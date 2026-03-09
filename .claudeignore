@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.next/
+*.glb
+*.ktx2
+*.webp
+*.splat
+*.ply
+.env
+.env.local
