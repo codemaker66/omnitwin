@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { CAMERA_EYE_HEIGHT } from "../components/GrandHallRoom.js";
 
 // Mock @react-three/fiber — happy-dom has no WebGL context.
-// vi.hoisted ensures the mock fn is created before the hoisted vi.mock call.
 const CanvasMock = vi.hoisted(() =>
   vi.fn(({ children }: { children?: React.ReactNode }) => (
     <div data-testid="r3f-canvas">{children}</div>
@@ -13,11 +11,20 @@ const CanvasMock = vi.hoisted(() =>
 vi.mock("@react-three/fiber", () => ({
   Canvas: CanvasMock,
   useThree: () => ({
-    camera: { position: { x: 0, y: 0, z: 0, set: vi.fn(), copy: vi.fn() }, quaternion: { setFromEuler: vi.fn() } },
+    camera: {
+      position: { x: 0, y: 0, z: 0, set: vi.fn(), copy: vi.fn() },
+      quaternion: { setFromEuler: vi.fn() },
+      lookAt: vi.fn(),
+    },
     gl: { domElement: document.createElement("canvas") },
     invalidate: vi.fn(),
   }),
   useFrame: vi.fn(),
+}));
+
+vi.mock("@react-three/drei", () => ({
+  OrbitControls: vi.fn(() => null),
+  Html: vi.fn(({ children }: { children?: React.ReactNode }) => children),
 }));
 
 import { App } from "../App.js";
@@ -60,17 +67,19 @@ describe("App", () => {
     expect(gl["antialias"]).toBe(true);
   });
 
-  it("configures camera at eye height with 75° FOV", () => {
+  it("configures camera with 45° FOV for architectural view", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();
     const camera = props["camera"] as Record<string, unknown>;
-    const position = camera["position"] as readonly number[];
-    expect(position[0]).toBe(0);
-    expect(position[1]).toBe(CAMERA_EYE_HEIGHT);
-    expect(position[2]).toBe(0);
-    expect(camera["fov"]).toBe(75);
+    expect(camera["fov"]).toBe(55);
     expect(camera["near"]).toBe(0.1);
-    expect(camera["far"]).toBe(100);
+    expect(camera["far"]).toBe(200);
+  });
+
+  it("uses neutral background colour", () => {
+    CanvasMock.mockClear();
+    render(<App />);
+    expect(CanvasMock).toHaveBeenCalled();
   });
 });

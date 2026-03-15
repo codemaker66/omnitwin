@@ -3,11 +3,20 @@ import { render } from "@testing-library/react";
 import { FrontSide } from "three";
 import {
   computeRoomSurfaces,
+  computeWainscotingSurfaces,
+  isSurfaceClippable,
   GRAND_HALL_SURFACES,
-  CAMERA_EYE_HEIGHT,
+  GRAND_HALL_WAINSCOTING,
+  DOME_RADIUS,
+  DOME_RECESS_DEPTH,
   type RoomSurface,
 } from "../GrandHallRoom.js";
-import { FLOOR_COLOR, WALL_COLOR, CEILING_COLOR } from "../../constants/colors.js";
+import {
+  FLOOR_COLOR, WALL_COLOR, CEILING_COLOR,
+  WAINSCOT_COLOR, WAINSCOT_HEIGHT,
+  DOME_COLOR,
+} from "../../constants/colors.js";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 
 // ---------------------------------------------------------------------------
 // Mock R3F — happy-dom has no WebGL context
@@ -22,11 +31,19 @@ const CanvasMock = vi.hoisted(() =>
 vi.mock("@react-three/fiber", () => ({
   Canvas: CanvasMock,
   useThree: () => ({
-    camera: { position: { x: 0, y: 0, z: 0, set: vi.fn(), copy: vi.fn() }, quaternion: { setFromEuler: vi.fn() } },
+    camera: {
+      position: { x: 0, y: 0, z: 0, set: vi.fn(), copy: vi.fn() },
+      quaternion: { setFromEuler: vi.fn() },
+      lookAt: vi.fn(),
+    },
     gl: { domElement: document.createElement("canvas") },
     invalidate: vi.fn(),
   }),
   useFrame: vi.fn(),
+}));
+
+vi.mock("@react-three/drei", () => ({
+  OrbitControls: vi.fn(() => null),
 }));
 
 // Import App after mock is registered
@@ -220,27 +237,29 @@ describe("computeRoomSurfaces", () => {
 // ---------------------------------------------------------------------------
 
 describe("GRAND_HALL_SURFACES", () => {
-  it("matches the dimensions from @omnitwin/types (21 × 10.5 × 8)", () => {
+  it("matches the scaled render dimensions", () => {
+    const { width, length, height } = GRAND_HALL_RENDER_DIMENSIONS;
     const floor = findSurface(GRAND_HALL_SURFACES, "floor");
-    expect(floor.size).toEqual([21, 10.5]);
+    expect(floor.size).toEqual([width, length]);
 
     const ceiling = findSurface(GRAND_HALL_SURFACES, "ceiling");
-    expect(ceiling.position[1]).toBe(8);
+    expect(ceiling.position[1]).toBe(height);
   });
 
-  it("positions back wall at z = -5.25 (half of 10.5m length)", () => {
+  it("positions back wall at z = -halfLength", () => {
     const wall = findSurface(GRAND_HALL_SURFACES, "wall-back");
-    expect(wall.position[2]).toBe(-5.25);
+    expect(wall.position[2]).toBe(-GRAND_HALL_RENDER_DIMENSIONS.length / 2);
   });
 
-  it("positions left wall at x = -10.5 (half of 21m width)", () => {
+  it("positions left wall at x = -halfWidth", () => {
     const wall = findSurface(GRAND_HALL_SURFACES, "wall-left");
-    expect(wall.position[0]).toBe(-10.5);
+    expect(wall.position[0]).toBe(-GRAND_HALL_RENDER_DIMENSIONS.width / 2);
   });
 
-  it("sizes the left/right walls to 10.5m × 8m (length × height)", () => {
+  it("sizes the left/right walls to length × height", () => {
+    const { length, height } = GRAND_HALL_RENDER_DIMENSIONS;
     const wall = findSurface(GRAND_HALL_SURFACES, "wall-left");
-    expect(wall.size).toEqual([10.5, 8]);
+    expect(wall.size).toEqual([length, height]);
   });
 
   it("has exactly 6 surfaces", () => {
@@ -249,13 +268,59 @@ describe("GRAND_HALL_SURFACES", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Camera constants
+// Wainscoting
 // ---------------------------------------------------------------------------
 
-describe("CAMERA_EYE_HEIGHT", () => {
-  it("is approximately adult eye level (1.5m–2.0m)", () => {
-    expect(CAMERA_EYE_HEIGHT).toBeGreaterThanOrEqual(1.5);
-    expect(CAMERA_EYE_HEIGHT).toBeLessThanOrEqual(2.0);
+describe("computeWainscotingSurfaces", () => {
+  const dimensions = { width: 10, length: 8, height: 4 };
+  const panels = computeWainscotingSurfaces(dimensions);
+
+  it("returns exactly 4 panels", () => {
+    expect(panels).toHaveLength(4);
+  });
+
+  it("returns panels named wainscot-back, wainscot-front, wainscot-left, wainscot-right", () => {
+    const names = panels.map((p) => p.name).sort();
+    expect(names).toEqual(["wainscot-back", "wainscot-front", "wainscot-left", "wainscot-right"]);
+  });
+
+  it("all panels use WAINSCOT_COLOR", () => {
+    for (const panel of panels) {
+      expect(panel.color).toBe(WAINSCOT_COLOR);
+    }
+  });
+
+  it("panels are WAINSCOT_HEIGHT tall", () => {
+    for (const panel of panels) {
+      expect(panel.size[1]).toBe(WAINSCOT_HEIGHT);
+    }
+  });
+
+  it("panels are positioned at half wainscot height (centered on lower wall)", () => {
+    for (const panel of panels) {
+      expect(panel.position[1]).toBeCloseTo(WAINSCOT_HEIGHT / 2);
+    }
+  });
+
+  it("back panel is slightly inset from the wall (z-fighting prevention)", () => {
+    const back = findSurface(panels, "wainscot-back");
+    expect(back.position[2]).toBeGreaterThan(-4); // slightly closer than wall at -4
+  });
+});
+
+describe("GRAND_HALL_WAINSCOTING", () => {
+  it("has exactly 4 panels", () => {
+    expect(GRAND_HALL_WAINSCOTING).toHaveLength(4);
+  });
+
+  it("back panel width matches scaled room width", () => {
+    const back = findSurface(GRAND_HALL_WAINSCOTING, "wainscot-back");
+    expect(back.size[0]).toBe(GRAND_HALL_RENDER_DIMENSIONS.width);
+  });
+
+  it("left panel width matches scaled room length", () => {
+    const left = findSurface(GRAND_HALL_WAINSCOTING, "wainscot-left");
+    expect(left.size[0]).toBe(GRAND_HALL_RENDER_DIMENSIONS.length);
   });
 });
 
@@ -279,6 +344,70 @@ describe("colour constants", () => {
   it("all three colours are distinct", () => {
     const colors = new Set([FLOOR_COLOR, WALL_COLOR, CEILING_COLOR]);
     expect(colors.size).toBe(3);
+  });
+
+  it("WAINSCOT_COLOR is a valid hex colour", () => {
+    expect(WAINSCOT_COLOR).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it("WAINSCOT_COLOR is distinct from wall and floor", () => {
+    expect(WAINSCOT_COLOR).not.toBe(WALL_COLOR);
+    expect(WAINSCOT_COLOR).not.toBe(FLOOR_COLOR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dome constants
+// ---------------------------------------------------------------------------
+
+describe("dome constants", () => {
+  it("DOME_RADIUS is 3.5m (7m diameter)", () => {
+    expect(DOME_RADIUS).toBe(3.5);
+  });
+
+  it("DOME_RECESS_DEPTH equals the radius (hemisphere)", () => {
+    expect(DOME_RECESS_DEPTH).toBe(DOME_RADIUS);
+  });
+
+  it("dome fits within the room width", () => {
+    expect(DOME_RADIUS * 2).toBeLessThanOrEqual(GRAND_HALL_RENDER_DIMENSIONS.width);
+  });
+
+  it("dome fits within the room length", () => {
+    expect(DOME_RADIUS * 2).toBeLessThanOrEqual(GRAND_HALL_RENDER_DIMENSIONS.length);
+  });
+
+  it("DOME_COLOR is a valid hex colour", () => {
+    expect(DOME_COLOR).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it("DOME_COLOR is distinct from CEILING_COLOR", () => {
+    expect(DOME_COLOR).not.toBe(CEILING_COLOR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Section plane clipping
+// ---------------------------------------------------------------------------
+
+describe("isSurfaceClippable", () => {
+  it("floor is NOT clippable (always visible)", () => {
+    expect(isSurfaceClippable("floor")).toBe(false);
+  });
+
+  it("ceiling IS clippable", () => {
+    expect(isSurfaceClippable("ceiling")).toBe(true);
+  });
+
+  it("all 4 walls are clippable", () => {
+    expect(isSurfaceClippable("wall-back")).toBe(true);
+    expect(isSurfaceClippable("wall-front")).toBe(true);
+    expect(isSurfaceClippable("wall-left")).toBe(true);
+    expect(isSurfaceClippable("wall-right")).toBe(true);
+  });
+
+  it("wainscoting is clippable", () => {
+    expect(isSurfaceClippable("wainscot-back")).toBe(true);
   });
 });
 
@@ -329,18 +458,5 @@ describe("App with GrandHallRoom", () => {
   it("renders without crashing", () => {
     const { getByTestId } = render(<App />);
     expect(getByTestId("r3f-canvas")).toBeDefined();
-  });
-
-  it("passes camera config with eye-height position", () => {
-    CanvasMock.mockClear();
-    render(<App />);
-    const firstCall = CanvasMock.mock.calls[0];
-    if (firstCall === undefined) {
-      throw new Error("Canvas was never called");
-    }
-    const props = firstCall[0] as Record<string, unknown>;
-    const camera = props["camera"] as Record<string, unknown>;
-    const position = camera["position"] as readonly number[];
-    expect(position[1]).toBe(CAMERA_EYE_HEIGHT);
   });
 });

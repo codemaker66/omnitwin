@@ -372,8 +372,8 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     floorPlanOutline: [
       { x: 0, y: 0 },
       { x: 21, y: 0 },
-      { x: 21, y: 10.5 },
-      { x: 0, y: 10.5 },
+      { x: 21, y: 10 },
+      { x: 0, y: 10 },
     ],
     meshUrl: "https://cdn.omnitwin.com/meshes/grand-hall.glb",
     thumbnailUrl: "https://cdn.omnitwin.com/thumbs/grand-hall.jpg",

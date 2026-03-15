@@ -14,17 +14,17 @@ export interface HemisphereLightConfig {
   readonly intensity: number;
 }
 
-/** Warm white — simulates overhead venue lighting bouncing off cream walls. */
-const SKY_COLOR = "#ffeedd";
+/** Bright cool white — clean architectural daylight from above. */
+const SKY_COLOR = "#f0f0ff";
 
-/** Cool dark grey — floor bounce light. */
-const GROUND_COLOR = "#444455";
+/** Warm grey — subtle ground bounce for depth. */
+const GROUND_COLOR = "#d0c8c0";
 
 const HEMISPHERE_CONFIGS: Record<DeviceTier, HemisphereLightConfig> = {
-  poster: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 0.4 },
-  low: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 0.8 },
-  medium: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.0 },
-  high: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.2 },
+  poster: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 0.8 },
+  low: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.5 },
+  medium: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.8 },
+  high: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 2.0 },
 };
 
 /**

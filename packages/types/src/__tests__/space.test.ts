@@ -498,7 +498,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Grand Hall has correct dimensions", () => {
-    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21, length: 10.5, height: 8 });
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21, length: 10, height: 7 });
   });
 
   it("Robert Adam Room dimensions validate", () => {
@@ -506,7 +506,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Robert Adam Room has correct dimensions", () => {
-    expect(TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS).toEqual({ width: 12, length: 8, height: 4 });
+    expect(TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS).toEqual({ width: 9.7, length: 5.6, height: 2.18 });
   });
 
   it("Reception Room dimensions validate", () => {
@@ -514,7 +514,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Reception Room has correct dimensions", () => {
-    expect(TRADES_HALL_RECEPTION_ROOM_DIMENSIONS).toEqual({ width: 10, length: 7, height: 3.5 });
+    expect(TRADES_HALL_RECEPTION_ROOM_DIMENSIONS).toEqual({ width: 13.4, length: 11.2, height: 3.2 });
   });
 
   it("Saloon dimensions validate", () => {
@@ -522,7 +522,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Saloon has correct dimensions", () => {
-    expect(TRADES_HALL_SALOON_DIMENSIONS).toEqual({ width: 9, length: 6, height: 3.5 });
+    expect(TRADES_HALL_SALOON_DIMENSIONS).toEqual({ width: 12, length: 7, height: 5.4 });
   });
 
   it("each room has a valid floor plan outline (4 rectangle corners)", () => {
@@ -548,8 +548,8 @@ describe("Trades Hall room constants", () => {
     expect(room.floorPlanOutline).toEqual([
       { x: 0, y: 0 },
       { x: 21, y: 0 },
-      { x: 21, y: 10.5 },
-      { x: 0, y: 10.5 },
+      { x: 21, y: 10 },
+      { x: 0, y: 10 },
     ]);
   });
 
