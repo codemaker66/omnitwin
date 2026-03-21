@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SnapGuide } from "../lib/snap-guide.js";
 
 // ---------------------------------------------------------------------------
 // Selection store — manages selected furniture items
@@ -7,6 +8,8 @@ import { create } from "zustand";
 export interface SelectionState {
   /** IDs of currently selected placed items. */
   readonly selectedIds: ReadonlySet<string>;
+  /** Active snap alignment guides (populated during drag-move or ghost placement). */
+  readonly activeGuides: readonly SnapGuide[];
   /** Whether a marquee drag is active. */
   readonly marqueeActive: boolean;
   /** Marquee start point (screen coords). Null when not dragging. */
@@ -34,10 +37,13 @@ export interface SelectionState {
   readonly updateMarquee: (x: number, y: number, worldX: number, worldZ: number) => void;
   /** End marquee drag. */
   readonly endMarquee: () => void;
+  /** Set the active snap alignment guides. */
+  readonly setActiveGuides: (guides: readonly SnapGuide[]) => void;
 }
 
 export const useSelectionStore = create<SelectionState>()((set, get) => ({
   selectedIds: new Set<string>(),
+  activeGuides: [],
   marqueeActive: false,
   marqueeStart: null,
   marqueeEnd: null,
@@ -64,7 +70,7 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   },
 
   clearSelection: () => {
-    set({ selectedIds: new Set<string>() });
+    set({ selectedIds: new Set<string>(), activeGuides: [] });
   },
 
   isSelected: (id: string) => {
@@ -95,6 +101,11 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       marqueeEnd: null,
       marqueeWorldStart: null,
       marqueeWorldEnd: null,
+      activeGuides: [],
     });
+  },
+
+  setActiveGuides: (guides: readonly SnapGuide[]) => {
+    set({ activeGuides: guides });
   },
 }));

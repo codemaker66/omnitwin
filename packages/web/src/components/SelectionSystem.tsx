@@ -8,6 +8,7 @@ import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
+import { computeSnapGuides } from "../lib/snap-guide.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -413,6 +414,13 @@ export function SelectionSystem(): null {
                   if (othersToMove.size > 0) {
                     usePlacementStore.getState().moveItemsByDelta(othersToMove, effectiveDx, effectiveDz);
                   }
+                  // Compute snap alignment guides for the moved primary item
+                  const guides = computeSnapGuides(
+                    movedPrimary.x, movedPrimary.z,
+                    movedPrimary.catalogueItemId, movedPrimary.rotationY,
+                    usePlacementStore.getState().placedItems, allMovingIds,
+                  );
+                  useSelectionStore.getState().setActiveGuides(guides);
                 }
                 invalidateRef.current();
               }
@@ -451,6 +459,8 @@ export function SelectionSystem(): null {
         invalidateRef.current();
       }
 
+      // Clear snap guides when interaction ends
+      useSelectionStore.getState().setActiveGuides([]);
       isDragging.current = false;
       isMarquee.current = false;
       dragItemId.current = null;

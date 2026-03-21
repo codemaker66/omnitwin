@@ -7,9 +7,11 @@ const _ndc = new Vector2();
 
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
+import { useSelectionStore } from "../stores/selection-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
+import { computeSnapGuides } from "../lib/snap-guide.js";
 import { findNearestTable, CLOTH_SNAP_DISTANCE_RENDER } from "../lib/cloth-snap.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
@@ -78,6 +80,15 @@ export function PlacementGhost(): React.ReactElement | null {
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (hit !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
+        // Compute snap alignment guides at the ghost's snapped position
+        const placeState = usePlacementStore.getState();
+        if (placeState.ghostPosition !== null) {
+          const guides = computeSnapGuides(
+            placeState.ghostPosition[0], placeState.ghostPosition[2],
+            itemId, 0, placeState.placedItems, new Set(),
+          );
+          useSelectionStore.getState().setActiveGuides(guides);
+        }
         invalidateRef.current();
       }
     }
@@ -161,6 +172,7 @@ export function PlacementGhost(): React.ReactElement | null {
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";
       usePlacementStore.getState().clearGhost();
+      useSelectionStore.getState().setActiveGuides([]);
     };
   }, [selectedItemId, scene, camera, raycaster]);
 

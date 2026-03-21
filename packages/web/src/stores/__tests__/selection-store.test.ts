@@ -4,6 +4,7 @@ import { useSelectionStore } from "../selection-store.js";
 function resetStore(): void {
   useSelectionStore.setState({
     selectedIds: new Set<string>(),
+    activeGuides: [],
     marqueeActive: false,
     marqueeStart: null,
     marqueeEnd: null,
@@ -149,5 +150,36 @@ describe("marquee", () => {
     expect(useSelectionStore.getState().marqueeEnd).toBeNull();
     expect(useSelectionStore.getState().marqueeWorldStart).toBeNull();
     expect(useSelectionStore.getState().marqueeWorldEnd).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snap alignment guides
+// ---------------------------------------------------------------------------
+
+describe("activeGuides", () => {
+  it("starts as empty array", () => {
+    expect(useSelectionStore.getState().activeGuides).toHaveLength(0);
+  });
+
+  it("setActiveGuides updates the array", () => {
+    const guides = [{ axis: "x" as const, kind: "center" as const, coord: 5, start: 0, end: 10 }];
+    useSelectionStore.getState().setActiveGuides(guides);
+    expect(useSelectionStore.getState().activeGuides).toHaveLength(1);
+    expect(useSelectionStore.getState().activeGuides[0]?.coord).toBe(5);
+  });
+
+  it("clearSelection resets activeGuides", () => {
+    const guides = [{ axis: "z" as const, kind: "edge" as const, coord: 3, start: 0, end: 8 }];
+    useSelectionStore.getState().setActiveGuides(guides);
+    useSelectionStore.getState().clearSelection();
+    expect(useSelectionStore.getState().activeGuides).toHaveLength(0);
+  });
+
+  it("endMarquee resets activeGuides", () => {
+    const guides = [{ axis: "x" as const, kind: "center" as const, coord: 2, start: 0, end: 5 }];
+    useSelectionStore.getState().setActiveGuides(guides);
+    useSelectionStore.getState().endMarquee();
+    expect(useSelectionStore.getState().activeGuides).toHaveLength(0);
   });
 });

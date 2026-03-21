@@ -19,6 +19,7 @@ import { PlacementGhost } from "./components/PlacementGhost.js";
 import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
+import { SnapGuides } from "./components/SnapGuides.js";
 import { ActionBar } from "./components/ActionBar.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { useSectionStore } from "./stores/section-store.js";
@@ -71,6 +72,7 @@ export function App(): React.ReactElement {
         <PlacedFurniture />
         <PlacementGhost />
         <SelectionSystem />
+        <SnapGuides />
         <MarqueeSelect />
         <CameraRig dimensions={GRAND_HALL_RENDER_DIMENSIONS} />
         {import.meta.env.DEV && <PerfMonitor />}
