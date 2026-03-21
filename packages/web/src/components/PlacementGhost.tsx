@@ -1,7 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import { Vector2 } from "three";
-import type { Object3D } from "three";
+
+/** Reusable Vector2 for NDC coordinates — avoids per-event allocation. */
+const _ndc = new Vector2();
+
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
@@ -30,15 +33,15 @@ export function PlacementGhost(): React.ReactElement | null {
   const ghostPosition = usePlacementStore((s) => s.ghostPosition);
   const ghostValid = usePlacementStore((s) => s.ghostValid);
 
-  useEffect(() => {
-    return usePlacementStore.subscribe(() => { invalidate(); });
-  }, [invalidate]);
+  // No manual store subscriptions needed — the useStore selectors above
+  // (selectedItemId, ghostPosition, ghostValid) trigger React re-renders.
 
-  useEffect(() => {
-    return useCatalogueStore.subscribe(() => { invalidate(); });
-  }, [invalidate]);
+  // Stable ref for invalidate — avoids effect re-runs when invalidate ref changes
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
 
-  // Raycasting: update ghost on pointer move, place on pointer up (drag) or click
+  // Raycasting: update ghost on pointer move, place on pointer up (drag) or click.
+  // All handlers read selectedItemId from the store (not the closure) to avoid stale values.
   useEffect(() => {
     if (selectedItemId === null) return;
 
@@ -47,19 +50,21 @@ export function PlacementGhost(): React.ReactElement | null {
 
     canvasEl.style.cursor = "crosshair";
 
+    // Cache the floor mesh for the duration of this placement session
+    let floorMesh = scene.getObjectByName("floor") ?? null;
+
     function raycastToFloor(clientX: number, clientY: number): { x: number; z: number } | null {
       if (canvasEl === null) return null;
+      if (floorMesh === null) {
+        floorMesh = scene.getObjectByName("floor") ?? null;
+        if (floorMesh === null) return null;
+      }
       const rect = canvasEl.getBoundingClientRect();
       const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new Vector2(ndcX, ndcY), camera);
+      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      const floorMeshes: Object3D[] = [];
-      scene.traverse((obj) => {
-        if (obj.name === "floor") floorMeshes.push(obj);
-      });
-
-      const intersects = raycaster.intersectObjects(floorMeshes, false);
+      const intersects = raycaster.intersectObjects([floorMesh], false);
       const hit = intersects[0];
       if (hit !== undefined) {
         return { x: hit.point.x, z: hit.point.z };
@@ -68,11 +73,12 @@ export function PlacementGhost(): React.ReactElement | null {
     }
 
     function onPointerMove(event: PointerEvent): void {
-      if (selectedItemId === null) return;
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      if (itemId === null) return;
       const hit = raycastToFloor(event.clientX, event.clientY);
       if (hit !== null) {
-        usePlacementStore.getState().updateGhost(hit.x, hit.z, selectedItemId);
-        invalidate();
+        usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
+        invalidateRef.current();
       }
     }
 
@@ -92,7 +98,7 @@ export function PlacementGhost(): React.ReactElement | null {
         );
         if (nearest !== null) {
           placeState.toggleCloth(nearest.id);
-          invalidate();
+          invalidateRef.current();
         }
         return;
       }
@@ -112,7 +118,7 @@ export function PlacementGhost(): React.ReactElement | null {
         });
         catState.clearSelection();
         placeState.clearGhost();
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -121,7 +127,7 @@ export function PlacementGhost(): React.ReactElement | null {
         placeState.ghostPosition[0],
         placeState.ghostPosition[2],
       );
-      invalidate();
+      invalidateRef.current();
     }
 
     function onPointerUp(event: PointerEvent): void {
@@ -130,8 +136,9 @@ export function PlacementGhost(): React.ReactElement | null {
 
       // Update ghost one final time at release position
       const hit = raycastToFloor(event.clientX, event.clientY);
-      if (hit !== null && selectedItemId !== null) {
-        usePlacementStore.getState().updateGhost(hit.x, hit.z, selectedItemId);
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      if (hit !== null && itemId !== null) {
+        usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       }
       placeAtGhost();
     }
@@ -155,7 +162,7 @@ export function PlacementGhost(): React.ReactElement | null {
       canvasEl.style.cursor = "";
       usePlacementStore.getState().clearGhost();
     };
-  }, [selectedItemId, scene, camera, raycaster, invalidate]);
+  }, [selectedItemId, scene, camera, raycaster]);
 
   // Escape cancels placement
   useEffect(() => {

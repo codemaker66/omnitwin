@@ -23,6 +23,10 @@ import {
 
 const FLOOR_PLANE = new Plane(new Vector3(0, 1, 0), 0);
 const _floorHit = new Vector3();
+/** Reusable Vector2 for NDC coordinates — avoids per-event allocation. */
+const _ndc = new Vector2();
+/** Reusable Vector3 for world-space projection in marquee hit-testing. */
+const _worldPos = new Vector3();
 
 /**
  * Raycast from screen pixel to the floor plane (y=0).
@@ -31,14 +35,13 @@ const _floorHit = new Vector3();
 function screenToFloor(
   clientX: number,
   clientY: number,
-  canvasEl: HTMLCanvasElement,
+  rect: DOMRect,
   cam: Camera,
   rc: Raycaster,
 ): { x: number; z: number } | null {
-  const rect = canvasEl.getBoundingClientRect();
   const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
   const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-  rc.setFromCamera(new Vector2(ndcX, ndcY), cam);
+  rc.setFromCamera(_ndc.set(ndcX, ndcY), cam);
   const hit = rc.ray.intersectPlane(FLOOR_PLANE, _floorHit);
   if (hit === null) return null;
   return { x: hit.x, z: hit.z };
@@ -62,17 +65,38 @@ function screenToFloor(
  *
  * Must be inside the R3F Canvas.
  */
+/** Finds the floor mesh in the scene (cached after first lookup). */
+function findFloor(scene: Object3D, cache: React.MutableRefObject<Object3D | null>): Object3D[] {
+  if (cache.current === null) {
+    cache.current = scene.getObjectByName("floor") ?? null;
+  }
+  return cache.current !== null ? [cache.current] : [];
+}
+
+/** Collects furniture group roots from the known parent group. */
+function findFurnitureGroups(scene: Object3D): Object3D[] {
+  const parent = scene.getObjectByName("placed-furniture");
+  if (parent === undefined) return [];
+  return parent.children.filter((c) => c.name.startsWith("furniture-placed-"));
+}
+
 export function SelectionSystem(): null {
   const { scene, camera, raycaster, invalidate, gl } = useThree();
   const isDragging = useRef(false);
   const isMarquee = useRef(false);
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
+  const marqueeRafId = useRef<number>(0);
+  const floorCache = useRef<Object3D | null>(null);
+
+  // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
 
   // Invalidate when selection changes
   useEffect(() => {
-    return useSelectionStore.subscribe(() => { invalidate(); });
-  }, [invalidate]);
+    return useSelectionStore.subscribe(() => { invalidateRef.current(); });
+  }, []);
 
   // Keyboard handlers
   useEffect(() => {
@@ -87,7 +111,7 @@ export function SelectionSystem(): null {
         event.preventDefault();
         usePlacementStore.getState().undo();
         useSelectionStore.getState().clearSelection();
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -99,7 +123,7 @@ export function SelectionSystem(): null {
         event.preventDefault();
         usePlacementStore.getState().redo();
         useSelectionStore.getState().clearSelection();
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -108,7 +132,7 @@ export function SelectionSystem(): null {
         if (selectedIds.size === 0) return;
         usePlacementStore.getState().removeItems(selectedIds);
         useSelectionStore.getState().clearSelection();
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -116,7 +140,7 @@ export function SelectionSystem(): null {
       if (event.code === "Escape") {
         if (selectedIds.size > 0) {
           useSelectionStore.getState().clearSelection();
-          invalidate();
+          invalidateRef.current();
         }
         return;
       }
@@ -132,7 +156,7 @@ export function SelectionSystem(): null {
             usePlacementStore.getState().rotateItem(id, newRotation);
           }
         }
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -147,7 +171,7 @@ export function SelectionSystem(): null {
             usePlacementStore.getState().rotateItem(id, newRotation);
           }
         }
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -162,7 +186,7 @@ export function SelectionSystem(): null {
             usePlacementStore.getState().rotateItem(id, newRotation);
           }
         }
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -178,18 +202,20 @@ export function SelectionSystem(): null {
         for (const id of selectedIds) {
           usePlacementStore.getState().toggleCloth(id);
         }
-        invalidate();
+        invalidateRef.current();
         return;
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, [invalidate]);
+  }, []);
 
   // Pointer handlers for click-select, drag-move, and marquee
   useEffect(() => {
     const canvasEl = gl.domElement;
+    // Cache canvas rect — refreshed on pointer down (covers resize between interactions)
+    let cachedRect = canvasEl.getBoundingClientRect();
 
     function onPointerDown(event: PointerEvent): void {
       // Only handle left-click
@@ -201,21 +227,16 @@ export function SelectionSystem(): null {
       isDragging.current = false;
       isMarquee.current = false;
 
-      // Raycast to find if we clicked on a placed furniture item
-      const rect = canvasEl.getBoundingClientRect();
-      const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new Vector2(ndcX, ndcY), camera);
+      // Refresh cached rect at interaction start (handles canvas resize)
+      cachedRect = canvasEl.getBoundingClientRect();
 
-      // Collect furniture group roots and all their mesh descendants
-      const furnitureGroups: Object3D[] = [];
-      scene.traverse((obj) => {
-        if (obj.name.startsWith("furniture-placed-")) {
-          furnitureGroups.push(obj);
-        }
-      });
+      // Raycast to find if we clicked on a placed furniture item
+      const ndcX = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+      const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
       // Raycast recursively into furniture groups to hit actual meshes
+      const furnitureGroups = findFurnitureGroups(scene);
       const intersects = raycaster.intersectObjects(furnitureGroups, true);
       if (intersects.length > 0) {
         const hitObj = intersects[0]?.object;
@@ -266,7 +287,7 @@ export function SelectionSystem(): null {
           const floorPos = screenToFloor(
             dragStartScreen.current.x,
             dragStartScreen.current.y,
-            canvasEl,
+            cachedRect,
             camera,
             raycaster,
           );
@@ -280,83 +301,78 @@ export function SelectionSystem(): null {
       }
 
       if (isMarquee.current) {
-        // Update marquee end point (screen + world coords)
-        const floorPos = screenToFloor(event.clientX, event.clientY, canvasEl, camera, raycaster);
-        useSelectionStore.getState().updateMarquee(
-          event.clientX,
-          event.clientY,
-          floorPos?.x ?? 0,
-          floorPos?.z ?? 0,
-        );
+        // Coalesce marquee updates to one per animation frame — pointer events
+        // can fire far more often than the display refreshes, wasting GPU cycles.
+        const clientX = event.clientX;
+        const clientY = event.clientY;
+        const shiftKey = event.shiftKey;
 
-        // Live preview: find items inside marquee rectangle
-        const rect = computeMarqueeRect(
-          dragStartScreen.current.x,
-          dragStartScreen.current.y,
-          event.clientX,
-          event.clientY,
-        );
+        cancelAnimationFrame(marqueeRafId.current);
+        marqueeRafId.current = requestAnimationFrame(() => {
+          // Update marquee end point (screen + world coords)
+          const floorPos = screenToFloor(clientX, clientY, cachedRect, camera, raycaster);
+          useSelectionStore.getState().updateMarquee(
+            clientX,
+            clientY,
+            floorPos?.x ?? 0,
+            floorPos?.z ?? 0,
+          );
 
-        const canvasRect = canvasEl.getBoundingClientRect();
-        const placedItems = usePlacementStore.getState().placedItems;
-        const idsInRect: string[] = [];
-        const worldPos = new Vector3();
+          // Live preview: find items inside marquee rectangle
+          const rect = computeMarqueeRect(
+            dragStartScreen.current.x,
+            dragStartScreen.current.y,
+            clientX,
+            clientY,
+          );
 
-        for (const placed of placedItems) {
-          // Project world position to screen coordinates
-          worldPos.set(placed.x, placed.y, placed.z);
-          worldPos.project(camera);
-
-          // NDC → screen pixels
-          const screenX = (worldPos.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left;
-          const screenY = (-worldPos.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top;
-
-          if (isPointInRect(screenX, screenY, rect)) {
-            idsInRect.push(placed.id);
+          const placedItems = usePlacementStore.getState().placedItems;
+          const idsInRect: string[] = [];
+          for (const placed of placedItems) {
+            _worldPos.set(placed.x, placed.y, placed.z);
+            _worldPos.project(camera);
+            const screenX = (_worldPos.x * 0.5 + 0.5) * cachedRect.width + cachedRect.left;
+            const screenY = (-_worldPos.y * 0.5 + 0.5) * cachedRect.height + cachedRect.top;
+            if (isPointInRect(screenX, screenY, rect)) {
+              idsInRect.push(placed.id);
+            }
           }
-        }
 
-        // Update selection live as user drags
-        if (event.shiftKey) {
-          // Additive marquee — add to existing selection
-          const existing = useSelectionStore.getState().selectedIds;
-          const merged = [...existing, ...idsInRect];
-          useSelectionStore.getState().selectMultiple(merged);
-        } else {
-          useSelectionStore.getState().selectMultiple(idsInRect);
-        }
+          if (shiftKey) {
+            const existing = useSelectionStore.getState().selectedIds;
+            const merged = [...existing, ...idsInRect];
+            useSelectionStore.getState().selectMultiple(merged);
+          } else {
+            useSelectionStore.getState().selectMultiple(idsInRect);
+          }
 
-        invalidate();
+          invalidateRef.current();
+        });
         return;
       }
 
       if (isDragging.current && dragItemId.current !== null) {
         // Drag-move furniture
-        const canvasRect = canvasEl.getBoundingClientRect();
-        const ndcX = ((event.clientX - canvasRect.left) / canvasRect.width) * 2 - 1;
-        const ndcY = -((event.clientY - canvasRect.top) / canvasRect.height) * 2 + 1;
-        raycaster.setFromCamera(new Vector2(ndcX, ndcY), camera);
+        const ndcX = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+        const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+        raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-        const floorMeshes: Object3D[] = [];
-        scene.traverse((obj) => {
-          if (obj.name === "floor") floorMeshes.push(obj);
-        });
-
-        const floorHits = raycaster.intersectObjects(floorMeshes, false);
+        const floorHits = raycaster.intersectObjects(findFloor(scene, floorCache), false);
         if (floorHits.length > 0) {
           const hit = floorHits[0];
           if (hit !== undefined) {
             const selectedIds = useSelectionStore.getState().selectedIds;
+            // Read placed items once for the entire handler — consistent snapshot
+            const placedItems = usePlacementStore.getState().placedItems;
             // Collect all IDs being moved (selected + their group members)
             const allMovingIds = new Set<string>();
             for (const sid of selectedIds) {
-              for (const gid of getGroupMemberIds(sid, usePlacementStore.getState().placedItems)) {
+              for (const gid of getGroupMemberIds(sid, placedItems)) {
                 allMovingIds.add(gid);
               }
             }
 
             // Move all items in the moving set (selected + group members)
-            const placedItems = usePlacementStore.getState().placedItems;
             const primaryId = dragItemId.current;
             const primary = placedItems.find((p) => p.id === primaryId);
             if (primary !== undefined) {
@@ -398,7 +414,7 @@ export function SelectionSystem(): null {
                     usePlacementStore.getState().moveItemsByDelta(othersToMove, effectiveDx, effectiveDz);
                   }
                 }
-                invalidate();
+                invalidateRef.current();
               }
             }
           }
@@ -411,10 +427,12 @@ export function SelectionSystem(): null {
       if (useCatalogueStore.getState().selectedItemId !== null) return;
 
       if (isMarquee.current) {
+        // Cancel any pending rAF from marquee drag
+        cancelAnimationFrame(marqueeRafId.current);
         // End marquee — selection was already updated live
         useSelectionStore.getState().endMarquee();
         isMarquee.current = false;
-        invalidate();
+        invalidateRef.current();
         return;
       }
 
@@ -430,7 +448,7 @@ export function SelectionSystem(): null {
           // Clicked on empty space
           useSelectionStore.getState().clearSelection();
         }
-        invalidate();
+        invalidateRef.current();
       }
 
       isDragging.current = false;
@@ -443,17 +461,13 @@ export function SelectionSystem(): null {
       if (useCatalogueStore.getState().selectedItemId !== null) return;
 
       // Find which placed item was double-clicked
-      const rect = canvasEl.getBoundingClientRect();
-      const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(new Vector2(ndcX, ndcY), camera);
+      cachedRect = canvasEl.getBoundingClientRect();
+      const ndcX = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+      const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      const furnitureGroups: Object3D[] = [];
-      scene.traverse((obj) => {
-        if (obj.name.startsWith("furniture-placed-")) furnitureGroups.push(obj);
-      });
-
-      const intersects = raycaster.intersectObjects(furnitureGroups, true);
+      const dblClickFurniture = findFurnitureGroups(scene);
+      const intersects = raycaster.intersectObjects(dblClickFurniture, true);
       if (intersects.length === 0) return;
 
       const hitObj = intersects[0]?.object;
@@ -490,7 +504,7 @@ export function SelectionSystem(): null {
         // Double-click on chair in a group → break it out
         usePlacementStore.getState().breakFromGroup(placedId);
         useSelectionStore.getState().select(placedId);
-        invalidate();
+        invalidateRef.current();
       }
     }
 
@@ -500,12 +514,13 @@ export function SelectionSystem(): null {
     canvasEl.addEventListener("dblclick", onDblClick);
 
     return () => {
+      cancelAnimationFrame(marqueeRafId.current);
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       canvasEl.removeEventListener("pointermove", onPointerMove);
       canvasEl.removeEventListener("pointerup", onPointerUp);
       canvasEl.removeEventListener("dblclick", onDblClick);
     };
-  }, [scene, camera, raycaster, invalidate, gl]);
+  }, [scene, camera, raycaster, gl]);
 
   return null;
 }

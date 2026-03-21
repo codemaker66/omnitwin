@@ -119,36 +119,15 @@ export const ZOOM_VELOCITY_THRESHOLD = 0.001;
 
 const PAN_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"]);
 
-function createKeyboardState(): { readonly keys: Set<string>; attach: () => () => void } {
-  const keys = new Set<string>();
+/** Shared keyboard state — tracks which pan keys are currently held. */
+const keyboardKeys = new Set<string>();
 
-  function onKeyDown(event: KeyboardEvent): void {
-    if (PAN_KEYS.has(event.code)) {
-      keys.add(event.code);
-    }
-  }
+function onKeyUp(event: KeyboardEvent): void {
+  keyboardKeys.delete(event.code);
+}
 
-  function onKeyUp(event: KeyboardEvent): void {
-    keys.delete(event.code);
-  }
-
-  function onBlur(): void {
-    keys.clear();
-  }
-
-  function attach(): () => void {
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-      keys.clear();
-    };
-  }
-
-  return { keys, attach };
+function onBlur(): void {
+  keyboardKeys.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -247,24 +226,29 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     invalidate();
   }, [camera, dimensions, target, invalidate]);
 
-  // Keyboard input — keydown must call invalidate() to wake demand-mode frame loop
-  const keyboardRef = useRef<ReturnType<typeof createKeyboardState> | null>(null);
-  useEffect(() => {
-    const kb = createKeyboardState();
-    keyboardRef.current = kb;
-    const detach = kb.attach();
+  // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
+  // Uses stable ref to invalidate so the effect runs only once (mount/unmount).
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
 
-    function onPanKeyDown(event: KeyboardEvent): void {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
       if (PAN_KEYS.has(event.code)) {
-        invalidate();
+        keyboardKeys.add(event.code);
+        invalidateRef.current();
       }
     }
-    window.addEventListener("keydown", onPanKeyDown);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     return () => {
-      detach();
-      window.removeEventListener("keydown", onPanKeyDown);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      keyboardKeys.clear();
     };
-  }, [invalidate]);
+  }, []);
 
   // Reusable vectors to avoid per-frame allocation
   const panDelta = useRef(new Vector3());
@@ -364,8 +348,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   // Per-frame: inertial zoom + WASD panning + damping decay
   useFrame((_state, delta) => {
     const controls = controlsRef.current;
-    const keyboard = keyboardRef.current;
-    if (controls === null || keyboard === null) return;
+    if (controls === null) return;
 
     // Skip normal camera controls while a bookmark transition is active
     if (!controls.enabled) return;
@@ -412,7 +395,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     }
 
     // Keyboard pan direction
-    const [dx, dz] = computeKeyboardPanDirection(keyboard.keys);
+    const [dx, dz] = computeKeyboardPanDirection(keyboardKeys);
 
     if (dx === 0 && dz === 0) return;
 

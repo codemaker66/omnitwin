@@ -31,25 +31,28 @@ export function PlacedFurniture(): React.ReactElement {
   const [animatingIds, setAnimatingIds] = useState<ReadonlySet<string>>(new Set());
   const prevClothedRef = useRef<ReadonlySet<string>>(new Set());
 
-  // Detect newly clothed items to trigger animation
+  // Detect newly clothed items to trigger animation.
+  // Avoids allocating intermediate Sets on every render — only builds new
+  // Sets when an item actually becomes clothed for the first time.
   useEffect(() => {
-    const currentClothed = new Set<string>();
-    for (const item of placedItems) {
-      if (item.clothed) currentClothed.add(item.id);
-    }
+    const prev = prevClothedRef.current;
+    let newlyClothed: string[] | null = null;
+    const nextClothed = new Set<string>();
 
-    const newlyClothed = new Set<string>();
-    for (const id of currentClothed) {
-      if (!prevClothedRef.current.has(id)) {
-        newlyClothed.add(id);
+    for (const item of placedItems) {
+      if (item.clothed) {
+        nextClothed.add(item.id);
+        if (!prev.has(item.id)) {
+          (newlyClothed ??= []).push(item.id);
+        }
       }
     }
 
-    prevClothedRef.current = currentClothed;
+    prevClothedRef.current = nextClothed;
 
-    if (newlyClothed.size > 0) {
-      setAnimatingIds((prev) => {
-        const next = new Set(prev);
+    if (newlyClothed !== null) {
+      setAnimatingIds((cur) => {
+        const next = new Set(cur);
         for (const id of newlyClothed) next.add(id);
         return next;
       });
@@ -65,13 +68,8 @@ export function PlacedFurniture(): React.ReactElement {
     invalidate();
   }, [invalidate]);
 
-  useEffect(() => {
-    return usePlacementStore.subscribe(() => { invalidate(); });
-  }, [invalidate]);
-
-  useEffect(() => {
-    return useSelectionStore.subscribe(() => { invalidate(); });
-  }, [invalidate]);
+  // No manual store subscriptions needed — the useStore selectors above
+  // (placedItems, selectedIds) trigger React re-renders which repaint the canvas.
 
   return (
     <group name="placed-furniture">
