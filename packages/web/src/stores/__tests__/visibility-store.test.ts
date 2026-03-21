@@ -261,7 +261,8 @@ describe("useVisibilityStore", () => {
     });
   });
 
-  it("defaults to auto-2 mode", () => {
+  it("starts in auto-2 mode after reset", () => {
+    // beforeEach resets to auto-2 for these tests
     expect(useVisibilityStore.getState().mode).toBe("auto-2");
   });
 

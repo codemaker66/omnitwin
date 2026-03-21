@@ -6,5 +6,11 @@ export default defineConfig({
     globals: false,
     environment: "happy-dom",
     passWithNoTests: true,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+      },
+    },
   },
 });

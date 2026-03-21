@@ -15,13 +15,31 @@ import type { SpaceDimensions } from "@omnitwin/types";
  */
 export const RENDER_SCALE = 2.0;
 
+/**
+ * Converts a real-world measurement (metres) to render-space units.
+ * Use when placing geometry in the scene (X and Z axes).
+ * Y axis (height) is NOT scaled — pass height values directly.
+ */
+export function toRenderSpace(metres: number): number {
+  return metres * RENDER_SCALE;
+}
+
+/**
+ * Converts a render-space measurement back to real-world metres.
+ * Use before displaying ANY distance, dimension, or coordinate to the user.
+ * Y axis (height) is NOT scaled — pass height values directly.
+ */
+export function toRealWorld(renderUnits: number): number {
+  return renderUnits / RENDER_SCALE;
+}
+
 /** Scales a SpaceDimensions object by the render scale factor.
  *  Width and length are scaled for spacious floor area.
  *  Height is kept at real-world value — tall walls look wrong when scaled up. */
 export function scaleForRendering(dimensions: SpaceDimensions): SpaceDimensions {
   return {
-    width: dimensions.width * RENDER_SCALE,
-    length: dimensions.length * RENDER_SCALE,
+    width: toRenderSpace(dimensions.width),
+    length: toRenderSpace(dimensions.length),
     height: dimensions.height,
   };
 }

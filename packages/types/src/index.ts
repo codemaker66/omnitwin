@@ -159,3 +159,43 @@ export {
   type PhotoUploadRequest,
   type PhotoUploadResponse,
 } from "./photo.js";
+
+export {
+  // Solver — entry point
+  solveLayout,
+  // Solver — types & schemas
+  SolverInputSchema,
+  SolverOutputSchema,
+  SolverConfigSchema,
+  ComplianceReportSchema,
+  FireExitSchema,
+  DEFAULT_SOLVER_CONFIG,
+  SOLVER_ASSETS,
+  SOLVER_ASSET_DIMENSIONS,
+  type SolverInput,
+  type SolverOutput,
+  type SolverConfig,
+  type ComplianceReport,
+  type FireExit,
+  // Solver — geometry
+  pointInPolygon,
+  distanceToEdge,
+  distanceToPoint,
+  circleInPolygon,
+  rectInPolygon,
+  lineIntersectsRect,
+  generateGridPoints,
+  // Solver — compliance
+  checkAisleWidths,
+  checkFireExitClearance,
+  checkMaxTravelDistance,
+  generateComplianceReport,
+  // Solver — layout strategies
+  solveDinnerRounds,
+  solveTheatre,
+  solveBoardroom,
+  solveCabaret,
+  solveCocktail,
+  solveCeremony,
+  solveDinnerBanquet,
+} from "./solver/index.js";

@@ -90,10 +90,9 @@ describe("computeCameraTarget", () => {
 describe("computeDistanceLimits", () => {
   const grandHall: SpaceDimensions = { width: 21, length: 10, height: 7 };
 
-  it("minDistance is about 5m for the Grand Hall", () => {
+  it("minDistance is 1.5m (close enough to inspect furniture)", () => {
     const limits = computeDistanceLimits(grandHall);
-    expect(limits.minDistance).toBeGreaterThanOrEqual(4);
-    expect(limits.minDistance).toBeLessThanOrEqual(6);
+    expect(limits.minDistance).toBe(1.5);
   });
 
   it("maxDistance is about 25m for the Grand Hall", () => {
@@ -107,16 +106,15 @@ describe("computeDistanceLimits", () => {
     expect(limits.maxDistance).toBeGreaterThan(limits.minDistance);
   });
 
-  it("scales with room size", () => {
+  it("maxDistance scales with room size", () => {
     const small = computeDistanceLimits({ width: 5, length: 5, height: 3 });
     const large = computeDistanceLimits({ width: 50, length: 50, height: 20 });
-    expect(large.minDistance).toBeGreaterThan(small.minDistance);
     expect(large.maxDistance).toBeGreaterThan(small.maxDistance);
   });
 
-  it("enforces minimum floor for small rooms", () => {
+  it("minDistance is always 1.5m regardless of room size", () => {
     const tiny = computeDistanceLimits({ width: 2, length: 2, height: 2 });
-    expect(tiny.minDistance).toBeGreaterThanOrEqual(2);
+    expect(tiny.minDistance).toBe(1.5);
     expect(tiny.maxDistance).toBeGreaterThanOrEqual(15);
   });
 });

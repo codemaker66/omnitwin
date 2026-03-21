@@ -232,6 +232,8 @@ export function createRectangularGridGeometry(
   return geometry;
 }
 
+// Timber frame beams defined in lib/timber-frame.ts, rendered by TimberFrame component.
+
 /** Dome radius in meters (7m diameter dome). */
 export const DOME_RADIUS = 3.5;
 
@@ -274,6 +276,8 @@ export function GrandHallRoom(): React.ReactElement {
     () => createRectangularGridGeometry(width, length, GRID_MARGIN),
     [width, length],
   );
+
+  // Room frame beams are precomputed (GRAND_HALL_BEAMS)
 
   // Drive non-brick surface opacity imperatively (floor, ceiling, dome).
   // Walls and wainscoting are handled by BrickWall's own useFrame.
@@ -321,6 +325,7 @@ export function GrandHallRoom(): React.ReactElement {
       <lineSegments geometry={gridGeometry} position={[0, 0.002, 0]}>
         <lineBasicMaterial color={GRID_COLOR} />
       </lineSegments>
+      {/* Timber frame removed — didn't look good visually */}
       {/* Non-wall surfaces: floor + ceiling as flat planes */}
       {GRAND_HALL_SURFACES.filter((s) => !s.name.startsWith("wall-")).map((surface) => {
         const clippable = isSurfaceClippable(surface.name);

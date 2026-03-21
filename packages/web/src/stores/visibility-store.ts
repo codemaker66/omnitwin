@@ -172,18 +172,18 @@ export function isSurfaceVisible(
 // ---------------------------------------------------------------------------
 
 export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
-  mode: "auto-2" as WallMode,
+  mode: "manual" as WallMode,
   walls: {
-    "wall-front": false,
+    "wall-front": true,
     "wall-back": true,
     "wall-left": true,
-    "wall-right": false,
+    "wall-right": true,
   },
   wallOpacity: {
-    "wall-front": 0,
+    "wall-front": 1,
     "wall-back": 1,
     "wall-left": 1,
-    "wall-right": 0,
+    "wall-right": 1,
   },
   ceiling: false,
   dome: false,

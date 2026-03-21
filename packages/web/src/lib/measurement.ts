@@ -1,4 +1,4 @@
-import { RENDER_SCALE } from "../constants/scale.js";
+import { toRealWorld } from "../constants/scale.js";
 
 // ---------------------------------------------------------------------------
 // Measurement tool — pure functions
@@ -25,9 +25,9 @@ export type Point3 = readonly [number, number, number];
  * We un-scale each axis separately before computing the distance.
  */
 export function computeRealDistance(a: Point3, b: Point3): number {
-  const dx = (b[0] - a[0]) / RENDER_SCALE; // X scaled
-  const dy = b[1] - a[1];                   // Y not scaled
-  const dz = (b[2] - a[2]) / RENDER_SCALE; // Z scaled
+  const dx = toRealWorld(b[0] - a[0]); // X scaled
+  const dy = b[1] - a[1];              // Y not scaled
+  const dz = toRealWorld(b[2] - a[2]); // Z scaled
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 

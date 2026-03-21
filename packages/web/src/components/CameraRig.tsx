@@ -53,7 +53,7 @@ export function computeCameraTarget(
 
 /**
  * Computes min/max orbit distance constraints.
- * - Min ~5m: close enough to inspect details, but not inside walls.
+ * - Min ~1.5m: close enough to inspect individual chairs/cloths.
  * - Max ~25m: far enough to see the whole room, but never so far
  *   that it looks like a toy model.
  */
@@ -62,7 +62,7 @@ export function computeDistanceLimits(
 ): { readonly minDistance: number; readonly maxDistance: number } {
   const maxDim = Math.max(dimensions.width, dimensions.length, dimensions.height);
   return {
-    minDistance: Math.max(2, maxDim * 0.24),
+    minDistance: 1.5,
     maxDistance: Math.max(15, maxDim * 1.2),
   };
 }

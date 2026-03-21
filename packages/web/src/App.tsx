@@ -4,16 +4,27 @@ import { CameraRig } from "./components/CameraRig.js";
 import { GrandHallRoom } from "./components/GrandHallRoom.js";
 import { SectionPlane } from "./components/SectionPlane.js";
 import { SectionSlider } from "./components/SectionSlider.js";
-import { WallTogglePanel, AutoWallSelector, InvalidateOnToggle } from "./components/WallTogglePanel.js";
+import { WallTogglePanel, InvalidateOnToggle } from "./components/WallTogglePanel.js";
 import { BookmarkPanel } from "./components/BookmarkPanel.js";
 import { XrayToggle } from "./components/XrayToggle.js";
 import { MeasurementTool } from "./components/MeasurementTool.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
 import { Toolbar } from "./components/Toolbar.js";
+import { TapeMeasure } from "./components/TapeMeasure.js";
+import { SectionBoxControls } from "./components/SectionBoxControls.js";
 import { PerfMonitor } from "./components/PerfMonitor.js";
 import { PerfOverlay } from "./components/PerfOverlay.js";
+import { CatalogueDrawer } from "./components/CatalogueDrawer.js";
+import { PlacementGhost } from "./components/PlacementGhost.js";
+import { PlacedFurniture } from "./components/PlacedFurniture.js";
+import { SelectionSystem } from "./components/SelectionSystem.js";
+import { MarqueeSelect } from "./components/MarqueeSelect.js";
+import { ActionBar } from "./components/ActionBar.js";
+import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
+import { usePlacementStore } from "./stores/placement-store.js";
+import { useChairDialogStore } from "./stores/chair-dialog-store.js";
 
 // Initialize stores with Grand Hall dimensions
 useSectionStore.getState().setMaxHeight(GRAND_HALL_RENDER_DIMENSIONS.height);
@@ -40,6 +51,8 @@ useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
  * - Drag up to restore full 3D view
  */
 export function App(): React.ReactElement {
+  const chairRequest = useChairDialogStore((s) => s.pending);
+
   return (
     <>
       <Canvas
@@ -50,11 +63,15 @@ export function App(): React.ReactElement {
       >
         <color attach="background" args={["#f5f5f0"]} />
         <SectionPlane />
-        <AutoWallSelector />
         <InvalidateOnToggle />
         <GrandHallRoom />
         <XrayToggle />
         <MeasurementTool />
+        <TapeMeasure />
+        <PlacedFurniture />
+        <PlacementGhost />
+        <SelectionSystem />
+        <MarqueeSelect />
         <CameraRig dimensions={GRAND_HALL_RENDER_DIMENSIONS} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>
@@ -76,9 +93,45 @@ export function App(): React.ReactElement {
       </div>
       {/* Bottom-left: camera bookmarks */}
       <BookmarkPanel />
-      {/* Top-right: tool tray (measure, x-ray, etc.) */}
+      {/* Top-left: undo + delete */}
+      <ActionBar />
+      {/* Bottom-right: radial arc toolbox (measure, x-ray, tape, box, place) */}
       <Toolbar />
+      {/* Top-left: section box face sliders (shown when box mode active) */}
+      <SectionBoxControls />
       <MeasurementOverlay />
+      <CatalogueDrawer />
+      <ChairCountDialog
+        request={chairRequest}
+        onConfirm={(count) => {
+          const editId = useChairDialogStore.getState().editTableId;
+          if (editId !== null) {
+            // Editing existing group
+            usePlacementStore.getState().rearrangeGroup(editId, count);
+          } else if (chairRequest !== null) {
+            if (count > 0) {
+              usePlacementStore.getState().placeTableGroup(
+                chairRequest.catalogueItemId,
+                chairRequest.x,
+                chairRequest.z,
+                chairRequest.rotationY,
+                count,
+              );
+            } else {
+              usePlacementStore.getState().placeItem(
+                chairRequest.catalogueItemId,
+                chairRequest.x,
+                chairRequest.z,
+                chairRequest.rotationY,
+              );
+            }
+          }
+          useChairDialogStore.getState().clearDialog();
+        }}
+        onCancel={() => {
+          useChairDialogStore.getState().clearDialog();
+        }}
+      />
       {import.meta.env.DEV && <PerfOverlay />}
     </>
   );

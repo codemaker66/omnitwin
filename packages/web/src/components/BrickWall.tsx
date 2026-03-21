@@ -1,5 +1,6 @@
-import { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useRef, useMemo, useCallback } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import type { ThreeEvent } from "@react-three/fiber";
 import {
   BoxGeometry,
   Color,
@@ -13,7 +14,7 @@ import {
   Vector3,
 } from "three";
 import { sectionClipPlanes } from "./SectionPlane.js";
-import { useVisibilityStore, getSurfaceOpacity } from "../stores/visibility-store.js";
+import { useVisibilityStore, getSurfaceOpacity, type WallKey } from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 
@@ -30,24 +31,33 @@ export const BLOCK_DEPTH = 0.08;
 export const MORTAR_GAP = 0.008;
 
 /** How far blocks scatter outward from the wall face (meters). */
-export const SCATTER_DISTANCE = 1.8;
+export const SCATTER_DISTANCE = 2.2;
 
 /** Proportion of the 0→1 timeline used for row stagger.
- *  Higher = more overlap between rows. */
-export const STAGGER_SPAN = 0.55;
+ *  0.8 = very sequential — each row mostly finishes before the next starts.
+ *  This gives a realistic bottom-up bricklaying feel. */
+export const STAGGER_SPAN = 0.8;
 
-/** Random per-brick timing jitter added to row stagger (fraction of timeline). */
-export const BRICK_JITTER = 0.08;
+/** Random per-brick timing jitter (fraction of timeline).
+ *  Low value = tidy rows like a real bricklayer. */
+export const BRICK_JITTER = 0.03;
 
 /** Max random rotation (radians) when fully scattered — kept low for heavy feel. */
-export const MAX_SCATTER_ROTATION = 0.15;
+export const MAX_SCATTER_ROTATION = 0.12;
 
 /** Fraction of per-brick timeline where the brick reaches its rest position.
- *  The remaining time is used for the impact bounce. Lower = faster slam. */
-export const IMPACT_POINT = 0.55;
+ *  The remaining time is used for the impact bounce. */
+export const IMPACT_POINT = 0.6;
 
 /** How far past rest position the brick overshoots on impact (fraction of SCATTER_DISTANCE). */
-export const BOUNCE_OVERSHOOT = 0.06;
+export const BOUNCE_OVERSHOOT = 0.04;
+
+/** Wall opacity threshold — below this means "should be unbuilt". */
+const BUILD_THRESHOLD = 0.5;
+
+/** Full build/unbuild animation duration in seconds.
+ *  5s gives a slow, deliberate, row-by-row bricklaying feel. */
+const BUILD_DURATION = 5.0;
 
 // ---------------------------------------------------------------------------
 // Pure layout helpers — fully testable
@@ -225,15 +235,28 @@ const _scale = new Vector3(1, 1, 1);
 const _mat = new Matrix4();
 
 /**
- * Renders a wall as an InstancedMesh of stone blocks with brick-dissolve animation.
+ * Renders a wall as an InstancedMesh of stone blocks with brick-build animation.
  *
- * When the wall's opacity in the visibility store transitions 0↔1, bricks
- * assemble/scatter with a radial ripple from the wall center — inspired by
- * the Diagon Alley entrance in Harry Potter.
+ * The wall is either BUILT or UNBUILT — never frozen mid-animation.
+ * When the visibility store signals the wall should appear/disappear (opacity
+ * crosses the 0.5 threshold), the brick animation plays to completion at its
+ * own pace (BUILD_DURATION seconds). Camera movement during the animation
+ * does NOT interrupt or freeze it.
  *
- * At opacity=1, the wall looks like a solid stone/plaster surface.
- * At opacity=0, all bricks are scattered and invisible.
+ * At progress=1, the wall looks like a solid stone/plaster surface.
+ * At progress=0, all bricks are scattered and invisible.
  */
+/** Maps surface names to WallKeys for click-to-toggle. */
+function getWallKey(surfaceName: string): WallKey | null {
+  if (surfaceName.startsWith("wainscot-")) {
+    return surfaceName.replace("wainscot-", "wall-") as WallKey;
+  }
+  if (surfaceName.startsWith("wall-")) {
+    return surfaceName as WallKey;
+  }
+  return null;
+}
+
 export function BrickWall({
   wallWidth,
   wallHeight,
@@ -244,6 +267,22 @@ export function BrickWall({
   roughness = 0.95,
 }: BrickWallProps): React.ReactElement | null {
   const meshRef = useRef<InstancedMesh>(null);
+  const { invalidate } = useThree();
+
+  /** Internal animation progress — drives brick positions independently of wallOpacity. */
+  const animProgress = useRef(1); // start fully built
+  /** Target: 1 = built, 0 = unbuilt. */
+  const animTarget = useRef(1);
+
+  /** Click to toggle this wall's visibility. */
+  const handleClick = useCallback((event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation();
+    const wallKey = getWallKey(name);
+    if (wallKey !== null) {
+      useVisibilityStore.getState().toggleWall(wallKey);
+      invalidate();
+    }
+  }, [name, invalidate]);
 
   const bricks = useMemo(
     () => computeBrickLayout(wallWidth, wallHeight, hashString(name)),
@@ -267,15 +306,40 @@ export function BrickWall({
     return mat;
   }, [color, roughness]);
 
-  // Update instance matrices every frame based on visibility store progress.
-  useFrame(() => {
+  // Update instance matrices every frame based on internal animation progress.
+  useFrame((_state, delta) => {
     const mesh = meshRef.current;
     if (mesh === null) return;
 
+    // Read the visibility store to determine whether wall should be built or not
     const { wallOpacity, ceiling, dome } = useVisibilityStore.getState();
-    const baseProgress = getSurfaceOpacity(name, wallOpacity, ceiling, dome);
+    const baseOpacity = getSurfaceOpacity(name, wallOpacity, ceiling, dome);
     const xrayOpacity = useXrayStore.getState().opacity;
-    const progress = applyXrayOpacity(name, baseProgress, xrayOpacity);
+    const surfaceOpacity = applyXrayOpacity(name, baseOpacity, xrayOpacity);
+
+    // Determine target from threshold — binary decision
+    const shouldBeBuilt = surfaceOpacity >= BUILD_THRESHOLD;
+    animTarget.current = shouldBeBuilt ? 1 : 0;
+
+    // Advance internal animation toward target
+    const speed = 1 / BUILD_DURATION; // progress units per second
+    const clampedDelta = Math.min(delta, 0.1);
+    const step = speed * clampedDelta;
+
+    const prev = animProgress.current;
+    if (animTarget.current > prev) {
+      animProgress.current = Math.min(animTarget.current, prev + step);
+    } else if (animTarget.current < prev) {
+      animProgress.current = Math.max(animTarget.current, prev - step);
+    }
+
+    const progress = animProgress.current;
+    const isAnimating = Math.abs(progress - animTarget.current) > 0.001;
+
+    // If animating, keep requesting frames
+    if (isAnimating) {
+      invalidate();
+    }
 
     // Hide entire mesh when fully scattered.
     if (progress < 0.005) {
@@ -328,14 +392,28 @@ export function BrickWall({
   if (bricks.length === 0) return null;
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[geometry, material, bricks.length]}
-      position={[position[0], position[1], position[2]]}
-      rotation={[rotation[0], rotation[1], rotation[2]]}
-      name={name}
-      frustumCulled={false}
-    />
+    <group>
+      <instancedMesh
+        ref={meshRef}
+        args={[geometry, material, bricks.length]}
+        position={[position[0], position[1], position[2]]}
+        rotation={[rotation[0], rotation[1], rotation[2]]}
+        name={name}
+        frustumCulled={false}
+        onClick={handleClick}
+      />
+      {/* Invisible click plane — allows rebuilding walls that are fully unbuilt.
+          Sits at the wall position so users can click where the wall was. */}
+      <mesh
+        position={[position[0], position[1], position[2]]}
+        rotation={[rotation[0], rotation[1], rotation[2]]}
+        onClick={handleClick}
+        name={`${name}-click-plane`}
+      >
+        <planeGeometry args={[wallWidth, wallHeight]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
+    </group>
   );
 }
 

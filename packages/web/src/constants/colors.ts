@@ -31,3 +31,6 @@ export const DOME_COLOR = "#d5d8de";
 
 /** Human reference figure — neutral medium grey, visible but not distracting. */
 export const HUMAN_FIGURE_COLOR = "#8090a0";
+
+/** Room wireframe edge colour — subtle dark grey, always visible as reference. */
+export const FRAME_COLOR = "#6a6a6a";
