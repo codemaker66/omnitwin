@@ -9,8 +9,9 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "typecheck": "node --max-old-space-size=4096 -e \"require('child_process').execSync('tsc --noEmit', {stdio:'inherit'})\"",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
+    "test": "vitest run --exclude src/__tests__/integration.test.ts",
+    "test:integration": "vitest run src/__tests__/integration.test.ts",
+    "test:watch": "vitest watch --exclude src/__tests__/integration.test.ts",
     "lint": "eslint src/",
     "clean": "rm -rf dist",
     "dev": "tsx watch src/index.ts",
