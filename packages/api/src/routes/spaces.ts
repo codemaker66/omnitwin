@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
-import { spaces, venues } from "../db/schema.js";
+import { eq, and, isNull, sql } from "drizzle-orm";
+import { spaces, venues, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -83,7 +83,14 @@ export async function spaceRoutes(
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
     }
 
-    return { data: space };
+    // Count active reference loadouts for this space
+    const [countResult] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(referenceLoadouts)
+      .where(and(eq(referenceLoadouts.spaceId, space.id), isNull(referenceLoadouts.deletedAt)));
+
+    const loadoutCount = countResult?.count ?? 0;
+
+    return { data: { ...space, loadoutCount } };
   });
 
   // POST /venues/:venueId/spaces — admin or hallkeeper of that venue

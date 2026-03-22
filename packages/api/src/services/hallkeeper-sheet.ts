@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   enquiries, venues, spaces, configurations, placedObjects,
-  assetDefinitions, enquiryStatusHistory, users,
+  assetDefinitions, enquiryStatusHistory, users, referenceLoadouts,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -23,6 +24,7 @@ export interface HallkeeperSheetData {
   };
   readonly configuration: { readonly name: string } | null;
   readonly equipment: readonly { readonly category: string; readonly name: string; readonly quantity: number }[];
+  readonly referenceLoadouts: readonly { readonly name: string; readonly photoCount: number }[];
   readonly statusHistory: readonly { readonly from: string; readonly to: string; readonly at: string; readonly by: string }[];
   readonly generatedAt: string;
 }
@@ -108,6 +110,17 @@ export async function generateHallkeeperSheet(
     quantity: e.count,
   }));
 
+  // Fetch reference loadouts for this space
+  const loadouts = await db.select({
+    name: referenceLoadouts.name,
+    photoCount: sql<number>`(SELECT count(*)::int FROM reference_photos WHERE loadout_id = ${referenceLoadouts.id})`,
+  })
+    .from(referenceLoadouts)
+    .where(and(
+      eq(referenceLoadouts.spaceId, enquiry.spaceId),
+      isNull(referenceLoadouts.deletedAt),
+    ));
+
   return {
     venue: { name: venue.name, address: venue.address },
     space: { name: space.name, widthM: space.widthM, lengthM: space.lengthM, heightM: space.heightM },
@@ -122,6 +135,7 @@ export async function generateHallkeeperSheet(
     },
     configuration: configData,
     equipment,
+    referenceLoadouts: loadouts,
     statusHistory: historyWithNames,
     generatedAt: new Date().toISOString(),
   };
@@ -185,6 +199,16 @@ export async function generateHallkeeperPdf(data: HallkeeperSheetData): Promise<
       doc.text("  No equipment specified");
     }
     doc.moveDown();
+
+    // --- Reference Loadouts ---
+    if (data.referenceLoadouts.length > 0) {
+      doc.fontSize(12).text("Reference Loadouts", { underline: true });
+      doc.fontSize(10);
+      for (const loadout of data.referenceLoadouts) {
+        doc.text(`  ${loadout.name} (${String(loadout.photoCount)} photo${loadout.photoCount === 1 ? "" : "s"})`);
+      }
+      doc.moveDown();
+    }
 
     // --- Status History ---
     if (data.statusHistory.length > 0) {

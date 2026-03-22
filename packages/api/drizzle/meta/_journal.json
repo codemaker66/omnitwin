@@ -36,6 +36,13 @@
       "when": 1774369200000,
       "tag": "0004_pricing_rules_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774455600000,
+      "tag": "0005_reference_loadouts",
+      "breakpoints": true
     }
   ]
 }

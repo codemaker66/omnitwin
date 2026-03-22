@@ -13,6 +13,8 @@ import { placedObjectRoutes } from "./routes/placed-objects.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
+import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
+import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 
@@ -73,6 +75,8 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
+  await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
+  await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
 
   // --- WebSocket ---
   await server.register(websocket);

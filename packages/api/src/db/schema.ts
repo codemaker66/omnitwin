@@ -246,3 +246,36 @@ export const files = pgTable("files", {
 }, (table) => [
   index("files_context_idx").on(table.context, table.contextId),
 ]);
+
+// ---------------------------------------------------------------------------
+// 11. reference_loadouts — hallkeeper photo documentation of room setups
+// ---------------------------------------------------------------------------
+
+export const referenceLoadouts = pgTable("reference_loadouts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  index("reference_loadouts_space_idx").on(table.spaceId),
+]);
+
+// ---------------------------------------------------------------------------
+// 12. reference_photos — photos linked to a reference loadout
+// ---------------------------------------------------------------------------
+
+export const referencePhotos = pgTable("reference_photos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  loadoutId: uuid("loadout_id").notNull().references(() => referenceLoadouts.id, { onDelete: "cascade" }),
+  fileId: uuid("file_id").notNull().references(() => files.id),
+  caption: text("caption"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("reference_photos_loadout_idx").on(table.loadoutId),
+]);
