@@ -29,6 +29,13 @@
       "when": 1774282800000,
       "tag": "0003_manual_enquiry_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774369200000,
+      "tag": "0004_pricing_rules_upgrade",
+      "breakpoints": true
     }
   ]
 }

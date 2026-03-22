@@ -1,12 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations } from "../db/schema.js";
+import { enquiries, enquiryStatusHistory, configurations, pricingRules } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
+import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
+import { generateHallkeeperSheet, generateHallkeeperPdf } from "../services/hallkeeper-sheet.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -280,5 +282,119 @@ export async function enquiryRoutes(
       .orderBy(enquiryStatusHistory.createdAt);
 
     return { data: history };
+  });
+
+  // GET /enquiries/:id/quote — calculate price for an enquiry
+  server.get("/:id/quote", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+
+    const [enquiry] = await db.select().from(enquiries)
+      .where(eq(enquiries.id, params.data.id))
+      .limit(1);
+
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+
+    if (!canAccessResource(request.user, enquiry.userId, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    // Fetch active pricing rules for this venue
+    const rules = await db.select().from(pricingRules)
+      .where(and(
+        eq(pricingRules.venueId, enquiry.venueId),
+        eq(pricingRules.isActive, true),
+        isNull(pricingRules.deletedAt),
+      ));
+
+    const ruleInputs: PricingRuleInput[] = rules.map((r) => ({
+      name: r.name,
+      type: r.type as PricingRuleInput["type"],
+      amount: parseFloat(r.amount),
+      currency: r.currency,
+      minHours: r.minHours,
+      minGuests: r.minGuests,
+      tiers: r.tiers as PricingRuleInput["tiers"],
+      dayOfWeekModifiers: r.dayOfWeekModifiers as PricingRuleInput["dayOfWeekModifiers"],
+      seasonalModifiers: r.seasonalModifiers as PricingRuleInput["seasonalModifiers"],
+      validFrom: r.validFrom,
+      validTo: r.validTo,
+      isActive: r.isActive,
+      spaceId: r.spaceId,
+    }));
+
+    const result = calculatePrice({
+      rules: ruleInputs,
+      spaceId: enquiry.spaceId,
+      eventDate: enquiry.preferredDate ?? new Date().toISOString().split("T")[0] ?? "",
+      startTime: "10:00",
+      endTime: "22:00",
+      guestCount: enquiry.estimatedGuests ?? 0,
+    });
+
+    return { data: result };
+  });
+
+  // GET /enquiries/:id/hallkeeper-sheet — JSON sheet data
+  server.get("/:id/hallkeeper-sheet", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+
+    const [enquiry] = await db.select().from(enquiries)
+      .where(eq(enquiries.id, params.data.id))
+      .limit(1);
+
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+
+    if (!canManageVenue(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const sheet = await generateHallkeeperSheet(db, params.data.id);
+    if (sheet === null) {
+      return reply.status(500).send({ error: "Failed to generate sheet", code: "INTERNAL_ERROR" });
+    }
+
+    return { data: sheet };
+  });
+
+  // GET /enquiries/:id/hallkeeper-sheet/pdf — PDF download
+  server.get("/:id/hallkeeper-sheet/pdf", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+
+    const [enquiry] = await db.select().from(enquiries)
+      .where(eq(enquiries.id, params.data.id))
+      .limit(1);
+
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
+    }
+
+    if (!canManageVenue(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const sheet = await generateHallkeeperSheet(db, params.data.id);
+    if (sheet === null) {
+      return reply.status(500).send({ error: "Failed to generate sheet", code: "INTERNAL_ERROR" });
+    }
+
+    const pdf = await generateHallkeeperPdf(sheet);
+
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="hallkeeper-sheet-${params.data.id}.pdf"`)
+      .send(pdf);
   });
 }

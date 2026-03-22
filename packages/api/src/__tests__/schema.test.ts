@@ -7,8 +7,11 @@ import {
   configurations,
   placedObjects,
   enquiries,
+  enquiryStatusHistory,
   photoReferences,
   pricingRules,
+  files,
+  refreshTokens,
 } from "../db/schema.js";
 import { getTableColumns } from "drizzle-orm";
 
@@ -141,20 +144,25 @@ describe("pricingRules table", () => {
     expect(cols.venueId).toBeDefined();
     expect(cols.spaceId).toBeDefined();
     expect(cols.name).toBeDefined();
-    expect(cols.basePricePence).toBeDefined();
-    expect(cols.pricePerGuestPence).toBeDefined();
-    expect(cols.pricePerHourPence).toBeDefined();
-    expect(cols.minimumHours).toBeDefined();
-    expect(cols.dayOfWeek).toBeDefined();
+    expect(cols.type).toBeDefined();
+    expect(cols.amount).toBeDefined();
+    expect(cols.currency).toBeDefined();
+    expect(cols.minHours).toBeDefined();
+    expect(cols.minGuests).toBeDefined();
+    expect(cols.tiers).toBeDefined();
+    expect(cols.dayOfWeekModifiers).toBeDefined();
+    expect(cols.seasonalModifiers).toBeDefined();
+    expect(cols.isActive).toBeDefined();
   });
 });
 
 describe("table count", () => {
-  it("exports exactly 9 tables", () => {
+  it("exports exactly 12 tables", () => {
     const tables = [
-      venues, spaces, users, assetDefinitions, configurations,
-      placedObjects, enquiries, photoReferences, pricingRules,
+      venues, spaces, users, refreshTokens, assetDefinitions, configurations,
+      placedObjects, enquiries, enquiryStatusHistory, photoReferences,
+      pricingRules, files,
     ];
-    expect(tables).toHaveLength(9);
+    expect(tables).toHaveLength(12);
   });
 });
