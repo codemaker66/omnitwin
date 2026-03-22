@@ -8,7 +8,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node --max-old-space-size=4096 -e \"require('child_process').execSync('tsc --noEmit', {stdio:'inherit'})\"",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "lint": "eslint src/",

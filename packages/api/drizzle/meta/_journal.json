@@ -8,6 +8,13 @@
       "when": 1774182396954,
       "tag": "0000_exotic_excalibur",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774184952270,
+      "tag": "0001_curvy_maginty",
+      "breakpoints": true
     }
   ]
 }

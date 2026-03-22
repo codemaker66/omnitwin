@@ -4,6 +4,8 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import { validateEnv } from "./env.js";
+import { createDb } from "./db/client.js";
+import { authRoutes } from "./routes/auth.js";
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
@@ -49,6 +51,12 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
       version: process.env["npm_package_version"] ?? "0.0.0",
     };
   });
+
+  // --- Database ---
+  const db = createDb(env.DATABASE_URL);
+
+  // --- Routes ---
+  await server.register(authRoutes, { db, prefix: "/auth" });
 
   return server;
 }
