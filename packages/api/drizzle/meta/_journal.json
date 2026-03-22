@@ -15,6 +15,13 @@
       "when": 1774184952270,
       "tag": "0001_curvy_maginty",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774190139002,
+      "tag": "0002_hesitant_purifiers",
+      "breakpoints": true
     }
   ]
 }

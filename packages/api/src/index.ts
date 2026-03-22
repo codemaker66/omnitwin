@@ -6,6 +6,10 @@ import rateLimit from "@fastify/rate-limit";
 import { validateEnv } from "./env.js";
 import { createDb } from "./db/client.js";
 import { authRoutes } from "./routes/auth.js";
+import { venueRoutes } from "./routes/venues.js";
+import { spaceRoutes } from "./routes/spaces.js";
+import { configurationRoutes } from "./routes/configurations.js";
+import { placedObjectRoutes } from "./routes/placed-objects.js";
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
@@ -57,6 +61,10 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
 
   // --- Routes ---
   await server.register(authRoutes, { db, prefix: "/auth" });
+  await server.register(venueRoutes, { db, prefix: "/venues" });
+  await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
+  await server.register(configurationRoutes, { db, prefix: "/configurations" });
+  await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
 
   return server;
 }

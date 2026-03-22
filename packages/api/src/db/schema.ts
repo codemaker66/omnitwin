@@ -26,6 +26,7 @@ export const venues = pgTable("venues", {
   brandColour: varchar("brand_colour", { length: 7 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,7 @@ export const spaces = pgTable("spaces", {
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   unique("spaces_venue_slug_unique").on(table.venueId, table.slug),
 ]);
@@ -120,6 +122,7 @@ export const configurations = pgTable("configurations", {
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   index("configurations_space_state_idx").on(table.spaceId, table.state),
   index("configurations_venue_visibility_idx").on(table.venueId, table.visibility),
