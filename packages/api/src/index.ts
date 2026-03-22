@@ -10,6 +10,8 @@ import { venueRoutes } from "./routes/venues.js";
 import { spaceRoutes } from "./routes/spaces.js";
 import { configurationRoutes } from "./routes/configurations.js";
 import { placedObjectRoutes } from "./routes/placed-objects.js";
+import { enquiryRoutes } from "./routes/enquiries.js";
+import { uploadRoutes } from "./routes/uploads.js";
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
@@ -65,6 +67,8 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
   await server.register(configurationRoutes, { db, prefix: "/configurations" });
   await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
+  await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
+  await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
 
   return server;
 }

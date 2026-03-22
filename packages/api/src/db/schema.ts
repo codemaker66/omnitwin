@@ -158,19 +158,35 @@ export const enquiries = pgTable("enquiries", {
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   spaceId: uuid("space_id").notNull().references(() => spaces.id),
   configurationId: uuid("configuration_id").references(() => configurations.id),
-  state: varchar("state", { length: 20 }).notNull().default("submitted"),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  state: varchar("state", { length: 20 }).notNull().default("draft"),
   name: varchar("name", { length: 200 }).notNull(),
   email: varchar("email", { length: 255 }).notNull(),
   preferredDate: date("preferred_date"),
   eventType: varchar("event_type", { length: 100 }),
   estimatedGuests: integer("estimated_guests"),
   message: text("message"),
-  viewDurationSeconds: integer("view_duration_seconds"),
-  submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
-  viewedAt: timestamp("viewed_at", { withTimezone: true }),
-  respondedAt: timestamp("responded_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
+  index("enquiries_user_id_idx").on(table.userId),
+]);
+
+// ---------------------------------------------------------------------------
+// 7b. enquiry_status_history
+// ---------------------------------------------------------------------------
+
+export const enquiryStatusHistory = pgTable("enquiry_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  enquiryId: uuid("enquiry_id").notNull().references(() => enquiries.id, { onDelete: "cascade" }),
+  fromStatus: varchar("from_status", { length: 20 }).notNull(),
+  toStatus: varchar("to_status", { length: 20 }).notNull(),
+  changedBy: uuid("changed_by").notNull().references(() => users.id),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("enquiry_history_enquiry_id_idx").on(table.enquiryId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -207,3 +223,20 @@ export const pricingRules = pgTable("pricing_rules", {
   validTo: date("valid_to"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// 10. files — tracks uploaded files (S3/R2)
+// ---------------------------------------------------------------------------
+
+export const files = pgTable("files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fileKey: text("file_key").notNull().unique(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  contentType: varchar("content_type", { length: 100 }).notNull(),
+  context: varchar("context", { length: 50 }).notNull(),
+  contextId: uuid("context_id").notNull(),
+  uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("files_context_idx").on(table.context, table.contextId),
+]);
