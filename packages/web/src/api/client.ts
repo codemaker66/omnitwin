@@ -38,10 +38,13 @@ async function attemptRefresh(): Promise<boolean> {
     if (!res.ok) return false;
 
     const body = (await res.json()) as {
-      data: { accessToken: string; refreshToken: string };
+      data?: { accessToken: string; refreshToken: string };
+      accessToken?: string;
+      refreshToken?: string;
     };
-    localStorage.setItem("omnitwin_access_token", body.data.accessToken);
-    localStorage.setItem("omnitwin_refresh_token", body.data.refreshToken);
+    const tokens = body.data ?? body;
+    localStorage.setItem("omnitwin_access_token", tokens.accessToken ?? "");
+    localStorage.setItem("omnitwin_refresh_token", tokens.refreshToken ?? "");
     return true;
   } catch {
     return false;
@@ -107,8 +110,8 @@ async function request<T>(opts: RequestOptions): Promise<T> {
       const retryRes = await fetch(`${API_URL}${opts.path}`, { ...fetchOpts, headers });
       if (retryRes.ok) {
         if (retryRes.status === 204) return undefined as T;
-        const retryBody = (await retryRes.json()) as { data: T };
-        return retryBody.data;
+        const retryBody = (await retryRes.json()) as { data?: T };
+        return (retryBody.data !== undefined ? retryBody.data : retryBody) as T;
       }
     }
     // Refresh failed — clear auth
@@ -132,7 +135,8 @@ async function request<T>(opts: RequestOptions): Promise<T> {
     );
   }
 
-  return json.data as T;
+  // Auth endpoints return flat response; CRUD endpoints use { data } envelope
+  return (json.data !== undefined ? json.data : json) as T;
 }
 
 // ---------------------------------------------------------------------------
