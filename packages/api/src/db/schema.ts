@@ -62,6 +62,9 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   name: varchar("name", { length: 200 }).notNull(),
+  displayName: text("display_name"),
+  phone: text("phone"),
+  organizationName: text("organization_name"),
   role: varchar("role", { length: 20 }).notNull(),
   venueId: uuid("venue_id").references(() => venues.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -110,10 +113,11 @@ export const configurations = pgTable("configurations", {
   id: uuid("id").primaryKey().defaultRandom(),
   spaceId: uuid("space_id").notNull().references(() => spaces.id),
   venueId: uuid("venue_id").notNull().references(() => venues.id),
-  userId: uuid("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
   name: varchar("name", { length: 200 }).notNull(),
   state: varchar("state", { length: 20 }).notNull().default("draft"),
   layoutStyle: varchar("layout_style", { length: 50 }).notNull(),
+  isPublicPreview: boolean("is_public_preview").notNull().default(false),
   guestCount: integer("guest_count").notNull().default(0),
   isTemplate: boolean("is_template").notNull().default(false),
   visibility: varchar("visibility", { length: 20 }).notNull().default("private"),
@@ -158,7 +162,10 @@ export const enquiries = pgTable("enquiries", {
   venueId: uuid("venue_id").notNull().references(() => venues.id),
   spaceId: uuid("space_id").notNull().references(() => spaces.id),
   configurationId: uuid("configuration_id").references(() => configurations.id),
-  userId: uuid("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
+  guestEmail: text("guest_email"),
+  guestPhone: text("guest_phone"),
+  guestName: text("guest_name"),
   state: varchar("state", { length: 20 }).notNull().default("draft"),
   name: varchar("name", { length: 200 }).notNull(),
   email: varchar("email", { length: 255 }).notNull(),
@@ -182,7 +189,7 @@ export const enquiryStatusHistory = pgTable("enquiry_status_history", {
   enquiryId: uuid("enquiry_id").notNull().references(() => enquiries.id, { onDelete: "cascade" }),
   fromStatus: varchar("from_status", { length: 20 }).notNull(),
   toStatus: varchar("to_status", { length: 20 }).notNull(),
-  changedBy: uuid("changed_by").notNull().references(() => users.id),
+  changedBy: uuid("changed_by").references(() => users.id),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -248,7 +255,24 @@ export const files = pgTable("files", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 11. reference_loadouts — hallkeeper photo documentation of room setups
+// 11. guest_leads — tracks anonymous visitors who submit enquiries
+// ---------------------------------------------------------------------------
+
+export const guestLeads = pgTable("guest_leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  name: text("name"),
+  firstEnquiryId: uuid("first_enquiry_id"),
+  convertedToUserId: uuid("converted_to_user_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("guest_leads_email_idx").on(table.email),
+]);
+
+// ---------------------------------------------------------------------------
+// 12. reference_loadouts — hallkeeper photo documentation of room setups
 // ---------------------------------------------------------------------------
 
 export const referenceLoadouts = pgTable("reference_loadouts", {

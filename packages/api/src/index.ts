@@ -15,6 +15,11 @@ import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
+import { publicConfigRoutes } from "./routes/public-configs.js";
+import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
+import { claimConfigRoutes } from "./routes/claim-config.js";
+import { clientRoutes } from "./routes/clients.js";
+import { adminRoutes } from "./routes/admin.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 
@@ -77,6 +82,11 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
+  await server.register(publicConfigRoutes, { db, prefix: "/public" });
+  await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+  await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
+  await server.register(clientRoutes, { db, prefix: "/clients" });
+  await server.register(adminRoutes, { db, prefix: "/admin" });
 
   // --- WebSocket ---
   await server.register(websocket);

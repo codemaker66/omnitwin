@@ -1,0 +1,235 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { eq, and, isNull, sql, ilike, or } from "drizzle-orm";
+import {
+  users, configurations, enquiries, guestLeads,
+} from "../db/schema.js";
+import type { Database } from "../db/client.js";
+import { authenticate } from "../middleware/auth.js";
+import { canManageVenue } from "../utils/query.js";
+
+// ---------------------------------------------------------------------------
+// Zod schemas
+// ---------------------------------------------------------------------------
+
+const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
+const UserIdParam = z.object({ userId: z.string().uuid() });
+const LeadIdParam = z.object({ leadId: z.string().uuid() });
+
+// ---------------------------------------------------------------------------
+// Plugin — client search and profiles for hallkeepers
+// ---------------------------------------------------------------------------
+
+export async function clientRoutes(
+  server: FastifyInstance,
+  opts: { db: Database },
+): Promise<void> {
+  const { db } = opts;
+
+  // GET /clients/search?q=... — hallkeeper of venue or admin
+  server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
+    const query = SearchQuery.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: "Query must be at least 2 characters", code: "VALIDATION_ERROR" });
+    }
+
+    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+      if (request.user.role !== "admin") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+    }
+
+    const pattern = `%${query.data.q}%`;
+
+    // Search users
+    const matchedUsers = await db.select({
+      id: users.id,
+      displayName: users.displayName,
+      organizationName: users.organizationName,
+      email: users.email,
+      phone: users.phone,
+      configurationCount: sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`,
+      enquiryCount: sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`,
+    })
+      .from(users)
+      .where(or(
+        ilike(users.displayName, pattern),
+        ilike(users.organizationName, pattern),
+        ilike(users.email, pattern),
+      ))
+      .limit(20);
+
+    // Search guest leads
+    const matchedLeads = await db.select({
+      id: guestLeads.id,
+      email: guestLeads.email,
+      phone: guestLeads.phone,
+      name: guestLeads.name,
+      enquiryCount: sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL)`,
+      convertedToUserId: guestLeads.convertedToUserId,
+    })
+      .from(guestLeads)
+      .where(or(
+        ilike(guestLeads.name, pattern),
+        ilike(guestLeads.email, pattern),
+      ))
+      .limit(20);
+
+    // Search configurations by name (return owning user info)
+    const matchedConfigs = await db.select({
+      id: configurations.id,
+      name: configurations.name,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
+      userName: sql<string | null>`(SELECT name FROM users WHERE id = ${configurations.userId})`,
+      createdAt: configurations.createdAt,
+    })
+      .from(configurations)
+      .where(and(
+        ilike(configurations.name, pattern),
+        isNull(configurations.deletedAt),
+      ))
+      .limit(20);
+
+    return {
+      data: {
+        users: matchedUsers,
+        guestLeads: matchedLeads,
+        configurations: matchedConfigs,
+      },
+    };
+  });
+
+  // GET /clients/:userId/profile — full client profile
+  server.get("/:userId/profile", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = UserIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid user ID", code: "VALIDATION_ERROR" });
+    }
+
+    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+      if (request.user.role !== "admin") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+    }
+
+    const [user] = await db.select({
+      id: users.id,
+      displayName: users.displayName,
+      organizationName: users.organizationName,
+      email: users.email,
+      phone: users.phone,
+      name: users.name,
+      role: users.role,
+      createdAt: users.createdAt,
+    })
+      .from(users)
+      .where(eq(users.id, params.data.userId))
+      .limit(1);
+
+    if (user === undefined) {
+      return reply.status(404).send({ error: "User not found", code: "NOT_FOUND" });
+    }
+
+    const configs = await db.select({
+      id: configurations.id,
+      name: configurations.name,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
+      objectCount: sql<number>`(SELECT count(*)::int FROM placed_objects WHERE configuration_id = ${configurations.id})`,
+      createdAt: configurations.createdAt,
+    })
+      .from(configurations)
+      .where(and(eq(configurations.userId, params.data.userId), isNull(configurations.deletedAt)));
+
+    const userEnquiries = await db.select({
+      id: enquiries.id,
+      state: enquiries.state,
+      eventType: enquiries.eventType,
+      preferredDate: enquiries.preferredDate,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+    })
+      .from(enquiries)
+      .where(eq(enquiries.userId, params.data.userId));
+
+    return {
+      data: {
+        user,
+        configurations: configs,
+        enquiries: userEnquiries,
+      },
+    };
+  });
+
+  // GET /clients/leads/:leadId/profile — guest lead profile
+  server.get("/leads/:leadId/profile", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = LeadIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid lead ID", code: "VALIDATION_ERROR" });
+    }
+
+    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+      if (request.user.role !== "admin") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+    }
+
+    const [lead] = await db.select()
+      .from(guestLeads)
+      .where(eq(guestLeads.id, params.data.leadId))
+      .limit(1);
+
+    if (lead === undefined) {
+      return reply.status(404).send({ error: "Guest lead not found", code: "NOT_FOUND" });
+    }
+
+    const leadEnquiries = await db.select({
+      id: enquiries.id,
+      state: enquiries.state,
+      eventType: enquiries.eventType,
+      preferredDate: enquiries.preferredDate,
+      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      createdAt: enquiries.createdAt,
+    })
+      .from(enquiries)
+      .where(and(eq(enquiries.guestEmail, lead.email), isNull(enquiries.userId)));
+
+    return {
+      data: {
+        lead,
+        enquiries: leadEnquiries,
+      },
+    };
+  });
+
+  // GET /clients/recent — last 20 enquiries with contact info
+  server.get("/recent", { preHandler: [authenticate] }, async (request, reply) => {
+    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+      if (request.user.role !== "admin") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+    }
+
+    const venueFilter = request.user.role === "admin"
+      ? undefined
+      : eq(enquiries.venueId, request.user.venueId ?? "");
+
+    const recentEnquiries = await db.select({
+      id: enquiries.id,
+      state: enquiries.state,
+      name: enquiries.name,
+      email: enquiries.email,
+      guestEmail: enquiries.guestEmail,
+      guestPhone: enquiries.guestPhone,
+      guestName: enquiries.guestName,
+      userId: enquiries.userId,
+      eventType: enquiries.eventType,
+      preferredDate: enquiries.preferredDate,
+      createdAt: enquiries.createdAt,
+    })
+      .from(enquiries)
+      .where(venueFilter)
+      .orderBy(sql`${enquiries.createdAt} DESC`)
+      .limit(20);
+
+    return { data: recentEnquiries };
+  });
+}

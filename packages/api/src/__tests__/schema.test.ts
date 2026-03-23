@@ -14,6 +14,7 @@ import {
   refreshTokens,
   referenceLoadouts,
   referencePhotos,
+  guestLeads,
 } from "../db/schema.js";
 import { getTableColumns } from "drizzle-orm";
 
@@ -159,12 +160,12 @@ describe("pricingRules table", () => {
 });
 
 describe("table count", () => {
-  it("exports exactly 14 tables", () => {
+  it("exports exactly 15 tables", () => {
     const tables = [
       venues, spaces, users, refreshTokens, assetDefinitions, configurations,
       placedObjects, enquiries, enquiryStatusHistory, photoReferences,
-      pricingRules, files, referenceLoadouts, referencePhotos,
+      pricingRules, files, referenceLoadouts, referencePhotos, guestLeads,
     ];
-    expect(tables).toHaveLength(14);
+    expect(tables).toHaveLength(15);
   });
 });

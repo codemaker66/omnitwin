@@ -20,9 +20,9 @@ export function canManageVenue(user: JwtUser, venueId: string): boolean {
  */
 export function canAccessResource(
   user: JwtUser,
-  ownerId: string,
+  ownerId: string | null,
   venueId: string,
 ): boolean {
-  if (user.id === ownerId) return true;
+  if (ownerId !== null && user.id === ownerId) return true;
   return canManageVenue(user, venueId);
 }

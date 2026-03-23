@@ -94,13 +94,17 @@ export async function generateHallkeeperSheet(
   // Resolve user names for history
   const historyWithNames: { from: string; to: string; at: string; by: string }[] = [];
   for (const h of history) {
-    const [user] = await db.select({ name: users.name }).from(users)
-      .where(eq(users.id, h.changedBy)).limit(1);
+    let byName = "Guest";
+    if (h.changedBy !== null) {
+      const [user] = await db.select({ name: users.name }).from(users)
+        .where(eq(users.id, h.changedBy)).limit(1);
+      byName = user?.name ?? "Unknown";
+    }
     historyWithNames.push({
       from: h.fromStatus,
       to: h.toStatus,
       at: h.createdAt.toISOString(),
-      by: user?.name ?? "Unknown",
+      by: byName,
     });
   }
 
