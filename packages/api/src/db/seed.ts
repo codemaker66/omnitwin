@@ -112,7 +112,7 @@ async function seed(): Promise<void> {
       email: "elaine@tradeshall.co.uk",
       passwordHash: staffHash,
       name: "Elaine MacGregor",
-      role: "staff",
+      role: "hallkeeper",
       venueId: venue.id,
     },
   ]).returning();
