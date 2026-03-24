@@ -5,21 +5,9 @@ import { RegisterPage } from "./pages/RegisterPage.js";
 import { EditorPage } from "./pages/EditorPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
-import { useAuthStore } from "./stores/auth-store.js";
-import { getDefaultRoute } from "./lib/role-routing.js";
 
 // ---------------------------------------------------------------------------
-// Role-aware root redirect
-// ---------------------------------------------------------------------------
-
-function RootRedirect(): React.ReactElement {
-  const user = useAuthStore((s) => s.user);
-  const target = user !== null ? getDefaultRoute(user.role) : "/login";
-  return <Navigate to={target} replace />;
-}
-
-// ---------------------------------------------------------------------------
-// Application routes
+// Application routes — editor is PUBLIC (no auth required)
 // ---------------------------------------------------------------------------
 
 export const router = createBrowserRouter([
@@ -33,11 +21,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/editor",
-    element: (
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
-        <EditorPage />
-      </ProtectedRoute>
-    ),
+    element: <EditorPage />,
+  },
+  {
+    path: "/editor/:configId",
+    element: <EditorPage />,
   },
   {
     path: "/dashboard",
@@ -49,10 +37,10 @@ export const router = createBrowserRouter([
   },
   {
     path: "/",
-    element: <RootRedirect />,
+    element: <Navigate to="/editor" replace />,
   },
   {
     path: "*",
-    element: <Navigate to="/" replace />,
+    element: <Navigate to="/editor" replace />,
   },
 ]);
