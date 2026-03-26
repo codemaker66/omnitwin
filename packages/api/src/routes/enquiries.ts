@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, pricingRules } from "../db/schema.js";
+import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
@@ -9,6 +9,8 @@ import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { generateHallkeeperSheet, generateHallkeeperPdf } from "../services/hallkeeper-sheet.js";
+import { sendEmailAsync } from "../services/email.js";
+import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -253,6 +255,26 @@ export async function enquiryRoutes(
       changedBy: request.user.id,
       note: parsed.data.note ?? null,
     });
+
+    // Send notification emails on approval/rejection
+    if (parsed.data.status === "approved" || parsed.data.status === "rejected") {
+      const recipientEmail = enquiry.guestEmail ?? enquiry.email;
+      const [space] = await db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, enquiry.spaceId)).limit(1);
+      const [venue] = await db.select({ name: venues.name }).from(venues).where(eq(venues.id, enquiry.venueId)).limit(1);
+      const spaceName = space?.name ?? "Unknown space";
+      const venueName = venue?.name ?? "Unknown venue";
+
+      if (parsed.data.status === "approved") {
+        const configUrl = enquiry.configurationId !== null
+          ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/editor/${enquiry.configurationId}`
+          : null;
+        const emailData = enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
+        sendEmailAsync({ to: recipientEmail, ...emailData });
+      } else {
+        const emailData = enquiryRejected({ venueName, spaceName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
+        sendEmailAsync({ to: recipientEmail, ...emailData });
+      }
+    }
 
     return { data: updated };
   });

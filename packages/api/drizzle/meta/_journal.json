@@ -50,6 +50,13 @@
       "when": 1774542000000,
       "tag": "0006_public_editor_guests",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774628400000,
+      "tag": "0006_clerk_migration",
+      "breakpoints": true
     }
   ]
 }

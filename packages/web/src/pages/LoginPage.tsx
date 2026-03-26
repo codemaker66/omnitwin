@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { LoginForm } from "../components/auth/LoginForm.js";
+import { SignIn } from "@clerk/clerk-react";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
 
@@ -15,5 +15,12 @@ export function LoginPage(): React.ReactElement {
     }
   }, [isAuthenticated, user, navigate]);
 
-  return <LoginForm onNavigateRegister={() => { void navigate("/register"); }} />;
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Inter', sans-serif", background: "#f5f5f0",
+    }}>
+      <SignIn routing="hash" signUpUrl="/register" />
+    </div>
+  );
 }

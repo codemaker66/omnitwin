@@ -19,44 +19,18 @@ export class ApiError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Token refresh mutex — prevents thundering herd of refresh calls
+// Token retrieval — uses Clerk's getToken exposed via window global
 // ---------------------------------------------------------------------------
 
-let refreshPromise: Promise<boolean> | null = null;
-
-async function attemptRefresh(): Promise<boolean> {
-  const stored = localStorage.getItem("omnitwin_refresh_token");
-  if (stored === null) return false;
-
+async function getAuthToken(): Promise<string | null> {
+  const getToken = (window as unknown as Record<string, unknown>)["__clerk_getToken"] as
+    (() => Promise<string | null>) | undefined;
+  if (getToken === undefined) return null;
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: stored }),
-    });
-
-    if (!res.ok) return false;
-
-    const body = (await res.json()) as {
-      data?: { accessToken: string; refreshToken: string };
-      accessToken?: string;
-      refreshToken?: string;
-    };
-    const tokens = body.data ?? body;
-    localStorage.setItem("omnitwin_access_token", tokens.accessToken ?? "");
-    localStorage.setItem("omnitwin_refresh_token", tokens.refreshToken ?? "");
-    return true;
+    return await getToken();
   } catch {
-    return false;
+    return null;
   }
-}
-
-function refreshTokensOnce(): Promise<boolean> {
-  if (refreshPromise !== null) return refreshPromise;
-  refreshPromise = attemptRefresh().finally(() => {
-    refreshPromise = null;
-  });
-  return refreshPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +50,7 @@ async function request<T>(opts: RequestOptions): Promise<T> {
   };
 
   if (opts.skipAuth !== true) {
-    const token = localStorage.getItem("omnitwin_access_token");
+    const token = await getAuthToken();
     if (token !== null) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -98,28 +72,9 @@ async function request<T>(opts: RequestOptions): Promise<T> {
     throw new ApiError(0, "Network error — check your connection", "NETWORK_ERROR", err);
   }
 
-  // 401 — try refresh once, then retry
+  // 401 — Clerk handles session refresh automatically. Just report the error.
   if (res.status === 401 && opts.skipAuth !== true) {
-    const refreshed = await refreshTokensOnce();
-    if (refreshed) {
-      // Retry with new token
-      const newToken = localStorage.getItem("omnitwin_access_token");
-      if (newToken !== null) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-      }
-      const retryRes = await fetch(`${API_URL}${opts.path}`, { ...fetchOpts, headers });
-      if (retryRes.ok) {
-        if (retryRes.status === 204) return undefined as T;
-        const retryBody = (await retryRes.json()) as { data?: T };
-        return (retryBody.data !== undefined ? retryBody.data : retryBody) as T;
-      }
-    }
-    // Refresh failed — clear auth
-    localStorage.removeItem("omnitwin_access_token");
-    localStorage.removeItem("omnitwin_refresh_token");
-    localStorage.removeItem("omnitwin_user");
-    window.location.href = "/login";
-    throw new ApiError(401, "Session expired", "UNAUTHORIZED");
+    throw new ApiError(401, "Session expired — please sign in again", "UNAUTHORIZED");
   }
 
   if (res.status === 204) return undefined as T;
@@ -135,7 +90,7 @@ async function request<T>(opts: RequestOptions): Promise<T> {
     );
   }
 
-  // Auth endpoints return flat response; CRUD endpoints use { data } envelope
+  // CRUD endpoints use { data } envelope
   return (json.data !== undefined ? json.data : json) as T;
 }
 

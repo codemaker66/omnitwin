@@ -1,11 +1,10 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import { validateEnv } from "./env.js";
 import { createDb } from "./db/client.js";
-import { authRoutes } from "./routes/auth.js";
+import { setAuthDb } from "./middleware/auth.js";
 import { venueRoutes } from "./routes/venues.js";
 import { spaceRoutes } from "./routes/spaces.js";
 import { configurationRoutes } from "./routes/configurations.js";
@@ -20,6 +19,7 @@ import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { adminRoutes } from "./routes/admin.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 
@@ -49,10 +49,6 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
     credentials: true,
   });
 
-  await server.register(jwt, {
-    secret: env.JWT_SECRET,
-  });
-
   await server.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
@@ -71,8 +67,10 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   // --- Database ---
   const db = createDb(env.DATABASE_URL);
 
+  // Inject DB into auth middleware for Clerk user lookups
+  setAuthDb(db);
+
   // --- Routes ---
-  await server.register(authRoutes, { db, prefix: "/auth" });
   await server.register(venueRoutes, { db, prefix: "/venues" });
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
   await server.register(configurationRoutes, { db, prefix: "/configurations" });
@@ -87,6 +85,7 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
+  await server.register(webhookRoutes, { db, prefix: "/webhooks" });
 
   // --- WebSocket ---
   await server.register(websocket);

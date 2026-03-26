@@ -17,7 +17,7 @@ beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
 function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
-  return server.jwt.sign(payload, { expiresIn: "15m" });
+  return JSON.stringify(payload);
 }
 
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });

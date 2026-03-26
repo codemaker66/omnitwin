@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Auth component tests — minimal DOM validation
+// Auth component tests — Clerk-based
 // ---------------------------------------------------------------------------
 
 // Mock react-router-dom
@@ -13,20 +13,29 @@ vi.mock("react-router-dom", () => ({
   createBrowserRouter: (routes: unknown) => routes,
 }));
 
+// Mock Clerk
+vi.mock("@clerk/clerk-react", () => ({
+  ClerkProvider: ({ children }: { children: unknown }) => children,
+  SignIn: () => "SignIn",
+  SignUp: () => "SignUp",
+  UserButton: () => "UserButton",
+  SignInButton: ({ children }: { children: unknown }) => children,
+  SignedIn: ({ children }: { children: unknown }) => children,
+  SignedOut: () => null,
+  useUser: () => ({ isLoaded: true, isSignedIn: false, user: null }),
+  useAuth: () => ({ getToken: vi.fn() }),
+}));
+
 // Mock auth store
 const mockAuthState = {
   user: null as { id: string; email: string; role: string; venueId: string | null; name: string } | null,
   isAuthenticated: false,
   isLoading: false,
   error: null as string | null,
-  login: vi.fn(),
-  register: vi.fn(),
+  setUser: vi.fn(),
+  setLoading: vi.fn(),
   logout: vi.fn(),
-  refreshTokens: vi.fn(),
-  initialize: vi.fn(),
   clearError: vi.fn(),
-  accessToken: null as string | null,
-  refreshToken: null as string | null,
 };
 
 vi.mock("../stores/auth-store.js", () => ({
@@ -45,26 +54,6 @@ beforeEach(() => {
   mockAuthState.error = null;
 });
 
-describe("LoginForm", () => {
-  it("exports a component", async () => {
-    const { LoginForm } = await import("../components/auth/LoginForm.js");
-    expect(typeof LoginForm).toBe("function");
-  });
-
-  it("renders without crashing", async () => {
-    const { LoginForm } = await import("../components/auth/LoginForm.js");
-    // Just verify it's callable — full render needs RTL which we test conceptually
-    expect(LoginForm.length).toBeLessThanOrEqual(1); // takes props
-  });
-});
-
-describe("RegisterForm", () => {
-  it("exports a component", async () => {
-    const { RegisterForm } = await import("../components/auth/RegisterForm.js");
-    expect(typeof RegisterForm).toBe("function");
-  });
-});
-
 describe("ProtectedRoute", () => {
   it("exports a component", async () => {
     const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
@@ -74,18 +63,14 @@ describe("ProtectedRoute", () => {
   it("redirects when unauthenticated", async () => {
     mockAuthState.isAuthenticated = false;
     mockAuthState.isLoading = false;
-
     const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
-    // We can verify the function exists and handles state — rendered output tested by router tests
     expect(ProtectedRoute).toBeDefined();
   });
 
   it("shows 403 for wrong role", async () => {
     mockAuthState.isAuthenticated = true;
     mockAuthState.user = { id: "u1", email: "viewer@test.com", role: "viewer", venueId: null, name: "V" };
-
     const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
-    // With allowedRoles=["admin"], a viewer should get 403
     expect(ProtectedRoute).toBeDefined();
   });
 });
@@ -95,20 +80,12 @@ describe("UserMenu", () => {
     const { UserMenu } = await import("../components/auth/UserMenu.js");
     expect(typeof UserMenu).toBe("function");
   });
-
-  it("returns null when not authenticated", async () => {
-    mockAuthState.isAuthenticated = false;
-    mockAuthState.user = null;
-
-    const { UserMenu } = await import("../components/auth/UserMenu.js");
-    expect(UserMenu).toBeDefined();
-  });
 });
 
-describe("AuthLayout", () => {
+describe("ClerkAuthBridge", () => {
   it("exports a component", async () => {
-    const { AuthLayout } = await import("../components/auth/AuthLayout.js");
-    expect(typeof AuthLayout).toBe("function");
+    const { ClerkAuthBridge } = await import("../components/auth/ClerkAuthBridge.js");
+    expect(typeof ClerkAuthBridge).toBe("function");
   });
 });
 

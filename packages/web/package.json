@@ -15,6 +15,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.3",
     "@omnitwin/types": "workspace:*",
     "@react-spring/web": "^10.0.3",
     "@react-three/drei": "^9.114.3",

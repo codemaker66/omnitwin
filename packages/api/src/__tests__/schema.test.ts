@@ -11,7 +11,6 @@ import {
   photoReferences,
   pricingRules,
   files,
-  refreshTokens,
   referenceLoadouts,
   referencePhotos,
   guestLeads,
@@ -56,7 +55,7 @@ describe("users table", () => {
     const cols = getTableColumns(users);
     expect(cols.id).toBeDefined();
     expect(cols.email).toBeDefined();
-    expect(cols.passwordHash).toBeDefined();
+    expect(cols.clerkId).toBeDefined();
     expect(cols.name).toBeDefined();
     expect(cols.role).toBeDefined();
     expect(cols.venueId).toBeDefined();
@@ -160,12 +159,12 @@ describe("pricingRules table", () => {
 });
 
 describe("table count", () => {
-  it("exports exactly 15 tables", () => {
+  it("exports exactly 14 tables", () => {
     const tables = [
-      venues, spaces, users, refreshTokens, assetDefinitions, configurations,
+      venues, spaces, users, assetDefinitions, configurations,
       placedObjects, enquiries, enquiryStatusHistory, photoReferences,
       pricingRules, files, referenceLoadouts, referencePhotos, guestLeads,
     ];
-    expect(tables).toHaveLength(15);
+    expect(tables).toHaveLength(14);
   });
 });

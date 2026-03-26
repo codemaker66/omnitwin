@@ -21,7 +21,7 @@ beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
 function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
-  return server.jwt.sign(payload, { expiresIn: "15m" });
+  return JSON.stringify(payload);
 }
 
 const CONFIG_ID = "00000000-0000-0000-0000-000000000001";

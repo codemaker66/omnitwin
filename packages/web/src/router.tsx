@@ -1,5 +1,4 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { AuthLayout } from "./components/auth/AuthLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { RegisterPage } from "./pages/RegisterPage.js";
 import { EditorPage } from "./pages/EditorPage.js";
@@ -8,16 +7,17 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — editor is PUBLIC (no auth required)
+// Clerk handles login/register UI via its own components
 // ---------------------------------------------------------------------------
 
 export const router = createBrowserRouter([
   {
     path: "/login",
-    element: <AuthLayout><LoginPage /></AuthLayout>,
+    element: <LoginPage />,
   },
   {
     path: "/register",
-    element: <AuthLayout><RegisterPage /></AuthLayout>,
+    element: <RegisterPage />,
   },
   {
     path: "/editor",

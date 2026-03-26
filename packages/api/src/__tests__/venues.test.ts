@@ -17,7 +17,7 @@ afterAll(async () => { await server.close(); });
 
 /** Sign a test JWT with the given payload. */
 function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
-  return server.jwt.sign(payload, { expiresIn: "15m" });
+  return JSON.stringify(payload);
 }
 
 const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });

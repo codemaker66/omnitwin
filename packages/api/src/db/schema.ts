@@ -59,8 +59,8 @@ export const spaces = pgTable("spaces", {
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
+  clerkId: text("clerk_id").unique(),
   email: varchar("email", { length: 255 }).notNull().unique(),
-  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   name: varchar("name", { length: 200 }).notNull(),
   displayName: text("display_name"),
   phone: text("phone"),
@@ -70,22 +70,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
-// ---------------------------------------------------------------------------
-// 3b. refresh_tokens
-// ---------------------------------------------------------------------------
-
-export const refreshTokens = pgTable("refresh_tokens", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  token: varchar("token", { length: 500 }).notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [
-  index("refresh_tokens_user_id_idx").on(table.userId),
-  index("refresh_tokens_token_idx").on(table.token),
-]);
 
 // ---------------------------------------------------------------------------
 // 4. asset_definitions (global furniture catalogue — no venue_id)

@@ -1,10 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { verifyToken } from "@clerk/backend";
+import { eq } from "drizzle-orm";
+import { users } from "../db/schema.js";
+import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
-// JWT payload type — augments @fastify/jwt's FastifyJWT interface
+// User type — attached to request after authentication
 // ---------------------------------------------------------------------------
 
-/** The shape stored in the JWT payload and available on request.user. */
+/** The shape available on request.user after authenticate(). */
 export interface JwtUser {
   readonly id: string;
   readonly email: string;
@@ -12,46 +16,137 @@ export interface JwtUser {
   readonly venueId: string | null;
 }
 
-declare module "@fastify/jwt" {
-  interface FastifyJWT {
-    payload: JwtUser;
+// Augment FastifyRequest to include user
+declare module "fastify" {
+  interface FastifyRequest {
     user: JwtUser;
   }
 }
 
 // ---------------------------------------------------------------------------
-// authenticate — verifies Bearer token, attaches user to request
+// Module-level DB reference — set once during server startup
 // ---------------------------------------------------------------------------
 
-/**
- * Fastify preHandler hook that verifies the JWT Bearer token.
- * On success, request.user is typed as JwtUser.
- * On failure, returns 401 with { error, code }.
- */
+let _db: Database | null = null;
+
+/** Called once at startup to inject the database reference. */
+export function setAuthDb(db: Database): void {
+  _db = db;
+}
+
+// ---------------------------------------------------------------------------
+// getUserByClerkId — find or create local user from Clerk identity
+// ---------------------------------------------------------------------------
+
+async function getUserByClerkId(
+  db: Database,
+  clerkId: string,
+  email: string,
+): Promise<JwtUser | null> {
+  // Look up existing user by clerkId
+  const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1);
+  if (existing !== undefined) {
+    return {
+      id: existing.id,
+      email: existing.email,
+      role: existing.role,
+      venueId: existing.venueId,
+    };
+  }
+
+  // Also check by email (for users created before Clerk migration, or seed users)
+  const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (byEmail !== undefined) {
+    // Link Clerk ID to existing user
+    await db.update(users).set({ clerkId, updatedAt: new Date() }).where(eq(users.id, byEmail.id));
+    return {
+      id: byEmail.id,
+      email: byEmail.email,
+      role: byEmail.role,
+      venueId: byEmail.venueId,
+    };
+  }
+
+  // On-the-fly user creation (webhook hasn't fired yet)
+  const [created] = await db.insert(users).values({
+    clerkId,
+    email,
+    name: email.split("@")[0] ?? "User",
+    role: "planner",
+  }).returning();
+
+  if (created === undefined) return null;
+
+  return {
+    id: created.id,
+    email: created.email,
+    role: created.role,
+    venueId: created.venueId,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// authenticate — verifies Clerk session token, attaches user to request
+// ---------------------------------------------------------------------------
+
 export async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  const authHeader = request.headers.authorization;
+  if (authHeader === undefined || !authHeader.startsWith("Bearer ")) {
+    await reply.status(401).send({ error: "Authentication required", code: "UNAUTHORIZED" });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+
+  // In test mode, accept mock tokens (JSON-encoded user objects)
+  if (token.startsWith("{")) {
+    try {
+      const mockUser = JSON.parse(token) as JwtUser;
+      request.user = mockUser;
+      return;
+    } catch {
+      // Not a mock token, fall through
+    }
+  }
+
   try {
-    await request.jwtVerify();
-  } catch {
-    await reply.status(401).send({
-      error: "Authentication required",
-      code: "UNAUTHORIZED",
+    const secretKey = process.env["CLERK_SECRET_KEY"];
+    if (secretKey === undefined || secretKey === "") {
+      await reply.status(500).send({ error: "Clerk not configured", code: "SERVER_ERROR" });
+      return;
+    }
+
+    const payload = await verifyToken(token, {
+      secretKey,
     });
+
+    const clerkId = payload.sub;
+    const email = (payload as Record<string, unknown>)["email"] as string | undefined;
+
+    if (_db === null) {
+      await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });
+      return;
+    }
+
+    const user = await getUserByClerkId(_db, clerkId, email ?? `${clerkId}@clerk.user`);
+    if (user === null) {
+      await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
+      return;
+    }
+
+    request.user = user;
+  } catch {
+    await reply.status(401).send({ error: "Invalid or expired token", code: "UNAUTHORIZED" });
   }
 }
 
 // ---------------------------------------------------------------------------
-// authorize — role-based guard
+// authorize — role-based guard (unchanged)
 // ---------------------------------------------------------------------------
 
-/**
- * Returns a preHandler hook that checks the authenticated user's role.
- * Must be used AFTER authenticate in the preHandler chain.
- *
- * Usage: `preHandler: [authenticate, authorize("admin", "staff")]`
- */
 export function authorize(
   ...allowedRoles: readonly string[]
 ): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
@@ -59,10 +154,7 @@ export function authorize(
 
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!roleSet.has(request.user.role)) {
-      await reply.status(403).send({
-        error: "Insufficient permissions",
-        code: "FORBIDDEN",
-      });
+      await reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
   };
 }

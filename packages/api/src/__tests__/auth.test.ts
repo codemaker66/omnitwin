@@ -2,266 +2,257 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 // ---------------------------------------------------------------------------
-// Auth route tests — Fastify inject, no real HTTP server
+// Auth middleware tests (Clerk-based)
 // ---------------------------------------------------------------------------
 
-// Mock env before importing buildServer
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
-process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
 
 const { buildServer } = await import("../index.js");
 
 let server: FastifyInstance;
 
-beforeAll(async () => {
-  server = await buildServer();
-});
+beforeAll(async () => { server = await buildServer(); });
+afterAll(async () => { await server.close(); });
 
-afterAll(async () => {
-  await server.close();
-});
-
-// ---------------------------------------------------------------------------
-// Helper — parse JSON response
-// ---------------------------------------------------------------------------
-
-interface ErrorResponse {
-  error: string;
-  code: string;
+function mockToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+  return JSON.stringify(payload);
 }
 
-// Since we're using a mock DATABASE_URL, all DB operations will fail.
-// These tests verify request validation, Zod parsing, and route wiring.
-// Integration tests against a real DB belong in a separate test suite.
-
 // ---------------------------------------------------------------------------
-// POST /auth/register — validation tests
+// Token verification
 // ---------------------------------------------------------------------------
 
-describe("POST /auth/register", () => {
-  it("returns 400 when body is missing", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
+describe("Clerk auth middleware", () => {
+  it("returns 401 when no Authorization header is sent", async () => {
+    const res = await server.inject({ method: "GET", url: "/enquiries" });
+    expect(res.statusCode).toBe(401);
+    const body = JSON.parse(res.payload) as Record<string, unknown>;
+    expect(body["code"]).toBe("UNAUTHORIZED");
   });
 
-  it("returns 400 when email is invalid", async () => {
+  it("returns 401 when Authorization header has no Bearer prefix", async () => {
     const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email: "not-an-email", password: "password123", name: "Test" },
+      method: "GET", url: "/enquiries",
+      headers: { authorization: "Token something" },
     });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(res.statusCode).toBe(401);
   });
 
-  it("returns 400 when password is too short", async () => {
+  it("returns 401 with invalid (non-JSON, non-Clerk) token", async () => {
     const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email: "test@example.com", password: "short", name: "Test" },
+      method: "GET", url: "/enquiries",
+      headers: { authorization: "Bearer invalid-garbage-token" },
     });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(res.statusCode).toBe(401);
   });
 
-  it("returns 400 when name is empty", async () => {
+  it("accepts mock JSON token in test mode", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
     const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email: "test@example.com", password: "password123", name: "" },
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
     });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-
-  it("returns 400 when role is invalid", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email: "test@example.com", password: "password123", name: "Test", role: "superadmin" },
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-
-  it("accepts valid role values", async () => {
-    // This will fail at DB layer (mock URL) but should pass validation
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: { email: "test@example.com", password: "password123", name: "Test", role: "admin" },
-    });
-    // Should NOT be 400 (validation passed), will be 500 (DB unreachable)
-    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
   });
 });
 
 // ---------------------------------------------------------------------------
-// POST /auth/login — validation tests
-// ---------------------------------------------------------------------------
-
-describe("POST /auth/login", () => {
-  it("returns 400 when body is missing", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/login",
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-
-  it("returns 400 when email is invalid", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: "not-email", password: "password123" },
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-
-  it("returns 400 when password is missing", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: "test@example.com" },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /auth/refresh — validation tests
-// ---------------------------------------------------------------------------
-
-describe("POST /auth/refresh", () => {
-  it("returns 400 when body is missing", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/refresh",
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-
-  it("returns 400 when refreshToken is empty", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/refresh",
-      payload: { refreshToken: "" },
-    });
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body) as ErrorResponse;
-    expect(body.code).toBe("VALIDATION_ERROR");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Protected route — 401 without token
-// ---------------------------------------------------------------------------
-
-describe("protected route without token", () => {
-  it("returns 401 when no Authorization header", async () => {
-    // We need to register a test route that uses authenticate
-    // This is done via the authenticate middleware being tested
-    // Just verify the middleware import compiles correctly
-    const { authenticate } = await import("../middleware/auth.js");
-    expect(typeof authenticate).toBe("function");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Middleware — authorize function
+// Role-based authorization
 // ---------------------------------------------------------------------------
 
 describe("authorize middleware", () => {
-  it("returns a function", async () => {
-    const { authorize } = await import("../middleware/auth.js");
-    const handler = authorize("admin", "staff");
-    expect(typeof handler).toBe("function");
+  it("returns 403 when role is not in allowed set", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "planner", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/clients/search?q=test",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("allows admin access to admin-only endpoints", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/clients/search?q=test",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
+  it("allows hallkeeper access to hallkeeper endpoints", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "hallkeeper", venueId: "v1" });
+    const res = await server.inject({
+      method: "GET", url: "/clients/search?q=test",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).not.toBe(403);
   });
 });
 
 // ---------------------------------------------------------------------------
-// JWT token signing
+// Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
-describe("JWT token signing", () => {
-  it("server.jwt.sign produces a valid token string", () => {
-    const token = server.jwt.sign(
-      { id: "test-id", email: "test@example.com", role: "admin", venueId: null },
-      { expiresIn: "15m" },
-    );
-    expect(typeof token).toBe("string");
-    expect(token.split(".")).toHaveLength(3); // JWT has 3 parts
-  });
-
-  it("server.jwt.verify decodes a signed token", () => {
-    const payload = { id: "test-id", email: "test@example.com", role: "staff", venueId: "venue-123" };
-    const token = server.jwt.sign(payload, { expiresIn: "15m" });
-    const decoded = server.jwt.verify<typeof payload>(token);
-    expect(decoded.id).toBe("test-id");
-    expect(decoded.email).toBe("test@example.com");
-    expect(decoded.role).toBe("staff");
-    expect(decoded.venueId).toBe("venue-123");
-  });
-
-  it("server.jwt.verify rejects tampered token", () => {
-    const token = server.jwt.sign(
-      { id: "test-id", email: "a@b.com", role: "admin", venueId: null },
-      { expiresIn: "15m" },
-    );
-    const tampered = token + "x";
-    expect(() => server.jwt.verify(tampered)).toThrow();
-  });
-
-  it("server.jwt.verify rejects expired token", () => {
-    // Sign with a negative iat offset to force expiry
-    const token = server.jwt.sign(
-      { id: "test-id", email: "a@b.com", role: "admin", venueId: null },
-      { expiresIn: 0 },
-    );
-    // fast-jwt may not throw synchronously for 0-second expiry on same tick.
-    // Instead, verify that a token with 15m expiry decodes correctly
-    // (positive case already tested above) and that tampered tokens fail.
-    // The real expiry enforcement happens during request.jwtVerify().
-    expect(typeof token).toBe("string");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Route registration
-// ---------------------------------------------------------------------------
-
-describe("route registration", () => {
-  it("all auth routes respond to POST", async () => {
-    // Verify routes exist by sending POST without body (expect 400, not 404)
-    const registerRes = await server.inject({ method: "POST", url: "/auth/register" });
-    expect(registerRes.statusCode).toBe(400); // validation error, not 404
-
-    const loginRes = await server.inject({ method: "POST", url: "/auth/login" });
-    expect(loginRes.statusCode).toBe(400);
-
-    const refreshRes = await server.inject({ method: "POST", url: "/auth/refresh" });
-    expect(refreshRes.statusCode).toBe(400);
-  });
-
-  it("health route still works", async () => {
+describe("public endpoints require no auth", () => {
+  it("GET /health is public", async () => {
     const res = await server.inject({ method: "GET", url: "/health" });
     expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body) as { status: string };
-    expect(body.status).toBe("ok");
+  });
+
+  it("GET /venues is public", async () => {
+    const res = await server.inject({ method: "GET", url: "/venues" });
+    expect(res.statusCode).not.toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook handler
+// ---------------------------------------------------------------------------
+
+describe("POST /webhooks/clerk", () => {
+  it("responds 200 to user.created event", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: {
+        type: "user.created",
+        data: {
+          id: "clerk_test_123",
+          email_addresses: [{ id: "ea_1", email_address: "newuser@test.com" }],
+          primary_email_address_id: "ea_1",
+          first_name: "Test",
+          last_name: "User",
+          phone_numbers: [],
+          public_metadata: { role: "planner" },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("responds 200 to user.updated event", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: {
+        type: "user.updated",
+        data: {
+          id: "clerk_test_123",
+          email_addresses: [{ id: "ea_1", email_address: "updated@test.com" }],
+          primary_email_address_id: "ea_1",
+          first_name: "Updated",
+          last_name: "Name",
+          phone_numbers: [{ phone_number: "+441234567890" }],
+          public_metadata: {},
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("responds 200 to user.deleted event", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: {
+        type: "user.deleted",
+        data: {
+          id: "clerk_test_123",
+          email_addresses: [],
+          primary_email_address_id: "",
+          first_name: null,
+          last_name: null,
+          phone_numbers: [],
+          public_metadata: {},
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("responds 200 to unknown event type", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: { type: "organization.created", data: {} },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook signature verification
+// ---------------------------------------------------------------------------
+
+describe("webhook signature verification", () => {
+  it("processes event without secret in dev mode (existing tests cover this)", async () => {
+    // CLERK_WEBHOOK_SECRET is not set in test env — dev mode skips verification
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: { type: "unknown.event", data: {} },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("returns 401 when secret is set but signature headers are missing", async () => {
+    // Temporarily set the secret
+    const original = process.env["CLERK_WEBHOOK_SECRET"];
+    process.env["CLERK_WEBHOOK_SECRET"] = "whsec_testSecretForUnitTests123456";
+
+    // Rebuild server with the secret set
+    const { buildServer: rebuild } = await import("../index.js");
+    const freshServer = await rebuild();
+
+    const res = await freshServer.inject({
+      method: "POST", url: "/webhooks/clerk",
+      payload: { type: "user.created", data: {} },
+      // No svix-id, svix-timestamp, svix-signature headers
+    });
+    expect(res.statusCode).toBe(401);
+    const body = JSON.parse(res.payload) as Record<string, unknown>;
+    expect(body["code"]).toBe("UNAUTHORIZED");
+
+    await freshServer.close();
+    process.env["CLERK_WEBHOOK_SECRET"] = original;
+  });
+
+  it("returns 401 when signature is invalid", async () => {
+    const original = process.env["CLERK_WEBHOOK_SECRET"];
+    process.env["CLERK_WEBHOOK_SECRET"] = "whsec_testSecretForUnitTests123456";
+
+    const { buildServer: rebuild } = await import("../index.js");
+    const freshServer = await rebuild();
+
+    const res = await freshServer.inject({
+      method: "POST", url: "/webhooks/clerk",
+      headers: {
+        "svix-id": "msg_fake",
+        "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+        "svix-signature": "v1,invalidSignatureData",
+      },
+      payload: { type: "user.created", data: {} },
+    });
+    expect(res.statusCode).toBe(401);
+
+    await freshServer.close();
+    process.env["CLERK_WEBHOOK_SECRET"] = original;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Old auth routes are removed
+// ---------------------------------------------------------------------------
+
+describe("old auth routes removed", () => {
+  it("POST /auth/register returns 404", async () => {
+    const res = await server.inject({ method: "POST", url: "/auth/register", payload: {} });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("POST /auth/login returns 404", async () => {
+    const res = await server.inject({ method: "POST", url: "/auth/login", payload: {} });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("POST /auth/refresh returns 404", async () => {
+    const res = await server.inject({ method: "POST", url: "/auth/refresh", payload: {} });
+    expect(res.statusCode).toBe(404);
   });
 });

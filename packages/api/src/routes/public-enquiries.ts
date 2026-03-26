@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
-import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces } from "../db/schema.js";
+import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { sendEmailAsync } from "../services/email.js";
+import { newEnquiryNotification } from "../services/email-templates.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -111,6 +113,30 @@ export async function publicEnquiryRoutes(
       await db.update(guestLeads)
         .set(updateData)
         .where(eq(guestLeads.id, existingLead.id));
+    }
+
+    // Notify hallkeeper(s) of the venue
+    const spaceForName = await db.select({ name: spaces.name })
+      .from(spaces).where(eq(spaces.id, config.spaceId)).limit(1);
+    const spaceName = spaceForName[0]?.name ?? "Unknown space";
+
+    const hallkeepers = await db.select({ email: users.email })
+      .from(users)
+      .where(and(eq(users.venueId, space.venueId), eq(users.role, "hallkeeper")));
+
+    for (const hk of hallkeepers) {
+      const emailData = newEnquiryNotification({
+        spaceName,
+        eventType: parsed.data.eventType ?? null,
+        contactName: displayName,
+        contactEmail: parsed.data.email,
+        contactPhone: parsed.data.phone ?? null,
+        eventDate: parsed.data.eventDate ?? null,
+        guestCount: parsed.data.guestCount ?? null,
+        message: parsed.data.message ?? null,
+        dashboardUrl: `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/dashboard`,
+      });
+      sendEmailAsync({ to: hk.email, ...emailData });
     }
 
     return reply.status(201).send({

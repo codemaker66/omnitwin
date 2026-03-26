@@ -5,7 +5,7 @@ import { eq, inArray } from "drizzle-orm";
 import { createDb, type Database } from "../db/client.js";
 import {
   users, configurations, placedObjects, enquiries,
-  enquiryStatusHistory, refreshTokens, guestLeads,
+  enquiryStatusHistory, guestLeads,
 } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -99,7 +99,6 @@ afterAll(async () => {
     // Users
     const testUserIds = [plannerUserId, hallkeeperUserId, claimerUserId].filter((id) => id !== "");
     if (testUserIds.length > 0) {
-      await db.delete(refreshTokens).where(inArray(refreshTokens.userId, testUserIds));
       await db.delete(users).where(inArray(users.id, testUserIds));
     }
   } catch (err) {

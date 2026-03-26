@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { hash } from "argon2";
 import { validateEnv } from "../env.js";
 import { createDb } from "./client.js";
 import {
@@ -96,21 +95,19 @@ async function seed(): Promise<void> {
     console.log(`  Asset: ${a.name} (${a.id})`);
   }
 
-  // --- 4. Users (dev only — insecure passwords) ---
-  const adminHash = await hash("admin123");
-  const staffHash = await hash("staff123");
-
+  // --- 4. Users (Clerk manages auth — these are local profile records) ---
+  // clerkId is null until real Clerk users are created and linked via webhook
   const insertedUsers = await db.insert(users).values([
     {
+      clerkId: "clerk_seed_admin",
       email: "admin@tradeshall.co.uk",
-      passwordHash: adminHash,
       name: "Admin User",
       role: "admin",
       venueId: venue.id,
     },
     {
+      clerkId: "clerk_seed_hallkeeper",
       email: "elaine@tradeshall.co.uk",
-      passwordHash: staffHash,
       name: "Elaine MacGregor",
       role: "hallkeeper",
       venueId: venue.id,

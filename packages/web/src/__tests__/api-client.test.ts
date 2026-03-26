@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// API client tests — mock fetch globally
+// API client tests — Clerk-based token retrieval
 // ---------------------------------------------------------------------------
 
 const fetchMock = vi.fn();
@@ -21,21 +21,32 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 beforeEach(() => {
   fetchMock.mockReset();
-  localStorage.clear();
+  // Clear Clerk getToken mock
+  delete (window as unknown as Record<string, unknown>)["__clerk_getToken"];
 });
 
 describe("api.get", () => {
-  it("attaches Authorization header when token exists", async () => {
-    localStorage.setItem("omnitwin_access_token", "test-token");
+  it("attaches Authorization header when Clerk token available", async () => {
+    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("clerk-session-token");
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
     await api.get("/test");
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer test-token");
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer clerk-session-token");
   });
 
-  it("omits Authorization header when no token", async () => {
+  it("omits Authorization header when no Clerk session", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
+
+    await api.get("/test");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
+  });
+
+  it("omits Authorization header when getToken returns null", async () => {
+    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve(null);
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
     await api.get("/test");
@@ -88,38 +99,19 @@ describe("error handling", () => {
   });
 });
 
-describe("401 + token refresh", () => {
-  it("retries request after successful refresh", async () => {
-    localStorage.setItem("omnitwin_access_token", "expired-token");
-    localStorage.setItem("omnitwin_refresh_token", "valid-refresh");
-
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401)) // first attempt
-      .mockResolvedValueOnce(jsonResponse({ data: { accessToken: "new-token", refreshToken: "new-refresh" } })) // refresh
-      .mockResolvedValueOnce(jsonResponse({ data: { id: 42 } })); // retry
-
-    const result = await api.get<{ id: number }>("/test");
-    expect(result).toEqual({ id: 42 });
-    expect(localStorage.getItem("omnitwin_access_token")).toBe("new-token");
-  });
-
-  it("redirects to login on failed refresh", async () => {
-    localStorage.setItem("omnitwin_access_token", "expired-token");
-    localStorage.setItem("omnitwin_refresh_token", "bad-refresh");
-
-    // Mock window.location
-    const originalHref = window.location.href;
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: { ...window.location, href: originalHref },
-    });
-
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401))
-      .mockResolvedValueOnce(jsonResponse({ error: "Invalid refresh" }, 401));
+describe("401 handling", () => {
+  it("throws ApiError on 401 (Clerk handles session refresh)", async () => {
+    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("expired-token");
+    fetchMock.mockResolvedValue(jsonResponse({ error: "Unauthorized" }, 401));
 
     await expect(api.get("/test")).rejects.toThrow(ApiError);
-    expect(localStorage.getItem("omnitwin_access_token")).toBeNull();
+    try {
+      await api.get("/test");
+    } catch (err) {
+      const apiErr = err as InstanceType<typeof ApiError>;
+      expect(apiErr.status).toBe(401);
+      expect(apiErr.code).toBe("UNAUTHORIZED");
+    }
   });
 });
 
@@ -135,10 +127,10 @@ describe("api.post", () => {
   });
 
   it("supports skipAuth for public endpoints", async () => {
-    localStorage.setItem("omnitwin_access_token", "my-token");
+    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("my-token");
     fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
 
-    await api.post("/auth/login", { email: "a" }, true);
+    await api.post("/public/test", { email: "a" }, true);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
@@ -151,5 +143,15 @@ describe("api.delete", () => {
 
     const result = await api.delete("/test/1");
     expect(result).toBeUndefined();
+  });
+});
+
+describe("graceful getToken errors", () => {
+  it("continues without auth if getToken throws", async () => {
+    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.reject(new Error("Clerk error"));
+    fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
+
+    const result = await api.get<{ id: number }>("/test");
+    expect(result).toEqual({ id: 1 });
   });
 });

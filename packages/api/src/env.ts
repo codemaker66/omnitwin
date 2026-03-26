@@ -6,8 +6,14 @@ import { z } from "zod";
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   PORT: z.coerce.number().int().positive().default(3001),
+  // Clerk — auth provider
+  CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  CLERK_SECRET_KEY: z.string().min(1).optional(),
+  CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Email — Resend (optional — logs to console if not set)
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(1).default("OMNITWIN <notifications@omnitwin.com>"),
   // R2/S3 — optional (uploads disabled if not set)
   R2_ACCOUNT_ID: z.string().min(1).optional(),
   R2_ACCESS_KEY_ID: z.string().min(1).optional(),

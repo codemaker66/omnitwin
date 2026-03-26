@@ -3,14 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { SpacePicker } from "../components/editor/SpacePicker.js";
-import { EditorToolbar } from "../components/editor/EditorToolbar.js";
-import { AssetPalette } from "../components/editor/AssetPalette.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { AuthModal } from "../components/editor/AuthModal.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 
 // ---------------------------------------------------------------------------
 // EditorPage — public 3D editor with space picker + save/send flow
+// The existing bottom Toolbar handles furniture placement — no separate
+// asset palette or top toolbar needed here.
 // ---------------------------------------------------------------------------
 
 export function EditorPage(): React.ReactElement {
@@ -54,11 +54,9 @@ export function EditorPage(): React.ReactElement {
   return (
     <>
       <EditorBridge />
-      <EditorToolbar onSignIn={() => { setShowAuth(true); }} />
-      <div style={{ paddingTop: 48, paddingLeft: 220, height: "100vh", boxSizing: "border-box" }}>
+      <div style={{ height: "100vh", boxSizing: "border-box" }}>
         <Editor3D />
       </div>
-      <AssetPalette />
       <SaveSendPanel />
       {showAuth && <AuthModal onClose={() => { setShowAuth(false); }} />}
     </>
