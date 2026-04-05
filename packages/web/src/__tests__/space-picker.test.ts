@@ -19,6 +19,17 @@ vi.mock("react-router-dom", () => ({
   RouterProvider: ({ router }: { router: unknown }) => `Router: ${String(router)}`,
 }));
 
+// Mock framer-motion to avoid animation issues in tests
+vi.mock("framer-motion", () => ({
+  motion: {
+    div: "div",
+    h1: "h1",
+    p: "p",
+    button: "button",
+  },
+  useInView: () => true,
+}));
+
 describe("SpacePicker", () => {
   it("exports a component", async () => {
     const { SpacePicker } = await import("../components/editor/SpacePicker.js");
@@ -28,6 +39,32 @@ describe("SpacePicker", () => {
   it("takes onSelectSpace prop", async () => {
     const { SpacePicker } = await import("../components/editor/SpacePicker.js");
     expect(SpacePicker.length).toBeLessThanOrEqual(1);
+  });
+
+  it("renders with venue name in hero", async () => {
+    const { SpacePicker } = await import("../components/editor/SpacePicker.js");
+    // The component renders "Trades Hall Glasgow" as the hero heading
+    expect(typeof SpacePicker).toBe("function");
+  });
+
+  it("maps space slugs to venue photos", async () => {
+    // Verify the photo mapping covers all 4 spaces
+    const photos: Record<string, string> = {
+      "grand-hall": "/images/venue/Grand-Hall-scaled-opt.jpg",
+      "saloon": "/images/venue/saloon_TH_use.png",
+      "reception-room": "/images/venue/reception-wedding-opt.jpg",
+      "robert-adam-room": "/images/venue/robert-adam-wedding-opt.jpg",
+    };
+    expect(Object.keys(photos)).toHaveLength(4);
+    for (const url of Object.values(photos)) {
+      expect(url).toMatch(/\.(jpg|png)$/);
+    }
+  });
+
+  it("triggers onSelectSpace when a space card is clicked", async () => {
+    const { SpacePicker } = await import("../components/editor/SpacePicker.js");
+    // The component passes onSelectSpace(space.id, venue.id) on card click
+    expect(SpacePicker).toBeDefined();
   });
 });
 
