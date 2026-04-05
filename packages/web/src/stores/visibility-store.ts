@@ -196,8 +196,9 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
   toggleWall: (key: WallKey) => {
     const state = get();
     const newVisible = !state.walls[key];
+    // Don't change mode — stay in auto so camera control continues working.
+    // The click just triggers the brick animation via BrickWall's useAnimation ref.
     set({
-      mode: "manual" as WallMode,
       walls: { ...state.walls, [key]: newVisible },
       wallOpacity: { ...state.wallOpacity, [key]: newVisible ? 1 : 0 },
     });

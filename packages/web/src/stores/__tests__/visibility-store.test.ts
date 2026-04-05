@@ -261,8 +261,7 @@ describe("useVisibilityStore", () => {
     });
   });
 
-  it("starts in auto-2 mode after reset", () => {
-    // beforeEach resets to auto-2 for these tests
+  it("starts in auto-2 mode after reset (set by beforeEach)", () => {
     expect(useVisibilityStore.getState().mode).toBe("auto-2");
   });
 
@@ -271,10 +270,11 @@ describe("useVisibilityStore", () => {
     expect(useVisibilityStore.getState().mode).toBe("auto-3");
   });
 
-  it("toggleWall switches to manual mode and snaps opacity", () => {
+  it("toggleWall snaps opacity without changing mode", () => {
+    useVisibilityStore.getState().setMode("auto-3");
     useVisibilityStore.getState().toggleWall("wall-front");
     const state = useVisibilityStore.getState();
-    expect(state.mode).toBe("manual");
+    expect(state.mode).toBe("auto-3"); // stays in auto mode
     expect(state.walls["wall-front"]).toBe(true);
     expect(state.wallOpacity["wall-front"]).toBe(1);
   });
