@@ -264,19 +264,9 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       {/* Floor grid */}
       <FloorGrid polygon={geometry.wallPolygon} />
 
-      {/* Ceiling — simple large plane instead of ShapeGeometry to avoid
-          triangulation glitches with complex polygons. Viewed from below,
-          a flat rectangle is visually identical. */}
-      <mesh name="ceiling" rotation={[Math.PI / 2, 0, 0]} position={[0, ceilingHeight, 0]}>
-        <planeGeometry args={[200, 200]} />
-        <meshStandardMaterial
-          color={CEILING_COLOR}
-          roughness={0.95}
-          metalness={0}
-          transparent
-          clippingPlanes={sectionClipPlanes}
-        />
-      </mesh>
+      {/* Ceiling omitted — not visible in a top-down venue planning view
+          and ShapeGeometry/planeGeometry both cause z-fighting artifacts
+          when the camera moves. Walls define the room outline. */}
 
       {/* Walls — auto-transparency driven by camera position */}
       <WallSegments polygon={geometry.wallPolygon} ceilingHeight={ceilingHeight} />
