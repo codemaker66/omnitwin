@@ -6,6 +6,7 @@ import { useSelectionStore } from "../stores/selection-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
+import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
@@ -453,7 +454,33 @@ export function SelectionSystem(): null {
             useSelectionStore.getState().select(dragItemId.current);
           }
         } else {
-          // Clicked on empty space
+          // Clicked on empty space — check if a wall click plane was hit
+          const wallClickPlanes: Object3D[] = [];
+          scene.traverse((obj) => {
+            if (obj.name.endsWith("-click-plane")) wallClickPlanes.push(obj);
+          });
+
+          if (wallClickPlanes.length > 0) {
+            const ndcX2 = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+            const ndcY2 = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+            raycaster.setFromCamera(_ndc.set(ndcX2, ndcY2), camera);
+            const wallHits = raycaster.intersectObjects(wallClickPlanes, false);
+            if (wallHits.length > 0 && wallHits[0] !== undefined) {
+              const hitName = wallHits[0].object.name; // e.g. "wall-front-click-plane"
+              const wallKey = hitName.replace("-click-plane", "") as WallKey;
+              if (wallKey === "wall-front" || wallKey === "wall-back" || wallKey === "wall-left" || wallKey === "wall-right") {
+                // Set global flag so BrickWall knows to animate (not instant)
+                (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wallKey;
+                useVisibilityStore.getState().toggleWall(wallKey);
+                invalidateRef.current();
+                isDragging.current = false;
+                isMarquee.current = false;
+                dragItemId.current = null;
+                return;
+              }
+            }
+          }
+
           useSelectionStore.getState().clearSelection();
         }
         invalidateRef.current();

@@ -277,12 +277,13 @@ export function BrickWall({
    *  False when driven by camera rotation (instant show/hide, no animation). */
   const useAnimation = useRef(false);
 
-  /** Click to toggle this wall's visibility. */
+  /** Click to toggle this wall's visibility (called from SelectionSystem). */
   const handleClick = useCallback((event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
     const wallKey = getWallKey(name);
     if (wallKey !== null) {
       useAnimation.current = true;
+      (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wallKey;
       useVisibilityStore.getState().toggleWall(wallKey);
       invalidate();
     }
@@ -325,11 +326,18 @@ export function BrickWall({
     const shouldBeBuilt = surfaceOpacity >= BUILD_THRESHOLD;
     const newTarget = shouldBeBuilt ? 1 : 0;
 
+    // Check if this wall was click-toggled (via global flag from SelectionSystem)
+    const globalAnimKey = (window as unknown as Record<string, unknown>)["__brickWallAnimate"] as string | undefined;
+    const wallKey = getWallKey(name);
+    if (globalAnimKey !== undefined && globalAnimKey === wallKey) {
+      useAnimation.current = true;
+      (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = undefined;
+    }
+
     // Detect if target changed (camera rotation or click)
     if (newTarget !== animTarget.current) {
       // If not triggered by a click, this is a camera-driven change → no animation
       if (!useAnimation.current) {
-        // Snap instantly
         animProgress.current = newTarget;
       }
       animTarget.current = newTarget;
