@@ -4,6 +4,7 @@ import type { ThreeEvent } from "@react-three/fiber";
 import {
   BoxGeometry,
   Color,
+  DoubleSide,
   DynamicDrawUsage,
   Euler,
   FrontSide,
@@ -445,6 +446,7 @@ export function BrickWall({
           depthWrite={false}
           depthTest={false}
           color="#ffffff"
+          side={DoubleSide}
         />
       </mesh>
     </group>

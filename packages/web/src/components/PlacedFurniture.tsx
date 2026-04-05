@@ -81,13 +81,13 @@ export function PlacedFurniture(): React.ReactElement {
         const isAnimating = animatingIds.has(placed.id);
 
         return (
-          <group key={placed.id}>
+          <group key={placed.id} name={`furniture-${placed.id}`}>
             {/* Table always visible — cloth drapes over it */}
             <FurnitureProxy
               item={catalogueItem}
               position={[placed.x, placed.y, placed.z]}
               rotationY={placed.rotationY}
-              name={`furniture-${placed.id}`}
+              name={`furniture-${placed.id}-mesh`}
             />
 
             {/* Animated unfurl for newly clothed tables */}
