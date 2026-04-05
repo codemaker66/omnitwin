@@ -256,20 +256,29 @@ export function SelectionSystem(): null {
         dragItemId.current = null;
       }
 
-      // Also check for wall click planes (for brick disassembly)
+      // Also check for wall hits (for brick disassembly)
+      // Raycast against ALL scene objects and check if any wall-related object was hit
       wallClickKey.current = null;
       if (dragItemId.current === null) {
-        const allObjects: Object3D[] = [];
-        scene.traverse((obj) => {
-          if (obj.name.endsWith("-click-plane")) allObjects.push(obj);
-        });
-        const wallHits = raycaster.intersectObjects(allObjects, false);
-        if (wallHits.length > 0 && wallHits[0] !== undefined) {
-          const hitName = wallHits[0].object.name;
-          const key = hitName.replace("-click-plane", "");
-          if (key === "wall-front" || key === "wall-back" || key === "wall-left" || key === "wall-right") {
-            wallClickKey.current = key as WallKey;
+        const allHits = raycaster.intersectObjects(scene.children, true);
+        for (const hit of allHits) {
+          let obj: Object3D | null = hit.object;
+          while (obj !== null) {
+            const n = obj.name;
+            if (n === "wall-front" || n === "wall-back" || n === "wall-left" || n === "wall-right") {
+              wallClickKey.current = n as WallKey;
+              break;
+            }
+            if (n.endsWith("-click-plane")) {
+              const key = n.replace("-click-plane", "");
+              if (key === "wall-front" || key === "wall-back" || key === "wall-left" || key === "wall-right") {
+                wallClickKey.current = key as WallKey;
+                break;
+              }
+            }
+            obj = obj.parent;
           }
+          if (wallClickKey.current !== null) break;
         }
       }
     }
