@@ -234,26 +234,19 @@ export function SelectionSystem(): null {
       const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
       raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      // Raycast recursively into furniture groups to hit actual meshes
-      const furnitureGroups = findFurnitureGroups(scene);
-      const intersects = raycaster.intersectObjects(furnitureGroups, true);
-      if (intersects.length > 0) {
-        const hitObj = intersects[0]?.object;
-        if (hitObj !== undefined) {
-          // Walk up parents to find the furniture group name
-          let current: Object3D | null = hitObj;
-          let placedId: string | null = null;
-          while (current !== null) {
-            if (current.name.startsWith("furniture-placed-")) {
-              placedId = current.name.replace("furniture-", "");
-              break;
-            }
-            current = current.parent;
+      // Raycast against entire scene to find furniture hits
+      const allIntersects = raycaster.intersectObjects(scene.children, true);
+      dragItemId.current = null;
+      for (const inter of allIntersects) {
+        let current: Object3D | null = inter.object;
+        while (current !== null) {
+          if (current.name.startsWith("furniture-placed-") && !current.name.endsWith("-mesh")) {
+            dragItemId.current = current.name.replace("furniture-", "");
+            break;
           }
-          dragItemId.current = placedId;
+          current = current.parent;
         }
-      } else {
-        dragItemId.current = null;
+        if (dragItemId.current !== null) break;
       }
 
       // Also check for wall hits (for brick disassembly)
