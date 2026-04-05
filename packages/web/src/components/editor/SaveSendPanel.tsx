@@ -9,9 +9,9 @@ import { AuthModal } from "./AuthModal.js";
 // ---------------------------------------------------------------------------
 
 const panelStyle: React.CSSProperties = {
-  position: "fixed", bottom: 20, right: 20, zIndex: 60,
+  position: "fixed", top: 20, right: 80, zIndex: 60,
   background: "rgba(255,255,255,0.95)", borderRadius: 12,
-  padding: 16, display: "flex", flexDirection: "column", gap: 8,
+  padding: 12, display: "flex", flexDirection: "row", gap: 8,
   boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid #e5e5e5",
   fontFamily: "'Inter', sans-serif", backdropFilter: "blur(8px)",
 };
