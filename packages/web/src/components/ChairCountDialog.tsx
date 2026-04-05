@@ -92,7 +92,7 @@ export function ChairCountDialog({
 
   useEffect(() => {
     if (request !== null) {
-      setCount(request.tableShape === "round" ? 10 : 6);
+      setCount(request.tableShape === "round" ? 10 : 2);
       setTimeout(() => { inputRef.current?.select(); }, 50);
     }
   }, [request]);
