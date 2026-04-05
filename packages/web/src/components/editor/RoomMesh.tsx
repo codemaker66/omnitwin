@@ -264,17 +264,16 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       {/* Floor grid */}
       <FloorGrid polygon={geometry.wallPolygon} />
 
-      {/* Ceiling — polygonOffset prevents z-fighting with grid lines */}
+      {/* Ceiling — simple large plane instead of ShapeGeometry to avoid
+          triangulation glitches with complex polygons. Viewed from below,
+          a flat rectangle is visually identical. */}
       <mesh name="ceiling" rotation={[Math.PI / 2, 0, 0]} position={[0, ceilingHeight, 0]}>
-        <shapeGeometry args={[floorShape]} />
+        <planeGeometry args={[200, 200]} />
         <meshStandardMaterial
           color={CEILING_COLOR}
           roughness={0.95}
           metalness={0}
           transparent
-          polygonOffset
-          polygonOffsetFactor={1}
-          polygonOffsetUnits={1}
           clippingPlanes={sectionClipPlanes}
         />
       </mesh>
