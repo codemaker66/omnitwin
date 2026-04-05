@@ -176,7 +176,7 @@ export function PlacementGhost(): React.ReactElement | null {
     };
   }, [selectedItemId, scene, camera, raycaster]);
 
-  // Escape cancels placement
+  // Escape or right-click cancels placement
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.code === "Escape" && useCatalogueStore.getState().selectedItemId !== null) {
@@ -184,8 +184,19 @@ export function PlacementGhost(): React.ReactElement | null {
         usePlacementStore.getState().clearGhost();
       }
     }
+    function onContextMenu(event: MouseEvent): void {
+      if (useCatalogueStore.getState().selectedItemId !== null) {
+        event.preventDefault();
+        useCatalogueStore.getState().clearSelection();
+        usePlacementStore.getState().clearGhost();
+      }
+    }
     window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
   }, []);
 
   if (selectedItemId === null || ghostPosition === null) return null;
