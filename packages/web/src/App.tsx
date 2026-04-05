@@ -26,6 +26,7 @@ import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
 import { useChairDialogStore } from "./stores/chair-dialog-store.js";
+import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { roomGeometries, computeBoundingBox } from "./data/room-geometries.js";
 
@@ -143,7 +144,12 @@ export function App(): React.ReactElement {
               );
             }
           }
+          const itemId = chairRequest?.catalogueItemId ?? null;
           useChairDialogStore.getState().clearDialog();
+          // Re-select the same catalogue item so user can place another immediately
+          if (itemId !== null) {
+            useCatalogueStore.getState().selectItem(itemId);
+          }
         }}
         onCancel={() => {
           useChairDialogStore.getState().clearDialog();
