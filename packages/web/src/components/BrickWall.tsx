@@ -428,16 +428,24 @@ export function BrickWall({
         name={name}
         frustumCulled={false}
       />
-      {/* Click plane — full wall-sized transparent plane for reliable click detection.
-          Slightly in front of the bricks so it catches clicks first. */}
+      {/* Click plane — full wall-sized plane for reliable click detection.
+          Rendered with near-zero opacity (invisible to eye, visible to raycaster).
+          Slightly offset inward from wall face so it's in front of bricks. */}
       <mesh
         position={[position[0], position[1], position[2]]}
         rotation={[rotation[0], rotation[1], rotation[2]]}
         onClick={handleClick}
         name={`${name}-click-plane`}
+        renderOrder={999}
       >
         <planeGeometry args={[wallWidth, wallHeight]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial
+          transparent
+          opacity={0.001}
+          depthWrite={false}
+          depthTest={false}
+          color="#ffffff"
+        />
       </mesh>
     </group>
   );

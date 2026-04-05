@@ -84,6 +84,7 @@ export function SelectionSystem(): null {
   const isMarquee = useRef(false);
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
+  const wallClickKey = useRef<WallKey | null>(null);
   const marqueeRafId = useRef<number>(0);
   // floorCache removed — drag uses math plane intersection
 
@@ -253,6 +254,23 @@ export function SelectionSystem(): null {
         }
       } else {
         dragItemId.current = null;
+      }
+
+      // Also check for wall click planes (for brick disassembly)
+      wallClickKey.current = null;
+      if (dragItemId.current === null) {
+        const allObjects: Object3D[] = [];
+        scene.traverse((obj) => {
+          if (obj.name.endsWith("-click-plane")) allObjects.push(obj);
+        });
+        const wallHits = raycaster.intersectObjects(allObjects, false);
+        if (wallHits.length > 0 && wallHits[0] !== undefined) {
+          const hitName = wallHits[0].object.name;
+          const key = hitName.replace("-click-plane", "");
+          if (key === "wall-front" || key === "wall-back" || key === "wall-left" || key === "wall-right") {
+            wallClickKey.current = key as WallKey;
+          }
+        }
       }
     }
 
@@ -446,34 +464,14 @@ export function SelectionSystem(): null {
           } else {
             useSelectionStore.getState().select(dragItemId.current);
           }
+        } else if (wallClickKey.current !== null) {
+          // Wall was clicked — trigger brick disassembly animation
+          const wk = wallClickKey.current;
+          (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wk;
+          useVisibilityStore.getState().toggleWall(wk);
+          wallClickKey.current = null;
         } else {
-          // Clicked on empty space — check if a wall click plane was hit
-          const wallClickPlanes: Object3D[] = [];
-          scene.traverse((obj) => {
-            if (obj.name.endsWith("-click-plane")) wallClickPlanes.push(obj);
-          });
-
-          if (wallClickPlanes.length > 0) {
-            const ndcX2 = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
-            const ndcY2 = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
-            raycaster.setFromCamera(_ndc.set(ndcX2, ndcY2), camera);
-            const wallHits = raycaster.intersectObjects(wallClickPlanes, false);
-            if (wallHits.length > 0 && wallHits[0] !== undefined) {
-              const hitName = wallHits[0].object.name; // e.g. "wall-front-click-plane"
-              const wallKey = hitName.replace("-click-plane", "") as WallKey;
-              if (wallKey === "wall-front" || wallKey === "wall-back" || wallKey === "wall-left" || wallKey === "wall-right") {
-                // Set global flag so BrickWall knows to animate (not instant)
-                (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wallKey;
-                useVisibilityStore.getState().toggleWall(wallKey);
-                invalidateRef.current();
-                isDragging.current = false;
-                isMarquee.current = false;
-                dragItemId.current = null;
-                return;
-              }
-            }
-          }
-
+          // Clicked on empty space — clear selection
           useSelectionStore.getState().clearSelection();
         }
         invalidateRef.current();
