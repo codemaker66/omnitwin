@@ -139,6 +139,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: false,
         isLoading: false,
       });
+      // Load space data (name, dimensions) for room geometry rendering
+      if (config.venueId !== undefined && config.spaceId !== undefined) {
+        void get().loadSpace(config.venueId, config.spaceId);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load configuration";
       set({ isLoading: false, error: message });
@@ -167,6 +171,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: false,
         isLoading: false,
       });
+
+      // Load space data for room geometry rendering
+      if (config.venueId !== undefined && config.spaceId !== undefined) {
+        void get().loadSpace(config.venueId, config.spaceId);
+      }
 
       // Track in localStorage
       const stored = JSON.parse(localStorage.getItem("omnitwin_my_configs") ?? "[]") as { configId: string; createdAt: string }[];
