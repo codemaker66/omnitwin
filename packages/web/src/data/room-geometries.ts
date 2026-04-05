@@ -114,61 +114,29 @@ const receptionPolygon: readonly (readonly [number, number])[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// 4. Robert Adam Room — two connected sections
-//    Upper: 11.4m × 7.4m (main seating/ceremony area)
-//    Lower: 5.6m × 10m (secondary space with curved wall on left)
-// Centred at origin based on combined bounding box
-// Total bounding: 11.4m wide × ~12.4m deep (upper 7.4 + lower ~5.0)
+// 4. Robert Adam Room — 9.7m × 5.6m
+// Rectangular room with a subtle curved bay window on one end wall.
+// The curve bows outward ~0.4m over a 3m span on the south wall.
+// Ceiling height 2.18m — a low, intimate, ornate room.
 // ---------------------------------------------------------------------------
 
-// Upper section: top-left at (-5.7, -6.2), bottom-right at (5.7, 1.2)
-// Lower section: left side has curved wall, right side at (2.8, 1.2) to (2.8, 6.2)
-// Curved wall on left: from (-2.8, 1.2) curving outward to approximately (-4.0, 3.7) then back to (-2.8, 6.2)
+const ROBERT_HW = 4.85; // half width (9.7/2)
+const ROBERT_HL = 2.8;  // half length (5.6/2)
 
 const robertAdamPolygon: readonly (readonly [number, number])[] = [
-  // Upper section — start top-left, clockwise
-  [-5.7, -6.2],   // top-left of upper
-  [5.7, -6.2],    // top-right of upper
-  [5.7, 1.2],     // right side of upper, down to junction
-  // Step in to lower section (narrower)
-  [2.8, 1.2],     // right edge steps in
-  [2.8, 6.2],     // bottom-right of lower
-  // Bottom wall with door indentations (4 doorways ~0.9m wide, 0.3m deep)
-  [1.4, 6.2],
-  [1.4, 6.5],     // door indent 1
-  [0.5, 6.5],
-  [0.5, 6.2],
-  [-0.5, 6.2],
-  [-0.5, 6.5],    // door indent 2
-  [-1.4, 6.5],
-  [-1.4, 6.2],
-  [-2.8, 6.2],    // bottom-left of lower
-  // Curved wall on left side of lower section (8 segments approximating an arc)
-  // Curves outward to the left from (-2.8, 6.2) up to (-2.8, 1.2)
-  [-3.3, 5.8],
-  [-3.7, 5.2],
-  [-4.0, 4.5],
-  [-4.1, 3.7],    // apex of curve
-  [-4.0, 2.9],
-  [-3.7, 2.2],
-  [-3.3, 1.6],
-  [-2.8, 1.2],    // back at junction
-  // Step out to upper section width
-  [-5.7, 1.2],    // left side of upper
-];
-
-const robertAdamFeatures: readonly RoomFeature[] = [
-  {
-    type: "platform",
-    polygon: [
-      [-2.8, 1.0],
-      [2.8, 1.0],
-      [2.8, 1.4],
-      [-2.8, 1.4],
-    ],
-    height: 0.15,
-    label: "Steps",
-  },
+  // Start top-left, clockwise
+  [-ROBERT_HW, -ROBERT_HL],
+  [ROBERT_HW, -ROBERT_HL],
+  [ROBERT_HW, ROBERT_HL],
+  // South wall — subtle curved bay window (6 segments, ~0.4m outward)
+  [1.5, ROBERT_HL],
+  [1.2, ROBERT_HL + 0.2],
+  [0.6, ROBERT_HL + 0.35],
+  [0.0, ROBERT_HL + 0.4],
+  [-0.6, ROBERT_HL + 0.35],
+  [-1.2, ROBERT_HL + 0.2],
+  [-1.5, ROBERT_HL],
+  [-ROBERT_HW, ROBERT_HL],
 ];
 
 // ---------------------------------------------------------------------------
@@ -200,7 +168,7 @@ export const roomGeometries: Readonly<Record<string, RoomGeometry>> = {
   "Robert Adam Room": {
     wallPolygon: robertAdamPolygon,
     ceilingHeight: 2.18,
-    features: robertAdamFeatures,
+    features: [],
     hasDome: false,
     domeRadius: 0,
   },
