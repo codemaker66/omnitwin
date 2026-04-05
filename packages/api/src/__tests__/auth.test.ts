@@ -192,18 +192,14 @@ describe("webhook signature verification", () => {
   });
 
   it("returns 401 when secret is set but signature headers are missing", async () => {
-    // Temporarily set the secret
     const original = process.env["CLERK_WEBHOOK_SECRET"];
     process.env["CLERK_WEBHOOK_SECRET"] = "whsec_testSecretForUnitTests123456";
 
-    // Rebuild server with the secret set
-    const { buildServer: rebuild } = await import("../index.js");
-    const freshServer = await rebuild();
+    const freshServer = await buildServer();
 
     const res = await freshServer.inject({
       method: "POST", url: "/webhooks/clerk",
       payload: { type: "user.created", data: {} },
-      // No svix-id, svix-timestamp, svix-signature headers
     });
     expect(res.statusCode).toBe(401);
     const body = JSON.parse(res.payload) as Record<string, unknown>;
@@ -217,8 +213,7 @@ describe("webhook signature verification", () => {
     const original = process.env["CLERK_WEBHOOK_SECRET"];
     process.env["CLERK_WEBHOOK_SECRET"] = "whsec_testSecretForUnitTests123456";
 
-    const { buildServer: rebuild } = await import("../index.js");
-    const freshServer = await rebuild();
+    const freshServer = await buildServer();
 
     const res = await freshServer.inject({
       method: "POST", url: "/webhooks/clerk",
