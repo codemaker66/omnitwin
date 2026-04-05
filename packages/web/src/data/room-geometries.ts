@@ -40,19 +40,7 @@ const grandHallPolygon: readonly (readonly [number, number])[] = [
   [-GRAND_HALL_HW, GRAND_HALL_HL],
 ];
 
-const grandHallFeatures: readonly RoomFeature[] = [
-  {
-    type: "platform",
-    polygon: [
-      [-GRAND_HALL_HW, -GRAND_HALL_HL],
-      [GRAND_HALL_HW, -GRAND_HALL_HL],
-      [GRAND_HALL_HW, -GRAND_HALL_HL + 2.0],
-      [-GRAND_HALL_HW, -GRAND_HALL_HL + 2.0],
-    ],
-    height: 0.8,
-    label: "Balcony",
-  },
-];
+const grandHallFeatures: readonly RoomFeature[] = [];
 
 // ---------------------------------------------------------------------------
 // 2. Saloon — 11.9m × 6.9m with alcove niches

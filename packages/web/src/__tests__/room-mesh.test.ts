@@ -45,12 +45,11 @@ describe("room-geometries data", () => {
     }
   });
 
-  it("Grand Hall has dome and balcony", async () => {
+  it("Grand Hall has dome", async () => {
     const { roomGeometries } = await import("../data/room-geometries.js");
     const gh = roomGeometries["Grand Hall"];
     expect(gh).toBeDefined();
     expect(gh?.hasDome).toBe(true);
-    expect(gh?.features.length).toBeGreaterThan(0);
   });
 
   it("fallback: rooms without matching geometry can use rectangular box", async () => {

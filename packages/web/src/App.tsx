@@ -8,23 +8,20 @@ import { RoomMesh } from "./components/editor/RoomMesh.js";
 import { SectionPlane } from "./components/SectionPlane.js";
 import { SectionSlider } from "./components/SectionSlider.js";
 import { WallTogglePanel, InvalidateOnToggle } from "./components/WallTogglePanel.js";
-import { BookmarkPanel } from "./components/BookmarkPanel.js";
 import { XrayToggle } from "./components/XrayToggle.js";
 import { MeasurementTool } from "./components/MeasurementTool.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
-import { Toolbar } from "./components/Toolbar.js";
 import { TapeMeasure } from "./components/TapeMeasure.js";
 import { SectionBoxControls } from "./components/SectionBoxControls.js";
 import { PerfMonitor } from "./components/PerfMonitor.js";
 import { PerfOverlay } from "./components/PerfOverlay.js";
-import { CatalogueDrawer } from "./components/CatalogueDrawer.js";
 import { PlacementGhost } from "./components/PlacementGhost.js";
 import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
 import { SnapGuides } from "./components/SnapGuides.js";
-import { ActionBar } from "./components/ActionBar.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
+import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
@@ -47,7 +44,6 @@ function useRoomDimensions(): SpaceDimensions {
 
     const geom = roomGeometries[space.name];
     if (geom === undefined) {
-      // Fallback: use API dimensions
       return scaleForRendering({
         width: parseFloat(space.widthM),
         length: parseFloat(space.lengthM),
@@ -69,14 +65,12 @@ export function App(): React.ReactElement {
   const space = useEditorStore((s) => s.space);
   const dimensions = useRoomDimensions();
 
-  // Update section store and bookmark store when room changes
   const ceilingHeight = dimensions.height;
   useMemo(() => {
     useSectionStore.getState().setMaxHeight(ceilingHeight);
     useBookmarkStore.getState().initialize(dimensions);
   }, [ceilingHeight, dimensions]);
 
-  // Determine which room geometry to use
   const spaceName = space?.name ?? null;
   const roomGeometry = spaceName !== null ? roomGeometries[spaceName] ?? null : null;
 
@@ -87,11 +81,11 @@ export function App(): React.ReactElement {
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
         camera={{ fov: 55, near: 0.1, far: 200 }}
+        style={{ marginLeft: 52 }}
       >
         <color attach="background" args={["#f5f5f0"]} />
         <SectionPlane />
         <InvalidateOnToggle />
-        {/* Render matched room geometry, or fall back to hardcoded Grand Hall */}
         {roomGeometry !== null ? (
           <RoomMesh geometry={roomGeometry} />
         ) : (
@@ -108,27 +102,23 @@ export function App(): React.ReactElement {
         <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>
+
+      {/* Vertical icon toolbox — left edge */}
+      <VerticalToolbox />
+
+      {/* Right-side controls */}
       <div style={{
-        position: "absolute",
-        right: 20,
-        top: "50%",
-        transform: "translateY(-50%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 12,
-        zIndex: 10,
-        pointerEvents: "auto",
+        position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+        zIndex: 10, pointerEvents: "auto",
       }}>
         <WallTogglePanel />
         <SectionSlider />
       </div>
-      <BookmarkPanel />
-      <ActionBar />
-      <Toolbar />
+
       <SectionBoxControls />
       <MeasurementOverlay />
-      <CatalogueDrawer />
+
       <ChairCountDialog
         request={chairRequest}
         onConfirm={(count) => {

@@ -77,17 +77,6 @@ describe("ceiling heights", () => {
 });
 
 describe("Grand Hall features", () => {
-  it("has a balcony platform feature", () => {
-    const geom = roomGeometries["Grand Hall"];
-    expect(geom).toBeDefined();
-    if (geom !== undefined) {
-      const balcony = geom.features.find((f) => f.label === "Balcony");
-      expect(balcony).toBeDefined();
-      expect(balcony?.type).toBe("platform");
-      expect(balcony?.height).toBe(0.8);
-    }
-  });
-
   it("has a dome", () => {
     const geom = roomGeometries["Grand Hall"];
     expect(geom?.hasDome).toBe(true);
