@@ -114,29 +114,59 @@ const receptionPolygon: readonly (readonly [number, number])[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// 4. Robert Adam Room — 9.7m × 5.6m
-// Rectangular room with a subtle curved bay window on one end wall.
-// The curve bows outward ~0.4m over a 3m span on the south wall.
-// Ceiling height 2.18m — a low, intimate, ornate room.
+// 4. Robert Adam Room — two sections, wide top + narrow bottom
+//    Upper: 11.4m wide × 7.4m deep (main ceremony/seating area)
+//    Lower: 5.6m wide × 5.0m deep (secondary space, left-aligned)
+//    Left walls are flush. Step-in is on the RIGHT side.
+//    Curved wall: LEFT side of lower section, concave (curves inward ~1.2m)
+//    Centred on the upper section's midpoint.
+//    Total bounding: 11.4m wide × 12.4m deep
 // ---------------------------------------------------------------------------
 
-const ROBERT_HW = 4.85; // half width (9.7/2)
-const ROBERT_HL = 2.8;  // half length (5.6/2)
+// Origin at centre of upper section
+const RA_UW = 5.7;  // upper half-width (11.4/2)
+const RA_UD = 3.7;  // upper half-depth (7.4/2)
+// Lower section is 5.6m wide (left-aligned with upper), 5.0m deep
+const RA_LD = 5.0;
 
 const robertAdamPolygon: readonly (readonly [number, number])[] = [
-  // Start top-left, clockwise
-  [-ROBERT_HW, -ROBERT_HL],
-  [ROBERT_HW, -ROBERT_HL],
-  [ROBERT_HW, ROBERT_HL],
-  // South wall — subtle curved bay window (6 segments, ~0.4m outward)
-  [1.5, ROBERT_HL],
-  [1.2, ROBERT_HL + 0.2],
-  [0.6, ROBERT_HL + 0.35],
-  [0.0, ROBERT_HL + 0.4],
-  [-0.6, ROBERT_HL + 0.35],
-  [-1.2, ROBERT_HL + 0.2],
-  [-1.5, ROBERT_HL],
-  [-ROBERT_HW, ROBERT_HL],
+  // Upper section — start top-left, clockwise
+  [-RA_UW, -RA_UD],                          // top-left
+  [RA_UW, -RA_UD],                           // top-right
+  [RA_UW, RA_UD],                            // bottom-right of upper
+
+  // Step IN on the right — lower section is narrower, left-aligned
+  // Lower right wall: x = left wall + 5.6m = -5.7 + 5.6 = -0.1
+  [-0.1, RA_UD],                             // step-in point
+
+  // Lower right wall going down
+  [-0.1, RA_UD + RA_LD],                     // bottom-right of lower
+
+  // Bottom wall with small door indentations (0.3m deep)
+  [-1.6, RA_UD + RA_LD],
+  [-1.6, RA_UD + RA_LD + 0.3],              // door 1
+  [-2.4, RA_UD + RA_LD + 0.3],
+  [-2.4, RA_UD + RA_LD],
+  [-3.3, RA_UD + RA_LD],
+  [-3.3, RA_UD + RA_LD + 0.3],              // door 2
+  [-4.1, RA_UD + RA_LD + 0.3],
+  [-4.1, RA_UD + RA_LD],
+
+  // Bottom-left of lower
+  [-RA_UW, RA_UD + RA_LD],
+
+  // Left wall of lower section — concave curve inward (~1.2m over 4m span)
+  // Curves from (-5.7, 8.7) up to (-5.7, 3.7), bowing RIGHT (inward)
+  [-5.7, RA_UD + RA_LD - 0.5],              // start of curve
+  [-4.9, RA_UD + RA_LD - 1.2],
+  [-4.6, RA_UD + RA_LD - 2.0],
+  [-4.5, RA_UD + RA_LD - 2.5],              // apex — 1.2m inward
+  [-4.6, RA_UD + RA_LD - 3.0],
+  [-4.9, RA_UD + RA_LD - 3.8],
+  [-5.7, RA_UD + RA_LD - 4.5],              // end of curve
+
+  // Left wall continues straight up to upper section
+  [-RA_UW, RA_UD],                           // bottom-left of upper = top-left of lower
 ];
 
 // ---------------------------------------------------------------------------
