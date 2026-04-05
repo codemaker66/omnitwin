@@ -9,24 +9,25 @@ import { AuthModal } from "./AuthModal.js";
 // ---------------------------------------------------------------------------
 
 const panelStyle: React.CSSProperties = {
-  position: "fixed", top: 20, right: 80, zIndex: 60,
-  background: "rgba(255,255,255,0.95)", borderRadius: 12,
-  padding: 12, display: "flex", flexDirection: "row", gap: 8,
-  boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid #e5e5e5",
-  fontFamily: "'Inter', sans-serif", backdropFilter: "blur(8px)",
-};
-
-const btnBase: React.CSSProperties = {
-  padding: "10px 20px", fontSize: 14, fontWeight: 600, border: "none",
-  borderRadius: 8, cursor: "pointer", transition: "background 0.2s",
+  position: "fixed", top: 16, right: 72, zIndex: 60,
+  display: "flex", flexDirection: "row", gap: 10,
+  fontFamily: "'Inter', sans-serif",
 };
 
 const saveBtn: React.CSSProperties = {
-  ...btnBase, background: "#1a1a2e", color: "#fff",
+  padding: "9px 20px", fontSize: 13, fontWeight: 500, letterSpacing: 0.3,
+  border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6,
+  cursor: "pointer", transition: "all 0.2s",
+  background: "rgba(26,26,30,0.75)", color: "rgba(255,255,255,0.85)",
+  backdropFilter: "blur(12px)", boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
 };
 
 const sendBtn: React.CSSProperties = {
-  ...btnBase, background: "#2563eb", color: "#fff",
+  padding: "9px 20px", fontSize: 13, fontWeight: 500, letterSpacing: 0.3,
+  border: "1px solid rgba(201,168,76,0.3)", borderRadius: 6,
+  cursor: "pointer", transition: "all 0.2s",
+  background: "linear-gradient(135deg, #c9a84c 0%, #a8893e 100%)",
+  color: "#1a1a1a", boxShadow: "0 2px 12px rgba(201,168,76,0.2)",
 };
 
 export function SaveSendPanel(): React.ReactElement | null {
