@@ -419,10 +419,9 @@ export function BrickWall({
         rotation={[rotation[0], rotation[1], rotation[2]]}
         name={name}
         frustumCulled={false}
-        onClick={handleClick}
       />
-      {/* Invisible click plane — allows rebuilding walls that are fully unbuilt.
-          Sits at the wall position so users can click where the wall was. */}
+      {/* Click plane — full wall-sized transparent plane for reliable click detection.
+          Slightly in front of the bricks so it catches clicks first. */}
       <mesh
         position={[position[0], position[1], position[2]]}
         rotation={[rotation[0], rotation[1], rotation[2]]}
@@ -430,7 +429,7 @@ export function BrickWall({
         name={`${name}-click-plane`}
       >
         <planeGeometry args={[wallWidth, wallHeight]} />
-        <meshBasicMaterial visible={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </group>
   );
