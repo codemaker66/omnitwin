@@ -246,7 +246,7 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
       <ambientLight intensity={0.3} />
 
-      {/* Floor */}
+      {/* Floor — polygonOffset so grid lines render cleanly on top */}
       <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial
@@ -254,6 +254,9 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
           side={DoubleSide}
           roughness={0.95}
           metalness={0}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
           clippingPlanes={noClipPlanes}
         />
       </mesh>
@@ -261,7 +264,7 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       {/* Floor grid */}
       <FloorGrid polygon={geometry.wallPolygon} />
 
-      {/* Ceiling */}
+      {/* Ceiling — polygonOffset prevents z-fighting with grid lines */}
       <mesh name="ceiling" rotation={[Math.PI / 2, 0, 0]} position={[0, ceilingHeight, 0]}>
         <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial
@@ -269,6 +272,9 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
           roughness={0.95}
           metalness={0}
           transparent
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
           clippingPlanes={sectionClipPlanes}
         />
       </mesh>
