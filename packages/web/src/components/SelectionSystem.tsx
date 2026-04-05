@@ -68,12 +68,8 @@ function screenToFloor(
  * Must be inside the R3F Canvas.
  */
 /** Finds the floor mesh in the scene (cached after first lookup). */
-function findFloor(scene: Object3D, cache: React.MutableRefObject<Object3D | null>): Object3D[] {
-  if (cache.current === null) {
-    cache.current = scene.getObjectByName("floor") ?? null;
-  }
-  return cache.current !== null ? [cache.current] : [];
-}
+// Floor mesh raycast removed — drag uses math-plane intersection instead
+// to work with any room polygon shape.
 
 /** Collects furniture group roots from the known parent group. */
 function findFurnitureGroups(scene: Object3D): Object3D[] {
@@ -89,7 +85,7 @@ export function SelectionSystem(): null {
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
   const marqueeRafId = useRef<number>(0);
-  const floorCache = useRef<Object3D | null>(null);
+  // floorCache removed — drag uses math plane intersection
 
   // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
   const invalidateRef = useRef(invalidate);
@@ -354,15 +350,12 @@ export function SelectionSystem(): null {
       }
 
       if (isDragging.current && dragItemId.current !== null) {
-        // Drag-move furniture
-        const ndcX = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
-        const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
-        raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
-
-        const floorHits = raycaster.intersectObjects(findFloor(scene, floorCache), false);
-        if (floorHits.length > 0) {
-          const hit = floorHits[0];
-          if (hit !== undefined) {
+        // Drag-move furniture — use math plane intersection (not floor mesh raycast)
+        // so dragging works regardless of floor polygon shape
+        const floorHit = screenToFloor(event.clientX, event.clientY, cachedRect, camera, raycaster);
+        if (floorHit !== null) {
+          const hit = { point: { x: floorHit.x, z: floorHit.z } };
+          {
             const selectedIds = useSelectionStore.getState().selectedIds;
             // Read placed items once for the entire handler — consistent snapshot
             const placedItems = usePlacementStore.getState().placedItems;
