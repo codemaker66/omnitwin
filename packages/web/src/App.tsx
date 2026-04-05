@@ -1,7 +1,10 @@
+import { useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
-import { GRAND_HALL_RENDER_DIMENSIONS } from "./constants/scale.js";
+import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "./constants/scale.js";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { CameraRig } from "./components/CameraRig.js";
 import { GrandHallRoom } from "./components/GrandHallRoom.js";
+import { RoomMesh } from "./components/editor/RoomMesh.js";
 import { SectionPlane } from "./components/SectionPlane.js";
 import { SectionSlider } from "./components/SectionSlider.js";
 import { WallTogglePanel, InvalidateOnToggle } from "./components/WallTogglePanel.js";
@@ -26,33 +29,56 @@ import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
 import { useChairDialogStore } from "./stores/chair-dialog-store.js";
+import { useEditorStore } from "./stores/editor-store.js";
+import { roomGeometries, computeBoundingBox } from "./data/room-geometries.js";
 
-// Initialize stores with Grand Hall dimensions
+// Initialize stores with Grand Hall dimensions (default)
 useSectionStore.getState().setMaxHeight(GRAND_HALL_RENDER_DIMENSIONS.height);
 useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
 
 /**
- * Root application component — venue planning tool.
- *
- * Canvas configured with:
- * - frameloop="demand": only re-render when invalidated (orbit/pan/zoom)
- * - dpr={[1, 2]}: cap device pixel ratio at 2x
- * - powerPreference="high-performance": hint browser to use discrete GPU
- * - Orbital camera: establishing shot looking down at the room
- *
- * Camera interaction (RTS-style, like StarCraft 2):
- * - WASD / Arrow keys: pan camera across the room
- * - Scroll wheel: zoom in/out
- * - Right-click drag: orbit (rotate around look-at point)
- * - Middle-click drag: pan
- * - Left-click: reserved for object selection
- *
- * Section slider (right side):
- * - Drag down to slice away walls/ceiling from top
- * - Drag up to restore full 3D view
+ * Computes render dimensions from room geometry polygon data.
+ * Falls back to Grand Hall dimensions if no match.
  */
+function useRoomDimensions(): SpaceDimensions {
+  const space = useEditorStore((s) => s.space);
+  return useMemo(() => {
+    if (space === null) return GRAND_HALL_RENDER_DIMENSIONS;
+
+    const geom = roomGeometries[space.name];
+    if (geom === undefined) {
+      // Fallback: use API dimensions
+      return scaleForRendering({
+        width: parseFloat(space.widthM),
+        length: parseFloat(space.lengthM),
+        height: parseFloat(space.heightM),
+      });
+    }
+
+    const bbox = computeBoundingBox(geom.wallPolygon);
+    return scaleForRendering({
+      width: bbox.width,
+      length: bbox.depth,
+      height: geom.ceilingHeight,
+    });
+  }, [space]);
+}
+
 export function App(): React.ReactElement {
   const chairRequest = useChairDialogStore((s) => s.pending);
+  const space = useEditorStore((s) => s.space);
+  const dimensions = useRoomDimensions();
+
+  // Update section store and bookmark store when room changes
+  const ceilingHeight = dimensions.height;
+  useMemo(() => {
+    useSectionStore.getState().setMaxHeight(ceilingHeight);
+    useBookmarkStore.getState().initialize(dimensions);
+  }, [ceilingHeight, dimensions]);
+
+  // Determine which room geometry to use
+  const spaceName = space?.name ?? null;
+  const roomGeometry = spaceName !== null ? roomGeometries[spaceName] ?? null : null;
 
   return (
     <>
@@ -65,7 +91,12 @@ export function App(): React.ReactElement {
         <color attach="background" args={["#f5f5f0"]} />
         <SectionPlane />
         <InvalidateOnToggle />
-        <GrandHallRoom />
+        {/* Render matched room geometry, or fall back to hardcoded Grand Hall */}
+        {roomGeometry !== null ? (
+          <RoomMesh geometry={roomGeometry} />
+        ) : (
+          <GrandHallRoom />
+        )}
         <XrayToggle />
         <MeasurementTool />
         <TapeMeasure />
@@ -74,10 +105,9 @@ export function App(): React.ReactElement {
         <SelectionSystem />
         <SnapGuides />
         <MarqueeSelect />
-        <CameraRig dimensions={GRAND_HALL_RENDER_DIMENSIONS} />
+        <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>
-      {/* Right-side toolbar: wall toggle icon + section slider */}
       <div style={{
         position: "absolute",
         right: 20,
@@ -93,13 +123,9 @@ export function App(): React.ReactElement {
         <WallTogglePanel />
         <SectionSlider />
       </div>
-      {/* Bottom-left: camera bookmarks */}
       <BookmarkPanel />
-      {/* Top-left: undo + delete */}
       <ActionBar />
-      {/* Bottom-right: radial arc toolbox (measure, x-ray, tape, box, place) */}
       <Toolbar />
-      {/* Top-left: section box face sliders (shown when box mode active) */}
       <SectionBoxControls />
       <MeasurementOverlay />
       <CatalogueDrawer />
@@ -108,7 +134,6 @@ export function App(): React.ReactElement {
         onConfirm={(count) => {
           const editId = useChairDialogStore.getState().editTableId;
           if (editId !== null) {
-            // Editing existing group
             usePlacementStore.getState().rearrangeGroup(editId, count);
           } else if (chairRequest !== null) {
             if (count > 0) {
