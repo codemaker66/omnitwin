@@ -273,12 +273,16 @@ export function BrickWall({
   const animProgress = useRef(1); // start fully built
   /** Target: 1 = built, 0 = unbuilt. */
   const animTarget = useRef(1);
+  /** True when the last visibility change was triggered by a click (animate bricks).
+   *  False when driven by camera rotation (instant show/hide, no animation). */
+  const useAnimation = useRef(false);
 
   /** Click to toggle this wall's visibility. */
   const handleClick = useCallback((event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();
     const wallKey = getWallKey(name);
     if (wallKey !== null) {
+      useAnimation.current = true;
       useVisibilityStore.getState().toggleWall(wallKey);
       invalidate();
     }
@@ -319,10 +323,20 @@ export function BrickWall({
 
     // Determine target from threshold — binary decision
     const shouldBeBuilt = surfaceOpacity >= BUILD_THRESHOLD;
-    animTarget.current = shouldBeBuilt ? 1 : 0;
+    const newTarget = shouldBeBuilt ? 1 : 0;
 
-    // Advance internal animation toward target
-    const speed = 1 / BUILD_DURATION; // progress units per second
+    // Detect if target changed (camera rotation or click)
+    if (newTarget !== animTarget.current) {
+      // If not triggered by a click, this is a camera-driven change → no animation
+      if (!useAnimation.current) {
+        // Snap instantly
+        animProgress.current = newTarget;
+      }
+      animTarget.current = newTarget;
+    }
+
+    // Advance internal animation toward target (only matters if useAnimation is true)
+    const speed = 1 / BUILD_DURATION;
     const clampedDelta = Math.min(delta, 0.1);
     const step = speed * clampedDelta;
 
@@ -331,6 +345,11 @@ export function BrickWall({
       animProgress.current = Math.min(animTarget.current, prev + step);
     } else if (animTarget.current < prev) {
       animProgress.current = Math.max(animTarget.current, prev - step);
+    }
+
+    // Clear the animation flag once animation completes
+    if (Math.abs(animProgress.current - animTarget.current) < 0.001) {
+      useAnimation.current = false;
     }
 
     const progress = animProgress.current;
