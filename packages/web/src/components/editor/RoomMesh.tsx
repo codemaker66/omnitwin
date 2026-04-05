@@ -1,27 +1,25 @@
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Shape, DoubleSide, BackSide, BufferGeometry, Float32BufferAttribute, Mesh, MeshStandardMaterial } from "three";
+import { Shape, DoubleSide, BackSide, BufferGeometry, Float32BufferAttribute } from "three";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
-import { FLOOR_COLOR, WALL_COLOR, CEILING_COLOR, GRID_COLOR, DOME_COLOR } from "../../constants/colors.js";
+import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
 import { sectionClipPlanes, noClipPlanes } from "../SectionPlane.js";
-import { useVisibilityStore } from "../../stores/visibility-store.js";
+import { useVisibilityStore, type WallKey } from "../../stores/visibility-store.js";
+import { BrickWall } from "../BrickWall.js";
 
 // ---------------------------------------------------------------------------
 // RoomMesh — renders accurate room geometry from polygon data
-// Walls auto-hide when the camera is behind them (looking through).
+// Walls use BrickWall for click-to-toggle brick animation.
+// Camera-based auto-fade driven via the visibility store.
 // ---------------------------------------------------------------------------
 
 const GRID_Y = 0.002;
 
-/**
- * Converts a polygon of [x,z] metre coords to a Three.js Shape in render space.
- */
 function polygonToShape(polygon: readonly (readonly [number, number])[]): Shape {
   const shape = new Shape();
   const first = polygon[0];
   if (first === undefined) return shape;
-
   shape.moveTo(toRenderSpace(first[0]), toRenderSpace(first[1]));
   for (let i = 1; i < polygon.length; i++) {
     const pt = polygon[i];
@@ -34,7 +32,7 @@ function polygonToShape(polygon: readonly (readonly [number, number])[]): Shape 
 }
 
 // ---------------------------------------------------------------------------
-// Wall segment data — precomputed from polygon
+// Wall segment — precomputed from polygon
 // ---------------------------------------------------------------------------
 
 interface WallSegment {
@@ -42,14 +40,22 @@ interface WallSegment {
   readonly cz: number;
   readonly width: number;
   readonly rotY: number;
-  /** Outward-facing normal (points outside the room). */
   readonly normalX: number;
   readonly normalZ: number;
+  /** Cardinal wall key this segment maps to (based on dominant normal direction). */
+  readonly wallKey: WallKey;
+}
+
+/** Maps a wall outward normal to the nearest cardinal WallKey. */
+function normalToWallKey(nx: number, nz: number): WallKey {
+  if (Math.abs(nx) > Math.abs(nz)) {
+    return nx > 0 ? "wall-right" : "wall-left";
+  }
+  return nz > 0 ? "wall-front" : "wall-back";
 }
 
 function computeWallSegments(polygon: readonly (readonly [number, number])[]): readonly WallSegment[] {
   const segments: WallSegment[] = [];
-
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i];
     const b = polygon[(i + 1) % polygon.length];
@@ -65,104 +71,46 @@ function computeWallSegments(polygon: readonly (readonly [number, number])[]): r
     const dx = bx - ax;
     const dz = bz - az;
     const len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 0.01) continue; // skip degenerate segments
     const rotY = -Math.atan2(dz, dx);
 
-    // Outward normal (perpendicular to wall, pointing outside)
-    // For clockwise winding, the outward normal is (dz, -dx) normalized
+    // Outward normal for clockwise winding
     const nx = dz / len;
     const nz = -dx / len;
 
-    segments.push({ cx, cz, width: len, rotY, normalX: nx, normalZ: nz });
+    segments.push({ cx, cz, width: len, rotY, normalX: nx, normalZ: nz, wallKey: normalToWallKey(nx, nz) });
   }
-
   return segments;
 }
 
 // ---------------------------------------------------------------------------
-// WallSegments — renders walls with camera-based auto-transparency
+// CameraWallDriver — updates visibility store from camera position
 // ---------------------------------------------------------------------------
 
-function WallSegments({ polygon, ceilingHeight }: {
-  readonly polygon: readonly (readonly [number, number])[];
-  readonly ceilingHeight: number;
-}): React.ReactElement {
-  const walls = useMemo(() => computeWallSegments(polygon), [polygon]);
-  const { camera } = useThree();
-  const meshRefs = useRef<(Mesh | null)[]>([]);
+function CameraWallDriver(): null {
+  const { camera, invalidate } = useThree();
 
-  useFrame(() => {
+  useFrame((_state, delta) => {
     const mode = useVisibilityStore.getState().mode;
+    if (mode === "manual") return;
 
-    for (let i = 0; i < walls.length; i++) {
-      const mesh = meshRefs.current[i];
-      const wall = walls[i];
-      if (mesh === null || mesh === undefined || wall === undefined) continue;
-
-      const mat = mesh.material;
-      if (!(mat instanceof MeshStandardMaterial)) continue;
-
-      if (mode === "manual") {
-        // Manual mode: all walls fully visible
-        mat.opacity = 1;
-        mesh.visible = true;
-        continue;
-      }
-
-      // Auto mode: hide walls the camera is behind
-      // Dot product of (camera - wallCenter) with outward normal
-      // Positive = camera is on the outside → hide the wall
-      // Negative = camera is on the inside → show the wall
-      const toCamX = camera.position.x - wall.cx;
-      const toCamZ = camera.position.z - wall.cz;
-      const dot = toCamX * wall.normalX + toCamZ * wall.normalZ;
-
-      // Smooth transition zone
-      const targetOpacity = dot > 0.5 ? 0 : dot > -0.5 ? 1 - (dot + 0.5) : 1;
-
-      // Lerp toward target
-      const current = mat.opacity;
-      const speed = 4; // opacity units per second (fast but smooth)
-      const newOpacity = current + Math.sign(targetOpacity - current) * Math.min(Math.abs(targetOpacity - current), speed * 0.016);
-
-      mat.opacity = newOpacity;
-      mat.transparent = true;
-      mesh.visible = newOpacity > 0.01;
+    const transitioning = useVisibilityStore.getState().updateAutoWalls(
+      camera.position.x, camera.position.z, delta,
+    );
+    if (transitioning) {
+      invalidate();
     }
   });
 
-  const halfH = ceilingHeight / 2;
-
-  return (
-    <>
-      {walls.map((w, i) => (
-        <mesh
-          key={`wall-${String(i)}`}
-          name={`wall-${String(i)}`}
-          ref={(el) => { meshRefs.current[i] = el; }}
-          position={[w.cx, halfH, w.cz]}
-          rotation={[0, w.rotY, 0]}
-        >
-          <planeGeometry args={[w.width, ceilingHeight]} />
-          <meshStandardMaterial
-            color={WALL_COLOR}
-            roughness={0.92}
-            metalness={0}
-            transparent
-            opacity={1}
-            clippingPlanes={sectionClipPlanes}
-          />
-        </mesh>
-      ))}
-    </>
-  );
+  return null;
 }
 
-/**
- * Renders a feature (platform/balcony) as an extruded box.
- */
+// ---------------------------------------------------------------------------
+// Feature mesh
+// ---------------------------------------------------------------------------
+
 function FeatureMesh({ feature }: { readonly feature: RoomFeature }): React.ReactElement {
   const shape = useMemo(() => polygonToShape(feature.polygon), [feature.polygon]);
-
   return (
     <mesh
       name={`feature-${feature.label.toLowerCase().replace(/\s+/g, "-")}`}
@@ -170,19 +118,15 @@ function FeatureMesh({ feature }: { readonly feature: RoomFeature }): React.Reac
       rotation={[-Math.PI / 2, 0, 0]}
     >
       <extrudeGeometry args={[shape, { depth: feature.height, bevelEnabled: false }]} />
-      <meshStandardMaterial
-        color="#8a7a6a"
-        roughness={0.85}
-        metalness={0}
-        clippingPlanes={noClipPlanes}
-      />
+      <meshStandardMaterial color="#8a7a6a" roughness={0.85} metalness={0} clippingPlanes={noClipPlanes} />
     </mesh>
   );
 }
 
-/**
- * Floor grid — 1m intervals within room bounding box.
- */
+// ---------------------------------------------------------------------------
+// Floor grid
+// ---------------------------------------------------------------------------
+
 function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, number])[] }): React.ReactElement {
   const gridGeom = useMemo(() => {
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -194,7 +138,6 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
       if (rz < minZ) minZ = rz;
       if (rz > maxZ) maxZ = rz;
     }
-
     const margin = 2;
     minX -= margin; maxX += margin;
     minZ -= margin; maxZ += margin;
@@ -206,7 +149,6 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
     for (let x = Math.floor(minX); x <= maxX + 0.001; x += 1) {
       vertices.push(x, 0, minZ, x, 0, maxZ);
     }
-
     const geom = new BufferGeometry();
     geom.setAttribute("position", new Float32BufferAttribute(vertices, 3));
     return geom;
@@ -229,16 +171,8 @@ interface RoomMeshProps {
 
 export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
+  const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
-  const { invalidate } = useThree();
-
-  // Keep rendering during wall transitions
-  useFrame(() => {
-    const mode = useVisibilityStore.getState().mode;
-    if (mode !== "manual") {
-      invalidate();
-    }
-  });
 
   return (
     <group name="room-mesh">
@@ -246,7 +180,10 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
       <ambientLight intensity={0.3} />
 
-      {/* Floor — polygonOffset so grid lines render cleanly on top */}
+      {/* Camera-driven wall auto-fade */}
+      <CameraWallDriver />
+
+      {/* Floor */}
       <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial
@@ -264,24 +201,29 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
       {/* Floor grid */}
       <FloorGrid polygon={geometry.wallPolygon} />
 
-      {/* Ceiling omitted — not visible in a top-down venue planning view
-          and ShapeGeometry/planeGeometry both cause z-fighting artifacts
-          when the camera moves. Walls define the room outline. */}
-
-      {/* Walls — auto-transparency driven by camera position */}
-      <WallSegments polygon={geometry.wallPolygon} ceilingHeight={ceilingHeight} />
+      {/* Walls — BrickWall instances with click-to-toggle animation.
+          Each segment maps to a cardinal WallKey so the visibility store
+          drives auto-fade from camera position AND click toggles. */}
+      {walls.map((w, i) => (
+        <BrickWall
+          key={`wall-${String(i)}`}
+          name={w.wallKey}
+          wallWidth={w.width}
+          wallHeight={ceilingHeight}
+          position={[w.cx, ceilingHeight / 2, w.cz]}
+          rotation={[0, w.rotY, 0]}
+          color={WALL_COLOR}
+        />
+      ))}
 
       {/* Features (balconies, platforms) */}
       {geometry.features.map((f, i) => (
         <FeatureMesh key={`feature-${String(i)}`} feature={f} />
       ))}
 
-      {/* Dome (Grand Hall) */}
+      {/* Dome */}
       {geometry.hasDome && geometry.domeRadius > 0 && (
-        <mesh
-          name="dome"
-          position={[0, ceilingHeight + 0.005, 0]}
-        >
+        <mesh name="dome" position={[0, ceilingHeight + 0.005, 0]}>
           <sphereGeometry args={[geometry.domeRadius, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
           <meshStandardMaterial
             color={DOME_COLOR}
