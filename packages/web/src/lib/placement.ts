@@ -328,22 +328,18 @@ export function checkCollision(
 // Placed object creation
 // ---------------------------------------------------------------------------
 
-/** Counter for generating unique IDs within a session. */
-let nextPlacedId = 1;
-
-/** Resets the ID counter (for testing). */
-export function resetPlacedIdCounter(): void {
-  nextPlacedId = 1;
-}
-
 /**
- * Generates a unique ID for a placed object.
- * Format: "placed-{n}" — session-local, not UUID (that's for persistence).
+ * Generates a UUID for a placed object.
+ * Matches the API's z.string().uuid() validation so objects can be
+ * persisted without ID translation.
  */
 export function generatePlacedId(): string {
-  const id = `placed-${String(nextPlacedId)}`;
-  nextPlacedId += 1;
-  return id;
+  return crypto.randomUUID();
+}
+
+/** No-op — UUIDs are globally unique, no counter to reset. Kept for test compat. */
+export function resetPlacedIdCounter(): void {
+  // no-op
 }
 
 /** A furniture item placed in the scene. */

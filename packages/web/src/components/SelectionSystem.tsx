@@ -75,7 +75,7 @@ function screenToFloor(
 function findFurnitureGroups(scene: Object3D): Object3D[] {
   const parent = scene.getObjectByName("placed-furniture");
   if (parent === undefined) return [];
-  return parent.children.filter((c) => c.name.startsWith("furniture-placed-"));
+  return parent.children.filter((c) => c.name.startsWith("furniture-"));
 }
 
 const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
@@ -266,7 +266,7 @@ export function SelectionSystem(): null {
         if (dragItemId.current === null) {
           let current: Object3D | null = inter.object;
           while (current !== null) {
-            if (current.name.startsWith("furniture-placed-") && !current.name.endsWith("-mesh")) {
+            if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
               dragItemId.current = current.name.replace("furniture-", "");
               break;
             }
@@ -512,7 +512,7 @@ export function SelectionSystem(): null {
       let current: Object3D | null = hitObj;
       let placedId: string | null = null;
       while (current !== null) {
-        if (current.name.startsWith("furniture-placed-")) {
+        if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
           placedId = current.name.replace("furniture-", "");
           break;
         }

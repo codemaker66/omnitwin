@@ -179,29 +179,22 @@ describe("isWithinRoomBounds", () => {
 // generatePlacedId / createPlacedItem
 // ---------------------------------------------------------------------------
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 describe("generatePlacedId", () => {
-  beforeEach(() => { resetPlacedIdCounter(); });
-
-  it("generates sequential IDs", () => {
-    expect(generatePlacedId()).toBe("placed-1");
-    expect(generatePlacedId()).toBe("placed-2");
-    expect(generatePlacedId()).toBe("placed-3");
-  });
-
-  it("resetPlacedIdCounter resets to 1", () => {
-    generatePlacedId();
-    generatePlacedId();
-    resetPlacedIdCounter();
-    expect(generatePlacedId()).toBe("placed-1");
+  it("generates valid UUIDs", () => {
+    const id1 = generatePlacedId();
+    const id2 = generatePlacedId();
+    expect(id1).toMatch(UUID_RE);
+    expect(id2).toMatch(UUID_RE);
+    expect(id1).not.toBe(id2);
   });
 });
 
 describe("createPlacedItem", () => {
-  beforeEach(() => { resetPlacedIdCounter(); });
-
   it("creates a placed item with correct fields", () => {
     const item = createPlacedItem("round-table-6ft", 5, -3, Math.PI / 4);
-    expect(item.id).toBe("placed-1");
+    expect(item.id).toMatch(UUID_RE);
     expect(item.catalogueItemId).toBe("round-table-6ft");
     expect(item.x).toBe(5);
     expect(item.z).toBe(-3);
