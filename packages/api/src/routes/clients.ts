@@ -40,42 +40,71 @@ export async function clientRoutes(
     }
 
     const pattern = `%${query.data.q}%`;
+    const venueId = request.user.venueId;
+    const isAdmin = request.user.role === "admin";
 
-    // Search users
+    // Search users — only those who have configurations or enquiries at this venue
+    const venueUserFilter = isAdmin
+      ? undefined
+      : sql`(
+          EXISTS (SELECT 1 FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)
+          OR EXISTS (SELECT 1 FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})
+        )`;
+
     const matchedUsers = await db.select({
       id: users.id,
       displayName: users.displayName,
       organizationName: users.organizationName,
       email: users.email,
       phone: users.phone,
-      configurationCount: sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`,
-      enquiryCount: sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`,
+      configurationCount: isAdmin
+        ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
+        : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
+      enquiryCount: isAdmin
+        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
+        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
     })
       .from(users)
-      .where(or(
-        ilike(users.displayName, pattern),
-        ilike(users.organizationName, pattern),
-        ilike(users.email, pattern),
+      .where(and(
+        or(
+          ilike(users.displayName, pattern),
+          ilike(users.organizationName, pattern),
+          ilike(users.email, pattern),
+        ),
+        venueUserFilter,
       ))
       .limit(20);
 
-    // Search guest leads
+    // Search guest leads — only those with enquiries at this venue
+    const venueLeadFilter = isAdmin
+      ? undefined
+      : sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${venueId})`;
+
     const matchedLeads = await db.select({
       id: guestLeads.id,
       email: guestLeads.email,
       phone: guestLeads.phone,
       name: guestLeads.name,
-      enquiryCount: sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL)`,
+      enquiryCount: isAdmin
+        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL)`
+        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${venueId})`,
       convertedToUserId: guestLeads.convertedToUserId,
     })
       .from(guestLeads)
-      .where(or(
-        ilike(guestLeads.name, pattern),
-        ilike(guestLeads.email, pattern),
+      .where(and(
+        or(
+          ilike(guestLeads.name, pattern),
+          ilike(guestLeads.email, pattern),
+        ),
+        venueLeadFilter,
       ))
       .limit(20);
 
-    // Search configurations by name (return owning user info)
+    // Search configurations — scoped to venue
+    const venueConfigFilter = isAdmin
+      ? undefined
+      : eq(configurations.venueId, venueId ?? "");
+
     const matchedConfigs = await db.select({
       id: configurations.id,
       name: configurations.name,
@@ -87,6 +116,7 @@ export async function clientRoutes(
       .where(and(
         ilike(configurations.name, pattern),
         isNull(configurations.deletedAt),
+        venueConfigFilter,
       ))
       .limit(20);
 
@@ -130,6 +160,9 @@ export async function clientRoutes(
       return reply.status(404).send({ error: "User not found", code: "NOT_FOUND" });
     }
 
+    const profileVenueId = request.user.venueId;
+    const profileIsAdmin = request.user.role === "admin";
+
     const configs = await db.select({
       id: configurations.id,
       name: configurations.name,
@@ -138,7 +171,11 @@ export async function clientRoutes(
       createdAt: configurations.createdAt,
     })
       .from(configurations)
-      .where(and(eq(configurations.userId, params.data.userId), isNull(configurations.deletedAt)));
+      .where(and(
+        eq(configurations.userId, params.data.userId),
+        isNull(configurations.deletedAt),
+        profileIsAdmin ? undefined : eq(configurations.venueId, profileVenueId ?? ""),
+      ));
 
     const userEnquiries = await db.select({
       id: enquiries.id,
@@ -148,7 +185,10 @@ export async function clientRoutes(
       spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
     })
       .from(enquiries)
-      .where(eq(enquiries.userId, params.data.userId));
+      .where(and(
+        eq(enquiries.userId, params.data.userId),
+        profileIsAdmin ? undefined : eq(enquiries.venueId, profileVenueId ?? ""),
+      ));
 
     return {
       data: {
@@ -181,6 +221,9 @@ export async function clientRoutes(
       return reply.status(404).send({ error: "Guest lead not found", code: "NOT_FOUND" });
     }
 
+    const leadVenueId = request.user.venueId;
+    const leadIsAdmin = request.user.role === "admin";
+
     const leadEnquiries = await db.select({
       id: enquiries.id,
       state: enquiries.state,
@@ -190,7 +233,11 @@ export async function clientRoutes(
       createdAt: enquiries.createdAt,
     })
       .from(enquiries)
-      .where(and(eq(enquiries.guestEmail, lead.email), isNull(enquiries.userId)));
+      .where(and(
+        eq(enquiries.guestEmail, lead.email),
+        isNull(enquiries.userId),
+        leadIsAdmin ? undefined : eq(enquiries.venueId, leadVenueId ?? ""),
+      ));
 
     return {
       data: {
