@@ -2,9 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { files } from "../db/schema.js";
+import { files, spaces, enquiries } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
+import { canManageVenue } from "../utils/query.js";
 import type { Env } from "../env.js";
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,47 @@ async function createPresignedUrl(
 }
 
 // ---------------------------------------------------------------------------
+// Authorization — verify user can access the referenced resource
+// ---------------------------------------------------------------------------
+
+async function verifyContextAccess(
+  db: Database,
+  user: { id: string; role: string; venueId: string | null },
+  context: string,
+  contextId: string,
+): Promise<boolean> {
+  // Admins can access everything
+  if (user.role === "admin") return true;
+
+  // Assets are global catalogue items — any authenticated user can upload
+  if (context === "asset") return true;
+
+  if (context === "venue") {
+    // Must be staff/hallkeeper at this venue
+    return canManageVenue(user as Parameters<typeof canManageVenue>[0], contextId);
+  }
+
+  if (context === "space") {
+    // Look up the space's venue, then check venue access
+    const [space] = await db.select({ venueId: spaces.venueId })
+      .from(spaces).where(eq(spaces.id, contextId)).limit(1);
+    if (space === undefined) return false;
+    return canManageVenue(user as Parameters<typeof canManageVenue>[0], space.venueId);
+  }
+
+  if (context === "enquiry") {
+    // User must own the enquiry OR be venue staff
+    const [enq] = await db.select({ userId: enquiries.userId, venueId: enquiries.venueId })
+      .from(enquiries).where(eq(enquiries.id, contextId)).limit(1);
+    if (enq === undefined) return false;
+    if (enq.userId === user.id) return true;
+    return canManageVenue(user as Parameters<typeof canManageVenue>[0], enq.venueId);
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -97,6 +139,12 @@ export async function uploadRoutes(
     const parsed = PresignedBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    // Verify user can access the referenced resource
+    const allowed = await verifyContextAccess(db, request.user, parsed.data.context, parsed.data.contextId);
+    if (!allowed) {
+      return reply.status(403).send({ error: "You do not have access to this resource", code: "FORBIDDEN" });
     }
 
     // Check R2 is configured
@@ -130,6 +178,12 @@ export async function uploadRoutes(
     const params = ListFilesParams.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+
+    // Verify user can access the referenced resource
+    const allowed = await verifyContextAccess(db, request.user, params.data.context, params.data.contextId);
+    if (!allowed) {
+      return reply.status(403).send({ error: "You do not have access to this resource", code: "FORBIDDEN" });
     }
 
     const rows = await db.select()
