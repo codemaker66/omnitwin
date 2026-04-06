@@ -45,8 +45,9 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
 
   // --- Plugins ---
 
+  const allowedOrigins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
   await server.register(cors, {
-    origin: true,
+    origin: allowedOrigins,
     credentials: true,
   });
 

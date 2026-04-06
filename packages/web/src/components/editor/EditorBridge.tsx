@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useEditorStore, type EditorObject } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import type { PlacedItem } from "../../lib/placement.js";
 
 // ---------------------------------------------------------------------------
@@ -68,7 +69,11 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
 export function EditorBridge(): null {
   const editorObjects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
-  const isAuthenticated = useRef(false);
+  const authState = useAuthStore((s) => s.isAuthenticated);
+  const isAuthenticated = useRef(authState);
+
+  // Keep auth ref in sync so auto-save uses the correct endpoint
+  useEffect(() => { isAuthenticated.current = authState; }, [authState]);
 
   // Track whether we're currently pushing from editor→placement to avoid feedback loops
   const syncing = useRef(false);

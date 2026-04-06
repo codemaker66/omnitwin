@@ -101,8 +101,10 @@ export async function authenticate(
 
   const token = authHeader.slice(7);
 
-  // In test mode, accept mock tokens (JSON-encoded user objects)
-  if (token.startsWith("{")) {
+  // In test mode ONLY, accept mock tokens (JSON-encoded user objects).
+  // This MUST be gated behind NODE_ENV to prevent production exploitation.
+  const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
+  if (isTest && token.startsWith("{")) {
     try {
       const mockUser = JSON.parse(token) as JwtUser;
       request.user = mockUser;

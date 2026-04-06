@@ -87,21 +87,7 @@ type EditorStore = EditorState & EditorActions;
 
 let localIdCounter = 0;
 
-// ---------------------------------------------------------------------------
-// Auto-save debounce
-// ---------------------------------------------------------------------------
-
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function scheduleAutoSave(get: () => EditorStore, isAuthenticated: boolean): void {
-  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(() => {
-    const state = get();
-    if (state.isDirty && !state.isSaving && state.configId !== null) {
-      void state.saveToServer(isAuthenticated);
-    }
-  }, 3000);
-}
+// Auto-save is owned by EditorBridge — no internal debounce needed here.
 
 // ---------------------------------------------------------------------------
 // Store
@@ -199,7 +185,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       scale: 1, sortOrder: get().objects.length,
     };
     set((s) => ({ objects: [...s.objects, obj], isDirty: true }));
-    scheduleAutoSave(get, false);
+
   },
 
   updateObject: (objectId, transform) => {
@@ -207,7 +193,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       objects: s.objects.map((o) => o.id === objectId ? { ...o, ...transform } : o),
       isDirty: true,
     }));
-    scheduleAutoSave(get, false);
+
   },
 
   removeObject: (objectId) => {
@@ -216,7 +202,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       selectedObjectId: s.selectedObjectId === objectId ? null : s.selectedObjectId,
     }));
-    scheduleAutoSave(get, false);
+
   },
 
   selectObject: (id) => { set({ selectedObjectId: id }); },
@@ -245,7 +231,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   reset: () => {
-    if (autoSaveTimer !== null) clearTimeout(autoSaveTimer);
     set(INITIAL_STATE);
   },
 }));

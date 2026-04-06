@@ -68,8 +68,9 @@ export async function registerAutoSave(
     let userRole: string;
     let userVenueId: string | null;
     try {
-      // In test mode, accept JSON-encoded mock tokens
-      if (token.startsWith("{")) {
+      // In test mode ONLY, accept JSON-encoded mock tokens
+      const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
+      if (isTest && token.startsWith("{")) {
         const mock = JSON.parse(token) as { id: string; role: string; venueId: string | null };
         userId = mock.id;
         userRole = mock.role;

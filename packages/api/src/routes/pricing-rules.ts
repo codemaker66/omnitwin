@@ -137,8 +137,9 @@ export async function pricingRuleRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
+    // Verify rule exists AND belongs to the URL venue (prevents cross-venue updates)
     const [existing] = await db.select().from(pricingRules)
-      .where(and(eq(pricingRules.id, params.data.id), isNull(pricingRules.deletedAt)))
+      .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
       .limit(1);
     if (existing === undefined) {
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
@@ -177,8 +178,9 @@ export async function pricingRuleRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Verify rule belongs to the URL venue
     const [existing] = await db.select().from(pricingRules)
-      .where(and(eq(pricingRules.id, params.data.id), isNull(pricingRules.deletedAt)))
+      .where(and(eq(pricingRules.id, params.data.id), eq(pricingRules.venueId, params.data.venueId), isNull(pricingRules.deletedAt)))
       .limit(1);
     if (existing === undefined) {
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
