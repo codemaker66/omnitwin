@@ -132,38 +132,20 @@ export async function registerAutoSave(
           return;
         }
 
-        // Handle deletes
-        if (deletes.length > 0) {
-          await db.delete(placedObjects).where(
-            and(
-              inArray(placedObjects.id, deletes),
-              eq(placedObjects.configurationId, configId),
-            ),
-          );
-        }
-
-        // Handle upserts
+        // Atomic flush: deletes + updates + inserts in one transaction
         const toInsert = updates.filter((o) => o.id === undefined);
         const toUpdate = updates.filter((o) => o.id !== undefined);
 
-        for (const obj of toUpdate) {
-          if (obj.id === undefined) continue;
-          await db.update(placedObjects).set({
-            assetDefinitionId: obj.assetId,
-            positionX: String(obj.position.x),
-            positionY: String(obj.position.y),
-            positionZ: String(obj.position.z),
-            rotationX: String(obj.rotation.x),
-            rotationY: String(obj.rotation.y),
-            rotationZ: String(obj.rotation.z),
-            scale: String(obj.scale),
-          }).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
-        }
+        await db.transaction(async (tx) => {
+          if (deletes.length > 0) {
+            await tx.delete(placedObjects).where(
+              and(inArray(placedObjects.id, deletes), eq(placedObjects.configurationId, configId)),
+            );
+          }
 
-        if (toInsert.length > 0) {
-          await db.insert(placedObjects).values(
-            toInsert.map((obj) => ({
-              configurationId: configId,
+          for (const obj of toUpdate) {
+            if (obj.id === undefined) continue;
+            await tx.update(placedObjects).set({
               assetDefinitionId: obj.assetId,
               positionX: String(obj.position.x),
               positionY: String(obj.position.y),
@@ -172,9 +154,25 @@ export async function registerAutoSave(
               rotationY: String(obj.rotation.y),
               rotationZ: String(obj.rotation.z),
               scale: String(obj.scale),
-            })),
-          );
-        }
+            }).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
+          }
+
+          if (toInsert.length > 0) {
+            await tx.insert(placedObjects).values(
+              toInsert.map((obj) => ({
+                configurationId: configId,
+                assetDefinitionId: obj.assetId,
+                positionX: String(obj.position.x),
+                positionY: String(obj.position.y),
+                positionZ: String(obj.position.z),
+                rotationX: String(obj.rotation.x),
+                rotationY: String(obj.rotation.y),
+                rotationZ: String(obj.rotation.z),
+                scale: String(obj.scale),
+              })),
+            );
+          }
+        });
 
         const objectCount = updates.length + deletes.length;
         socket.send(JSON.stringify({

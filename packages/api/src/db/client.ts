@@ -1,19 +1,22 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle, type NeonDatabase } from "drizzle-orm/neon-serverless";
 import * as schema from "./schema.js";
 
 // ---------------------------------------------------------------------------
-// Database client — Neon serverless + Drizzle ORM
+// Database client — Neon serverless (WebSocket) + Drizzle ORM
+//
+// Uses the WebSocket-based Pool driver instead of HTTP. This enables
+// db.transaction() for atomic multi-statement operations (batch save).
 // ---------------------------------------------------------------------------
 
-/** Type alias for the database instance (avoids heavy generic expansion). */
-export type Database = NeonHttpDatabase<typeof schema>;
+/** Type alias for the database instance. */
+export type Database = NeonDatabase<typeof schema>;
 
 /**
- * Creates a Drizzle ORM instance connected to Neon via HTTP.
- * Uses @neondatabase/serverless (HTTP/WebSocket) — not node-postgres.
+ * Creates a Drizzle ORM instance connected to Neon via WebSocket Pool.
+ * Supports db.transaction() for atomic operations.
  */
 export function createDb(databaseUrl: string): Database {
-  const sql = neon(databaseUrl);
-  return drizzle(sql, { schema });
+  const pool = new Pool({ connectionString: databaseUrl });
+  return drizzle(pool, { schema });
 }

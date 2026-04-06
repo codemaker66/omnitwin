@@ -235,71 +235,72 @@ export async function placedObjectRoutes(
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
 
-    // Separate items with IDs (updates) from new items (inserts)
+    // Full-sync batch: delete stale + update existing + insert new, all atomic.
     const toUpdate = parsed.data.objects.filter((o) => o.id !== undefined);
     const toInsert = parsed.data.objects.filter((o) => o.id === undefined);
+    const configId = params.data.configId;
 
-    const results: (typeof placedObjects.$inferSelect)[] = [];
+    const results = await db.transaction(async (tx) => {
+      const txResults: (typeof placedObjects.$inferSelect)[] = [];
 
-    // Delete objects not in the batch (full sync)
-    const batchIds = toUpdate.map((o) => o.id).filter((id): id is string => id !== undefined);
-    if (batchIds.length > 0) {
-      // Delete objects in this config that are NOT in the batch
-      const existing = await db.select({ id: placedObjects.id })
-        .from(placedObjects)
-        .where(eq(placedObjects.configurationId, params.data.configId));
+      // Delete objects not in the batch
+      const batchIds = toUpdate.map((o) => o.id).filter((id): id is string => id !== undefined);
+      if (batchIds.length > 0) {
+        const existing = await tx.select({ id: placedObjects.id })
+          .from(placedObjects)
+          .where(eq(placedObjects.configurationId, configId));
 
-      const existingIds = existing.map((e) => e.id);
-      const toDelete = existingIds.filter((id) => !batchIds.includes(id));
-      if (toDelete.length > 0) {
-        await db.delete(placedObjects).where(inArray(placedObjects.id, toDelete));
+        const toDelete = existing.map((e) => e.id).filter((id) => !batchIds.includes(id));
+        if (toDelete.length > 0) {
+          await tx.delete(placedObjects).where(inArray(placedObjects.id, toDelete));
+        }
+      } else {
+        await tx.delete(placedObjects).where(eq(placedObjects.configurationId, configId));
       }
-    } else {
-      // No updates — delete all existing objects (full replace)
-      await db.delete(placedObjects)
-        .where(eq(placedObjects.configurationId, params.data.configId));
-    }
 
-    // Update existing objects
-    for (const obj of toUpdate) {
-      if (obj.id === undefined) continue;
-      const [updated] = await db.update(placedObjects)
-        .set({
-          assetDefinitionId: obj.assetDefinitionId,
-          positionX: String(obj.positionX),
-          positionY: String(obj.positionY),
-          positionZ: String(obj.positionZ),
-          rotationX: String(obj.rotationX),
-          rotationY: String(obj.rotationY),
-          rotationZ: String(obj.rotationZ),
-          scale: String(obj.scale),
-          sortOrder: obj.sortOrder,
-          metadata: obj.metadata ?? null,
-        })
-        .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, params.data.configId)))
-        .returning();
-      if (updated !== undefined) results.push(updated);
-    }
+      // Update existing
+      for (const obj of toUpdate) {
+        if (obj.id === undefined) continue;
+        const [updated] = await tx.update(placedObjects)
+          .set({
+            assetDefinitionId: obj.assetDefinitionId,
+            positionX: String(obj.positionX),
+            positionY: String(obj.positionY),
+            positionZ: String(obj.positionZ),
+            rotationX: String(obj.rotationX),
+            rotationY: String(obj.rotationY),
+            rotationZ: String(obj.rotationZ),
+            scale: String(obj.scale),
+            sortOrder: obj.sortOrder,
+            metadata: obj.metadata ?? null,
+          })
+          .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
+          .returning();
+        if (updated !== undefined) txResults.push(updated);
+      }
 
-    // Insert new objects
-    if (toInsert.length > 0) {
-      const inserted = await db.insert(placedObjects)
-        .values(toInsert.map((obj) => ({
-          configurationId: params.data.configId,
-          assetDefinitionId: obj.assetDefinitionId,
-          positionX: String(obj.positionX),
-          positionY: String(obj.positionY),
-          positionZ: String(obj.positionZ),
-          rotationX: String(obj.rotationX),
-          rotationY: String(obj.rotationY),
-          rotationZ: String(obj.rotationZ),
-          scale: String(obj.scale),
-          sortOrder: obj.sortOrder,
-          metadata: obj.metadata ?? null,
-        })))
-        .returning();
-      results.push(...inserted);
-    }
+      // Insert new
+      if (toInsert.length > 0) {
+        const inserted = await tx.insert(placedObjects)
+          .values(toInsert.map((obj) => ({
+            configurationId: configId,
+            assetDefinitionId: obj.assetDefinitionId,
+            positionX: String(obj.positionX),
+            positionY: String(obj.positionY),
+            positionZ: String(obj.positionZ),
+            rotationX: String(obj.rotationX),
+            rotationY: String(obj.rotationY),
+            rotationZ: String(obj.rotationZ),
+            scale: String(obj.scale),
+            sortOrder: obj.sortOrder,
+            metadata: obj.metadata ?? null,
+          })))
+          .returning();
+        txResults.push(...inserted);
+      }
+
+      return txResults;
+    });
 
     return { data: results };
   });
