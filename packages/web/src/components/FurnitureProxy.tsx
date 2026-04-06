@@ -3,6 +3,8 @@ import { RoundTableMesh } from "./meshes/RoundTableMesh.js";
 import { TrestleTableMesh } from "./meshes/TrestleTableMesh.js";
 import { ChairMesh } from "./meshes/ChairMesh.js";
 import { PlatformMesh } from "./meshes/PlatformMesh.js";
+import { ProjectorScreenMesh } from "./meshes/ProjectorScreenMesh.js";
+import { ProjectorMesh } from "./meshes/ProjectorMesh.js";
 
 // ---------------------------------------------------------------------------
 // FurnitureProxy — routes to the correct mesh component per item type
@@ -63,6 +65,12 @@ function renderMesh(
 
     case "stage":
       return <PlatformMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+
+    case "av":
+      if (item.id === "projector-screen") {
+        return <ProjectorScreenMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+      }
+      return <ProjectorMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
 
     default:
       return <PlatformMesh item={item} opacity={opacity} colorOverride={colorOverride} />;

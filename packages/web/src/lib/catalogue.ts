@@ -116,6 +116,30 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     maxCount: 1,
   },
 
+  // --- AV ---
+  {
+    id: "projector-screen",
+    name: "Projector Screen",
+    category: "av",
+    width: 2.50,
+    height: 1.80,
+    depth: 0.60,
+    color: "#1a1a1a",
+    tableShape: null,
+    maxCount: null,
+  },
+  {
+    id: "projector",
+    name: "Laser Projector",
+    category: "av",
+    width: 0.55,
+    height: 0.10,
+    depth: 0.35,
+    color: "#3a3a40",
+    tableShape: null,
+    maxCount: null,
+  },
+
   // --- Decor (table dressing) ---
   {
     id: "black-table-cloth",
