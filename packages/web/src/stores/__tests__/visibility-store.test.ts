@@ -51,93 +51,70 @@ describe("smoothstep", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeWallTargetOpacities", () => {
-  describe("auto-2 mode", () => {
-    it("camera at +X,+Z (31°) shows back wall, side walls hidden with tight edges", () => {
-      const opacities = computeWallTargetOpacities(5, 3, 2);
-      // Back wall: -hideScore ≈ 0.51 → near edge boundary
-      expect(opacities["wall-back"]).toBeGreaterThan(0);
-      // Front and right are behind camera → hidden
-      expect(opacities["wall-front"]).toBeLessThan(0.1);
-    });
+  // Room half-dims: W=21 (X axis), L=10 (Z axis). Fade zone = 3 units from wall.
 
-    it("camera at -X,-Z (31°) shows front wall, side walls hidden with tight edges", () => {
-      const opacities = computeWallTargetOpacities(-5, -3, 2);
-      expect(opacities["wall-front"]).toBeGreaterThan(0);
-      expect(opacities["wall-back"]).toBeLessThan(0.1);
-    });
-
-    it("camera aligned with +Z axis shows only back wall", () => {
-      const opacities = computeWallTargetOpacities(0, 5, 2);
-      expect(opacities["wall-back"]).toBeGreaterThan(0.9);
-      expect(opacities["wall-front"]).toBeLessThan(0.1);
-      // Perpendicular walls hidden when aligned
-      expect(opacities["wall-left"]).toBeLessThan(0.1);
-      expect(opacities["wall-right"]).toBeLessThan(0.1);
-    });
-
-    it("camera aligned with +X axis shows only left wall", () => {
-      const opacities = computeWallTargetOpacities(5, 0, 2);
-      expect(opacities["wall-left"]).toBeGreaterThan(0.9);
-      expect(opacities["wall-right"]).toBeLessThan(0.1);
-      expect(opacities["wall-front"]).toBeLessThan(0.1);
-      expect(opacities["wall-back"]).toBeLessThan(0.1);
-    });
-
-    it("camera at origin returns all walls visible", () => {
-      const opacities = computeWallTargetOpacities(0, 0, 2);
-      expect(opacities["wall-front"]).toBe(1);
-      expect(opacities["wall-back"]).toBe(1);
-      expect(opacities["wall-left"]).toBe(1);
-      expect(opacities["wall-right"]).toBe(1);
-    });
-
-    it("diagonal camera shows exactly 2 walls at full opacity", () => {
-      // At 45°, two walls should be fully visible
-      const opacities = computeWallTargetOpacities(5, 5, 2);
-      const fullyVisible = Object.values(opacities).filter((o) => o > 0.9).length;
-      expect(fullyVisible).toBe(2);
-    });
+  it("camera at center — all walls fully visible", () => {
+    const o = computeWallTargetOpacities(0, 0, 3);
+    expect(o["wall-front"]).toBe(1);
+    expect(o["wall-back"]).toBe(1);
+    expect(o["wall-left"]).toBe(1);
+    expect(o["wall-right"]).toBe(1);
   });
 
-  describe("auto-3 mode", () => {
-    it("camera strongly on +X axis shows left, front, and back walls", () => {
-      // nx ≈ 1, nz ≈ 0.1 — perpendicular walls should appear with auto-3 edges
-      const opacities = computeWallTargetOpacities(10, 1, 3);
-      expect(opacities["wall-left"]).toBeGreaterThan(0.9);
-      expect(opacities["wall-right"]).toBeLessThan(0.1);
-      // Perpendicular walls should be at least partially visible
-      expect(opacities["wall-back"]).toBeGreaterThan(0.3);
-    });
-
-    it("auto-3 shows more walls than auto-2 for same position", () => {
-      const auto2 = computeWallTargetOpacities(5, 3, 2);
-      const auto3 = computeWallTargetOpacities(5, 3, 3);
-      const sum2 = Object.values(auto2).reduce((a, b) => a + b, 0);
-      const sum3 = Object.values(auto3).reduce((a, b) => a + b, 0);
-      expect(sum3).toBeGreaterThanOrEqual(sum2);
-    });
+  it("camera well inside room — all walls visible", () => {
+    const o = computeWallTargetOpacities(5, 3, 3);
+    expect(o["wall-front"]).toBe(1);
+    expect(o["wall-back"]).toBe(1);
+    expect(o["wall-left"]).toBe(1);
+    expect(o["wall-right"]).toBe(1);
   });
 
-  describe("smooth transitions", () => {
-    it("nearby camera positions produce similar opacities (no flickering)", () => {
-      const a = computeWallTargetOpacities(5, 3, 2);
-      const b = computeWallTargetOpacities(5, 3.1, 2);
-      // Small camera movement → small opacity change (tighter edges = steeper transition)
+  it("camera near right wall — right wall fades, others stay", () => {
+    // At x=20, dist from right wall (21) = 1 unit → inside fade zone
+    const o = computeWallTargetOpacities(20, 0, 3);
+    expect(o["wall-right"]).toBeLessThan(0.5);
+    expect(o["wall-left"]).toBe(1);
+    expect(o["wall-front"]).toBe(1);
+    expect(o["wall-back"]).toBe(1);
+  });
+
+  it("camera past right wall — right wall fully hidden", () => {
+    const o = computeWallTargetOpacities(22, 0, 3);
+    expect(o["wall-right"]).toBe(0);
+  });
+
+  it("camera near front wall — front wall fades", () => {
+    const o = computeWallTargetOpacities(0, 9, 3);
+    expect(o["wall-front"]).toBeLessThan(0.5);
+    expect(o["wall-back"]).toBe(1);
+  });
+
+  it("camera in corner — two walls fade", () => {
+    // Near right+front corner
+    const o = computeWallTargetOpacities(20, 9, 3);
+    expect(o["wall-right"]).toBeLessThan(0.5);
+    expect(o["wall-front"]).toBeLessThan(0.5);
+    expect(o["wall-left"]).toBe(1);
+    expect(o["wall-back"]).toBe(1);
+  });
+
+  it("opacities are always in [0, 1] range", () => {
+    const positions = [[0, 0], [25, 15], [-25, -15], [100, 100], [20, 9]];
+    for (const [x, z] of positions) {
+      const o = computeWallTargetOpacities(x ?? 0, z ?? 0, 3);
       for (const key of ["wall-front", "wall-back", "wall-left", "wall-right"] as WallKey[]) {
-        expect(Math.abs(a[key] - b[key])).toBeLessThan(0.15);
+        expect(o[key]).toBeGreaterThanOrEqual(0);
+        expect(o[key]).toBeLessThanOrEqual(1);
       }
-    });
+    }
+  });
 
-    it("opacities are always in [0, 1] range", () => {
-      const positions = [[5, 3], [-5, 3], [0, 10], [10, 0], [0.01, 0.01], [100, 1]];
-      for (const [x, z] of positions) {
-        const opacities = computeWallTargetOpacities(x ?? 0, z ?? 0, 2);
-        for (const key of ["wall-front", "wall-back", "wall-left", "wall-right"] as WallKey[]) {
-          expect(opacities[key]).toBeGreaterThanOrEqual(0);
-          expect(opacities[key]).toBeLessThanOrEqual(1);
-        }
-      }
-    });
+  it("nearby positions produce similar opacities (no flickering)", () => {
+    const a = computeWallTargetOpacities(19, 0, 3);
+    const b = computeWallTargetOpacities(19.1, 0, 3);
+    for (const key of ["wall-front", "wall-back", "wall-left", "wall-right"] as WallKey[]) {
+      expect(Math.abs(a[key] - b[key])).toBeLessThan(0.1);
+    }
   });
 });
 
@@ -330,17 +307,16 @@ describe("useVisibilityStore", () => {
   });
 
   it("updateAutoWalls lerps opacity toward targets", () => {
-    // Start with left=1, right=0. Move camera to -X to reverse.
+    // Start with right=0. Camera near right wall (x=20) → right should fade.
     useVisibilityStore.setState({
-      wallOpacity: { "wall-front": 0, "wall-back": 1, "wall-left": 1, "wall-right": 0 },
+      wallOpacity: { "wall-front": 1, "wall-back": 1, "wall-left": 1, "wall-right": 1 },
     });
-    // Camera at -X,+Z — left should hide, right should show
-    useVisibilityStore.getState().updateAutoWalls(-5, 3, 0.016);
+    // Camera near right wall → right should decrease
+    useVisibilityStore.getState().updateAutoWalls(20, 0, 0.016);
     const { wallOpacity } = useVisibilityStore.getState();
-    // After one frame, left should have decreased (moving toward 0)
-    expect(wallOpacity["wall-left"]).toBeLessThan(1);
-    // Right should have increased (moving toward 1)
-    expect(wallOpacity["wall-right"]).toBeGreaterThan(0);
+    expect(wallOpacity["wall-right"]).toBeLessThan(1);
+    // Left wall is far away → stays at 1
+    expect(wallOpacity["wall-left"]).toBe(1);
   });
 
   it("updateAutoWalls returns true while transitioning", () => {
@@ -442,52 +418,44 @@ describe("delta clamping", () => {
   });
 
   it("large delta does not cause instant jump to target", () => {
-    // Simulate a 2-second idle frame
-    useVisibilityStore.getState().updateAutoWalls(5, 5, 2.0);
+    // All walls start at 0. Camera at center → all targets = 1.
+    // Large delta should still clamp step.
+    useVisibilityStore.getState().updateAutoWalls(0, 0, 2.0);
     const { wallOpacity } = useVisibilityStore.getState();
-    // With delta clamping, max step per frame is limited (linear: speed * clampedDelta)
-    // wall-left and wall-back should be targets (1), but opacity should not reach 1 in one step
     const maxStep = WALL_TRANSITION_SPEED * MAX_LERP_DELTA;
-    expect(wallOpacity["wall-left"]).toBeLessThanOrEqual(maxStep + 0.01);
-    expect(wallOpacity["wall-back"]).toBeLessThanOrEqual(maxStep + 0.01);
+    expect(wallOpacity["wall-front"]).toBeLessThanOrEqual(maxStep + 0.01);
   });
 
   it("normal delta (16ms) produces small opacity step", () => {
-    useVisibilityStore.getState().updateAutoWalls(5, 5, 0.016);
+    useVisibilityStore.getState().updateAutoWalls(0, 0, 0.016);
     const { wallOpacity } = useVisibilityStore.getState();
-    // Should be a small step, not a jump
-    expect(wallOpacity["wall-left"]).toBeLessThan(0.15);
-    expect(wallOpacity["wall-left"]).toBeGreaterThan(0);
+    expect(wallOpacity["wall-front"]).toBeLessThan(0.15);
+    expect(wallOpacity["wall-front"]).toBeGreaterThan(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Aligned camera — only far wall visible
+// Proximity-based wall hiding
 // ---------------------------------------------------------------------------
 
-describe("aligned camera behavior", () => {
-  it("perfectly aligned with +Z axis shows only back wall (auto-2)", () => {
-    const opacities = computeWallTargetOpacities(0, 10, 2);
-    expect(opacities["wall-back"]).toBe(1);
-    expect(opacities["wall-front"]).toBe(0);
-    expect(opacities["wall-left"]).toBe(0);
-    expect(opacities["wall-right"]).toBe(0);
+describe("proximity wall behavior", () => {
+  it("camera at front wall boundary — front wall hidden", () => {
+    const o = computeWallTargetOpacities(0, 10, 3);
+    expect(o["wall-front"]).toBe(0);
+    expect(o["wall-back"]).toBe(1);
   });
 
-  it("nearly aligned (~5°) still shows only back wall", () => {
-    // 5° off-axis: sin(5°) ≈ 0.087
-    const opacities = computeWallTargetOpacities(0.087, 1, 2);
-    expect(opacities["wall-back"]).toBeGreaterThan(0.9);
-    // Side walls should still be hidden within the margin
-    expect(opacities["wall-left"]).toBeLessThan(0.1);
-    expect(opacities["wall-right"]).toBeLessThan(0.1);
+  it("camera inside room near front wall — front wall fading", () => {
+    const o = computeWallTargetOpacities(0, 8.5, 3);
+    expect(o["wall-front"]).toBeLessThan(0.8);
+    expect(o["wall-front"]).toBeGreaterThan(0);
   });
 
-  it("significantly off-axis (~40°) shows second wall fading in", () => {
-    // 40° off-axis: sin(40°) ≈ 0.64, cos(40°) ≈ 0.77
-    const opacities = computeWallTargetOpacities(0.64, 0.77, 2);
-    expect(opacities["wall-back"]).toBeGreaterThan(0.5);
-    // Side wall should be partially visible (0.64 is between edges [0.5, 0.65])
-    expect(opacities["wall-left"]).toBeGreaterThan(0.1);
+  it("camera far from all walls — all visible", () => {
+    const o = computeWallTargetOpacities(0, 0, 3);
+    expect(o["wall-front"]).toBe(1);
+    expect(o["wall-back"]).toBe(1);
+    expect(o["wall-left"]).toBe(1);
+    expect(o["wall-right"]).toBe(1);
   });
 });

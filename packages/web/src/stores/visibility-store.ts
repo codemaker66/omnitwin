@@ -65,7 +65,7 @@ export function smoothstep(x: number, edge0: number, edge1: number): number {
 /** Linear opacity transition speed (opacity units per second).
  *  At 1.5, a full 0→1 build takes ~0.67s — fast enough that walls are never
  *  stuck half-formed when the camera is at the "right" angle. */
-export const WALL_TRANSITION_SPEED = 1.5;
+export const WALL_TRANSITION_SPEED = 4.0;
 
 /** Maximum delta (seconds) for opacity lerp — prevents instant jumps after idle frames. */
 export const MAX_LERP_DELTA = 0.1;
@@ -76,57 +76,44 @@ export const MAX_LERP_DELTA = 0.1;
  *  At 45° corners: 2 walls comfortably visible. */
 export const AUTO_2_EDGES: readonly [number, number] = [0.15, 0.55];
 
-/** Smoothstep edges for auto-3 mode — lenient, typically 2–3 walls visible. */
-export const AUTO_3_EDGES: readonly [number, number] = [-0.7, 0.0];
+/** Smoothstep edges for auto-3 mode — walls disappear as soon as camera
+ *  crosses to their side. Tight range for seamless transitions. */
+export const AUTO_3_EDGES: readonly [number, number] = [-0.15, 0.15];
+
+/** Room half-dimensions in render-space for wall proximity checks.
+ *  Imported from scale constants. Hardcoded here to avoid circular deps. */
+const ROOM_HALF_W = 21; // Grand Hall: 42m render / 2
+const ROOM_HALF_L = 10; // Grand Hall: 20m render / 2
+
+/** Distance (render-space units) from the wall plane where fade begins. */
+const FADE_START = 3.0;
+/** Distance from wall plane where wall is fully hidden. */
+const FADE_END = 0.0;
 
 /**
  * Computes target opacity (0–1) for each wall based on camera position.
  *
- * Uses the normalized camera direction from the room center to determine
- * which walls are "behind" the camera (should be hidden) vs visible.
- *
- * The smoothstep function creates gradual transitions as the camera rotates,
- * preventing the jarring binary wall flips that occur with discrete sorting.
- *
- * Key behavior:
- * - When camera is aligned with one axis, only the far wall is visible
- * - At 45° angles, two walls are visible (the two the camera can see into)
- * - Transitions are smooth — no flickering near axis boundaries
+ * A wall only hides when the camera is physically near that wall's boundary.
+ * Standing inside the room (even off-center) keeps all walls visible.
+ * Walls fade out smoothly as the camera approaches within FADE_START units
+ * of the wall plane, and are fully hidden at/past the wall.
  */
 export function computeWallTargetOpacities(
   cameraX: number,
   cameraZ: number,
-  count: 2 | 3,
+  _count: 2 | 3,
 ): Readonly<Record<WallKey, number>> {
-  const dist = Math.sqrt(cameraX * cameraX + cameraZ * cameraZ);
+  // Distance from each wall plane (positive = inside room, negative = outside)
+  const distRight = ROOM_HALF_W - cameraX;  // + when inside, - when past right wall
+  const distLeft = ROOM_HALF_W + cameraX;   // + when inside, - when past left wall
+  const distFront = ROOM_HALF_L - cameraZ;  // + when inside, - when past front wall
+  const distBack = ROOM_HALF_L + cameraZ;   // + when inside, - when past back wall
 
-  if (dist < 0.01) {
-    // Camera at center — all walls fully visible
-    return { "wall-front": 1, "wall-back": 1, "wall-left": 1, "wall-right": 1 };
-  }
-
-  const nx = cameraX / dist;
-  const nz = cameraZ / dist;
-
-  // "Hide score" per wall — positive means camera is on that wall's side
-  // (closer to it → should be hidden). Range: -1 to +1.
-  const hideScores: Readonly<Record<WallKey, number>> = {
-    "wall-right": nx,
-    "wall-left": -nx,
-    "wall-front": nz,
-    "wall-back": -nz,
-  };
-
-  const [edge0, edge1] = count === 2 ? AUTO_2_EDGES : AUTO_3_EDGES;
-
-  // Convert hide score to visibility using smoothstep.
-  // -hideScore: high when camera is FAR from the wall (should be visible).
-  // smoothstep: values above edge1 → 1 (visible), below edge0 → 0 (hidden).
   return {
-    "wall-front": smoothstep(-hideScores["wall-front"], edge0, edge1),
-    "wall-back": smoothstep(-hideScores["wall-back"], edge0, edge1),
-    "wall-left": smoothstep(-hideScores["wall-left"], edge0, edge1),
-    "wall-right": smoothstep(-hideScores["wall-right"], edge0, edge1),
+    "wall-right": smoothstep(distRight, FADE_END, FADE_START),
+    "wall-left": smoothstep(distLeft, FADE_END, FADE_START),
+    "wall-front": smoothstep(distFront, FADE_END, FADE_START),
+    "wall-back": smoothstep(distBack, FADE_END, FADE_START),
   };
 }
 

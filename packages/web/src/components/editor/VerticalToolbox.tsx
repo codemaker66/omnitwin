@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
-  Camera, Grid3X3, Save, User,
+  Camera, Grid3X3, Save, User, Eye,
 } from "lucide-react";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -9,6 +9,7 @@ import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
+import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
@@ -109,6 +110,8 @@ export function VerticalToolbox(): React.ReactElement {
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isSaving = useEditorStore((s) => s.isSaving);
+  const wallMode = useVisibilityStore((s) => s.mode);
+  const allWallsUp = wallMode === "manual";
 
   const handleToolClick = useCallback((tool: ActiveTool) => {
     if (tool === "add") {
@@ -133,6 +136,27 @@ export function VerticalToolbox(): React.ReactElement {
 
   const handleSnapToggle = useCallback(() => {
     usePlacementStore.getState().toggleSnap();
+  }, []);
+
+  const handleToggleAllWalls = useCallback(() => {
+    const store = useVisibilityStore.getState();
+    if (store.mode === "manual") {
+      // Switch back to auto — camera controls walls again
+      store.setMode("auto-3");
+    } else {
+      // Switch to manual with all walls up, locks cleared
+      store.setMode("manual");
+      const allUp: Record<string, boolean> = {};
+      const allOpacity: Record<string, number> = {};
+      for (const key of WALL_KEYS) {
+        allUp[key] = true;
+        allOpacity[key] = 1;
+      }
+      useVisibilityStore.setState({
+        walls: allUp as Record<typeof WALL_KEYS[number], boolean>,
+        wallOpacity: allOpacity as Record<typeof WALL_KEYS[number], number>,
+      });
+    }
   }, []);
 
   const handleSave = useCallback(() => {
@@ -213,6 +237,11 @@ export function VerticalToolbox(): React.ReactElement {
         {/* Snap */}
         <button type="button" style={btnStyle(snapEnabled)} onClick={handleSnapToggle} title="Grid Snap (G)">
           <Grid3X3 size={ICON_SIZE} />
+        </button>
+
+        {/* Show All Walls */}
+        <button type="button" style={btnStyle(allWallsUp)} onClick={handleToggleAllWalls} title="Show All Walls">
+          <Eye size={ICON_SIZE} />
         </button>
 
         {/* Save */}

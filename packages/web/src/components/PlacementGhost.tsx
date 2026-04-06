@@ -11,6 +11,7 @@ import { useSelectionStore } from "../stores/selection-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
+import { ROTATION_SNAP_RAD } from "../lib/selection.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import { findNearestTable, CLOTH_SNAP_DISTANCE_RENDER } from "../lib/cloth-snap.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
@@ -33,6 +34,7 @@ export function PlacementGhost(): React.ReactElement | null {
   const { invalidate, scene, camera, raycaster } = useThree();
   const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
   const ghostPosition = usePlacementStore((s) => s.ghostPosition);
+  const ghostRotation = usePlacementStore((s) => s.ghostRotation);
   const ghostValid = usePlacementStore((s) => s.ghostValid);
 
   // No manual store subscriptions needed — the useStore selectors above
@@ -124,7 +126,7 @@ export function PlacementGhost(): React.ReactElement | null {
           catalogueItemId: catState.selectedItemId,
           x: placeState.ghostPosition[0],
           z: placeState.ghostPosition[2],
-          rotationY: 0,
+          rotationY: placeState.ghostRotation,
           tableShape: item.tableShape,
         });
         catState.clearSelection();
@@ -137,6 +139,7 @@ export function PlacementGhost(): React.ReactElement | null {
         catState.selectedItemId,
         placeState.ghostPosition[0],
         placeState.ghostPosition[2],
+        placeState.ghostRotation,
       );
       invalidateRef.current();
     }
@@ -182,6 +185,17 @@ export function PlacementGhost(): React.ReactElement | null {
       if (event.code === "Escape" && useCatalogueStore.getState().selectedItemId !== null) {
         useCatalogueStore.getState().clearSelection();
         usePlacementStore.getState().clearGhost();
+        return;
+      }
+      // Q/E rotate ghost during placement
+      if (event.code === "KeyQ" && !event.ctrlKey && !event.metaKey && useCatalogueStore.getState().selectedItemId !== null) {
+        usePlacementStore.getState().rotateGhost(ROTATION_SNAP_RAD);
+        invalidateRef.current();
+        return;
+      }
+      if (event.code === "KeyE" && !event.ctrlKey && !event.metaKey && useCatalogueStore.getState().selectedItemId !== null) {
+        usePlacementStore.getState().rotateGhost(-ROTATION_SNAP_RAD);
+        invalidateRef.current();
       }
     }
     function onContextMenu(event: MouseEvent): void {
@@ -247,6 +261,7 @@ export function PlacementGhost(): React.ReactElement | null {
     <FurnitureProxy
       item={catalogueItem}
       position={ghostPosition}
+      rotationY={ghostRotation}
       opacity={0.6}
       colorOverride={ghostColor}
       name="placement-ghost"

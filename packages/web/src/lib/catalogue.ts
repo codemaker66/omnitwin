@@ -139,6 +139,52 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
   },
+  {
+    id: "laptop",
+    name: "Laptop",
+    category: "av",
+    width: 0.36,
+    height: 0.25,
+    depth: 0.25,
+    color: "#2a2a2e",
+    tableShape: null,
+    maxCount: null,
+  },
+  {
+    id: "microphone",
+    name: "Table Microphone",
+    category: "av",
+    width: 0.10,
+    height: 0.25,
+    depth: 0.10,
+    color: "#2a2a2a",
+    tableShape: null,
+    maxCount: null,
+  },
+  {
+    id: "mic-stand",
+    name: "Mic Stand",
+    category: "av",
+    width: 0.50,
+    height: 1.60,
+    depth: 0.50,
+    color: "#2a2a2a",
+    tableShape: null,
+    maxCount: null,
+  },
+
+  // --- Lecterns ---
+  {
+    id: "lectern",
+    name: "Lectern",
+    category: "lectern",
+    width: 0.60,
+    height: 1.15,
+    depth: 0.50,
+    color: "#5a3a20",
+    tableShape: null,
+    maxCount: null,
+  },
 
   // --- Decor (table dressing) ---
   {

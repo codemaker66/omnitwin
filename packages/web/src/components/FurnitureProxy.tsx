@@ -5,6 +5,10 @@ import { ChairMesh } from "./meshes/ChairMesh.js";
 import { PlatformMesh } from "./meshes/PlatformMesh.js";
 import { ProjectorScreenMesh } from "./meshes/ProjectorScreenMesh.js";
 import { ProjectorMesh } from "./meshes/ProjectorMesh.js";
+import { LaptopMesh } from "./meshes/LaptopMesh.js";
+import { MicrophoneMesh } from "./meshes/MicrophoneMesh.js";
+import { MicStandMesh } from "./meshes/MicStandMesh.js";
+import { LecternMesh } from "./meshes/LecternMesh.js";
 
 // ---------------------------------------------------------------------------
 // FurnitureProxy — routes to the correct mesh component per item type
@@ -70,7 +74,19 @@ function renderMesh(
       if (item.id === "projector-screen") {
         return <ProjectorScreenMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
       }
+      if (item.id === "laptop") {
+        return <LaptopMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+      }
+      if (item.id === "microphone") {
+        return <MicrophoneMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+      }
+      if (item.id === "mic-stand") {
+        return <MicStandMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+      }
       return <ProjectorMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+
+    case "lectern":
+      return <LecternMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
 
     default:
       return <PlatformMesh item={item} opacity={opacity} colorOverride={colorOverride} />;

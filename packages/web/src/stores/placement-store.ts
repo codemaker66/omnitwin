@@ -30,6 +30,8 @@ export interface PlacementState {
   readonly redoStack: readonly (readonly PlacedItem[])[];
   /** Render-space position of the ghost cursor. Null when not placing. */
   readonly ghostPosition: readonly [number, number, number] | null;
+  /** Ghost rotation around Y axis in radians. */
+  readonly ghostRotation: number;
   /** Whether the current ghost position is valid for placement. */
   readonly ghostValid: boolean;
   /** Snap-to-grid enabled (default true). */
@@ -49,6 +51,8 @@ export interface PlacementState {
   readonly rotateItem: (id: string, rotationY: number) => void;
   /** Update ghost position and validity. */
   readonly updateGhost: (x: number, z: number, catalogueItemId: string) => void;
+  /** Rotate ghost by a delta (radians). */
+  readonly rotateGhost: (delta: number) => void;
   /** Clear ghost (stop placing). */
   readonly clearGhost: () => void;
   /** Toggle cloth on/off for a placed item (tables only). */
@@ -93,6 +97,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   undoStack: [],
   redoStack: [],
   ghostPosition: null,
+  ghostRotation: 0,
   ghostValid: false,
   snapEnabled: true,
 
@@ -178,30 +183,35 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
   updateGhost: (x: number, z: number, catalogueItemId: string) => {
     const state = get();
+    const rot = state.ghostRotation;
     const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     const catalogueItem = getCatalogueItem(catalogueItemId);
     // Edge snap + wall snap first (XZ only), then compute surface height
     let finalX = gridPos[0];
     let finalZ = gridPos[2];
     if (catalogueItem !== undefined) {
-      const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, 0, state.placedItems, new Set());
+      const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
-      const wallSnap = snapToWallEdge(finalX, finalZ, catalogueItem, 0);
+      const wallSnap = snapToWallEdge(finalX, finalZ, catalogueItem, rot);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const pos = [finalX, surfaceY, finalZ] as const;
     const valid = catalogueItem !== undefined &&
-      isWithinRoomBounds(pos[0], pos[2], catalogueItem) &&
-      !checkCollision(pos[0], pos[2], catalogueItem, 0, state.placedItems, new Set(), 0.01, surfaceY) &&
+      isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot) &&
+      !checkCollision(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), 0.01, surfaceY) &&
       !isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId));
     set({ ghostPosition: pos, ghostValid: valid });
   },
 
+  rotateGhost: (delta: number) => {
+    set((state) => ({ ghostRotation: state.ghostRotation + delta }));
+  },
+
   clearGhost: () => {
-    set({ ghostPosition: null, ghostValid: false });
+    set({ ghostPosition: null, ghostRotation: 0, ghostValid: false });
   },
 
   toggleCloth: (id: string) => {
