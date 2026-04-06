@@ -115,8 +115,8 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Verify space exists
-    const [space] = await db.select({ id: spaces.id })
+    // Verify space exists and derive venueId from it (don't trust client-supplied venueId)
+    const [space] = await db.select({ id: spaces.id, venueId: spaces.venueId })
       .from(spaces)
       .where(and(eq(spaces.id, parsed.data.spaceId), isNull(spaces.deletedAt)))
       .limit(1);
@@ -127,7 +127,7 @@ export async function configurationRoutes(
 
     const [config] = await db.insert(configurations).values({
       spaceId: parsed.data.spaceId,
-      venueId: parsed.data.venueId,
+      venueId: space.venueId,
       userId: request.user.id,
       name: parsed.data.name,
       layoutStyle: parsed.data.layoutStyle,

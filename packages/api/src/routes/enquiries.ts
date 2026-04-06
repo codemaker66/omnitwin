@@ -143,10 +143,11 @@ export async function enquiryRoutes(
       return reply.status(403).send({ error: "Configuration does not belong to you", code: "FORBIDDEN" });
     }
 
+    // Derive venueId/spaceId from the verified configuration (don't trust client-supplied values)
     const [enquiry] = await db.insert(enquiries).values({
       configurationId: parsed.data.configurationId,
-      venueId: parsed.data.venueId,
-      spaceId: parsed.data.spaceId,
+      venueId: config.venueId,
+      spaceId: config.spaceId,
       userId: request.user.id,
       name: parsed.data.name,
       email: parsed.data.email,

@@ -145,8 +145,9 @@ export async function spaceRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Verify space exists AND belongs to the URL venue (prevents cross-venue updates)
     const [space] = await db.select().from(spaces)
-      .where(and(eq(spaces.id, params.data.id), isNull(spaces.deletedAt)))
+      .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
       .limit(1);
     if (space === undefined) {
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
@@ -187,8 +188,9 @@ export async function spaceRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Verify space belongs to the URL venue
     const [space] = await db.select().from(spaces)
-      .where(and(eq(spaces.id, params.data.id), isNull(spaces.deletedAt)))
+      .where(and(eq(spaces.id, params.data.id), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
       .limit(1);
     if (space === undefined) {
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
