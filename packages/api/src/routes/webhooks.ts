@@ -60,10 +60,14 @@ export async function webhookRoutes(
 
       try {
         const wh = new Webhook(webhookSecret);
-        const rawBody = typeof request.body === "string"
-          ? request.body
-          : JSON.stringify(request.body);
-        wh.verify(rawBody, {
+        // Use the actual raw bytes captured by fastify-raw-body.
+        // JSON.stringify(request.body) can differ from the original payload
+        // (key ordering, whitespace) which breaks HMAC signature verification.
+        const body = (request as unknown as { rawBody?: Buffer }).rawBody;
+        if (body === undefined) {
+          return reply.status(500).send({ error: "Raw body not available", code: "INTERNAL_ERROR" });
+        }
+        wh.verify(body.toString("utf-8"), {
           "svix-id": svixId,
           "svix-timestamp": svixTimestamp,
           "svix-signature": svixSignature,
@@ -121,9 +125,9 @@ export async function webhookRoutes(
         await db.update(users).set({ clerkId: null, updatedAt: new Date() }).where(eq(users.clerkId, data.id));
         return reply.status(200).send({ received: true });
       }
-    } catch {
-      // DB errors should still return 200 to avoid Clerk retries
-      // in test mode (mock DB). In production, log the error.
+    } catch (err) {
+      // Return 200 to avoid Clerk retries, but log the DB error
+      server.log.error({ err, type: payload.type }, "Clerk webhook DB error");
     }
 
     return reply.status(200).send({ received: true });

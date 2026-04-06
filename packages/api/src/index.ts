@@ -2,6 +2,7 @@ import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
+import rawBody from "fastify-raw-body";
 import { validateEnv } from "./env.js";
 import { createDb } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
@@ -52,6 +53,13 @@ export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
   await server.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
+  });
+
+  await server.register(rawBody, {
+    field: "rawBody",
+    global: false,
+    runFirst: true,
+    encoding: false, // returns Buffer, not string
   });
 
   // --- Health check ---
