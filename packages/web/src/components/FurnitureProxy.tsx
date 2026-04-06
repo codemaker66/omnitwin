@@ -9,6 +9,7 @@ import { LaptopMesh } from "./meshes/LaptopMesh.js";
 import { MicrophoneMesh } from "./meshes/MicrophoneMesh.js";
 import { MicStandMesh } from "./meshes/MicStandMesh.js";
 import { LecternMesh } from "./meshes/LecternMesh.js";
+import { PoseurTableMesh } from "./meshes/PoseurTableMesh.js";
 
 // ---------------------------------------------------------------------------
 // FurnitureProxy — routes to the correct mesh component per item type
@@ -59,6 +60,9 @@ function renderMesh(
 ): React.ReactElement {
   switch (item.category) {
     case "table":
+      if (item.id.startsWith("poseur-table")) {
+        return <PoseurTableMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
+      }
       if (item.tableShape === "round") {
         return <RoundTableMesh item={item} opacity={opacity} colorOverride={colorOverride} />;
       }

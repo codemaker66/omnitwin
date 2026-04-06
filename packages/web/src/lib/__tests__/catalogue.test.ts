@@ -166,7 +166,7 @@ describe("getCatalogueItem", () => {
 describe("getCatalogueByCategory", () => {
   it("returns all items in the table category", () => {
     const tables = getCatalogueByCategory("table");
-    expect(tables.length).toBe(3);
+    expect(tables.length).toBe(6);
     for (const item of tables) {
       expect(item.category).toBe("table");
     }

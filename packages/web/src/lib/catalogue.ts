@@ -79,6 +79,41 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     maxCount: null,
   },
 
+  // --- Poseur / Cocktail tables ---
+  {
+    id: "poseur-table",
+    name: "Poseur Table",
+    category: "table",
+    width: 0.60,
+    height: 1.05,
+    depth: 0.60,
+    color: "#c0c0c8",
+    tableShape: "round",
+    maxCount: null,
+  },
+  {
+    id: "poseur-table-black",
+    name: "Poseur Table (Black)",
+    category: "table",
+    width: 0.60,
+    height: 1.05,
+    depth: 0.60,
+    color: "#1a1a1a",
+    tableShape: "round",
+    maxCount: null,
+  },
+  {
+    id: "poseur-table-white",
+    name: "Poseur Table (White)",
+    category: "table",
+    width: 0.60,
+    height: 1.05,
+    depth: 0.60,
+    color: "#f0ede8",
+    tableShape: "round",
+    maxCount: null,
+  },
+
   // --- Chairs ---
   {
     id: "banquet-chair",
