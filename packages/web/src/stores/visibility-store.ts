@@ -27,6 +27,9 @@ export interface VisibilityState {
   readonly walls: Readonly<Record<WallKey, boolean>>;
   /** Per-wall opacity (0 = fully hidden, 1 = fully visible) for smooth transitions. */
   readonly wallOpacity: Readonly<Record<WallKey, number>>;
+  /** Per-wall click locks. A locked wall ignores auto-show/hide from camera.
+   *  First click locks it OFF, second click unlocks it back to auto. */
+  readonly wallLocks: Readonly<Record<WallKey, boolean>>;
   /** Ceiling visibility (always manual). */
   readonly ceiling: boolean;
   /** Dome visibility (always manual). */
@@ -35,8 +38,10 @@ export interface VisibilityState {
   readonly menuOpen: boolean;
   /** Set the wall display mode. */
   readonly setMode: (mode: WallMode) => void;
-  /** Toggle a specific wall (switches to manual mode). */
+  /** Toggle a wall: first click hides + locks, second click rebuilds (stays locked until done). */
   readonly toggleWall: (key: WallKey) => void;
+  /** Unlock a wall after rebuild animation completes so auto resumes. */
+  readonly unlockWall: (key: WallKey) => void;
   /** Toggle ceiling visibility. */
   readonly toggleCeiling: () => void;
   /** Toggle dome visibility. */
@@ -185,23 +190,47 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
     "wall-left": 1,
     "wall-right": 1,
   },
+  wallLocks: {
+    "wall-front": false,
+    "wall-back": false,
+    "wall-left": false,
+    "wall-right": false,
+  },
   ceiling: false,
   dome: false,
   menuOpen: false,
 
   setMode: (mode: WallMode) => {
-    set({ mode });
+    // Changing mode clears all locks
+    set({
+      mode,
+      wallLocks: { "wall-front": false, "wall-back": false, "wall-left": false, "wall-right": false },
+    });
   },
 
   toggleWall: (key: WallKey) => {
     const state = get();
-    const newVisible = !state.walls[key];
-    // Don't change mode — stay in auto so camera control continues working.
-    // The click just triggers the brick animation via BrickWall's useAnimation ref.
-    set({
-      walls: { ...state.walls, [key]: newVisible },
-      wallOpacity: { ...state.wallOpacity, [key]: newVisible ? 1 : 0 },
-    });
+    if (state.wallLocks[key]) {
+      // Already locked (hidden) → stay locked while rebuilding (so BrickWall
+      // animates instead of snapping). BrickWall will call unlockWall() once done.
+      set({
+        walls: { ...state.walls, [key]: true },
+        wallOpacity: { ...state.wallOpacity, [key]: 1 },
+      });
+    } else {
+      // Not locked → lock it OFF, hide it, auto can't bring it back
+      set({
+        wallLocks: { ...state.wallLocks, [key]: true },
+        walls: { ...state.walls, [key]: false },
+        wallOpacity: { ...state.wallOpacity, [key]: 0 },
+      });
+    }
+  },
+
+  unlockWall: (key: WallKey) => {
+    set((state) => ({
+      wallLocks: { ...state.wallLocks, [key]: false },
+    }));
   },
 
   toggleCeiling: () => {
@@ -219,6 +248,7 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
   updateAutoWalls: (cameraX: number, cameraZ: number, delta: number): boolean => {
     const state = get();
     if (state.mode === "manual") return false;
+    const { wallLocks } = state;
 
     const count = state.mode === "auto-2" ? 2 : 3;
     const targets = computeWallTargetOpacities(cameraX, cameraZ, count);
@@ -233,6 +263,11 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
     let transitioning = false;
 
     for (const key of WALL_KEYS) {
+      // Locked walls are click-controlled — auto doesn't touch them
+      if (wallLocks[key]) {
+        newOpacity[key] = state.wallOpacity[key];
+        continue;
+      }
       const current = state.wallOpacity[key];
       const target = targets[key];
       const diff = target - current;

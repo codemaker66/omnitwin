@@ -1,6 +1,5 @@
-import { useRef, useMemo, useCallback } from "react";
+import { useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import type { ThreeEvent } from "@react-three/fiber";
 import {
   BoxGeometry,
   Color,
@@ -247,17 +246,6 @@ const _mat = new Matrix4();
  * At progress=1, the wall looks like a solid stone/plaster surface.
  * At progress=0, all bricks are scattered and invisible.
  */
-/** Maps surface names to WallKeys for click-to-toggle. */
-function getWallKey(surfaceName: string): WallKey | null {
-  if (surfaceName.startsWith("wainscot-")) {
-    return surfaceName.replace("wainscot-", "wall-") as WallKey;
-  }
-  if (surfaceName.startsWith("wall-")) {
-    return surfaceName as WallKey;
-  }
-  return null;
-}
-
 export function BrickWall({
   wallWidth,
   wallHeight,
@@ -274,21 +262,6 @@ export function BrickWall({
   const animProgress = useRef(1); // start fully built
   /** Target: 1 = built, 0 = unbuilt. */
   const animTarget = useRef(1);
-  /** True when the last visibility change was triggered by a click (animate bricks).
-   *  False when driven by camera rotation (instant show/hide, no animation). */
-  const useAnimation = useRef(false);
-
-  /** Click to toggle this wall's visibility (called from SelectionSystem). */
-  const handleClick = useCallback((event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
-    const wallKey = getWallKey(name);
-    if (wallKey !== null) {
-      useAnimation.current = true;
-      (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wallKey;
-      useVisibilityStore.getState().toggleWall(wallKey);
-      invalidate();
-    }
-  }, [name, invalidate]);
 
   const bricks = useMemo(
     () => computeBrickLayout(wallWidth, wallHeight, hashString(name)),
@@ -318,7 +291,7 @@ export function BrickWall({
     if (mesh === null) return;
 
     // Read the visibility store to determine whether wall should be built or not
-    const { wallOpacity, ceiling, dome } = useVisibilityStore.getState();
+    const { wallOpacity, wallLocks, ceiling, dome } = useVisibilityStore.getState();
     const baseOpacity = getSurfaceOpacity(name, wallOpacity, ceiling, dome);
     const xrayOpacity = useXrayStore.getState().opacity;
     const surfaceOpacity = applyXrayOpacity(name, baseOpacity, xrayOpacity);
@@ -327,24 +300,21 @@ export function BrickWall({
     const shouldBeBuilt = surfaceOpacity >= BUILD_THRESHOLD;
     const newTarget = shouldBeBuilt ? 1 : 0;
 
-    // Check if this wall was click-toggled (via global flag from SelectionSystem)
-    const globalAnimKey = (window as unknown as Record<string, unknown>)["__brickWallAnimate"] as string | undefined;
-    const wallKey = getWallKey(name);
-    if (globalAnimKey !== undefined && globalAnimKey === wallKey) {
-      useAnimation.current = true;
-      (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = undefined;
-    }
+    // Locked = user clicked this wall → animate bricks over BUILD_DURATION.
+    // Unlocked = camera auto-fade → snap instantly (camera has its own smooth transition).
+    const wallKey = name.startsWith("wainscot-")
+      ? name.replace("wainscot-", "wall-") as WallKey
+      : name as WallKey;
+    const isLocked = wallLocks[wallKey] ?? false;
 
-    // Detect if target changed (camera rotation or click)
     if (newTarget !== animTarget.current) {
-      // If not triggered by a click, this is a camera-driven change → no animation
-      if (!useAnimation.current) {
-        animProgress.current = newTarget;
+      if (!isLocked) {
+        animProgress.current = newTarget; // camera: snap
       }
       animTarget.current = newTarget;
     }
 
-    // Advance internal animation toward target (only matters if useAnimation is true)
+    // Advance animation toward target (only moves when locked / click-driven)
     const speed = 1 / BUILD_DURATION;
     const clampedDelta = Math.min(delta, 0.1);
     const step = speed * clampedDelta;
@@ -356,9 +326,9 @@ export function BrickWall({
       animProgress.current = Math.max(animTarget.current, prev - step);
     }
 
-    // Clear the animation flag once animation completes
-    if (Math.abs(animProgress.current - animTarget.current) < 0.001) {
-      useAnimation.current = false;
+    // Unlock wall once rebuild animation completes so camera auto resumes
+    if (isLocked && animTarget.current === 1 && Math.abs(animProgress.current - 1) < 0.001) {
+      useVisibilityStore.getState().unlockWall(wallKey);
     }
 
     const progress = animProgress.current;
@@ -429,22 +399,19 @@ export function BrickWall({
         name={name}
         frustumCulled={false}
       />
-      {/* Click plane — full wall-sized plane for reliable click detection.
-          Rendered with near-zero opacity (invisible to eye, visible to raycaster).
-          Slightly offset inward from wall face so it's in front of bricks. */}
+      {/* Click plane — full wall-sized plane for raycast detection by SelectionSystem.
+          Always present so walls can be rebuilt after being fully unbuilt.
+          Near-zero opacity: invisible to eye, hittable by raycaster. */}
       <mesh
         position={[position[0], position[1], position[2]]}
         rotation={[rotation[0], rotation[1], rotation[2]]}
-        onClick={handleClick}
         name={`${name}-click-plane`}
-        renderOrder={999}
       >
         <planeGeometry args={[wallWidth, wallHeight]} />
         <meshBasicMaterial
           transparent
           opacity={0.001}
           depthWrite={false}
-          depthTest={false}
           color="#ffffff"
           side={DoubleSide}
         />

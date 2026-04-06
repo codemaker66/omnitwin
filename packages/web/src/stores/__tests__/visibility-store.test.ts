@@ -255,6 +255,12 @@ describe("useVisibilityStore", () => {
         "wall-left": 1,
         "wall-right": 0,
       },
+      wallLocks: {
+        "wall-front": false,
+        "wall-back": false,
+        "wall-left": false,
+        "wall-right": false,
+      },
       ceiling: false,
       dome: false,
       menuOpen: false,
@@ -270,13 +276,30 @@ describe("useVisibilityStore", () => {
     expect(useVisibilityStore.getState().mode).toBe("auto-3");
   });
 
-  it("toggleWall snaps opacity without changing mode", () => {
+  it("toggleWall locks wall off and snaps opacity to 0", () => {
     useVisibilityStore.getState().setMode("auto-3");
-    useVisibilityStore.getState().toggleWall("wall-front");
+    useVisibilityStore.getState().toggleWall("wall-back"); // wall-back starts visible
     const state = useVisibilityStore.getState();
-    expect(state.mode).toBe("auto-3"); // stays in auto mode
-    expect(state.walls["wall-front"]).toBe(true);
-    expect(state.wallOpacity["wall-front"]).toBe(1);
+    expect(state.mode).toBe("auto-3"); // stays in auto — per-wall lock, not global
+    expect(state.wallLocks["wall-back"]).toBe(true);
+    expect(state.walls["wall-back"]).toBe(false);
+    expect(state.wallOpacity["wall-back"]).toBe(0);
+  });
+
+  it("toggleWall again rebuilds wall (stays locked until animation completes)", () => {
+    useVisibilityStore.getState().toggleWall("wall-back"); // lock off
+    useVisibilityStore.getState().toggleWall("wall-back"); // rebuild (still locked)
+    const state = useVisibilityStore.getState();
+    expect(state.wallLocks["wall-back"]).toBe(true); // still locked during rebuild
+    expect(state.walls["wall-back"]).toBe(true);
+    expect(state.wallOpacity["wall-back"]).toBe(1);
+  });
+
+  it("unlockWall releases lock so auto resumes", () => {
+    useVisibilityStore.getState().toggleWall("wall-back"); // lock off
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(true);
+    useVisibilityStore.getState().unlockWall("wall-back");
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(false);
   });
 
   it("toggleWall sets opacity to 0 when hiding", () => {

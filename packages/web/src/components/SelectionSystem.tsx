@@ -78,6 +78,23 @@ function findFurnitureGroups(scene: Object3D): Object3D[] {
   return parent.children.filter((c) => c.name.startsWith("furniture-placed-"));
 }
 
+const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
+
+/** Walk the parent chain looking for a wall name or click-plane name. */
+function findWallKey(obj: Object3D): WallKey | null {
+  let current: Object3D | null = obj;
+  while (current !== null) {
+    const n = current.name;
+    if (WALL_KEYS_SET.has(n)) return n as WallKey;
+    if (n.endsWith("-click-plane")) {
+      const key = n.replace("-click-plane", "");
+      if (WALL_KEYS_SET.has(key)) return key as WallKey;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 export function SelectionSystem(): null {
   const { scene, camera, raycaster, invalidate, gl } = useThree();
   const isDragging = useRef(false);
@@ -249,29 +266,15 @@ export function SelectionSystem(): null {
         if (dragItemId.current !== null) break;
       }
 
-      // Also check for wall hits (for brick disassembly)
-      // Raycast against ALL scene objects and check if any wall-related object was hit
+      // If no furniture hit, check for wall hits (for brick disassembly toggle)
       wallClickKey.current = null;
       if (dragItemId.current === null) {
-        const allHits = raycaster.intersectObjects(scene.children, true);
-        for (const hit of allHits) {
-          let obj: Object3D | null = hit.object;
-          while (obj !== null) {
-            const n = obj.name;
-            if (n === "wall-front" || n === "wall-back" || n === "wall-left" || n === "wall-right") {
-              wallClickKey.current = n as WallKey;
-              break;
-            }
-            if (n.endsWith("-click-plane")) {
-              const key = n.replace("-click-plane", "");
-              if (key === "wall-front" || key === "wall-back" || key === "wall-left" || key === "wall-right") {
-                wallClickKey.current = key as WallKey;
-                break;
-              }
-            }
-            obj = obj.parent;
+        for (const hit of allIntersects) {
+          const wk = findWallKey(hit.object);
+          if (wk !== null) {
+            wallClickKey.current = wk;
+            break;
           }
-          if (wallClickKey.current !== null) break;
         }
       }
     }
@@ -467,10 +470,7 @@ export function SelectionSystem(): null {
             useSelectionStore.getState().select(dragItemId.current);
           }
         } else if (wallClickKey.current !== null) {
-          // Wall was clicked — trigger brick disassembly animation
-          const wk = wallClickKey.current;
-          (window as unknown as Record<string, unknown>)["__brickWallAnimate"] = wk;
-          useVisibilityStore.getState().toggleWall(wk);
+          useVisibilityStore.getState().toggleWall(wallClickKey.current);
           wallClickKey.current = null;
         } else {
           // Clicked on empty space — clear selection

@@ -47,27 +47,24 @@ export function snapPositionToGrid(x: number, z: number): Position3 {
 
 /**
  * Returns true if an item placed at (x, z) in render-space fits within the
- * room bounds. Checks that the item's bounding box (accounting for item
- * width/depth scaled to render-space) doesn't extend past the walls.
+ * room bounds. Only requires the item's center to be within the room so
+ * furniture (e.g. chairs) can sit flush against walls.
  */
 export function isWithinRoomBounds(
   x: number,
   z: number,
-  item: CatalogueItem,
-  rotationY: number = 0,
+  _item: CatalogueItem,
+  _rotationY: number = 0,
 ): boolean {
   const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
   const halfRoomW = width / 2;
   const halfRoomL = length / 2;
 
-  // Compute the effective footprint after rotation
-  const { halfW, halfD } = computeRotatedFootprint(item, rotationY);
-
   return (
-    x - halfW >= -halfRoomW &&
-    x + halfW <= halfRoomW &&
-    z - halfD >= -halfRoomL &&
-    z + halfD <= halfRoomL
+    x >= -halfRoomW &&
+    x <= halfRoomW &&
+    z >= -halfRoomL &&
+    z <= halfRoomL
   );
 }
 
