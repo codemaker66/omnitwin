@@ -109,9 +109,15 @@ export function SelectionSystem(): null {
   const invalidateRef = useRef(invalidate);
   invalidateRef.current = invalidate;
 
-  // Invalidate when selection changes
+  // Invalidate only when selected IDs change (not marquee/guides)
   useEffect(() => {
-    return useSelectionStore.subscribe(() => { invalidateRef.current(); });
+    let prev = useSelectionStore.getState().selectedIds;
+    return useSelectionStore.subscribe((state) => {
+      if (state.selectedIds !== prev) {
+        prev = state.selectedIds;
+        invalidateRef.current();
+      }
+    });
   }, []);
 
   // Keyboard handlers
@@ -251,29 +257,29 @@ export function SelectionSystem(): null {
       const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
       raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      // Raycast against entire scene to find furniture hits
+      // Single raycast — process hits in distance order to find furniture or wall
       const allIntersects = raycaster.intersectObjects(scene.children, true);
       dragItemId.current = null;
-      for (const inter of allIntersects) {
-        let current: Object3D | null = inter.object;
-        while (current !== null) {
-          if (current.name.startsWith("furniture-placed-") && !current.name.endsWith("-mesh")) {
-            dragItemId.current = current.name.replace("furniture-", "");
-            break;
-          }
-          current = current.parent;
-        }
-        if (dragItemId.current !== null) break;
-      }
-
-      // If no furniture hit, check for wall hits (for brick disassembly toggle)
       wallClickKey.current = null;
-      if (dragItemId.current === null) {
-        for (const hit of allIntersects) {
-          const wk = findWallKey(hit.object);
+      for (const inter of allIntersects) {
+        // Check furniture first (higher priority)
+        if (dragItemId.current === null) {
+          let current: Object3D | null = inter.object;
+          while (current !== null) {
+            if (current.name.startsWith("furniture-placed-") && !current.name.endsWith("-mesh")) {
+              dragItemId.current = current.name.replace("furniture-", "");
+              break;
+            }
+            current = current.parent;
+          }
+          if (dragItemId.current !== null) break; // furniture found, stop
+        }
+        // Check wall (only if no furniture found yet)
+        if (wallClickKey.current === null) {
+          const wk = findWallKey(inter.object);
           if (wk !== null) {
             wallClickKey.current = wk;
-            break;
+            break; // wall found, stop
           }
         }
       }

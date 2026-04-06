@@ -262,6 +262,8 @@ export function BrickWall({
   const animProgress = useRef(1); // start fully built
   /** Target: 1 = built, 0 = unbuilt. */
   const animTarget = useRef(1);
+  /** True when instance matrices need updating (animation in progress). */
+  const needsMatrixUpdate = useRef(true);
 
   const bricks = useMemo(
     () => computeBrickLayout(wallWidth, wallHeight, hashString(name)),
@@ -333,6 +335,12 @@ export function BrickWall({
 
     const progress = animProgress.current;
     const isAnimating = Math.abs(progress - animTarget.current) > 0.001;
+
+    // Early exit: nothing to update when animation is settled
+    if (!isAnimating && !needsMatrixUpdate.current) {
+      return;
+    }
+    needsMatrixUpdate.current = isAnimating;
 
     // If animating, keep requesting frames
     if (isAnimating) {

@@ -281,6 +281,10 @@ export function GrandHallRoom(): React.ReactElement {
 
   // Drive non-brick surface opacity imperatively (floor, ceiling, dome).
   // Walls and wainscoting are handled by BrickWall's own useFrame.
+  const prevCeiling = useRef<boolean | null>(null);
+  const prevDome = useRef<boolean | null>(null);
+  const prevXray = useRef<number | null>(null);
+
   useFrame(() => {
     const group = groupRef.current;
     if (group === null) return;
@@ -288,22 +292,25 @@ export function GrandHallRoom(): React.ReactElement {
     const { ceiling, dome } = useVisibilityStore.getState();
     const xrayOpacity = useXrayStore.getState().opacity;
 
+    // Skip if nothing changed
+    if (ceiling === prevCeiling.current && dome === prevDome.current && xrayOpacity === prevXray.current) return;
+    prevCeiling.current = ceiling;
+    prevDome.current = dome;
+    prevXray.current = xrayOpacity;
+
     for (const child of group.children) {
       if (!(child instanceof Mesh)) continue;
       const mat: unknown = child.material;
       if (!(mat instanceof MeshStandardMaterial)) continue;
 
       if (child.name === "floor") {
-        // Floor is exempt from x-ray — always fully opaque
         mat.opacity = 1;
       } else if (child.name === "ceiling") {
-        const baseOpacity = ceiling ? 1 : 0;
-        const finalOpacity = applyXrayOpacity("ceiling", baseOpacity, xrayOpacity);
+        const finalOpacity = applyXrayOpacity("ceiling", ceiling ? 1 : 0, xrayOpacity);
         child.visible = finalOpacity > 0.01;
         mat.opacity = finalOpacity;
       } else if (child.name === "dome") {
-        const baseOpacity = dome ? 1 : 0;
-        const finalOpacity = applyXrayOpacity("dome", baseOpacity, xrayOpacity);
+        const finalOpacity = applyXrayOpacity("dome", dome ? 1 : 0, xrayOpacity);
         child.visible = finalOpacity > 0.01;
         mat.opacity = finalOpacity;
         mat.transparent = true;

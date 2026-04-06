@@ -90,7 +90,11 @@ export function EditorBridge(): null {
 
   // --- Placement → Editor: subscribe to placement-store changes ---
   useEffect(() => {
-    const unsub = usePlacementStore.subscribe((state) => {
+    let prevItems = usePlacementStore.getState().placedItems;
+    const unsub = usePlacementStore.subscribe((storeState) => {
+      if (storeState.placedItems === prevItems) return;
+      prevItems = storeState.placedItems;
+      const state = { placedItems: storeState.placedItems };
       if (syncing.current || configId === null) return;
       syncing.current = true;
 

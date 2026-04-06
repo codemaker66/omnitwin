@@ -270,14 +270,6 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
       }
     }
 
-    // Derive booleans from opacity (for UI checkboxes and compat)
-    const newWalls: Record<WallKey, boolean> = {
-      "wall-front": newOpacity["wall-front"] > 0.5,
-      "wall-back": newOpacity["wall-back"] > 0.5,
-      "wall-left": newOpacity["wall-left"] > 0.5,
-      "wall-right": newOpacity["wall-right"] > 0.5,
-    };
-
     // Only update store if opacity actually changed
     let changed = false;
     for (const key of WALL_KEYS) {
@@ -288,7 +280,15 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
     }
 
     if (changed) {
-      set({ wallOpacity: newOpacity, walls: newWalls });
+      set({
+        wallOpacity: newOpacity,
+        walls: {
+          "wall-front": newOpacity["wall-front"] > 0.5,
+          "wall-back": newOpacity["wall-back"] > 0.5,
+          "wall-left": newOpacity["wall-left"] > 0.5,
+          "wall-right": newOpacity["wall-right"] > 0.5,
+        },
+      });
     }
 
     return transitioning;
