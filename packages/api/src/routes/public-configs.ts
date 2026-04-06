@@ -30,7 +30,7 @@ const BatchObjectItem = z.object({
 });
 
 const BatchBody = z.object({
-  objects: z.array(BatchObjectItem).min(1).max(500),
+  objects: z.array(BatchObjectItem).max(500),
 });
 
 // ---------------------------------------------------------------------------
