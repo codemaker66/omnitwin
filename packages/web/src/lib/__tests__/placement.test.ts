@@ -402,9 +402,9 @@ describe("computeSurfaceHeight", () => {
     expect(computeSurfaceHeight(0, 0, [p], new Set([p.id]))).toBe(0);
   });
 
-  it("only considers stage items", () => {
+  it("considers stage and table items as surfaces", () => {
     const table = createPlacedItem("round-table-6ft", 0, 0);
-    expect(computeSurfaceHeight(0, 0, [table], new Set())).toBe(0);
+    expect(computeSurfaceHeight(0, 0, [table], new Set())).toBe(0.76);
   });
 
   it("respects platform footprint boundaries", () => {

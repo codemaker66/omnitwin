@@ -237,11 +237,13 @@ export function computeSurfaceHeight(
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
     const otherItem = getCatalogueItem(other.catalogueItemId);
-    if (otherItem === undefined || otherItem.category !== "stage") continue;
+    if (otherItem === undefined) continue;
+    // Items can be placed on stages and tables
+    if (otherItem.category !== "stage" && otherItem.category !== "table") continue;
 
     const { halfW, halfD } = computeRotatedFootprint(otherItem, other.rotationY);
 
-    // Check if the point (x, z) is within this platform's XZ footprint
+    // Check if the point (x, z) is within this surface's XZ footprint
     if (
       Math.abs(x - other.x) <= halfW &&
       Math.abs(z - other.z) <= halfD
