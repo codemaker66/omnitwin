@@ -134,8 +134,15 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   removeItems: (ids: ReadonlySet<string>) => {
     if (ids.size === 0) return;
     const state = get();
+    // Expand selection to include all group members (e.g. deleting a table also deletes its chairs)
+    const allIds = new Set<string>();
+    for (const id of ids) {
+      for (const memberId of getGroupMemberIds(id, state.placedItems)) {
+        allIds.add(memberId);
+      }
+    }
     set({
-      placedItems: state.placedItems.filter((item) => !ids.has(item.id)),
+      placedItems: state.placedItems.filter((item) => !allIds.has(item.id)),
       ...pushUndo(state),
     });
   },

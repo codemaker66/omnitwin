@@ -120,8 +120,9 @@ export function PlacementGhost(): React.ReactElement | null {
       if (!placeState.ghostValid) return;
 
       // Table: show chair count dialog instead of placing directly
+      // (poseur tables skip the dialog — no chairs)
       const item = getCatalogueItem(catState.selectedItemId);
-      if (item !== undefined && item.tableShape !== null) {
+      if (item !== undefined && item.tableShape !== null && !catState.selectedItemId.startsWith("poseur-table")) {
         useChairDialogStore.getState().showDialog({
           catalogueItemId: catState.selectedItemId,
           x: placeState.ghostPosition[0],
