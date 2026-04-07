@@ -160,12 +160,47 @@ const MARGIN = 36; // 0.5 inch
 const CONTENT_W = A4_LANDSCAPE_W - MARGIN * 2;
 
 /**
+ * Fetches an image from a URL and returns it as a Buffer.
+ * Returns null if the fetch fails.
+ */
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arrayBuf = await res.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates a QR code as a PNG Buffer.
+ */
+async function generateQrBuffer(url: string, size: number): Promise<Buffer | null> {
+  try {
+    const QRCode = await import("qrcode");
+    const dataUrl = await QRCode.toDataURL(url, { width: size, margin: 1, color: { dark: "#333333", light: "#ffffff" } });
+    const base64 = dataUrl.split(",")[1];
+    if (base64 === undefined) return null;
+    return Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Generates a PDF buffer from assembled sheet data.
  * Uses pdfkit for server-side rendering — no browser needed.
  */
 export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
   const PDFDocument = (await import("pdfkit")).default;
-  // QR code library available for future iteration (pre-render to Buffer)
+
+  // Pre-render QR code and fetch diagram image BEFORE starting the PDF stream
+  const [qrBuffer, diagramBuffer] = await Promise.all([
+    generateQrBuffer(data.webViewUrl, 200),
+    data.diagramUrl !== null ? fetchImageBuffer(data.diagramUrl) : Promise.resolve(null),
+  ]);
 
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -231,28 +266,45 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
     const diagramY = headerH + 8;
     const diagramH = 230;
 
-    doc.save();
-    doc.rect(MARGIN, diagramY, CONTENT_W, diagramH)
-      .strokeColor("#d0d0d0").lineWidth(0.5).dash(4, { space: 4 }).stroke();
-    doc.restore();
+    if (diagramBuffer !== null) {
+      // Insert the actual floor plan diagram image
+      doc.image(diagramBuffer, MARGIN, diagramY, {
+        width: CONTENT_W,
+        height: diagramH,
+        fit: [CONTENT_W, diagramH],
+        align: "center",
+        valign: "center",
+      });
+      // Light border around diagram
+      doc.save();
+      doc.rect(MARGIN, diagramY, CONTENT_W, diagramH)
+        .strokeColor("#d0d0d0").lineWidth(0.5).stroke();
+      doc.restore();
+    } else {
+      // Placeholder when no diagram available
+      doc.save();
+      doc.rect(MARGIN, diagramY, CONTENT_W, diagramH)
+        .strokeColor("#d0d0d0").lineWidth(0.5).dash(4, { space: 4 }).stroke();
+      doc.restore();
 
-    doc.font("Helvetica").fontSize(11).fillColor("#bbbbbb");
-    doc.text("Floor plan diagram", MARGIN, diagramY + diagramH / 2 - 10, {
-      width: CONTENT_W,
-      align: "center",
-    });
-    doc.fontSize(8).fillColor("#cccccc");
-    doc.text("(Generated from 3D editor — attach via web view)", MARGIN, diagramY + diagramH / 2 + 6, {
-      width: CONTENT_W,
-      align: "center",
-    });
+      doc.font("Helvetica").fontSize(11).fillColor("#bbbbbb");
+      doc.text("Floor plan diagram", MARGIN, diagramY + diagramH / 2 - 10, {
+        width: CONTENT_W, align: "center",
+      });
+      doc.fontSize(8).fillColor("#cccccc");
+      doc.text("Generate from the 3D editor to include the floor plan", MARGIN, diagramY + diagramH / 2 + 6, {
+        width: CONTENT_W, align: "center",
+      });
+    }
 
-    // Scale bar placeholder
+    // Scale bar
     doc.font("Helvetica").fontSize(7).fillColor("#999999");
     doc.text("1m", MARGIN + 4, diagramY + diagramH - 18);
+    doc.save();
     doc.moveTo(MARGIN + 16, diagramY + diagramH - 12)
-      .lineTo(MARGIN + 16 + 28.35, diagramY + diagramH - 12) // 1cm = 28.35pt ≈ 1m at scale
+      .lineTo(MARGIN + 16 + 28.35, diagramY + diagramH - 12)
       .strokeColor("#999999").lineWidth(1).undash().stroke();
+    doc.restore();
 
     // =====================================================================
     // ZONE 3 — MANIFEST TABLE (bottom ~30%)
@@ -341,14 +393,18 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
       MARGIN, footerY,
     );
 
-    // Centre — QR code
-    // QR code is rendered in the web view — PDF shows the URL text instead.
-    // pdfkit image insertion requires a file path or Buffer, not a data URL,
-    // so we'd need to pre-generate the QR to a Buffer before doc creation.
-    // This is handled in a future iteration with pre-generated QR buffers.
-
-    doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa");
-    doc.text(`Web view: ${data.webViewUrl}`, centerX - 120, footerY, { width: 240, align: "center" });
+    // Centre — QR code (pre-rendered as PNG buffer)
+    const qrSize = 56; // ~2cm at 72dpi
+    const qrX = centerX - qrSize / 2;
+    const qrY = footerY - 12;
+    if (qrBuffer !== null) {
+      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+      doc.font("Helvetica").fontSize(5.5).fillColor("#bbbbbb");
+      doc.text("Scan for web view", qrX - 20, qrY + qrSize + 2, { width: qrSize + 40, align: "center" });
+    } else {
+      doc.font("Helvetica").fontSize(6.5).fillColor("#aaaaaa");
+      doc.text(`Web view: ${data.webViewUrl}`, centerX - 120, footerY, { width: 240, align: "center" });
+    }
 
     // Right — generation info
     doc.font("Helvetica").fontSize(6).fillColor("#bbbbbb");
