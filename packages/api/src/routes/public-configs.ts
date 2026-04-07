@@ -163,11 +163,14 @@ export async function publicConfigRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
+    // Load config by ID — no isPublicPreview filter.
+    // The UUID itself is the access token (shared via QR code / URL).
+    // Anyone with the link can VIEW; only public preview configs can be
+    // SAVED to via the public batch endpoint.
     const [config] = await db.select()
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
-        eq(configurations.isPublicPreview, true),
         isNull(configurations.deletedAt),
       ))
       .limit(1);

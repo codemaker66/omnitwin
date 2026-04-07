@@ -62,6 +62,10 @@ export async function getPublicConfig(configId: string): Promise<Configuration> 
 // Authenticated endpoints
 // ---------------------------------------------------------------------------
 
+export async function getConfig(configId: string): Promise<Configuration> {
+  return api.get<Configuration>(`/configurations/${configId}`);
+}
+
 export async function claimConfig(configId: string): Promise<Configuration> {
   return api.post<Configuration>(`/configurations/${configId}/claim`);
 }

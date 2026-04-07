@@ -79,7 +79,8 @@ interface EditorActions {
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
-  readonly saveToServer: (isAuthenticated: boolean) => Promise<void>;
+  /** Save to server. Uses public endpoint for preview configs, authenticated for claimed. */
+  readonly saveToServer: (isAuthenticated?: boolean) => Promise<void>;
   readonly reset: () => void;
 }
 
@@ -209,14 +210,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   deselectObject: () => { set({ selectedObjectId: null }); },
 
   saveToServer: async (isAuthenticated) => {
-    const { configId, objects, isSaving } = get();
+    const { configId, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return;
+
+    // Determine save path: use authenticated endpoint if config is claimed
+    // (isPublicPreview=false) OR if caller explicitly says authenticated.
+    // Public preview configs always use the public endpoint.
+    const useAuthPath = isPublicPreview === false || isAuthenticated === true;
 
     set({ isSaving: true });
     try {
       const batch = objects.map(editorToBatch);
       let saved: configApi.PlacedObject[];
-      if (isAuthenticated) {
+      if (useAuthPath) {
         saved = await configApi.authBatchSave(configId, batch);
       } else {
         saved = await configApi.publicBatchSave(configId, batch);

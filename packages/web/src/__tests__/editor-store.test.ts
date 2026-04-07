@@ -122,7 +122,7 @@ describe("removeObject", () => {
 });
 
 describe("saveToServer", () => {
-  it("calls public endpoint when not authenticated", async () => {
+  it("calls public endpoint for public preview configs", async () => {
     configMock.publicBatchSave.mockResolvedValue([
       { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: "a1",
         positionX: "0", positionY: "0", positionZ: "0",
@@ -130,7 +130,7 @@ describe("saveToServer", () => {
         scale: "1", sortOrder: 0, metadata: null },
     ]);
 
-    useEditorStore.setState({ configId: "cfg-1", isDirty: true });
+    useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
     useEditorStore.getState().addObject("a1", 0, 0, 0);
 
     await useEditorStore.getState().saveToServer(false);

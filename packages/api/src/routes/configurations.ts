@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { configurations, spaces } from "../db/schema.js";
+import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
@@ -105,7 +105,13 @@ export async function configurationRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: config };
+    // Include placed objects (same as public GET)
+    const objects = await db.select()
+      .from(placedObjects)
+      .where(eq(placedObjects.configurationId, params.data.id))
+      .orderBy(placedObjects.sortOrder);
+
+    return { data: { ...config, objects } };
   });
 
   // POST /configurations — authenticated
