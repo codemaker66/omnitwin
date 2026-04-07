@@ -142,6 +142,27 @@ export async function clientRoutes(
       }
     }
 
+    const profileVenueId = request.user.venueId;
+    const profileIsAdmin = request.user.role === "admin";
+
+    // Non-admin: verify the target user has configs or enquiries at this venue
+    // BEFORE returning any PII (prevents IDOR exposure of unrelated users)
+    if (!profileIsAdmin) {
+      const [hasRelation] = await db.select({ n: sql<number>`1` })
+        .from(users)
+        .where(and(
+          eq(users.id, params.data.userId),
+          sql`(
+            EXISTS (SELECT 1 FROM configurations WHERE user_id = ${params.data.userId} AND venue_id = ${profileVenueId} AND deleted_at IS NULL)
+            OR EXISTS (SELECT 1 FROM enquiries WHERE user_id = ${params.data.userId} AND venue_id = ${profileVenueId})
+          )`,
+        ))
+        .limit(1);
+      if (hasRelation === undefined) {
+        return reply.status(404).send({ error: "User not found", code: "NOT_FOUND" });
+      }
+    }
+
     const [user] = await db.select({
       id: users.id,
       displayName: users.displayName,
@@ -159,9 +180,6 @@ export async function clientRoutes(
     if (user === undefined) {
       return reply.status(404).send({ error: "User not found", code: "NOT_FOUND" });
     }
-
-    const profileVenueId = request.user.venueId;
-    const profileIsAdmin = request.user.role === "admin";
 
     const configs = await db.select({
       id: configurations.id,
@@ -212,6 +230,24 @@ export async function clientRoutes(
       }
     }
 
+    const leadVenueId = request.user.venueId;
+    const leadIsAdmin = request.user.role === "admin";
+
+    // Non-admin: verify this lead has enquiries at the hallkeeper's venue
+    // BEFORE returning any PII
+    if (!leadIsAdmin) {
+      const [hasRelation] = await db.select({ n: sql<number>`1` })
+        .from(guestLeads)
+        .where(and(
+          eq(guestLeads.id, params.data.leadId),
+          sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${leadVenueId})`,
+        ))
+        .limit(1);
+      if (hasRelation === undefined) {
+        return reply.status(404).send({ error: "Guest lead not found", code: "NOT_FOUND" });
+      }
+    }
+
     const [lead] = await db.select()
       .from(guestLeads)
       .where(eq(guestLeads.id, params.data.leadId))
@@ -220,9 +256,6 @@ export async function clientRoutes(
     if (lead === undefined) {
       return reply.status(404).send({ error: "Guest lead not found", code: "NOT_FOUND" });
     }
-
-    const leadVenueId = request.user.venueId;
-    const leadIsAdmin = request.user.role === "admin";
 
     const leadEnquiries = await db.select({
       id: enquiries.id,

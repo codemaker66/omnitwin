@@ -139,8 +139,14 @@ export async function referenceLoadoutRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
+    // Verify loadout belongs to the URL venue and space (prevents cross-venue mutation)
     const [existing] = await db.select().from(referenceLoadouts)
-      .where(and(eq(referenceLoadouts.id, params.data.id), isNull(referenceLoadouts.deletedAt)))
+      .where(and(
+        eq(referenceLoadouts.id, params.data.id),
+        eq(referenceLoadouts.venueId, params.data.venueId),
+        eq(referenceLoadouts.spaceId, params.data.spaceId),
+        isNull(referenceLoadouts.deletedAt),
+      ))
       .limit(1);
     if (existing === undefined) {
       return reply.status(404).send({ error: "Loadout not found", code: "NOT_FOUND" });
@@ -169,8 +175,14 @@ export async function referenceLoadoutRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // Verify loadout belongs to the URL venue and space
     const [existing] = await db.select().from(referenceLoadouts)
-      .where(and(eq(referenceLoadouts.id, params.data.id), isNull(referenceLoadouts.deletedAt)))
+      .where(and(
+        eq(referenceLoadouts.id, params.data.id),
+        eq(referenceLoadouts.venueId, params.data.venueId),
+        eq(referenceLoadouts.spaceId, params.data.spaceId),
+        isNull(referenceLoadouts.deletedAt),
+      ))
       .limit(1);
     if (existing === undefined) {
       return reply.status(404).send({ error: "Loadout not found", code: "NOT_FOUND" });
