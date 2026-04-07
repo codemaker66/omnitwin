@@ -3,6 +3,7 @@ import { LoginPage } from "./pages/LoginPage.js";
 import { RegisterPage } from "./pages/RegisterPage.js";
 import { EditorPage } from "./pages/EditorPage.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
+import { HallkeeperPage } from "./pages/HallkeeperPage.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,10 @@ export const router = createBrowserRouter([
   {
     path: "/editor/:configId",
     element: <EditorPage />,
+  },
+  {
+    path: "/hallkeeper/:configId",
+    element: <HallkeeperPage />,
   },
   {
     path: "/dashboard",
