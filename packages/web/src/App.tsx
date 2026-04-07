@@ -16,6 +16,7 @@ import { SectionBoxControls } from "./components/SectionBoxControls.js";
 import { PerfMonitor } from "./components/PerfMonitor.js";
 import { PerfOverlay } from "./components/PerfOverlay.js";
 import { PlacementGhost } from "./components/PlacementGhost.js";
+import { DiagramLabels } from "./components/DiagramLabels.js";
 import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
@@ -100,6 +101,7 @@ export function App(): React.ReactElement {
         <SelectionSystem />
         <SnapGuides />
         <MarqueeSelect />
+        <DiagramLabels />
         <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>

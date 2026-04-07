@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
-  Camera, Grid3X3, Save, User, Eye,
+  Camera, Grid3X3, Save, User, Eye, FileText,
 } from "lucide-react";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -159,6 +159,12 @@ export function VerticalToolbox(): React.ReactElement {
     }
   }, []);
 
+  const handleGenerateSheet = useCallback(() => {
+    const configId = useEditorStore.getState().configId;
+    if (configId === null) return;
+    window.open(`/hallkeeper/${configId}`, "_blank");
+  }, []);
+
   const handleSave = useCallback(() => {
     void useEditorStore.getState().saveToServer(true).then(() => {
       setSaveFlash(true);
@@ -247,6 +253,11 @@ export function VerticalToolbox(): React.ReactElement {
         {/* Save */}
         <button type="button" style={btnStyle(saveFlash)} onClick={handleSave} title="Save" disabled={isSaving}>
           <Save size={ICON_SIZE} />
+        </button>
+
+        {/* Generate Events Sheet */}
+        <button type="button" style={btnStyle(false)} onClick={handleGenerateSheet} title="Events Sheet">
+          <FileText size={ICON_SIZE} />
         </button>
 
         {/* Spacer */}
