@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { files, spaces, enquiries } from "../db/schema.js";
+import { files, spaces, enquiries, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -22,12 +22,12 @@ const ALLOWED_CONTENT_TYPES = [
 const PresignedBody = z.object({
   filename: z.string().trim().min(1).max(255),
   contentType: z.enum(ALLOWED_CONTENT_TYPES),
-  context: z.enum(["venue", "space", "asset", "enquiry"]),
+  context: z.enum(["venue", "space", "asset", "enquiry", "loadout"]),
   contextId: z.string().uuid(),
 });
 
 const ListFilesParams = z.object({
-  context: z.enum(["venue", "space", "asset", "enquiry"]),
+  context: z.enum(["venue", "space", "asset", "enquiry", "loadout"]),
   contextId: z.string().uuid(),
 });
 
@@ -112,6 +112,14 @@ async function verifyContextAccess(
     return canManageVenue(user as Parameters<typeof canManageVenue>[0], space.venueId);
   }
 
+  if (context === "loadout") {
+    // Look up the loadout's venue, then check venue access
+    const [loadout] = await db.select({ venueId: referenceLoadouts.venueId })
+      .from(referenceLoadouts).where(eq(referenceLoadouts.id, contextId)).limit(1);
+    if (loadout === undefined) return false;
+    return canManageVenue(user as Parameters<typeof canManageVenue>[0], loadout.venueId);
+  }
+
   if (context === "enquiry") {
     // User must own the enquiry OR be venue staff
     const [enq] = await db.select({ userId: enquiries.userId, venueId: enquiries.venueId })
@@ -158,18 +166,18 @@ export async function uploadRoutes(
     const uploadUrl = await createPresignedUrl(env, fileKey, parsed.data.contentType);
     const publicUrl = `${env.R2_PUBLIC_URL}/${fileKey}`;
 
-    // Record the file in the database
-    await db.insert(files).values({
+    // Record the file in the database and return its ID
+    const [file] = await db.insert(files).values({
       fileKey,
       filename: parsed.data.filename,
       contentType: parsed.data.contentType,
       context: parsed.data.context,
       contextId: parsed.data.contextId,
       uploadedBy: request.user.id,
-    });
+    }).returning();
 
     return reply.status(201).send({
-      data: { uploadUrl, fileKey, publicUrl },
+      data: { fileId: file?.id, uploadUrl, fileKey, publicUrl },
     });
   });
 
