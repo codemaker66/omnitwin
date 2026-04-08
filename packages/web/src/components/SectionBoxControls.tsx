@@ -181,8 +181,9 @@ export function SectionBoxControls(): React.ReactElement | null {
   useEffect(() => {
     if (!boxEnabled) return;
     function onPointerDown(e: PointerEvent): void {
+      // Only close on left-click, not right-click (orbit) or middle-click (pan)
+      if (e.button !== 0) return;
       if (panelRef.current !== null && !panelRef.current.contains(e.target as Node)) {
-        // Don't close if clicking the toolbar section box button itself (it toggles)
         const target = e.target as HTMLElement;
         if (target.closest("[data-section-box-btn]") !== null) return;
         useSectionStore.getState().toggleBox();
