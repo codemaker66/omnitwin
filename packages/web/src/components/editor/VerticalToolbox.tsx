@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
-  Camera, Grid3X3, Save, User, Eye, FileText,
+  Camera, Grid3X3, Save, User, Eye, FileText, Box,
 } from "lucide-react";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -10,6 +10,7 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
+import { useSectionStore } from "../../stores/section-store.js";
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
@@ -268,6 +269,8 @@ export function VerticalToolbox(): React.ReactElement {
   const isSaving = useEditorStore((s) => s.isSaving);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
+  const boxEnabled = useSectionStore((s) => s.boxEnabled);
+  const toggleBox = useSectionStore((s) => s.toggleBox);
 
   const handleToolClick = useCallback((tool: ActiveTool) => {
     if (tool === "add") {
@@ -409,6 +412,10 @@ export function VerticalToolbox(): React.ReactElement {
 
         <ToolBtn active={allWallsUp} label="Show All Walls" description="Pin every wall up so you can see the full room structure. Click individual walls to toggle them." onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
+        </ToolBtn>
+
+        <ToolBtn active={boxEnabled} label="Section Box" description="Slice the room from any direction — peel back walls, ceiling, and floor to see exactly what's inside." shortcut="B" onClick={toggleBox}>
+          <Box size={ICON_SIZE} />
         </ToolBtn>
 
         <ToolBtn active={saveFlash} disabled={isSaving} label="Save Layout" description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
