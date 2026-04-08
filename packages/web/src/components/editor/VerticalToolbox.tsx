@@ -360,6 +360,14 @@ export function VerticalToolbox(): React.ReactElement {
 
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
 
+  // Close furniture panel and camera dropdown when section box opens
+  useEffect(() => {
+    if (boxEnabled) {
+      setPanelOpen(false);
+      setCameraOpen(false);
+    }
+  }, [boxEnabled]);
+
   // F key opens furniture panel
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -419,7 +427,7 @@ export function VerticalToolbox(): React.ReactElement {
         </ToolBtn>
 
         <div data-section-box-btn="">
-          <ToolBtn active={boxEnabled} label="Section Box" description="Slice the room from any direction — peel back walls, ceiling, and floor to see exactly what's inside." shortcut="B" onClick={toggleBox}>
+          <ToolBtn active={boxEnabled} label="Section Box" description="Slice the room from any direction — peel back walls, ceiling, and floor to see exactly what's inside." shortcut="B" onClick={() => { setPanelOpen(false); setCameraOpen(false); toggleBox(); }}>
             <Box size={ICON_SIZE} />
           </ToolBtn>
         </div>
