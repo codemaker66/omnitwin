@@ -52,16 +52,20 @@ const dividerStyle: React.CSSProperties = {
 
 const panelStyle: React.CSSProperties = {
   position: "fixed", left: TOOLBAR_W, top: 0, bottom: 0, width: PANEL_W,
-  background: "rgba(26,26,26,0.97)", borderRight: "1px solid #333",
-  zIndex: 49, overflowY: "auto", padding: "16px 12px",
+  background: "linear-gradient(180deg, rgba(16,16,16,0.98) 0%, rgba(22,22,22,0.98) 100%)",
+  borderRight: "1px solid rgba(201,168,76,0.1)",
+  zIndex: 49, overflowY: "auto", padding: "24px 16px",
   fontFamily: "'Inter', sans-serif", color: "#ccc",
-  backdropFilter: "blur(12px)",
+  backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+  animation: "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+  boxShadow: "8px 0 40px rgba(0,0,0,0.4), inset -1px 0 0 rgba(201,168,76,0.05)",
 };
 
 const categoryHeaderStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1,
-  color: "#777", padding: "12px 8px 6px", cursor: "pointer",
+  fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2,
+  color: GOLD, padding: "16px 8px 8px", cursor: "pointer",
   display: "flex", justifyContent: "space-between", alignItems: "center",
+  borderBottom: "1px solid rgba(201,168,76,0.08)",
 };
 
 const assetRowStyle: React.CSSProperties = {
@@ -71,15 +75,17 @@ const assetRowStyle: React.CSSProperties = {
 };
 
 const cameraDropdownStyle: React.CSSProperties = {
-  position: "fixed", left: TOOLBAR_W + 8, background: "#222", borderRadius: 8,
-  padding: 4, zIndex: 51, boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-  border: "1px solid #444", minWidth: 160,
+  position: "fixed", left: TOOLBAR_W + 8, background: "linear-gradient(145deg, #141414, #1c1c1c)",
+  borderRadius: 16, padding: "12px 8px", zIndex: 51,
+  boxShadow: "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.12)",
+  border: "1px solid rgba(201,168,76,0.15)", minWidth: 200,
+  animation: "omni-dropdown-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
 };
 
 const cameraItemStyle: React.CSSProperties = {
-  display: "block", width: "100%", padding: "8px 12px", fontSize: 13,
+  display: "block", width: "100%", padding: "10px 14px", fontSize: 14,
   background: "none", border: "none", color: "#ccc", cursor: "pointer",
-  textAlign: "left", borderRadius: 4,
+  textAlign: "left", borderRadius: 8, fontFamily: "'Inter', sans-serif",
 };
 
 // ---------------------------------------------------------------------------
@@ -96,6 +102,50 @@ const CATEGORY_COLORS: Partial<Record<FurnitureCategory, string>> = {
 // ---------------------------------------------------------------------------
 // Tooltip — rich animated popout labels
 // ---------------------------------------------------------------------------
+
+// Panel entrance animations
+const PANEL_ANIM_ID = "omni-panel-anims";
+if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) === null) {
+  const ps = document.createElement("style");
+  ps.id = PANEL_ANIM_ID;
+  ps.textContent = `
+    @keyframes omni-panel-slide {
+      0% { transform: translateX(-100%); opacity: 0; filter: blur(8px); }
+      60% { transform: translateX(8px); filter: blur(0); }
+      100% { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes omni-panel-item {
+      0% { opacity: 0; transform: translateX(-16px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes omni-dropdown-pop {
+      0% { opacity: 0; transform: scale(0.9) translateY(-8px); filter: blur(4px); }
+      60% { transform: scale(1.02) translateY(2px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+    }
+    .omni-asset-row {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    .omni-asset-row:hover {
+      background: rgba(201,168,76,0.08) !important;
+      padding-left: 16px !important;
+      border-left: 2px solid rgba(201,168,76,0.5) !important;
+    }
+    .omni-asset-row:active {
+      transform: scale(0.97);
+      background: rgba(201,168,76,0.15) !important;
+    }
+    .omni-cam-item {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    .omni-cam-item:hover {
+      background: rgba(201,168,76,0.1) !important;
+      padding-left: 20px !important;
+      color: #dfc06a !important;
+    }
+  `;
+  document.head.appendChild(ps);
+}
 
 const TOOLTIP_ANIM_ID = "omni-tooltip-anims-v2";
 if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) === null) {
@@ -450,7 +500,12 @@ export function VerticalToolbox(): React.ReactElement {
       {/* === Slide-out asset panel === */}
       {panelOpen && (
         <div style={panelStyle}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", marginBottom: 12 }}>
+          {/* Gold accent */}
+          <div style={{ width: 32, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.2))`, marginBottom: 14 }} />
+          <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 2.5, color: GOLD, marginBottom: 4 }}>
+            Catalogue
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", fontFamily: "'Playfair Display', serif", marginBottom: 20, letterSpacing: -0.3 }}>
             Furniture
           </div>
           {CATALOGUE_CATEGORIES.map((cat) => {
@@ -463,22 +518,26 @@ export function VerticalToolbox(): React.ReactElement {
                   <span>{categoryLabel(cat)}</span>
                   <span style={{ fontSize: 14 }}>{collapsed ? "+" : "−"}</span>
                 </div>
-                {!collapsed && items.map((item) => (
+                {!collapsed && items.map((item, idx) => (
                   <div
                     key={item.id}
-                    style={assetRowStyle}
+                    className="omni-asset-row"
+                    style={{
+                      ...assetRowStyle,
+                      animation: `omni-panel-item 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${String(idx * 0.04)}s both`,
+                      borderLeft: "2px solid transparent",
+                    }}
                     onClick={() => { handleAssetClick(item); }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAssetClick(item); }}
                   >
                     <div style={{
-                      width: 8, height: 8, borderRadius: 2,
+                      width: 10, height: 10, borderRadius: 3,
                       background: CATEGORY_COLORS[cat] ?? "#666",
+                      boxShadow: `0 0 6px ${CATEGORY_COLORS[cat] ?? "#666"}40`,
                     }} />
-                    <span>{item.name}</span>
+                    <span style={{ fontSize: 14 }}>{item.name}</span>
                   </div>
                 ))}
               </div>
@@ -494,10 +553,12 @@ export function VerticalToolbox(): React.ReactElement {
             <button
               key={bm.id}
               type="button"
-              style={cameraItemStyle}
+              className="omni-cam-item"
+              style={{
+                ...cameraItemStyle,
+                animation: `omni-panel-item 0.25s cubic-bezier(0.16, 1, 0.3, 1) ${String(i * 0.05)}s both`,
+              }}
               onClick={() => { handleCameraPreset(i); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {bm.name}
             </button>
