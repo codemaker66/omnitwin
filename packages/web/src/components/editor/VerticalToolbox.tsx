@@ -281,6 +281,10 @@ export function VerticalToolbox(): React.ReactElement {
       setActiveTool(tool);
     }
     setCameraOpen(false);
+    // Close section box when switching tools
+    if (useSectionStore.getState().boxEnabled) {
+      useSectionStore.getState().toggleBox();
+    }
   }, []);
 
   const handleUndo = useCallback(() => {

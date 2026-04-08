@@ -6,7 +6,7 @@ import {
   percentToFace,
   boxValueToReal,
   faceLabel,
-  BOX_FACES,
+  getFullRoomBounds,
 } from "../lib/section-box.js";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +89,18 @@ const GOLD = "#c9a84c";
 // Sub-components
 // ---------------------------------------------------------------------------
 
+const sliderRowStyle: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 12, padding: "6px 0",
+};
+const sliderLabelStyle: React.CSSProperties = {
+  fontSize: 13, fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 600,
+  color: "#bbb", width: 48, textAlign: "right", flexShrink: 0,
+};
+const sliderValueStyle: React.CSSProperties = {
+  fontSize: 14, fontFamily: "'Inter', system-ui, monospace", fontWeight: 700,
+  color: "#fff", width: 56, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums",
+};
+
 function FaceSlider({ face }: { readonly face: BoxFace }): React.ReactElement {
   const boxBounds = useSectionStore((s) => s.boxBounds);
   const setBoxFace = useSectionStore((s) => s.setBoxFace);
@@ -98,54 +110,56 @@ function FaceSlider({ face }: { readonly face: BoxFace }): React.ReactElement {
 
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const newPercent = Number(event.target.value);
-      const newValue = percentToFace(face, newPercent);
-      setBoxFace(face, newValue);
+      setBoxFace(face, percentToFace(face, Number(event.target.value)));
     },
     [face, setBoxFace],
   );
 
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      padding: "6px 0",
-    }}>
-      <span style={{
-        fontSize: 13,
-        fontFamily: "'Inter', system-ui, sans-serif",
-        fontWeight: 600,
-        color: "#bbb",
-        width: 48,
-        textAlign: "right",
-        flexShrink: 0,
-      }}>
-        {faceLabel(face)}
-      </span>
-      <input
-        type="range"
-        className="omni-sb-slider"
-        min={0}
-        max={100}
-        step={0.5}
-        value={percent}
-        onChange={handleChange}
-        aria-label={`Section box ${faceLabel(face)} face`}
-        style={{ flex: 1 }}
-      />
-      <span style={{
-        fontSize: 14,
-        fontFamily: "'Inter', system-ui, monospace",
-        fontWeight: 700,
-        color: "#fff",
-        width: 56,
-        textAlign: "right",
-        flexShrink: 0,
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {realValue.toFixed(1)}m
-      </span>
+    <div style={sliderRowStyle}>
+      <span style={sliderLabelStyle}>{faceLabel(face)}</span>
+      <input type="range" className="omni-sb-slider" min={0} max={100} step={0.5}
+        value={percent} onChange={handleChange} style={{ flex: 1 }}
+        aria-label={`Section box ${faceLabel(face)} face`} />
+      <span style={sliderValueStyle}>{realValue.toFixed(1)}m</span>
+    </div>
+  );
+}
+
+/**
+ * Unified walls slider — moves all 4 wall faces (left, right, front, back)
+ * symmetrically inward by the same percentage.
+ */
+function WallsSlider(): React.ReactElement {
+  const boxBounds = useSectionStore((s) => s.boxBounds);
+  const setBoxFace = useSectionStore((s) => s.setBoxFace);
+  const room = getFullRoomBounds();
+
+  // Compute the inset as a percentage (0 = full room, 100 = fully clipped)
+  const insetX = 1 - (boxBounds.maxX - boxBounds.minX) / (room.maxX - room.minX);
+  const insetZ = 1 - (boxBounds.maxZ - boxBounds.minZ) / (room.maxZ - room.minZ);
+  const insetPercent = Math.round(((insetX + insetZ) / 2) * 100);
+
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const pct = Number(event.target.value) / 100;
+      const halfInsetX = ((room.maxX - room.minX) / 2) * pct;
+      const halfInsetZ = ((room.maxZ - room.minZ) / 2) * pct;
+      setBoxFace("minX", room.minX + halfInsetX);
+      setBoxFace("maxX", room.maxX - halfInsetX);
+      setBoxFace("minZ", room.minZ + halfInsetZ);
+      setBoxFace("maxZ", room.maxZ - halfInsetZ);
+    },
+    [setBoxFace, room],
+  );
+
+  return (
+    <div style={sliderRowStyle}>
+      <span style={sliderLabelStyle}>Walls</span>
+      <input type="range" className="omni-sb-slider" min={0} max={90} step={1}
+        value={insetPercent} onChange={handleChange} style={{ flex: 1 }}
+        aria-label="Section box wall inset" />
+      <span style={sliderValueStyle}>{String(insetPercent)}%</span>
     </div>
   );
 }
@@ -252,16 +266,16 @@ export function SectionBoxControls(): React.ReactElement | null {
           </button>
         </div>
 
-        {/* Sliders */}
+        {/* Unified walls slider */}
+        <WallsSlider />
+
         <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-        }}>
-          {BOX_FACES.map((face) => (
-            <FaceSlider key={face} face={face} />
-          ))}
-        </div>
+          height: 1, background: "rgba(255,255,255,0.06)", margin: "8px 0",
+        }} />
+
+        {/* Top / Bottom individual sliders */}
+        <FaceSlider face="minY" />
+        <FaceSlider face="maxY" />
 
         {/* Shortcut hint */}
         <div style={{
