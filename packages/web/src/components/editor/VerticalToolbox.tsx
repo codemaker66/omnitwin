@@ -180,6 +180,11 @@ if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) 
       60% { transform: translateX(6px) scale(1.03); filter: blur(0); }
       100% { opacity: 1; transform: translateX(0) scale(1); }
     }
+    @keyframes omni-tt-pop-out {
+      0% { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+      40% { transform: translateX(4px) scale(1.08); }
+      100% { opacity: 0; transform: translateX(-12px) scale(0.7); filter: blur(6px); }
+    }
     @keyframes omni-tt-glow {
       0%, 100% { box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.04); }
       50% { box-shadow: 0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(201,168,76,0.3), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 24px rgba(201,168,76,0.08); }
@@ -211,15 +216,26 @@ interface ToolBtnProps {
 }
 
 function ToolBtn({ active, disabled = false, label, description, shortcut, onClick, children }: ToolBtnProps): React.ReactElement {
-  const [hovered, setHovered] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [exiting, setExiting] = useState(false);
+  const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onEnter = (): void => {
-    timeoutRef.current = setTimeout(() => { setHovered(true); }, 200);
+    if (exitTimer.current !== null) { clearTimeout(exitTimer.current); exitTimer.current = null; }
+    setExiting(false);
+    enterTimer.current = setTimeout(() => { setShowTooltip(true); }, 200);
   };
-  const onLeave = (): void => {
-    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
-    setHovered(false);
+  const dismiss = (): void => {
+    if (enterTimer.current !== null) { clearTimeout(enterTimer.current); enterTimer.current = null; }
+    if (!showTooltip) { setShowTooltip(false); return; }
+    setExiting(true);
+    exitTimer.current = setTimeout(() => { setShowTooltip(false); setExiting(false); }, 250);
+  };
+  const onLeave = (): void => { dismiss(); };
+  const handleClick = (): void => {
+    dismiss();
+    onClick();
   };
 
   return (
@@ -227,12 +243,12 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
       <button
         type="button"
         style={btnStyle(active, disabled)}
-        onClick={onClick}
+        onClick={handleClick}
         disabled={disabled}
       >
         {children}
       </button>
-      {hovered && !disabled && (
+      {showTooltip && !disabled && (
         <div style={{
           position: "absolute",
           left: 58,
@@ -240,7 +256,9 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
           transform: "translateY(-50%)",
           zIndex: 100,
           pointerEvents: "none",
-          animation: "omni-tt-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+          animation: exiting
+            ? "omni-tt-pop-out 0.25s cubic-bezier(0.55, 0, 1, 0.45) forwards"
+            : "omni-tt-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}>
           {/* Arrow — large, gold-tinted */}
           <div style={{
