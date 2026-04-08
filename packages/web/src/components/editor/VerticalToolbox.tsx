@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText,
@@ -353,6 +353,20 @@ export function VerticalToolbox(): React.ReactElement {
 
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
 
+  // F key opens furniture panel
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey) {
+        // Don't conflict with placement rotation (handled by PlacementGhost)
+        if (useCatalogueStore.getState().selectedItemId !== null) return;
+        handleToolClick("add");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); };
+  }, [handleToolClick]);
+
   return (
     <>
       {/* === Toolbar strip === */}
@@ -361,7 +375,7 @@ export function VerticalToolbox(): React.ReactElement {
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." shortcut="F" onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
