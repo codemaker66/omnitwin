@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useSectionStore } from "../stores/section-store.js";
 import type { BoxFace } from "../lib/section-box.js";
 import {
@@ -171,17 +171,39 @@ function WallsSlider(): React.ReactElement {
 export function SectionBoxControls(): React.ReactElement | null {
   const boxEnabled = useSectionStore((s) => s.boxEnabled);
   const resetBox = useSectionStore((s) => s.resetBox);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const handleReset = useCallback(() => {
     resetBox();
   }, [resetBox]);
 
+  // Close section box when clicking outside the panel (e.g. on the canvas)
+  useEffect(() => {
+    if (!boxEnabled) return;
+    function onPointerDown(e: PointerEvent): void {
+      if (panelRef.current !== null && !panelRef.current.contains(e.target as Node)) {
+        // Don't close if clicking the toolbar section box button itself (it toggles)
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-section-box-btn]") !== null) return;
+        useSectionStore.getState().toggleBox();
+      }
+    }
+    // Use a short delay so the opening click doesn't immediately close it
+    const timer = setTimeout(() => {
+      window.addEventListener("pointerdown", onPointerDown);
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [boxEnabled]);
+
   if (!boxEnabled) return null;
 
   return (
-    <div style={{
+    <div ref={panelRef} style={{
       position: "absolute",
-      left: 68, // clear of 52px toolbar + 16px gap
+      left: 68,
       top: 20,
       zIndex: 30,
       pointerEvents: "auto",

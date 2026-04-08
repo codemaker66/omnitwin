@@ -418,9 +418,11 @@ export function VerticalToolbox(): React.ReactElement {
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={boxEnabled} label="Section Box" description="Slice the room from any direction — peel back walls, ceiling, and floor to see exactly what's inside." shortcut="B" onClick={toggleBox}>
-          <Box size={ICON_SIZE} />
-        </ToolBtn>
+        <div data-section-box-btn="">
+          <ToolBtn active={boxEnabled} label="Section Box" description="Slice the room from any direction — peel back walls, ceiling, and floor to see exactly what's inside." shortcut="B" onClick={toggleBox}>
+            <Box size={ICON_SIZE} />
+          </ToolBtn>
+        </div>
 
         <ToolBtn active={saveFlash} disabled={isSaving} label="Save Layout" description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
           <Save size={ICON_SIZE} />
