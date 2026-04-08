@@ -57,7 +57,6 @@ const panelStyle: React.CSSProperties = {
   zIndex: 49, overflowY: "auto", padding: "24px 16px",
   fontFamily: "'Inter', sans-serif", color: "#ccc",
   backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-  animation: "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
   boxShadow: "8px 0 40px rgba(0,0,0,0.4), inset -1px 0 0 rgba(201,168,76,0.05)",
 };
 
@@ -79,7 +78,6 @@ const cameraDropdownStyle: React.CSSProperties = {
   borderRadius: 16, padding: "12px 8px", zIndex: 51,
   boxShadow: "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.12)",
   border: "1px solid rgba(201,168,76,0.15)", minWidth: 200,
-  animation: "omni-dropdown-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
 };
 
 const cameraItemStyle: React.CSSProperties = {
@@ -103,6 +101,23 @@ const CATEGORY_COLORS: Partial<Record<FurnitureCategory, string>> = {
 // Tooltip — rich animated popout labels
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Delayed unmount hook — keeps element mounted during exit animation
+// ---------------------------------------------------------------------------
+
+function useDelayedUnmount(isOpen: boolean, delayMs: number): boolean {
+  const [mounted, setMounted] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen) {
+      setMounted(true);
+    } else {
+      const t = setTimeout(() => { setMounted(false); }, delayMs);
+      return () => { clearTimeout(t); };
+    }
+  }, [isOpen, delayMs]);
+  return mounted;
+}
+
 // Panel entrance animations
 const PANEL_ANIM_ID = "omni-panel-anims";
 if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) === null) {
@@ -114,6 +129,10 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       60% { transform: translateX(8px); filter: blur(0); }
       100% { transform: translateX(0); opacity: 1; }
     }
+    @keyframes omni-panel-slide-out {
+      0% { transform: translateX(0); opacity: 1; filter: blur(0); }
+      100% { transform: translateX(-100%); opacity: 0; filter: blur(8px); }
+    }
     @keyframes omni-panel-item {
       0% { opacity: 0; transform: translateX(-16px); }
       100% { opacity: 1; transform: translateX(0); }
@@ -122,6 +141,10 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       0% { opacity: 0; transform: scale(0.9) translateY(-8px); filter: blur(4px); }
       60% { transform: scale(1.02) translateY(2px); }
       100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+    }
+    @keyframes omni-dropdown-pop-out {
+      0% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+      100% { opacity: 0; transform: scale(0.9) translateY(-8px); filter: blur(4px); }
     }
     .omni-asset-row {
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
@@ -410,6 +433,10 @@ export function VerticalToolbox(): React.ReactElement {
 
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
 
+  // Delayed unmount for exit animations
+  const panelMounted = useDelayedUnmount(panelOpen, 300);
+  const cameraMounted = useDelayedUnmount(cameraOpen, 250);
+
   // Close furniture panel and camera dropdown when section box opens
   useEffect(() => {
     if (boxEnabled) {
@@ -498,8 +525,13 @@ export function VerticalToolbox(): React.ReactElement {
       </div>
 
       {/* === Slide-out asset panel === */}
-      {panelOpen && (
-        <div style={panelStyle}>
+      {panelMounted && (
+        <div style={{
+          ...panelStyle,
+          animation: panelOpen
+            ? "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards"
+            : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+        }}>
           {/* Gold accent */}
           <div style={{ width: 32, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.2))`, marginBottom: 14 }} />
           <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 2.5, color: GOLD, marginBottom: 4 }}>
@@ -547,8 +579,14 @@ export function VerticalToolbox(): React.ReactElement {
       )}
 
       {/* === Camera dropdown === */}
-      {cameraOpen && bookmarks.length > 0 && (
-        <div style={{ ...cameraDropdownStyle, top: 280 }}>
+      {cameraMounted && bookmarks.length > 0 && (
+        <div style={{
+          ...cameraDropdownStyle,
+          top: 280,
+          animation: cameraOpen
+            ? "omni-dropdown-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards"
+            : "omni-dropdown-pop-out 0.25s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+        }}>
           {bookmarks.map((bm, i) => (
             <button
               key={bm.id}
