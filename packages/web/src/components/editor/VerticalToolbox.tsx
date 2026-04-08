@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText,
@@ -91,6 +91,126 @@ const CATEGORY_COLORS: Partial<Record<FurnitureCategory, string>> = {
   stage: "#4a4a4a",
   decor: "#1a1a1a",
 };
+
+// ---------------------------------------------------------------------------
+// Tooltip — rich animated popout labels
+// ---------------------------------------------------------------------------
+
+const TOOLTIP_ANIM_ID = "omni-tooltip-anims";
+if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) === null) {
+  const s = document.createElement("style");
+  s.id = TOOLTIP_ANIM_ID;
+  s.textContent = `
+    @keyframes omni-tooltip-in {
+      0% { opacity: 0; transform: translateX(-8px) scale(0.9); }
+      50% { transform: translateX(4px) scale(1.02); }
+      100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+interface ToolBtnProps {
+  readonly active: boolean;
+  readonly disabled?: boolean;
+  readonly label: string;
+  readonly description: string;
+  readonly shortcut?: string;
+  readonly onClick: () => void;
+  readonly children: React.ReactNode;
+}
+
+function ToolBtn({ active, disabled = false, label, description, shortcut, onClick, children }: ToolBtnProps): React.ReactElement {
+  const [hovered, setHovered] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onEnter = (): void => {
+    timeoutRef.current = setTimeout(() => { setHovered(true); }, 250);
+  };
+  const onLeave = (): void => {
+    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
+    setHovered(false);
+  };
+
+  return (
+    <div style={{ position: "relative" }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <button
+        type="button"
+        style={btnStyle(active, disabled)}
+        onClick={onClick}
+        disabled={disabled}
+      >
+        {children}
+      </button>
+      {hovered && !disabled && (
+        <div style={{
+          position: "absolute",
+          left: 52,
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: 100,
+          pointerEvents: "none",
+          animation: "omni-tooltip-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        }}>
+          {/* Arrow */}
+          <div style={{
+            position: "absolute",
+            left: -6,
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 0, height: 0,
+            borderTop: "7px solid transparent",
+            borderBottom: "7px solid transparent",
+            borderRight: "7px solid #1a1a1a",
+          }} />
+          <div style={{
+            background: "linear-gradient(135deg, #1a1a1a, #222)",
+            border: `1px solid rgba(201,168,76,0.25)`,
+            borderRadius: 12,
+            padding: "10px 16px",
+            minWidth: 160,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1)",
+          }}>
+            <div style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#fff",
+              letterSpacing: -0.2,
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}>
+              {label}
+            </div>
+            <div style={{
+              fontSize: 12,
+              color: "#888",
+              marginTop: 3,
+              lineHeight: 1.4,
+              fontFamily: "'Inter', system-ui, sans-serif",
+            }}>
+              {description}
+            </div>
+            {shortcut !== undefined && (
+              <div style={{
+                marginTop: 6,
+                display: "inline-block",
+                padding: "2px 8px",
+                borderRadius: 4,
+                background: "rgba(201,168,76,0.12)",
+                color: GOLD,
+                fontSize: 11,
+                fontWeight: 600,
+                fontFamily: "'Inter', system-ui, sans-serif",
+                letterSpacing: 0.5,
+              }}>
+                {shortcut}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -201,72 +321,59 @@ export function VerticalToolbox(): React.ReactElement {
     <>
       {/* === Toolbar strip === */}
       <div style={toolbarStyle}>
-        {/* Select */}
-        <button type="button" style={btnStyle(activeTool === "select")} onClick={() => { handleToolClick("select"); }} title="Select (V)">
+        <ToolBtn active={activeTool === "select"} label="Select" description="Click to select furniture, drag to move" shortcut="V" onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Add Furniture */}
-        <button type="button" style={btnStyle(activeTool === "add")} onClick={() => { handleToolClick("add"); }} title="Add Furniture">
+        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Browse tables, chairs, AV and more" onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Rotate */}
-        <button type="button" style={btnStyle(activeTool === "rotate")} onClick={() => { handleToolClick("rotate"); }} title="Rotate (R)">
+        <ToolBtn active={activeTool === "rotate"} label="Rotate" description="Spin selected items 15° at a time" shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
           <RotateCw size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Delete */}
-        <button type="button" style={btnStyle(activeTool === "delete")} onClick={() => { handleToolClick("delete"); }} title="Delete (Del)">
+        <ToolBtn active={activeTool === "delete"} label="Delete" description="Remove selected furniture" shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
           <Trash2 size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
         <div style={dividerStyle} />
 
-        {/* Undo */}
-        <button type="button" style={btnStyle(false, !canUndo)} onClick={handleUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+        <ToolBtn active={false} disabled={!canUndo} label="Undo" description="Reverse your last action" shortcut="Ctrl+Z" onClick={handleUndo}>
           <Undo2 size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Redo */}
-        <button type="button" style={btnStyle(false, !canRedo)} onClick={handleRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
+        <ToolBtn active={false} disabled={!canRedo} label="Redo" description="Bring back what you undid" shortcut="Ctrl+Y" onClick={handleRedo}>
           <Redo2 size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
         <div style={dividerStyle} />
 
-        {/* Camera */}
-        <button type="button" style={btnStyle(cameraOpen)} onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }} title="Camera Views">
+        <ToolBtn active={cameraOpen} label="Camera Views" description="Jump to saved viewpoints" onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
           <Camera size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Snap */}
-        <button type="button" style={btnStyle(snapEnabled)} onClick={handleSnapToggle} title="Grid Snap (G)">
+        <ToolBtn active={snapEnabled} label="Grid Snap" description="Align items to the floor grid" shortcut="G" onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Show All Walls */}
-        <button type="button" style={btnStyle(allWallsUp)} onClick={handleToggleAllWalls} title="Show All Walls">
+        <ToolBtn active={allWallsUp} label="Show All Walls" description="Keep every wall visible while you work" onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Save */}
-        <button type="button" style={btnStyle(saveFlash)} onClick={handleSave} title="Save" disabled={isSaving}>
+        <ToolBtn active={saveFlash} disabled={isSaving} label="Save" description="Save your layout to the cloud" onClick={handleSave}>
           <Save size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Generate Events Sheet */}
-        <button type="button" style={btnStyle(false)} onClick={handleGenerateSheet} title="Events Sheet">
+        <ToolBtn active={false} label="Events Sheet" description="Generate a setup sheet for the crew" onClick={handleGenerateSheet}>
           <FileText size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* User */}
-        <button type="button" style={btnStyle(false)} title={isAuthenticated ? "Account" : "Sign In"}>
+        <ToolBtn active={false} label={isAuthenticated ? "Account" : "Sign In"} description={isAuthenticated ? "Manage your account settings" : "Sign in to save your layouts"} onClick={() => {}}>
           <User size={ICON_SIZE} />
-        </button>
+        </ToolBtn>
       </div>
 
       {/* === Slide-out asset panel === */}
