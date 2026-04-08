@@ -85,10 +85,12 @@ export const AUTO_3_EDGES: readonly [number, number] = [-0.15, 0.15];
 const ROOM_HALF_W = 21; // Grand Hall: 42m render / 2
 const ROOM_HALF_L = 10; // Grand Hall: 20m render / 2
 
-/** Distance (render-space units) from the wall plane where fade begins. */
-const FADE_START = 3.0;
-/** Distance from wall plane where wall is fully hidden. */
-const FADE_END = 0.0;
+/** Distance (render-space units) from the wall plane where fade begins.
+ *  A wall only starts fading when the camera is within this distance of it. */
+const FADE_START = 2.0;
+/** Distance past the wall plane where the wall is fully hidden.
+ *  Negative = must go PAST the wall before it fully disappears. */
+const FADE_END = -2.0;
 
 /**
  * Computes target opacity (0–1) for each wall based on camera position.

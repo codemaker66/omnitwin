@@ -70,30 +70,31 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("camera near right wall — right wall fades, others stay", () => {
-    // At x=20, dist from right wall (21) = 1 unit → inside fade zone
+    // At x=20, dist from right wall (21) = 1 unit → inside fade zone (FADE_START=2)
     const o = computeWallTargetOpacities(20, 0, 3);
-    expect(o["wall-right"]).toBeLessThan(0.5);
+    expect(o["wall-right"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
     expect(o["wall-front"]).toBe(1);
     expect(o["wall-back"]).toBe(1);
   });
 
-  it("camera past right wall — right wall fully hidden", () => {
-    const o = computeWallTargetOpacities(22, 0, 3);
+  it("camera well past right wall — right wall fully hidden", () => {
+    // Must go 2 units PAST the wall (FADE_END=-2) → x=23+
+    const o = computeWallTargetOpacities(24, 0, 3);
     expect(o["wall-right"]).toBe(0);
   });
 
   it("camera near front wall — front wall fades", () => {
+    // At z=9, dist from front wall (10) = 1 → inside fade zone
     const o = computeWallTargetOpacities(0, 9, 3);
-    expect(o["wall-front"]).toBeLessThan(0.5);
+    expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera in corner — two walls fade", () => {
-    // Near right+front corner
     const o = computeWallTargetOpacities(20, 9, 3);
-    expect(o["wall-right"]).toBeLessThan(0.5);
-    expect(o["wall-front"]).toBeLessThan(0.5);
+    expect(o["wall-right"]).toBeLessThan(1);
+    expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
     expect(o["wall-back"]).toBe(1);
   });
@@ -439,15 +440,17 @@ describe("delta clamping", () => {
 // ---------------------------------------------------------------------------
 
 describe("proximity wall behavior", () => {
-  it("camera at front wall boundary — front wall hidden", () => {
-    const o = computeWallTargetOpacities(0, 10, 3);
+  it("camera well past front wall — front wall hidden", () => {
+    // FADE_END=-2, so must be 2+ units past the wall (z=10) → z=12+
+    const o = computeWallTargetOpacities(0, 13, 3);
     expect(o["wall-front"]).toBe(0);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera inside room near front wall — front wall fading", () => {
-    const o = computeWallTargetOpacities(0, 8.5, 3);
-    expect(o["wall-front"]).toBeLessThan(0.8);
+    // At z=9, distance to front wall (10) = 1, inside FADE_START=2 zone
+    const o = computeWallTargetOpacities(0, 9, 3);
+    expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-front"]).toBeGreaterThan(0);
   });
 
