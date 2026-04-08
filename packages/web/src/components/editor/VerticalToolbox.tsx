@@ -96,15 +96,31 @@ const CATEGORY_COLORS: Partial<Record<FurnitureCategory, string>> = {
 // Tooltip — rich animated popout labels
 // ---------------------------------------------------------------------------
 
-const TOOLTIP_ANIM_ID = "omni-tooltip-anims";
+const TOOLTIP_ANIM_ID = "omni-tooltip-anims-v2";
 if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) === null) {
   const s = document.createElement("style");
   s.id = TOOLTIP_ANIM_ID;
   s.textContent = `
-    @keyframes omni-tooltip-in {
-      0% { opacity: 0; transform: translateX(-8px) scale(0.9); }
-      50% { transform: translateX(4px) scale(1.02); }
+    @keyframes omni-tt-enter {
+      0% { opacity: 0; transform: translateX(-16px) scale(0.85); filter: blur(6px); }
+      60% { transform: translateX(6px) scale(1.03); filter: blur(0); }
       100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    @keyframes omni-tt-glow {
+      0%, 100% { box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.04); }
+      50% { box-shadow: 0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(201,168,76,0.3), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 24px rgba(201,168,76,0.08); }
+    }
+    @keyframes omni-tt-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    @keyframes omni-tt-arrow {
+      0% { opacity: 0; transform: translateY(-50%) translateX(-4px); }
+      100% { opacity: 1; transform: translateY(-50%) translateX(0); }
+    }
+    @keyframes omni-tt-badge {
+      0% { opacity: 0; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1); }
     }
   `;
   document.head.appendChild(s);
@@ -125,7 +141,7 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onEnter = (): void => {
-    timeoutRef.current = setTimeout(() => { setHovered(true); }, 250);
+    timeoutRef.current = setTimeout(() => { setHovered(true); }, 200);
   };
   const onLeave = (): void => {
     if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
@@ -145,64 +161,84 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
       {hovered && !disabled && (
         <div style={{
           position: "absolute",
-          left: 52,
+          left: 58,
           top: "50%",
           transform: "translateY(-50%)",
           zIndex: 100,
           pointerEvents: "none",
-          animation: "omni-tooltip-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+          animation: "omni-tt-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}>
-          {/* Arrow */}
+          {/* Arrow — large, gold-tinted */}
           <div style={{
             position: "absolute",
-            left: -6,
+            left: -10,
             top: "50%",
-            transform: "translateY(-50%)",
             width: 0, height: 0,
-            borderTop: "7px solid transparent",
-            borderBottom: "7px solid transparent",
-            borderRight: "7px solid #1a1a1a",
+            borderTop: "11px solid transparent",
+            borderBottom: "11px solid transparent",
+            borderRight: "11px solid #141414",
+            animation: "omni-tt-arrow 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards",
           }} />
+          {/* Card */}
           <div style={{
-            background: "linear-gradient(135deg, #1a1a1a, #222)",
-            border: `1px solid rgba(201,168,76,0.25)`,
-            borderRadius: 12,
-            padding: "10px 16px",
-            minWidth: 160,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.1)",
+            background: "linear-gradient(145deg, #141414 0%, #1c1c1c 50%, #181818 100%)",
+            border: "1px solid rgba(201,168,76,0.2)",
+            borderRadius: 16,
+            padding: "18px 24px 16px",
+            minWidth: 240,
+            maxWidth: 300,
+            animation: "omni-tt-glow 3s ease-in-out infinite",
           }}>
+            {/* Gold accent bar at top */}
             <div style={{
-              fontSize: 15,
-              fontWeight: 700,
+              width: 36,
+              height: 3,
+              borderRadius: 2,
+              background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.3))`,
+              marginBottom: 12,
+            }} />
+            {/* Label */}
+            <div style={{
+              fontSize: 20,
+              fontWeight: 800,
               color: "#fff",
-              letterSpacing: -0.2,
-              fontFamily: "'Inter', system-ui, sans-serif",
+              letterSpacing: -0.4,
+              fontFamily: "'Playfair Display', serif",
+              lineHeight: 1.1,
             }}>
               {label}
             </div>
+            {/* Description */}
             <div style={{
-              fontSize: 12,
-              color: "#888",
-              marginTop: 3,
-              lineHeight: 1.4,
+              fontSize: 14,
+              color: "#999",
+              marginTop: 8,
+              lineHeight: 1.5,
               fontFamily: "'Inter', system-ui, sans-serif",
+              fontWeight: 400,
             }}>
               {description}
             </div>
+            {/* Shortcut badge */}
             {shortcut !== undefined && (
               <div style={{
-                marginTop: 6,
-                display: "inline-block",
-                padding: "2px 8px",
-                borderRadius: 4,
-                background: "rgba(201,168,76,0.12)",
+                marginTop: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 12px",
+                borderRadius: 8,
+                background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.08))",
+                border: "1px solid rgba(201,168,76,0.2)",
                 color: GOLD,
-                fontSize: 11,
-                fontWeight: 600,
+                fontSize: 12,
+                fontWeight: 700,
                 fontFamily: "'Inter', system-ui, sans-serif",
-                letterSpacing: 0.5,
+                letterSpacing: 0.8,
+                animation: "omni-tt-badge 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both",
               }}>
-                {shortcut}
+                <span style={{ fontSize: 10, color: "rgba(201,168,76,0.6)", fontWeight: 500 }}>SHORTCUT</span>
+                <span>{shortcut}</span>
               </div>
             )}
           </div>
@@ -321,57 +357,57 @@ export function VerticalToolbox(): React.ReactElement {
     <>
       {/* === Toolbar strip === */}
       <div style={toolbarStyle}>
-        <ToolBtn active={activeTool === "select"} label="Select" description="Click to select furniture, drag to move" shortcut="V" onClick={() => { handleToolClick("select"); }}>
+        <ToolBtn active={activeTool === "select"} label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Browse tables, chairs, AV and more" onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "rotate"} label="Rotate" description="Spin selected items 15° at a time" shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
+        <ToolBtn active={activeTool === "rotate"} label="Rotate" description="Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows." shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "delete"} label="Delete" description="Remove selected furniture" shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
+        <ToolBtn active={activeTool === "delete"} label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
           <Trash2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={false} disabled={!canUndo} label="Undo" description="Reverse your last action" shortcut="Ctrl+Z" onClick={handleUndo}>
+        <ToolBtn active={false} disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" onClick={handleUndo}>
           <Undo2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} disabled={!canRedo} label="Redo" description="Bring back what you undid" shortcut="Ctrl+Y" onClick={handleRedo}>
+        <ToolBtn active={false} disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" onClick={handleRedo}>
           <Redo2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={cameraOpen} label="Camera Views" description="Jump to saved viewpoints" onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
+        <ToolBtn active={cameraOpen} label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={snapEnabled} label="Grid Snap" description="Align items to the floor grid" shortcut="G" onClick={handleSnapToggle}>
+        <ToolBtn active={snapEnabled} label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} label="Show All Walls" description="Keep every wall visible while you work" onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} label="Show All Walls" description="Pin every wall up so you can see the full room structure. Click individual walls to toggle them." onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={saveFlash} disabled={isSaving} label="Save" description="Save your layout to the cloud" onClick={handleSave}>
+        <ToolBtn active={saveFlash} disabled={isSaving} label="Save Layout" description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
           <Save size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} label="Events Sheet" description="Generate a setup sheet for the crew" onClick={handleGenerateSheet}>
+        <ToolBtn active={false} label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." onClick={handleGenerateSheet}>
           <FileText size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} label={isAuthenticated ? "Account" : "Sign In"} description={isAuthenticated ? "Manage your account settings" : "Sign in to save your layouts"} onClick={() => {}}>
+        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => {}}>
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>
