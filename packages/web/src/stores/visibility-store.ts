@@ -87,10 +87,10 @@ const ROOM_HALF_L = 10; // Grand Hall: 20m render / 2
 
 /** Distance (render-space units) from the wall plane where fade begins.
  *  A wall only starts fading when the camera is within this distance of it. */
-const FADE_START = 2.0;
+const FADE_START = 1.0;
 /** Distance past the wall plane where the wall is fully hidden.
- *  Negative = must go PAST the wall before it fully disappears. */
-const FADE_END = -2.0;
+ *  Negative = must go well PAST the wall before it fully disappears. */
+const FADE_END = -6.0;
 
 /**
  * Computes target opacity (0–1) for each wall based on camera position.

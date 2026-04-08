@@ -70,8 +70,8 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("camera near right wall — right wall fades, others stay", () => {
-    // At x=20, dist from right wall (21) = 1 unit → inside fade zone (FADE_START=2)
-    const o = computeWallTargetOpacities(20, 0, 3);
+    // At x=20.5, dist from right wall (21) = 0.5 → inside fade zone (FADE_START=1)
+    const o = computeWallTargetOpacities(20.5, 0, 3);
     expect(o["wall-right"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
     expect(o["wall-front"]).toBe(1);
@@ -79,20 +79,20 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("camera well past right wall — right wall fully hidden", () => {
-    // Must go 2 units PAST the wall (FADE_END=-2) → x=23+
-    const o = computeWallTargetOpacities(24, 0, 3);
+    // Must go 6 units PAST the wall (FADE_END=-6) → x=27+
+    const o = computeWallTargetOpacities(28, 0, 3);
     expect(o["wall-right"]).toBe(0);
   });
 
   it("camera near front wall — front wall fades", () => {
-    // At z=9, dist from front wall (10) = 1 → inside fade zone
-    const o = computeWallTargetOpacities(0, 9, 3);
+    // At z=9.5, dist from front wall (10) = 0.5 → inside fade zone
+    const o = computeWallTargetOpacities(0, 9.5, 3);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera in corner — two walls fade", () => {
-    const o = computeWallTargetOpacities(20, 9, 3);
+    const o = computeWallTargetOpacities(20.5, 9.5, 3);
     expect(o["wall-right"]).toBeLessThan(1);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
@@ -308,12 +308,11 @@ describe("useVisibilityStore", () => {
   });
 
   it("updateAutoWalls lerps opacity toward targets", () => {
-    // Start with right=0. Camera near right wall (x=20) → right should fade.
     useVisibilityStore.setState({
       wallOpacity: { "wall-front": 1, "wall-back": 1, "wall-left": 1, "wall-right": 1 },
     });
-    // Camera near right wall → right should decrease
-    useVisibilityStore.getState().updateAutoWalls(20, 0, 0.016);
+    // Camera at x=20.8 — 0.2 units from right wall (21), inside FADE_START=1
+    useVisibilityStore.getState().updateAutoWalls(20.8, 0, 0.016);
     const { wallOpacity } = useVisibilityStore.getState();
     expect(wallOpacity["wall-right"]).toBeLessThan(1);
     // Left wall is far away → stays at 1
@@ -441,15 +440,15 @@ describe("delta clamping", () => {
 
 describe("proximity wall behavior", () => {
   it("camera well past front wall — front wall hidden", () => {
-    // FADE_END=-2, so must be 2+ units past the wall (z=10) → z=12+
-    const o = computeWallTargetOpacities(0, 13, 3);
+    // FADE_END=-6, so must be 6+ units past the wall (z=10) → z=17+
+    const o = computeWallTargetOpacities(0, 17, 3);
     expect(o["wall-front"]).toBe(0);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera inside room near front wall — front wall fading", () => {
-    // At z=9, distance to front wall (10) = 1, inside FADE_START=2 zone
-    const o = computeWallTargetOpacities(0, 9, 3);
+    // At z=9.5, distance to front wall (10) = 0.5, inside FADE_START=1 zone
+    const o = computeWallTargetOpacities(0, 9.5, 3);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-front"]).toBeGreaterThan(0);
   });
