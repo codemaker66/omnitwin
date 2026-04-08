@@ -29,6 +29,42 @@
         filter: brightness(0.9);
         transition-duration: 0.06s !important;
       }
+
+      /* ============================================
+         Golden scrollbar — matches the OMNITWIN aesthetic
+         ============================================ */
+
+      /* Webkit (Chrome, Safari, Edge) */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(20, 20, 20, 0.6);
+        border-radius: 8px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #a8872e, #c9a84c, #a8872e);
+        border-radius: 8px;
+        border: 2px solid rgba(20, 20, 20, 0.6);
+        transition: background 0.2s;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #c9a84c, #dfc06a, #c9a84c);
+        box-shadow: 0 0 8px rgba(201, 168, 76, 0.4);
+      }
+      ::-webkit-scrollbar-thumb:active {
+        background: linear-gradient(180deg, #8a6e1e, #a8872e, #8a6e1e);
+      }
+      ::-webkit-scrollbar-corner {
+        background: rgba(20, 20, 20, 0.6);
+      }
+
+      /* Firefox */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #c9a84c rgba(20, 20, 20, 0.6);
+      }
     </style>
   </head>
   <body>
