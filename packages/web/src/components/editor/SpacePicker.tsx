@@ -116,7 +116,7 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
       {/* SECTION 1 — HERO */}
       {/* ================================================================= */}
       <section style={{
-        position: "relative", height: "100vh", width: "100%", overflow: "hidden",
+        position: "relative", height: "70vh", width: "100%", overflow: "hidden",
         display: "flex", flexDirection: "column",
       }}>
         {/* Ken Burns background */}

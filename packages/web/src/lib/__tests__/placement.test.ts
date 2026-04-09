@@ -33,6 +33,7 @@ const smallItem: CatalogueItem = {
   color: "#aaaaaa",
   tableShape: "rectangular",
   maxCount: null,
+  subtitle: "1m \u00D7 1m",
 };
 
 // A large item: 3m × 0.75m × 3m real-world
@@ -45,6 +46,7 @@ const largeItem: CatalogueItem = {
   depth: 3,
   color: "#222222",
   tableShape: null,
+  subtitle: "3m \u00D7 3m",
   maxCount: null,
 };
 
@@ -354,6 +356,7 @@ const platformItem: CatalogueItem = {
   color: "#4a4a4a",
   tableShape: null,
   maxCount: null,
+  subtitle: "2.4m \u00D7 1.2m",
 };
 
 // ---------------------------------------------------------------------------

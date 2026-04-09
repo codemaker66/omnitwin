@@ -36,6 +36,53 @@ export interface CatalogueItem {
   readonly tableShape: TableShape | null;
   /** Maximum number of this item allowed in the scene. Null = unlimited. */
   readonly maxCount: number | null;
+  /** Short subtitle shown in the catalogue panel (dimensions, capacity, etc). */
+  readonly subtitle: string;
+}
+
+// ---------------------------------------------------------------------------
+// SVG icon silhouettes for catalogue panel (gold stroke on transparent)
+// ---------------------------------------------------------------------------
+
+const ICON_STROKE = "rgba(201,168,76,0.7)";
+const ICON_FILL = "rgba(201,168,76,0.08)";
+
+/** Returns an inline SVG string for the catalogue thumbnail. */
+export function catalogueIcon(item: CatalogueItem): string {
+  const s = ICON_STROKE;
+  const f = ICON_FILL;
+  switch (item.id) {
+    case "round-table-6ft":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="14" fill="${f}" stroke="${s}" stroke-width="1.5"/><circle cx="20" cy="20" r="3" fill="${s}" opacity="0.3"/></svg>`;
+    case "trestle-6ft":
+    case "trestle-4ft":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="12" width="28" height="16" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "poseur-table":
+    case "poseur-table-black":
+    case "poseur-table-white":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="16" r="8" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="24" x2="20" y2="36" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="36" x2="26" y2="36" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "banquet-chair":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="6" width="16" height="8" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><rect x="12" y="16" width="16" height="12" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="28" x2="14" y2="34" stroke="${s}" stroke-width="1.5"/><line x1="26" y1="28" x2="26" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "platform":
+    case "platform-narrow":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="16" width="32" height="12" rx="1" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="4" y1="22" x2="36" y2="22" stroke="${s}" stroke-width="0.5" opacity="0.3"/></svg>`;
+    case "projector-screen":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="28" height="20" rx="1" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="26" x2="20" y2="34" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="34" x2="26" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "projector":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="14" width="24" height="12" rx="3" fill="${f}" stroke="${s}" stroke-width="1.5"/><circle cx="28" cy="20" r="4" fill="none" stroke="${s}" stroke-width="1"/></svg>`;
+    case "laptop":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="10" width="24" height="16" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><rect x="4" y="26" width="32" height="4" rx="1" fill="${f}" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "microphone":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="16" y="6" width="8" height="16" rx="4" fill="${f}" stroke="${s}" stroke-width="1.5"/><path d="M12 18 C12 26, 28 26, 28 18" fill="none" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="26" x2="20" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "mic-stand":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="8" r="4" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="12" x2="20" y2="32" stroke="${s}" stroke-width="1.5"/><path d="M12 32 L20 28 L28 32" fill="none" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "lectern":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M12 8 L28 8 L26 28 L14 28 Z" fill="${f}" stroke="${s}" stroke-width="1.5"/><rect x="14" y="10" width="12" height="6" rx="1" fill="none" stroke="${s}" stroke-width="0.8" opacity="0.4"/><line x1="16" y1="28" x2="16" y2="34" stroke="${s}" stroke-width="1.5"/><line x1="24" y1="28" x2="24" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "black-table-cloth":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 14 Q20 10, 32 14 L30 30 Q20 34, 10 30 Z" fill="${f}" stroke="${s}" stroke-width="1.5"/></svg>`;
+    default:
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="8" width="24" height="24" rx="4" fill="${f}" stroke="${s}" stroke-width="1.5"/></svg>`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +102,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#c4a882",
     tableShape: "round",
     maxCount: null,
+    subtitle: "1.8m round \u00B7 seats up to 12",
   },
   {
     id: "trestle-6ft",
@@ -66,6 +114,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#b89b72",
     tableShape: "rectangular",
     maxCount: null,
+    subtitle: "1.8m \u00D7 0.76m \u00B7 seats up to 20",
   },
   {
     id: "trestle-4ft",
@@ -77,6 +126,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#b89b72",
     tableShape: "rectangular",
     maxCount: null,
+    subtitle: "1.2m \u00D7 0.76m \u00B7 seats up to 12",
   },
 
   // --- Poseur / Cocktail tables ---
@@ -90,6 +140,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#c0c0c8",
     tableShape: "round",
     maxCount: null,
+    subtitle: "60cm round \u00B7 standing height",
   },
   {
     id: "poseur-table-black",
@@ -101,6 +152,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#1a1a1a",
     tableShape: "round",
     maxCount: null,
+    subtitle: "60cm round \u00B7 black cloth",
   },
   {
     id: "poseur-table-white",
@@ -112,6 +164,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#f0ede8",
     tableShape: "round",
     maxCount: null,
+    subtitle: "60cm round \u00B7 white cloth",
   },
 
   // --- Chairs ---
@@ -125,6 +178,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#a82020",
     tableShape: null,
     maxCount: null,
+    subtitle: "Padded \u00B7 stackable",
   },
 
   // --- Stage ---
@@ -138,6 +192,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#4a4a4a",
     tableShape: null,
     maxCount: null,
+    subtitle: "2.4m \u00D7 1.2m \u00B7 40cm high",
   },
   {
     id: "platform-narrow",
@@ -149,6 +204,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#4a4a4a",
     tableShape: null,
     maxCount: 1,
+    subtitle: "2.4m \u00D7 1.0m \u00B7 40cm high",
   },
 
   // --- AV ---
@@ -162,6 +218,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#1a1a1a",
     tableShape: null,
     maxCount: null,
+    subtitle: "2.5m wide \u00B7 freestanding",
   },
   {
     id: "projector",
@@ -173,6 +230,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#3a3a40",
     tableShape: null,
     maxCount: null,
+    subtitle: "55cm \u00B7 table-mountable",
   },
   {
     id: "laptop",
@@ -184,6 +242,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#2a2a2e",
     tableShape: null,
     maxCount: null,
+    subtitle: "36cm \u00B7 table-mountable",
   },
   {
     id: "microphone",
@@ -195,6 +254,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#2a2a2a",
     tableShape: null,
     maxCount: null,
+    subtitle: "Gooseneck \u00B7 table-mountable",
   },
   {
     id: "mic-stand",
@@ -206,6 +266,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#2a2a2a",
     tableShape: null,
     maxCount: null,
+    subtitle: "1.6m tall \u00B7 freestanding",
   },
 
   // --- Lecterns ---
@@ -219,6 +280,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#5a3a20",
     tableShape: null,
     maxCount: null,
+    subtitle: "60cm \u00D7 50cm \u00B7 wooden",
   },
 
   // --- Decor (table dressing) ---
@@ -232,6 +294,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     color: "#1a1a1a",
     tableShape: null,
     maxCount: null,
+    subtitle: "Drapes over any table",
   },
 ] as const;
 

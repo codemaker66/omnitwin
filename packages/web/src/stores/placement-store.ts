@@ -34,6 +34,8 @@ export interface PlacementState {
   readonly ghostRotation: number;
   /** Whether the current ghost position is valid for placement. */
   readonly ghostValid: boolean;
+  /** Human-readable reason the ghost position is invalid, or null if valid. */
+  readonly ghostInvalidReason: string | null;
   /** Snap-to-grid enabled (default true). */
   readonly snapEnabled: boolean;
 
@@ -99,6 +101,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   ghostPosition: null,
   ghostRotation: 0,
   ghostValid: false,
+  ghostInvalidReason: null,
   snapEnabled: true,
 
   placeItem: (catalogueItemId: string, x: number, z: number, rotationY: number = 0) => {
@@ -206,11 +209,21 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const pos = [finalX, surfaceY, finalZ] as const;
-    const valid = catalogueItem !== undefined &&
-      isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot) &&
-      !checkCollision(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), 0.01, surfaceY) &&
-      !isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId));
-    set({ ghostPosition: pos, ghostValid: valid });
+    let valid = true;
+    let reason: string | null = null;
+    if (catalogueItem === undefined) {
+      valid = false;
+    } else if (!isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot)) {
+      valid = false;
+      reason = "Outside room bounds";
+    } else if (checkCollision(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), 0.01, surfaceY)) {
+      valid = false;
+      reason = "Overlaps existing furniture";
+    } else if (isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId))) {
+      valid = false;
+      reason = "Maximum reached for this item";
+    }
+    set({ ghostPosition: pos, ghostValid: valid, ghostInvalidReason: reason });
   },
 
   rotateGhost: (delta: number) => {
@@ -218,7 +231,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   clearGhost: () => {
-    set({ ghostPosition: null, ghostRotation: 0, ghostValid: false });
+    set({ ghostPosition: null, ghostRotation: 0, ghostValid: false, ghostInvalidReason: null });
   },
 
   toggleCloth: (id: string) => {

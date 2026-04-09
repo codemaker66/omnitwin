@@ -11,20 +11,22 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
 import { useSectionStore } from "../../stores/section-store.js";
+import { AuthModal } from "./AuthModal.js";
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
   categoryLabel,
+  catalogueIcon,
 } from "../../lib/catalogue.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
-import type { FurnitureCategory } from "@omnitwin/types";
+
 
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
 const TOOLBAR_W = 52;
-const PANEL_W = 260;
+const PANEL_W = 290;
 const BG = "#1a1a1a";
 const GOLD = "#c9a84c";
 const ICON_SIZE = 20;
@@ -68,9 +70,9 @@ const categoryHeaderStyle: React.CSSProperties = {
 };
 
 const assetRowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, padding: "8px 8px",
-  borderRadius: 6, cursor: "pointer", fontSize: 13, color: "#ddd",
-  transition: "background 0.15s",
+  display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+  borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#ddd",
+  transition: "background 0.15s, border-color 0.15s",
 };
 
 const cameraDropdownStyle: React.CSSProperties = {
@@ -86,16 +88,6 @@ const cameraItemStyle: React.CSSProperties = {
   textAlign: "left", borderRadius: 8, fontFamily: "'Inter', sans-serif",
 };
 
-// ---------------------------------------------------------------------------
-// Category colour dots
-// ---------------------------------------------------------------------------
-
-const CATEGORY_COLORS: Partial<Record<FurnitureCategory, string>> = {
-  table: "#8b6914",
-  chair: "#a82020",
-  stage: "#4a4a4a",
-  decor: "#1a1a1a",
-};
 
 // ---------------------------------------------------------------------------
 // Tooltip — rich animated popout labels
@@ -352,6 +344,8 @@ export function VerticalToolbox(): React.ReactElement {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [saveFlash, setSaveFlash] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const canUndo = usePlacementStore((s) => s.undoStack.length > 0);
   const canRedo = usePlacementStore((s) => s.redoStack.length > 0);
@@ -422,7 +416,7 @@ export function VerticalToolbox(): React.ReactElement {
   const handleSave = useCallback(() => {
     void useEditorStore.getState().saveToServer(true).then(() => {
       setSaveFlash(true);
-      setTimeout(() => { setSaveFlash(false); }, 1500);
+      setTimeout(() => { setSaveFlash(false); }, 2000);
     });
   }, []);
 
@@ -527,7 +521,7 @@ export function VerticalToolbox(): React.ReactElement {
           </ToolBtn>
         </div>
 
-        <ToolBtn active={saveFlash} disabled={isSaving} label="Save Layout" description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
+        <ToolBtn active={saveFlash} disabled={isSaving} label={saveFlash ? (isAuthenticated ? "Saved!" : "Auto-saved!") : "Save Layout"} description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
           <Save size={ICON_SIZE} />
         </ToolBtn>
 
@@ -537,7 +531,7 @@ export function VerticalToolbox(): React.ReactElement {
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => {}}>
+        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { window.location.href = "/dashboard"; } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>
@@ -555,18 +549,44 @@ export function VerticalToolbox(): React.ReactElement {
           <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 2.5, color: GOLD, marginBottom: 4 }}>
             Catalogue
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", fontFamily: "'Playfair Display', serif", marginBottom: 20, letterSpacing: -0.3 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", fontFamily: "'Playfair Display', serif", marginBottom: 16, letterSpacing: -0.3 }}>
             Furniture
           </div>
+
+          {/* Search */}
+          <div style={{ position: "relative", marginBottom: 16 }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); }}
+              placeholder="Search furniture\u2026"
+              style={{
+                width: "100%", padding: "9px 12px 9px 32px", fontSize: 13,
+                fontFamily: "'Inter', system-ui, sans-serif",
+                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8, color: "#f0f0f0", outline: "none",
+                boxSizing: "border-box",
+                transition: "border-color 0.2s, box-shadow 0.2s",
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(201,168,76,0.3)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(201,168,76,0.06)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.boxShadow = "none"; }}
+            />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </div>
+
           {CATALOGUE_CATEGORIES.map((cat) => {
-            const items = getCatalogueByCategory(cat);
+            const allItems = getCatalogueByCategory(cat);
+            const q = searchQuery.trim().toLowerCase();
+            const items = q.length > 0 ? allItems.filter((item) => item.name.toLowerCase().includes(q) || item.subtitle.toLowerCase().includes(q) || categoryLabel(cat).toLowerCase().includes(q)) : allItems;
             if (items.length === 0) return null;
-            const collapsed = collapsedCategories.has(cat);
+            const collapsed = collapsedCategories.has(cat) && q.length === 0;
             return (
               <div key={cat}>
                 <div style={categoryHeaderStyle} onClick={() => { toggleCategory(cat); }}>
-                  <span>{categoryLabel(cat)}</span>
-                  <span style={{ fontSize: 14 }}>{collapsed ? "+" : "−"}</span>
+                  <span>{categoryLabel(cat)} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
+                  <span style={{ fontSize: 14 }}>{collapsed ? "+" : "\u2212"}</span>
                 </div>
                 {!collapsed && items.map((item, idx) => (
                   <div
@@ -582,17 +602,41 @@ export function VerticalToolbox(): React.ReactElement {
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAssetClick(item); }}
                   >
-                    <div style={{
-                      width: 10, height: 10, borderRadius: 3,
-                      background: CATEGORY_COLORS[cat] ?? "#666",
-                      boxShadow: `0 0 6px ${CATEGORY_COLORS[cat] ?? "#666"}40`,
-                    }} />
-                    <span style={{ fontSize: 14 }}>{item.name}</span>
+                    {/* SVG thumbnail */}
+                    <div
+                      style={{
+                        width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+                        background: "rgba(201,168,76,0.04)",
+                        border: "1px solid rgba(201,168,76,0.08)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        padding: 2,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: catalogueIcon(item) }}
+                    />
+                    {/* Name + subtitle */}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.subtitle}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             );
           })}
+
+          {/* Empty search state */}
+          {searchQuery.trim().length > 0 && CATALOGUE_CATEGORIES.every((cat) => {
+            const q = searchQuery.trim().toLowerCase();
+            return getCatalogueByCategory(cat).filter((item) => item.name.toLowerCase().includes(q) || item.subtitle.toLowerCase().includes(q) || categoryLabel(cat).toLowerCase().includes(q)).length === 0;
+          }) && (
+            <div style={{ textAlign: "center", padding: "24px 8px", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
+              No items match &ldquo;{searchQuery.trim()}&rdquo;
+            </div>
+          )}
         </div>
       )}
 
@@ -621,6 +665,7 @@ export function VerticalToolbox(): React.ReactElement {
           ))}
         </div>
       )}
+      {showAuth && <AuthModal onClose={() => { setShowAuth(false); }} />}
     </>
   );
 }
