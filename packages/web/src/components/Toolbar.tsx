@@ -3,7 +3,6 @@ import { useSpring, animated } from "@react-spring/web";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
-import { useSectionStore } from "../stores/section-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import {
   playArcOpenSound,
@@ -44,7 +43,6 @@ const TOOLBOX_GAP = 10;
 const ACCENT_MEASURE = "#5B9BD5"; // sapphire
 const ACCENT_XRAY = "#9B72CF";    // amethyst
 const ACCENT_TAPE = "#D4A843";    // burnished brass
-const ACCENT_BOX = "#4DA66A";     // emerald
 const ACCENT_PLACE = "#C25B5B";   // garnet
 
 // ---------------------------------------------------------------------------
@@ -83,18 +81,6 @@ function TapeIcon(): React.ReactElement {
   );
 }
 
-function BoxIcon(): React.ReactElement {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <rect x="4" y="5" width="10" height="10" rx="1" stroke="currentColor" strokeWidth="1.3" strokeDasharray="2 1.5" />
-      <line x1="4" y1="5" x2="7" y2="3" stroke="currentColor" strokeWidth="1.2" />
-      <line x1="14" y1="5" x2="17" y2="3" stroke="currentColor" strokeWidth="1.2" />
-      <line x1="17" y1="3" x2="17" y2="12" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.5" />
-      <line x1="14" y1="15" x2="17" y2="12" stroke="currentColor" strokeWidth="1.2" />
-      <line x1="7" y1="3" x2="17" y2="3" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
-}
 
 function PlaceIcon(): React.ReactElement {
   return (
@@ -150,7 +136,6 @@ export function Toolbar(): React.ReactElement {
   const measureActive = useMeasurementStore((s) => s.active);
   const xrayEnabled = useXrayStore((s) => s.enabled);
   const tapeActive = useGuidelineStore((s) => s.active);
-  const boxEnabled = useSectionStore((s) => s.boxEnabled);
   const catalogueOpen = useCatalogueStore((s) => s.drawerOpen);
 
   // Tool definitions — stable array
@@ -183,15 +168,6 @@ export function Toolbar(): React.ReactElement {
       isActive: () => useGuidelineStore.getState().active,
     },
     {
-      id: "box",
-      label: "Box",
-      shortcut: "B",
-      accent: ACCENT_BOX,
-      icon: BoxIcon,
-      toggle: () => { useSectionStore.getState().toggleBox(); },
-      isActive: () => useSectionStore.getState().boxEnabled,
-    },
-    {
       id: "place",
       label: "Place",
       shortcut: "F",
@@ -208,7 +184,6 @@ export function Toolbar(): React.ReactElement {
   const derivedActiveId = measureActive ? "measure"
     : xrayEnabled ? "xray"
     : tapeActive ? "tape"
-    : boxEnabled ? "box"
     : catalogueOpen ? "place"
     : null;
 

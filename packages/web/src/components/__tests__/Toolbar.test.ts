@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useXrayStore } from "../../stores/xray-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
-import { useSectionStore } from "../../stores/section-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import {
   isToolbarMuted,
@@ -11,24 +10,19 @@ import {
 } from "../../lib/toolbar-sounds.js";
 
 // ---------------------------------------------------------------------------
-// These tests verify the Toolbar's integration with all 5 tool stores,
+// These tests verify the Toolbar's integration with tool stores,
 // keyboard shortcut handling, sound utility, and arc geometry.
-// The component uses react-spring for animation — we test the store
-// interactions and pure logic that drive it.
 // ---------------------------------------------------------------------------
 
-// Capture initial states for reset
 const initialMeasurement = useMeasurementStore.getState();
 const initialXray = useXrayStore.getState();
 const initialGuideline = useGuidelineStore.getState();
-const initialSection = useSectionStore.getState();
 const initialCatalogue = useCatalogueStore.getState();
 
 beforeEach(() => {
   useMeasurementStore.setState(initialMeasurement, true);
   useXrayStore.setState(initialXray, true);
   useGuidelineStore.setState(initialGuideline, true);
-  useSectionStore.setState(initialSection, true);
   useCatalogueStore.setState(initialCatalogue, true);
   setToolbarMuted(true);
 });
@@ -62,14 +56,6 @@ describe("Toolbar tool store integration", () => {
     expect(useGuidelineStore.getState().active).toBe(false);
   });
 
-  it("section box toggles via store", () => {
-    expect(useSectionStore.getState().boxEnabled).toBe(false);
-    useSectionStore.getState().toggleBox();
-    expect(useSectionStore.getState().boxEnabled).toBe(true);
-    useSectionStore.getState().toggleBox();
-    expect(useSectionStore.getState().boxEnabled).toBe(false);
-  });
-
   it("catalogue drawer toggles via store", () => {
     expect(useCatalogueStore.getState().drawerOpen).toBe(false);
     useCatalogueStore.getState().toggleDrawer();
@@ -80,7 +66,7 @@ describe("Toolbar tool store integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tool definitions (5 tools with correct shortcuts and accents)
+// Tool definitions (4 tools with correct shortcuts and accents)
 // ---------------------------------------------------------------------------
 
 describe("Toolbar tool definitions", () => {
@@ -88,27 +74,26 @@ describe("Toolbar tool definitions", () => {
     { id: "measure", shortcut: "M", accent: "#5B9BD5" },
     { id: "xray", shortcut: "X", accent: "#9B72CF" },
     { id: "tape", shortcut: "T", accent: "#D4A843" },
-    { id: "box", shortcut: "B", accent: "#4DA66A" },
     { id: "place", shortcut: "F", accent: "#C25B5B" },
   ] as const;
 
-  it("has exactly 5 tools", () => {
-    expect(TOOL_DEFS).toHaveLength(5);
+  it("has exactly 4 tools", () => {
+    expect(TOOL_DEFS).toHaveLength(4);
   });
 
   it("each tool has a unique ID", () => {
     const ids = TOOL_DEFS.map((t) => t.id);
-    expect(new Set(ids).size).toBe(5);
+    expect(new Set(ids).size).toBe(4);
   });
 
   it("each tool has a unique keyboard shortcut", () => {
     const shortcuts = TOOL_DEFS.map((t) => t.shortcut);
-    expect(new Set(shortcuts).size).toBe(5);
+    expect(new Set(shortcuts).size).toBe(4);
   });
 
   it("each tool has a unique accent colour", () => {
     const accents = TOOL_DEFS.map((t) => t.accent);
-    expect(new Set(accents).size).toBe(5);
+    expect(new Set(accents).size).toBe(4);
   });
 
   it("all shortcuts are single uppercase letters", () => {
@@ -132,7 +117,7 @@ describe("Toolbar row geometry", () => {
   const TOOL_SIZE = 44;
   const TOOL_GAP = 6;
   const TOOLBOX_GAP = 10;
-  const TOOL_COUNT = 5;
+  const TOOL_COUNT = 4;
 
   function computeRowOffset(index: number): number {
     return TOOLBOX_GAP + index * (TOOL_SIZE + TOOL_GAP);
@@ -143,9 +128,9 @@ describe("Toolbar row geometry", () => {
     expect(offset).toBe(TOOLBOX_GAP);
   });
 
-  it("last tool (index 4) is furthest from toolbox", () => {
-    const offset = computeRowOffset(4);
-    expect(offset).toBeGreaterThan(computeRowOffset(3));
+  it("last tool (index 3) is furthest from toolbox", () => {
+    const offset = computeRowOffset(3);
+    expect(offset).toBeGreaterThan(computeRowOffset(2));
   });
 
   it("tools are evenly spaced", () => {
@@ -204,21 +189,21 @@ describe("Toolbar sound utility", () => {
 
 describe("Toolbar stagger timing", () => {
   const STAGGER_MS = 40;
-  const TOOL_COUNT = 5;
+  const TOOL_COUNT = 4;
 
-  it("opening: tool 0 at 0ms, tool 4 at 160ms", () => {
+  it("opening: tool 0 at 0ms, tool 3 at 120ms", () => {
     for (let i = 0; i < TOOL_COUNT; i++) {
       expect(i * STAGGER_MS).toBe(i * 40);
     }
     expect(0 * STAGGER_MS).toBe(0);
-    expect(4 * STAGGER_MS).toBe(160);
+    expect(3 * STAGGER_MS).toBe(120);
   });
 
-  it("closing: tool 4 retracts first (at 0ms), tool 0 last (at 160ms)", () => {
+  it("closing: tool 3 retracts first (at 0ms), tool 0 last (at 120ms)", () => {
     for (let i = 0; i < TOOL_COUNT; i++) {
       const closeDelay = (TOOL_COUNT - 1 - i) * STAGGER_MS;
-      if (i === 4) expect(closeDelay).toBe(0);
-      if (i === 0) expect(closeDelay).toBe(160);
+      if (i === 3) expect(closeDelay).toBe(0);
+      if (i === 0) expect(closeDelay).toBe(120);
     }
   });
 });
@@ -245,10 +230,6 @@ describe("hexToRgb", () => {
 
   it("converts brass accent correctly", () => {
     expect(hexToRgb("#D4A843")).toBe("212, 168, 67");
-  });
-
-  it("converts emerald accent correctly", () => {
-    expect(hexToRgb("#4DA66A")).toBe("77, 166, 106");
   });
 
   it("converts garnet accent correctly", () => {
@@ -287,12 +268,6 @@ describe("Toolbar keyboard shortcuts", () => {
     expect(useGuidelineStore.getState().active).toBe(true);
   });
 
-  it("B toggles section box", () => {
-    expect(useSectionStore.getState().boxEnabled).toBe(false);
-    useSectionStore.getState().toggleBox();
-    expect(useSectionStore.getState().boxEnabled).toBe(true);
-  });
-
   it("F toggles catalogue", () => {
     expect(useCatalogueStore.getState().drawerOpen).toBe(false);
     useCatalogueStore.getState().toggleDrawer();
@@ -302,7 +277,6 @@ describe("Toolbar keyboard shortcuts", () => {
   it("Escape deactivates active tool (measure)", () => {
     useMeasurementStore.getState().toggle();
     expect(useMeasurementStore.getState().active).toBe(true);
-    // Escape would toggle the active tool
     useMeasurementStore.getState().toggle();
     expect(useMeasurementStore.getState().active).toBe(false);
   });
@@ -324,7 +298,6 @@ describe("Toolbar active tool accent", () => {
     measure: "#5B9BD5",
     xray: "#9B72CF",
     tape: "#D4A843",
-    box: "#4DA66A",
     place: "#C25B5B",
   };
 
@@ -332,7 +305,6 @@ describe("Toolbar active tool accent", () => {
     expect(useMeasurementStore.getState().active).toBe(false);
     expect(useXrayStore.getState().enabled).toBe(false);
     expect(useGuidelineStore.getState().active).toBe(false);
-    expect(useSectionStore.getState().boxEnabled).toBe(false);
     expect(useCatalogueStore.getState().drawerOpen).toBe(false);
   });
 
@@ -351,11 +323,6 @@ describe("Toolbar active tool accent", () => {
     expect(ACCENTS["tape"]).toBe("#D4A843");
   });
 
-  it("box active → emerald accent", () => {
-    useSectionStore.getState().toggleBox();
-    expect(ACCENTS["box"]).toBe("#4DA66A");
-  });
-
   it("place active → garnet accent", () => {
     useCatalogueStore.getState().toggleDrawer();
     expect(ACCENTS["place"]).toBe("#C25B5B");
@@ -368,7 +335,6 @@ describe("Toolbar active tool accent", () => {
 
 describe("Toolbar touch support", () => {
   it("touch devices use tap-to-toggle (no hover)", () => {
-    // On touch, first tap opens arc, second tap closes
     let arcOpen = false;
     arcOpen = !arcOpen; // first tap
     expect(arcOpen).toBe(true);

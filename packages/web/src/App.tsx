@@ -12,7 +12,6 @@ import { XrayToggle } from "./components/XrayToggle.js";
 import { MeasurementTool } from "./components/MeasurementTool.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
 import { TapeMeasure } from "./components/TapeMeasure.js";
-import { SectionBoxControls } from "./components/SectionBoxControls.js";
 import { PlacementHint } from "./components/PlacementHint.js";
 import { PerfMonitor } from "./components/PerfMonitor.js";
 import { PerfOverlay } from "./components/PerfOverlay.js";
@@ -119,7 +118,6 @@ export function App(): React.ReactElement {
         <SectionSlider />
       </div>
 
-      <SectionBoxControls />
       <MeasurementOverlay />
       <PlacementHint />
 
