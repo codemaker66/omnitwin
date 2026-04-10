@@ -117,6 +117,118 @@ describe("auto-save message schemas", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Regression — resolveWsUser must return DB user ID, not Clerk sub.
+//
+// Punch list #3: the previous implementation set userId = payload.sub
+// (the opaque Clerk ID), then compared it against configurations.userId
+// (a local UUID). Every authenticated user silently failed the owner
+// check and got "Permission denied" on auto-save. These tests pin the fix.
+// ---------------------------------------------------------------------------
+
+describe("resolveWsUser — test-mode mock token path", () => {
+  it("returns the mock id verbatim (simulating a DB UUID)", async () => {
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const token = JSON.stringify({
+      id: "00000000-0000-0000-0000-00000000dead",
+      email: "alice@example.com",
+      role: "admin",
+      venueId: null,
+    });
+
+    const result = await resolveWsUser(mockDb, token, true);
+
+    expect(result).not.toBeNull();
+    expect(result?.userId).toBe("00000000-0000-0000-0000-00000000dead");
+    expect(result?.userRole).toBe("admin");
+    expect(result?.userVenueId).toBeNull();
+  });
+
+  it("preserves venueId from mock token for hallkeeper role", async () => {
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const token = JSON.stringify({
+      id: "user-db-uuid-1",
+      email: "bob@venue.com",
+      role: "hallkeeper",
+      venueId: "venue-db-uuid-1",
+    });
+
+    const result = await resolveWsUser(mockDb, token, true);
+
+    expect(result?.userVenueId).toBe("venue-db-uuid-1");
+    expect(result?.userRole).toBe("hallkeeper");
+  });
+
+  it("returns null for malformed mock token (missing id)", async () => {
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const token = JSON.stringify({ role: "admin" });
+
+    const result = await resolveWsUser(mockDb, token, true);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null for malformed mock token (id is not a string)", async () => {
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const token = JSON.stringify({ id: 42, role: "admin" });
+
+    const result = await resolveWsUser(mockDb, token, true);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null for invalid JSON in test mode", async () => {
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+
+    const result = await resolveWsUser(mockDb, "{not-json", true);
+
+    expect(result).toBeNull();
+  });
+
+  it("does NOT take the mock path when isTestMode is false", async () => {
+    // In production mode, a JSON-shaped token must go through Clerk
+    // verification (which will fail here because there's no real Clerk
+    // backend configured in this unit test, so we expect null).
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const token = JSON.stringify({ id: "x", role: "admin" });
+
+    const result = await resolveWsUser(mockDb, token, false);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("resolveWsUser — diligence regression marker", () => {
+  it("resolved userId must be comparable to configurations.userId (both DB UUIDs)", async () => {
+    // This test exists to make the invariant loud: whatever resolveWsUser
+    // returns in `userId` MUST be the same ID space as the local
+    // `users.id` column. If a future refactor re-introduces
+    // `payload.sub` here, this test is the sentinel that catches it.
+    const { resolveWsUser } = await import("../ws/auto-save.js");
+    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    // Simulate what a test runner passes: the DB row's `id` column
+    const dbUserId = "550e8400-e29b-41d4-a716-446655440000";
+    const token = JSON.stringify({
+      id: dbUserId,
+      email: "a@b.com",
+      role: "planner",
+      venueId: null,
+    });
+
+    const result = await resolveWsUser(mockDb, token, true);
+
+    // The resolved userId is exactly the DB id the caller provided —
+    // NOT a transformed or namespaced version, NOT a Clerk sub.
+    expect(result?.userId).toBe(dbUserId);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Future integration test additions needed:
 // ---------------------------------------------------------------------------
 // 1. Connect with real WebSocket client, send update_objects, verify DB write
@@ -125,4 +237,6 @@ describe("auto-save message schemas", () => {
 // 4. Send update, wait 500ms debounce, verify "saved" message
 // 5. Send invalid JSON, verify error message (connection stays open)
 // 6. Disconnect mid-buffer, verify buffered data is flushed
+// 7. Clerk path: mock @clerk/backend and db.select to prove
+//    getUserByClerkId's DB id flows through to ws ownership checks.
 // These require a running server (not Fastify inject) and a WS client lib.

@@ -17,7 +17,14 @@ import type { PlacedItem } from "../../lib/placement.js";
  * The assetDefinitionId from the backend maps to catalogueItemId in the local
  * catalogue. For V1 we use the same string IDs.
  */
-function editorToPlaced(obj: EditorObject): PlacedItem {
+/**
+ * Convert a local `EditorObject` (store state) to a `PlacedItem` (scene state).
+ *
+ * The placement system is the R3F scene's source of truth — it owns
+ * clothed/groupId during interaction. Loading from the store populates
+ * the scene; subsequent user interactions flow the other way.
+ */
+export function editorToPlacedItem(obj: EditorObject): PlacedItem {
   return {
     id: obj.id,
     catalogueItemId: obj.assetDefinitionId,
@@ -25,26 +32,37 @@ function editorToPlaced(obj: EditorObject): PlacedItem {
     y: obj.positionY,
     z: obj.positionZ,
     rotationY: obj.rotationY,
-    clothed: false,
-    groupId: null,
+    clothed: obj.clothed,
+    groupId: obj.groupId,
   };
 }
 
 /**
  * Convert a PlacedItem (from user interaction) to an EditorObject (for save).
+ *
+ * Scene-only state (clothed, groupId) round-trips through here. The
+ * placement system doesn't model rotationX/Z or scale (no tilted items, no
+ * non-uniform scaling), so those flow through as zeros — when those features
+ * land, this function is the place to thread them through.
+ *
+ * sortOrder is preserved by looking up the existing editor object so reload
+ * doesn't scramble user-defined ordering. New items get sortOrder=0 here and
+ * are assigned a real index by the editor store on first save.
  */
-function placedToEditor(item: PlacedItem): EditorObject {
+export function placedItemToEditor(item: PlacedItem, existing: EditorObject | undefined): EditorObject {
   return {
     id: item.id,
     assetDefinitionId: item.catalogueItemId,
     positionX: item.x,
     positionY: item.y,
     positionZ: item.z,
-    rotationX: 0,
+    rotationX: existing?.rotationX ?? 0,
     rotationY: item.rotationY,
-    rotationZ: 0,
-    scale: 1,
-    sortOrder: 0,
+    rotationZ: existing?.rotationZ ?? 0,
+    scale: existing?.scale ?? 1,
+    sortOrder: existing?.sortOrder ?? 0,
+    clothed: item.clothed,
+    groupId: item.groupId,
   };
 }
 
@@ -86,7 +104,7 @@ export function EditorBridge(): null {
     const currentPlaced = usePlacementStore.getState().placedItems;
     if (!itemsMatch(currentPlaced, editorObjects)) {
       // Replace placement-store items with editor-store objects
-      const newItems = editorObjects.map(editorToPlaced);
+      const newItems = editorObjects.map(editorToPlacedItem);
       usePlacementStore.setState({ placedItems: newItems });
     }
 
@@ -104,7 +122,8 @@ export function EditorBridge(): null {
       syncing.current = true;
 
       const editorState = useEditorStore.getState();
-      const newEditorObjects = state.placedItems.map(placedToEditor);
+      const existingById = new Map(editorState.objects.map((o) => [o.id, o]));
+      const newEditorObjects = state.placedItems.map((item) => placedItemToEditor(item, existingById.get(item.id)));
 
       // Only update if actually different
       if (!itemsMatch(state.placedItems, editorState.objects)) {

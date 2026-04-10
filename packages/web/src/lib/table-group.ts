@@ -9,7 +9,7 @@ import type { PlacedItem } from "./placement.js";
 // ---------------------------------------------------------------------------
 
 /** Gap between table edge and chair center (real-world metres). */
-const CHAIR_GAP_M = 0.15;
+const CHAIR_GAP_M = 0.05;
 
 /** The chair catalogue item ID. */
 const CHAIR_ID = "banquet-chair";

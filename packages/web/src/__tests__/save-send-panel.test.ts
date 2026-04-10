@@ -69,7 +69,7 @@ describe("SaveSendPanel visibility", () => {
   });
 
   it("requires configId", async () => {
-    useEditorStore.setState({ objects: [{ id: "o1", assetDefinitionId: "a1", positionX: 0, positionY: 0, positionZ: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scale: 1, sortOrder: 0 }] });
+    useEditorStore.setState({ objects: [{ id: "o1", assetDefinitionId: "a1", positionX: 0, positionY: 0, positionZ: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scale: 1, sortOrder: 0, clothed: false, groupId: null }] });
     // Still no configId — panel should return null
     expect(useEditorStore.getState().configId).toBeNull();
   });

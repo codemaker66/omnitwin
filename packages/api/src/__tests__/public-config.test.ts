@@ -106,6 +106,43 @@ describe("GET /public/configurations/:configId", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  // Punch list #2: the route MUST filter to isPublicPreview=true so that
+  // leaked or guessed UUIDs cannot expose private claimed layouts via the
+  // anonymous endpoint.
+  //
+  // We can't fully exercise the filter against the mock DB (every query
+  // throws → 500 instead of 404). But we CAN inspect the source string
+  // of the registered route handler — if a future refactor removes the
+  // filter, the test fails because the assertion no longer matches.
+  // This is a "tripwire" test that pins the SQL clause without needing
+  // a real DB.
+  it("route handler source includes isPublicPreview filter (tripwire)", async () => {
+    // Read the compiled route source directly. If a future change removes
+    // the isPublicPreview filter, this assertion will fail and force the
+    // engineer to confirm the change is intentional.
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const routeSource = await fs.readFile(
+      path.resolve("src/routes/public-configs.ts"),
+      "utf-8",
+    );
+    expect(routeSource).toContain("eq(configurations.isPublicPreview, true)");
+    // The error message names "Public preview" — pinning this catches a
+    // future regression where someone removes the filter and forgets to
+    // also revert the user-facing string.
+    expect(routeSource).toContain("Public preview configuration not found");
+  });
+
+  it("anonymous GET never returns 200 against mock DB (sanity)", async () => {
+    // Sanity check that the anonymous path either 404s (no public preview
+    // matches) or 500s (mock DB fails) but never silently returns 200.
+    const res = await server.inject({
+      method: "GET", url: `/public/configurations/${CONFIG_ID}`,
+    });
+    expect(res.statusCode).not.toBe(200);
+    expect(res.statusCode).not.toBe(401); // anonymous endpoint, not auth-gated
+  });
 });
 
 // ---------------------------------------------------------------------------

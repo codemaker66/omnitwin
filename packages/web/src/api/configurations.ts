@@ -4,6 +4,18 @@ import { api } from "./client.js";
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Object metadata blob — JSON column on placed_objects.
+ *
+ * Used to round-trip scene-only state (cloth drape, group membership)
+ * that doesn't have first-class columns. Forward-compatible: future
+ * fields can be added here without DB migrations.
+ */
+export interface ObjectMetadata {
+  readonly clothed?: boolean;
+  readonly groupId?: string | null;
+}
+
 export interface PlacedObject {
   readonly id: string;
   readonly configurationId: string;
@@ -16,7 +28,7 @@ export interface PlacedObject {
   readonly rotationZ: string;
   readonly scale: string;
   readonly sortOrder: number;
-  readonly metadata: unknown;
+  readonly metadata: ObjectMetadata | null;
 }
 
 export interface Configuration {
@@ -40,6 +52,7 @@ export interface BatchObjectInput {
   readonly rotationZ: number;
   readonly scale: number;
   readonly sortOrder: number;
+  readonly metadata?: ObjectMetadata | null;
 }
 
 // ---------------------------------------------------------------------------

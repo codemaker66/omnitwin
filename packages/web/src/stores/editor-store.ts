@@ -19,9 +19,21 @@ export interface EditorObject {
   readonly rotationZ: number;
   readonly scale: number;
   readonly sortOrder: number;
+  /** Whether a cloth is draped over this item (tables only). Persisted in metadata. */
+  readonly clothed: boolean;
+  /** Group ID — items sharing a groupId move together. Persisted in metadata. */
+  readonly groupId: string | null;
 }
 
-function placedToEditor(p: PlacedObject): EditorObject {
+/**
+ * Convert an API `PlacedObject` (wire format) to a local `EditorObject`.
+ *
+ * Scene-only state lives in the `metadata` JSON blob on the wire. We
+ * extract it defensively here so malformed metadata from older records
+ * degrades gracefully to default values.
+ */
+export function placedObjectToEditor(p: PlacedObject): EditorObject {
+  const meta = p.metadata ?? {};
   return {
     id: p.id,
     assetDefinitionId: p.assetDefinitionId,
@@ -33,10 +45,18 @@ function placedToEditor(p: PlacedObject): EditorObject {
     rotationZ: parseFloat(p.rotationZ),
     scale: parseFloat(p.scale),
     sortOrder: p.sortOrder,
+    clothed: meta.clothed === true,
+    groupId: typeof meta.groupId === "string" ? meta.groupId : null,
   };
 }
 
-function editorToBatch(o: EditorObject): BatchObjectInput {
+/**
+ * Convert a local `EditorObject` to a `BatchObjectInput` for the wire.
+ *
+ * Scene-only state (clothed, groupId) is packed into the `metadata` blob
+ * so it round-trips through the database without needing dedicated columns.
+ */
+export function editorToBatch(o: EditorObject): BatchObjectInput {
   return {
     id: o.id.startsWith("local-") ? undefined : o.id,
     assetDefinitionId: o.assetDefinitionId,
@@ -48,6 +68,7 @@ function editorToBatch(o: EditorObject): BatchObjectInput {
     rotationZ: o.rotationZ,
     scale: o.scale,
     sortOrder: o.sortOrder,
+    metadata: { clothed: o.clothed, groupId: o.groupId },
   };
 }
 
@@ -71,7 +92,20 @@ interface EditorState {
 }
 
 interface EditorActions {
-  readonly loadConfiguration: (configId: string) => Promise<void>;
+  /**
+   * Load a configuration by ID.
+   *
+   * The endpoint depends on `isAuthenticated`:
+   *   - true  → `getConfig()`        — auth path, enforces ownership/venue access
+   *   - false → `getPublicConfig()`  — public path, only returns public previews
+   *
+   * Punch list #2 / #33: previously this always called `getPublicConfig()`,
+   * which (a) silently relied on the backend's permissive no-filter behavior
+   * and (b) broke the moment that backend bug was fixed (claimed configs
+   * 404'd because they're no longer public previews). Both bugs were
+   * fixed together — this signature is the contract that pins it.
+   */
+  readonly loadConfiguration: (configId: string, isAuthenticated?: boolean) => Promise<void>;
   readonly loadSpace: (venueId: string, spaceId: string) => Promise<void>;
   readonly createPublicConfig: (spaceId: string) => Promise<string>;
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
@@ -112,11 +146,13 @@ const INITIAL_STATE: EditorState = {
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...INITIAL_STATE,
 
-  loadConfiguration: async (configId) => {
+  loadConfiguration: async (configId, isAuthenticated) => {
     set({ isLoading: true, error: null });
     try {
-      const config = await configApi.getPublicConfig(configId);
-      const objects = (config.objects ?? []).map(placedToEditor);
+      const config = isAuthenticated === true
+        ? await configApi.getConfig(configId)
+        : await configApi.getPublicConfig(configId);
+      const objects = (config.objects ?? []).map(placedObjectToEditor);
       set({
         configId: config.id,
         spaceId: config.spaceId,
@@ -184,6 +220,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: get().objects.length,
+      clothed: false, groupId: null,
     };
     set((s) => ({ objects: [...s.objects, obj], isDirty: true }));
 
@@ -228,7 +265,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         saved = await configApi.publicBatchSave(configId, batch);
       }
       // Update local IDs with server IDs
-      const serverObjects = saved.map(placedToEditor);
+      const serverObjects = saved.map(placedObjectToEditor);
       set({ objects: serverObjects, isDirty: false, isSaving: false, lastSavedAt: new Date() });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Save failed";

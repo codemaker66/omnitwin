@@ -26,9 +26,14 @@ import type { RoomLayout, RoomFeaturePoint } from "./spatial-classifier.js";
 
 /** All data needed to render the hallkeeper sheet PDF. */
 export interface SheetData {
-  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: string | null };
+  /**
+   * `venue.id` and `config.userId` are surfaced specifically so the route
+   * can call `canAccessResource(user, config.userId, venue.id)` before
+   * returning PDF or JSON. They are not used by the PDF renderer.
+   */
+  readonly venue: { readonly id: string; readonly name: string; readonly address: string; readonly logoUrl: string | null };
   readonly space: { readonly name: string; readonly widthM: number; readonly lengthM: number; readonly heightM: number };
-  readonly config: { readonly id: string; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
+  readonly config: { readonly id: string; readonly userId: string | null; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
   readonly manifest: Manifest;
   readonly diagramUrl: string | null;
   readonly webViewUrl: string;
@@ -118,7 +123,7 @@ export async function assembleSheetData(
   const manifest = generateManifest(manifestObjects, roomLayout);
 
   return {
-    venue: { name: venue.name, address: venue.address, logoUrl: venue.logoUrl },
+    venue: { id: venue.id, name: venue.name, address: venue.address, logoUrl: venue.logoUrl },
     space: {
       name: space.name,
       widthM: Number(space.widthM),
@@ -127,6 +132,7 @@ export async function assembleSheetData(
     },
     config: {
       id: config.id,
+      userId: config.userId,
       name: config.name,
       layoutStyle: config.layoutStyle,
       guestCount: config.guestCount,

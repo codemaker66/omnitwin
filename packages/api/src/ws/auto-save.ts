@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { configurations, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { getUserByClerkId } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // WebSocket auto-save — debounced placed object sync
@@ -46,6 +47,75 @@ const IncomingMessage = z.discriminatedUnion("type", [
 export type IncomingMessageType = z.infer<typeof IncomingMessage>;
 
 // ---------------------------------------------------------------------------
+// WS user resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * The user identity used for WebSocket ownership checks.
+ *
+ * `userId` MUST be the local `users.id` UUID so it can be compared against
+ * `configurations.userId`. The previous incarnation of this code used
+ * `payload.sub` (Clerk's opaque ID) directly, which never matches any DB
+ * row — every authenticated user silently got "Permission denied" on
+ * auto-save. This shape pins the fix.
+ */
+export interface WsUser {
+  readonly userId: string;
+  readonly userRole: string;
+  readonly userVenueId: string | null;
+}
+
+/**
+ * Resolve a WebSocket query-param token to a DB user.
+ *
+ * Two paths:
+ *   - Test mode (`NODE_ENV=test` or `VITEST` set) + token starts with `{`:
+ *     the token is a JSON-encoded `{ id, role, venueId }` where `id` is
+ *     already a DB UUID. Used by the existing integration tests.
+ *   - Production: verify the Clerk JWT, then look up (or create) the local
+ *     user via `getUserByClerkId`, and use that user's DB id.
+ *
+ * Returns `null` on any failure — verification, missing fields, or user
+ * resolution. The caller must treat null as "close the socket".
+ */
+export async function resolveWsUser(
+  db: Database,
+  token: string,
+  isTestMode: boolean = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined,
+): Promise<WsUser | null> {
+  if (isTestMode && token.startsWith("{")) {
+    try {
+      const mock = JSON.parse(token) as { id?: unknown; role?: unknown; venueId?: unknown };
+      if (typeof mock.id !== "string" || typeof mock.role !== "string") return null;
+      const venueId = typeof mock.venueId === "string" ? mock.venueId : null;
+      return { userId: mock.id, userRole: mock.role, userVenueId: venueId };
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const { verifyToken } = await import("@clerk/backend");
+    const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
+    const payload = await verifyToken(token, { secretKey });
+    const clerkId = payload.sub;
+    const email = ((payload as Record<string, unknown>)["email"] as string | undefined)
+      ?? `${clerkId}@clerk.user`;
+
+    const dbUser = await getUserByClerkId(db, clerkId, email);
+    if (dbUser === null) return null;
+
+    return {
+      userId: dbUser.id,
+      userRole: dbUser.role,
+      userVenueId: dbUser.venueId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -64,32 +134,13 @@ export async function registerAutoSave(
       return;
     }
 
-    let userId: string;
-    let userRole: string;
-    let userVenueId: string | null;
-    try {
-      // In test mode ONLY, accept JSON-encoded mock tokens
-      const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
-      if (isTest && token.startsWith("{")) {
-        const mock = JSON.parse(token) as { id: string; role: string; venueId: string | null };
-        userId = mock.id;
-        userRole = mock.role;
-        userVenueId = mock.venueId ?? null;
-      } else {
-        // Clerk token verification — import verifyToken dynamically to avoid
-        // circular dependency issues at module scope
-        const { verifyToken } = await import("@clerk/backend");
-        const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
-        const payload = await verifyToken(token, { secretKey });
-        userId = payload.sub;
-        userRole = ((payload as Record<string, unknown>)["role"] as string) ?? "planner";
-        userVenueId = ((payload as Record<string, unknown>)["venueId"] as string) ?? null;
-      }
-    } catch {
+    const resolved = await resolveWsUser(db, token);
+    if (resolved === null) {
       socket.send(JSON.stringify({ type: "error", message: "Invalid token" }));
       socket.close();
       return;
     }
+    const { userId, userRole, userVenueId } = resolved;
 
     const rawConfigId = (request.params as { configId?: string }).configId;
     if (rawConfigId === undefined) {

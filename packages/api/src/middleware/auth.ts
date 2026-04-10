@@ -35,10 +35,15 @@ export function setAuthDb(db: Database): void {
 }
 
 // ---------------------------------------------------------------------------
-// getUserByClerkId — find or create local user from Clerk identity
+// getUserByClerkId — find or create local user from Clerk identity.
+//
+// This is the authoritative bridge from Clerk's opaque `sub` (the JWT
+// `payload.sub` claim) to our local `users.id` UUID. Both HTTP and
+// WebSocket auth paths MUST go through this so ownership checks against
+// `configurations.userId` compare apples to apples.
 // ---------------------------------------------------------------------------
 
-async function getUserByClerkId(
+export async function getUserByClerkId(
   db: Database,
   clerkId: string,
   email: string,
@@ -146,7 +151,16 @@ export async function authenticate(
 }
 
 // ---------------------------------------------------------------------------
-// authorize — role-based guard (unchanged)
+// authorize — role-based guard
+//
+// CRITICAL: returns the reply to halt the Fastify lifecycle so the actual
+// route handler does NOT run after a 403. The previous version sent the
+// 403 body but didn't return — Fastify then proceeded to invoke the
+// downstream handler with `request.user` still set, silently bypassing
+// the role check on every admin route.
+//
+// Pinned by the regression tests in __tests__/auth.test.ts that hit
+// `POST /venues` (admin-only) with a planner token.
 // ---------------------------------------------------------------------------
 
 export function authorize(
@@ -156,7 +170,7 @@ export function authorize(
 
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!roleSet.has(request.user.role)) {
-      await reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
   };
 }

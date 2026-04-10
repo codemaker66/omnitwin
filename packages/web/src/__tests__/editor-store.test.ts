@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
+  getConfig: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("../api/spaces.js", () => ({
 
 const configMock = (await import("../api/configurations.js")) as unknown as {
   getPublicConfig: ReturnType<typeof vi.fn>;
+  getConfig: ReturnType<typeof vi.fn>;
   createPublicConfig: ReturnType<typeof vi.fn>;
   publicBatchSave: ReturnType<typeof vi.fn>;
   authBatchSave: ReturnType<typeof vi.fn>;
@@ -74,6 +76,39 @@ describe("loadConfiguration", () => {
 
     expect(useEditorStore.getState().error).toBe("Not found");
     expect(useEditorStore.getState().isLoading).toBe(false);
+  });
+
+  // Punch list #2 / #33: load path must branch on auth state.
+  // The previous version always called getPublicConfig, which silently
+  // depended on the backend's permissive no-filter behavior.
+  it("uses public endpoint when called without auth flag", async () => {
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    configMock.getConfig.mockResolvedValue(mockConfig);
+
+    await useEditorStore.getState().loadConfiguration("cfg-1");
+
+    expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-1");
+    expect(configMock.getConfig).not.toHaveBeenCalled();
+  });
+
+  it("uses public endpoint when isAuthenticated is false", async () => {
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    configMock.getConfig.mockResolvedValue(mockConfig);
+
+    await useEditorStore.getState().loadConfiguration("cfg-1", false);
+
+    expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-1");
+    expect(configMock.getConfig).not.toHaveBeenCalled();
+  });
+
+  it("uses authenticated endpoint when isAuthenticated is true", async () => {
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    configMock.getConfig.mockResolvedValue(mockConfig);
+
+    await useEditorStore.getState().loadConfiguration("cfg-1", true);
+
+    expect(configMock.getConfig).toHaveBeenCalledWith("cfg-1");
+    expect(configMock.getPublicConfig).not.toHaveBeenCalled();
   });
 });
 

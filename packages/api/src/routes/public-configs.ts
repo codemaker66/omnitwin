@@ -156,27 +156,35 @@ export async function publicConfigRoutes(
     return { data: results };
   });
 
-  // GET /public/configurations/:configId — get preview config with objects
+  // GET /public/configurations/:configId — get a PUBLIC PREVIEW config with objects
+  //
+  // SECURITY: this endpoint is anonymous (no auth header required) so it
+  // MUST only return public-preview configurations. Once a config is
+  // claimed (`isPublicPreview = false`), it becomes private and is
+  // accessible only via the authenticated `GET /configurations/:id`
+  // endpoint, which enforces ownership/venue access via canAccessResource.
+  //
+  // Punch list #2 / #33: the previous version had no filter, so any
+  // leaked or guessed UUID could expose a private claimed layout — and
+  // the frontend was loading every config (claimed or not) through this
+  // endpoint, which made the bug invisible until diligence.
   server.get("/configurations/:configId", async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    // Load config by ID — no isPublicPreview filter.
-    // The UUID itself is the access token (shared via QR code / URL).
-    // Anyone with the link can VIEW; only public preview configs can be
-    // SAVED to via the public batch endpoint.
     const [config] = await db.select()
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),
+        eq(configurations.isPublicPreview, true),
         isNull(configurations.deletedAt),
       ))
       .limit(1);
 
     if (config === undefined) {
-      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+      return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
 
     const objects = await db.select()

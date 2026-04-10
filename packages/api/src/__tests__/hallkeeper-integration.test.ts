@@ -20,9 +20,9 @@ const ROOM: RoomLayout = {
 function makeSheetData(objects: readonly ManifestObject[]): SheetData {
   const manifest = generateManifest(objects, ROOM);
   return {
-    venue: { name: "Trades Hall Glasgow", address: "85 Glassford Street, Glasgow G1 1UH", logoUrl: null },
+    venue: { id: "test-venue-id", name: "Trades Hall Glasgow", address: "85 Glassford Street, Glasgow G1 1UH", logoUrl: null },
     space: { name: "Grand Hall", widthM: 21, lengthM: 10.5, heightM: 7 },
-    config: { id: "test-config-id", name: "Wedding Reception", layoutStyle: "dinner-rounds", guestCount: 120 },
+    config: { id: "test-config-id", userId: "test-user-id", name: "Wedding Reception", layoutStyle: "dinner-rounds", guestCount: 120 },
     manifest,
     diagramUrl: null,
     webViewUrl: "https://omnitwin.com/hallkeeper/test-config-id",

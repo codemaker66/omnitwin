@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { useAuthStore } from "../stores/auth-store.js";
 import { SpacePicker } from "../components/editor/SpacePicker.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { AuthModal } from "../components/editor/AuthModal.js";
@@ -18,14 +19,18 @@ export function EditorPage(): React.ReactElement {
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);
   const isLoading = useEditorStore((s) => s.isLoading);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [showAuth, setShowAuth] = useState(false);
 
-  // Load config from URL on mount
+  // Load config from URL on mount.
+  // The endpoint depends on auth state — see editor-store.loadConfiguration
+  // for the contract. Re-runs if auth state flips (e.g. user signs in
+  // mid-session and the public endpoint would now 404 a claimed config).
   useEffect(() => {
     if (urlConfigId !== undefined && urlConfigId !== storeConfigId) {
-      void useEditorStore.getState().loadConfiguration(urlConfigId);
+      void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
-  }, [urlConfigId, storeConfigId]);
+  }, [urlConfigId, storeConfigId, isAuthenticated]);
 
   // Handle space selection → create config → navigate
   const handleSelectSpace = (spaceId: string, _venueId: string): void => {

@@ -184,9 +184,9 @@ export function snapToWallEdge(
 
   // For round tables with chairs, use the full chair-ring radius as the
   // extent so the outermost chair back sits flush against the wall.
-  // Chair depth ~0.45m (render 0.9), gap 0.15m (render 0.3).
+  // Chair depth ~0.45m (render 0.9), gap 0.05m (render 0.1).
   const chairExtent = item.tableShape === "round"
-    ? toRenderSpace(0.45 + 0.15) // chair depth + gap beyond table edge
+    ? toRenderSpace(0.45 + 0.05) // chair depth + gap beyond table edge
     : 0;
   const { halfW: rawHalfW, halfD: rawHalfD } = computeRotatedFootprint(item, rotationY);
   const halfW = rawHalfW + chairExtent;
