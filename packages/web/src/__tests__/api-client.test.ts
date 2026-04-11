@@ -155,3 +155,108 @@ describe("graceful getToken errors", () => {
     expect(result).toEqual({ id: 1 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Schema validation — punch list #8
+//
+// Every api.get/post/patch can now take a Zod schema. When present, the
+// response is parsed and a RESPONSE_VALIDATION_ERROR is thrown if it
+// doesn't match. When absent, the legacy unsafe-cast path runs (and
+// emits a dev-mode console.warn so migration progress is visible).
+//
+// These tests pin the contract: valid responses parse, malformed
+// responses throw with a clear error code, and the legacy path still
+// works for unmigrated modules.
+// ---------------------------------------------------------------------------
+
+describe("schema validation", () => {
+  it("valid response parses through the schema and returns typed data", async () => {
+    const { z } = await import("zod");
+    const PetSchema = z.object({ name: z.string(), age: z.number() });
+
+    fetchMock.mockResolvedValue(jsonResponse({ data: { name: "Rex", age: 5 } }));
+
+    const result = await api.get("/pets/rex", PetSchema);
+    // Type assertion: TypeScript should infer { name: string; age: number }
+    expect(result.name).toBe("Rex");
+    expect(result.age).toBe(5);
+  });
+
+  it("malformed response throws ApiError(RESPONSE_VALIDATION_ERROR)", async () => {
+    const { z } = await import("zod");
+    const PetSchema = z.object({ name: z.string(), age: z.number() });
+
+    // Server returns age as a string instead of number — exactly the kind
+    // of contract drift that previously crashed components silently.
+    fetchMock.mockResolvedValue(jsonResponse({ data: { name: "Rex", age: "five" } }));
+
+    await expect(api.get("/pets/rex", PetSchema)).rejects.toThrow(ApiError);
+    try {
+      await api.get("/pets/rex", PetSchema);
+    } catch (err) {
+      const apiErr = err as InstanceType<typeof ApiError>;
+      expect(apiErr.code).toBe("RESPONSE_VALIDATION_ERROR");
+      // The validation issues are surfaced for debugging
+      expect(apiErr.details).toBeDefined();
+      expect(Array.isArray(apiErr.details)).toBe(true);
+    }
+  });
+
+  it("missing required field throws RESPONSE_VALIDATION_ERROR", async () => {
+    const { z } = await import("zod");
+    const PetSchema = z.object({ name: z.string(), age: z.number() });
+
+    fetchMock.mockResolvedValue(jsonResponse({ data: { name: "Rex" } }));
+
+    await expect(api.get("/pets/rex", PetSchema)).rejects.toThrow(ApiError);
+    try {
+      await api.get("/pets/rex", PetSchema);
+    } catch (err) {
+      const apiErr = err as InstanceType<typeof ApiError>;
+      expect(apiErr.code).toBe("RESPONSE_VALIDATION_ERROR");
+    }
+  });
+
+  it("array schemas validate every element", async () => {
+    const { z } = await import("zod");
+    const PetListSchema = z.array(z.object({ name: z.string() }));
+
+    fetchMock.mockResolvedValue(jsonResponse({ data: [
+      { name: "Rex" },
+      { name: 42 }, // wrong type — should fail
+    ] }));
+
+    await expect(api.get("/pets", PetListSchema)).rejects.toThrow(ApiError);
+  });
+
+  it("legacy path without schema still works (back-compat)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: { whatever: "shape" } }));
+
+    // No schema passed — falls through to the unsafe cast path
+    const result = await api.get<{ whatever: string }>("/legacy");
+    expect(result).toEqual({ whatever: "shape" });
+  });
+
+  it("schema validates after the {data} envelope is unwrapped", async () => {
+    const { z } = await import("zod");
+    const PetSchema = z.object({ name: z.string() });
+
+    // The data envelope is unwrapped first, then PetSchema validates
+    // the inner shape (NOT the envelope itself)
+    fetchMock.mockResolvedValue(jsonResponse({ data: { name: "Rex" } }));
+
+    const result = await api.get("/pets/rex", PetSchema);
+    expect(result).toEqual({ name: "Rex" });
+  });
+
+  it("schema works with raw JSON responses (no data envelope)", async () => {
+    const { z } = await import("zod");
+    const PetSchema = z.object({ name: z.string() });
+
+    // Some endpoints return the body directly without a data wrapper
+    fetchMock.mockResolvedValue(jsonResponse({ name: "Rex" }));
+
+    const result = await api.get("/pets/rex", PetSchema);
+    expect(result).toEqual({ name: "Rex" });
+  });
+});

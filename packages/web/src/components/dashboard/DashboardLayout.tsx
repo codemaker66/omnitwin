@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { useClerk } from "@clerk/clerk-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 
@@ -48,7 +49,19 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string }[] = [
 
 export function DashboardLayout({ activeView, onViewChange, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const logoutLocal = useAuthStore((s) => s.logout);
+  const { signOut } = useClerk();
+
+  // Punch list #11: previously called only the local Zustand `logout()`,
+  // which cleared the in-memory user but left the Clerk session intact.
+  // A page refresh would re-populate the store from Clerk and the user
+  // would be "logged in" again. Now invokes Clerk's signOut() and clears
+  // local state for immediate UI feedback. Clerk handles the redirect
+  // (default: stays on the current page; ProtectedRoute then redirects).
+  const handleSignOut = (): void => {
+    logoutLocal();
+    void signOut();
+  };
 
   return (
     <>
@@ -71,7 +84,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
           {user?.email ?? ""}
           <button
             type="button"
-            onClick={logout}
+            onClick={handleSignOut}
             style={{ display: "block", marginTop: 8, background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 12, padding: 0 }}
           >
             Sign Out

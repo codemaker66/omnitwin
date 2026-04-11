@@ -406,7 +406,15 @@ export function VerticalToolbox(): React.ReactElement {
   }, []);
 
   const handleSave = useCallback(() => {
-    void useEditorStore.getState().saveToServer(true).then(() => {
+    // Punch list #10: previously called saveToServer(true) unconditionally,
+    // forcing the authenticated endpoint even for guests. Guest sessions
+    // would 401 silently. Now reads the live auth state at click time so
+    // guests hit the public-preview endpoint and authenticated users hit
+    // the auth endpoint. The store action's internal isPublicPreview check
+    // still applies — if a config is already claimed, the auth path is used
+    // regardless of the flag.
+    const authed = useAuthStore.getState().isAuthenticated;
+    void useEditorStore.getState().saveToServer(authed).then(() => {
       setSaveFlash(true);
       setTimeout(() => { setSaveFlash(false); }, 2000);
     });

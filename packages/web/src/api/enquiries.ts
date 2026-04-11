@@ -1,4 +1,4 @@
-import { api, ApiError } from "./client.js";
+import { api, ApiError, getAuthToken } from "./client.js";
 import { API_URL } from "../config/env.js";
 
 // ---------------------------------------------------------------------------
@@ -80,7 +80,11 @@ export async function getHallkeeperSheet(id: string): Promise<HallkeeperSheet> {
 }
 
 export async function downloadHallkeeperPdf(id: string): Promise<void> {
-  const token = localStorage.getItem("omnitwin_access_token");
+  // Punch list #12: previously read `omnitwin_access_token` from
+  // localStorage — that key is leftover from the pre-Clerk JWT auth and
+  // is always null for Clerk users, silently 401-ing every download.
+  // Now uses the same Clerk-aware getAuthToken() as the rest of the app.
+  const token = await getAuthToken();
   const res = await fetch(`${API_URL}/enquiries/${id}/hallkeeper-sheet/pdf`, {
     headers: token !== null ? { Authorization: `Bearer ${token}` } : {},
   });

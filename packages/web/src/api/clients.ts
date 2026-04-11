@@ -1,99 +1,142 @@
+import { z } from "zod";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Zod schemas — single source of truth.
+//
+// Punch list #8: each shape used to be a hand-written `interface` and every
+// call site cast the API response with `as T`, trusting the server. If the
+// API contract drifted (renamed field, missing column, string-where-number),
+// the app would crash deep in component code with no useful error.
+//
+// Now: schemas are the source of truth, TypeScript types are derived via
+// `z.infer`, and every call site passes the schema to `api.get()` which
+// validates the response at the boundary. Mismatches throw a clean
+// `RESPONSE_VALIDATION_ERROR` with the exact field issues.
+//
+// This module is the demonstration migration. Other api/*.ts modules
+// (configurations, enquiries, loadouts, spaces, uploads) still use the
+// legacy `as T` path and emit dev-mode warnings until they are migrated.
 // ---------------------------------------------------------------------------
 
-export interface ClientUser {
-  readonly id: string;
-  readonly displayName: string | null;
-  readonly organizationName: string | null;
-  readonly email: string;
-  readonly phone: string | null;
-  readonly configurationCount: number;
-  readonly enquiryCount: number;
-}
+const ClientUserSchema = z.object({
+  id: z.string(),
+  displayName: z.string().nullable(),
+  organizationName: z.string().nullable(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  configurationCount: z.number(),
+  enquiryCount: z.number(),
+});
+export type ClientUser = z.infer<typeof ClientUserSchema>;
 
-export interface GuestLead {
-  readonly id: string;
-  readonly email: string;
-  readonly phone: string | null;
-  readonly name: string | null;
-  readonly enquiryCount: number;
-  readonly convertedToUserId: string | null;
-}
+const GuestLeadSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  name: z.string().nullable(),
+  enquiryCount: z.number(),
+  convertedToUserId: z.string().nullable(),
+});
+export type GuestLead = z.infer<typeof GuestLeadSchema>;
 
-export interface ConfigSearchResult {
-  readonly id: string;
-  readonly name: string;
-  readonly spaceName: string;
-  readonly userName: string | null;
-  readonly createdAt: string;
-}
+const ConfigSearchResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  spaceName: z.string(),
+  userName: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ConfigSearchResult = z.infer<typeof ConfigSearchResultSchema>;
 
-export interface SearchResults {
-  readonly users: readonly ClientUser[];
-  readonly guestLeads: readonly GuestLead[];
-  readonly configurations: readonly ConfigSearchResult[];
-}
+const SearchResultsSchema = z.object({
+  users: z.array(ClientUserSchema),
+  guestLeads: z.array(GuestLeadSchema),
+  configurations: z.array(ConfigSearchResultSchema),
+});
+export type SearchResults = z.infer<typeof SearchResultsSchema>;
 
-export interface ClientProfile {
-  readonly user: {
-    readonly id: string;
-    readonly displayName: string | null;
-    readonly organizationName: string | null;
-    readonly email: string;
-    readonly phone: string | null;
-    readonly name: string;
-    readonly role: string;
-    readonly createdAt: string;
-  };
-  readonly configurations: readonly { readonly id: string; readonly name: string; readonly spaceName: string; readonly objectCount: number; readonly createdAt: string }[];
-  readonly enquiries: readonly { readonly id: string; readonly state: string; readonly eventType: string | null; readonly preferredDate: string | null; readonly spaceName: string }[];
-}
+const ClientProfileSchema = z.object({
+  user: z.object({
+    id: z.string(),
+    displayName: z.string().nullable(),
+    organizationName: z.string().nullable(),
+    email: z.string(),
+    phone: z.string().nullable(),
+    name: z.string(),
+    role: z.string(),
+    createdAt: z.string(),
+  }),
+  configurations: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    spaceName: z.string(),
+    objectCount: z.number(),
+    createdAt: z.string(),
+  })),
+  enquiries: z.array(z.object({
+    id: z.string(),
+    state: z.string(),
+    eventType: z.string().nullable(),
+    preferredDate: z.string().nullable(),
+    spaceName: z.string(),
+  })),
+});
+export type ClientProfile = z.infer<typeof ClientProfileSchema>;
 
-export interface LeadProfile {
-  readonly lead: {
-    readonly id: string;
-    readonly email: string;
-    readonly phone: string | null;
-    readonly name: string | null;
-    readonly convertedToUserId: string | null;
-    readonly createdAt: string;
-  };
-  readonly enquiries: readonly { readonly id: string; readonly state: string; readonly eventType: string | null; readonly preferredDate: string | null; readonly spaceName: string; readonly createdAt: string }[];
-}
+const LeadProfileSchema = z.object({
+  lead: z.object({
+    id: z.string(),
+    email: z.string(),
+    phone: z.string().nullable(),
+    name: z.string().nullable(),
+    convertedToUserId: z.string().nullable(),
+    createdAt: z.string(),
+  }),
+  enquiries: z.array(z.object({
+    id: z.string(),
+    state: z.string(),
+    eventType: z.string().nullable(),
+    preferredDate: z.string().nullable(),
+    spaceName: z.string(),
+    createdAt: z.string(),
+  })),
+});
+export type LeadProfile = z.infer<typeof LeadProfileSchema>;
 
-export interface RecentEnquiry {
-  readonly id: string;
-  readonly state: string;
-  readonly name: string;
-  readonly email: string;
-  readonly guestEmail: string | null;
-  readonly guestPhone: string | null;
-  readonly guestName: string | null;
-  readonly userId: string | null;
-  readonly eventType: string | null;
-  readonly preferredDate: string | null;
-  readonly createdAt: string;
-}
+const RecentEnquirySchema = z.object({
+  id: z.string(),
+  state: z.string(),
+  name: z.string(),
+  email: z.string(),
+  guestEmail: z.string().nullable(),
+  guestPhone: z.string().nullable(),
+  guestName: z.string().nullable(),
+  userId: z.string().nullable(),
+  eventType: z.string().nullable(),
+  preferredDate: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type RecentEnquiry = z.infer<typeof RecentEnquirySchema>;
+
+const RecentEnquiryListSchema = z.array(RecentEnquirySchema);
 
 // ---------------------------------------------------------------------------
-// API functions
+// API functions — every call passes its schema to api.get() for validation
 // ---------------------------------------------------------------------------
 
 export async function searchClients(q: string): Promise<SearchResults> {
-  return api.get<SearchResults>(`/clients/search?q=${encodeURIComponent(q)}`);
+  return api.get(`/clients/search?q=${encodeURIComponent(q)}`, SearchResultsSchema);
 }
 
 export async function getClientProfile(userId: string): Promise<ClientProfile> {
-  return api.get<ClientProfile>(`/clients/${userId}/profile`);
+  return api.get(`/clients/${userId}/profile`, ClientProfileSchema);
 }
 
 export async function getLeadProfile(leadId: string): Promise<LeadProfile> {
-  return api.get<LeadProfile>(`/clients/leads/${leadId}/profile`);
+  return api.get(`/clients/leads/${leadId}/profile`, LeadProfileSchema);
 }
 
 export async function getRecentEnquiries(): Promise<RecentEnquiry[]> {
-  return api.get<RecentEnquiry[]>("/clients/recent");
+  return api.get("/clients/recent", RecentEnquiryListSchema);
 }

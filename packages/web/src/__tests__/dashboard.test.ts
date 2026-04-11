@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
 // Dashboard component tests
@@ -62,6 +63,19 @@ vi.mock("react-router-dom", () => ({
   RouterProvider: ({ router }: { router: unknown }) => `Router: ${String(router)}`,
 }));
 
+vi.mock("@clerk/clerk-react", () => ({
+  useClerk: () => ({ signOut: vi.fn() }),
+  useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
+  useAuth: () => ({ getToken: vi.fn(), isLoaded: true, isSignedIn: false }),
+  ClerkProvider: ({ children }: { children: ReactNode }) => children,
+  SignIn: () => null,
+  SignUp: () => null,
+  SignedIn: ({ children }: { children: ReactNode }) => children,
+  SignedOut: ({ children }: { children: ReactNode }) => children,
+  UserButton: () => null,
+  SignInButton: () => null,
+}));
+
 const mockAuthState = {
   user: { id: "u1", email: "elaine@tradeshall.co.uk", role: "hallkeeper", venueId: "v1", name: "Elaine" },
   isAuthenticated: true,
@@ -95,6 +109,21 @@ describe("DashboardLayout", () => {
   it("exports", async () => {
     const { DashboardLayout } = await import("../components/dashboard/DashboardLayout.js");
     expect(typeof DashboardLayout).toBe("function");
+  });
+
+  // Punch list #11: Sign Out previously called only the local Zustand
+  // logout(), leaving the Clerk session intact. A page refresh would
+  // re-populate the store and the user would be "logged in" again. This
+  // test reads the source and asserts the Clerk signOut() is invoked.
+  it("Sign Out invokes Clerk signOut() (not just local logout)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/components/dashboard/DashboardLayout.tsx"),
+      "utf-8",
+    );
+    expect(src).toContain("useClerk");
+    expect(src).toContain("signOut");
   });
 });
 
@@ -195,6 +224,25 @@ describe("enquiries API", () => {
     expect(typeof mod.getEnquiryHistory).toBe("function");
     expect(typeof mod.downloadHallkeeperPdf).toBe("function");
   });
+
+  // Punch list #12: previously read `omnitwin_access_token` (legacy JWT
+  // key) from localStorage. After the Clerk migration this key is always
+  // null, silently 401-ing every download. This test reads the source
+  // and asserts the legacy key is gone.
+  it("downloadHallkeeperPdf does NOT use legacy localStorage token", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/api/enquiries.ts"),
+      "utf-8",
+    );
+    // The dead code path is gone (a documentation comment can still
+    // mention the legacy key for context — what we want to forbid is the
+    // actual call site reading from localStorage).
+    expect(src).not.toMatch(/localStorage\.getItem\(["']omnitwin_access_token["']\)/);
+    // The replacement uses Clerk-aware token retrieval
+    expect(src).toMatch(/getAuthToken\(\)/);
+  });
 });
 
 describe("loadouts API", () => {
@@ -251,6 +299,34 @@ describe("file type validation", () => {
     expect(accepted).toContain("image/png");
     expect(accepted).toContain("image/webp");
     expect(accepted).not.toContain("application/pdf");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Toolbar save Clerk migration regression — punch list #10
+// ---------------------------------------------------------------------------
+
+describe("VerticalToolbox save", () => {
+  // Previously called saveToServer(true) unconditionally, forcing the
+  // authenticated endpoint even for guests. Guests would 401 silently.
+  // This test reads the source and asserts the auth flag is read from
+  // the auth store, not hard-coded.
+  it("does NOT hard-code saveToServer(true) — reads auth state at click time", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/components/editor/VerticalToolbox.tsx"),
+      "utf-8",
+    );
+    // Strip line comments and block comments before checking — comments
+    // can legitimately mention the legacy `saveToServer(true)` call to
+    // explain what was removed.
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(codeOnly).not.toMatch(/saveToServer\(true\)/);
+    // The auth state is read at click time
+    expect(codeOnly).toContain("useAuthStore.getState().isAuthenticated");
   });
 });
 
