@@ -24,7 +24,7 @@ const validUser = {
   email: "alice@example.com",
   name: "Alice Smith",
   role: "staff" as const,
-  venueIds: [VALID_VENUE_UUID],
+  venueId: VALID_VENUE_UUID,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
 };
@@ -33,7 +33,7 @@ const validCreateUser = {
   email: "alice@example.com",
   name: "Alice Smith",
   role: "staff" as const,
-  venueIds: [VALID_VENUE_UUID],
+  venueId: VALID_VENUE_UUID,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,16 +153,17 @@ describe("UserSchema", () => {
     }
   });
 
-  it("accepts empty venueIds array", () => {
-    expect(UserSchema.safeParse({ ...validUser, venueIds: [] }).success).toBe(true);
-  });
-
-  it("accepts multiple venueIds", () => {
-    const secondVenue = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
-    const result = UserSchema.safeParse({ ...validUser, venueIds: [VALID_VENUE_UUID, secondVenue] });
+  // Punch list #35 / Prompt 16: venueId is singular and nullable to match
+  // the runtime DB. The previous schema declared venueIds: VenueId[] which
+  // silently disagreed with the runtime. Multi-venue users (one user
+  // belonging to many venues) is a future SaaS feature; today's
+  // single-tenant model is one venue per user, with `null` for client
+  // users who don't belong to any specific venue.
+  it("accepts null venueId (client users without a venue)", () => {
+    const result = UserSchema.safeParse({ ...validUser, venueId: null });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.venueIds).toHaveLength(2);
+      expect(result.data.venueId).toBeNull();
     }
   });
 
@@ -198,9 +199,9 @@ describe("UserSchema", () => {
     expect(UserSchema.safeParse(noRole).success).toBe(false);
   });
 
-  it("rejects missing venueIds", () => {
-    const { venueIds: _, ...noVenueIds } = validUser;
-    expect(UserSchema.safeParse(noVenueIds).success).toBe(false);
+  it("rejects missing venueId", () => {
+    const { venueId: _, ...noVenueId } = validUser;
+    expect(UserSchema.safeParse(noVenueId).success).toBe(false);
   });
 
   it("rejects missing createdAt", () => {
@@ -225,8 +226,8 @@ describe("UserSchema", () => {
     expect(UserSchema.safeParse({ ...validUser, role: "superadmin" }).success).toBe(false);
   });
 
-  it("rejects invalid UUID in venueIds array", () => {
-    expect(UserSchema.safeParse({ ...validUser, venueIds: ["bad-uuid"] }).success).toBe(false);
+  it("rejects invalid UUID for venueId", () => {
+    expect(UserSchema.safeParse({ ...validUser, venueId: "bad-uuid" }).success).toBe(false);
   });
 
   it("rejects name exceeding 200 characters", () => {
@@ -262,9 +263,13 @@ describe("CreateUserSchema", () => {
     expect(CreateUserSchema.safeParse(noRole).success).toBe(false);
   });
 
-  it("rejects missing venueIds", () => {
-    const { venueIds: _, ...noVenueIds } = validCreateUser;
-    expect(CreateUserSchema.safeParse(noVenueIds).success).toBe(false);
+  it("rejects missing venueId", () => {
+    const { venueId: _, ...noVenueId } = validCreateUser;
+    expect(CreateUserSchema.safeParse(noVenueId).success).toBe(false);
+  });
+
+  it("accepts null venueId for client users", () => {
+    expect(CreateUserSchema.safeParse({ ...validCreateUser, venueId: null }).success).toBe(true);
   });
 
   it("does not accept id field (strips extra keys)", () => {

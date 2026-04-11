@@ -431,7 +431,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     email: "hallkeeper@tradeshall.co.uk",
     name: "Hamish McKenzie",
     role: "hallkeeper" as const,
-    venueIds: [VENUE_ID],
+    venueId: VENUE_ID,
   };
 
   // Step 7: Create enquiry
@@ -711,18 +711,20 @@ describe("type-level compatibility", () => {
     expect(FurnitureItemIdSchema.safeParse(obj.furnitureItemId).success).toBe(true);
   });
 
-  it("User.venueIds elements are valid VenueIds", () => {
+  it("User.venueId is a valid VenueId (or null for client users)", () => {
+    // Punch list #35 / Prompt 16: schema migrated from venueIds: VenueId[]
+    // to venueId: VenueId | null to match the runtime DB column.
     const user: User = UserSchema.parse({
       id: USER_ID,
       email: "admin@tradeshall.co.uk",
       name: "Admin",
       role: "admin",
-      venueIds: [VENUE_ID],
+      venueId: VENUE_ID,
       createdAt: NOW,
       updatedAt: NOW,
     });
-    for (const vid of user.venueIds) {
-      expect(VenueIdSchema.safeParse(vid).success).toBe(true);
+    if (user.venueId !== null) {
+      expect(VenueIdSchema.safeParse(user.venueId).success).toBe(true);
     }
   });
 

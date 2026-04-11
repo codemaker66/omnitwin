@@ -99,7 +99,7 @@ describe("seed users pass CreateUserSchema", () => {
         email: u.email,
         name: u.name,
         role: u.role,
-        venueIds: [UUID],
+        venueId: UUID,
       });
       expect(result.success).toBe(true);
     });
