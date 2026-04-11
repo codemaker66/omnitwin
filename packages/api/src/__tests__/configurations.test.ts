@@ -123,7 +123,11 @@ describe("POST /configurations", () => {
   });
 
   it("validates all 8 layout styles", async () => {
-    const styles = ["ceremony", "dinnerRounds", "dinnerBanquet", "theatre", "boardroom", "cabaret", "cocktail", "custom"];
+    // Source-of-truth values from `@omnitwin/types/LayoutStyleSchema`. Punch
+    // list #13: this fixture previously hard-coded camelCase variants
+    // (`dinnerRounds`, `dinnerBanquet`) which silently disagreed with the
+    // shared types package and broke the solver at runtime.
+    const styles = ["ceremony", "dinner-rounds", "dinner-banquet", "theatre", "boardroom", "cabaret", "cocktail", "custom"];
     for (const style of styles) {
       const res = await server.inject({
         method: "POST",

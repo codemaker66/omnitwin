@@ -236,7 +236,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
         spaceId,
         venueId,
         name: `Integration Test Config ${RUN_ID}`,
-        layoutStyle: "dinnerRounds",
+        layoutStyle: "dinner-rounds",
         guestCount: 120,
       },
     });

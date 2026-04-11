@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
+import { LayoutStyleSchema } from "@omnitwin/types";
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -9,6 +10,12 @@ import { canAccessResource } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
+//
+// `layoutStyle` is sourced from `@omnitwin/types` (LayoutStyleSchema) so the
+// API and the shared types package can never silently disagree on the enum
+// values. The shared schema is kebab-case (`dinner-rounds`, `dinner-banquet`)
+// to match the slug convention used elsewhere in the system and the keys the
+// solver in `@omnitwin/types/solver` expects. Punch list #13.
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });
@@ -17,7 +24,7 @@ const CreateConfigBody = z.object({
   spaceId: z.string().uuid(),
   venueId: z.string().uuid(),
   name: z.string().trim().min(1).max(200),
-  layoutStyle: z.enum(["ceremony", "dinnerRounds", "dinnerBanquet", "theatre", "boardroom", "cabaret", "cocktail", "custom"]),
+  layoutStyle: LayoutStyleSchema,
   guestCount: z.number().int().nonnegative().default(0),
   isTemplate: z.boolean().default(false),
   visibility: z.enum(["private", "staff", "public"]).default("private"),
@@ -26,7 +33,7 @@ const CreateConfigBody = z.object({
 const UpdateConfigBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   state: z.enum(["draft", "published"]).optional(),
-  layoutStyle: z.enum(["ceremony", "dinnerRounds", "dinnerBanquet", "theatre", "boardroom", "cabaret", "cocktail", "custom"]).optional(),
+  layoutStyle: LayoutStyleSchema.optional(),
   guestCount: z.number().int().nonnegative().optional(),
   visibility: z.enum(["private", "staff", "public"]).optional(),
   thumbnailUrl: z.string().url().nullable().optional(),
