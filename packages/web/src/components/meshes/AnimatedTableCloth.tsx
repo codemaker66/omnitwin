@@ -6,6 +6,7 @@ import {
   Uint32BufferAttribute,
   DoubleSide,
   Group,
+  Mesh,
   MeshStandardMaterial,
 } from "three";
 import { toRenderSpace } from "../../constants/scale.js";
@@ -276,7 +277,11 @@ export function AnimatedTableCloth({
   const isRound = tableItem.tableShape === "round";
   const startTimeRef = useRef<number | null>(null);
   const completedRef = useRef(false);
-  const geomRef = useRef<BufferGeometry | null>(null);
+  // Punch list #17: direct ref to the mesh (not a callback that caches
+  // mesh.geometry). R3F manages attachment and clears meshRef.current to
+  // null on unmount automatically, so there's no stale-ref window after
+  // the cloth animation completes and the component unmounts.
+  const meshRef = useRef<Mesh | null>(null);
   const groupRef = useRef<Group | null>(null);
   const matRef = useRef<MeshStandardMaterial | null>(null);
 
@@ -313,6 +318,14 @@ export function AnimatedTableCloth({
     startTimeRef.current = null;
     completedRef.current = false;
   }, []);
+
+  // Punch list #17: dispose the BufferGeometry when the component unmounts
+  // OR when initialGeom is replaced (e.g. table dimensions change). Three.js
+  // does not garbage-collect GPU resources \u2014 leaking BufferGeometry on every
+  // animation cycle would accumulate VRAM until the tab crashes.
+  useEffect(() => {
+    return () => { initialGeom.dispose(); };
+  }, [initialGeom]);
 
   // Main animation loop — orchestrates all five phases
   useFrame(() => {
@@ -359,8 +372,8 @@ export function AnimatedTableCloth({
       applyWaveRipple(result.positions, tableItem.height, renderRadius, t, discVertCount, radialSegments, discRings);
     }
 
-    const geom = geomRef.current;
-    if (geom !== null) {
+    const geom = meshRef.current?.geometry;
+    if (geom !== undefined) {
       const posAttr = geom.getAttribute("position") as Float32BufferAttribute;
       posAttr.set(result.positions);
       posAttr.needsUpdate = true;
@@ -385,11 +398,7 @@ export function AnimatedTableCloth({
 
   return (
     <group ref={groupRef}>
-      <mesh geometry={initialGeom} ref={(mesh) => {
-        if (mesh !== null) {
-          geomRef.current = mesh.geometry;
-        }
-      }}>
+      <mesh geometry={initialGeom} ref={meshRef}>
         <meshStandardMaterial
           ref={matRef}
           color={CLOTH_COLOR}
