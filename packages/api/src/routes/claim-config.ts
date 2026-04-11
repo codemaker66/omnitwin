@@ -42,25 +42,48 @@ export async function claimConfigRoutes(
       return reply.status(409).send({ error: "Configuration is already claimed", code: "ALREADY_CLAIMED" });
     }
 
-    // Claim it
-    const [claimed] = await db.update(configurations)
-      .set({
-        userId: request.user.id,
-        isPublicPreview: false,
-        visibility: "private",
-        updatedAt: new Date(),
-      })
-      .where(eq(configurations.id, params.data.configId))
-      .returning();
+    // Punch list #14: claim is performed inside a transaction so the two
+    // updates (config ownership + enquiry linking) are atomic. Previously
+    // the second update could throw and leave the system in a half-state
+    // where the config was already owned but the linked enquiries weren't.
+    //
+    // The enquiry filter is scoped to `configurationId` — NOT email, which
+    // was the original bug. Filtering by `guestEmail` meant that claiming
+    // config A would silently reassign every unowned enquiry from the same
+    // email address, including enquiries for unrelated configs (B, C, D...).
+    // The data model already represents the right relationship via
+    // `enquiries.configuration_id`; this query now uses it.
+    const result = await db.transaction(async (tx) => {
+      const [claimed] = await tx.update(configurations)
+        .set({
+          userId: request.user.id,
+          isPublicPreview: false,
+          visibility: "private",
+          updatedAt: new Date(),
+        })
+        .where(eq(configurations.id, params.data.configId))
+        .returning();
 
-    // Also link any guest enquiries from the same email to this user
-    await db.update(enquiries)
-      .set({ userId: request.user.id, updatedAt: new Date() })
-      .where(and(
-        eq(enquiries.guestEmail, request.user.email),
-        isNull(enquiries.userId),
-      ));
+      const linkedEnquiries = await tx.update(enquiries)
+        .set({ userId: request.user.id, updatedAt: new Date() })
+        .where(and(
+          eq(enquiries.configurationId, params.data.configId),
+          isNull(enquiries.userId),
+        ))
+        .returning({ id: enquiries.id });
 
-    return { data: claimed };
+      return { claimed, linkedEnquiryCount: linkedEnquiries.length };
+    });
+
+    // Audit log — visible in production logs so ops can verify the scope
+    // hasn't drifted again. If `linkedEnquiryCount` is ever surprisingly
+    // large for a "normal" claim, that's a signal to investigate.
+    request.log.info({
+      configId: params.data.configId,
+      userId: request.user.id,
+      linkedEnquiryCount: result.linkedEnquiryCount,
+    }, "configuration claimed");
+
+    return { data: result.claimed };
   });
 }

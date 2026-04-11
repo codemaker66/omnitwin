@@ -174,3 +174,68 @@ describe("POST /configurations/:configId/claim", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Claim scope tripwire — punch list #14
+//
+// The claim endpoint previously linked enquiries by `guestEmail` only,
+// which meant claiming config A would silently reassign every unowned
+// enquiry from the same email address (including enquiries for unrelated
+// configs B, C, D...). The fix scopes the link to `configurationId` and
+// wraps both updates in a transaction so they're atomic.
+//
+// These tests read the route source code and pin five structural
+// properties of the fix. Behavioural verification of the cross-config
+// bleed scenario is deferred to integration.test.ts (currently bit-rotted
+// — see project_integration_test_rot.md memory). When that file is
+// resurrected, add an end-to-end test that creates two enquiries with
+// different `configurationId` values and the same email, claims one,
+// and asserts only one is reassigned.
+// ---------------------------------------------------------------------------
+
+describe("claim-config.ts source-of-truth (#14)", () => {
+  async function readClaimConfigSource(): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(
+      path.resolve("src/routes/claim-config.ts"),
+      "utf-8",
+    );
+    // Strip comments before negative checks — comments may legitimately
+    // mention the legacy buggy filter to document what was removed.
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("wraps the two updates in db.transaction (atomicity)", async () => {
+    const { codeOnly } = await readClaimConfigSource();
+    expect(codeOnly).toContain("db.transaction(");
+  });
+
+  it("filters enquiries by configurationId (correct scope)", async () => {
+    const { codeOnly } = await readClaimConfigSource();
+    expect(codeOnly).toContain("eq(enquiries.configurationId,");
+  });
+
+  it("does NOT filter enquiries by guestEmail (bug eliminated)", async () => {
+    const { codeOnly } = await readClaimConfigSource();
+    // The original bug: linking enquiries by email scoped the side effect
+    // to "every enquiry from this address" instead of "every enquiry for
+    // this config". Comments may still mention guestEmail for context;
+    // the negative check runs against code only.
+    expect(codeOnly).not.toContain("eq(enquiries.guestEmail,");
+  });
+
+  it("emits an audit log on claim (observability)", async () => {
+    const { codeOnly } = await readClaimConfigSource();
+    expect(codeOnly).toContain("request.log.info");
+    expect(codeOnly).toContain("configuration claimed");
+  });
+
+  it("captures linkedEnquiryCount for the audit log", async () => {
+    const { codeOnly } = await readClaimConfigSource();
+    expect(codeOnly).toContain("linkedEnquiryCount");
+  });
+});
