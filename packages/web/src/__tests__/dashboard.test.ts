@@ -331,6 +331,98 @@ describe("VerticalToolbox save", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ClientProfile → enquiry navigation — punch list #34
+//
+// Previously the DashboardPage `onViewEnquiry` callback discarded the
+// enquiry id and just dumped the user at the unfiltered list:
+//
+//   onViewEnquiry={() => { setView("enquiries"); ... }}   // BUG
+//
+// The user clicked "Wedding for Alice" in the profile and was taken to
+// the top of the enquiry list with no idea where to scroll. The fix:
+//   1. DashboardPage captures the id and stores a return context
+//      (which profile we came from)
+//   2. EnquiriesView accepts `initialSelectedId` and fetches the enquiry
+//      independently via `getEnquiry()` so the status filter doesn't
+//      matter for the cross-view case
+//   3. EnquiriesView accepts `onDetailClose` so "Back" can return to the
+//      profile instead of the enquiry list
+//
+// These tests pin all three properties at the source level. Behavioural
+// verification (multi-component render flow) belongs in an E2E suite —
+// see project_integration_test_rot.md for the broader test-infra
+// limitation.
+// ---------------------------------------------------------------------------
+
+describe("ClientProfile enquiry navigation (#34)", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("DashboardPage captures the enquiry id (no longer discards it)", async () => {
+    const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
+    // Positive: the new handler is wired in by name
+    expect(codeOnly).toContain("handleViewEnquiryFromProfile");
+    // Positive: the handler captures an `enquiryId` parameter
+    expect(codeOnly).toMatch(/handleViewEnquiryFromProfile\s*=\s*\(\s*enquiryId/);
+    // Negative: the bug pattern is gone — `onViewEnquiry={() => {` with
+    // no parameter is the discarding form. Comments stripped first.
+    expect(codeOnly).not.toMatch(/onViewEnquiry=\{\s*\(\s*\)\s*=>/);
+  });
+
+  it("DashboardPage stores return context for restoring the profile", async () => {
+    const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
+    // The return context type and state are wired up
+    expect(codeOnly).toContain("EnquiryReturnContext");
+    expect(codeOnly).toContain("enquiryReturnContext");
+    // The "back from enquiry" handler restores both possible profile types
+    expect(codeOnly).toContain("handleEnquiryDetailClose");
+    expect(codeOnly).toContain("setProfileUserId(enquiryReturnContext.returnUserId)");
+    expect(codeOnly).toContain("setProfileLeadId(enquiryReturnContext.returnLeadId)");
+  });
+
+  it("DashboardPage drops return context on sidebar view change", async () => {
+    const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
+    // Sidebar navigation should clear the cross-view return context so it
+    // doesn't bleed into an unrelated view
+    expect(codeOnly).toMatch(/handleViewChange[\s\S]*?setEnquiryReturnContext\(null\)/);
+  });
+
+  it("EnquiriesView accepts initialSelectedId and onDetailClose props", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/EnquiriesView.tsx");
+    expect(codeOnly).toContain("initialSelectedId");
+    expect(codeOnly).toContain("onDetailClose");
+    expect(codeOnly).toContain("EnquiriesViewProps");
+  });
+
+  it("EnquiriesView fetches the pre-selected enquiry independently (avoids status-filter mismatch)", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/EnquiriesView.tsx");
+    // The fix: when initialSelectedId is set, fetch the enquiry directly
+    // via `getEnquiry()` rather than relying on the filtered list lookup.
+    // Otherwise a rejected enquiry pre-selected with the "submitted"
+    // filter would silently render nothing.
+    expect(codeOnly).toContain("preselectedEnquiry");
+    expect(codeOnly).toMatch(/enquiriesApi\.getEnquiry\(initialSelectedId\)/);
+  });
+
+  it("EnquiriesView 'Back' button label reflects return destination", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/EnquiriesView.tsx");
+    // When onDetailClose is provided, the back button should say "Back to
+    // profile" so the user knows where they're going.
+    expect(codeOnly).toContain("Back to profile");
+    expect(codeOnly).toContain("Back to list");
+    // The handler is named, not inlined
+    expect(codeOnly).toContain("handleBack");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Search debounce logic
 // ---------------------------------------------------------------------------
 

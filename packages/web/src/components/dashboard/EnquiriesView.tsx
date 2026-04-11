@@ -23,10 +23,36 @@ const cardStyle: React.CSSProperties = {
   border: "1px solid #e5e7eb", cursor: "pointer", transition: "box-shadow 0.15s",
 };
 
-export function EnquiriesView(): React.ReactElement {
+// ---------------------------------------------------------------------------
+// Props — punch list #34
+//
+// `initialSelectedId` is set when the user navigates here from a different
+// view (e.g. clicking an enquiry in ClientProfile). The component pre-selects
+// that enquiry on mount AND fetches it independently via `getEnquiry`, so
+// the detail view renders even when the current status filter wouldn't
+// have included it in `listEnquiries`. Without the independent fetch the
+// `find()` call below would return undefined whenever the status filter
+// excluded the target enquiry, leaving the user dumped at an unfiltered
+// list with no idea where to scroll.
+//
+// `onDetailClose` is called when the user clicks "Back" from the detail
+// view. When provided, the parent gets to decide where back goes (e.g.
+// restoring the ClientProfile they came from). When omitted, "Back" falls
+// back to the in-component behaviour of returning to the list.
+// ---------------------------------------------------------------------------
+
+interface EnquiriesViewProps {
+  readonly initialSelectedId?: string | null;
+  readonly onDetailClose?: () => void;
+}
+
+export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): React.ReactElement {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  // Independent fetch for the cross-view pre-selection case. Populated by
+  // the effect below; falls back to the list lookup once both are loaded.
+  const [preselectedEnquiry, setPreselectedEnquiry] = useState<Enquiry | null>(null);
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [transition, setTransition] = useState<{ id: string; status: string } | null>(null);
@@ -43,7 +69,31 @@ export function EnquiriesView(): React.ReactElement {
     })();
   }, [statusFilter, addToast]);
 
-  const selected = enquiries.find((e) => e.id === selectedId);
+  // When pre-selected via initialSelectedId, fetch the enquiry directly so
+  // the detail view can render regardless of the active status filter.
+  useEffect(() => {
+    if (initialSelectedId === null) return;
+    setSelectedId(initialSelectedId);
+    void enquiriesApi.getEnquiry(initialSelectedId)
+      .then(setPreselectedEnquiry)
+      .catch(() => { addToast("Failed to load enquiry", "error"); });
+  }, [initialSelectedId, addToast]);
+
+  // Prefer the freshly-fetched pre-selected enquiry if it matches the
+  // currently-selected id; otherwise fall back to the list lookup. This
+  // makes status-filter mismatches a non-issue for the navigation case.
+  const selected = (preselectedEnquiry !== null && preselectedEnquiry.id === selectedId)
+    ? preselectedEnquiry
+    : enquiries.find((e) => e.id === selectedId);
+
+  // "Back" exits the detail view. If a parent provided `onDetailClose`,
+  // the parent owns the destination (e.g. restore ClientProfile). Else
+  // we just clear the selection and return to the in-component list.
+  const handleBack = (): void => {
+    setSelectedId(null);
+    setPreselectedEnquiry(null);
+    if (onDetailClose !== undefined) onDetailClose();
+  };
 
   useEffect(() => {
     if (selectedId !== null) {
@@ -79,10 +129,10 @@ export function EnquiriesView(): React.ReactElement {
       <div>
         <button
           type="button"
-          onClick={() => { setSelectedId(null); }}
+          onClick={handleBack}
           style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}
         >
-          &larr; Back to list
+          &larr; {onDetailClose !== undefined ? "Back to profile" : "Back to list"}
         </button>
 
         <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: "1px solid #e5e7eb" }}>
