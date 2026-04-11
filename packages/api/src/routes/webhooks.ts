@@ -76,7 +76,17 @@ export async function webhookRoutes(
         return reply.status(401).send({ error: "Invalid webhook signature", code: "UNAUTHORIZED" });
       }
     } else {
-      server.log.warn("CLERK_WEBHOOK_SECRET not set — skipping webhook signature verification (dev mode)");
+      // Punch list #5: signature verification can ONLY be skipped in
+      // non-production environments. Startup validation in env.ts already
+      // refuses to boot production without CLERK_WEBHOOK_SECRET, so this
+      // branch is theoretically unreachable in prod — but the check is
+      // a belt-and-suspenders defense in case startup was bypassed
+      // (e.g. someone unsets the env var after boot).
+      if (process.env["NODE_ENV"] === "production") {
+        server.log.error("CLERK_WEBHOOK_SECRET unset in production — refusing webhook to avoid silently accepting unsigned events");
+        return reply.status(500).send({ error: "Webhook verification not configured", code: "INTERNAL_ERROR" });
+      }
+      server.log.warn("CLERK_WEBHOOK_SECRET not set — skipping webhook signature verification (dev mode only)");
     }
 
     // --- Process event ---

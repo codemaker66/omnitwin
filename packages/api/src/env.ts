@@ -2,9 +2,16 @@ import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
+//
+// Production-required variables (CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET)
+// are .optional() at the schema level so dev/test environments without
+// Clerk configured can still boot. The cross-field check below enforces
+// them ONLY when NODE_ENV === "production". This is the "fail fast in
+// prod, permissive in dev" pattern.
 // ---------------------------------------------------------------------------
 
 const EnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   PORT: z.coerce.number().int().positive().default(3001),
   // Clerk — auth provider
@@ -22,6 +29,28 @@ const EnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_BUCKET_NAME: z.string().min(1).optional(),
   R2_PUBLIC_URL: z.string().url().optional(),
+}).superRefine((env, ctx) => {
+  // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
+  // the webhook route can verify signatures. Without it, the route
+  // currently logs a warning and silently accepts unsigned events —
+  // any attacker can POST fake user.created events to the webhook
+  // endpoint. We refuse to boot a production server in that state.
+  if (env.NODE_ENV === "production") {
+    if (env.CLERK_WEBHOOK_SECRET === undefined || env.CLERK_WEBHOOK_SECRET === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLERK_WEBHOOK_SECRET"],
+        message: "CLERK_WEBHOOK_SECRET is required in production (webhook signature verification cannot be skipped)",
+      });
+    }
+    if (env.CLERK_SECRET_KEY === undefined || env.CLERK_SECRET_KEY === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLERK_SECRET_KEY"],
+        message: "CLERK_SECRET_KEY is required in production (auth tokens cannot be verified without it)",
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof EnvSchema>;

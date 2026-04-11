@@ -64,3 +64,88 @@ describe("EnvSchema", () => {
     expect(typeof EnvSchema.safeParse).toBe("function");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Production hard-fail — punch list #5
+//
+// In NODE_ENV=production, Clerk credentials become required. The previous
+// behavior was a runtime warning at the webhook handler that silently
+// fell through to accepting unsigned events. These tests pin the new
+// startup-fail-fast contract.
+// ---------------------------------------------------------------------------
+
+describe("production environment validation", () => {
+  const validProdBase = {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://user:pass@host/db",
+    CLERK_SECRET_KEY: "sk_live_xyz",
+    CLERK_WEBHOOK_SECRET: "whsec_abc",
+  };
+
+  it("accepts a fully-configured production environment", () => {
+    expect(() => validateEnv(validProdBase)).not.toThrow();
+    const env = validateEnv(validProdBase);
+    expect(env.NODE_ENV).toBe("production");
+  });
+
+  it("REJECTS production without CLERK_WEBHOOK_SECRET", () => {
+    const { CLERK_WEBHOOK_SECRET: _, ...withoutWebhook } = validProdBase;
+    expect(() => validateEnv(withoutWebhook)).toThrow("CLERK_WEBHOOK_SECRET");
+  });
+
+  it("REJECTS production with empty CLERK_WEBHOOK_SECRET", () => {
+    expect(() => validateEnv({
+      ...validProdBase,
+      CLERK_WEBHOOK_SECRET: "",
+    })).toThrow("CLERK_WEBHOOK_SECRET");
+  });
+
+  it("REJECTS production without CLERK_SECRET_KEY", () => {
+    const { CLERK_SECRET_KEY: _, ...withoutSecret } = validProdBase;
+    expect(() => validateEnv(withoutSecret)).toThrow("CLERK_SECRET_KEY");
+  });
+
+  it("REJECTS production with empty CLERK_SECRET_KEY", () => {
+    expect(() => validateEnv({
+      ...validProdBase,
+      CLERK_SECRET_KEY: "",
+    })).toThrow("CLERK_SECRET_KEY");
+  });
+
+  it("error message names production explicitly (diligence marker)", () => {
+    // Naming "production" in the error makes the failure mode obvious
+    // to whoever sees the boot crash log.
+    const { CLERK_WEBHOOK_SECRET: _, ...withoutWebhook } = validProdBase;
+    try {
+      validateEnv(withoutWebhook);
+      expect.unreachable("validation should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      const msg = (err as Error).message;
+      expect(msg).toContain("production");
+    }
+  });
+});
+
+describe("non-production environments are permissive", () => {
+  it("development boots without Clerk credentials", () => {
+    expect(() => validateEnv({
+      NODE_ENV: "development",
+      DATABASE_URL: "postgresql://user:pass@host/db",
+    })).not.toThrow();
+  });
+
+  it("test boots without Clerk credentials", () => {
+    expect(() => validateEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: "postgresql://user:pass@host/db",
+    })).not.toThrow();
+  });
+
+  it("default NODE_ENV is development (no Clerk required)", () => {
+    const env = validateEnv({
+      DATABASE_URL: "postgresql://user:pass@host/db",
+    });
+    expect(env.NODE_ENV).toBe("development");
+  });
+});
