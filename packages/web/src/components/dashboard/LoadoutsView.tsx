@@ -77,9 +77,8 @@ export function LoadoutsView(): React.ReactElement {
         onBack={() => { setSelectedLoadoutId(null); }}
         onDeleted={() => {
           setSelectedLoadoutId(null);
-          if (selectedSpaceId !== null) {
-            void loadoutsApi.listLoadouts(venueId, selectedSpaceId).then(setLoadouts).catch(() => { /* ignore */ });
-          }
+          // selectedSpaceId is already non-null in this branch (see outer guard).
+          void loadoutsApi.listLoadouts(venueId, selectedSpaceId).then(setLoadouts).catch(() => { /* ignore */ });
         }}
       />
     );

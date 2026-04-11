@@ -102,14 +102,16 @@ export function computeNearestWall(
   const halfW = widthM / 2;
   const halfL = lengthM / 2;
 
-  const distances: readonly WallDistance[] = [
+  // Typed as a 4-tuple so distances[0] is statically known to exist —
+  // avoids a non-null assertion on index access.
+  const distances: readonly [WallDistance, WallDistance, WallDistance, WallDistance] = [
     { wall: "north", distanceM: z + halfL },    // front wall
     { wall: "south", distanceM: halfL - z },     // back wall
     { wall: "west", distanceM: x + halfW },      // left wall
     { wall: "east", distanceM: halfW - x },      // right wall
   ];
 
-  let nearest = distances[0]!;
+  let nearest = distances[0];
   for (const d of distances) {
     if (d.distanceM < nearest.distanceM) nearest = d;
   }

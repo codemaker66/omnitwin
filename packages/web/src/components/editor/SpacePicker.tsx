@@ -63,23 +63,28 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    // Read the abort flag through a function call so TS can't narrow
+    // it across awaits — the lint otherwise dead-code-eliminates the
+    // post-await guards even though the cleanup mutates the signal.
+    const isActive = (): boolean => !controller.signal.aborted;
     void (async () => {
       try {
         const venueList = await spacesApi.listVenues();
-        if (cancelled) return;
+        if (!isActive()) return;
         setVenues(venueList);
-        if (venueList.length > 0 && venueList[0] !== undefined) {
-          const spaceList = await spacesApi.listSpaces(venueList[0].id);
-          if (!cancelled) setSpaces(spaceList);
+        const firstVenue = venueList[0];
+        if (firstVenue !== undefined) {
+          const spaceList = await spacesApi.listSpaces(firstVenue.id);
+          if (isActive()) setSpaces(spaceList);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load venues");
+        if (isActive()) setError(err instanceof Error ? err.message : "Failed to load venues");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isActive()) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { controller.abort(); };
   }, []);
 
   const venue = venues[0];
@@ -269,10 +274,10 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
                 onKeyDown={(e) => { if (e.key === "Enter") handleSelectSpace(space); }}
                 role="button"
                 tabIndex={0}
-                data-testid={`space-card-${space.slug ?? space.name.toLowerCase().replace(/\s+/g, "-")}`}
+                data-testid={`space-card-${space.slug}`}
               >
                 <img
-                  src={getSpacePhoto(space.slug ?? "")}
+                  src={getSpacePhoto(space.slug)}
                   alt={space.name}
                   loading="lazy"
                   style={{

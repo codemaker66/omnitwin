@@ -4,10 +4,11 @@ import { useToastStore } from "../../stores/toast-store.js";
 // ToastContainer — renders floating toast notifications
 // ---------------------------------------------------------------------------
 
+const INFO_COLORS = { bg: "#eff6ff", border: "#3b82f6" };
 const TOAST_COLORS: Record<string, { bg: string; border: string }> = {
   success: { bg: "#f0fdf4", border: "#22c55e" },
   error: { bg: "#fef2f2", border: "#ef4444" },
-  info: { bg: "#eff6ff", border: "#3b82f6" },
+  info: INFO_COLORS,
 };
 
 export function ToastContainer(): React.ReactElement | null {
@@ -23,7 +24,7 @@ export function ToastContainer(): React.ReactElement | null {
       fontFamily: "'Inter', sans-serif",
     }}>
       {toasts.map((t) => {
-        const colors = TOAST_COLORS[t.type] ?? TOAST_COLORS["info"]!;
+        const colors = TOAST_COLORS[t.type] ?? INFO_COLORS;
         return (
           <div key={t.id} style={{
             background: colors.bg, borderLeft: `3px solid ${colors.border}`,

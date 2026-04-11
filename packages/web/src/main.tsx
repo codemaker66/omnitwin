@@ -13,7 +13,7 @@ const CLERK_KEY = import.meta.env["VITE_CLERK_PUBLISHABLE_KEY"] as string | unde
 
 function AppRoot(): React.ReactElement {
   return (
-    <ClerkProvider publishableKey={CLERK_KEY ?? ""}>
+    <ClerkProvider publishableKey={CLERK_KEY ?? ""} afterSignOutUrl="/editor">
       <ClerkAuthBridge />
       <RouterProvider router={router} />
     </ClerkProvider>

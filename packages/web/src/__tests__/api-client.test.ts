@@ -143,8 +143,7 @@ describe("api.delete", () => {
   it("handles 204 No Content", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 204, headers: new Headers() } as Response);
 
-    const result = await api.delete("/test/1");
-    expect(result).toBeUndefined();
+    await expect(api.delete("/test/1")).resolves.toBeUndefined();
   });
 });
 

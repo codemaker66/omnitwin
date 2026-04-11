@@ -307,7 +307,7 @@ export function BrickWall({
     const wallKey = name.startsWith("wainscot-")
       ? name.replace("wainscot-", "wall-") as WallKey
       : name as WallKey;
-    const isLocked = wallLocks[wallKey] ?? false;
+    const isLocked = wallLocks[wallKey];
 
     if (newTarget !== animTarget.current) {
       if (!isLocked) {

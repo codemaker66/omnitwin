@@ -24,10 +24,15 @@ export function ClerkAuthBridge(): null {
       return;
     }
 
-    if (isSignedIn && user !== null && user !== undefined) {
+    if (isSignedIn) {
+      // After `isSignedIn` narrows, `user` is non-null per Clerk's types.
       const email = user.primaryEmailAddress?.emailAddress ?? "";
-      const role = (user.publicMetadata?.["role"] as string) ?? "planner";
-      const venueId = (user.publicMetadata?.["venueId"] as string) ?? null;
+      // publicMetadata is `unknown` jsonb — only accept string values, never
+      // trust a cast (a previous `as string` would let through numbers/objects).
+      const rawRole = user.publicMetadata["role"];
+      const role = typeof rawRole === "string" ? rawRole : "planner";
+      const rawVenueId = user.publicMetadata["venueId"];
+      const venueId = typeof rawVenueId === "string" ? rawVenueId : null;
 
       useAuthStore.getState().setUser({
         id: user.id,

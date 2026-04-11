@@ -130,13 +130,13 @@ export function ProjectorMesh({
       </mesh>
 
       {/* Rubber feet — 4 corners */}
-      {[
+      {([
         [-renderWidth / 2 + footInset, 0, -renderDepth / 2 + footInset],
         [-renderWidth / 2 + footInset, 0, renderDepth / 2 - footInset],
         [renderWidth / 2 - footInset, 0, -renderDepth / 2 + footInset],
         [renderWidth / 2 - footInset, 0, renderDepth / 2 - footInset],
-      ].map((pos, i) => (
-        <mesh key={i} position={[pos[0]!, pos[1]! + FOOT_HEIGHT / 2, pos[2]!]}>
+      ] satisfies readonly (readonly [number, number, number])[]).map(([px, py, pz], i) => (
+        <mesh key={i} position={[px, py + FOOT_HEIGHT / 2, pz]}>
           <cylinderGeometry args={[FOOT_SIZE, FOOT_SIZE, FOOT_HEIGHT, 8]} />
           <meshStandardMaterial
             color={footColor}

@@ -159,7 +159,10 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     if (e.key === "Escape") onClose();
   }, [onClose]);
 
-  const displayName = name.trim() !== "" ? name.trim().split(/\s+/)[0] : null;
+  // `split(...)[0]` is `string | undefined` under noUncheckedIndexedAccess, so
+  // coalesce to null up-front and keep the render-side check as a single
+  // is-non-null comparison.
+  const displayName: string | null = name.trim() !== "" ? (name.trim().split(/\s+/)[0] ?? null) : null;
   const layoutSummary = getLayoutSummary();
 
   // -----------------------------------------------------------------------

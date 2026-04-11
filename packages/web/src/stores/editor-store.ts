@@ -162,10 +162,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: false,
         isLoading: false,
       });
-      // Load space data (name, dimensions) for room geometry rendering
-      if (config.venueId !== undefined && config.spaceId !== undefined) {
-        void get().loadSpace(config.venueId, config.spaceId);
-      }
+      // Load space data (name, dimensions) for room geometry rendering.
+      // venueId/spaceId are non-nullable on the wire — no guard needed.
+      void get().loadSpace(config.venueId, config.spaceId);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load configuration";
       set({ isLoading: false, error: message });
@@ -195,10 +194,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isLoading: false,
       });
 
-      // Load space data for room geometry rendering
-      if (config.venueId !== undefined && config.spaceId !== undefined) {
-        void get().loadSpace(config.venueId, config.spaceId);
-      }
+      // Load space data for room geometry rendering.
+      // venueId/spaceId are non-nullable on the wire — no guard needed.
+      void get().loadSpace(config.venueId, config.spaceId);
 
       // Track in localStorage
       const stored = JSON.parse(localStorage.getItem("omnitwin_my_configs") ?? "[]") as { configId: string; createdAt: string }[];
@@ -253,7 +251,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Determine save path: use authenticated endpoint if config is claimed
     // (isPublicPreview=false) OR if caller explicitly says authenticated.
     // Public preview configs always use the public endpoint.
-    const useAuthPath = isPublicPreview === false || isAuthenticated === true;
+    const useAuthPath = !isPublicPreview || isAuthenticated === true;
 
     set({ isSaving: true });
     try {

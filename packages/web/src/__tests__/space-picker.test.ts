@@ -47,7 +47,7 @@ describe("SpacePicker", () => {
     expect(typeof SpacePicker).toBe("function");
   });
 
-  it("maps space slugs to venue photos", async () => {
+  it("maps space slugs to venue photos", () => {
     // Verify the photo mapping covers all 4 spaces
     const photos: Record<string, string> = {
       "grand-hall": "/images/venue/Grand-Hall-scaled-opt.jpg",

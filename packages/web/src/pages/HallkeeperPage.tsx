@@ -71,7 +71,9 @@ export function HallkeeperPage(): React.ReactElement {
         const json = (await res.json()) as { data: SheetData };
         setData(json.data);
       })
-      .catch((err: Error) => { setError(err.message); })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to load");
+      })
       .finally(() => { setLoading(false); });
   }, [configId]);
 

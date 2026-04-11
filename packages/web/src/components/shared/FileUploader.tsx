@@ -55,7 +55,7 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
           u.file === file ? { ...u, status: "done" as const, fileId, progress: 100 } : u,
         ));
         onUploaded(fileId, file.name);
-      }).catch((err) => {
+      }).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : "Upload failed";
         setUploads((prev) => prev.map((u) =>
           u.file === file ? { ...u, status: "error" as const, error: message } : u,
@@ -78,7 +78,7 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
         u.file === upload.file ? { ...u, status: "done" as const, fileId, progress: 100 } : u,
       ));
       onUploaded(fileId, upload.file.name);
-    }).catch((err) => {
+    }).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : "Upload failed";
       setUploads((prev) => prev.map((u) =>
         u.file === upload.file ? { ...u, status: "error" as const, error: message } : u,

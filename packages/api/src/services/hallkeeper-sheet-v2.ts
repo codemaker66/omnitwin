@@ -100,6 +100,11 @@ export async function assembleSheetData(
   const manifestObjects: ManifestObject[] = objects.map((obj) => {
     const asset = assetCache.get(obj.assetDefinitionId);
     const meta = obj.metadata as Record<string, unknown> | null;
+    // groupId is unknown jsonb — only accept it if it's actually a string,
+    // otherwise fall back to null. A previous `as string` cast lied to TS
+    // and could let through numbers/objects/etc. unchanged.
+    const rawGroupId = meta?.["groupId"];
+    const groupId = typeof rawGroupId === "string" ? rawGroupId : null;
     return {
       id: obj.id,
       assetName: asset?.name ?? "Unknown",
@@ -109,7 +114,7 @@ export async function assembleSheetData(
       positionZ: Number(obj.positionZ),
       rotationY: Number(obj.rotationY),
       chairCount: 0,
-      groupId: (meta?.["groupId"] as string) ?? null,
+      groupId,
     };
   });
 
@@ -316,8 +321,20 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
     // ZONE 3 — MANIFEST TABLE (bottom ~30%)
     // =====================================================================
     const tableY = diagramY + diagramH + 12;
-    const colWidths = [40, 220, 40, 240, 200]; // CODE, ITEM, QTY, POSITION, NOTES
-    const headers = ["CODE", "ITEM", "QTY", "POSITION", "NOTES"];
+    // Single source of truth: header label, column width, and row-value
+    // extractor live together. Eliminates parallel-array indexing and
+    // its non-null assertions on every access.
+    const columns: readonly {
+      readonly header: string;
+      readonly width: number;
+      readonly value: (row: typeof data.manifest.rows[number]) => string;
+    }[] = [
+      { header: "CODE",     width:  40, value: (r) => r.code },
+      { header: "ITEM",     width: 220, value: (r) => r.item },
+      { header: "QTY",      width:  40, value: (r) => String(r.qty) },
+      { header: "POSITION", width: 240, value: (r) => r.position },
+      { header: "NOTES",    width: 200, value: (r) => r.notes },
+    ];
     const rowH = 14;
     const headerRowH = 16;
 
@@ -329,9 +346,9 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
 
     let curX = MARGIN;
     doc.font("Helvetica-Bold").fontSize(7).fillColor("#ffffff");
-    for (let i = 0; i < headers.length; i++) {
-      doc.text(headers[i]!, curX + 4, curY + 4, { width: colWidths[i]! - 8 });
-      curX += colWidths[i]!;
+    for (const col of columns) {
+      doc.text(col.header, curX + 4, curY + 4, { width: col.width - 8 });
+      curX += col.width;
     }
     curY += headerRowH;
 
@@ -347,18 +364,13 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
       }
 
       curX = MARGIN;
-      const fields = [row.code, row.item, String(row.qty), row.position, row.notes];
       doc.fillColor("#1a1a1a");
-      // Code column bold
-      doc.font("Helvetica-Bold");
-      doc.text(fields[0]!, curX + 4, curY + 3, { width: colWidths[0]! - 8 });
-      curX += colWidths[0]!;
-
-      doc.font("Helvetica");
-      for (let i = 1; i < fields.length; i++) {
-        doc.text(fields[i]!, curX + 4, curY + 3, { width: colWidths[i]! - 8 });
-        curX += colWidths[i]!;
-      }
+      // First (CODE) column rendered bold; remainder regular weight.
+      columns.forEach((col, i) => {
+        doc.font(i === 0 ? "Helvetica-Bold" : "Helvetica");
+        doc.text(col.value(row), curX + 4, curY + 3, { width: col.width - 8 });
+        curX += col.width;
+      });
       curY += rowH;
       rowIdx++;
 

@@ -34,9 +34,9 @@ export function EditorPage(): React.ReactElement {
 
   // Handle space selection → create config → navigate
   const handleSelectSpace = (spaceId: string, _venueId: string): void => {
-    void useEditorStore.getState().createPublicConfig(spaceId).then((newConfigId) => {
-      navigate(`/editor/${newConfigId}`, { replace: true });
-    });
+    void useEditorStore.getState().createPublicConfig(spaceId)
+      .then((newConfigId) => { void navigate(`/editor/${newConfigId}`, { replace: true }); })
+      .catch(() => { /* error already surfaced via store.error */ });
   };
 
   // No configId in URL and none in store → show space picker

@@ -257,32 +257,37 @@ export function SelectionSystem(): null {
       const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
       raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
 
-      // Single raycast — process hits in distance order to find furniture or wall
+      // Single raycast — process hits in distance order to find furniture or wall.
+      // Holds the in-progress results in an object so TS doesn't narrow the
+      // comparisons via control-flow analysis after the initial null assignment
+      // (object property access escapes literal narrowing in a way that bare
+      // `let` bindings do not).
       const allIntersects = raycaster.intersectObjects(scene.children, true);
-      dragItemId.current = null;
-      wallClickKey.current = null;
+      const found: { itemId: string | null; wallKey: WallKey | null } = { itemId: null, wallKey: null };
       for (const inter of allIntersects) {
         // Check furniture first (higher priority)
-        if (dragItemId.current === null) {
+        if (found.itemId === null) {
           let current: Object3D | null = inter.object;
           while (current !== null) {
             if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
-              dragItemId.current = current.name.replace("furniture-", "");
+              found.itemId = current.name.replace("furniture-", "");
               break;
             }
             current = current.parent;
           }
-          if (dragItemId.current !== null) break; // furniture found, stop
+          if (found.itemId !== null) break; // furniture found, stop
         }
         // Check wall (only if no furniture found yet)
-        if (wallClickKey.current === null) {
+        if (found.wallKey === null) {
           const wk = findWallKey(inter.object);
           if (wk !== null) {
-            wallClickKey.current = wk;
+            found.wallKey = wk;
             break; // wall found, stop
           }
         }
       }
+      dragItemId.current = found.itemId;
+      wallClickKey.current = found.wallKey;
     }
 
     function onPointerMove(event: PointerEvent): void {

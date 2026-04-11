@@ -12,7 +12,8 @@ export function UserMenu(): React.ReactElement {
   return (
     <div style={containerStyle} data-testid="user-menu-trigger">
       <SignedIn>
-        <UserButton afterSignOutUrl="/editor" />
+        {/* `afterSignOutUrl` is configured globally on <ClerkProvider/> in main.tsx */}
+        <UserButton />
       </SignedIn>
       <SignedOut>
         <SignInButton mode="modal">
