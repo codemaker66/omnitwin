@@ -1,0 +1,101 @@
+# =============================================================================
+# OMNITWIN — Continuous Integration
+# =============================================================================
+# Three independent jobs run in parallel against every push to master and
+# every pull request targeting master:
+#
+#   lint       — ESLint v9 across all packages, zero errors required
+#   typecheck  — `tsc --noEmit` across all packages, zero errors required
+#   test       — Vitest across all packages, all 2,436 tests must pass
+#
+# Each job is fully isolated and reproducible: pnpm version is pinned to
+# match the local development environment, the lockfile is enforced via
+# --frozen-lockfile, and Node 22 (current LTS) is the only supported runtime.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Cancel any in-flight runs for the same ref when a new commit lands —
+# saves CI minutes when force-pushing or rapid-iterating on a PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (ESLint)
+        run: pnpm -r lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tsc --noEmit)
+        run: pnpm -r typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (Vitest)
+        run: pnpm -r test
