@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// API client tests — Clerk-based token retrieval
+// API client tests — Clerk-based token retrieval via auth-bridge module
 // ---------------------------------------------------------------------------
 
 const fetchMock = vi.fn();
@@ -9,6 +9,7 @@ vi.stubGlobal("fetch", fetchMock);
 
 // Must import AFTER stubbing fetch
 const { api, ApiError } = await import("../api/client.js");
+const { setTokenGetter, _resetTokenGetterForTests } = await import("../api/auth-bridge.js");
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -21,13 +22,14 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 beforeEach(() => {
   fetchMock.mockReset();
-  // Clear Clerk getToken mock
-  delete (window as unknown as Record<string, unknown>)["__clerk_getToken"];
+  // Reset auth-bridge module state between tests so leftover token
+  // getters from prior tests don't bleed into the next case.
+  _resetTokenGetterForTests();
 });
 
 describe("api.get", () => {
   it("attaches Authorization header when Clerk token available", async () => {
-    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("clerk-session-token");
+    setTokenGetter(() => Promise.resolve("clerk-session-token"));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
     await api.get("/test");
@@ -46,7 +48,7 @@ describe("api.get", () => {
   });
 
   it("omits Authorization header when getToken returns null", async () => {
-    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve(null);
+    setTokenGetter(() => Promise.resolve(null));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
     await api.get("/test");
@@ -101,7 +103,7 @@ describe("error handling", () => {
 
 describe("401 handling", () => {
   it("throws ApiError on 401 (Clerk handles session refresh)", async () => {
-    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("expired-token");
+    setTokenGetter(() => Promise.resolve("expired-token"));
     fetchMock.mockResolvedValue(jsonResponse({ error: "Unauthorized" }, 401));
 
     await expect(api.get("/test")).rejects.toThrow(ApiError);
@@ -127,7 +129,7 @@ describe("api.post", () => {
   });
 
   it("supports skipAuth for public endpoints", async () => {
-    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.resolve("my-token");
+    setTokenGetter(() => Promise.resolve("my-token"));
     fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
 
     await api.post("/public/test", { email: "a" }, true);
@@ -148,7 +150,7 @@ describe("api.delete", () => {
 
 describe("graceful getToken errors", () => {
   it("continues without auth if getToken throws", async () => {
-    (window as unknown as Record<string, unknown>)["__clerk_getToken"] = () => Promise.reject(new Error("Clerk error"));
+    setTokenGetter(() => Promise.reject(new Error("Clerk error")));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
     const result = await api.get<{ id: number }>("/test");
@@ -168,6 +170,62 @@ describe("graceful getToken errors", () => {
 // responses throw with a clear error code, and the legacy path still
 // works for unmigrated modules.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Auth bridge module — punch list #9
+//
+// Pins the contract that the API client uses the typed auth-bridge
+// module, NOT a window-global mutation. Reads the actual source files
+// and asserts no production code mutates window.__clerk_getToken.
+// ---------------------------------------------------------------------------
+
+describe("auth bridge — no window globals", () => {
+  it("api/client.ts does not read from window.__clerk_getToken (only comments)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/api/client.ts"),
+      "utf-8",
+    );
+    // Strip comments before checking — comments can mention the legacy
+    // pattern for context (they should, in fact, document what was removed).
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(codeOnly).not.toContain("__clerk_getToken");
+    expect(codeOnly).not.toMatch(/window\s+as\s+unknown/);
+    // Positive: uses the typed bridge module
+    expect(codeOnly).toContain("getTokenGetter");
+  });
+
+  it("ClerkAuthBridge does not mutate window (only comments)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/components/auth/ClerkAuthBridge.tsx"),
+      "utf-8",
+    );
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(codeOnly).not.toContain("__clerk_getToken");
+    expect(codeOnly).not.toMatch(/window\s+as\s+unknown/);
+    expect(codeOnly).toContain("setTokenGetter");
+  });
+
+  it("setTokenGetter / getTokenGetter round-trip", async () => {
+    const { setTokenGetter, getTokenGetter, _resetTokenGetterForTests } = await import("../api/auth-bridge.js");
+    _resetTokenGetterForTests();
+    expect(getTokenGetter()).toBeNull();
+
+    const fakeGetter = (): Promise<string | null> => Promise.resolve("token-123");
+    setTokenGetter(fakeGetter);
+    expect(getTokenGetter()).toBe(fakeGetter);
+
+    setTokenGetter(null);
+    expect(getTokenGetter()).toBeNull();
+  });
+});
 
 describe("schema validation", () => {
   it("valid response parses through the schema and returns typed data", async () => {

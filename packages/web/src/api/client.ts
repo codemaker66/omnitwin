@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import { API_URL } from "../config/env.js";
+import { getTokenGetter } from "./auth-bridge.js";
 
 // ---------------------------------------------------------------------------
 // Typed API error
@@ -20,19 +21,22 @@ export class ApiError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Token retrieval — uses Clerk's getToken exposed via window global
+// Token retrieval — uses the registered token getter from auth-bridge.
 //
 // Exported because non-JSON endpoints (PDF download, file streams) bypass
 // the typed `request<T>()` helper and need to attach the auth header
 // themselves. They MUST go through this function — never read from
 // localStorage directly. The legacy `omnitwin_access_token` localStorage
 // key is dead and is always null for Clerk users; using it silently 401s.
+//
+// Punch list #9: previously read from `window.__clerk_getToken` (a
+// window-global mutation set by ClerkAuthBridge). Now uses the typed
+// auth-bridge module — no window mutation, no `as unknown` casts.
 // ---------------------------------------------------------------------------
 
 export async function getAuthToken(): Promise<string | null> {
-  const getToken = (window as unknown as Record<string, unknown>)["__clerk_getToken"] as
-    (() => Promise<string | null>) | undefined;
-  if (getToken === undefined) return null;
+  const getToken = getTokenGetter();
+  if (getToken === null) return null;
   try {
     return await getToken();
   } catch {

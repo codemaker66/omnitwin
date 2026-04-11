@@ -1,10 +1,17 @@
 import { useEffect } from "react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { setTokenGetter } from "../../api/auth-bridge.js";
 
 // ---------------------------------------------------------------------------
 // ClerkAuthBridge — syncs Clerk session state to the Zustand auth store
-// so existing components (dashboard, protected routes, etc.) keep working.
+// AND registers Clerk's getToken function with the API client's
+// auth-bridge module so non-React code can fetch tokens.
+//
+// Punch list #9: previously mutated `window.__clerk_getToken` to expose
+// getToken to the API client. Now uses a typed module-level setter pair
+// (api/auth-bridge.ts) — no window mutation, no race conditions if
+// multiple bridges mount.
 // ---------------------------------------------------------------------------
 
 export function ClerkAuthBridge(): null {
@@ -34,11 +41,13 @@ export function ClerkAuthBridge(): null {
     }
   }, [isLoaded, isSignedIn, user]);
 
-  // Expose getToken globally for the API client
+  // Register getToken with the API client's auth-bridge module so
+  // non-React code (api/client.ts, api/enquiries.ts) can fetch tokens.
+  // Returns a cleanup function that unregisters on unmount so test
+  // tear-downs don't leak state into subsequent test cases.
   useEffect(() => {
-    if (getToken !== undefined) {
-      (window as unknown as Record<string, unknown>)["__clerk_getToken"] = getToken;
-    }
+    setTokenGetter(getToken);
+    return () => { setTokenGetter(null); };
   }, [getToken]);
 
   return null;
