@@ -124,6 +124,13 @@ let localIdCounter = 0;
 
 // Auto-save is owned by EditorBridge — no internal debounce needed here.
 
+// Punch list #18: cap on the `omnitwin_my_configs` audit log to prevent
+// unbounded localStorage growth. 50 entries × ~80 bytes = ~4 KB total,
+// safely under the 5 MB localStorage budget and large enough to cover a
+// power user's recent history. FIFO eviction keeps the most recent entries.
+const MAX_TRACKED_CONFIGS = 50;
+const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -198,10 +205,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
 
-      // Track in localStorage
-      const stored = JSON.parse(localStorage.getItem("omnitwin_my_configs") ?? "[]") as { configId: string; createdAt: string }[];
-      stored.push({ configId: config.id, createdAt: new Date().toISOString() });
-      localStorage.setItem("omnitwin_my_configs", JSON.stringify(stored));
+      // Track in localStorage with a bounded cap (FIFO eviction). Without
+      // the cap, every public config creation appended to an unbounded
+      // array — slow JSON.parse over time, contention with other clients
+      // of the localStorage budget, and an unhandled QuotaExceededError
+      // path if the budget filled up. The try/catch also covers private-
+      // browsing modes where localStorage throws on write. Tracking is
+      // best-effort; the createPublicConfig flow must NOT fail if
+      // persistence is unavailable.
+      try {
+        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
+        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
+        const capped = stored.length > MAX_TRACKED_CONFIGS
+          ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
+          : stored;
+        localStorage.setItem(TRACKED_CONFIGS_KEY, JSON.stringify(capped));
+      } catch {
+        // localStorage unavailable or quota exceeded — silently skip.
+      }
 
       return config.id;
     } catch (err) {
