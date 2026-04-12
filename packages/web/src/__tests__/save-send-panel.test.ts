@@ -102,6 +102,54 @@ describe("EditorPage", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Punch list #32 — stale layout on enquiry submit
+//
+// The "Send to Events Team" button previously opened the enquiry modal
+// immediately. With a 3-second auto-save debounce in EditorBridge, edits
+// made within 3s of clicking Send were not yet persisted — the venue
+// received the old layout. The fix force-flushes the auto-save BEFORE
+// opening the modal.
+// ---------------------------------------------------------------------------
+
+describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("SaveSendPanel imports flushAutoSave from EditorBridge", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("flushAutoSave");
+    expect(codeOnly).toMatch(/import[\s\S]*?flushAutoSave[\s\S]*?from[\s\S]*?EditorBridge/);
+  });
+
+  it("SaveSendPanel calls flushAutoSave before opening the modal (not onClick={() => setShowEnquiry(true)))", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    // Positive: flushAutoSave is called somewhere in the click handler
+    expect(codeOnly).toContain("flushAutoSave()");
+    // Negative: the old direct-open pattern is gone (comments stripped)
+    expect(codeOnly).not.toMatch(/onClick=\{\s*\(\)\s*=>\s*\{\s*setShowEnquiry\(true\)/);
+  });
+
+  it("EditorBridge exports flushAutoSave", async () => {
+    const { codeOnly } = await readSource("src/components/editor/EditorBridge.tsx");
+    expect(codeOnly).toMatch(/export\s+(async\s+)?function\s+flushAutoSave/);
+  });
+
+  it("flushAutoSave cancels the debounce timer before saving", async () => {
+    const { codeOnly } = await readSource("src/components/editor/EditorBridge.tsx");
+    // The function must cancel the pending timer to prevent a redundant
+    // save after the flush. Pin the clearTimeout call inside flushAutoSave.
+    expect(codeOnly).toMatch(/flushAutoSave[\s\S]{0,300}?clearTimeout\(bridgeSaveTimer\)/);
+  });
+});
+
 describe("Router", () => {
   it("exports router config", async () => {
     const { router } = await import("../router.js");

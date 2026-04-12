@@ -170,3 +170,23 @@ function scheduleAutoSave(isAuthenticated: boolean): void {
     }
   }, 3000);
 }
+
+/**
+ * Cancel the pending auto-save debounce timer and immediately flush any
+ * dirty state to the server. Punch list #32: called by SaveSendPanel before
+ * opening the enquiry modal so the venue receives the latest layout, not a
+ * 3-second-stale one.
+ *
+ * Returns a promise that resolves when the save completes (or immediately
+ * if nothing is dirty).
+ */
+export async function flushAutoSave(): Promise<void> {
+  if (bridgeSaveTimer !== null) {
+    clearTimeout(bridgeSaveTimer);
+    bridgeSaveTimer = null;
+  }
+  const state = useEditorStore.getState();
+  if (state.isDirty && !state.isSaving && state.configId !== null) {
+    await state.saveToServer(useAuthStore.getState().isAuthenticated);
+  }
+}

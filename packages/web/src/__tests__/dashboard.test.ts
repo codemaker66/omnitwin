@@ -423,6 +423,31 @@ describe("ClientProfile enquiry navigation (#34)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// LoadoutsView infinite spinner — punch list #36
+//
+// The useEffect that loads spaces bailed with `if (venueId === "") return`
+// but never called `setLoading(false)` in that branch. Users without a
+// venueId (new accounts, client role) saw an infinite spinner.
+// ---------------------------------------------------------------------------
+
+describe("LoadoutsView empty venueId fix (#36) — source-grep", () => {
+  it("sets loading false when venueId is empty (no infinite spinner)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/components/dashboard/LoadoutsView.tsx"),
+      "utf-8",
+    );
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    // The early-return branch for empty venueId must call setLoading(false)
+    // before returning. Without it, loading stays true forever.
+    expect(codeOnly).toMatch(/if\s*\(venueId\s*===\s*""[^)]*\)\s*\{[\s\S]{0,100}?setLoading\(false\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Search debounce logic
 // ---------------------------------------------------------------------------
 

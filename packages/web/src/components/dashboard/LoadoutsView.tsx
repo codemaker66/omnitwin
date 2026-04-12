@@ -34,9 +34,14 @@ export function LoadoutsView(): React.ReactElement {
   const [createDesc, setCreateDesc] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Load spaces
+  // Load spaces. Punch list #36: the early return for empty venueId must
+  // also clear the loading flag — otherwise users without a venue
+  // (new accounts, client role) see an infinite spinner.
   useEffect(() => {
-    if (venueId === "") return;
+    if (venueId === "") {
+      setLoading(false);
+      return;
+    }
     void spacesApi.listSpaces(venueId).then(setSpaces).catch(() => { addToast("Failed to load spaces", "error"); })
       .finally(() => { setLoading(false); });
   }, [venueId, addToast]);

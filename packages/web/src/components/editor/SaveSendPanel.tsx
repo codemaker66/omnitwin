@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
+import { flushAutoSave } from "./EditorBridge.js";
 
 // ---------------------------------------------------------------------------
 // SaveSendPanel — floating "Send to Events Team" CTA at top-right
@@ -25,16 +26,30 @@ export function SaveSendPanel(): React.ReactElement | null {
   const configId = useEditorStore((s) => s.configId);
 
   const [showEnquiry, setShowEnquiry] = useState(false);
+  const [flushing, setFlushing] = useState(false);
 
   if (objects.length === 0 || configId === null) return null;
+
+  // Punch list #32: force-flush any pending auto-save BEFORE opening the
+  // enquiry modal. Without this, the 3-second debounce in EditorBridge
+  // means edits made within 3s of clicking "Send" are not persisted yet —
+  // the venue receives a stale layout.
+  const handleSend = (): void => {
+    setFlushing(true);
+    void flushAutoSave().finally(() => {
+      setFlushing(false);
+      setShowEnquiry(true);
+    });
+  };
 
   return (
     <>
       <div style={panelStyle} data-testid="save-send-panel">
         <button
           type="button"
-          style={sendBtn}
-          onClick={() => { setShowEnquiry(true); }}
+          style={{ ...sendBtn, opacity: flushing ? 0.6 : 1 }}
+          onClick={handleSend}
+          disabled={flushing}
         >
           Send to Events Team
         </button>
