@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
+import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -15,6 +16,18 @@ export interface JwtUser {
   readonly role: string;
   readonly venueId: string | null;
 }
+
+// Punch list #7: Zod schema for validating mock tokens in test mode.
+// The previous code did `JSON.parse(token) as JwtUser` which trusted
+// any JSON shape, including objects with missing or wrong-typed fields.
+// Downstream code (ownership checks, venue filtering) silently broke
+// when fields were missing or had wrong types.
+const MockTokenSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().min(1),
+  role: z.string().min(1),
+  venueId: z.string().nullable(),
+});
 
 // Augment FastifyRequest to include user
 declare module "fastify" {
@@ -108,14 +121,23 @@ export async function authenticate(
 
   // In test mode ONLY, accept mock tokens (JSON-encoded user objects).
   // This MUST be gated behind NODE_ENV to prevent production exploitation.
+  // Punch list #7: the parsed JSON is validated via Zod so malformed mock
+  // tokens (missing fields, wrong types) are rejected with 401 instead of
+  // silently producing a broken request.user.
   const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
   if (isTest && token.startsWith("{")) {
     try {
-      const mockUser = JSON.parse(token) as JwtUser;
-      request.user = mockUser;
-      return;
+      const parsed: unknown = JSON.parse(token);
+      const result = MockTokenSchema.safeParse(parsed);
+      if (result.success) {
+        request.user = result.data;
+        return;
+      }
+      // Shape doesn't match — fall through to Clerk verification.
+      // In practice this means the token was JSON but not a valid
+      // mock user, so Clerk will also reject it (401).
     } catch {
-      // Not a mock token, fall through
+      // Not valid JSON — fall through
     }
   }
 

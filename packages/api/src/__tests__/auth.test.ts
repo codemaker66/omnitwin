@@ -57,6 +57,87 @@ describe("Clerk auth middleware", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Mock token shape validation — punch list #7
+//
+// The test-mode mock token path previously did `JSON.parse(token) as JwtUser`
+// which trusted any JSON shape. Missing or wrong-typed fields silently
+// produced a broken request.user. Now validated via Zod MockTokenSchema.
+// ---------------------------------------------------------------------------
+
+describe("mock token shape validation (#7)", () => {
+  it("rejects mock token with missing id", async () => {
+    const token = JSON.stringify({ email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects mock token with missing email", async () => {
+    const token = JSON.stringify({ id: "u1", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects mock token with missing role", async () => {
+    const token = JSON.stringify({ id: "u1", email: "test@test.com", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects mock token with numeric id (wrong type)", async () => {
+    const token = JSON.stringify({ id: 123, email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects mock token with empty id string", async () => {
+    const token = JSON.stringify({ id: "", email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects empty JSON object", async () => {
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: "Bearer {}" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("accepts valid mock token with null venueId", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it("accepts valid mock token with string venueId", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "hallkeeper", venueId: "v1" });
+    const res = await server.inject({
+      method: "GET", url: "/enquiries",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Role-based authorization
 // ---------------------------------------------------------------------------
 
