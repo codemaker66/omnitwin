@@ -44,6 +44,8 @@ vi.mock("../api/spaces.js", () => ({
   listVenues: vi.fn(),
   listSpaces: vi.fn(),
   getSpace: vi.fn(),
+  getVenue: vi.fn(),
+  updateVenue: vi.fn(),
 }));
 
 vi.mock("../api/configurations.js", () => ({
@@ -159,6 +161,84 @@ describe("LoadoutDetail", () => {
   it("exports", async () => {
     const { LoadoutDetail } = await import("../components/dashboard/LoadoutDetail.js");
     expect(typeof LoadoutDetail).toBe("function");
+  });
+});
+
+describe("VenueSettings", () => {
+  it("exports", async () => {
+    const { VenueSettings } = await import("../components/dashboard/VenueSettings.js");
+    expect(typeof VenueSettings).toBe("function");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Venue Settings — punch list #25
+// ---------------------------------------------------------------------------
+
+describe("VenueSettings wiring (#25) — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("DashboardPage imports and renders VenueSettings (not placeholder)", async () => {
+    const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
+    expect(codeOnly).toContain("VenueSettings");
+    expect(codeOnly).toContain("<VenueSettings");
+    expect(codeOnly).not.toContain("Coming soon");
+  });
+
+  it("VenueSettings reads venueId from auth store", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
+    expect(codeOnly).toContain("useAuthStore");
+    expect(codeOnly).toContain("venueId");
+  });
+
+  it("VenueSettings calls getVenue to load venue data", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
+    expect(codeOnly).toContain("getVenue");
+  });
+
+  it("VenueSettings calls updateVenue to save changes", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
+    expect(codeOnly).toContain("updateVenue");
+  });
+
+  it("VenueSettings has fields for name, address, brandColour, logoUrl", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
+    expect(codeOnly).toContain("Venue Name");
+    expect(codeOnly).toContain("Address");
+    expect(codeOnly).toContain("Brand Colour");
+    expect(codeOnly).toContain("Logo URL");
+  });
+
+  it("VenueSettings handles the no-venue case gracefully", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
+    expect(codeOnly).toContain("No venue assigned");
+  });
+});
+
+describe("spaces API venue functions (#25) — source-grep", () => {
+  it("exports getVenue and updateVenue", async () => {
+    const mod = await import("../api/spaces.js");
+    expect(typeof mod.getVenue).toBe("function");
+    expect(typeof mod.updateVenue).toBe("function");
+  });
+
+  it("Venue interface includes logoUrl and brandColour", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve("src/api/spaces.ts"), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(codeOnly).toMatch(/logoUrl:\s*string\s*\|\s*null/);
+    expect(codeOnly).toMatch(/brandColour:\s*string\s*\|\s*null/);
   });
 });
 

@@ -4,6 +4,7 @@ import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ClientSearchView } from "../components/dashboard/ClientSearchView.js";
 import { ClientProfile } from "../components/dashboard/ClientProfile.js";
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
+import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 
 // ---------------------------------------------------------------------------
 // DashboardPage — hallkeeper management interface
@@ -97,12 +98,7 @@ export function DashboardPage(): React.ReactElement {
       case "loadouts":
         return <LoadoutsView />;
       case "settings":
-        return (
-          <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 600 }}>Venue Settings</h2>
-            <p>Coming soon</p>
-          </div>
-        );
+        return <VenueSettings />;
     }
   };
 

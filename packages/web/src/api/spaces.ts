@@ -9,6 +9,8 @@ export interface Venue {
   readonly name: string;
   readonly slug: string;
   readonly address: string;
+  readonly logoUrl: string | null;
+  readonly brandColour: string | null;
 }
 
 export interface Space {
@@ -28,6 +30,25 @@ export interface Space {
 
 export async function listVenues(): Promise<Venue[]> {
   return api.get<Venue[]>("/venues");
+}
+
+export interface VenueDetail extends Venue {
+  readonly spaces: readonly Space[];
+}
+
+export async function getVenue(venueId: string): Promise<VenueDetail> {
+  return api.get<VenueDetail>(`/venues/${venueId}`);
+}
+
+export interface UpdateVenueInput {
+  readonly name?: string;
+  readonly address?: string;
+  readonly logoUrl?: string | null;
+  readonly brandColour?: string | null;
+}
+
+export async function updateVenue(venueId: string, data: UpdateVenueInput): Promise<Venue> {
+  return api.patch<Venue>(`/venues/${venueId}`, data);
 }
 
 export async function listSpaces(venueId: string): Promise<Space[]> {
