@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import * as spacesApi from "../../api/spaces.js";
 import * as pricingApi from "../../api/pricing.js";
-import type { Venue, VenueDetail } from "../../api/spaces.js";
+import type { Venue, VenueDetail, Space } from "../../api/spaces.js";
 import type { PricingRule } from "../../api/pricing.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ConfirmModal } from "../shared/ConfirmModal.js";
 
 // ---------------------------------------------------------------------------
 // AdminPanel — venue + space management for admin users
@@ -70,12 +71,24 @@ export function AdminPanel(): React.ReactElement {
   const [spaceLength, setSpaceLength] = useState("");
   const [spaceHeight, setSpaceHeight] = useState("");
 
+  // Venue delete
+  const [showDeleteVenue, setShowDeleteVenue] = useState(false);
+
+  // Space edit/delete
+  const [editingSpace, setEditingSpace] = useState<Space | null>(null);
+  const [editSpaceName, setEditSpaceName] = useState("");
+  const [editSpaceWidth, setEditSpaceWidth] = useState("");
+  const [editSpaceLength, setEditSpaceLength] = useState("");
+  const [editSpaceHeight, setEditSpaceHeight] = useState("");
+  const [deletingSpaceId, setDeletingSpaceId] = useState<string | null>(null);
+
   // Pricing rules
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
   const [showCreateRule, setShowCreateRule] = useState(false);
   const [ruleName, setRuleName] = useState("");
   const [ruleType, setRuleType] = useState<PricingRule["type"]>("flat_rate");
   const [ruleAmount, setRuleAmount] = useState("");
+  const [ruleSpaceId, setRuleSpaceId] = useState("");
 
   const loadVenues = (): void => {
     void spacesApi.listVenues()
@@ -109,14 +122,27 @@ export function AdminPanel(): React.ReactElement {
         name: ruleName.trim(),
         type: ruleType,
         amount,
+        spaceId: ruleSpaceId !== "" ? ruleSpaceId : null,
       });
       addToast("Pricing rule created", "success");
       setShowCreateRule(false);
       setRuleName("");
       setRuleAmount("");
+      setRuleSpaceId("");
       void pricingApi.listPricingRules(selectedVenue.id).then(setPricingRules).catch(() => { /* ignore */ });
     } catch {
       addToast("Failed to create pricing rule", "error");
+    }
+  };
+
+  const handleDeleteRule = async (ruleId: string): Promise<void> => {
+    if (selectedVenue === null) return;
+    try {
+      await pricingApi.deletePricingRule(selectedVenue.id, ruleId);
+      addToast("Pricing rule deleted", "success");
+      void pricingApi.listPricingRules(selectedVenue.id).then(setPricingRules).catch(() => { /* ignore */ });
+    } catch {
+      addToast("Failed to delete pricing rule", "error");
     }
   };
 
@@ -168,6 +194,63 @@ export function AdminPanel(): React.ReactElement {
     }
   };
 
+  const handleDeleteVenue = async (): Promise<void> => {
+    if (selectedVenue === null) return;
+    try {
+      await spacesApi.deleteVenue(selectedVenue.id);
+      addToast("Venue deleted", "success");
+      setSelectedVenue(null);
+      setShowDeleteVenue(false);
+      loadVenues();
+    } catch {
+      addToast("Failed to delete venue", "error");
+    }
+  };
+
+  const openEditSpace = (space: Space): void => {
+    setEditingSpace(space);
+    setEditSpaceName(space.name);
+    setEditSpaceWidth(space.widthM);
+    setEditSpaceLength(space.lengthM);
+    setEditSpaceHeight(space.heightM);
+  };
+
+  const handleEditSpace = async (): Promise<void> => {
+    if (selectedVenue === null || editingSpace === null) return;
+    const w = parseFloat(editSpaceWidth);
+    const l = parseFloat(editSpaceLength);
+    const h = parseFloat(editSpaceHeight);
+    if (editSpaceName.trim() === "" || Number.isNaN(w) || Number.isNaN(l) || Number.isNaN(h) || w <= 0 || l <= 0 || h <= 0) {
+      addToast("Name and positive dimensions required", "error");
+      return;
+    }
+    try {
+      await spacesApi.updateSpace(selectedVenue.id, editingSpace.id, {
+        name: editSpaceName.trim(),
+        widthM: w,
+        lengthM: l,
+        heightM: h,
+      });
+      addToast("Space updated", "success");
+      setEditingSpace(null);
+      handleSelectVenue(selectedVenue.id);
+    } catch {
+      addToast("Failed to update space", "error");
+    }
+  };
+
+  const handleDeleteSpace = async (spaceId: string): Promise<void> => {
+    if (selectedVenue === null) return;
+    try {
+      await spacesApi.deleteSpace(selectedVenue.id, spaceId);
+      addToast("Space deleted", "success");
+      setDeletingSpaceId(null);
+      handleSelectVenue(selectedVenue.id);
+    } catch {
+      addToast("Failed to delete space", "error");
+    }
+  };
+
   // --- Venue detail view ---
   if (selectedVenue !== null) {
     return (
@@ -177,8 +260,16 @@ export function AdminPanel(): React.ReactElement {
           &larr; Back to venues
         </button>
 
-        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{selectedVenue.name}</h2>
-        <p style={{ fontSize: 13, color: "#666", marginBottom: 20 }}>{selectedVenue.address}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{selectedVenue.name}</h2>
+            <p style={{ fontSize: 13, color: "#666", marginBottom: 20 }}>{selectedVenue.address}</p>
+          </div>
+          <button type="button" onClick={() => { setShowDeleteVenue(true); }}
+            style={{ fontSize: 12, color: "#dc2626", background: "#fee2e2", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>
+            Delete Venue
+          </button>
+        </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
@@ -195,10 +286,24 @@ export function AdminPanel(): React.ReactElement {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {selectedVenue.spaces.map((space) => (
-            <div key={space.id} style={cardStyle}>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>{space.name}</div>
-              <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                {space.widthM}m × {space.lengthM}m × {space.heightM}m · slug: {space.slug}
+            <div key={space.id} style={{ ...cardStyle, cursor: "default" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>{space.name}</div>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                    {space.widthM}m × {space.lengthM}m × {space.heightM}m · slug: {space.slug}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={() => { openEditSpace(space); }}
+                    style={{ fontSize: 11, color: "#3b82f6", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    Edit
+                  </button>
+                  <button type="button" onClick={() => { setDeletingSpaceId(space.id); }}
+                    style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -249,7 +354,7 @@ export function AdminPanel(): React.ReactElement {
         <div style={{ marginTop: 32, paddingTop: 20, borderTop: "1px solid #e5e7eb" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
-              Pricing Rules ({pricingRules.length})
+              Room Hire Pricing ({pricingRules.length} rules)
             </h3>
             <button type="button" style={btnPrimary} onClick={() => { setShowCreateRule(true); }}>
               + New Rule
@@ -260,28 +365,52 @@ export function AdminPanel(): React.ReactElement {
             <p style={{ color: "#999", fontSize: 14 }}>No pricing rules configured.</p>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {pricingRules.map((rule) => (
-              <div key={rule.id} style={{ ...cardStyle, cursor: "default" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{rule.name}</div>
-                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
-                      {rule.type.replace(/_/g, " ")} · {rule.currency} {rule.amount}
-                      {rule.spaceId !== null && " · space-specific"}
-                    </div>
-                  </div>
-                  <span style={{
-                    fontSize: 11, padding: "2px 8px", borderRadius: 4,
-                    background: rule.isActive ? "#dcfce7" : "#fee2e2",
-                    color: rule.isActive ? "#16a34a" : "#dc2626",
-                  }}>
-                    {rule.isActive ? "Active" : "Inactive"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* Pricing table — mirrors Trades Hall price sheet layout */}
+          {pricingRules.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                    <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600, color: "#333" }}>Rule</th>
+                    <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 600, color: "#333" }}>Amount</th>
+                    <th style={{ textAlign: "center", padding: "8px 12px", fontWeight: 600, color: "#333" }}>Type</th>
+                    <th style={{ textAlign: "center", padding: "8px 12px", fontWeight: 600, color: "#333" }}>Status</th>
+                    <th style={{ textAlign: "center", padding: "8px 12px", fontWeight: 600, color: "#333" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pricingRules.map((rule) => (
+                    <tr key={rule.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td style={{ padding: "8px 12px" }}>
+                        <div style={{ fontWeight: 500 }}>{rule.name}</div>
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        £{parseFloat(rule.amount).toFixed(2)}
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", color: "#666" }}>
+                        {rule.type.replace(/_/g, " ")}
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                        <span style={{
+                          fontSize: 11, padding: "2px 8px", borderRadius: 4,
+                          background: rule.isActive ? "#dcfce7" : "#fee2e2",
+                          color: rule.isActive ? "#16a34a" : "#dc2626",
+                        }}>
+                          {rule.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                        <button type="button" onClick={() => { void handleDeleteRule(rule.id); }}
+                          style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "2px 6px" }}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {showCreateRule && (
             <div style={{
@@ -294,7 +423,17 @@ export function AdminPanel(): React.ReactElement {
                   <div>
                     <label style={labelStyle}>Rule Name</label>
                     <input type="text" value={ruleName} onChange={(e) => { setRuleName(e.target.value); }}
-                      style={inputStyle} placeholder="e.g. Weekend Evening Rate" />
+                      style={inputStyle} placeholder="e.g. Grand Hall — Half Day" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Space (optional)</label>
+                    <select value={ruleSpaceId} onChange={(e) => { setRuleSpaceId(e.target.value); }}
+                      style={{ ...inputStyle, cursor: "pointer" }}>
+                      <option value="">Venue-wide</option>
+                      {selectedVenue.spaces.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label style={labelStyle}>Type</label>
@@ -321,6 +460,69 @@ export function AdminPanel(): React.ReactElement {
             </div>
           )}
         </div>
+
+        {/* Venue delete confirmation */}
+        {showDeleteVenue && (
+          <ConfirmModal
+            title="Delete Venue"
+            message={`Are you sure you want to delete "${selectedVenue.name}"? All spaces, pricing rules, and configurations will be permanently removed.`}
+            confirmLabel="Delete"
+            onConfirm={() => { void handleDeleteVenue(); }}
+            onCancel={() => { setShowDeleteVenue(false); }}
+          />
+        )}
+
+        {/* Space delete confirmation */}
+        {deletingSpaceId !== null && (
+          <ConfirmModal
+            title="Delete Space"
+            message="Are you sure you want to delete this space? All associated configurations and loadouts will be removed."
+            confirmLabel="Delete"
+            onConfirm={() => { void handleDeleteSpace(deletingSpaceId); }}
+            onCancel={() => { setDeletingSpaceId(null); }}
+          />
+        )}
+
+        {/* Space edit modal */}
+        {editingSpace !== null && (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Edit Space</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Space Name</label>
+                  <input type="text" value={editSpaceName} onChange={(e) => { setEditSpaceName(e.target.value); }}
+                    style={inputStyle} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label style={labelStyle}>Width (m)</label>
+                    <input type="number" value={editSpaceWidth} onChange={(e) => { setEditSpaceWidth(e.target.value); }}
+                      style={inputStyle} step="0.1" min="0" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Length (m)</label>
+                    <input type="number" value={editSpaceLength} onChange={(e) => { setEditSpaceLength(e.target.value); }}
+                      style={inputStyle} step="0.1" min="0" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Height (m)</label>
+                    <input type="number" value={editSpaceHeight} onChange={(e) => { setEditSpaceHeight(e.target.value); }}
+                      style={inputStyle} step="0.1" min="0" />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+                <button type="button" style={btnSecondary} onClick={() => { setEditingSpace(null); }}>Cancel</button>
+                <button type="button" style={btnPrimary} onClick={() => { void handleEditSpace(); }}
+                  disabled={editSpaceName.trim() === ""}>Save Changes</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

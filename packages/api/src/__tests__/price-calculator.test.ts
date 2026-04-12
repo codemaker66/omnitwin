@@ -199,3 +199,61 @@ describe("calculatePrice", () => {
     expect(result.total).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Seed data structural tests
+// ---------------------------------------------------------------------------
+
+describe("seed data — Trades Hall pricing", () => {
+  it("seed file includes all 6 Trades Hall spaces", async () => {
+    const fs = await import("node:fs");
+    const seedCode = fs.readFileSync("src/db/seed.ts", "utf-8");
+    expect(seedCode).toContain("Grand Hall");
+    expect(seedCode).toContain("Saloon");
+    expect(seedCode).toContain("Reception Room");
+    expect(seedCode).toContain("Robert Adam Room");
+    expect(seedCode).toContain("North Gallery");
+    expect(seedCode).toContain("South Gallery");
+  });
+
+  it("seed file includes pricing rules from official price sheet", async () => {
+    const fs = await import("node:fs");
+    const seedCode = fs.readFileSync("src/db/seed.ts", "utf-8");
+    // 3 time slots
+    expect(seedCode).toContain("Half Day");
+    expect(seedCode).toContain("Full Day");
+    expect(seedCode).toContain("Evening Event");
+    // Exclusive venue
+    expect(seedCode).toContain("Exclusive Use of Full Venue");
+    expect(seedCode).toContain("2500");
+    // Key prices from the PDF
+    expect(seedCode).toContain("amount: 550");   // Grand Hall half day
+    expect(seedCode).toContain("amount: 900");   // Grand Hall full day
+    expect(seedCode).toContain("amount: 1500");  // Grand Hall evening
+    // Notes
+    expect(seedCode).toContain("Includes Saloon");
+    expect(seedCode).toContain("Only if venue already open");
+    expect(seedCode).toContain("Free with Grand Hall booking");
+  });
+
+  it("seed file inserts pricingRules from schema", async () => {
+    const fs = await import("node:fs");
+    const seedCode = fs.readFileSync("src/db/seed.ts", "utf-8");
+    expect(seedCode).toContain("pricingRules");
+    expect(seedCode).toContain("db.insert(pricingRules)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Estimate endpoint wiring
+// ---------------------------------------------------------------------------
+
+describe("pricing-rules route — estimate endpoint", () => {
+  it("pricing-rules.ts imports and uses calculatePrice", async () => {
+    const fs = await import("node:fs");
+    const routeCode = fs.readFileSync("src/routes/pricing-rules.ts", "utf-8");
+    expect(routeCode).toContain("calculatePrice");
+    expect(routeCode).toContain("estimate");
+    expect(routeCode).toContain("EstimateBody");
+  });
+});

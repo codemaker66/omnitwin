@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, cleanup } from "@testing-library/react";
 
 // Mock @react-three/fiber — happy-dom has no WebGL context.
 const CanvasMock = vi.hoisted(() =>
@@ -39,6 +39,9 @@ function getCanvasProps(): Record<string, unknown> {
 }
 
 describe("App", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { cleanup(); vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+
   it("renders without crashing", () => {
     const { getByTestId } = render(<App />);
     expect(getByTestId("r3f-canvas")).toBeDefined();

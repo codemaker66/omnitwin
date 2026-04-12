@@ -28,6 +28,28 @@ export interface CreatePricingRuleInput {
   readonly isActive?: boolean;
 }
 
+export interface PriceEstimateInput {
+  readonly spaceId: string;
+  readonly eventDate: string;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly guestCount: number;
+}
+
+export interface LineItem {
+  readonly ruleName: string;
+  readonly description: string;
+  readonly amount: number;
+}
+
+export interface PriceEstimate {
+  readonly lineItems: readonly LineItem[];
+  readonly subtotal: number;
+  readonly modifiers: readonly { readonly name: string; readonly multiplier: number }[];
+  readonly total: number;
+  readonly currency: string;
+}
+
 // ---------------------------------------------------------------------------
 // API functions
 // ---------------------------------------------------------------------------
@@ -38,4 +60,12 @@ export async function listPricingRules(venueId: string): Promise<PricingRule[]> 
 
 export async function createPricingRule(venueId: string, data: CreatePricingRuleInput): Promise<PricingRule> {
   return api.post<PricingRule>(`/venues/${venueId}/pricing`, data);
+}
+
+export async function deletePricingRule(venueId: string, ruleId: string): Promise<void> {
+  await api.delete(`/venues/${venueId}/pricing/${ruleId}`);
+}
+
+export async function estimatePrice(venueId: string, data: PriceEstimateInput): Promise<PriceEstimate> {
+  return api.post<PriceEstimate>(`/venues/${venueId}/pricing/estimate`, data);
 }

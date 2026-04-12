@@ -48,6 +48,9 @@ vi.mock("../api/spaces.js", () => ({
   updateVenue: vi.fn(),
   createVenue: vi.fn(),
   createSpace: vi.fn(),
+  updateSpace: vi.fn(),
+  deleteSpace: vi.fn(),
+  deleteVenue: vi.fn(),
 }));
 
 vi.mock("../api/configurations.js", () => ({
@@ -309,13 +312,38 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
     expect(codeOnly).toContain("listPricingRules");
     expect(codeOnly).toContain("createPricingRule");
     expect(codeOnly).toContain("New Rule");
-    expect(codeOnly).toContain("Pricing Rules");
+    expect(codeOnly).toContain("Room Hire Pricing");
   });
 
-  it("pricing API module exports list and create functions", async () => {
+  it("pricing API module exports list, create, delete, and estimate functions", async () => {
     const mod = await import("../api/pricing.js");
     expect(typeof mod.listPricingRules).toBe("function");
     expect(typeof mod.createPricingRule).toBe("function");
+    expect(typeof mod.deletePricingRule).toBe("function");
+    expect(typeof mod.estimatePrice).toBe("function");
+  });
+
+  it("AdminPanel supports venue delete with ConfirmModal", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("ConfirmModal");
+    expect(codeOnly).toContain("deleteVenue");
+    expect(codeOnly).toContain("Delete Venue");
+    expect(codeOnly).toContain("showDeleteVenue");
+  });
+
+  it("AdminPanel supports space edit and delete", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("updateSpace");
+    expect(codeOnly).toContain("deleteSpace");
+    expect(codeOnly).toContain("editingSpace");
+    expect(codeOnly).toContain("Edit Space");
+  });
+
+  it("spaces API module exports update, delete venue, and delete space", async () => {
+    const mod = await import("../api/spaces.js");
+    expect(typeof mod.updateSpace).toBe("function");
+    expect(typeof mod.deleteSpace).toBe("function");
+    expect(typeof mod.deleteVenue).toBe("function");
   });
 });
 

@@ -26,6 +26,8 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
   const [captionValue, setCaptionValue] = useState("");
   const [showDelete, setShowDelete] = useState(false);
   const [showDeletePhoto, setShowDeletePhoto] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const addToast = useToastStore((s) => s.addToast);
 
   const refresh = (): void => {
@@ -77,6 +79,29 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       addToast("Loadout deleted", "success");
       onDeleted();
     } catch { addToast("Failed to delete loadout", "error"); }
+  };
+
+  // Punch list #26: native HTML5 drag-and-drop reorder. Dragging a photo card
+  // onto another card swaps their positions and persists via reorderPhotos API.
+  const handleDrop = (targetId: string): void => {
+    if (loadout === null || dragId === null || dragId === targetId) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    const photos = [...loadout.photos];
+    const fromIdx = photos.findIndex((p) => p.id === dragId);
+    const toIdx = photos.findIndex((p) => p.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = photos.splice(fromIdx, 1);
+    if (moved === undefined) return;
+    photos.splice(toIdx, 0, moved);
+    const orderedIds = photos.map((p) => p.id);
+    void loadoutsApi.reorderPhotos(loadoutId, orderedIds)
+      .then(() => { refresh(); })
+      .catch(() => { addToast("Failed to reorder", "error"); });
+    setDragId(null);
+    setDragOverId(null);
   };
 
   // Punch list #37: move a photo up or down in the sort order, then call
@@ -138,7 +163,19 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       {loadout.photos.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
           {loadout.photos.map((p, idx) => (
-            <div key={p.id} style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+            <div key={p.id}
+              draggable
+              onDragStart={() => { setDragId(p.id); }}
+              onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+              onDragOver={(e) => { e.preventDefault(); setDragOverId(p.id); }}
+              onDragLeave={() => { setDragOverId(null); }}
+              onDrop={(e) => { e.preventDefault(); handleDrop(p.id); }}
+              style={{
+                background: "#fff", borderRadius: 8, overflow: "hidden", cursor: "grab",
+                border: dragOverId === p.id && dragId !== p.id ? "2px solid #3b82f6" : "1px solid #e5e7eb",
+                opacity: dragId === p.id ? 0.5 : 1,
+                transition: "border-color 0.15s, opacity 0.15s",
+              }}>
               {/* Punch list #38: render image preview when R2 URL is configured,
                   fall back to filename text when it isn't. */}
               {R2_PUBLIC_URL !== null ? (

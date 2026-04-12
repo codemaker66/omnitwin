@@ -81,3 +81,22 @@ export async function listSpaces(venueId: string): Promise<Space[]> {
 export async function getSpace(venueId: string, spaceId: string): Promise<Space> {
   return api.get<Space>(`/venues/${venueId}/spaces/${spaceId}`);
 }
+
+export interface UpdateSpaceInput {
+  readonly name?: string;
+  readonly widthM?: number;
+  readonly lengthM?: number;
+  readonly heightM?: number;
+}
+
+export async function updateSpace(venueId: string, spaceId: string, data: UpdateSpaceInput): Promise<Space> {
+  return api.patch<Space>(`/venues/${venueId}/spaces/${spaceId}`, data);
+}
+
+export async function deleteSpace(venueId: string, spaceId: string): Promise<void> {
+  await api.delete(`/venues/${venueId}/spaces/${spaceId}`);
+}
+
+export async function deleteVenue(venueId: string): Promise<void> {
+  await api.delete(`/venues/${venueId}`);
+}

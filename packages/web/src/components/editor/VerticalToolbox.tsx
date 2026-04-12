@@ -98,11 +98,13 @@ const cameraItemStyle: React.CSSProperties = {
 
 function useDelayedUnmount(isOpen: boolean, delayMs: number): boolean {
   const [mounted, setMounted] = useState(isOpen);
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
     } else {
-      const t = setTimeout(() => { setMounted(false); }, delayMs);
+      const t = setTimeout(() => { if (alive.current) setMounted(false); }, delayMs);
       return () => { clearTimeout(t); };
     }
   }, [isOpen, delayMs]);

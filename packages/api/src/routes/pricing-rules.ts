@@ -5,6 +5,8 @@ import { pricingRules } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
+import { calculatePrice } from "../services/price-calculator.js";
+import type { PricingRuleInput } from "../services/price-calculator.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -14,6 +16,14 @@ const VenueIdParam = z.object({ venueId: z.string().uuid() });
 const RuleIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid() });
 
 const PRICING_TYPES = ["flat_rate", "per_hour", "per_head", "tiered"] as const;
+
+const EstimateBody = z.object({
+  spaceId: z.string().uuid(),
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  guestCount: z.number().int().min(1).max(10000),
+});
 
 const TierSchema = z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() });
 
@@ -191,5 +201,53 @@ export async function pricingRuleRoutes(
       .where(eq(pricingRules.id, params.data.id));
 
     return reply.status(204).send();
+  });
+
+  // POST /venues/:venueId/pricing/estimate — public price calculator
+  server.post("/estimate", async (request, reply) => {
+    const params = VenueIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
+    }
+
+    const parsed = EstimateBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    // Fetch active, non-deleted rules for this venue
+    const rows = await db.select().from(pricingRules)
+      .where(and(
+        eq(pricingRules.venueId, params.data.venueId),
+        eq(pricingRules.isActive, true),
+        isNull(pricingRules.deletedAt),
+      ));
+
+    const rules: PricingRuleInput[] = rows.map((r) => ({
+      name: r.name,
+      type: r.type as PricingRuleInput["type"],
+      amount: parseFloat(r.amount),
+      currency: r.currency,
+      minHours: r.minHours,
+      minGuests: r.minGuests,
+      tiers: r.tiers as PricingRuleInput["tiers"],
+      dayOfWeekModifiers: r.dayOfWeekModifiers as PricingRuleInput["dayOfWeekModifiers"],
+      seasonalModifiers: r.seasonalModifiers as PricingRuleInput["seasonalModifiers"],
+      validFrom: r.validFrom,
+      validTo: r.validTo,
+      isActive: r.isActive,
+      spaceId: r.spaceId,
+    }));
+
+    const result = calculatePrice({
+      rules,
+      spaceId: parsed.data.spaceId,
+      eventDate: parsed.data.eventDate,
+      startTime: parsed.data.startTime,
+      endTime: parsed.data.endTime,
+      guestCount: parsed.data.guestCount,
+    });
+
+    return { data: result };
   });
 }

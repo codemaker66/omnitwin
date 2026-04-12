@@ -6,6 +6,7 @@ import {
   spaces,
   users,
   assetDefinitions,
+  pricingRules,
 } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,8 @@ async function seed(): Promise<void> {
     { name: "Saloon", slug: "saloon", width: 12, length: 7, height: 5.4, sort: 1 },
     { name: "Reception Room", slug: "reception-room", width: 13.4, length: 11.2, height: 3.2, sort: 2 },
     { name: "Robert Adam Room", slug: "robert-adam-room", width: 9.7, length: 5.6, height: 2.18, sort: 3 },
+    { name: "North Gallery", slug: "north-gallery", width: 8, length: 4, height: 3, sort: 4 },
+    { name: "South Gallery", slug: "south-gallery", width: 8, length: 4, height: 3, sort: 5 },
   ] as const;
 
   const insertedSpaces = await db.insert(spaces).values(
@@ -117,6 +120,85 @@ async function seed(): Promise<void> {
   for (const u of insertedUsers) {
     console.log(`  User: ${u.email} (${u.role})`);
   }
+
+  // --- 5. Pricing rules (from official Trades Hall price sheet) ---
+  // Each room has three time slots: half day, full day, evening event.
+  // Amounts are in GBP. Notes are encoded in the rule name.
+  //
+  // Source: Trades Hall Glasgow Room Hire PDF (March 2025)
+  //   Half day:  09:00–13:00 or 14:00–18:00
+  //   Full day:  09:00–17:30
+  //   Evening:   19:00–00:30
+
+  // Build a space-name → id lookup from the just-inserted rows
+  const spaceIdByName = new Map<string, string>();
+  for (const s of insertedSpaces) {
+    spaceIdByName.set(s.name, s.id);
+  }
+
+  const pricingData: {
+    readonly space: string;
+    readonly slot: string;
+    readonly amount: number;
+    readonly note: string | null;
+  }[] = [
+    // Grand Hall
+    { space: "Grand Hall", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 550, note: null },
+    { space: "Grand Hall", slot: "Full Day (09:00–17:30)", amount: 900, note: null },
+    { space: "Grand Hall", slot: "Evening Event (19:00–00:30)", amount: 1500, note: "Includes Saloon" },
+    // Saloon
+    { space: "Saloon", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 350, note: "Free with Grand Hall booking" },
+    { space: "Saloon", slot: "Full Day (09:00–17:30)", amount: 450, note: "Free with Grand Hall booking" },
+    { space: "Saloon", slot: "Evening Event (19:00–00:30)", amount: 500, note: null },
+    // Reception Room
+    { space: "Reception Room", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 300, note: null },
+    { space: "Reception Room", slot: "Full Day (09:00–17:30)", amount: 400, note: null },
+    { space: "Reception Room", slot: "Evening Event (19:00–00:30)", amount: 500, note: null },
+    // Robert Adam Room
+    { space: "Robert Adam Room", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 450, note: null },
+    { space: "Robert Adam Room", slot: "Full Day (09:00–17:30)", amount: 550, note: null },
+    { space: "Robert Adam Room", slot: "Evening Event (19:00–00:30)", amount: 650, note: null },
+    // North Gallery
+    { space: "North Gallery", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 130, note: "Only if venue already open" },
+    { space: "North Gallery", slot: "Full Day (09:00–17:30)", amount: 250, note: "Only if venue already open" },
+    { space: "North Gallery", slot: "Evening Event (19:00–00:30)", amount: 250, note: "Only if venue already open" },
+    // South Gallery
+    { space: "South Gallery", slot: "Half Day (09:00–13:00 or 14:00–18:00)", amount: 130, note: "Only if venue already open" },
+    { space: "South Gallery", slot: "Full Day (09:00–17:30)", amount: 250, note: "Only if venue already open" },
+    { space: "South Gallery", slot: "Evening Event (19:00–00:30)", amount: 250, note: "Only if venue already open" },
+  ];
+
+  const ruleValues = pricingData.map((p) => {
+    const spaceId = spaceIdByName.get(p.space);
+    if (spaceId === undefined) throw new Error(`Space not found: ${p.space}`);
+    const name = p.note !== null
+      ? `${p.space} — ${p.slot} (${p.note})`
+      : `${p.space} — ${p.slot}`;
+    return {
+      venueId: venue.id,
+      spaceId,
+      name,
+      type: "flat_rate",
+      amount: String(p.amount),
+      currency: "GBP",
+      isActive: true,
+    };
+  });
+
+  // Add venue-wide exclusive hire rule
+  ruleValues.push({
+    venueId: venue.id,
+    spaceId: null as unknown as string,
+    name: "Exclusive Use of Full Venue",
+    type: "flat_rate",
+    amount: "2500",
+    currency: "GBP",
+    isActive: true,
+  });
+
+  const insertedRules = await db.insert(pricingRules).values(ruleValues).returning();
+  console.log(`  Pricing rules: ${String(insertedRules.length)} created`);
+  console.log("    Note: Breakout rooms get 10% discount on additional room charge");
 
   console.log("\nSeed complete.");
 }
