@@ -168,7 +168,17 @@ async function seed(): Promise<void> {
     { space: "South Gallery", slot: "Evening Event (19:00–00:30)", amount: 250, note: "Only if venue already open" },
   ];
 
-  const ruleValues = pricingData.map((p) => {
+  interface SeedRule {
+    readonly venueId: string;
+    readonly spaceId: string | null;
+    readonly name: string;
+    readonly type: string;
+    readonly amount: string;
+    readonly currency: string;
+    readonly isActive: boolean;
+  }
+
+  const ruleValues: SeedRule[] = pricingData.map((p) => {
     const spaceId = spaceIdByName.get(p.space);
     if (spaceId === undefined) throw new Error(`Space not found: ${p.space}`);
     const name = p.note !== null
@@ -185,10 +195,10 @@ async function seed(): Promise<void> {
     };
   });
 
-  // Add venue-wide exclusive hire rule
+  // Add venue-wide exclusive hire rule (spaceId: null = applies to whole venue)
   ruleValues.push({
     venueId: venue.id,
-    spaceId: null as unknown as string,
+    spaceId: null,
     name: "Exclusive Use of Full Venue",
     type: "flat_rate",
     amount: "2500",
