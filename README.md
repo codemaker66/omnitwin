@@ -1,6 +1,6 @@
 # OMNITWIN
 
-[![CI](https://github.com/codemaker66/omnitwin2/actions/workflows/ci.yml/badge.svg)](https://github.com/codemaker66/omnitwin2/actions/workflows/ci.yml)
+[![CI](https://github.com/codemaker66/omnitwin/actions/workflows/ci.yml/badge.svg)](https://github.com/codemaker66/omnitwin/actions/workflows/ci.yml)
 
 Browser-based photorealistic venue planning platform for Trades Hall Glasgow —
 a "Sims build mode" for real-world event spaces. Plan a wedding or banquet by
@@ -42,8 +42,8 @@ packages/
 ## Getting started
 
 ```bash
-git clone https://github.com/codemaker66/omnitwin2.git
-cd omnitwin2
+git clone https://github.com/codemaker66/omnitwin.git
+cd omnitwin
 pnpm install --frozen-lockfile
 
 # Frontend dev server  → http://localhost:5173
