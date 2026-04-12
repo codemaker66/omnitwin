@@ -302,6 +302,21 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
     expect(typeof mod.createVenue).toBe("function");
     expect(typeof mod.createSpace).toBe("function");
   });
+
+  it("AdminPanel integrates pricing rules management", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("pricingRules");
+    expect(codeOnly).toContain("listPricingRules");
+    expect(codeOnly).toContain("createPricingRule");
+    expect(codeOnly).toContain("New Rule");
+    expect(codeOnly).toContain("Pricing Rules");
+  });
+
+  it("pricing API module exports list and create functions", async () => {
+    const mod = await import("../api/pricing.js");
+    expect(typeof mod.listPricingRules).toBe("function");
+    expect(typeof mod.createPricingRule).toBe("function");
+  });
 });
 
 describe("DashboardPage", () => {

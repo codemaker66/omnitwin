@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import * as spacesApi from "../../api/spaces.js";
+import * as pricingApi from "../../api/pricing.js";
 import type { Venue, VenueDetail } from "../../api/spaces.js";
+import type { PricingRule } from "../../api/pricing.js";
 import { useToastStore } from "../../stores/toast-store.js";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,13 @@ export function AdminPanel(): React.ReactElement {
   const [spaceLength, setSpaceLength] = useState("");
   const [spaceHeight, setSpaceHeight] = useState("");
 
+  // Pricing rules
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [showCreateRule, setShowCreateRule] = useState(false);
+  const [ruleName, setRuleName] = useState("");
+  const [ruleType, setRuleType] = useState<PricingRule["type"]>("flat_rate");
+  const [ruleAmount, setRuleAmount] = useState("");
+
   const loadVenues = (): void => {
     void spacesApi.listVenues()
       .then(setVenues)
@@ -79,8 +88,36 @@ export function AdminPanel(): React.ReactElement {
 
   const handleSelectVenue = (venueId: string): void => {
     void spacesApi.getVenue(venueId)
-      .then(setSelectedVenue)
+      .then((v) => {
+        setSelectedVenue(v);
+        void pricingApi.listPricingRules(venueId)
+          .then(setPricingRules)
+          .catch(() => { /* non-critical */ });
+      })
       .catch(() => { addToast("Failed to load venue", "error"); });
+  };
+
+  const handleCreateRule = async (): Promise<void> => {
+    if (selectedVenue === null || ruleName.trim() === "") return;
+    const amount = parseFloat(ruleAmount);
+    if (Number.isNaN(amount) || amount < 0) {
+      addToast("Amount must be a non-negative number", "error");
+      return;
+    }
+    try {
+      await pricingApi.createPricingRule(selectedVenue.id, {
+        name: ruleName.trim(),
+        type: ruleType,
+        amount,
+      });
+      addToast("Pricing rule created", "success");
+      setShowCreateRule(false);
+      setRuleName("");
+      setRuleAmount("");
+      void pricingApi.listPricingRules(selectedVenue.id).then(setPricingRules).catch(() => { /* ignore */ });
+    } catch {
+      addToast("Failed to create pricing rule", "error");
+    }
   };
 
   const handleCreateVenue = async (): Promise<void> => {
@@ -207,6 +244,83 @@ export function AdminPanel(): React.ReactElement {
             </div>
           </div>
         )}
+
+        {/* Pricing rules section */}
+        <div style={{ marginTop: 32, paddingTop: 20, borderTop: "1px solid #e5e7eb" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+              Pricing Rules ({pricingRules.length})
+            </h3>
+            <button type="button" style={btnPrimary} onClick={() => { setShowCreateRule(true); }}>
+              + New Rule
+            </button>
+          </div>
+
+          {pricingRules.length === 0 && (
+            <p style={{ color: "#999", fontSize: 14 }}>No pricing rules configured.</p>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pricingRules.map((rule) => (
+              <div key={rule.id} style={{ ...cardStyle, cursor: "default" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{rule.name}</div>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                      {rule.type.replace(/_/g, " ")} · {rule.currency} {rule.amount}
+                      {rule.spaceId !== null && " · space-specific"}
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 11, padding: "2px 8px", borderRadius: 4,
+                    background: rule.isActive ? "#dcfce7" : "#fee2e2",
+                    color: rule.isActive ? "#16a34a" : "#dc2626",
+                  }}>
+                    {rule.isActive ? "Active" : "Inactive"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {showCreateRule && (
+            <div style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>New Pricing Rule</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Rule Name</label>
+                    <input type="text" value={ruleName} onChange={(e) => { setRuleName(e.target.value); }}
+                      style={inputStyle} placeholder="e.g. Weekend Evening Rate" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Type</label>
+                    <select value={ruleType} onChange={(e) => { setRuleType(e.target.value as PricingRule["type"]); }}
+                      style={{ ...inputStyle, cursor: "pointer" }}>
+                      <option value="flat_rate">Flat Rate</option>
+                      <option value="per_hour">Per Hour</option>
+                      <option value="per_head">Per Head</option>
+                      <option value="tiered">Tiered</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Amount (GBP)</label>
+                    <input type="number" value={ruleAmount} onChange={(e) => { setRuleAmount(e.target.value); }}
+                      style={inputStyle} placeholder="500" step="0.01" min="0" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+                  <button type="button" style={btnSecondary} onClick={() => { setShowCreateRule(false); }}>Cancel</button>
+                  <button type="button" style={btnPrimary} onClick={() => { void handleCreateRule(); }}
+                    disabled={ruleName.trim() === "" || ruleAmount === ""}>Create Rule</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
