@@ -7,7 +7,7 @@ import { ToastContainer } from "../shared/ToastContainer.js";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "search" | "loadouts" | "settings";
+type DashboardView = "enquiries" | "search" | "loadouts" | "settings" | "admin";
 
 const sidebarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
@@ -40,11 +40,12 @@ interface DashboardLayoutProps {
   readonly children: ReactNode;
 }
 
-const NAV_ITEMS: readonly { view: DashboardView; label: string }[] = [
+const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean }[] = [
   { view: "enquiries", label: "Enquiries" },
   { view: "search", label: "Client Search" },
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
+  { view: "admin", label: "Admin", adminOnly: true },
 ];
 
 export function DashboardLayout({ activeView, onViewChange, children }: DashboardLayoutProps): React.ReactElement {
@@ -69,16 +70,19 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
         <div style={{ padding: "20px 20px 24px", fontSize: 18, fontWeight: 700, letterSpacing: -0.5 }}>
           OMNITWIN
         </div>
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.view}
-            type="button"
-            style={navItemStyle(activeView === item.view)}
-            onClick={() => { onViewChange(item.view); }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          if (item.adminOnly === true && user?.role !== "admin") return null;
+          return (
+            <button
+              key={item.view}
+              type="button"
+              style={navItemStyle(activeView === item.view)}
+              onClick={() => { onViewChange(item.view); }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
         <div style={{ flex: 1 }} />
         <div style={{ padding: "16px 20px", fontSize: 12, color: "rgba(255,255,255,0.4)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           {user?.email ?? ""}

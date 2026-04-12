@@ -46,6 +46,8 @@ vi.mock("../api/spaces.js", () => ({
   getSpace: vi.fn(),
   getVenue: vi.fn(),
   updateVenue: vi.fn(),
+  createVenue: vi.fn(),
+  createSpace: vi.fn(),
 }));
 
 vi.mock("../api/configurations.js", () => ({
@@ -239,6 +241,66 @@ describe("spaces API venue functions (#25) — source-grep", () => {
       .replace(/\/\/[^\n]*/g, "");
     expect(codeOnly).toMatch(/logoUrl:\s*string\s*\|\s*null/);
     expect(codeOnly).toMatch(/brandColour:\s*string\s*\|\s*null/);
+  });
+});
+
+describe("AdminPanel", () => {
+  it("exports", async () => {
+    const { AdminPanel } = await import("../components/dashboard/AdminPanel.js");
+    expect(typeof AdminPanel).toBe("function");
+  });
+});
+
+describe("AdminPanel wiring (#27) — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("DashboardLayout includes admin in the view type", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
+    expect(codeOnly).toContain(`"admin"`);
+  });
+
+  it("DashboardLayout shows admin nav only for admin role", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
+    expect(codeOnly).toContain("adminOnly");
+    expect(codeOnly).toMatch(/user\?\.role\s*!==\s*["']admin["']/);
+  });
+
+  it("DashboardPage imports and renders AdminPanel", async () => {
+    const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
+    expect(codeOnly).toContain("AdminPanel");
+    expect(codeOnly).toContain("<AdminPanel");
+  });
+
+  it("AdminPanel calls createVenue API", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("createVenue");
+  });
+
+  it("AdminPanel calls createSpace API", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("createSpace");
+  });
+
+  it("AdminPanel has venue list and space detail views", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/AdminPanel.tsx");
+    expect(codeOnly).toContain("selectedVenue");
+    expect(codeOnly).toContain("Back to venues");
+    expect(codeOnly).toContain("New Venue");
+    expect(codeOnly).toContain("New Space");
+  });
+
+  it("spaces API exports createVenue and createSpace", async () => {
+    const mod = await import("../api/spaces.js");
+    expect(typeof mod.createVenue).toBe("function");
+    expect(typeof mod.createSpace).toBe("function");
   });
 });
 

@@ -1,0 +1,274 @@
+import { useState, useEffect } from "react";
+import * as spacesApi from "../../api/spaces.js";
+import type { Venue, VenueDetail } from "../../api/spaces.js";
+import { useToastStore } from "../../stores/toast-store.js";
+
+// ---------------------------------------------------------------------------
+// AdminPanel — venue + space management for admin users
+//
+// Punch list #27: the backend CRUD for venues and spaces already existed
+// but there were zero admin-facing screens. This component provides:
+//   - List all venues with space counts
+//   - Create a new venue
+//   - View + manage spaces within a selected venue
+//   - Create a new space within a venue
+// ---------------------------------------------------------------------------
+
+const cardStyle: React.CSSProperties = {
+  background: "#fff", borderRadius: 8, padding: 16, border: "1px solid #e5e7eb",
+  cursor: "pointer", transition: "box-shadow 0.15s",
+};
+
+const btnPrimary: React.CSSProperties = {
+  padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#3b82f6",
+  color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",
+};
+
+const btnSecondary: React.CSSProperties = {
+  padding: "8px 16px", fontSize: 13, fontWeight: 500, background: "none",
+  color: "#3b82f6", border: "1px solid #d1d5db", borderRadius: 6, cursor: "pointer",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "8px 12px", fontSize: 14, border: "1px solid #d1d5db",
+  borderRadius: 6, boxSizing: "border-box", fontFamily: "inherit",
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block", fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 4,
+};
+
+/** Generate a slug from a name string. */
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+/** Rectangular floor plan outline for a given width and length. */
+function rectOutline(w: number, l: number): readonly { readonly x: number; readonly y: number }[] {
+  const hw = w / 2;
+  const hl = l / 2;
+  return [{ x: -hw, y: -hl }, { x: hw, y: -hl }, { x: hw, y: hl }, { x: -hw, y: hl }];
+}
+
+export function AdminPanel(): React.ReactElement {
+  const addToast = useToastStore((s) => s.addToast);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedVenue, setSelectedVenue] = useState<VenueDetail | null>(null);
+  const [showCreateVenue, setShowCreateVenue] = useState(false);
+  const [showCreateSpace, setShowCreateSpace] = useState(false);
+
+  // Create venue form
+  const [venueName, setVenueName] = useState("");
+  const [venueAddress, setVenueAddress] = useState("");
+
+  // Create space form
+  const [spaceName, setSpaceName] = useState("");
+  const [spaceWidth, setSpaceWidth] = useState("");
+  const [spaceLength, setSpaceLength] = useState("");
+  const [spaceHeight, setSpaceHeight] = useState("");
+
+  const loadVenues = (): void => {
+    void spacesApi.listVenues()
+      .then(setVenues)
+      .catch(() => { addToast("Failed to load venues", "error"); })
+      .finally(() => { setLoading(false); });
+  };
+
+  useEffect(loadVenues, [addToast]);
+
+  const handleSelectVenue = (venueId: string): void => {
+    void spacesApi.getVenue(venueId)
+      .then(setSelectedVenue)
+      .catch(() => { addToast("Failed to load venue", "error"); });
+  };
+
+  const handleCreateVenue = async (): Promise<void> => {
+    if (venueName.trim() === "" || venueAddress.trim() === "") return;
+    try {
+      await spacesApi.createVenue({
+        name: venueName.trim(),
+        slug: slugify(venueName),
+        address: venueAddress.trim(),
+      });
+      addToast("Venue created", "success");
+      setShowCreateVenue(false);
+      setVenueName("");
+      setVenueAddress("");
+      loadVenues();
+    } catch {
+      addToast("Failed to create venue", "error");
+    }
+  };
+
+  const handleCreateSpace = async (): Promise<void> => {
+    if (selectedVenue === null || spaceName.trim() === "") return;
+    const w = parseFloat(spaceWidth);
+    const l = parseFloat(spaceLength);
+    const h = parseFloat(spaceHeight);
+    if (Number.isNaN(w) || Number.isNaN(l) || Number.isNaN(h) || w <= 0 || l <= 0 || h <= 0) {
+      addToast("Dimensions must be positive numbers", "error");
+      return;
+    }
+    try {
+      await spacesApi.createSpace(selectedVenue.id, {
+        name: spaceName.trim(),
+        slug: slugify(spaceName),
+        widthM: w,
+        lengthM: l,
+        heightM: h,
+        floorPlanOutline: rectOutline(w, l),
+      });
+      addToast("Space created", "success");
+      setShowCreateSpace(false);
+      setSpaceName("");
+      setSpaceWidth("");
+      setSpaceLength("");
+      setSpaceHeight("");
+      handleSelectVenue(selectedVenue.id);
+    } catch {
+      addToast("Failed to create space", "error");
+    }
+  };
+
+  // --- Venue detail view ---
+  if (selectedVenue !== null) {
+    return (
+      <div>
+        <button type="button" onClick={() => { setSelectedVenue(null); }}
+          style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}>
+          &larr; Back to venues
+        </button>
+
+        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{selectedVenue.name}</h2>
+        <p style={{ fontSize: 13, color: "#666", marginBottom: 20 }}>{selectedVenue.address}</p>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+            Spaces ({selectedVenue.spaces.length})
+          </h3>
+          <button type="button" style={btnPrimary} onClick={() => { setShowCreateSpace(true); }}>
+            + New Space
+          </button>
+        </div>
+
+        {selectedVenue.spaces.length === 0 && (
+          <p style={{ color: "#999", fontSize: 14 }}>No spaces yet. Create one to get started.</p>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {selectedVenue.spaces.map((space) => (
+            <div key={space.id} style={cardStyle}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>{space.name}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                {space.widthM}m × {space.lengthM}m × {space.heightM}m · slug: {space.slug}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Create space modal */}
+        {showCreateSpace && (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>New Space</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Space Name</label>
+                  <input type="text" value={spaceName} onChange={(e) => { setSpaceName(e.target.value); }}
+                    style={inputStyle} placeholder="e.g. Grand Hall" />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label style={labelStyle}>Width (m)</label>
+                    <input type="number" value={spaceWidth} onChange={(e) => { setSpaceWidth(e.target.value); }}
+                      style={inputStyle} placeholder="21" step="0.1" min="0" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Length (m)</label>
+                    <input type="number" value={spaceLength} onChange={(e) => { setSpaceLength(e.target.value); }}
+                      style={inputStyle} placeholder="10" step="0.1" min="0" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Height (m)</label>
+                    <input type="number" value={spaceHeight} onChange={(e) => { setSpaceHeight(e.target.value); }}
+                      style={inputStyle} placeholder="7" step="0.1" min="0" />
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+                <button type="button" style={btnSecondary} onClick={() => { setShowCreateSpace(false); }}>Cancel</button>
+                <button type="button" style={btnPrimary} onClick={() => { void handleCreateSpace(); }}
+                  disabled={spaceName.trim() === ""}>Create Space</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // --- Venue list view ---
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Admin — Venues</h2>
+        <button type="button" style={btnPrimary} onClick={() => { setShowCreateVenue(true); }}>
+          + New Venue
+        </button>
+      </div>
+
+      {loading && <p style={{ color: "#999", fontSize: 14 }}>Loading...</p>}
+
+      {!loading && venues.length === 0 && (
+        <p style={{ color: "#999", fontSize: 14 }}>No venues found.</p>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {venues.map((v) => (
+          <div key={v.id} style={cardStyle} onClick={() => { handleSelectVenue(v.id); }}>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{v.name}</div>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+              {v.address} · slug: {v.slug}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Create venue modal */}
+      {showCreateVenue && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>New Venue</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Venue Name</label>
+                <input type="text" value={venueName} onChange={(e) => { setVenueName(e.target.value); }}
+                  style={inputStyle} placeholder="e.g. Trades Hall Glasgow" />
+              </div>
+              <div>
+                <label style={labelStyle}>Address</label>
+                <input type="text" value={venueAddress} onChange={(e) => { setVenueAddress(e.target.value); }}
+                  style={inputStyle} placeholder="e.g. 85 Glassford Street, Glasgow G1 1UH" />
+              </div>
+              <div style={{ fontSize: 12, color: "#999" }}>
+                Slug: {slugify(venueName) !== "" ? slugify(venueName) : "(auto-generated from name)"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
+              <button type="button" style={btnSecondary} onClick={() => { setShowCreateVenue(false); }}>Cancel</button>
+              <button type="button" style={btnPrimary} onClick={() => { void handleCreateVenue(); }}
+                disabled={venueName.trim() === "" || venueAddress.trim() === ""}>Create Venue</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
