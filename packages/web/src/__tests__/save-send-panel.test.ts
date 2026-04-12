@@ -150,6 +150,78 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Punch list #24 — ortho diagram capture wiring
+//
+// SaveSendPanel captures a top-down floor plan PNG from the Three.js scene
+// and uploads it to the config's thumbnailUrl before opening the enquiry
+// modal. This makes the hallkeeper sheet PDF show the actual floor plan
+// instead of the "Generate from the 3D editor" placeholder.
+//
+// The capture is best-effort: if scene is null, capture fails, or upload
+// fails, the modal opens anyway (hallkeeper sheet shows its placeholder).
+// ---------------------------------------------------------------------------
+
+describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("imports captureOrthographic from ortho-capture", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("captureOrthographic");
+    expect(codeOnly).toMatch(/import[\s\S]*?captureOrthographic[\s\S]*?from[\s\S]*?ortho-capture/);
+  });
+
+  it("imports updatePublicThumbnail from configurations API", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("updatePublicThumbnail");
+    expect(codeOnly).toMatch(/import[\s\S]*?updatePublicThumbnail[\s\S]*?from[\s\S]*?configurations/);
+  });
+
+  it("imports toRenderSpace for coordinate conversion", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("toRenderSpace");
+  });
+
+  it("reads scene from editor-store", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("useEditorStore.getState()");
+    expect(codeOnly).toMatch(/\{\s*scene[\s\S]*?\}\s*=\s*useEditorStore\.getState\(\)/);
+  });
+
+  it("calls captureOrthographic with reduced resolution for data URL size", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    // The capture must use 800x533 (not 2400x1600) so the PNG data URL
+    // fits within the 200 KB Postgres column budget.
+    expect(codeOnly).toMatch(/captureOrthographic\([\s\S]*?width:\s*800/);
+    expect(codeOnly).toMatch(/captureOrthographic\([\s\S]*?height:\s*533/);
+  });
+
+  it("calls updatePublicThumbnail with the captured data URL", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toMatch(/updatePublicThumbnail\([\s\S]*?dataUrl/);
+  });
+
+  it("only captures for public preview configs (not claimed)", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("isPublicPreview");
+  });
+
+  it("capture + upload are wrapped in try/catch (best-effort)", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    // The capture block must be inside a try/catch so failures don't
+    // prevent the modal from opening.
+    expect(codeOnly).toMatch(/try\s*\{[\s\S]*?captureOrthographic[\s\S]*?\}\s*catch/);
+  });
+});
+
 describe("Router", () => {
   it("exports router config", async () => {
     const { router } = await import("../router.js");
