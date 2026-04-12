@@ -239,3 +239,122 @@ describe("claim-config.ts source-of-truth (#14)", () => {
     expect(codeOnly).toContain("linkedEnquiryCount");
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST /public/configurations/:configId/thumbnail — punch list #24
+//
+// Stores the orthographic capture (PNG data URL) in configurations.thumbnailUrl.
+// The hallkeeper sheet PDF reads this URL to insert the floor plan diagram.
+// Without it, the PDF shows a placeholder "Generate from the 3D editor..."
+// ---------------------------------------------------------------------------
+
+describe("POST /public/configurations/:configId/thumbnail", () => {
+  const SMALL_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+  it("does not require auth (public endpoint)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: SMALL_PNG },
+    });
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it("returns 400 for invalid config ID", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/public/configurations/bad-id/thumbnail",
+      payload: { thumbnailUrl: SMALL_PNG },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for missing thumbnailUrl", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for non-data-URL string", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: "https://evil.com/image.png" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for non-PNG data URL", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: "data:image/jpeg;base64,/9j/4AAQ" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 when thumbnail exceeds size limit", async () => {
+    // 200 KB of base64 = ~266 KB string, well over the limit
+    const huge = "data:image/png;base64," + "A".repeat(250_000);
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: huge },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("passes validation with a valid PNG data URL (fails at DB)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/public/configurations/${CONFIG_ID}/thumbnail`,
+      payload: { thumbnailUrl: SMALL_PNG },
+    });
+    // Not 400 = passed Zod validation. Not 401 = no auth required.
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Thumbnail endpoint security — source-grep tripwire (#24)
+// ---------------------------------------------------------------------------
+
+describe("public-configs.ts thumbnail security — source-grep (#24)", () => {
+  async function readSource(): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve("src/routes/public-configs.ts"), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("validates thumbnailUrl starts with PNG data URL prefix", async () => {
+    const { codeOnly } = await readSource();
+    expect(codeOnly).toContain('startsWith("data:image/png;base64,');
+  });
+
+  it("enforces a size cap on the thumbnail body", async () => {
+    const { codeOnly } = await readSource();
+    expect(codeOnly).toContain("MAX_THUMBNAIL_BYTES");
+    expect(codeOnly).toMatch(/MAX_THUMBNAIL_BYTES\s*=\s*200[_0]*0/);
+  });
+
+  it("restricts to public preview configs only", async () => {
+    const { codeOnly } = await readSource();
+    // Must filter by isPublicPreview=true so claimed configs can't be
+    // mutated via the public path.
+    expect(codeOnly).toMatch(/thumbnail[\s\S]*?eq\(configurations\.isPublicPreview,\s*true\)/);
+  });
+
+  it("applies rate limiting to the thumbnail endpoint", async () => {
+    const { codeOnly } = await readSource();
+    // The route definition must include a rateLimit config
+    expect(codeOnly).toMatch(/thumbnail[\s\S]{0,200}?rateLimit/);
+  });
+});

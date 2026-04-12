@@ -33,6 +33,17 @@ const BatchBody = z.object({
   objects: z.array(BatchObjectItem).max(500),
 });
 
+// Punch list #24: accepts a data URL (PNG) as the thumbnail for a public
+// preview config. Max 200 KB covers a 800×533 PNG comfortably (~30-50 KB
+// typical). The long-term answer is R2 upload with a presigned URL; this
+// is the pragmatic single-tenant path that works without R2 configured.
+const MAX_THUMBNAIL_BYTES = 200_000;
+const ThumbnailBody = z.object({
+  thumbnailUrl: z.string()
+    .startsWith("data:image/png;base64,", "Must be a PNG data URL")
+    .max(MAX_THUMBNAIL_BYTES, `Thumbnail must be under ${String(MAX_THUMBNAIL_BYTES)} bytes`),
+});
+
 // ---------------------------------------------------------------------------
 // Plugin — public (no auth) configuration endpoints
 // ---------------------------------------------------------------------------
@@ -154,6 +165,56 @@ export async function publicConfigRoutes(
     });
 
     return { data: results };
+  });
+
+  // POST /public/configurations/:configId/thumbnail — set floor plan diagram
+  //
+  // Uses POST (not PATCH) because the public API client's `api.post()`
+  // supports `skipAuth` while `api.patch()` does not. Consistent with
+  // the other public config endpoints which are all POST.
+  //
+  // Punch list #24: the hallkeeper sheet PDF needs a floor plan image in
+  // `configurations.thumbnailUrl`. The ortho capture happens in the browser
+  // (Three.js scene → PNG data URL). This endpoint stores the data URL in
+  // the thumbnailUrl column. Only works for unclaimed public preview configs
+  // — claimed configs use the authenticated PATCH /configurations/:id.
+  //
+  // Security: no auth required (consistent with other public config endpoints).
+  // Scoped to isPublicPreview=true. Body is validated as a PNG data URL with
+  // a 200 KB size cap. Rate-limited to 20/hour to prevent abuse.
+  server.post("/configurations/:configId/thumbnail", {
+    config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+  }, async (request, reply) => {
+    const params = ConfigIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
+    }
+
+    const parsed = ThumbnailBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    // Only allow thumbnail updates on unclaimed public preview configs
+    const [config] = await db.select({ id: configurations.id })
+      .from(configurations)
+      .where(and(
+        eq(configurations.id, params.data.configId),
+        eq(configurations.isPublicPreview, true),
+        isNull(configurations.deletedAt),
+      ))
+      .limit(1);
+
+    if (config === undefined) {
+      return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
+    }
+
+    const [updated] = await db.update(configurations)
+      .set({ thumbnailUrl: parsed.data.thumbnailUrl, updatedAt: new Date() })
+      .where(eq(configurations.id, params.data.configId))
+      .returning();
+
+    return { data: updated };
   });
 
   // GET /public/configurations/:configId — get a PUBLIC PREVIEW config with objects

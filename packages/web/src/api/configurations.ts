@@ -71,6 +71,15 @@ export async function getPublicConfig(configId: string): Promise<Configuration> 
   return api.get<Configuration>(`/public/configurations/${configId}`);
 }
 
+/**
+ * Set the floor plan thumbnail on a public preview config.
+ * Accepts a PNG data URL from the orthographic capture.
+ * Punch list #24: wires the ortho-capture utility to the hallkeeper sheet.
+ */
+export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
+  return api.post<Configuration>(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true);
+}
+
 // ---------------------------------------------------------------------------
 // Authenticated endpoints
 // ---------------------------------------------------------------------------
