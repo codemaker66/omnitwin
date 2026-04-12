@@ -3,9 +3,15 @@ import {
   PricingRuleIdSchema,
   SUPPORTED_CURRENCIES,
   CurrencySchema,
+  PRICING_TYPES,
+  PricingTypeSchema,
+  TierSchema,
   PricingRuleSchema,
+  CreatePricingRuleSchema,
   PriceEstimateRequestSchema,
   PriceEstimateResponseSchema,
+  LineItemSchema,
+  ModifierSchema,
 } from "../pricing.js";
 
 // ---------------------------------------------------------------------------
@@ -21,31 +27,38 @@ const validPricingRule = {
   id: VALID_UUID,
   venueId: VALID_VENUE_UUID,
   spaceId: VALID_SPACE_UUID,
+  name: "Grand Hall — Half Day",
+  type: "flat_rate" as const,
+  amount: 550,
   currency: "GBP" as const,
-  basePrice: 500,
-  pricePerHour: 150,
-  pricePerGuest: 25,
-  minimumHours: 4,
-  minimumGuests: 20,
+  minHours: null,
+  minGuests: null,
+  tiers: null,
+  dayOfWeekModifiers: null,
+  seasonalModifiers: null,
+  validFrom: null,
+  validTo: null,
+  isActive: true,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
 };
 
 const validEstimateRequest = {
   spaceId: VALID_SPACE_UUID,
-  hours: 6,
+  eventDate: "2025-06-15",
+  startTime: "09:00",
+  endTime: "13:00",
   guestCount: 100,
-  eventDate: "2025-06-15T14:00:00.000Z",
 };
 
 const validEstimateResponse = {
-  spaceId: VALID_SPACE_UUID,
+  lineItems: [
+    { ruleName: "Grand Hall — Half Day", description: "Flat rate", amount: 550 },
+  ],
+  subtotal: 550,
+  modifiers: [],
+  total: 550,
   currency: "GBP" as const,
-  roomCost: 500,
-  hoursCost: 900,
-  guestsCost: 2500,
-  totalEstimate: 3900,
-  disclaimer: "This is an estimate only. Final pricing may vary.",
 };
 
 // ---------------------------------------------------------------------------
@@ -87,16 +100,56 @@ describe("CurrencySchema", () => {
     expect(CurrencySchema.safeParse("USD").success).toBe(false);
   });
 
-  it("rejects 'EUR' (not supported in V1)", () => {
-    expect(CurrencySchema.safeParse("EUR").success).toBe(false);
-  });
-
   it("rejects empty string", () => {
     expect(CurrencySchema.safeParse("").success).toBe(false);
   });
 
   it("rejects null", () => {
     expect(CurrencySchema.safeParse(null).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PricingTypeSchema
+// ---------------------------------------------------------------------------
+
+describe("PricingTypeSchema", () => {
+  it("has exactly 4 pricing types", () => {
+    expect(PRICING_TYPES).toHaveLength(4);
+  });
+
+  it.each(["flat_rate", "per_hour", "per_head", "tiered"] as const)("accepts '%s'", (t) => {
+    expect(PricingTypeSchema.safeParse(t).success).toBe(true);
+  });
+
+  it("rejects unknown type", () => {
+    expect(PricingTypeSchema.safeParse("per_day").success).toBe(false);
+  });
+
+  it("rejects empty string", () => {
+    expect(PricingTypeSchema.safeParse("").success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TierSchema
+// ---------------------------------------------------------------------------
+
+describe("TierSchema", () => {
+  it("accepts valid tier", () => {
+    expect(TierSchema.safeParse({ upTo: 50, amount: 500 }).success).toBe(true);
+  });
+
+  it("rejects zero upTo", () => {
+    expect(TierSchema.safeParse({ upTo: 0, amount: 500 }).success).toBe(false);
+  });
+
+  it("rejects negative amount", () => {
+    expect(TierSchema.safeParse({ upTo: 50, amount: -1 }).success).toBe(false);
+  });
+
+  it("accepts zero amount (free tier)", () => {
+    expect(TierSchema.safeParse({ upTo: 10, amount: 0 }).success).toBe(true);
   });
 });
 
@@ -109,25 +162,76 @@ describe("PricingRuleSchema", () => {
     const result = PricingRuleSchema.safeParse(validPricingRule);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.basePrice).toBe(500);
+      expect(result.data.amount).toBe(550);
+      expect(result.data.type).toBe("flat_rate");
       expect(result.data.currency).toBe("GBP");
     }
   });
 
-  it("accepts zero basePrice (free venue base)", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, basePrice: 0 }).success).toBe(true);
+  it("accepts null spaceId (venue-wide rule)", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, spaceId: null }).success).toBe(true);
   });
 
-  it("accepts zero pricePerHour", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, pricePerHour: 0 }).success).toBe(true);
+  it("accepts zero amount", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, amount: 0 }).success).toBe(true);
   });
 
-  it("accepts zero pricePerGuest", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, pricePerGuest: 0 }).success).toBe(true);
+  it("accepts fractional amounts", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, amount: 99.99 }).success).toBe(true);
   });
 
-  it("accepts fractional prices", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, basePrice: 99.99, pricePerHour: 12.50 }).success).toBe(true);
+  it("accepts rule with tiers", () => {
+    const withTiers = {
+      ...validPricingRule,
+      type: "tiered" as const,
+      tiers: [{ upTo: 50, amount: 300 }, { upTo: 100, amount: 500 }],
+    };
+    expect(PricingRuleSchema.safeParse(withTiers).success).toBe(true);
+  });
+
+  it("accepts rule with day-of-week modifiers", () => {
+    const withMods = {
+      ...validPricingRule,
+      dayOfWeekModifiers: { saturday: 1.5, sunday: 1.3 },
+    };
+    expect(PricingRuleSchema.safeParse(withMods).success).toBe(true);
+  });
+
+  it("accepts rule with seasonal modifiers", () => {
+    const withSeasonal = {
+      ...validPricingRule,
+      seasonalModifiers: { december: 1.25 },
+    };
+    expect(PricingRuleSchema.safeParse(withSeasonal).success).toBe(true);
+  });
+
+  it("accepts rule with date validity range", () => {
+    const withDates = {
+      ...validPricingRule,
+      validFrom: "2025-01-01",
+      validTo: "2025-12-31",
+    };
+    expect(PricingRuleSchema.safeParse(withDates).success).toBe(true);
+  });
+
+  it("accepts per_hour with minHours", () => {
+    const perHour = {
+      ...validPricingRule,
+      type: "per_hour" as const,
+      amount: 100,
+      minHours: 4,
+    };
+    expect(PricingRuleSchema.safeParse(perHour).success).toBe(true);
+  });
+
+  it("accepts per_head with minGuests", () => {
+    const perHead = {
+      ...validPricingRule,
+      type: "per_head" as const,
+      amount: 25,
+      minGuests: 20,
+    };
+    expect(PricingRuleSchema.safeParse(perHead).success).toBe(true);
   });
 
   // --- Missing required fields ---
@@ -142,9 +246,19 @@ describe("PricingRuleSchema", () => {
     expect(PricingRuleSchema.safeParse(noVenueId).success).toBe(false);
   });
 
-  it("rejects missing spaceId", () => {
-    const { spaceId: _, ...noSpaceId } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noSpaceId).success).toBe(false);
+  it("rejects missing name", () => {
+    const { name: _, ...noName } = validPricingRule;
+    expect(PricingRuleSchema.safeParse(noName).success).toBe(false);
+  });
+
+  it("rejects missing type", () => {
+    const { type: _, ...noType } = validPricingRule;
+    expect(PricingRuleSchema.safeParse(noType).success).toBe(false);
+  });
+
+  it("rejects missing amount", () => {
+    const { amount: _, ...noAmount } = validPricingRule;
+    expect(PricingRuleSchema.safeParse(noAmount).success).toBe(false);
   });
 
   it("rejects missing currency", () => {
@@ -152,29 +266,9 @@ describe("PricingRuleSchema", () => {
     expect(PricingRuleSchema.safeParse(noCurrency).success).toBe(false);
   });
 
-  it("rejects missing basePrice", () => {
-    const { basePrice: _, ...noBasePrice } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noBasePrice).success).toBe(false);
-  });
-
-  it("rejects missing pricePerHour", () => {
-    const { pricePerHour: _, ...noPPH } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noPPH).success).toBe(false);
-  });
-
-  it("rejects missing pricePerGuest", () => {
-    const { pricePerGuest: _, ...noPPG } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noPPG).success).toBe(false);
-  });
-
-  it("rejects missing minimumHours", () => {
-    const { minimumHours: _, ...noMinHours } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noMinHours).success).toBe(false);
-  });
-
-  it("rejects missing minimumGuests", () => {
-    const { minimumGuests: _, ...noMinGuests } = validPricingRule;
-    expect(PricingRuleSchema.safeParse(noMinGuests).success).toBe(false);
+  it("rejects missing isActive", () => {
+    const { isActive: _, ...noActive } = validPricingRule;
+    expect(PricingRuleSchema.safeParse(noActive).success).toBe(false);
   });
 
   it("rejects missing createdAt", () => {
@@ -189,68 +283,132 @@ describe("PricingRuleSchema", () => {
 
   // --- Invalid values ---
 
-  it("rejects negative basePrice", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, basePrice: -1 }).success).toBe(false);
+  it("rejects negative amount", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, amount: -1 }).success).toBe(false);
   });
 
-  it("rejects negative pricePerHour", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, pricePerHour: -50 }).success).toBe(false);
+  it("rejects amount exceeding max", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, amount: 1_000_001 }).success).toBe(false);
   });
 
-  it("rejects negative pricePerGuest", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, pricePerGuest: -10 }).success).toBe(false);
+  it("rejects empty name", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, name: "" }).success).toBe(false);
   });
 
-  it("rejects basePrice exceeding 1000000", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, basePrice: 1_000_001 }).success).toBe(false);
+  it("rejects name exceeding 200 chars", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, name: "a".repeat(201) }).success).toBe(false);
   });
 
-  it("accepts basePrice of exactly 1000000", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, basePrice: 1_000_000 }).success).toBe(true);
+  it("rejects invalid type", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, type: "custom" }).success).toBe(false);
   });
 
-  it("rejects zero minimumHours", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumHours: 0 }).success).toBe(false);
+  it("rejects invalid date format for validFrom", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, validFrom: "2025/01/01" }).success).toBe(false);
   });
 
-  it("rejects negative minimumHours", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumHours: -1 }).success).toBe(false);
+  it("rejects invalid date format for validTo", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, validTo: "Jan 1 2025" }).success).toBe(false);
   });
 
-  it("rejects float minimumHours", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumHours: 2.5 }).success).toBe(false);
+  it("rejects non-positive minHours", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minHours: 0 }).success).toBe(false);
   });
 
-  it("accepts minimumHours of 168 (one week)", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumHours: 168 }).success).toBe(true);
+  it("rejects minHours exceeding 168", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minHours: 169 }).success).toBe(false);
   });
 
-  it("rejects minimumHours exceeding 168", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumHours: 169 }).success).toBe(false);
+  it("rejects non-positive minGuests", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minGuests: 0 }).success).toBe(false);
   });
 
-  it("rejects zero minimumGuests", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumGuests: 0 }).success).toBe(false);
+  it("rejects minGuests exceeding 10000", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minGuests: 10_001 }).success).toBe(false);
   });
 
-  it("rejects float minimumGuests", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumGuests: 5.5 }).success).toBe(false);
+  it("accepts exactly 1000000 amount (boundary)", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, amount: 1_000_000 }).success).toBe(true);
   });
 
-  it("rejects minimumGuests exceeding 10000", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, minimumGuests: 10001 }).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for id", () => {
+  it("rejects non-UUID id", () => {
     expect(PricingRuleSchema.safeParse({ ...validPricingRule, id: "bad" }).success).toBe(false);
   });
 
-  it("rejects invalid currency", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, currency: "USD" }).success).toBe(false);
+  it("rejects non-boolean isActive", () => {
+    expect(PricingRuleSchema.safeParse({ ...validPricingRule, isActive: "yes" }).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CreatePricingRuleSchema
+// ---------------------------------------------------------------------------
+
+describe("CreatePricingRuleSchema", () => {
+  it("accepts minimal valid input", () => {
+    const result = CreatePricingRuleSchema.safeParse({
+      name: "Grand Hall — Half Day",
+      type: "flat_rate",
+      amount: 550,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.currency).toBe("GBP"); // default
+      expect(result.data.isActive).toBe(true);   // default
+    }
   });
 
-  it("rejects invalid datetime for createdAt", () => {
-    expect(PricingRuleSchema.safeParse({ ...validPricingRule, createdAt: "nope" }).success).toBe(false);
+  it("accepts full input with all optional fields", () => {
+    const result = CreatePricingRuleSchema.safeParse({
+      spaceId: VALID_SPACE_UUID,
+      name: "Weekend Evening Rate",
+      type: "per_hour",
+      amount: 200,
+      currency: "GBP",
+      minHours: 4,
+      minGuests: null,
+      tiers: null,
+      dayOfWeekModifiers: { saturday: 1.5, sunday: 1.5 },
+      seasonalModifiers: null,
+      validFrom: "2025-01-01",
+      validTo: "2025-12-31",
+      isActive: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts null spaceId (venue-wide)", () => {
+    const result = CreatePricingRuleSchema.safeParse({
+      name: "Exclusive Venue Hire",
+      type: "flat_rate",
+      amount: 2500,
+      spaceId: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing name", () => {
+    expect(CreatePricingRuleSchema.safeParse({ type: "flat_rate", amount: 100 }).success).toBe(false);
+  });
+
+  it("rejects missing type", () => {
+    expect(CreatePricingRuleSchema.safeParse({ name: "Test", amount: 100 }).success).toBe(false);
+  });
+
+  it("rejects missing amount", () => {
+    expect(CreatePricingRuleSchema.safeParse({ name: "Test", type: "flat_rate" }).success).toBe(false);
+  });
+
+  it("trims whitespace from name", () => {
+    const result = CreatePricingRuleSchema.safeParse({
+      name: "  Grand Hall  ",
+      type: "flat_rate",
+      amount: 550,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.name).toBe("Grand Hall");
+    }
   });
 });
 
@@ -263,8 +421,10 @@ describe("PriceEstimateRequestSchema", () => {
     const result = PriceEstimateRequestSchema.safeParse(validEstimateRequest);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.hours).toBe(6);
       expect(result.data.guestCount).toBe(100);
+      expect(result.data.eventDate).toBe("2025-06-15");
+      expect(result.data.startTime).toBe("09:00");
+      expect(result.data.endTime).toBe("13:00");
     }
   });
 
@@ -273,59 +433,36 @@ describe("PriceEstimateRequestSchema", () => {
     expect(PriceEstimateRequestSchema.safeParse(noSpaceId).success).toBe(false);
   });
 
-  it("rejects missing hours", () => {
-    const { hours: _, ...noHours } = validEstimateRequest;
-    expect(PriceEstimateRequestSchema.safeParse(noHours).success).toBe(false);
+  it("rejects invalid date format", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, eventDate: "June 15 2025" }).success).toBe(false);
   });
 
-  it("rejects missing guestCount", () => {
-    const { guestCount: _, ...noGuests } = validEstimateRequest;
-    expect(PriceEstimateRequestSchema.safeParse(noGuests).success).toBe(false);
+  it("rejects invalid time format", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, startTime: "9am" }).success).toBe(false);
   });
 
-  it("rejects missing eventDate", () => {
-    const { eventDate: _, ...noDate } = validEstimateRequest;
-    expect(PriceEstimateRequestSchema.safeParse(noDate).success).toBe(false);
+  it("accepts valid HH:MM time", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, startTime: "19:00", endTime: "00:30" }).success).toBe(true);
   });
 
-  it("rejects zero hours", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, hours: 0 }).success).toBe(false);
-  });
-
-  it("rejects negative hours", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, hours: -1 }).success).toBe(false);
-  });
-
-  it("rejects float hours", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, hours: 2.5 }).success).toBe(false);
-  });
-
-  it("rejects hours exceeding 168", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, hours: 169 }).success).toBe(false);
-  });
-
-  it("rejects zero guest count", () => {
+  it("rejects zero guestCount", () => {
     expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 0 }).success).toBe(false);
   });
 
-  it("rejects negative guest count", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: -5 }).success).toBe(false);
+  it("rejects guestCount exceeding max", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 10_001 }).success).toBe(false);
   });
 
-  it("rejects float guest count", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 10.5 }).success).toBe(false);
+  it("rejects non-integer guestCount", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 1.5 }).success).toBe(false);
   });
 
-  it("rejects guest count exceeding 10000", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 10001 }).success).toBe(false);
+  it("accepts exactly 10000 guests (boundary)", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 10_000 }).success).toBe(true);
   });
 
-  it("rejects invalid datetime for eventDate", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, eventDate: "nope" }).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for spaceId", () => {
-    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, spaceId: "bad" }).success).toBe(false);
+  it("accepts exactly 1 guest (minimum)", () => {
+    expect(PriceEstimateRequestSchema.safeParse({ ...validEstimateRequest, guestCount: 1 }).success).toBe(true);
   });
 });
 
@@ -338,37 +475,37 @@ describe("PriceEstimateResponseSchema", () => {
     const result = PriceEstimateResponseSchema.safeParse(validEstimateResponse);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.totalEstimate).toBe(3900);
-      expect(result.data.currency).toBe("GBP");
+      expect(result.data.total).toBe(550);
+      expect(result.data.lineItems).toHaveLength(1);
     }
   });
 
-  it("accepts all-zero costs (free event)", () => {
-    const result = PriceEstimateResponseSchema.safeParse({
-      ...validEstimateResponse,
-      roomCost: 0,
-      hoursCost: 0,
-      guestsCost: 0,
-      totalEstimate: 0,
-    });
-    expect(result.success).toBe(true);
+  it("accepts empty lineItems (no matching rules)", () => {
+    expect(PriceEstimateResponseSchema.safeParse({
+      lineItems: [],
+      subtotal: 0,
+      modifiers: [],
+      total: 0,
+      currency: "GBP",
+    }).success).toBe(true);
   });
 
-  it("accepts fractional costs (pence precision)", () => {
-    expect(
-      PriceEstimateResponseSchema.safeParse({
-        ...validEstimateResponse,
-        roomCost: 99.99,
-        totalEstimate: 99.99,
-      }).success,
-    ).toBe(true);
+  it("accepts response with modifiers", () => {
+    expect(PriceEstimateResponseSchema.safeParse({
+      lineItems: [{ ruleName: "Room Hire", description: "Flat rate", amount: 500 }],
+      subtotal: 500,
+      modifiers: [{ name: "saturday surcharge", multiplier: 1.5 }],
+      total: 750,
+      currency: "GBP",
+    }).success).toBe(true);
   });
 
-  // --- Missing required fields ---
+  it("rejects negative total", () => {
+    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, total: -1 }).success).toBe(false);
+  });
 
-  it("rejects missing spaceId", () => {
-    const { spaceId: _, ...noSpaceId } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noSpaceId).success).toBe(false);
+  it("rejects negative subtotal", () => {
+    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, subtotal: -1 }).success).toBe(false);
   });
 
   it("rejects missing currency", () => {
@@ -376,58 +513,55 @@ describe("PriceEstimateResponseSchema", () => {
     expect(PriceEstimateResponseSchema.safeParse(noCurrency).success).toBe(false);
   });
 
-  it("rejects missing roomCost", () => {
-    const { roomCost: _, ...noRoomCost } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noRoomCost).success).toBe(false);
+  it("rejects unsupported currency", () => {
+    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, currency: "USD" }).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LineItemSchema
+// ---------------------------------------------------------------------------
+
+describe("LineItemSchema", () => {
+  it("accepts valid line item", () => {
+    expect(LineItemSchema.safeParse({ ruleName: "Room Hire", description: "Flat rate", amount: 500 }).success).toBe(true);
   });
 
-  it("rejects missing hoursCost", () => {
-    const { hoursCost: _, ...noHoursCost } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noHoursCost).success).toBe(false);
+  it("rejects empty ruleName", () => {
+    expect(LineItemSchema.safeParse({ ruleName: "", description: "test", amount: 0 }).success).toBe(false);
   });
 
-  it("rejects missing guestsCost", () => {
-    const { guestsCost: _, ...noGuestsCost } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noGuestsCost).success).toBe(false);
+  it("rejects negative amount", () => {
+    expect(LineItemSchema.safeParse({ ruleName: "Test", description: "test", amount: -1 }).success).toBe(false);
   });
 
-  it("rejects missing totalEstimate", () => {
-    const { totalEstimate: _, ...noTotal } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noTotal).success).toBe(false);
+  it("accepts zero amount", () => {
+    expect(LineItemSchema.safeParse({ ruleName: "Free", description: "Complimentary", amount: 0 }).success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ModifierSchema
+// ---------------------------------------------------------------------------
+
+describe("ModifierSchema", () => {
+  it("accepts valid modifier", () => {
+    expect(ModifierSchema.safeParse({ name: "weekend surcharge", multiplier: 1.5 }).success).toBe(true);
   });
 
-  it("rejects missing disclaimer", () => {
-    const { disclaimer: _, ...noDisclaimer } = validEstimateResponse;
-    expect(PriceEstimateResponseSchema.safeParse(noDisclaimer).success).toBe(false);
+  it("rejects empty name", () => {
+    expect(ModifierSchema.safeParse({ name: "", multiplier: 1.2 }).success).toBe(false);
   });
 
-  // --- Invalid values ---
-
-  it("rejects negative roomCost", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, roomCost: -1 }).success).toBe(false);
+  it("rejects non-positive multiplier", () => {
+    expect(ModifierSchema.safeParse({ name: "test", multiplier: 0 }).success).toBe(false);
   });
 
-  it("rejects negative hoursCost", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, hoursCost: -1 }).success).toBe(false);
+  it("rejects negative multiplier", () => {
+    expect(ModifierSchema.safeParse({ name: "test", multiplier: -0.5 }).success).toBe(false);
   });
 
-  it("rejects negative guestsCost", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, guestsCost: -1 }).success).toBe(false);
-  });
-
-  it("rejects negative totalEstimate", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, totalEstimate: -100 }).success).toBe(false);
-  });
-
-  it("rejects empty disclaimer", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, disclaimer: "" }).success).toBe(false);
-  });
-
-  it("rejects invalid currency", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, currency: "EUR" }).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for spaceId", () => {
-    expect(PriceEstimateResponseSchema.safeParse({ ...validEstimateResponse, spaceId: "bad" }).success).toBe(false);
+  it("accepts multiplier exactly 1 (no change)", () => {
+    expect(ModifierSchema.safeParse({ name: "no change", multiplier: 1 }).success).toBe(true);
   });
 });

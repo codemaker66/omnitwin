@@ -13,14 +13,12 @@ import {
 // ---------------------------------------------------------------------------
 // Skip if DATABASE_URL is not set or is a mock URL.
 // Run with: pnpm --filter @omnitwin/api test:integration
+//
+// Authentication: uses mock tokens (JSON-encoded user objects) which the
+// auth middleware accepts when NODE_ENV=test. No Clerk dependency.
 
 const DATABASE_URL = process.env["DATABASE_URL"] ?? "";
 const IS_REAL_DB = DATABASE_URL.length > 0 && !DATABASE_URL.includes("mock");
-
-// Set real env vars so buildServer connects to Neon
-if (IS_REAL_DB) {
-  process.env["JWT_SECRET"] = process.env["JWT_SECRET"] ?? "integration-test-jwt-secret-at-least-32-chars!!";
-}
 
 // ---------------------------------------------------------------------------
 // Test-run unique prefix to avoid collisions
@@ -37,10 +35,10 @@ const HALLKEEPER_EMAIL = `hallkeeper-${RUN_ID}@integration.test`;
 let server: FastifyInstance;
 let db: Database;
 
-let plannerToken = "";
-let hallkeeperToken = "";
 let plannerUserId = "";
 let hallkeeperUserId = "";
+let plannerToken = "";
+let hallkeeperToken = "";
 
 let venueId = "";
 let spaceId = "";
@@ -58,11 +56,26 @@ let claimerToken = "";
 let claimerUserId = "";
 
 // ---------------------------------------------------------------------------
+// Helper: create a mock token for the auth middleware
+// ---------------------------------------------------------------------------
+
+function mockToken(user: { id: string; email: string; role: string; venueId: string | null }): string {
+  return JSON.stringify(user);
+}
+
+function auth(token: string): { authorization: string } {
+  return { authorization: `Bearer ${token}` };
+}
+
+// ---------------------------------------------------------------------------
 // Setup / teardown
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
   if (!IS_REAL_DB) return;
+
+  // Set NODE_ENV so the auth middleware accepts mock tokens
+  process.env["NODE_ENV"] = "test";
 
   const { buildServer } = await import("../index.js");
   server = await buildServer();
@@ -74,7 +87,6 @@ afterAll(async () => {
 
   // Clean up in reverse FK order
   try {
-    // Guest enquiry + history
     if (guestEnquiryId !== "") {
       await db.delete(enquiryStatusHistory).where(eq(enquiryStatusHistory.enquiryId, guestEnquiryId));
       await db.delete(enquiries).where(eq(enquiries.id, guestEnquiryId));
@@ -94,9 +106,7 @@ afterAll(async () => {
       await db.delete(placedObjects).where(eq(placedObjects.configurationId, configId));
       await db.delete(configurations).where(eq(configurations.id, configId));
     }
-    // Guest leads
     await db.delete(guestLeads).where(eq(guestLeads.email, GUEST_EMAIL));
-    // Users
     const testUserIds = [plannerUserId, hallkeeperUserId, claimerUserId].filter((id) => id !== "");
     if (testUserIds.length > 0) {
       await db.delete(users).where(inArray(users.id, testUserIds));
@@ -111,86 +121,75 @@ afterAll(async () => {
 }, 30000);
 
 // ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
-
-function auth(token: string): { authorization: string } {
-  return { authorization: `Bearer ${token}` };
-}
-
-// ---------------------------------------------------------------------------
 // Tests — sequential, each builds on the previous
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
-  // --- 1. Register planner ---
-  it("1. register planner user", async () => {
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: {
-        email: PLANNER_EMAIL,
-        password: "integration-test-123",
-        name: "Integration Planner",
-        role: "client",
-      },
+  // --- 1. Seed test users directly (Clerk handles real auth; tests use mock tokens) ---
+  it("1. create planner user in DB + generate mock token", async () => {
+    const [planner] = await db.insert(users).values({
+      clerkId: `clerk_test_planner_${RUN_ID}`,
+      email: PLANNER_EMAIL,
+      name: "Integration Planner",
+      role: "planner",
+    }).returning();
+
+    expect(planner).toBeDefined();
+    plannerUserId = planner!.id;
+    plannerToken = mockToken({
+      id: plannerUserId,
+      email: PLANNER_EMAIL,
+      role: "planner",
+      venueId: null,
     });
-    expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body) as { user: { id: string }; accessToken: string; refreshToken: string };
-    expect(body.accessToken).toBeTruthy();
-    expect(body.refreshToken).toBeTruthy();
-    plannerUserId = body.user.id;
-    plannerToken = body.accessToken;
   }, 15000);
 
-  // --- 2. Register hallkeeper ---
-  it("2. register hallkeeper user", async () => {
-    // First, get the venue ID from the seed data
+  // --- 2. Create hallkeeper user linked to Trades Hall ---
+  it("2. create hallkeeper user linked to venue", async () => {
+    // Get the venue ID from the seed data
     const venuesRes = await server.inject({ method: "GET", url: "/venues" });
     const venuesBody = JSON.parse(venuesRes.body) as { data: { id: string; slug: string }[] };
     const tradesHall = venuesBody.data.find((v) => v.slug === "trades-hall-glasgow");
     expect(tradesHall).toBeDefined();
     venueId = tradesHall!.id;
 
-    const res = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: {
-        email: HALLKEEPER_EMAIL,
-        password: "integration-test-456",
-        name: "Integration Hallkeeper",
-        role: "staff",
-        venueId,
-      },
+    const [hallkeeper] = await db.insert(users).values({
+      clerkId: `clerk_test_hallkeeper_${RUN_ID}`,
+      email: HALLKEEPER_EMAIL,
+      name: "Integration Hallkeeper",
+      role: "hallkeeper",
+      venueId,
+    }).returning();
+
+    expect(hallkeeper).toBeDefined();
+    hallkeeperUserId = hallkeeper!.id;
+    hallkeeperToken = mockToken({
+      id: hallkeeperUserId,
+      email: HALLKEEPER_EMAIL,
+      role: "hallkeeper",
+      venueId,
     });
-    expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body) as { user: { id: string }; accessToken: string };
-    hallkeeperUserId = body.user.id;
-    hallkeeperToken = body.accessToken;
   }, 15000);
 
-  // --- 3. Login as planner ---
-  it("3. login as planner", async () => {
+  // --- 3. Verify mock token auth works ---
+  it("3. mock token auth — planner can access authenticated endpoints", async () => {
     const res = await server.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: PLANNER_EMAIL, password: "integration-test-123" },
+      method: "GET",
+      url: "/configurations",
+      headers: auth(plannerToken),
     });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body) as { accessToken: string };
-    plannerToken = body.accessToken;
+    // Should not be 401 — mock token was accepted
+    expect(res.statusCode).not.toBe(401);
   }, 15000);
 
-  // --- 4. Login as hallkeeper ---
-  it("4. login as hallkeeper", async () => {
+  // --- 4. Verify hallkeeper auth works ---
+  it("4. mock token auth — hallkeeper can access authenticated endpoints", async () => {
     const res = await server.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: HALLKEEPER_EMAIL, password: "integration-test-456" },
+      method: "GET",
+      url: "/enquiries",
+      headers: auth(hallkeeperToken),
     });
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body) as { accessToken: string };
-    hallkeeperToken = body.accessToken;
+    expect(res.statusCode).not.toBe(401);
   }, 15000);
 
   // --- 5. GET /venues ---
@@ -223,7 +222,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
 
   // --- 8. POST /configurations ---
   it("8. planner creates configuration", async () => {
-    // Get an asset ID for placing objects later
     const spacesRes = await server.inject({ method: "GET", url: `/venues/${venueId}/spaces` });
     const spacesBody = JSON.parse(spacesRes.body) as { data: { id: string }[] };
     spaceId = spacesBody.data[0]!.id;
@@ -248,7 +246,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
 
   // --- 9. POST placed objects (3 items) ---
   it("9. place 3 objects in configuration", async () => {
-    // Get an asset definition ID from the DB
     const { assetDefinitions } = await import("../db/schema.js");
     const assets = await db.select({ id: assetDefinitions.id }).from(assetDefinitions).limit(1);
     expect(assets.length).toBeGreaterThan(0);
@@ -296,7 +293,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body) as { data: { id: string }[] };
     expect(body.data).toHaveLength(5);
-    // Update tracking IDs for cleanup
     placedObjectIds = body.data.map((o) => o.id);
   }, 15000);
 
@@ -419,11 +415,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
   }, 15000);
 
   // --- 19. Planner cannot approve (FAILURE PATH) ---
-  it("19. planner cannot approve enquiry → 422", async () => {
-    // Enquiry is already approved — create a fresh one for this test
-    // Actually, test the state machine: even if we could, client can't approve
-    // Use the existing enquiry — transition from approved to something only admin can do
-    // The state machine canTransition("approved", "archived", "client") should be false
+  it("19. planner cannot archive approved enquiry → 422", async () => {
     const res = await server.inject({
       method: "POST",
       url: `/enquiries/${enquiryId}/transition`,
@@ -433,11 +425,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(res.statusCode).toBe(422);
   }, 15000);
 
-  // --- 20. Hallkeeper cannot access other venue data → 403 ---
-  // NOTE: Our hallkeeper is assigned to Trades Hall, and the enquiry belongs
-  // to Trades Hall, so they CAN access it. To test cross-venue, we'd need
-  // another venue. Instead, verify a planner (no venueId) can't see
-  // hallkeeper-scoped data by checking the list is filtered.
+  // --- 20. Planner only sees own enquiries ---
   it("20. planner only sees own enquiries (not all venue enquiries)", async () => {
     const res = await server.inject({
       method: "GET",
@@ -446,7 +434,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body) as { data: { userId: string }[] };
-    // Every enquiry in the planner's list should belong to them
     for (const enq of body.data) {
       expect(enq.userId).toBe(plannerUserId);
     }
@@ -499,7 +486,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     });
     expect(delRes.statusCode).toBe(204);
 
-    // Verify it's gone from GET
     const getRes = await server.inject({
       method: "GET",
       url: `/configurations/${configId}`,
@@ -507,7 +493,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     });
     expect(getRes.statusCode).toBe(404);
 
-    // But exists in DB with deletedAt set
     const [row] = await db.select()
       .from(configurations)
       .where(eq(configurations.id, configId))
@@ -527,12 +512,11 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
   }, 15000);
 
   // =========================================================================
-  // Prompt 6.5 — public editor, guest enquiries, claim, search
+  // Public editor, guest enquiries, claim, search
   // =========================================================================
 
   // --- 26. Create public preview config (no auth) ---
   it("26. create public preview config + batch save objects", async () => {
-    // Create config
     const createRes = await server.inject({
       method: "POST",
       url: "/public/configurations",
@@ -544,7 +528,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(createBody.data.isPublicPreview).toBe(true);
     expect(createBody.data.userId).toBeNull();
 
-    // Batch save objects
     const batchRes = await server.inject({
       method: "POST",
       url: `/public/configurations/${publicConfigId}/objects/batch`,
@@ -559,7 +542,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     const batchBody = JSON.parse(batchRes.body) as { data: { id: string }[] };
     expect(batchBody.data).toHaveLength(2);
 
-    // Retrieve
     const getRes = await server.inject({
       method: "GET",
       url: `/public/configurations/${publicConfigId}`,
@@ -590,7 +572,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     guestEnquiryId = body.data.enquiryId;
     expect(body.data.message).toContain("events team");
 
-    // Hallkeeper can see it in their list
     const listRes = await server.inject({
       method: "GET",
       url: "/enquiries",
@@ -602,25 +583,24 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(found).toBeDefined();
   }, 30000);
 
-  // --- 28. Register new user + claim the preview config ---
-  it("28. register user then claim preview config", async () => {
-    // Register
-    const regRes = await server.inject({
-      method: "POST",
-      url: "/auth/register",
-      payload: {
-        email: CLAIMER_EMAIL,
-        password: "claimer-test-123",
-        name: "Config Claimer",
-        role: "client",
-      },
-    });
-    expect(regRes.statusCode).toBe(201);
-    const regBody = JSON.parse(regRes.body) as { user: { id: string }; accessToken: string };
-    claimerToken = regBody.accessToken;
-    claimerUserId = regBody.user.id;
+  // --- 28. Create claimer user + claim the preview config ---
+  it("28. create claimer user then claim preview config", async () => {
+    const [claimer] = await db.insert(users).values({
+      clerkId: `clerk_test_claimer_${RUN_ID}`,
+      email: CLAIMER_EMAIL,
+      name: "Config Claimer",
+      role: "planner",
+    }).returning();
 
-    // Claim the public config
+    expect(claimer).toBeDefined();
+    claimerUserId = claimer!.id;
+    claimerToken = mockToken({
+      id: claimerUserId,
+      email: CLAIMER_EMAIL,
+      role: "planner",
+      venueId: null,
+    });
+
     const claimRes = await server.inject({
       method: "POST",
       url: `/configurations/${publicConfigId}/claim`,
@@ -631,7 +611,6 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(claimBody.data.userId).toBe(claimerUserId);
     expect(claimBody.data.isPublicPreview).toBe(false);
 
-    // Cannot claim again
     const reClaimRes = await server.inject({
       method: "POST",
       url: `/configurations/${publicConfigId}/claim`,
@@ -653,27 +632,17 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(found).toBeDefined();
   }, 15000);
 
-  // --- 30. Cleanup does NOT delete config linked to guest enquiry ---
+  // --- 30. Admin cleanup spares claimed config ---
   it("30. cleanup spares preview config linked to enquiry", async () => {
-    // The public config was claimed (no longer preview), so create a NEW
-    // unclaimed preview config linked to the guest enquiry to test cleanup
-    // Actually the existing guestEnquiry links to publicConfigId which is now claimed.
-    // Cleanup only targets unclaimed previews. Verify admin cleanup doesn't crash
-    // and returns 0 (nothing to delete since publicConfig is claimed).
     const res = await server.inject({
       method: "POST",
       url: "/admin/cleanup",
-      headers: auth(plannerToken), // planner is not admin — should fail
+      headers: auth(plannerToken),
     });
     expect(res.statusCode).toBe(403);
 
-    // Admin can run it (use hallkeeper who isn't admin — need admin)
-    // Our planner registered as "client" role. The seed admin is available
-    // but we don't have their token. Let's just verify the endpoint works
-    // conceptually by checking the cleanup service directly.
     const { cleanupPreviewConfigurations } = await import("../services/cleanup.js");
     const deleted = await cleanupPreviewConfigurations(db);
-    // publicConfigId was claimed, so nothing should be deleted
     expect(deleted).toBe(0);
   }, 15000);
 });

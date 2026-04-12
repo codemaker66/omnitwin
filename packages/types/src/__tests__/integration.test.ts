@@ -314,12 +314,18 @@ describe("cross-module ID consistency", () => {
         id: PRICING_RULE_ID,
         venueId: VENUE_ID,
         spaceId: SPACE_ID,
+        name: "Grand Hall — Half Day",
+        type: "flat_rate",
+        amount: 550,
         currency: "GBP",
-        basePrice: 500,
-        pricePerHour: 100,
-        pricePerGuest: 5,
-        minimumHours: 4,
-        minimumGuests: 20,
+        minHours: null,
+        minGuests: null,
+        tiers: null,
+        dayOfWeekModifiers: null,
+        seasonalModifiers: null,
+        validFrom: null,
+        validTo: null,
+        isActive: true,
         createdAt: NOW,
         updatedAt: NOW,
       }).success,
@@ -328,9 +334,10 @@ describe("cross-module ID consistency", () => {
     expect(
       PriceEstimateRequestSchema.safeParse({
         spaceId: SPACE_ID,
-        hours: 6,
+        eventDate: "2025-06-15",
+        startTime: "09:00",
+        endTime: "13:00",
         guestCount: 120,
-        eventDate: NOW,
       }).success,
     ).toBe(true);
   });
@@ -447,17 +454,23 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     guestCount: 120,
   };
 
-  // Step 8: Create pricing rule
+  // Step 8: Create pricing rule (matches actual API schema)
   const pricingRuleData = {
     id: PRICING_RULE_ID,
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
+    name: "Grand Hall — Full Day (09:00–17:30)",
+    type: "flat_rate" as const,
+    amount: 900,
     currency: "GBP" as const,
-    basePrice: 2000,
-    pricePerHour: 200,
-    pricePerGuest: 15,
-    minimumHours: 4,
-    minimumGuests: 50,
+    minHours: null,
+    minGuests: null,
+    tiers: null,
+    dayOfWeekModifiers: null,
+    seasonalModifiers: null,
+    validFrom: null,
+    validTo: null,
+    isActive: true,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -528,24 +541,25 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
   it("Step 9: Price estimate flows through request → response", () => {
     const request = PriceEstimateRequestSchema.safeParse({
       spaceId: SPACE_ID,
-      hours: 6,
+      eventDate: "2026-08-15",
+      startTime: "09:00",
+      endTime: "17:30",
       guestCount: 120,
-      eventDate: "2026-08-15T14:00:00.000Z",
     });
     expect(request.success).toBe(true);
 
     const response = PriceEstimateResponseSchema.safeParse({
-      spaceId: SPACE_ID,
+      lineItems: [
+        { ruleName: "Grand Hall — Full Day", description: "Flat rate", amount: 900 },
+      ],
+      subtotal: 900,
+      modifiers: [],
+      total: 900,
       currency: "GBP",
-      roomCost: 2000,
-      hoursCost: 1200,
-      guestsCost: 1800,
-      totalEstimate: 5000,
-      disclaimer: "This is an estimate only. Final pricing may vary based on specific requirements.",
     });
     expect(response.success).toBe(true);
     if (response.success) {
-      expect(response.data.totalEstimate).toBe(5000);
+      expect(response.data.total).toBe(900);
     }
   });
 
