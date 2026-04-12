@@ -448,6 +448,58 @@ describe("LoadoutsView empty venueId fix (#36) — source-grep", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Loadout photos — punch list #37 (reorder) + #38 (image previews)
+// ---------------------------------------------------------------------------
+
+describe("LoadoutDetail photo improvements (#37, #38) — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("imports R2_PUBLIC_URL for constructing image URLs", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toContain("R2_PUBLIC_URL");
+    expect(codeOnly).toMatch(/import[\s\S]*?R2_PUBLIC_URL[\s\S]*?from[\s\S]*?env/);
+  });
+
+  it("renders <img> tags for photo previews when R2 is configured", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toContain("<img");
+    expect(codeOnly).toContain("p.fileKey");
+  });
+
+  it("falls back to filename text when R2 is not configured", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toMatch(/R2_PUBLIC_URL\s*!==\s*null\s*\?/);
+    expect(codeOnly).toContain("p.filename");
+  });
+
+  it("calls reorderPhotos API for move up/down", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toContain("reorderPhotos");
+    expect(codeOnly).toContain("handleMove");
+  });
+
+  it("has Move Up and Move Down buttons", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toContain("Move Up");
+    expect(codeOnly).toContain("Move Down");
+  });
+
+  it("disables Move Up on the first photo and Move Down on the last", async () => {
+    const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
+    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*0\}/);
+    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*loadout\.photos\.length\s*-\s*1\}/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Search debounce logic
 // ---------------------------------------------------------------------------
 

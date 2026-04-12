@@ -4,6 +4,7 @@ import type { LoadoutDetail as LoadoutDetailData } from "../../api/loadouts.js";
 import { FileUploader } from "../shared/FileUploader.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { R2_PUBLIC_URL } from "../../config/env.js";
 
 // ---------------------------------------------------------------------------
 // LoadoutDetail — photos, upload, reorder, captions
@@ -78,6 +79,26 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
     } catch { addToast("Failed to delete loadout", "error"); }
   };
 
+  // Punch list #37: move a photo up or down in the sort order, then call
+  // the reorderPhotos API with the new ordered array of IDs.
+  const handleMove = (photoId: string, direction: "up" | "down"): void => {
+    if (loadout === null) return;
+    const photos = [...loadout.photos];
+    const idx = photos.findIndex((p) => p.id === photoId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= photos.length) return;
+    const swapTarget = photos[swapIdx];
+    const current = photos[idx];
+    if (swapTarget === undefined || current === undefined) return;
+    photos[swapIdx] = current;
+    photos[idx] = swapTarget;
+    const orderedIds = photos.map((p) => p.id);
+    void loadoutsApi.reorderPhotos(loadoutId, orderedIds)
+      .then(() => { refresh(); })
+      .catch(() => { addToast("Failed to reorder", "error"); });
+  };
+
   if (loadout === null) return <p style={{ color: "#999" }}>Loading...</p>;
 
   return (
@@ -116,11 +137,33 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       {/* Photos grid */}
       {loadout.photos.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-          {loadout.photos.map((p) => (
+          {loadout.photos.map((p, idx) => (
             <div key={p.id} style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", overflow: "hidden" }}>
-              <div style={{ height: 150, background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#999" }}>
-                {p.filename}
-              </div>
+              {/* Punch list #38: render image preview when R2 URL is configured,
+                  fall back to filename text when it isn't. */}
+              {R2_PUBLIC_URL !== null ? (
+                <img
+                  src={`${R2_PUBLIC_URL}/${p.fileKey}`}
+                  alt={p.caption ?? p.filename}
+                  loading="lazy"
+                  style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }}
+                  onError={(e) => {
+                    // If the image fails to load, show the filename as fallback
+                    e.currentTarget.style.display = "none";
+                    const parent = e.currentTarget.parentElement;
+                    if (parent !== null) {
+                      const fallback = document.createElement("div");
+                      fallback.style.cssText = "height:150px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:12px;color:#999";
+                      fallback.textContent = p.filename;
+                      parent.prepend(fallback);
+                    }
+                  }}
+                />
+              ) : (
+                <div style={{ height: 150, background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#999" }}>
+                  {p.filename}
+                </div>
+              )}
               <div style={{ padding: 8 }}>
                 {editingCaption === p.id ? (
                   <div style={{ display: "flex", gap: 4 }}>
@@ -136,10 +179,23 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     {p.caption ?? "Add caption..."}
                   </div>
                 )}
-                <button type="button" onClick={() => { setShowDeletePhoto(p.id); }}
-                  style={{ marginTop: 4, fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                  Remove
-                </button>
+                {/* Punch list #37: move up/down buttons for reordering */}
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <button type="button" disabled={idx === 0}
+                    onClick={() => { handleMove(p.id, "up"); }}
+                    style={{ fontSize: 11, color: idx === 0 ? "#ccc" : "#3b82f6", background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", padding: 0 }}>
+                    Move Up
+                  </button>
+                  <button type="button" disabled={idx === loadout.photos.length - 1}
+                    onClick={() => { handleMove(p.id, "down"); }}
+                    style={{ fontSize: 11, color: idx === loadout.photos.length - 1 ? "#ccc" : "#3b82f6", background: "none", border: "none", cursor: idx === loadout.photos.length - 1 ? "default" : "pointer", padding: 0 }}>
+                    Move Down
+                  </button>
+                  <button type="button" onClick={() => { setShowDeletePhoto(p.id); }}
+                    style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: "auto" }}>
+                    Remove
+                  </button>
+                </div>
               </div>
             </div>
           ))}
