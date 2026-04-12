@@ -38,6 +38,17 @@ export interface CatalogueItem {
   readonly maxCount: number | null;
   /** Short subtitle shown in the catalogue panel (dimensions, capacity, etc). */
   readonly subtitle: string;
+  /**
+   * URL to a .glb model file. When non-null, the renderer loads this model
+   * instead of the procedural mesh. When null, the procedural mesh is used
+   * as the fallback (the current behaviour for all items).
+   *
+   * Punch list #28: this is the pipeline entry point. Add a .glb URL to
+   * any catalogue item and the renderer automatically upgrades it from
+   * procedural geometry to the imported model. No additional code changes
+   * needed per item.
+   */
+  readonly meshUrl: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +114,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "round",
     maxCount: null,
     subtitle: "1.8m round \u00B7 seats up to 12",
+    meshUrl: null,
   },
   {
     id: "trestle-6ft",
@@ -115,6 +127,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "rectangular",
     maxCount: null,
     subtitle: "1.8m \u00D7 0.76m \u00B7 seats up to 20",
+    meshUrl: null,
   },
   {
     id: "trestle-4ft",
@@ -127,6 +140,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "rectangular",
     maxCount: null,
     subtitle: "1.2m \u00D7 0.76m \u00B7 seats up to 12",
+    meshUrl: null,
   },
 
   // --- Poseur / Cocktail tables ---
@@ -141,6 +155,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "round",
     maxCount: null,
     subtitle: "60cm round \u00B7 standing height",
+    meshUrl: null,
   },
   {
     id: "poseur-table-black",
@@ -153,6 +168,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "round",
     maxCount: null,
     subtitle: "60cm round \u00B7 black cloth",
+    meshUrl: null,
   },
   {
     id: "poseur-table-white",
@@ -165,6 +181,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: "round",
     maxCount: null,
     subtitle: "60cm round \u00B7 white cloth",
+    meshUrl: null,
   },
 
   // --- Chairs ---
@@ -179,6 +196,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "Padded \u00B7 stackable",
+    meshUrl: null,
   },
 
   // --- Stage ---
@@ -193,6 +211,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "2.4m \u00D7 1.2m \u00B7 40cm high",
+    meshUrl: null,
   },
   {
     id: "platform-narrow",
@@ -205,6 +224,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: 1,
     subtitle: "2.4m \u00D7 1.0m \u00B7 40cm high",
+    meshUrl: null,
   },
 
   // --- AV ---
@@ -219,6 +239,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "2.5m wide \u00B7 freestanding",
+    meshUrl: null,
   },
   {
     id: "projector",
@@ -231,6 +252,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "55cm \u00B7 table-mountable",
+    meshUrl: null,
   },
   {
     id: "laptop",
@@ -243,6 +265,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "36cm \u00B7 table-mountable",
+    meshUrl: null,
   },
   {
     id: "microphone",
@@ -255,6 +278,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "Gooseneck \u00B7 table-mountable",
+    meshUrl: null,
   },
   {
     id: "mic-stand",
@@ -267,6 +291,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "1.6m tall \u00B7 freestanding",
+    meshUrl: null,
   },
 
   // --- Lecterns ---
@@ -281,6 +306,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "60cm \u00D7 50cm \u00B7 wooden",
+    meshUrl: null,
   },
 
   // --- Decor (table dressing) ---
@@ -295,6 +321,7 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] = [
     tableShape: null,
     maxCount: null,
     subtitle: "Drapes over any table",
+    meshUrl: null,
   },
 ] as const;
 

@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import type { CatalogueItem } from "../lib/catalogue.js";
+import { GltfFurniture } from "./meshes/GltfFurniture.js";
 import { RoundTableMesh } from "./meshes/RoundTableMesh.js";
 import { TrestleTableMesh } from "./meshes/TrestleTableMesh.js";
 import { ChairMesh } from "./meshes/ChairMesh.js";
@@ -32,7 +34,13 @@ interface FurnitureProxyProps {
 
 /**
  * Renders the correct mesh component for a catalogue item.
- * Routes based on category + tableShape to pick the right geometry.
+ *
+ * Punch list #28: when item.meshUrl is non-null, loads the .glb model
+ * via GltfFurniture (drei's useGLTF). The procedural mesh renders as the
+ * Suspense fallback while the model loads, then as the permanent fallback
+ * for items that don't have a .glb yet. This means adding a meshUrl to
+ * any catalogue entry automatically upgrades it from procedural geometry
+ * to the imported model — zero code changes needed per item.
  */
 export function FurnitureProxy({
   item,
@@ -42,13 +50,26 @@ export function FurnitureProxy({
   colorOverride,
   name,
 }: FurnitureProxyProps): React.ReactElement {
+  const procedural = renderMesh(item, opacity, colorOverride);
+
   return (
     <group
       name={name}
       position={[position[0], position[1], position[2]]}
       rotation={[0, rotationY, 0]}
     >
-      {renderMesh(item, opacity, colorOverride)}
+      {item.meshUrl !== null ? (
+        <Suspense fallback={procedural}>
+          <GltfFurniture
+            meshUrl={item.meshUrl}
+            item={item}
+            opacity={opacity}
+            colorOverride={colorOverride}
+          />
+        </Suspense>
+      ) : (
+        procedural
+      )}
     </group>
   );
 }
