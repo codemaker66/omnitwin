@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Scene } from "three";
 import type { Space } from "../api/spaces.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
@@ -89,6 +90,11 @@ interface EditorState {
   readonly lastSavedAt: Date | null;
   readonly isLoading: boolean;
   readonly error: string | null;
+  // Punch list #24: the live Three.js scene ref, set by SceneProvider
+  // inside the Canvas. Needed by the ortho-capture utility which runs
+  // outside the Canvas (in SaveSendPanel) to generate the floor plan
+  // diagram for the hallkeeper sheet PDF.
+  readonly scene: Scene | null;
 }
 
 interface EditorActions {
@@ -148,6 +154,7 @@ const INITIAL_STATE: EditorState = {
   lastSavedAt: null,
   isLoading: false,
   error: null,
+  scene: null,
 };
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -293,6 +300,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   reset: () => {
-    set(INITIAL_STATE);
+    // Preserve the scene ref — reset clears editor data but the Three.js
+    // scene is still alive in the Canvas. SceneProvider manages the ref.
+    set({ ...INITIAL_STATE, scene: get().scene });
   },
 }));

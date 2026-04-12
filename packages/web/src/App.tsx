@@ -21,6 +21,7 @@ import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
 import { SnapGuides } from "./components/SnapGuides.js";
+import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { useSectionStore } from "./stores/section-store.js";
@@ -86,6 +87,7 @@ export function App(): React.ReactElement {
         style={{ marginLeft: 52 }}
       >
         <color attach="background" args={["#f5f5f0"]} />
+        <SceneProvider />
         <SectionPlane />
         <InvalidateOnToggle />
         {roomGeometry !== null ? (

@@ -219,3 +219,34 @@ describe("reset", () => {
     expect(useEditorStore.getState().isDirty).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scene ref — punch list #24 (part 2/3)
+// ---------------------------------------------------------------------------
+
+describe("scene ref", () => {
+  it("starts as null", () => {
+    expect(useEditorStore.getState().scene).toBeNull();
+  });
+
+  it("can be set via setState (SceneProvider writes it)", () => {
+    const fakeScene = { type: "Scene" } as unknown as import("three").Scene;
+    useEditorStore.setState({ scene: fakeScene });
+    expect(useEditorStore.getState().scene).toBe(fakeScene);
+    // Cleanup
+    useEditorStore.setState({ scene: null });
+  });
+
+  it("reset() preserves the scene ref (Canvas is still alive)", () => {
+    const fakeScene = { type: "Scene" } as unknown as import("three").Scene;
+    useEditorStore.setState({ scene: fakeScene, configId: "cfg-1" });
+
+    useEditorStore.getState().reset();
+
+    // configId is cleared, but scene survives
+    expect(useEditorStore.getState().configId).toBeNull();
+    expect(useEditorStore.getState().scene).toBe(fakeScene);
+    // Cleanup
+    useEditorStore.setState({ scene: null });
+  });
+});
