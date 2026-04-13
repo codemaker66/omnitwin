@@ -58,6 +58,7 @@ export interface VisibilityState {
 
 /** Hermite smoothstep — smooth 0→1 transition between edge0 and edge1. */
 export function smoothstep(x: number, edge0: number, edge1: number): number {
+  if (edge0 === edge1) return x >= edge0 ? 1 : 0;
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 }

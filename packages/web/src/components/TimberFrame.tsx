@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   CylinderGeometry,
@@ -146,6 +146,11 @@ export function TimberFrame(): React.ReactElement {
     const normalMap = createWoodNormalTexture(42);
     return { colorMap, roughnessMap, normalMap };
   }, []);
+  useEffect(() => () => {
+    textures.colorMap.dispose();
+    textures.roughnessMap.dispose();
+    textures.normalMap.dispose();
+  }, [textures]);
 
   // Pre-build geometries for each beam (displaced cylinder per beam)
   const geometries = useMemo(() => {
@@ -158,6 +163,11 @@ export function TimberFrame(): React.ReactElement {
     }
     return map;
   }, []);
+  useEffect(() => () => {
+    for (const geos of geometries.values()) {
+      for (const geo of geos) geo.dispose();
+    }
+  }, [geometries]);
 
   useFrame(() => {
     const { wallOpacity } = useVisibilityStore.getState();

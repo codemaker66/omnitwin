@@ -106,9 +106,12 @@ export function captureOrthographic(
  * Converts a data URL to a Blob for upload.
  */
 export function dataUrlToBlob(dataUrl: string): Blob {
-  const parts = dataUrl.split(",");
-  const mime = parts[0]?.match(/:(.*?);/)?.[1] ?? "image/png";
-  const raw = atob(parts[1] ?? "");
+  const commaIdx = dataUrl.indexOf(",");
+  if (commaIdx < 0) return new Blob([], { type: "image/png" });
+  const header = dataUrl.slice(0, commaIdx);
+  const base64 = dataUrl.slice(commaIdx + 1);
+  const mime = header.match(/:(.*?);/)?.[1] ?? "image/png";
+  const raw = atob(base64);
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) {
     bytes[i] = raw.charCodeAt(i);

@@ -1,4 +1,4 @@
-import { useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   BoxGeometry,
@@ -274,6 +274,7 @@ export function BrickWall({
     () => new BoxGeometry(BLOCK_WIDTH, BLOCK_HEIGHT, BLOCK_DEPTH),
     [],
   );
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
 
   const material = useMemo(() => {
     const mat = new MeshStandardMaterial({
@@ -286,6 +287,7 @@ export function BrickWall({
     });
     return mat;
   }, [color, roughness]);
+  useEffect(() => () => { material.dispose(); }, [material]);
 
   // Update instance matrices every frame based on internal animation progress.
   useFrame((_state, delta) => {

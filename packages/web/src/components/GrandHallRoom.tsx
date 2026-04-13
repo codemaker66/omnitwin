@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
@@ -269,6 +269,11 @@ export function GrandHallRoom(): React.ReactElement {
     texture.needsUpdate = true;
     return texture;
   }, [useLightmap]);
+
+  // Dispose lightmap texture on unmount or when lightmap is toggled off
+  useEffect(() => {
+    return () => { lightmapTexture?.dispose(); };
+  }, [lightmapTexture]);
 
   const { width, length, height } = GRAND_HALL_RENDER_DIMENSIONS;
 

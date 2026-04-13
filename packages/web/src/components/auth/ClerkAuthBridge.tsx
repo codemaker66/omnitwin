@@ -48,12 +48,16 @@ export function ClerkAuthBridge(): null {
 
   // Register getToken with the API client's auth-bridge module so
   // non-React code (api/client.ts, api/enquiries.ts) can fetch tokens.
-  // Returns a cleanup function that unregisters on unmount so test
-  // tear-downs don't leak state into subsequent test cases.
+  // Depends on isSignedIn so the getter is cleared on logout — otherwise
+  // the stale token function stays registered and returns expired tokens.
   useEffect(() => {
-    setTokenGetter(getToken);
+    if (isSignedIn === true) {
+      setTokenGetter(getToken);
+    } else {
+      setTokenGetter(null);
+    }
     return () => { setTokenGetter(null); };
-  }, [getToken]);
+  }, [getToken, isSignedIn]);
 
   return null;
 }

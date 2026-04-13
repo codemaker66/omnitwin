@@ -18,18 +18,30 @@ interface ToastState {
 
 let toastCounter = 0;
 
+/** Active timers keyed by toast ID. Cleaned up on manual removal or unmount. */
+const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
 
   addToast: (message, type) => {
     const id = `toast-${String(++toastCounter)}`;
     set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
-    setTimeout(() => {
+
+    const timer = setTimeout(() => {
+      activeTimers.delete(id);
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, 4000);
+    activeTimers.set(id, timer);
   },
 
   removeToast: (id) => {
+    // Clear pending auto-dismiss timer to prevent stale setState
+    const timer = activeTimers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      activeTimers.delete(id);
+    }
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   },
 }));

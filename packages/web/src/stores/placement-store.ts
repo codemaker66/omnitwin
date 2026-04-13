@@ -336,6 +336,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
   moveGroup: (itemId: string, dx: number, dz: number) => {
     const state = get();
+    pushUndo(state);
     const memberIds = getGroupMemberIds(itemId, state.placedItems);
     set({
       placedItems: state.placedItems.map((item) => {
@@ -345,6 +346,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         const surfaceY = computeSurfaceHeight(newX, newZ, state.placedItems, memberIds);
         return { ...item, x: newX, z: newZ, y: surfaceY };
       }),
+      redoStack: [],
     });
   },
 
