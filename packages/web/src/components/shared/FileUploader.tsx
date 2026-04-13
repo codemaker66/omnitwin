@@ -7,6 +7,8 @@ import { useToastStore } from "../../stores/toast-store.js";
 // ---------------------------------------------------------------------------
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+/** Maximum file size in bytes (10 MB). */
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 interface FileUploadStatus {
   readonly file: File;
@@ -36,9 +38,16 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
 
   const handleFiles = (files: FileList | null): void => {
     if (files === null) return;
-    const validFiles = Array.from(files).filter((f) => ACCEPTED_TYPES.includes(f.type));
+    const validFiles = Array.from(files).filter((f) => {
+      if (!ACCEPTED_TYPES.includes(f.type)) return false;
+      if (f.size > MAX_FILE_SIZE) {
+        addToast(`${f.name} exceeds 10 MB limit`, "error");
+        return false;
+      }
+      return true;
+    });
     if (validFiles.length === 0) {
-      addToast("Only JPEG, PNG, and WebP images are accepted", "error");
+      addToast("Only JPEG, PNG, and WebP images under 10 MB are accepted", "error");
       return;
     }
 

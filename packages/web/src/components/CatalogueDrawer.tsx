@@ -614,6 +614,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
   const [trashLidOpen, setTrashLidOpen] = useState(false);
 
   const barRef = useRef<HTMLDivElement>(null);
+  const trashRef = useRef<HTMLDivElement>(null);
 
   const handleClose = useCallback(() => {
     useCatalogueStore.getState().closeDrawer();
@@ -660,7 +661,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
       setIsDraggingItem(dragging);
 
       // Trash zone hover detection
-      const trashEl = document.querySelector("[data-trash-zone]");
+      const trashEl = trashRef.current;
       if (trashEl !== null && dragging) {
         const rect = trashEl.getBoundingClientRect();
         const expandedTop = rect.top - 50;
@@ -703,7 +704,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
   // Global pointerup: black hole animation if over trash
   useEffect(() => {
     function onPointerUp(event: PointerEvent): void {
-      const trashEl = document.querySelector("[data-trash-zone]");
+      const trashEl = trashRef.current;
       if (trashEl !== null) {
         const rect = trashEl.getBoundingClientRect();
         const expandedTop = rect.top - 50;
@@ -824,6 +825,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
           ))}
           {/* Trash zone — glows when items selected, intensifies on hover */}
           <div
+            ref={trashRef}
             data-trash-zone=""
             style={trashStyle}
           >

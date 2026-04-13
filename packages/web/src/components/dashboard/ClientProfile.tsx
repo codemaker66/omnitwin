@@ -24,23 +24,42 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
   const [clientData, setClientData] = useState<ClientProfileData | null>(null);
   const [leadData, setLeadData] = useState<LeadProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
     void (async () => {
       setLoading(true);
+      setError(null);
+      setClientData(null);
+      setLeadData(null);
       try {
         if (userId !== undefined) {
           setClientData(await clientsApi.getClientProfile(userId));
         } else if (leadId !== undefined) {
           setLeadData(await clientsApi.getLeadProfile(leadId));
         }
-      } catch { addToast("Failed to load profile", "error"); }
+      } catch {
+        setError("Failed to load profile");
+        addToast("Failed to load profile", "error");
+      }
       setLoading(false);
     })();
   }, [userId, leadId, addToast]);
 
   if (loading) return <p style={{ color: "#999" }}>Loading profile...</p>;
+
+  if (error !== null) {
+    return (
+      <div>
+        <button type="button" onClick={onBack}
+          style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}>
+          &larr; Back
+        </button>
+        <p style={{ color: "#ef4444", fontSize: 14 }}>{error}</p>
+      </div>
+    );
+  }
 
   const isLead = leadData !== null;
   const user = clientData?.user;

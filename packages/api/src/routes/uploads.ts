@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { files, spaces, enquiries, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -107,7 +107,7 @@ async function verifyContextAccess(
   if (context === "space") {
     // Look up the space's venue, then check venue access
     const [space] = await db.select({ venueId: spaces.venueId })
-      .from(spaces).where(eq(spaces.id, contextId)).limit(1);
+      .from(spaces).where(and(eq(spaces.id, contextId), isNull(spaces.deletedAt))).limit(1);
     if (space === undefined) return false;
     return canManageVenue(user as Parameters<typeof canManageVenue>[0], space.venueId);
   }
@@ -115,7 +115,7 @@ async function verifyContextAccess(
   if (context === "loadout") {
     // Look up the loadout's venue, then check venue access
     const [loadout] = await db.select({ venueId: referenceLoadouts.venueId })
-      .from(referenceLoadouts).where(eq(referenceLoadouts.id, contextId)).limit(1);
+      .from(referenceLoadouts).where(and(eq(referenceLoadouts.id, contextId), isNull(referenceLoadouts.deletedAt))).limit(1);
     if (loadout === undefined) return false;
     return canManageVenue(user as Parameters<typeof canManageVenue>[0], loadout.venueId);
   }

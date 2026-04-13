@@ -271,28 +271,32 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
 
+  // Use ref for invalidate to avoid re-registering wheel listener every render.
+  // invalidate is a new function from useThree() each render, but its behavior
+  // is stable, so capturing via ref prevents event listener thrashing.
+  const invalidateWheelRef = useRef(invalidate);
+  invalidateWheelRef.current = invalidate;
+
   useEffect(() => {
     const canvas = gl.domElement;
 
     function onWheel(event: WheelEvent): void {
       event.preventDefault();
-      // Normalize scroll delta across browsers (line vs pixel mode)
       const raw = event.deltaY;
       const delta = Math.sign(raw) * Math.min(Math.abs(raw), 150);
       const normalizedDelta = delta / 100;
-      // Each tick adds velocity proportional to current distance (feels natural)
       const controls = controlsRef.current;
       if (controls === null) return;
       const distance = camera.position.distanceTo(controls.target);
       zoomVelocity.current += normalizedDelta * ZOOM_IMPULSE * distance;
-      invalidate();
+      invalidateWheelRef.current();
     }
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       canvas.removeEventListener("wheel", onWheel);
     };
-  }, [camera, gl, invalidate]);
+  }, [camera, gl]);
 
   // Per-frame: bookmark transition animation
   // Runs before the main camera loop — if a transition is active, it takes

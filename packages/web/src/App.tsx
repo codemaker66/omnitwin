@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "./constants/scale.js";
 import type { SpaceDimensions } from "@omnitwin/types";
@@ -68,11 +68,11 @@ export function App(): React.ReactElement {
   const space = useEditorStore((s) => s.space);
   const dimensions = useRoomDimensions();
 
-  const ceilingHeight = dimensions.height;
-  useMemo(() => {
-    useSectionStore.getState().setMaxHeight(ceilingHeight);
-    useBookmarkStore.getState().initialize(dimensions);
-  }, [ceilingHeight, dimensions]);
+  const { width: dimW, length: dimL, height: dimH } = dimensions;
+  useEffect(() => {
+    useSectionStore.getState().setMaxHeight(dimH);
+    useBookmarkStore.getState().initialize({ width: dimW, length: dimL, height: dimH });
+  }, [dimW, dimL, dimH]);
 
   const spaceName = space?.name ?? null;
   const roomGeometry = spaceName !== null ? roomGeometries[spaceName] ?? null : null;

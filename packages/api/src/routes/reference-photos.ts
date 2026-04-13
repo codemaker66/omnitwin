@@ -178,17 +178,19 @@ export async function referencePhotoRoutes(
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }
 
-    // Update each photo's sortOrder based on array position
-    for (let i = 0; i < parsed.data.photoIds.length; i++) {
-      const photoId = parsed.data.photoIds[i];
-      if (photoId === undefined) continue;
-      await db.update(referencePhotos)
-        .set({ sortOrder: i })
-        .where(and(
-          eq(referencePhotos.id, photoId),
-          eq(referencePhotos.loadoutId, params.data.loadoutId),
-        ));
-    }
+    // Update each photo's sortOrder atomically to prevent interleaving
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < parsed.data.photoIds.length; i++) {
+        const photoId = parsed.data.photoIds[i];
+        if (photoId === undefined) continue;
+        await tx.update(referencePhotos)
+          .set({ sortOrder: i })
+          .where(and(
+            eq(referencePhotos.id, photoId),
+            eq(referencePhotos.loadoutId, params.data.loadoutId),
+          ));
+      }
+    });
 
     // Return updated photos
     const photos = await db.select().from(referencePhotos)
