@@ -30,6 +30,7 @@ import { usePlacementStore } from "./stores/placement-store.js";
 import { useChairDialogStore } from "./stores/chair-dialog-store.js";
 import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
+import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
 import { roomGeometries, computeBoundingBox } from "./data/room-geometries.js";
 
 // Initialize stores with Grand Hall dimensions (default).
@@ -74,6 +75,7 @@ export function App(): React.ReactElement {
   useEffect(() => {
     useSectionStore.getState().setMaxHeight(dimH);
     useBookmarkStore.getState().initialize({ width: dimW, length: dimL, height: dimH });
+    useRoomDimensionsStore.getState().setDimensions({ width: dimW, length: dimL, height: dimH });
   }, [dimW, dimL, dimH]);
 
   const spaceName = space?.name ?? null;

@@ -16,11 +16,13 @@ import {
   getGroupMemberIds,
   computeSurfaceHeight,
   snapToPlatformEdge,
+  snapToWallEdge,
 } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
 import { toRenderSpace, toRealWorld, RENDER_SCALE } from "../../constants/scale.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import type { CatalogueItem } from "../catalogue.js";
+import type { SpaceDimensions } from "@omnitwin/types";
 
 // A small test item: 1m × 0.5m × 1m real-world
 const smallItem: CatalogueItem = {
@@ -176,6 +178,38 @@ describe("isWithinRoomBounds", () => {
 
   it("large item at center is valid", () => {
     expect(isWithinRoomBounds(0, 0, largeItem)).toBe(true);
+  });
+
+  it("custom room dims — inside small room is valid", () => {
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    expect(isWithinRoomBounds(4, 4, smallItem, 0, smallRoom)).toBe(true);
+  });
+
+  it("custom room dims — Grand Hall interior rejects in small room", () => {
+    // x=8 is valid in Grand Hall (halfW=21) but out of bounds in small room (halfW=5)
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    expect(isWithinRoomBounds(8, 0, smallItem, 0, smallRoom)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// snapToWallEdge — custom room dims
+// ---------------------------------------------------------------------------
+
+describe("snapToWallEdge with custom room dims", () => {
+  const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+
+  it("snaps item to right wall of small room (halfW=5)", () => {
+    // Item at x=4.6, item half-width ≈ 1 render unit → gap to wall = 5 - (4.6+1) = -0.6, within threshold
+    const result = snapToWallEdge(4.6, 0, smallItem, 0, smallRoom);
+    expect(result.x).toBeCloseTo(5 - toRenderSpace(smallItem.width) / 2);
+  });
+
+  it("does NOT snap to Grand Hall wall when room is smaller", () => {
+    // With small room, x=19 is outside the room (halfW=5), not near any wall inside it
+    // The snap threshold is 1.5; dist from right wall (5) = 5 - (19 + 1) = -15, no snap
+    const result = snapToWallEdge(19, 0, smallItem, 0, smallRoom);
+    expect(result.x).toBe(19); // no snap — way outside the room
   });
 });
 

@@ -13,6 +13,7 @@ import {
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
+import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture, ghost state, undo/redo history
@@ -114,10 +115,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let finalX = pos[0];
     let finalZ = pos[2];
     if (catItem !== undefined) {
+      const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
-      const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY);
+      const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
     }
@@ -165,10 +167,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (movingItem !== undefined) {
       const catItem = getCatalogueItem(movingItem.catalogueItemId);
       if (catItem !== undefined) {
+        const roomDims = useRoomDimensionsStore.getState().dimensions;
         const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, movingItem.rotationY, state.placedItems, new Set([id]));
         finalX = edgeSnap.x;
         finalZ = edgeSnap.z;
-        const wallSnap = snapToWallEdge(finalX, finalZ, catItem, movingItem.rotationY);
+        const wallSnap = snapToWallEdge(finalX, finalZ, catItem, movingItem.rotationY, roomDims);
         finalX = wallSnap.x;
         finalZ = wallSnap.z;
       }
@@ -199,11 +202,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     // Edge snap + wall snap first (XZ only), then compute surface height
     let finalX = gridPos[0];
     let finalZ = gridPos[2];
+    const roomDims = useRoomDimensionsStore.getState().dimensions;
     if (catalogueItem !== undefined) {
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catalogueItem, rot, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
-      const wallSnap = snapToWallEdge(finalX, finalZ, catalogueItem, rot);
+      const wallSnap = snapToWallEdge(finalX, finalZ, catalogueItem, rot, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
     }
@@ -213,7 +217,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let reason: string | null = null;
     if (catalogueItem === undefined) {
       valid = false;
-    } else if (!isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot)) {
+    } else if (!isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot, roomDims)) {
       valid = false;
       reason = "Outside room bounds";
     } else if (checkCollision(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), 0.01, surfaceY)) {
@@ -294,10 +298,11 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let finalX = pos[0];
     let finalZ = pos[2];
     if (catItem !== undefined) {
+      const roomDims = useRoomDimensionsStore.getState().dimensions;
       const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, rotationY, state.placedItems, new Set());
       finalX = edgeSnap.x;
       finalZ = edgeSnap.z;
-      const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY);
+      const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
     }

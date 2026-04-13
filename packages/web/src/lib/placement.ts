@@ -1,4 +1,5 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem } from "./catalogue.js";
 import type { CatalogueItem } from "./catalogue.js";
 
@@ -49,16 +50,20 @@ export function snapPositionToGrid(x: number, z: number): Position3 {
  * Returns true if an item placed at (x, z) in render-space fits within the
  * room bounds. Only requires the item's center to be within the room so
  * furniture (e.g. chairs) can sit flush against walls.
+ *
+ * @param roomDims - Current render-space room dimensions. Defaults to Grand
+ *   Hall for backward compatibility with tests; production callers should
+ *   always pass the active room dimensions from useRoomDimensionsStore.
  */
 export function isWithinRoomBounds(
   x: number,
   z: number,
   _item: CatalogueItem,
   _rotationY: number = 0,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
 ): boolean {
-  const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
-  const halfRoomW = width / 2;
-  const halfRoomL = length / 2;
+  const halfRoomW = roomDims.width / 2;
+  const halfRoomL = roomDims.length / 2;
 
   return (
     x >= -halfRoomW &&
@@ -170,6 +175,10 @@ const WALL_SNAP_THRESHOLD = 1.5;
  * Snaps a position so that the item's edge aligns flush with the room wall
  * when close enough. Works for any item category (platforms, tables, etc).
  *
+ * @param roomDims - Current render-space room dimensions. Defaults to Grand
+ *   Hall for backward compatibility with tests; production callers should
+ *   always pass the active room dimensions from useRoomDimensionsStore.
+ *
  * Returns the adjusted (x, z) position.
  */
 export function snapToWallEdge(
@@ -177,10 +186,10 @@ export function snapToWallEdge(
   z: number,
   item: CatalogueItem,
   rotationY: number,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
 ): { readonly x: number; readonly z: number } {
-  const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
-  const halfRoomW = width / 2;
-  const halfRoomL = length / 2;
+  const halfRoomW = roomDims.width / 2;
+  const halfRoomL = roomDims.length / 2;
 
   // For round tables with chairs, use the full chair-ring radius as the
   // extent so the outermost chair back sits flush against the wall.

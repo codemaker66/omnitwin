@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import type { SpaceDimensions } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
+import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,11 +84,6 @@ export const AUTO_2_EDGES: readonly [number, number] = [0.15, 0.55];
  *  crosses to their side. Tight range for seamless transitions. */
 export const AUTO_3_EDGES: readonly [number, number] = [-0.15, 0.15];
 
-/** Room half-dimensions in render-space for wall proximity checks.
- *  Imported from scale constants. Hardcoded here to avoid circular deps. */
-const ROOM_HALF_W = 21; // Grand Hall: 42m render / 2
-const ROOM_HALF_L = 10; // Grand Hall: 20m render / 2
-
 /** Distance (render-space units) from the wall plane where fade begins.
  *  A wall only starts fading when the camera is within this distance of it. */
 const FADE_START = 1.0;
@@ -100,17 +98,25 @@ const FADE_END = -6.0;
  * Standing inside the room (even off-center) keeps all walls visible.
  * Walls fade out smoothly as the camera approaches within FADE_START units
  * of the wall plane, and are fully hidden at/past the wall.
+ *
+ * @param roomDims - Current render-space room dimensions. Defaults to Grand
+ *   Hall for backward compatibility with tests; production callers (updateAutoWalls)
+ *   always pass the active room dimensions from useRoomDimensionsStore.
  */
 export function computeWallTargetOpacities(
   cameraX: number,
   cameraZ: number,
   _count: 2 | 3,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
 ): Readonly<Record<WallKey, number>> {
+  const halfRoomW = roomDims.width / 2;
+  const halfRoomL = roomDims.length / 2;
+
   // Distance from each wall plane (positive = inside room, negative = outside)
-  const distRight = ROOM_HALF_W - cameraX;  // + when inside, - when past right wall
-  const distLeft = ROOM_HALF_W + cameraX;   // + when inside, - when past left wall
-  const distFront = ROOM_HALF_L - cameraZ;  // + when inside, - when past front wall
-  const distBack = ROOM_HALF_L + cameraZ;   // + when inside, - when past back wall
+  const distRight = halfRoomW - cameraX;  // + when inside, - when past right wall
+  const distLeft = halfRoomW + cameraX;   // + when inside, - when past left wall
+  const distFront = halfRoomL - cameraZ;  // + when inside, - when past front wall
+  const distBack = halfRoomL + cameraZ;   // + when inside, - when past back wall
 
   return {
     "wall-right": smoothstep(distRight, FADE_END, FADE_START),
@@ -241,7 +247,8 @@ export const useVisibilityStore = create<VisibilityState>()((set, get) => ({
     const { wallLocks } = state;
 
     const count = state.mode === "auto-2" ? 2 : 3;
-    const targets = computeWallTargetOpacities(cameraX, cameraZ, count);
+    const { dimensions } = useRoomDimensionsStore.getState();
+    const targets = computeWallTargetOpacities(cameraX, cameraZ, count, dimensions);
 
     // Linear transition — uniform fade speed, no fast initial jump.
     // Clamp delta to prevent instant jumps after demand-mode idle frames.

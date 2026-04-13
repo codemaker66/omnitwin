@@ -11,6 +11,7 @@ import {
   AUTO_3_EDGES,
   type WallKey,
 } from "../visibility-store.js";
+import type { SpaceDimensions } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // smoothstep — pure function
@@ -116,6 +117,28 @@ describe("computeWallTargetOpacities", () => {
     for (const key of ["wall-front", "wall-back", "wall-left", "wall-right"] as WallKey[]) {
       expect(Math.abs(a[key] - b[key])).toBeLessThan(0.1);
     }
+  });
+
+  it("custom room dims — fades right wall at smaller x", () => {
+    // Small room: halfW=5 (width=10). Camera at x=4.5 → dist=0.5, inside FADE_START=1
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    const o = computeWallTargetOpacities(4.5, 0, 3, smallRoom);
+    expect(o["wall-right"]).toBeLessThan(1);
+    expect(o["wall-left"]).toBe(1); // far from left wall
+  });
+
+  it("custom room dims — Grand Hall x=20.5 is outside small room (opacity=0, not fading)", () => {
+    // In small room (halfW=5), x=20.5 is far outside → dist=-15.5, well below FADE_END=-6 → opacity=0
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    const o = computeWallTargetOpacities(20.5, 0, 3, smallRoom);
+    expect(o["wall-right"]).toBe(0);
+  });
+
+  it("Grand Hall default dims still apply when no roomDims passed", () => {
+    // Camera at x=5 well inside Grand Hall (halfW=21) — all walls visible
+    const o = computeWallTargetOpacities(5, 3, 3);
+    expect(o["wall-right"]).toBe(1);
+    expect(o["wall-left"]).toBe(1);
   });
 });
 
