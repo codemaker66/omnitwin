@@ -25,13 +25,13 @@ export interface RoomGeometry {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Grand Hall — 21m × 10.5m with balcony along south wall
+// 1. Grand Hall — 21m × 10m with balcony along south wall
 // Rectangular with a raised balcony platform (2m deep, 0.8m high)
 // Has a 7m diameter gilded dome in the ceiling centre
 // ---------------------------------------------------------------------------
 
-const GRAND_HALL_HW = 10.5; // half width (21/2)
-const GRAND_HALL_HL = 5;    // half length (10/2) — official: 21m × 10m
+const GRAND_HALL_HW = 10.5; // half-width  = 21m / 2
+const GRAND_HALL_HL = 5;    // half-length = 10m / 2
 
 const grandHallPolygon: readonly (readonly [number, number])[] = [
   [-GRAND_HALL_HW, -GRAND_HALL_HL],

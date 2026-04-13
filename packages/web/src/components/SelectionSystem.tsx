@@ -9,6 +9,7 @@ import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
+import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
@@ -388,6 +389,7 @@ export function SelectionSystem(): null {
               const dz = hit.point.z - primary.z;
 
               // Check collision + bounds for every moving item at its new position
+              const roomDims = useRoomDimensionsStore.getState().dimensions;
               let blocked = false;
               for (const id of allMovingIds) {
                 const item = placedItems.find((p) => p.id === id);
@@ -397,7 +399,7 @@ export function SelectionSystem(): null {
                 const newX = item.x + dx;
                 const newZ = item.z + dz;
                 const newY = computeSurfaceHeight(newX, newZ, placedItems, allMovingIds);
-                if (!isWithinRoomBounds(newX, newZ, catItem, item.rotationY) ||
+                if (!isWithinRoomBounds(newX, newZ, catItem, item.rotationY, roomDims) ||
                     checkCollision(newX, newZ, catItem, item.rotationY, placedItems, allMovingIds, 0.01, newY)) {
                   blocked = true;
                   break;
