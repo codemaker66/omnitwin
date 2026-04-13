@@ -22,6 +22,9 @@ const ObjectDataSchema = z.object({
   position: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
   rotation: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }),
   scale: z.number().positive(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  clothed: z.boolean().optional(),
+  groupId: z.string().nullable().optional(),
 });
 
 const UpdateObjectsMessage = z.object({
@@ -196,7 +199,7 @@ export async function registerAutoSave(
 
           for (const obj of toUpdate) {
             if (obj.id === undefined) continue;
-            await tx.update(placedObjects).set({
+            const setData: Record<string, unknown> = {
               assetDefinitionId: obj.assetId,
               positionX: String(obj.position.x),
               positionY: String(obj.position.y),
@@ -205,7 +208,11 @@ export async function registerAutoSave(
               rotationY: String(obj.rotation.y),
               rotationZ: String(obj.rotation.z),
               scale: String(obj.scale),
-            }).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
+            };
+            if (obj.sortOrder !== undefined) setData["sortOrder"] = obj.sortOrder;
+            if (obj.clothed !== undefined) setData["clothed"] = obj.clothed;
+            if (obj.groupId !== undefined) setData["groupId"] = obj.groupId;
+            await tx.update(placedObjects).set(setData).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
           }
 
           if (toInsert.length > 0) {
@@ -220,6 +227,7 @@ export async function registerAutoSave(
                 rotationY: String(obj.rotation.y),
                 rotationZ: String(obj.rotation.z),
                 scale: String(obj.scale),
+                sortOrder: obj.sortOrder ?? 0,
               })),
             );
           }

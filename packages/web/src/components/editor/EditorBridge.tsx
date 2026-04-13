@@ -66,7 +66,7 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
   };
 }
 
-/** Check if two placed-item arrays have the same IDs and positions. */
+/** Check if two placed-item arrays have the same state across all mutable fields. */
 function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -76,6 +76,8 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     if (pa.id !== eb.id) return false;
     if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
     if (pa.rotationY !== eb.rotationY) return false;
+    if (pa.clothed !== eb.clothed) return false;
+    if (pa.groupId !== eb.groupId) return false;
   }
   return true;
 }

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { venues, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, authorize } from "../middleware/auth.js";
@@ -79,7 +79,7 @@ export async function venueRoutes(
 
     const venueSpaces = await db.select()
       .from(spaces)
-      .where(eq(spaces.venueId, venue.id));
+      .where(and(eq(spaces.venueId, venue.id), isNull(spaces.deletedAt)));
 
     return { data: { ...venue, spaces: venueSpaces } };
   });

@@ -10,10 +10,13 @@ export const UserIdSchema = z.string().uuid();
 export type UserId = z.infer<typeof UserIdSchema>;
 
 // ---------------------------------------------------------------------------
-// User Role — the four user types in OMNITWIN
+// User Role — the five user types in OMNITWIN
+//
+// "planner" is the default role for users created via Clerk auth.
+// "client" is a legacy alias — both have identical permissions.
 // ---------------------------------------------------------------------------
 
-export const USER_ROLES = ["client", "staff", "hallkeeper", "admin"] as const;
+export const USER_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
 
 export const UserRoleSchema = z.enum(USER_ROLES);
 

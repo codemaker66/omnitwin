@@ -63,12 +63,16 @@ describe("UserRoleSchema", () => {
     expect(UserRoleSchema.safeParse(role).success).toBe(true);
   });
 
-  it("has exactly 4 roles", () => {
-    expect(USER_ROLES).toHaveLength(4);
+  it("has exactly 5 roles (client, planner, staff, hallkeeper, admin)", () => {
+    expect(USER_ROLES).toHaveLength(5);
   });
 
   it("contains the expected roles", () => {
-    expect(USER_ROLES).toEqual(["client", "staff", "hallkeeper", "admin"]);
+    expect(USER_ROLES).toEqual(["client", "planner", "staff", "hallkeeper", "admin"]);
+  });
+
+  it("accepts 'planner' (default Clerk role)", () => {
+    expect(UserRoleSchema.safeParse("planner").success).toBe(true);
   });
 
   it("rejects 'Client' (case sensitive)", () => {

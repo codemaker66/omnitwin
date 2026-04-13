@@ -15,20 +15,30 @@ export const ENQUIRY_STATES = [
 
 export type EnquiryState = (typeof ENQUIRY_STATES)[number];
 
-/** Roles relevant to enquiry transitions. */
-type TransitionRole = "client" | "staff" | "hallkeeper" | "admin";
+/** Roles relevant to enquiry transitions.
+ *
+ * "planner" is the default role assigned to users created via Clerk
+ * (see auth.ts on-the-fly creation and webhooks.ts). It has the same
+ * permissions as "client" for backward compatibility with any code that
+ * still references "client".
+ */
+type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
 
 // ---------------------------------------------------------------------------
 // Transition rules — keyed by [fromState][toState] → allowed roles
+//
+// "planner" and "client" are treated identically — both represent the
+// customer-facing role. The auth layer creates users as "planner" by
+// default, but legacy data may still have "client".
 // ---------------------------------------------------------------------------
 
 const TRANSITIONS: Record<string, readonly TransitionRole[]> = {
-  "draft→submitted": ["client", "staff", "admin"],
+  "draft→submitted": ["client", "planner", "staff", "admin"],
   "submitted→under_review": ["staff", "hallkeeper", "admin"],
-  "submitted→withdrawn": ["client", "staff", "admin"],
+  "submitted→withdrawn": ["client", "planner", "staff", "admin"],
   "under_review→approved": ["staff", "hallkeeper", "admin"],
   "under_review→rejected": ["staff", "hallkeeper", "admin"],
-  "under_review→withdrawn": ["client", "staff", "admin"],
+  "under_review→withdrawn": ["client", "planner", "staff", "admin"],
   "approved→archived": ["staff", "hallkeeper", "admin"],
   "rejected→archived": ["staff", "hallkeeper", "admin"],
 };

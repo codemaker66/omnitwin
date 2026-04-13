@@ -171,15 +171,18 @@ const MARGIN = 36; // 0.5 inch
 const CONTENT_W = A4_LANDSCAPE_W - MARGIN * 2;
 
 /**
- * Fetches an image from a URL and returns it as a Buffer.
- * Returns null if the fetch fails.
+ * Decodes an image from a data URL and returns it as a Buffer.
+ * Only accepts data:image/* URLs to prevent SSRF — the thumbnail upload
+ * endpoint already constrains to data:image/png;base64 with a 200KB cap.
+ * Returns null if the URL is invalid or not a data URL.
  */
-async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+function decodeImageDataUrl(url: string): Buffer | null {
+  if (!url.startsWith("data:image/")) return null;
+  const commaIdx = url.indexOf(",");
+  if (commaIdx < 0) return null;
+  const base64 = url.slice(commaIdx + 1);
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const arrayBuf = await res.arrayBuffer();
-    return Buffer.from(arrayBuf);
+    return Buffer.from(base64, "base64");
   } catch {
     return null;
   }
@@ -210,7 +213,7 @@ export async function generateSheetPdf(data: SheetData): Promise<Buffer> {
   // Pre-render QR code and fetch diagram image BEFORE starting the PDF stream
   const [qrBuffer, diagramBuffer] = await Promise.all([
     generateQrBuffer(data.webViewUrl, 200),
-    data.diagramUrl !== null ? fetchImageBuffer(data.diagramUrl) : Promise.resolve(null),
+    data.diagramUrl !== null ? Promise.resolve(decodeImageDataUrl(data.diagramUrl)) : Promise.resolve(null),
   ]);
 
   return new Promise<Buffer>((resolve, reject) => {

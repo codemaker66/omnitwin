@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { API_URL } from "../config/env.js";
+import { getAuthToken } from "../api/client.js";
 
 // ---------------------------------------------------------------------------
 // Types — mirrors the API SheetData response
@@ -61,20 +62,25 @@ export function HallkeeperPage(): React.ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(GROUP_ORDER));
   const manifestRef = useRef<HTMLDivElement>(null);
 
-  // Fetch sheet data
+  // Fetch sheet data with authentication
   useEffect(() => {
     if (configId === undefined) return;
     setLoading(true);
-    fetch(`${API_URL}/hallkeeper/${configId}/data`)
-      .then(async (res) => {
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        const headers: Record<string, string> = {};
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(`${API_URL}/hallkeeper/${configId}/data`, { headers });
         if (!res.ok) throw new Error(`${String(res.status)} — Configuration not found`);
         const json = (await res.json()) as { data: SheetData };
         setData(json.data);
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Failed to load");
-      })
-      .finally(() => { setLoading(false); });
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [configId]);
 
   // Toggle group expansion
@@ -92,10 +98,27 @@ export function HallkeeperPage(): React.ReactElement {
     setTimeout(() => { setHighlightedCode(null); }, 2000);
   }, []);
 
-  // Download PDF
+  // Download PDF with authentication
   const handleDownload = useCallback(() => {
     if (configId === undefined) return;
-    window.open(`${API_URL}/hallkeeper/${configId}/sheet?download=true`, "_blank");
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        const headers: Record<string, string> = {};
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(`${API_URL}/hallkeeper/${configId}/sheet?download=true`, { headers });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `hallkeeper-${configId}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        // Download failed silently
+      }
+    })();
   }, [configId]);
 
   // Print

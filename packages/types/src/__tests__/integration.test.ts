@@ -831,8 +831,8 @@ describe("export count verification", () => {
     expect(FURNITURE_CATEGORIES).toHaveLength(9);
   });
 
-  it("USER_ROLES has exactly 4 roles", () => {
-    expect(USER_ROLES).toHaveLength(4);
+  it("USER_ROLES has exactly 5 roles", () => {
+    expect(USER_ROLES).toHaveLength(5);
   });
 
   it("ENQUIRY_STATUSES has exactly 5 statuses", () => {

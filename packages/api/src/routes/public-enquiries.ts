@@ -40,10 +40,16 @@ export async function publicEnquiryRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Verify configuration exists
+    // Verify configuration exists AND is a public preview. Guest enquiries
+    // must only be allowed on public-preview configs — accepting private config
+    // IDs would let anyone attach enquiries to another user's workspace.
     const [config] = await db.select()
       .from(configurations)
-      .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
+      .where(and(
+        eq(configurations.id, parsed.data.configurationId),
+        eq(configurations.isPublicPreview, true),
+        isNull(configurations.deletedAt),
+      ))
       .limit(1);
 
     if (config === undefined) {
