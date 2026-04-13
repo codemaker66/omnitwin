@@ -3,60 +3,87 @@ import { test, expect } from "@playwright/test";
 // ---------------------------------------------------------------------------
 // E2E: Public editor — the core guest-facing experience
 //
-// These tests verify that an anonymous visitor can load the editor, see the
-// 3D canvas, interact with the furniture catalogue, and place items.
+// Stable selector strategy:
+//   - Toolbar buttons: getByRole("button", { name: "…" }) via aria-label on ToolBtn
+//   - Furniture panel: getByTestId("furniture-panel")
+//   - Catalogue items: getByText("…") scoped within the furniture panel
+//
+// These tests do not require authentication (anonymous editor path).
 // ---------------------------------------------------------------------------
 
 test.describe("Public Editor", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
-    // Wait for the R3F canvas to mount
+    // Wait for the R3F canvas to mount before every test
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
 
-  test("page loads with a WebGL canvas", async ({ page }) => {
+  // ---------------------------------------------------------------------------
+  // Canvas
+  // ---------------------------------------------------------------------------
+
+  test("page loads with a visible WebGL canvas", async ({ page }) => {
+    await expect(page.locator("canvas")).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Toolbar presence
+  // ---------------------------------------------------------------------------
+
+  test("all core toolbar buttons are present", async ({ page }) => {
+    // Each ToolBtn renders a <button aria-label={label} …>. Verifying these
+    // labels exist ensures the toolbox mounted and aria attributes are wired.
+    await Promise.all(
+      [
+        "Select & Move",
+        "Add Furniture",
+        "Rotate",
+        "Delete",
+        "Undo",
+        "Redo",
+        "Camera Views",
+        "Grid Snap",
+        "Show All Walls",
+        "Save Layout",
+        "Events Sheet",
+      ].map((name) => expect(page.getByRole("button", { name })).toBeVisible()),
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Furniture catalogue panel
+  // ---------------------------------------------------------------------------
+
+  test("clicking Add Furniture opens the catalogue panel", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await expect(page.getByTestId("furniture-panel")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("furniture catalogue lists Round Table", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Furniture" }).click();
+    const panel = page.getByTestId("furniture-panel");
+    await panel.waitFor({ state: "visible" });
+    await expect(panel.getByText("Round Table")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("clicking Add Furniture again closes the catalogue panel", async ({ page }) => {
+    const btn = page.getByRole("button", { name: "Add Furniture" });
+    await btn.click();
+    await page.getByTestId("furniture-panel").waitFor({ state: "visible" });
+    // Second click toggles the panel closed
+    await btn.click();
+    await expect(page.getByTestId("furniture-panel")).not.toBeVisible({ timeout: 5_000 });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Canvas mouse interaction
+  // ---------------------------------------------------------------------------
+
+  test("canvas accepts left and right clicks without crashing", async ({ page }) => {
     const canvas = page.locator("canvas");
-    await expect(canvas).toBeVisible();
-  });
-
-  test("vertical toolbar is visible", async ({ page }) => {
-    // The toolbar is a fixed-position div with toolbar buttons
-    // Look for the toolbar container (52px wide, left-aligned)
-    const toolbar = page.locator('[style*="width: 52px"]').first();
-    await expect(toolbar).toBeVisible();
-  });
-
-  test("clicking furniture icon opens the catalogue panel", async ({ page }) => {
-    // The Armchair icon button opens the catalogue panel
-    // Find the second toolbar button (furniture/add mode)
-    const buttons = page.locator("button").filter({ has: page.locator("svg") });
-    const furnitureBtn = buttons.nth(1);
-    await furnitureBtn.click();
-
-    // The catalogue panel should slide in with furniture categories
-    await expect(page.getByText("Tables")).toBeVisible({ timeout: 5_000 });
-  });
-
-  test("furniture catalogue shows items with dimensions", async ({ page }) => {
-    // Open catalogue
-    const buttons = page.locator("button").filter({ has: page.locator("svg") });
-    await buttons.nth(1).click();
-    await page.waitForTimeout(500); // panel animation
-
-    // Should show at least one furniture item with dimensions
-    await expect(page.getByText("Round Table")).toBeVisible({ timeout: 5_000 });
-  });
-
-  test("canvas responds to mouse interaction (no crash)", async ({ page }) => {
-    const canvas = page.locator("canvas");
-
-    // Verify canvas is interactive — click without crashing
     await canvas.click();
-
-    // Right-click (orbit camera) — should not crash
     await canvas.click({ button: "right" });
-
-    // Canvas should still be visible after interactions
+    // Canvas must remain visible after interactions
     await expect(canvas).toBeVisible();
   });
 });

@@ -163,6 +163,7 @@ export function ChairCountDialog({
   return (
     /* Overlay */
     <div
+      data-testid="chair-count-dialog"
       style={{
         position: "absolute", inset: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -319,6 +320,7 @@ export function ChairCountDialog({
         {/* Primary CTA */}
         <button
           type="button"
+          data-testid="chair-count-confirm"
           className="omni-v2-cta"
           style={{
             width: "100%", padding: "18px 0",

@@ -28,9 +28,11 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
-    // `cancelled` prevents a stale in-flight request from overwriting state
-    // after the user switches to a different profile (F23).
-    let cancelled = false;
+    // `cancel.current` prevents a stale in-flight request from overwriting
+    // state after the user switches to a different profile (F23).
+    // Object wrapper avoids the @typescript-eslint/no-unnecessary-condition
+    // false-positive: the linter can't narrow property reads to literal values.
+    const cancel = { current: false };
     void (async () => {
       setLoading(true);
       setError(null);
@@ -39,20 +41,20 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
       try {
         if (userId !== undefined) {
           const data = await clientsApi.getClientProfile(userId);
-          if (!cancelled) setClientData(data);
+          if (!cancel.current) setClientData(data);
         } else if (leadId !== undefined) {
           const data = await clientsApi.getLeadProfile(leadId);
-          if (!cancelled) setLeadData(data);
+          if (!cancel.current) setLeadData(data);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancel.current) {
           setError("Failed to load profile");
           addToast("Failed to load profile", "error");
         }
       }
-      if (!cancelled) setLoading(false);
+      if (!cancel.current) setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => { cancel.current = true; };
   }, [userId, leadId, addToast]);
 
   if (loading) return <p style={{ color: "#999" }}>Loading profile...</p>;

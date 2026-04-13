@@ -14,11 +14,12 @@ test.describe("Navigation", () => {
     await expect(page.locator("canvas")).toBeVisible();
   });
 
-  test("hallkeeper route loads dashboard", async ({ page }) => {
+  test("navigating to /hallkeeper without a configId renders without crashing", async ({ page }) => {
     await page.goto("/hallkeeper");
-    // Should show dashboard layout (may redirect to login if auth required)
-    // At minimum, the page should load without error
+    // /hallkeeper/:configId requires a UUID segment — without one the SPA
+    // renders index.html. Verify the app shell loads without a JS crash.
     await expect(page.locator("body")).toBeVisible();
+    await expect(page.getByText("Internal Server Error")).not.toBeVisible();
   });
 
   test("unknown route shows 404 or redirects", async ({ page }) => {

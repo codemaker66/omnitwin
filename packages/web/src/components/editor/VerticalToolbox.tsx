@@ -235,6 +235,7 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
     <div style={{ position: "relative" }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
       <button
         type="button"
+        aria-label={label}
         style={btnStyle(active, disabled)}
         onClick={handleClick}
         disabled={disabled}
@@ -526,12 +527,15 @@ export function VerticalToolbox(): React.ReactElement {
 
       {/* === Slide-out asset panel === */}
       {panelMounted && (
-        <div style={{
-          ...panelStyle,
-          animation: panelOpen
-            ? "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards"
-            : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
-        }}>
+        <div
+          data-testid="furniture-panel"
+          style={{
+            ...panelStyle,
+            animation: panelOpen
+              ? "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards"
+              : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+          }}
+        >
           {/* Gold accent */}
           <div style={{ width: 32, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.2))`, marginBottom: 14 }} />
           <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 2.5, color: GOLD, marginBottom: 4 }}>
