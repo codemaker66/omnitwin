@@ -172,12 +172,15 @@ export function PlacementHint(): React.ReactElement | null {
   };
 
   return (
-    <div style={{
-      ...barStyle,
-      animation: exiting
-        ? "omni-hint-out 0.25s ease forwards"
-        : "omni-hint-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-    }}>
+    <div
+      data-testid="placement-hint"
+      style={{
+        ...barStyle,
+        animation: exiting
+          ? "omni-hint-out 0.25s ease forwards"
+          : "omni-hint-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+      }}
+    >
       {/* Invalid placement reason */}
       {shownReason !== null && (
         <div

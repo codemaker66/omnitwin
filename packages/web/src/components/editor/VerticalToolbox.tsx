@@ -576,7 +576,7 @@ export function VerticalToolbox(): React.ReactElement {
             const collapsed = collapsedCategories.has(cat) && q.length === 0;
             return (
               <div key={cat}>
-                <div style={categoryHeaderStyle} onClick={() => { toggleCategory(cat); }}>
+                <div data-testid={`category-header-${cat}`} style={categoryHeaderStyle} onClick={() => { toggleCategory(cat); }}>
                   <span>{categoryLabel(cat)} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
                   <span style={{ fontSize: 14 }}>{collapsed ? "+" : "\u2212"}</span>
                 </div>
