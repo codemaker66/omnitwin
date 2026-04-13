@@ -1,4 +1,4 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import {
   enquiries, venues, spaces, configurations, placedObjects,
@@ -59,23 +59,21 @@ export async function generateHallkeeperSheet(
     if (config !== undefined) {
       configData = { name: config.name };
 
+      // Single JOIN query replaces N+1 per-object asset fetches
       const objects = await db.select({
-        assetId: placedObjects.assetDefinitionId,
-      }).from(placedObjects).where(eq(placedObjects.configurationId, config.id));
+        assetName: assetDefinitions.name,
+        assetCategory: assetDefinitions.category,
+      }).from(placedObjects)
+        .innerJoin(assetDefinitions, eq(placedObjects.assetDefinitionId, assetDefinitions.id))
+        .where(eq(placedObjects.configurationId, config.id));
 
-      // Fetch asset names and categories
       for (const obj of objects) {
-        const [asset] = await db.select({ name: assetDefinitions.name, category: assetDefinitions.category })
-          .from(assetDefinitions).where(eq(assetDefinitions.id, obj.assetId)).limit(1);
-
-        if (asset !== undefined) {
-          const key = asset.name;
-          const existing = equipmentMap.get(key);
-          if (existing !== undefined) {
-            existing.count++;
-          } else {
-            equipmentMap.set(key, { category: asset.category, name: asset.name, count: 1 });
-          }
+        const key = obj.assetName;
+        const existing = equipmentMap.get(key);
+        if (existing !== undefined) {
+          existing.count++;
+        } else {
+          equipmentMap.set(key, { category: obj.assetCategory, name: obj.assetName, count: 1 });
         }
       }
     }
@@ -91,22 +89,24 @@ export async function generateHallkeeperSheet(
     .where(eq(enquiryStatusHistory.enquiryId, enquiryId))
     .orderBy(enquiryStatusHistory.createdAt);
 
-  // Resolve user names for history
-  const historyWithNames: { from: string; to: string; at: string; by: string }[] = [];
-  for (const h of history) {
-    let byName = "Guest";
-    if (h.changedBy !== null) {
-      const [user] = await db.select({ name: users.name }).from(users)
-        .where(eq(users.id, h.changedBy)).limit(1);
-      byName = user?.name ?? "Unknown";
+  // Batch-fetch all user names for history entries (replaces N+1 per-entry fetch)
+  const changedByIds = [...new Set(history.map((h) => h.changedBy).filter((id): id is string => id !== null))];
+  const userNameMap = new Map<string, string>();
+  if (changedByIds.length > 0) {
+    const userRows = await db.select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, changedByIds));
+    for (const u of userRows) {
+      userNameMap.set(u.id, u.name);
     }
-    historyWithNames.push({
-      from: h.fromStatus,
-      to: h.toStatus,
-      at: h.createdAt.toISOString(),
-      by: byName,
-    });
   }
+
+  const historyWithNames = history.map((h) => ({
+    from: h.fromStatus,
+    to: h.toStatus,
+    at: h.createdAt.toISOString(),
+    by: h.changedBy !== null ? (userNameMap.get(h.changedBy) ?? "Unknown") : "Guest",
+  }));
 
   const equipment = Array.from(equipmentMap.values()).map((e) => ({
     category: e.category,

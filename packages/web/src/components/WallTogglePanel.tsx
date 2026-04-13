@@ -252,6 +252,8 @@ export function WallTogglePanel(): React.ReactElement {
         style={buttonStyle}
         onClick={toggleMenu}
         title="Wall visibility"
+        aria-expanded={menuOpen}
+        aria-label="Toggle wall visibility panel"
       >
         <img
           src="/th-building.png"

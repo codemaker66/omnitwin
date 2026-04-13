@@ -29,6 +29,12 @@ const DashboardPage = lazy(() =>
 const HallkeeperPage = lazy(() =>
   import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage })),
 );
+const PrivacyPage = lazy(() =>
+  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) })),
+);
+const TermsPage = lazy(() =>
+  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "terms" }) })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -73,6 +79,14 @@ export const router = createBrowserRouter([
         {withSuspense(<DashboardPage />)}
       </ProtectedRoute>
     ),
+  },
+  {
+    path: "/privacy",
+    element: withSuspense(<PrivacyPage />),
+  },
+  {
+    path: "/terms",
+    element: withSuspense(<TermsPage />),
   },
   {
     path: "/",

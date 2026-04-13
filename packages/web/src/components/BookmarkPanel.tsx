@@ -77,7 +77,7 @@ export function BookmarkPanel(): React.ReactElement {
   if (bookmarks.length === 0) return <div />;
 
   return (
-    <div style={panelStyle}>
+    <div style={panelStyle} role="toolbar" aria-label="Camera bookmarks">
       {bookmarks.map((bookmark, index) => (
         <button
           key={bookmark.id}
@@ -85,9 +85,10 @@ export function BookmarkPanel(): React.ReactElement {
           style={bookmarkButtonBase}
           onClick={() => { requestNavigation(bookmark.id); }}
           title={`${bookmark.name} (${String(index + 1)})`}
+          aria-label={`Navigate to ${bookmark.name} camera view`}
         >
           {bookmark.name}
-          {index < 9 && <span style={keyHintStyle}>{String(index + 1)}</span>}
+          {index < 9 && <span style={keyHintStyle} aria-hidden="true">{String(index + 1)}</span>}
         </button>
       ))}
     </div>

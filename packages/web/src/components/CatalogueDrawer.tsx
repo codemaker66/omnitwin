@@ -228,6 +228,8 @@ function CategoryTab({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       style={active ? tabBtnActive : tabBtnBase}
       onClick={onClick}
     >
@@ -796,7 +798,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
         }}
       >
         <div style={topRowStyle}>
-          <div style={tabRowStyle}>
+          <div style={tabRowStyle} role="tablist" aria-label="Furniture categories">
             {CATALOGUE_CATEGORIES.map((cat) => (
               <CategoryTab
                 key={cat}
@@ -811,6 +813,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
             style={closeBtnStyle}
             onClick={handleClose}
             title="Close (Esc)"
+            aria-label="Close catalogue"
           >
             ×
           </button>
@@ -828,6 +831,8 @@ export function CatalogueDrawer(): React.ReactElement | null {
             ref={trashRef}
             data-trash-zone=""
             style={trashStyle}
+            role="button"
+            aria-label="Trash zone — drag items here to delete"
           >
             <TrashBinIcon
               size={trashIconSize}

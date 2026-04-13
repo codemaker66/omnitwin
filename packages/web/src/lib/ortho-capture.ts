@@ -12,6 +12,7 @@ import {
   Scene,
   Color,
 } from "three";
+import { setDiagramLabelsVisible } from "../components/DiagramLabels.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -48,6 +49,9 @@ export function captureOrthographic(
   } = options;
 
   try {
+    // Enable diagram labels (T1, S1, etc.) for the capture
+    setDiagramLabelsVisible(true);
+
     // Offscreen renderer — separate from the main canvas
     const renderer = new WebGLRenderer({
       antialias: true,
@@ -95,9 +99,11 @@ export function captureOrthographic(
 
     // Cleanup
     renderer.dispose();
+    setDiagramLabelsVisible(false);
 
     return dataUrl;
   } catch {
+    setDiagramLabelsVisible(false);
     return null;
   }
 }

@@ -27,7 +27,7 @@ import {
   LAYOUT_STYLES,
   Vec3Schema,
   PlacedObjectIdSchema,
-  FurnitureItemIdSchema,
+  AssetDefinitionIdSchema,
   PlacedObjectSchema,
   ConfigurationSchema,
   CreateConfigurationSchema,
@@ -39,8 +39,8 @@ import {
   FURNITURE_CATEGORIES,
   FurnitureCategorySchema,
   FurnitureDimensionsSchema,
-  FurnitureItemSchema,
-  CreateFurnitureItemSchema,
+  AssetDefinitionSchema,
+  CreateAssetDefinitionSchema,
   // Scene
   VIEW_MODES,
   ViewModeSchema,
@@ -55,9 +55,6 @@ import {
   EmailSchema,
   UserSchema,
   CreateUserSchema,
-  LoginRequestSchema,
-  RegisterRequestSchema,
-  AuthTokensSchema,
   // Enquiry
   EnquiryIdSchema,
   ENQUIRY_STATUSES,
@@ -76,7 +73,6 @@ import {
   // Hallkeeper
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
-  HallkeeperSheetSchema,
   GenerateHallkeeperSheetRequestSchema,
   // Photo
   PhotoIdSchema,
@@ -93,7 +89,6 @@ import type {
   Configuration,
   User,
   Enquiry,
-  HallkeeperSheet,
 } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -108,7 +103,7 @@ const PLACED_OBJECT_ID = "f6666666-6666-4666-8666-666666666666";
 const USER_ID = "a7777777-7777-4777-8777-777777777777";
 const ENQUIRY_ID = "b8888888-8888-4888-8888-888888888888";
 const PRICING_RULE_ID = "c9999999-9999-4999-8999-999999999999";
-const HALLKEEPER_SHEET_ID = "d0000000-0000-4000-8000-000000000000";
+
 const PHOTO_ID = "e1111111-2222-4333-8444-555555555555";
 const NOW = "2025-06-15T14:30:00.000Z";
 
@@ -136,7 +131,7 @@ describe("barrel export completeness", () => {
       LayoutStyleSchema,
       Vec3Schema,
       PlacedObjectIdSchema,
-      FurnitureItemIdSchema,
+      AssetDefinitionIdSchema,
       PlacedObjectSchema,
       ConfigurationSchema,
       CreateConfigurationSchema,
@@ -145,8 +140,8 @@ describe("barrel export completeness", () => {
       CreateLayoutTemplateSchema,
       FurnitureCategorySchema,
       FurnitureDimensionsSchema,
-      FurnitureItemSchema,
-      CreateFurnitureItemSchema,
+      AssetDefinitionSchema,
+      CreateAssetDefinitionSchema,
       ViewModeSchema,
       CameraStateSchema,
       TransitionStateSchema,
@@ -156,9 +151,6 @@ describe("barrel export completeness", () => {
       EmailSchema,
       UserSchema,
       CreateUserSchema,
-      LoginRequestSchema,
-      RegisterRequestSchema,
-      AuthTokensSchema,
       EnquiryIdSchema,
       EnquiryStatusSchema,
       EnquirySchema,
@@ -170,7 +162,6 @@ describe("barrel export completeness", () => {
       PriceEstimateResponseSchema,
       HallkeeperSheetIdSchema,
       ManifestItemSchema,
-      HallkeeperSheetSchema,
       GenerateHallkeeperSheetRequestSchema,
       PhotoIdSchema,
       PhotoContentTypeSchema,
@@ -352,7 +343,7 @@ describe("cross-module ID consistency", () => {
     ).toBe(true);
   });
 
-  it("AssetDefinitionId (FurnitureItemId alias) accepted by PlacedObjectSchema", () => {
+  it("AssetDefinitionId accepted by PlacedObjectSchema", () => {
     const placed = PlacedObjectSchema.safeParse({
       id: PLACED_OBJECT_ID,
       configurationId: CONFIG_ID,
@@ -452,13 +443,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     thumbnailUrl: "https://cdn.omnitwin.com/thumbs/ceremony-template.jpg",
   };
 
-  // Step 6: Register user and create user
-  const registerData = {
-    email: "hallkeeper@tradeshall.co.uk",
-    name: "Hamish McKenzie",
-    password: "secure-hallkeeper-2025",
-  };
-
+  // Step 6: Create user (Clerk handles registration)
   const createUserData = {
     email: "hallkeeper@tradeshall.co.uk",
     name: "Hamish McKenzie",
@@ -516,8 +501,8 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     }
   });
 
-  it("Step 3: CreateFurnitureItemSchema validates asset definition creation data", () => {
-    const result = CreateFurnitureItemSchema.safeParse(createAssetData);
+  it("Step 3: CreateAssetDefinitionSchema validates asset definition creation data", () => {
+    const result = CreateAssetDefinitionSchema.safeParse(createAssetData);
     expect(result.success).toBe(true);
   });
 
@@ -537,10 +522,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     }
   });
 
-  it("Step 6a: RegisterRequestSchema validates registration", () => {
-    const result = RegisterRequestSchema.safeParse(registerData);
-    expect(result.success).toBe(true);
-  });
+  // Step 6a (RegisterRequestSchema) removed — pre-Clerk auth deleted.
 
   it("Step 6b: CreateUserSchema validates user creation", () => {
     const result = CreateUserSchema.safeParse(createUserData);
@@ -588,27 +570,8 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     }
   });
 
-  it("Step 10: HallkeeperSheetSchema (deprecated) validates generated PDF sheet", () => {
-    const result = HallkeeperSheetSchema.safeParse({
-      id: HALLKEEPER_SHEET_ID,
-      configurationId: CONFIG_ID,
-      generatedAt: NOW,
-      pdfUrl: "https://cdn.omnitwin.com/sheets/wedding-ceremony-120.pdf",
-      manifest: [
-        { furnitureName: "Round Table (6ft)", category: "table", quantity: 12, notes: "White linen covers" },
-        { furnitureName: "Gold Chiavari Chair", category: "chair", quantity: 96 },
-        { furnitureName: "Stage Section (4x8)", category: "stage", quantity: 2, notes: "Bolt together" },
-      ],
-      qrCodeData: "https://app.omnitwin.com/config/c3333333-3333-4333-8333-333333333333",
-      topDownDiagramUrl: "https://cdn.omnitwin.com/diagrams/wedding-ceremony-120.svg",
-      createdAt: NOW,
-      updatedAt: NOW,
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.manifest).toHaveLength(3);
-    }
-  });
+  // Step 10 (HallkeeperSheetSchema) removed — deprecated persistent entity deleted.
+  // The running system uses HallkeeperSheetDataSchema for on-the-fly generation.
 
   it("Step 11: Photo upload flow — request → response → stored entity", () => {
     const uploadReq = PhotoUploadRequestSchema.safeParse({
@@ -749,7 +712,7 @@ describe("type-level compatibility", () => {
     expect(VenueIdSchema.safeParse(venueId).success).toBe(true);
   });
 
-  it("PlacedObject.assetDefinitionId is a valid UUID accepted by FurnitureItemIdSchema", () => {
+  it("PlacedObject.assetDefinitionId is a valid UUID accepted by AssetDefinitionIdSchema", () => {
     const obj: PlacedObject = PlacedObjectSchema.parse({
       id: PLACED_OBJECT_ID,
       configurationId: CONFIG_ID,
@@ -764,7 +727,7 @@ describe("type-level compatibility", () => {
       sortOrder: 0,
       metadata: null,
     });
-    expect(FurnitureItemIdSchema.safeParse(obj.assetDefinitionId).success).toBe(true);
+    expect(AssetDefinitionIdSchema.safeParse(obj.assetDefinitionId).success).toBe(true);
   });
 
   it("User.venueId is a valid VenueId (or null for client users)", () => {
@@ -813,23 +776,9 @@ describe("type-level compatibility", () => {
     }
   });
 
-  it("HallkeeperSheet.manifest items have valid FurnitureCategory", () => {
-    const sheet: HallkeeperSheet = HallkeeperSheetSchema.parse({
-      id: HALLKEEPER_SHEET_ID,
-      configurationId: CONFIG_ID,
-      generatedAt: NOW,
-      pdfUrl: "https://cdn.omnitwin.com/sheet.pdf",
-      manifest: [
-        { furnitureName: "Chair", category: "chair", quantity: 50 },
-      ],
-      qrCodeData: "https://app.omnitwin.com/config/test",
-      topDownDiagramUrl: "https://cdn.omnitwin.com/diagram.svg",
-      createdAt: NOW,
-      updatedAt: NOW,
-    });
-    for (const item of sheet.manifest) {
-      expect(FurnitureCategorySchema.safeParse(item.category).success).toBe(true);
-    }
+  it("ManifestItem.category values are valid FurnitureCategory", () => {
+    const item = ManifestItemSchema.parse({ furnitureName: "Chair", category: "chair", quantity: 50 });
+    expect(FurnitureCategorySchema.safeParse(item.category).success).toBe(true);
   });
 });
 

@@ -5,8 +5,6 @@ import {
   FurnitureDimensionsSchema,
   AssetDefinitionSchema,
   CreateAssetDefinitionSchema,
-  FurnitureItemSchema,
-  CreateFurnitureItemSchema,
 } from "../furniture.js";
 
 // ---------------------------------------------------------------------------
@@ -319,22 +317,6 @@ describe("AssetDefinitionSchema", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// FurnitureItemSchema — legacy alias, same schema as AssetDefinitionSchema
-// ---------------------------------------------------------------------------
-
-describe("FurnitureItemSchema (legacy alias)", () => {
-  it("accepts a fully valid asset definition via legacy alias", () => {
-    const result = FurnitureItemSchema.safeParse(validAssetDefinition);
-    expect(result.success).toBe(true);
-  });
-
-  it("FurnitureItemSchema is structurally identical to AssetDefinitionSchema", () => {
-    const r1 = AssetDefinitionSchema.safeParse(validAssetDefinition);
-    const r2 = FurnitureItemSchema.safeParse(validAssetDefinition);
-    expect(r1.success).toBe(r2.success);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // CreateAssetDefinitionSchema — creation payload (numeric dimensions)
@@ -419,12 +401,4 @@ describe("CreateAssetDefinitionSchema", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// CreateFurnitureItemSchema — legacy alias
-// ---------------------------------------------------------------------------
-
-describe("CreateFurnitureItemSchema (legacy alias)", () => {
-  it("accepts a valid create payload via legacy alias", () => {
-    expect(CreateFurnitureItemSchema.safeParse(validCreateAssetDefinition).success).toBe(true);
-  });
-});
+// FurnitureItemSchema and CreateFurnitureItemSchema legacy aliases deleted.

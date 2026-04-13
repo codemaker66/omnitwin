@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { MAX_CHAIRS_ROUND, MAX_CHAIRS_RECT } from "../lib/table-group.js";
 
 // ---------------------------------------------------------------------------
@@ -116,6 +117,7 @@ export function ChairCountDialog({
   const [count, setCount] = useState(10);
   const [animKey, setAnimKey] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
   const maxChairs = request?.tableShape === "rectangular" ? MAX_CHAIRS_RECT : MAX_CHAIRS_ROUND;
 
@@ -170,9 +172,13 @@ export function ChairCountDialog({
         animation: "omni-v2-overlay 0.4s ease-out",
       }}
       onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="chair-dialog-title"
     >
       {/* Panel */}
       <div
+        ref={trapRef}
         style={{
           background: "rgba(16, 16, 16, 0.97)",
           borderRadius: 24,
@@ -205,7 +211,7 @@ export function ChairCountDialog({
           }}>
             {shapeLabel}
           </div>
-          <div style={{
+          <div id="chair-dialog-title" style={{
             fontSize: 28, fontWeight: 700, letterSpacing: -0.5,
             color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif",
@@ -241,6 +247,7 @@ export function ChairCountDialog({
             onPointerUp={minusRepeat.onPointerUp}
             onPointerLeave={minusRepeat.onPointerLeave}
             disabled={count <= 1}
+            aria-label="Decrease chair count"
           >
             −
           </button>
@@ -255,6 +262,7 @@ export function ChairCountDialog({
               min={1}
               max={maxChairs}
               value={count}
+              aria-label="Chair count"
               onChange={(e) => {
                 const raw = e.target.value;
                 if (raw === "") { setCount(1); return; }
@@ -294,6 +302,7 @@ export function ChairCountDialog({
             onPointerUp={plusRepeat.onPointerUp}
             onPointerLeave={plusRepeat.onPointerLeave}
             disabled={count >= maxChairs}
+            aria-label="Increase chair count"
           >
             +
           </button>

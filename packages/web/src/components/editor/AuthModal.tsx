@@ -3,6 +3,7 @@ import { SignIn } from "@clerk/clerk-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { claimConfig } from "../../api/configurations.js";
+import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // AuthModal — Clerk sign-in in a modal for mid-flow authentication
@@ -27,6 +28,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   // When auth succeeds via Clerk, claim the config and close
   useEffect(() => {
@@ -47,9 +49,9 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
   };
 
   return (
-    <div style={overlayStyle} onClick={onClose} onKeyDown={handleKeyDown} role="dialog" tabIndex={-1}>
-      <div style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1a1a2e", marginBottom: 16 }}>
+    <div style={overlayStyle} onClick={onClose} onKeyDown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" tabIndex={-1}>
+      <div ref={trapRef} style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
+        <h2 id="auth-modal-title" style={{ fontSize: 18, fontWeight: 700, color: "#1a1a2e", marginBottom: 16 }}>
           Sign In to Save
         </h2>
         <SignIn routing="hash" />

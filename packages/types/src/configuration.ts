@@ -76,8 +76,6 @@ export type PlacedObjectId = z.infer<typeof PlacedObjectIdSchema>;
 /** Asset definition ID (global catalogue, not venue-scoped). */
 export const AssetDefinitionIdSchema = z.string().uuid();
 
-/** @deprecated Use AssetDefinitionIdSchema. Legacy alias for solver compatibility. */
-export const FurnitureItemIdSchema = AssetDefinitionIdSchema;
 
 export const PlacedObjectSchema = z.object({
   id: PlacedObjectIdSchema,

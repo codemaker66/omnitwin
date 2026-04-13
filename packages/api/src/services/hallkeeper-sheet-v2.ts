@@ -12,7 +12,7 @@
 // from the manifest data + diagram URL.
 // ---------------------------------------------------------------------------
 
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray } from "drizzle-orm";
 import {
   configurations, placedObjects, assetDefinitions, spaces, venues,
 } from "../db/schema.js";
@@ -84,15 +84,15 @@ export async function assembleSheetData(
   }).from(placedObjects)
     .where(eq(placedObjects.configurationId, configId));
 
-  // Fetch asset definitions for each object
+  // Batch-fetch all asset definitions in one query (replaces N+1 per-unique-asset loop)
+  const uniqueAssetIds = [...new Set(objects.map((o) => o.assetDefinitionId))];
   const assetCache = new Map<string, { name: string; category: string }>();
-  for (const obj of objects) {
-    if (!assetCache.has(obj.assetDefinitionId)) {
-      const [asset] = await db.select({ name: assetDefinitions.name, category: assetDefinitions.category })
-        .from(assetDefinitions).where(eq(assetDefinitions.id, obj.assetDefinitionId)).limit(1);
-      if (asset !== undefined) {
-        assetCache.set(obj.assetDefinitionId, asset);
-      }
+  if (uniqueAssetIds.length > 0) {
+    const assetRows = await db.select({ id: assetDefinitions.id, name: assetDefinitions.name, category: assetDefinitions.category })
+      .from(assetDefinitions)
+      .where(inArray(assetDefinitions.id, uniqueAssetIds));
+    for (const a of assetRows) {
+      assetCache.set(a.id, { name: a.name, category: a.category });
     }
   }
 

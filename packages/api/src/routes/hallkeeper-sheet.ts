@@ -29,6 +29,12 @@ export async function hallkeeperSheetRoutes(
 ): Promise<void> {
   const { db } = opts;
 
+  // Base URL for QR codes / web view links — use FRONTEND_URL to prevent
+  // Host header spoofing (an attacker could send Host: evil.com and get
+  // their domain printed on the QR code). Falls back to request origin
+  // only in dev when FRONTEND_URL is not set.
+  const frontendUrl = process.env["FRONTEND_URL"] ?? null;
+
   // GET /hallkeeper/:configId/sheet — generate PDF (authenticated)
   server.get("/:configId/sheet", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
@@ -39,10 +45,7 @@ export async function hallkeeperSheetRoutes(
     const query = DownloadQuery.safeParse(request.query);
     const isDownload = query.success && query.data.download === "true";
 
-    // Determine base URL for QR code / web view link
-    const protocol = request.protocol;
-    const host = request.hostname;
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
     const data = await assembleSheetData(db, params.data.configId, baseUrl);
     if (data === null) {
@@ -71,9 +74,7 @@ export async function hallkeeperSheetRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const protocol = request.protocol;
-    const host = request.hostname;
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
     const data = await assembleSheetData(db, params.data.configId, baseUrl);
     if (data === null) {

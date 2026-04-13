@@ -7,7 +7,7 @@ import { GrandHallRoom } from "./components/GrandHallRoom.js";
 import { RoomMesh } from "./components/editor/RoomMesh.js";
 import { SectionPlane } from "./components/SectionPlane.js";
 import { SectionSlider } from "./components/SectionSlider.js";
-import { InvalidateOnToggle } from "./components/WallTogglePanel.js";
+import { InvalidateOnToggle, WallTogglePanel, AutoWallSelector } from "./components/WallTogglePanel.js";
 import { XrayToggle } from "./components/XrayToggle.js";
 import { MeasurementTool } from "./components/MeasurementTool.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
@@ -92,6 +92,7 @@ export function App(): React.ReactElement {
         <SceneProvider />
         <SectionPlane />
         <InvalidateOnToggle />
+        <AutoWallSelector />
         {roomGeometry !== null ? (
           <RoomMesh geometry={roomGeometry} />
         ) : (
@@ -119,6 +120,7 @@ export function App(): React.ReactElement {
         display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
         zIndex: 10, pointerEvents: "auto",
       }}>
+        <WallTogglePanel />
         <SectionSlider />
       </div>
 

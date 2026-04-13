@@ -42,7 +42,6 @@ export {
   Vec3Schema,
   PlacedObjectIdSchema,
   AssetDefinitionIdSchema,
-  FurnitureItemIdSchema,
   PlacedObjectSchema,
   ConfigurationSchema,
   CreateConfigurationSchema,
@@ -72,14 +71,10 @@ export {
   FurnitureDimensionsSchema,
   AssetDefinitionSchema,
   CreateAssetDefinitionSchema,
-  FurnitureItemSchema,
-  CreateFurnitureItemSchema,
   type FurnitureCategory,
   type FurnitureDimensions,
   type AssetDefinition,
   type CreateAssetDefinition,
-  type FurnitureItem,
-  type CreateFurnitureItem,
 } from "./furniture.js";
 
 export {
@@ -102,16 +97,10 @@ export {
   EmailSchema,
   UserSchema,
   CreateUserSchema,
-  LoginRequestSchema,
-  RegisterRequestSchema,
-  AuthTokensSchema,
   type UserId,
   type UserRole,
   type User,
   type CreateUser,
-  type LoginRequest,
-  type RegisterRequest,
-  type AuthTokens,
 } from "./user.js";
 
 export {
@@ -157,12 +146,10 @@ export {
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
   HallkeeperSheetDataSchema,
-  HallkeeperSheetSchema,
   GenerateHallkeeperSheetRequestSchema,
   type HallkeeperSheetId,
   type ManifestItem,
   type HallkeeperSheetData,
-  type HallkeeperSheet,
   type GenerateHallkeeperSheetRequest,
 } from "./hallkeeper.js";
 

@@ -7,8 +7,6 @@ import { AssetDefinitionIdSchema } from "./configuration.js";
 
 export { AssetDefinitionIdSchema } from "./configuration.js";
 
-/** @deprecated Use AssetDefinitionIdSchema. Legacy alias. */
-export { AssetDefinitionIdSchema as FurnitureItemIdSchema } from "./configuration.js";
 
 // ---------------------------------------------------------------------------
 // Furniture Category — classification of furniture/asset types
@@ -87,18 +85,3 @@ export const CreateAssetDefinitionSchema = z.object({
 
 export type CreateAssetDefinition = z.infer<typeof CreateAssetDefinitionSchema>;
 
-// ---------------------------------------------------------------------------
-// Legacy aliases — kept for backward compatibility with solver module
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use AssetDefinitionSchema */
-export const FurnitureItemSchema = AssetDefinitionSchema;
-
-/** @deprecated Use AssetDefinition */
-export type FurnitureItem = AssetDefinition;
-
-/** @deprecated Use CreateAssetDefinitionSchema */
-export const CreateFurnitureItemSchema = CreateAssetDefinitionSchema;
-
-/** @deprecated Use CreateAssetDefinition */
-export type CreateFurnitureItem = CreateAssetDefinition;

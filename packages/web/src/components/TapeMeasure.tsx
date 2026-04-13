@@ -116,6 +116,7 @@ function GuidelineLine({ guideline }: { readonly guideline: GuidelineData }): Re
               style={dismissBtnStyle}
               onClick={handleDismiss}
               title="Remove guideline"
+              aria-label="Remove guideline"
             >
               ×
             </button>

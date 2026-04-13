@@ -188,16 +188,17 @@ export function ActionBar(): React.ReactElement {
   }, [handleGroup]);
 
   return (
-    <div style={barStyle}>
+    <div style={barStyle} role="toolbar" aria-label="Editor actions">
       <button
         type="button"
         style={canUndo ? btnBase : btnDisabled}
         onClick={handleUndo}
         disabled={!canUndo}
         title="Undo (Ctrl+Z)"
+        aria-label="Undo"
       >
         <UndoIcon />
-        <span style={labelStyle}>Undo</span>
+        <span style={labelStyle} aria-hidden="true">Undo</span>
       </button>
       <button
         type="button"
@@ -205,18 +206,21 @@ export function ActionBar(): React.ReactElement {
         onClick={handleRedo}
         disabled={!canRedo}
         title="Redo (Ctrl+Y)"
+        aria-label="Redo"
       >
         <RedoIcon />
-        <span style={labelStyle}>Redo</span>
+        <span style={labelStyle} aria-hidden="true">Redo</span>
       </button>
       <button
         type="button"
         style={snapEnabled ? btnActive : btnBase}
         onClick={handleToggleSnap}
         title="Toggle Grid Snap (G)"
+        aria-label="Toggle grid snap"
+        aria-pressed={snapEnabled}
       >
         <GridSnapIcon />
-        <span style={labelStyle}>Snap</span>
+        <span style={labelStyle} aria-hidden="true">Snap</span>
       </button>
       {hasMultiSelect && (
         <button
@@ -224,9 +228,10 @@ export function ActionBar(): React.ReactElement {
           style={btnBase}
           onClick={handleGroup}
           title={allGrouped ? "Ungroup (Ctrl+G)" : "Group (Ctrl+G)"}
+          aria-label={allGrouped ? "Ungroup selected items" : "Group selected items"}
         >
           {allGrouped ? <UngroupIcon /> : <GroupIcon />}
-          <span style={labelStyle}>{allGrouped ? "Ungroup" : "Group"}</span>
+          <span style={labelStyle} aria-hidden="true">{allGrouped ? "Ungroup" : "Group"}</span>
         </button>
       )}
     </div>

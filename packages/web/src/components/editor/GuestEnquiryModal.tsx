@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
+import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // GuestEnquiryModal — premium conversion moment
@@ -103,6 +104,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
   const [emailTouched, setEmailTouched] = useState(false);
   const [copied, setCopied] = useState<"idle" | "success" | "fail">("idle");
   const emailRef = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   // Auto-focus email on open
   useEffect(() => {
@@ -181,9 +183,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         onClick={onClose}
         onKeyDown={handleKeyDown}
         role="dialog"
+        aria-modal="true"
+        aria-labelledby="enquiry-success-title"
         tabIndex={-1}
       >
         <div
+          ref={trapRef}
           style={{
             background: `linear-gradient(145deg, ${GLASS}, rgba(22,22,22,0.98))`,
             backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
@@ -196,7 +201,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         >
           {/* Animated check circle */}
           <div style={{ marginBottom: 20 }}>
-            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
               <circle cx="32" cy="32" r="30" stroke={GOLD} strokeWidth="2" opacity="0.2" />
               <circle cx="32" cy="32" r="30" stroke={GOLD} strokeWidth="2"
                 strokeDasharray="188" strokeDashoffset="0"
@@ -208,7 +213,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             </svg>
           </div>
 
-          <h2 style={{
+          <h2 id="enquiry-success-title" style={{
             fontSize: 26, fontWeight: 700, color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
           }}>
@@ -297,9 +302,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
       onClick={onClose}
       onKeyDown={handleKeyDown}
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="enquiry-form-title"
       tabIndex={-1}
     >
       <div
+        ref={trapRef}
         style={{
           background: `linear-gradient(145deg, ${GLASS}, rgba(22,22,22,0.98))`,
           backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
@@ -325,7 +333,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           }}>
             Almost there
           </div>
-          <h2 style={{
+          <h2 id="enquiry-form-title" style={{
             fontSize: 24, fontWeight: 700, color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
             lineHeight: 1.2,

@@ -1,4 +1,4 @@
-import { eq, and, isNull, lt, sql } from "drizzle-orm";
+import { eq, and, isNull, lt, sql, notExists, inArray } from "drizzle-orm";
 import { configurations, placedObjects, enquiries } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -18,29 +18,28 @@ import type { Database } from "../db/client.js";
 export async function cleanupPreviewConfigurations(db: Database): Promise<number> {
   const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000);
 
-  // Find stale preview configs not linked to any enquiry
+  // Single query: find stale preview configs NOT linked to any enquiry
+  // Replaces N+1 per-config enquiry existence check
   const stale = await db.select({ id: configurations.id })
     .from(configurations)
     .where(and(
       eq(configurations.isPublicPreview, true),
       isNull(configurations.userId),
       lt(configurations.createdAt, cutoff),
+      notExists(
+        db.select({ one: sql`1` })
+          .from(enquiries)
+          .where(eq(enquiries.configurationId, configurations.id)),
+      ),
     ));
 
-  let deleted = 0;
-  for (const config of stale) {
-    // Check if linked to any enquiry
-    const [linked] = await db.select({ count: sql<number>`count(*)::int` })
-      .from(enquiries)
-      .where(eq(enquiries.configurationId, config.id));
+  if (stale.length === 0) return 0;
 
-    if ((linked?.count ?? 0) > 0) continue;
+  const staleIds = stale.map((c) => c.id);
 
-    // Delete placed objects first (cascade should handle this, but be explicit)
-    await db.delete(placedObjects).where(eq(placedObjects.configurationId, config.id));
-    await db.delete(configurations).where(eq(configurations.id, config.id));
-    deleted++;
-  }
+  // Batch delete: placed objects first (cascade exists but be explicit), then configs
+  await db.delete(placedObjects).where(inArray(placedObjects.configurationId, staleIds));
+  await db.delete(configurations).where(inArray(configurations.id, staleIds));
 
-  return deleted;
+  return stale.length;
 }

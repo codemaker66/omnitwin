@@ -6,6 +6,8 @@ import { useSelectionStore } from "../stores/selection-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
+import { useMeasurementStore } from "../stores/measurement-store.js";
+import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
@@ -244,6 +246,8 @@ export function SelectionSystem(): null {
       if (event.button !== 0) return;
       // Don't interfere with placement mode
       if (useCatalogueStore.getState().selectedItemId !== null) return;
+      // Don't interfere with measurement or guideline tools
+      if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
       dragStartScreen.current = { x: event.clientX, y: event.clientY };
       isDragging.current = false;
@@ -500,6 +504,7 @@ export function SelectionSystem(): null {
     function onDblClick(event: MouseEvent): void {
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
+      if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
       // Find which placed item was double-clicked
       cachedRect = canvasEl.getBoundingClientRect();

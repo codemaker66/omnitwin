@@ -84,28 +84,3 @@ export const GenerateHallkeeperSheetRequestSchema = z.object({
 
 export type GenerateHallkeeperSheetRequest = z.infer<typeof GenerateHallkeeperSheetRequestSchema>;
 
-// ---------------------------------------------------------------------------
-// Legacy persistent sheet schema — DEPRECATED
-//
-// The original design assumed hallkeeper sheets would be persisted as DB
-// entities with pdfUrl, qrCodeData, topDownDiagramUrl. The running system
-// generates them on-the-fly instead. This schema is kept for backward
-// compatibility with existing tests only.
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use HallkeeperSheetDataSchema. Sheets are generated, not persisted. */
-export const HallkeeperSheetSchema = z.object({
-  id: HallkeeperSheetIdSchema,
-  configurationId: ConfigurationIdSchema,
-  generatedAt: z.string().datetime(),
-  pdfUrl: z.string().url(),
-  manifest: z.array(ManifestItemSchema).min(1),
-  qrCodeData: z.string().min(1).max(2000),
-  topDownDiagramUrl: z.string().url(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-/** @deprecated */
-// eslint-disable-next-line @typescript-eslint/no-deprecated
-export type HallkeeperSheet = z.infer<typeof HallkeeperSheetSchema>;

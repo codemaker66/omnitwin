@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
-import { referencePhotos, referenceLoadouts } from "../db/schema.js";
+import { referencePhotos, referenceLoadouts, files } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -82,21 +82,36 @@ export async function referencePhotoRoutes(
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }
 
-    // If no sortOrder provided, append to end
-    let sortOrder = parsed.data.sortOrder;
-    if (sortOrder === undefined) {
-      const [maxRow] = await db.select({ max: sql<number>`coalesce(max(sort_order), -1)::int` })
-        .from(referencePhotos)
-        .where(eq(referencePhotos.loadoutId, params.data.loadoutId));
-      sortOrder = (maxRow?.max ?? -1) + 1;
+    // Verify the fileId exists and belongs to this loadout's context
+    const [file] = await db.select({ id: files.id }).from(files)
+      .where(and(
+        eq(files.id, parsed.data.fileId),
+        eq(files.context, "loadout"),
+        eq(files.contextId, params.data.loadoutId),
+      ))
+      .limit(1);
+    if (file === undefined) {
+      return reply.status(400).send({ error: "File not found or does not belong to this loadout", code: "VALIDATION_ERROR" });
     }
 
-    const [photo] = await db.insert(referencePhotos).values({
-      loadoutId: params.data.loadoutId,
-      fileId: parsed.data.fileId,
-      caption: parsed.data.caption ?? null,
-      sortOrder,
-    }).returning();
+    // Atomic insert: compute sort order and insert in a single transaction
+    // to prevent concurrent requests from getting the same sort order.
+    const [photo] = await db.transaction(async (tx) => {
+      let sortOrder = parsed.data.sortOrder;
+      if (sortOrder === undefined) {
+        const [maxRow] = await tx.select({ max: sql<number>`coalesce(max(sort_order), -1)::int` })
+          .from(referencePhotos)
+          .where(eq(referencePhotos.loadoutId, params.data.loadoutId));
+        sortOrder = (maxRow?.max ?? -1) + 1;
+      }
+
+      return tx.insert(referencePhotos).values({
+        loadoutId: params.data.loadoutId,
+        fileId: parsed.data.fileId,
+        caption: parsed.data.caption ?? null,
+        sortOrder,
+      }).returning();
+    });
 
     return reply.status(201).send({ data: photo });
   });

@@ -124,18 +124,17 @@ export async function webhookRoutes(
       if (type === "user.updated") {
         const email = getPrimaryEmail(data);
         const name = getFullName(data);
-        const rawRole = data.public_metadata?.["role"];
-        const role = rawRole !== undefined ? sanitizeRole(rawRole) : undefined;
-        const venueId = (data.public_metadata?.["venueId"] as string) ?? undefined;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
 
-        const updateData: Record<string, unknown> = {
-          email, name, displayName: name, phone, updatedAt: new Date(),
-        };
-        if (role !== undefined) updateData["role"] = role;
-        if (venueId !== undefined) updateData["venueId"] = venueId;
+        // Always sync role and venueId from metadata. If the key was removed
+        // from Clerk, fall back to defaults so stale values don't persist.
+        const role = sanitizeRole(data.public_metadata?.["role"]);
+        const rawVenueId = data.public_metadata?.["venueId"];
+        const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
 
-        await db.update(users).set(updateData).where(eq(users.clerkId, data.id));
+        await db.update(users).set({
+          email, name, displayName: name, phone, role, venueId, updatedAt: new Date(),
+        }).where(eq(users.clerkId, data.id));
 
         return reply.status(200).send({ received: true });
       }

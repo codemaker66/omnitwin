@@ -36,7 +36,10 @@ const UpdateConfigBody = z.object({
   layoutStyle: LayoutStyleSchema.optional(),
   guestCount: z.number().int().nonnegative().optional(),
   visibility: z.enum(["private", "staff", "public"]).optional(),
-  thumbnailUrl: z.string().url().nullable().optional(),
+  thumbnailUrl: z.string().refine(
+    (s) => s.startsWith("data:image/") || /^https?:\/\//.test(s),
+    { message: "Must be a data:image/* URL or an https URL" },
+  ).nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------

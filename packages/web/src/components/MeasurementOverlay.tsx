@@ -78,8 +78,8 @@ export function MeasurementOverlay(): React.ReactElement | null {
     : "Click a surface to place first point";
 
   return (
-    <div style={barStyle}>
-      <span style={dotIndicator} />
+    <div style={barStyle} role="status" aria-live="polite" aria-label="Measurement tool status">
+      <span style={dotIndicator} aria-hidden="true" />
       <span>Measure</span>
       <span style={{ opacity: 0.6 }}>—</span>
       <span style={{ opacity: 0.8 }}>{hint}</span>

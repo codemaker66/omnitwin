@@ -68,19 +68,7 @@ describe("SpacePicker", () => {
   });
 });
 
-describe("AssetPalette", () => {
-  it("exports a component", async () => {
-    const { AssetPalette } = await import("../components/editor/AssetPalette.js");
-    expect(typeof AssetPalette).toBe("function");
-  });
-});
-
-describe("EditorToolbar", () => {
-  it("exports a component", async () => {
-    const { EditorToolbar } = await import("../components/editor/EditorToolbar.js");
-    expect(typeof EditorToolbar).toBe("function");
-  });
-});
+// AssetPalette and EditorToolbar were deleted — superseded by VerticalToolbox.
 
 describe("SaveSendPanel", () => {
   it("exports a component", async () => {

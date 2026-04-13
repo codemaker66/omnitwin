@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // ConfirmModal — reusable confirmation dialog
@@ -35,11 +36,12 @@ export function ConfirmModal({
   showNoteField = false, onConfirm, onCancel,
 }: ConfirmModalProps): React.ReactElement {
   const [note, setNote] = useState("");
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   return (
-    <div style={overlayStyle} onClick={onCancel} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} role="dialog" tabIndex={-1}>
-      <div style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#1a1a2e", marginBottom: 8 }}>{title}</h3>
+    <div style={overlayStyle} onClick={onCancel} onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" tabIndex={-1}>
+      <div ref={trapRef} style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
+        <h3 id="confirm-modal-title" style={{ fontSize: 16, fontWeight: 700, color: "#1a1a2e", marginBottom: 8 }}>{title}</h3>
         <p style={{ fontSize: 14, color: "#666", marginBottom: 16 }}>{message}</p>
         {showNoteField && (
           <textarea
