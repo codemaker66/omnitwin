@@ -56,8 +56,10 @@ export function LoadoutsView(): React.ReactElement {
   // Load loadouts for selected space
   useEffect(() => {
     if (selectedSpaceId === null || venueId === "") return;
-    void loadoutsApi.listLoadouts(venueId, selectedSpaceId).then(setLoadouts).catch(() => { /* ignore */ });
-  }, [selectedSpaceId, venueId]);
+    void loadoutsApi.listLoadouts(venueId, selectedSpaceId)
+      .then(setLoadouts)
+      .catch(() => { addToast("Failed to load loadouts", "error"); });
+  }, [selectedSpaceId, venueId, addToast]);
 
   const handleCreate = async (): Promise<void> => {
     if (selectedSpaceId === null || createName.trim() === "") return;
@@ -83,7 +85,9 @@ export function LoadoutsView(): React.ReactElement {
         onDeleted={() => {
           setSelectedLoadoutId(null);
           // selectedSpaceId is already non-null in this branch (see outer guard).
-          void loadoutsApi.listLoadouts(venueId, selectedSpaceId).then(setLoadouts).catch(() => { /* ignore */ });
+          void loadoutsApi.listLoadouts(venueId, selectedSpaceId)
+            .then(setLoadouts)
+            .catch(() => { addToast("Failed to load loadouts", "error"); });
         }}
       />
     );
@@ -109,7 +113,9 @@ export function LoadoutsView(): React.ReactElement {
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Reference Loadouts</h3>
-        <button type="button" style={btnStyle} onClick={() => { setShowCreate(true); }}>New Loadout</button>
+        <button type="button" style={{ ...btnStyle, opacity: selectedSpaceId === null ? 0.5 : 1 }}
+          disabled={selectedSpaceId === null}
+          onClick={() => { setShowCreate(true); }}>New Loadout</button>
       </div>
 
       {loading && <p style={{ color: "#999" }}>Loading...</p>}

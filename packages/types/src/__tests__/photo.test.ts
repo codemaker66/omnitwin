@@ -6,6 +6,7 @@ import {
   PhotoSchema,
   PhotoUploadRequestSchema,
   PhotoUploadResponseSchema,
+  ReferencePhotoSchema,
 } from "../photo.js";
 
 // ---------------------------------------------------------------------------
@@ -352,5 +353,62 @@ describe("PhotoUploadResponseSchema", () => {
     expect(
       PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, expiresAt: null }).success,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReferencePhotoSchema — live runtime schema (F30)
+//
+// Matches the reference_photos DB table: linked to a loadout (not a
+// configuration), references a files row (fileId, not a direct URL).
+// ---------------------------------------------------------------------------
+
+describe("ReferencePhotoSchema", () => {
+  const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+  const VALID_LOADOUT_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
+  const VALID_FILE_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
+  const VALID_DATETIME = "2026-01-15T10:30:00.000Z";
+
+  const validReferencePhoto = {
+    id: VALID_UUID,
+    loadoutId: VALID_LOADOUT_UUID,
+    fileId: VALID_FILE_UUID,
+    caption: "Grand Hall — ceremony layout",
+    sortOrder: 0,
+    createdAt: VALID_DATETIME,
+  };
+
+  it("accepts a fully valid reference photo", () => {
+    expect(ReferencePhotoSchema.safeParse(validReferencePhoto).success).toBe(true);
+  });
+
+  it("accepts null caption", () => {
+    expect(ReferencePhotoSchema.safeParse({ ...validReferencePhoto, caption: null }).success).toBe(true);
+  });
+
+  it("rejects missing loadoutId", () => {
+    const { loadoutId: _, ...noLoadout } = validReferencePhoto;
+    expect(ReferencePhotoSchema.safeParse(noLoadout).success).toBe(false);
+  });
+
+  it("rejects missing fileId", () => {
+    const { fileId: _, ...noFile } = validReferencePhoto;
+    expect(ReferencePhotoSchema.safeParse(noFile).success).toBe(false);
+  });
+
+  it("rejects non-UUID loadoutId", () => {
+    expect(ReferencePhotoSchema.safeParse({ ...validReferencePhoto, loadoutId: "not-uuid" }).success).toBe(false);
+  });
+
+  it("rejects negative sortOrder", () => {
+    expect(ReferencePhotoSchema.safeParse({ ...validReferencePhoto, sortOrder: -1 }).success).toBe(false);
+  });
+
+  it("accepts sortOrder of 0", () => {
+    expect(ReferencePhotoSchema.safeParse({ ...validReferencePhoto, sortOrder: 0 }).success).toBe(true);
+  });
+
+  it("rejects invalid createdAt format", () => {
+    expect(ReferencePhotoSchema.safeParse({ ...validReferencePhoto, createdAt: "not-a-date" }).success).toBe(false);
   });
 });

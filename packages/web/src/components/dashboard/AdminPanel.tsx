@@ -100,6 +100,9 @@ export function AdminPanel(): React.ReactElement {
   useEffect(loadVenues, [addToast]);
 
   const handleSelectVenue = (venueId: string): void => {
+    // Clear stale pricing rules immediately so the previous venue's rules
+    // are never shown under the newly selected venue (F22).
+    setPricingRules([]);
     void spacesApi.getVenue(venueId)
       .then((v) => {
         setSelectedVenue(v);

@@ -227,4 +227,59 @@ describe("rearrangeTableGroup", () => {
     const result = rearrangeTableGroup("nonexistent", 4, items);
     expect(result).toEqual(items);
   });
+
+  // F19: rearrangeTableGroup must preserve the original groupId and reuse
+  // existing chair IDs to avoid orphaning DB records on each rearrange.
+  it("preserves original groupId after rearrange (F19)", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
+    const table = group[0];
+    expect(table).toBeDefined();
+    if (table === undefined) return;
+
+    const originalGroupId = table.groupId;
+    const newItems = rearrangeTableGroup(table.id, 6, group);
+
+    // All rearranged items share the original groupId
+    const groupItems = newItems.filter((p) => p.groupId !== null);
+    for (const item of groupItems) {
+      expect(item.groupId).toBe(originalGroupId);
+    }
+  });
+
+  it("reuses existing chair IDs for positions within original count (F19)", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
+    const table = group[0];
+    expect(table).toBeDefined();
+    if (table === undefined) return;
+
+    const originalChairIds = group.slice(1).map((p) => p.id);
+
+    // Reduce from 4 to 2 chairs — the 2 remaining should reuse existing IDs
+    const newItems = rearrangeTableGroup(table.id, 2, group);
+    const newChairs = newItems.filter((p) => p.catalogueItemId === CHAIR_ID);
+
+    expect(newChairs).toHaveLength(2);
+    for (const chair of newChairs) {
+      expect(originalChairIds).toContain(chair.id);
+    }
+  });
+
+  it("generates fresh IDs only for newly added chairs (F19)", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
+    const table = group[0];
+    expect(table).toBeDefined();
+    if (table === undefined) return;
+
+    const originalChairIds = new Set(group.slice(1).map((p) => p.id));
+
+    // Increase from 4 to 6 chairs — first 4 reuse IDs, last 2 are new
+    const newItems = rearrangeTableGroup(table.id, 6, group);
+    const newChairs = newItems.filter((p) => p.catalogueItemId === CHAIR_ID);
+
+    expect(newChairs).toHaveLength(6);
+    const reuseCount = newChairs.filter((c) => originalChairIds.has(c.id)).length;
+    const freshCount = newChairs.filter((c) => !originalChairIds.has(c.id)).length;
+    expect(reuseCount).toBe(4);
+    expect(freshCount).toBe(2);
+  });
 });

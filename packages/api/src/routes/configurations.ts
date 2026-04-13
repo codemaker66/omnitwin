@@ -11,11 +11,11 @@ import { canAccessResource } from "../utils/query.js";
 // ---------------------------------------------------------------------------
 // Zod schemas
 //
-// `layoutStyle` is sourced from `@omnitwin/types` (LayoutStyleSchema) so the
-// API and the shared types package can never silently disagree on the enum
-// values. The shared schema is kebab-case (`dinner-rounds`, `dinner-banquet`)
-// to match the slug convention used elsewhere in the system and the keys the
-// solver in `@omnitwin/types/solver` expects. Punch list #13.
+// `layoutStyle` is the one field sourced from `@omnitwin/types` (LayoutStyleSchema)
+// so the API and the shared types package cannot silently diverge on that enum.
+// All other request/response shapes are defined locally here — drift between
+// local definitions and @omnitwin/types is tracked in the types-source-of-truth
+// test. Punch list #13.
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });

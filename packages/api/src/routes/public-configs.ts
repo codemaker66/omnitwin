@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { configurations, placedObjects, spaces } from "../db/schema.js";
+import { configurations, placedObjects, spaces, assetDefinitions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -113,6 +113,26 @@ export async function publicConfigRoutes(
 
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
+    }
+
+    // Verify all referenced assetDefinitionIds exist before touching the DB.
+    // Without this check, malformed batches can insert placed_objects rows with
+    // broken FK references (the DB constraint will reject them, but a clear 422
+    // is more informative than a generic 500 from a FK violation).
+    const uniqueAssetIds = [...new Set(parsed.data.objects.map((o) => o.assetDefinitionId))];
+    if (uniqueAssetIds.length > 0) {
+      const found = await db.select({ id: assetDefinitions.id })
+        .from(assetDefinitions)
+        .where(inArray(assetDefinitions.id, uniqueAssetIds));
+      if (found.length !== uniqueAssetIds.length) {
+        const foundIds = new Set(found.map((a) => a.id));
+        const missingIds = uniqueAssetIds.filter((id) => !foundIds.has(id));
+        return reply.status(422).send({
+          error: "Unknown asset definition IDs",
+          code: "ASSET_NOT_FOUND",
+          details: { missingIds },
+        });
+      }
     }
 
     const toUpdate = parsed.data.objects.filter((o) => o.id !== undefined);

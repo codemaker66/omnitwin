@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import rawBody from "fastify-raw-body";
-import { validateEnv } from "./env.js";
+import { validateEnv, type Env } from "./env.js";
 import { createDb } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { venueRoutes } from "./routes/venues.js";
@@ -29,9 +29,10 @@ import websocket from "@fastify/websocket";
 // OMNITWIN API — Fastify server entry point
 // ---------------------------------------------------------------------------
 
-/** Builds and configures the Fastify instance (exported for testing). */
-export async function buildServer(): Promise<ReturnType<typeof Fastify>> {
-  const env = validateEnv();
+/** Builds and configures the Fastify instance (exported for testing).
+ *  Accepts a pre-validated Env so the direct-run entry point can validate
+ *  once and pass the result in, avoiding the double-validation on startup. */
+export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<typeof Fastify>> {
 
   const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
   const isDev = process.env["NODE_ENV"] !== "production" && !isTest;
@@ -112,7 +113,7 @@ const isDirectRun = process.argv[1]?.endsWith("index.ts") === true ||
 
 if (isDirectRun) {
   const env = validateEnv();
-  const server = await buildServer();
+  const server = await buildServer(env);
 
   try {
     await server.listen({ port: env.PORT, host: "0.0.0.0" });

@@ -23,15 +23,22 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
   const [loading, setLoading] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonically-incrementing request counter — prevents a slow response
+  // from an earlier search overwriting results from a newer one (F23).
+  const requestIdRef = useRef(0);
 
   const doSearch = useCallback(async (q: string) => {
     if (q.length < 2) { setResults(null); return; }
+    const id = ++requestIdRef.current;
     setLoading(true);
     try {
       const data = await clientsApi.searchClients(q);
+      if (id !== requestIdRef.current) return; // Stale response — discard
       setResults(data);
-    } catch { addToast("Search failed", "error"); }
-    setLoading(false);
+    } catch {
+      if (id === requestIdRef.current) addToast("Search failed", "error");
+    }
+    if (id === requestIdRef.current) setLoading(false);
   }, [addToast]);
 
   const handleInput = (value: string): void => {

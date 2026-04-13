@@ -153,7 +153,8 @@ export async function authenticate(
     });
 
     const clerkId = payload.sub;
-    const email = (payload as Record<string, unknown>)["email"] as string | undefined;
+    const rawEmail = (payload as Record<string, unknown>)["email"];
+    const email = typeof rawEmail === "string" ? rawEmail : undefined;
 
     if (_db === null) {
       await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });

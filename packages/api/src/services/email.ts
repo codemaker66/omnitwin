@@ -4,14 +4,21 @@ import { Resend } from "resend";
 // Email service — sends via Resend, or logs to console in dev mode
 // ---------------------------------------------------------------------------
 
+// Initialized on first send so module-load order doesn't matter and tests
+// that don't set RESEND_API_KEY before import don't inadvertently create a
+// live client. See F39 in audit findings.
 let resendClient: Resend | null = null;
+let resendInitialized = false;
 
-const apiKey = process.env["RESEND_API_KEY"];
-if (apiKey !== undefined && apiKey !== "") {
-  resendClient = new Resend(apiKey);
+function getResendClient(): Resend | null {
+  if (resendInitialized) return resendClient;
+  resendInitialized = true;
+  const apiKey = process.env["RESEND_API_KEY"];
+  if (apiKey !== undefined && apiKey !== "") {
+    resendClient = new Resend(apiKey);
+  }
+  return resendClient;
 }
-
-const emailFrom = process.env["EMAIL_FROM"] ?? "OMNITWIN <notifications@omnitwin.com>";
 
 export interface EmailPayload {
   readonly to: string;
@@ -24,7 +31,9 @@ export interface EmailPayload {
  * Returns true on success (or dev log), false on error.
  */
 export async function sendEmail(payload: EmailPayload): Promise<boolean> {
-  if (resendClient === null) {
+  const emailFrom = process.env["EMAIL_FROM"] ?? "OMNITWIN <notifications@omnitwin.com>";
+  const client = getResendClient();
+  if (client === null) {
     console.log(`[DEV EMAIL] To: ${payload.to}`);
     console.log(`[DEV EMAIL] Subject: ${payload.subject}`);
     console.log(`[DEV EMAIL] Body: ${payload.html.slice(0, 200)}...`);
@@ -32,7 +41,7 @@ export async function sendEmail(payload: EmailPayload): Promise<boolean> {
   }
 
   try {
-    await resendClient.emails.send({
+    await client.emails.send({
       from: emailFrom,
       to: payload.to,
       subject: payload.subject,

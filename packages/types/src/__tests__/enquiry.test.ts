@@ -7,6 +7,7 @@ import {
   isValidEnquiryTransition,
   EnquirySchema,
   CreateEnquirySchema,
+  GuestEnquirySchema,
 } from "../enquiry.js";
 import type { EnquiryStatus } from "../enquiry.js";
 
@@ -454,6 +455,86 @@ describe("CreateEnquirySchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect("state" in result.data).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GuestEnquirySchema — public guest submission path (F31)
+//
+// Matches the /public/enquiries endpoint schema which differs from
+// CreateEnquirySchema: guests identify by configurationId (not venueId/spaceId),
+// contact details are optional, and field names use eventDate/guestCount.
+// ---------------------------------------------------------------------------
+
+describe("GuestEnquirySchema", () => {
+  const validGuest = {
+    configurationId: VALID_CONFIG_UUID,
+    email: "guest@example.com",
+  };
+
+  it("accepts minimal payload (only configurationId + email)", () => {
+    expect(GuestEnquirySchema.safeParse(validGuest).success).toBe(true);
+  });
+
+  it("accepts full optional payload", () => {
+    expect(GuestEnquirySchema.safeParse({
+      ...validGuest,
+      phone: "+44 141 555 1234",
+      name: "Jane Smith",
+      eventDate: "2026-09-15",
+      eventType: "Wedding Reception",
+      guestCount: 200,
+      message: "Looking for a venue for a large wedding reception.",
+    }).success).toBe(true);
+  });
+
+  it("rejects missing configurationId", () => {
+    const { configurationId: _, ...noConfig } = validGuest;
+    expect(GuestEnquirySchema.safeParse(noConfig).success).toBe(false);
+  });
+
+  it("rejects missing email", () => {
+    const { email: _, ...noEmail } = validGuest;
+    expect(GuestEnquirySchema.safeParse(noEmail).success).toBe(false);
+  });
+
+  it("rejects invalid email format", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, email: "not-an-email" }).success).toBe(false);
+  });
+
+  it("rejects non-UUID configurationId", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, configurationId: "not-uuid" }).success).toBe(false);
+  });
+
+  it("rejects eventDate in wrong format (datetime, not date)", () => {
+    expect(GuestEnquirySchema.safeParse({
+      ...validGuest, eventDate: "2026-09-15T14:00:00Z",
+    }).success).toBe(false);
+  });
+
+  it("accepts eventDate in YYYY-MM-DD format", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, eventDate: "2026-09-15" }).success).toBe(true);
+  });
+
+  it("rejects negative guestCount", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, guestCount: -1 }).success).toBe(false);
+  });
+
+  it("accepts guestCount of 0", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, guestCount: 0 }).success).toBe(true);
+  });
+
+  it("rejects phone exceeding 30 characters", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, phone: "1".repeat(31) }).success).toBe(false);
+  });
+
+  it("does not include venueId or spaceId (guest schema uses configurationId)", () => {
+    // Passing venueId should be silently stripped (Zod default behavior)
+    const result = GuestEnquirySchema.safeParse({ ...validGuest, venueId: VALID_VENUE_UUID });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect("venueId" in result.data).toBe(false);
     }
   });
 });

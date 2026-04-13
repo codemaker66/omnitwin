@@ -1,3 +1,9 @@
+/**
+ * @aspirational Layout template schemas — define a pre-made furniture
+ * arrangement that can be applied to a space. These types are tested and
+ * exported but not yet consumed by the web or API packages. When template
+ * management is implemented, import from here rather than re-declaring.
+ */
 import { z } from "zod";
 import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";

@@ -138,6 +138,27 @@ describe("production environment validation", () => {
     })).not.toThrow();
   });
 
+  // F29: R2_PUBLIC_URL must be included in the cohesion check — previously
+  // only 4 fields were checked, so R2_PUBLIC_URL could be missing and the
+  // error would only appear at request time rather than startup.
+  it("REJECTS R2 config missing R2_PUBLIC_URL (F29)", () => {
+    expect(() => validateEnv({
+      ...validProdBase,
+      R2_ACCOUNT_ID: "acct",
+      R2_ACCESS_KEY_ID: "key",
+      R2_SECRET_ACCESS_KEY: "secret",
+      R2_BUCKET_NAME: "bucket",
+      // R2_PUBLIC_URL deliberately omitted
+    })).toThrow("R2 configuration is incomplete");
+  });
+
+  it("REJECTS R2_PUBLIC_URL alone (partial R2 config)", () => {
+    expect(() => validateEnv({
+      ...validProdBase,
+      R2_PUBLIC_URL: "https://cdn.example.com",
+    })).toThrow("R2 configuration is incomplete");
+  });
+
   it("error message names production explicitly (diligence marker)", () => {
     // Naming "production" in the error makes the failure mode obvious
     // to whoever sees the boot crash log.

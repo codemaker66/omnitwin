@@ -1,3 +1,9 @@
+/**
+ * @aspirational Scene state schemas — model the client-side view state
+ * (camera, selected objects, view mode). These types are tested and exported
+ * but not yet consumed by the web package's Zustand stores. When a unified
+ * scene-state store is implemented, import from here.
+ */
 import { z } from "zod";
 import { SpaceIdSchema } from "./space.js";
 import { Vec3Schema, PlacedObjectIdSchema, ConfigurationIdSchema } from "./configuration.js";

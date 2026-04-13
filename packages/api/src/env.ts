@@ -62,13 +62,15 @@ const EnvSchema = z.object({
   }
 
   // R2 credential cohesion: if any R2 config is set, all required fields must be set.
-  const r2Fields = [env.R2_ACCOUNT_ID, env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY, env.R2_BUCKET_NAME];
+  // R2_PUBLIC_URL is included because missing it causes upload failures at request time
+  // rather than at startup — see F29 in audit findings.
+  const r2Fields = [env.R2_ACCOUNT_ID, env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY, env.R2_BUCKET_NAME, env.R2_PUBLIC_URL];
   const r2Set = r2Fields.filter((f) => f !== undefined).length;
-  if (r2Set > 0 && r2Set < 4) {
+  if (r2Set > 0 && r2Set < 5) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["R2_ACCOUNT_ID"],
-      message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME or none",
+      message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL or none",
     });
   }
 });

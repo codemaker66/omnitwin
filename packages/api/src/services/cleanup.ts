@@ -1,5 +1,5 @@
 import { eq, and, isNull, lt, sql, notExists, inArray } from "drizzle-orm";
-import { configurations, placedObjects, enquiries } from "../db/schema.js";
+import { configurations, placedObjects, enquiries, files, referencePhotos } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,38 @@ export async function cleanupPreviewConfigurations(db: Database): Promise<number
   // Batch delete: placed objects first (cascade exists but be explicit), then configs
   await db.delete(placedObjects).where(inArray(placedObjects.configurationId, staleIds));
   await db.delete(configurations).where(inArray(configurations.id, staleIds));
+
+  return stale.length;
+}
+
+/**
+ * Deletes loadout-context file records that are older than 24 hours and have
+ * no corresponding reference_photos entry. These are abandoned presigned-URL
+ * uploads: the user received a presigned URL but never attached the file to a
+ * loadout. Scoped to context='loadout' to avoid touching venue/space/asset
+ * files which are referenced differently (direct URL columns, not reference_photos).
+ *
+ * See F17 in audit findings.
+ */
+export async function cleanupOrphanedFiles(db: Database): Promise<number> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const stale = await db.select({ id: files.id })
+    .from(files)
+    .where(and(
+      eq(files.context, "loadout"),
+      lt(files.uploadedAt, cutoff),
+      notExists(
+        db.select({ one: sql`1` })
+          .from(referencePhotos)
+          .where(eq(referencePhotos.fileId, files.id)),
+      ),
+    ));
+
+  if (stale.length === 0) return 0;
+
+  const staleIds = stale.map((f) => f.id);
+  await db.delete(files).where(inArray(files.id, staleIds));
 
   return stale.length;
 }

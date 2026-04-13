@@ -52,21 +52,11 @@ const RECT_CHAIR_SPACING = 0.7;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Generates a UUID v4 string without external dependencies. */
+/** Generates a cryptographically random UUID v4.
+ *  Uses the Web Crypto API (globalThis.crypto.randomUUID), available in
+ *  Node 19+ and all modern browsers. */
 function generateUUID(): string {
-  const hex = "0123456789abcdef";
-  const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
-  let result = "";
-  for (const c of template) {
-    if (c === "-" || c === "4") {
-      result += c;
-    } else if (c === "y") {
-      result += hex[(Math.random() * 4 + 8) | 0] as string;
-    } else {
-      result += hex[(Math.random() * 16) | 0] as string;
-    }
-  }
-  return result;
+  return crypto.randomUUID();
 }
 
 function createSolverPlacedObject(

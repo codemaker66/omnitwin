@@ -79,6 +79,19 @@ describe("POST /public/configurations/:configId/objects/batch", () => {
     expect(res.statusCode).not.toBe(400);
   });
 
+  // F15 tripwire: the route must verify assetDefinitionIds exist before
+  // inserting. If a future refactor removes the check, this test fails.
+  it("route source includes assetDefinitionId existence check (F15 tripwire)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve("src/routes/public-configs.ts"),
+      "utf-8",
+    );
+    expect(source).toContain("assetDefinitions.id");
+    expect(source).toContain("ASSET_NOT_FOUND");
+  });
+
   it("returns 400 for invalid config ID", async () => {
     const res = await server.inject({
       method: "POST", url: "/public/configurations/bad-id/objects/batch",

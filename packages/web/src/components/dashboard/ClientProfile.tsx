@@ -28,6 +28,9 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
+    // `cancelled` prevents a stale in-flight request from overwriting state
+    // after the user switches to a different profile (F23).
+    let cancelled = false;
     void (async () => {
       setLoading(true);
       setError(null);
@@ -35,16 +38,21 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
       setLeadData(null);
       try {
         if (userId !== undefined) {
-          setClientData(await clientsApi.getClientProfile(userId));
+          const data = await clientsApi.getClientProfile(userId);
+          if (!cancelled) setClientData(data);
         } else if (leadId !== undefined) {
-          setLeadData(await clientsApi.getLeadProfile(leadId));
+          const data = await clientsApi.getLeadProfile(leadId);
+          if (!cancelled) setLeadData(data);
         }
       } catch {
-        setError("Failed to load profile");
-        addToast("Failed to load profile", "error");
+        if (!cancelled) {
+          setError("Failed to load profile");
+          addToast("Failed to load profile", "error");
+        }
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [userId, leadId, addToast]);
 
   if (loading) return <p style={{ color: "#999" }}>Loading profile...</p>;

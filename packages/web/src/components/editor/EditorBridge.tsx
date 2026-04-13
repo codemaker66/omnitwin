@@ -154,6 +154,16 @@ export function EditorBridge(): null {
     return unsub;
   }, []);
 
+  // --- Cleanup: cancel pending auto-save on unmount to prevent timer leaks (F26) ---
+  useEffect(() => {
+    return () => {
+      if (bridgeSaveTimer !== null) {
+        clearTimeout(bridgeSaveTimer);
+        bridgeSaveTimer = null;
+      }
+    };
+  }, []);
+
   return null;
 }
 

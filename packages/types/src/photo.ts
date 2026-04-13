@@ -3,6 +3,15 @@ import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
+// NOTE: PhotoSchema below models an old `photo_references` table that is no
+// longer the active runtime schema. The live system uses `reference_photos`
+// (linked to a loadout, not a configuration), which is modelled by
+// ReferencePhotoSchema at the bottom of this file. PhotoSchema is retained for
+// backward compatibility with existing tests and any future consumer that needs
+// the configuration-photo concept.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Photo ID — UUID v4
 // ---------------------------------------------------------------------------
 
@@ -81,3 +90,21 @@ export const PhotoUploadResponseSchema = z.object({
 });
 
 export type PhotoUploadResponse = z.infer<typeof PhotoUploadResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// ReferencePhotoSchema — matches the live `reference_photos` DB table
+//
+// Photos are linked to a reference loadout (not a configuration), and
+// reference a `files` row rather than storing a direct URL.
+// ---------------------------------------------------------------------------
+
+export const ReferencePhotoSchema = z.object({
+  id: z.string().uuid(),
+  loadoutId: z.string().uuid(),
+  fileId: z.string().uuid(),
+  caption: z.string().nullable(),
+  sortOrder: z.number().int().nonnegative(),
+  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
+});
+
+export type ReferencePhoto = z.infer<typeof ReferencePhotoSchema>;

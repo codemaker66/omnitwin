@@ -1,7 +1,8 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 import { useClerk } from "@clerk/clerk-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
+import * as spacesApi from "../../api/spaces.js";
 
 // ---------------------------------------------------------------------------
 // DashboardLayout — sidebar nav + top bar + main content
@@ -53,6 +54,20 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
   const logoutLocal = useAuthStore((s) => s.logout);
   const { signOut } = useClerk();
 
+  // Fetch venue name dynamically so the header reflects the actual venue,
+  // not the hardcoded placeholder (F28). Admin users without a venueId see
+  // "Admin Dashboard" instead.
+  const [venueName, setVenueName] = useState("Dashboard");
+  useEffect(() => {
+    if (user?.venueId === undefined || user.venueId === null) {
+      setVenueName(user?.role === "admin" ? "Admin Dashboard" : "Dashboard");
+      return;
+    }
+    void spacesApi.getVenue(user.venueId)
+      .then((v) => { setVenueName(v.name); })
+      .catch(() => { /* non-critical — keep default */ });
+  }, [user?.venueId, user?.role]);
+
   // Punch list #11: previously called only the local Zustand `logout()`,
   // which cleared the in-memory user but left the Clerk session intact.
   // A page refresh would re-populate the store from Clerk and the user
@@ -99,7 +114,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
       <div style={mainStyle}>
         <header style={topBarStyle}>
           <h1 style={{ fontSize: 18, fontWeight: 600, color: "#1a1a2e", margin: 0 }}>
-            Trades Hall Glasgow
+            {venueName}
           </h1>
           <span style={{ fontSize: 13, color: "#999" }}>{user?.name ?? ""}</span>
         </header>

@@ -174,7 +174,9 @@ export function createTableGroup(
 
 /**
  * Re-arranges chairs for an existing table group with a new chair count.
- * Keeps the table, replaces all chairs. Returns the full new set of items.
+ * Keeps the table (preserving its id, groupId, and clothed state), replaces
+ * all chairs. Reuses existing chair IDs for slots 0..min(old,new)-1 so the
+ * batch-save diff is minimal and DB records are not unnecessarily orphaned.
  */
 export function rearrangeTableGroup(
   tableId: string,
@@ -187,29 +189,27 @@ export function rearrangeTableGroup(
   const tableItem = getCatalogueItem(table.catalogueItemId);
   if (tableItem === undefined || tableItem.tableShape === null) return [...placedItems];
 
-  // Remove old group members (except other non-group items)
   const groupId = table.groupId;
   const others = placedItems.filter((p) => p.groupId !== groupId);
 
-  // Create new group (preserve Y position from original table)
-  const newGroup = createTableGroup(
-    table.catalogueItemId,
-    table.x,
-    table.z,
-    table.rotationY,
-    newChairCount,
-    table.y,
+  // Compute new chair positions without creating a fresh groupId
+  const chairPositions = computeChairPositions(
+    table.x, table.z, tableItem, table.rotationY, newChairCount,
   );
 
-  // Preserve the table's existing properties (clothed, etc.)
-  const newTable = newGroup[0];
-  if (newTable === undefined) return [...placedItems];
+  // Reuse existing chair IDs where available to avoid orphaning DB records
+  const existingChairs = placedItems.filter((p) => p.groupId === groupId && p.id !== table.id);
 
-  const preservedTable: PlacedItem = {
-    ...newTable,
-    id: table.id, // Keep original table ID
-    clothed: table.clothed,
-  };
+  const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
+    id: existingChairs[i]?.id ?? generatePlacedId(),
+    catalogueItemId: CHAIR_ID,
+    x: pos.x,
+    y: table.y,
+    z: pos.z,
+    rotationY: pos.rotationY,
+    groupId,
+    clothed: false,
+  }));
 
-  return [...others, preservedTable, ...newGroup.slice(1)];
+  return [...others, table, ...newChairs];
 }

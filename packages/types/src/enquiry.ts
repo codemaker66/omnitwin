@@ -103,3 +103,25 @@ export const CreateEnquirySchema = z.object({
 });
 
 export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
+
+// ---------------------------------------------------------------------------
+// GuestEnquiry — fields accepted by the public /public/enquiries endpoint
+//
+// Differs from CreateEnquiry: guests identify themselves via the configuration
+// they viewed (configurationId), provide contact details directly (not sourced
+// from an auth session), and use `eventDate`/`guestCount` naming rather than
+// `preferredDate`/`estimatedGuests`.
+// ---------------------------------------------------------------------------
+
+export const GuestEnquirySchema = z.object({
+  configurationId: ConfigurationIdSchema,
+  email: z.string().trim().email().max(255),
+  phone: z.string().trim().max(30).optional(),
+  name: z.string().trim().max(200).optional(),
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  eventType: z.string().trim().max(100).optional(),
+  guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
+  message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
+});
+
+export type GuestEnquiry = z.infer<typeof GuestEnquirySchema>;
