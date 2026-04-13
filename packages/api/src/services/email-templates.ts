@@ -15,6 +15,13 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Escapes a URL for use in an href attribute. Encodes special chars without
+ *  double-encoding & in query strings (which escapeHtml would do). */
+export function escapeHref(url: string): string {
+  // Encode the URI then escape only the HTML-attribute-breaking chars (" and ')
+  return encodeURI(url).replace(/"/g, "%22").replace(/'/g, "%27");
+}
+
 function layout(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -76,7 +83,7 @@ export function newEnquiryNotification(data: NewEnquiryData): { subject: string;
     </table>
     ${data.message !== null && data.message !== "" ? `<div style="margin-top:16px;padding:12px;background:#f9f9f6;border-radius:6px;font-size:13px;color:#555;">${escapeHtml(data.message)}</div>` : ""}
     <div style="margin-top:20px;">
-      <a href="${escapeHtml(data.dashboardUrl)}" style="display:inline-block;padding:10px 20px;background:${BRAND_BLUE};color:#fff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">View in Dashboard</a>
+      <a href="${escapeHref(data.dashboardUrl)}" style="display:inline-block;padding:10px 20px;background:${BRAND_BLUE};color:#fff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">View in Dashboard</a>
     </div>`;
 
   return { subject, html: layout("New Enquiry", bodyHtml) };
@@ -105,7 +112,7 @@ export function enquiryApproved(data: EnquiryApprovedData): { subject: string; h
     <p style="font-size:14px;color:#333;line-height:1.5;">
       The events team will be in touch shortly to confirm final details and arrangements.
     </p>
-    ${data.configUrl !== null ? `<div style="margin-top:16px;"><a href="${escapeHtml(data.configUrl)}" style="display:inline-block;padding:10px 20px;background:${BRAND_BLUE};color:#fff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">View Your Layout</a></div>` : ""}`;
+    ${data.configUrl !== null ? `<div style="margin-top:16px;"><a href="${escapeHref(data.configUrl)}" style="display:inline-block;padding:10px 20px;background:${BRAND_BLUE};color:#fff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600;">View Your Layout</a></div>` : ""}`;
 
   return { subject, html: layout("Approved", bodyHtml) };
 }

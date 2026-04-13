@@ -29,6 +29,8 @@ const EnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_BUCKET_NAME: z.string().min(1).optional(),
   R2_PUBLIC_URL: z.string().url().optional(),
+  // Frontend URL for email links (defaults to localhost)
+  FRONTEND_URL: z.string().url().optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. Without it, the route
@@ -50,6 +52,24 @@ const EnvSchema = z.object({
         message: "CLERK_SECRET_KEY is required in production (auth tokens cannot be verified without it)",
       });
     }
+    if (env.FRONTEND_URL === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["FRONTEND_URL"],
+        message: "FRONTEND_URL is required in production (email links will point to localhost without it)",
+      });
+    }
+  }
+
+  // R2 credential cohesion: if any R2 config is set, all required fields must be set.
+  const r2Fields = [env.R2_ACCOUNT_ID, env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY, env.R2_BUCKET_NAME];
+  const r2Set = r2Fields.filter((f) => f !== undefined).length;
+  if (r2Set > 0 && r2Set < 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["R2_ACCOUNT_ID"],
+      message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME or none",
+    });
   }
 });
 

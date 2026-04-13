@@ -32,7 +32,9 @@ import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { roomGeometries, computeBoundingBox } from "./data/room-geometries.js";
 
-// Initialize stores with Grand Hall dimensions (default)
+// Initialize stores with Grand Hall dimensions (default).
+// Runs once at module load. The useEffect in App() re-initializes when
+// the actual space dimensions are known.
 useSectionStore.getState().setMaxHeight(GRAND_HALL_RENDER_DIMENSIONS.height);
 useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
 
