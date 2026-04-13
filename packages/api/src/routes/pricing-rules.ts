@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
-import { pricingRules } from "../db/schema.js";
+import { pricingRules, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -111,6 +111,16 @@ export async function pricingRuleRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
+    // Verify spaceId belongs to this venue (prevents cross-venue pricing rules)
+    if (parsed.data.spaceId !== undefined && parsed.data.spaceId !== null) {
+      const [space] = await db.select({ id: spaces.id }).from(spaces)
+        .where(and(eq(spaces.id, parsed.data.spaceId), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+        .limit(1);
+      if (space === undefined) {
+        return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
+      }
+    }
+
     const [rule] = await db.insert(pricingRules).values({
       venueId: params.data.venueId,
       spaceId: parsed.data.spaceId ?? null,
@@ -155,7 +165,18 @@ export async function pricingRuleRoutes(
       return reply.status(404).send({ error: "Pricing rule not found", code: "NOT_FOUND" });
     }
 
+    // Verify spaceId belongs to this venue if being updated
+    if (parsed.data.spaceId !== undefined && parsed.data.spaceId !== null) {
+      const [space] = await db.select({ id: spaces.id }).from(spaces)
+        .where(and(eq(spaces.id, parsed.data.spaceId), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+        .limit(1);
+      if (space === undefined) {
+        return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
+      }
+    }
+
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    if (parsed.data.spaceId !== undefined) updateData["spaceId"] = parsed.data.spaceId;
     if (parsed.data.name !== undefined) updateData["name"] = parsed.data.name;
     if (parsed.data.type !== undefined) updateData["type"] = parsed.data.type;
     if (parsed.data.amount !== undefined) updateData["amount"] = String(parsed.data.amount);

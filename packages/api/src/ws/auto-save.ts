@@ -210,25 +210,38 @@ export async function registerAutoSave(
               scale: String(obj.scale),
             };
             if (obj.sortOrder !== undefined) setData["sortOrder"] = obj.sortOrder;
-            if (obj.clothed !== undefined) setData["clothed"] = obj.clothed;
-            if (obj.groupId !== undefined) setData["groupId"] = obj.groupId;
+            // clothed and groupId are stored in metadata JSONB, not as top-level columns.
+            // The placed_objects table has: positionX/Y/Z, rotationX/Y/Z, scale, sortOrder, metadata.
+            if (obj.clothed !== undefined || obj.groupId !== undefined) {
+              const meta: Record<string, unknown> = {};
+              if (obj.clothed !== undefined) meta["clothed"] = obj.clothed;
+              if (obj.groupId !== undefined) meta["groupId"] = obj.groupId;
+              setData["metadata"] = meta;
+            }
             await tx.update(placedObjects).set(setData).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
           }
 
           if (toInsert.length > 0) {
             await tx.insert(placedObjects).values(
-              toInsert.map((obj) => ({
-                configurationId: configId,
-                assetDefinitionId: obj.assetId,
-                positionX: String(obj.position.x),
-                positionY: String(obj.position.y),
-                positionZ: String(obj.position.z),
-                rotationX: String(obj.rotation.x),
-                rotationY: String(obj.rotation.y),
-                rotationZ: String(obj.rotation.z),
-                scale: String(obj.scale),
-                sortOrder: obj.sortOrder ?? 0,
-              })),
+              toInsert.map((obj) => {
+                const meta: Record<string, unknown> = {};
+                if (obj.clothed !== undefined) meta["clothed"] = obj.clothed;
+                if (obj.groupId !== undefined) meta["groupId"] = obj.groupId;
+                const hasMetadata = Object.keys(meta).length > 0;
+                return {
+                  configurationId: configId,
+                  assetDefinitionId: obj.assetId,
+                  positionX: String(obj.position.x),
+                  positionY: String(obj.position.y),
+                  positionZ: String(obj.position.z),
+                  rotationX: String(obj.rotation.x),
+                  rotationY: String(obj.rotation.y),
+                  rotationZ: String(obj.rotation.z),
+                  scale: String(obj.scale),
+                  sortOrder: obj.sortOrder ?? 0,
+                  metadata: hasMetadata ? meta : null,
+                };
+              }),
             );
           }
         });

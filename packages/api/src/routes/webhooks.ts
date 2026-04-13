@@ -93,11 +93,19 @@ export async function webhookRoutes(
     const payload = request.body as ClerkWebhookPayload;
     const { type, data } = payload;
 
+    // Allowed roles — prevents privilege escalation via Clerk public_metadata.
+    // If an unknown role arrives, default to "planner" (lowest privilege).
+    const ALLOWED_ROLES = new Set(["client", "planner", "staff", "hallkeeper", "admin"]);
+    const sanitizeRole = (raw: unknown): string => {
+      if (typeof raw === "string" && ALLOWED_ROLES.has(raw)) return raw;
+      return "planner";
+    };
+
     try {
       if (type === "user.created") {
         const email = getPrimaryEmail(data);
         const name = getFullName(data);
-        const role = (data.public_metadata?.["role"] as string) ?? "planner";
+        const role = sanitizeRole(data.public_metadata?.["role"]);
         const venueId = (data.public_metadata?.["venueId"] as string) ?? null;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
 
@@ -116,7 +124,8 @@ export async function webhookRoutes(
       if (type === "user.updated") {
         const email = getPrimaryEmail(data);
         const name = getFullName(data);
-        const role = (data.public_metadata?.["role"] as string) ?? undefined;
+        const rawRole = data.public_metadata?.["role"];
+        const role = rawRole !== undefined ? sanitizeRole(rawRole) : undefined;
         const venueId = (data.public_metadata?.["venueId"] as string) ?? undefined;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
 

@@ -167,14 +167,14 @@ export function SelectionSystem(): null {
         return;
       }
 
-      // Q — rotate selected items left (counter-clockwise from top = +Y)
+      // Q — rotate selected items counter-clockwise (negative Y rotation)
       if (event.code === "KeyQ" && !event.ctrlKey && !event.metaKey) {
         if (selectedIds.size === 0) return;
         const placedItems = usePlacementStore.getState().placedItems;
         for (const id of selectedIds) {
           const item = placedItems.find((p) => p.id === id);
           if (item !== undefined) {
-            const newRotation = snapRotation(item.rotationY + ROTATION_SNAP_RAD);
+            const newRotation = snapRotation(item.rotationY - ROTATION_SNAP_RAD);
             usePlacementStore.getState().rotateItem(id, newRotation);
           }
         }

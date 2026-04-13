@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { referenceLoadouts, referencePhotos, files } from "../db/schema.js";
+import { referenceLoadouts, referencePhotos, files, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -110,6 +110,14 @@ export async function referenceLoadoutRoutes(
     const parsed = CreateLoadoutBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    // Verify space belongs to the URL venue (prevents cross-venue mismatches)
+    const [space] = await db.select({ id: spaces.id }).from(spaces)
+      .where(and(eq(spaces.id, params.data.spaceId), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined) {
+      return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
     }
 
     const [loadout] = await db.insert(referenceLoadouts).values({
