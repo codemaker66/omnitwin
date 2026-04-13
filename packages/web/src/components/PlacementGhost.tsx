@@ -31,7 +31,7 @@ import { ClothPreview } from "./cloth/ClothPreview.js";
  * Also supports click-to-place mode (select then click).
  */
 export function PlacementGhost(): React.ReactElement | null {
-  const { invalidate, scene, camera, raycaster } = useThree();
+  const { invalidate, scene, camera, raycaster, gl } = useThree();
   const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
   const ghostPosition = usePlacementStore((s) => s.ghostPosition);
   const ghostRotation = usePlacementStore((s) => s.ghostRotation);
@@ -49,8 +49,7 @@ export function PlacementGhost(): React.ReactElement | null {
   useEffect(() => {
     if (selectedItemId === null) return;
 
-    const canvasEl = document.querySelector("canvas");
-    if (canvasEl === null) return;
+    const canvasEl = gl.domElement;
 
     canvasEl.style.cursor = "crosshair";
 
@@ -58,7 +57,6 @@ export function PlacementGhost(): React.ReactElement | null {
     let floorMesh = scene.getObjectByName("floor") ?? null;
 
     function raycastToFloor(clientX: number, clientY: number): { x: number; z: number } | null {
-      if (canvasEl === null) return null;
       if (floorMesh === null) {
         floorMesh = scene.getObjectByName("floor") ?? null;
         if (floorMesh === null) return null;
@@ -87,7 +85,7 @@ export function PlacementGhost(): React.ReactElement | null {
         if (placeState.ghostPosition !== null) {
           const guides = computeSnapGuides(
             placeState.ghostPosition[0], placeState.ghostPosition[2],
-            itemId, 0, placeState.placedItems, new Set(),
+            itemId, placeState.ghostRotation, placeState.placedItems, new Set(),
           );
           useSelectionStore.getState().setActiveGuides(guides);
         }
@@ -178,7 +176,7 @@ export function PlacementGhost(): React.ReactElement | null {
       usePlacementStore.getState().clearGhost();
       useSelectionStore.getState().setActiveGuides([]);
     };
-  }, [selectedItemId, scene, camera, raycaster]);
+  }, [selectedItemId, scene, camera, raycaster, gl]);
 
   // Escape or right-click cancels placement
   useEffect(() => {

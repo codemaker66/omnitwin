@@ -1,17 +1,11 @@
+import { ENQUIRY_STATUSES } from "@omnitwin/types";
+
 // ---------------------------------------------------------------------------
 // Enquiry state machine — pure functions, no side effects
 // ---------------------------------------------------------------------------
 
-/** All valid enquiry states. */
-export const ENQUIRY_STATES = [
-  "draft",
-  "submitted",
-  "under_review",
-  "approved",
-  "rejected",
-  "withdrawn",
-  "archived",
-] as const;
+/** All valid enquiry states — imported from @omnitwin/types (single source of truth). */
+export const ENQUIRY_STATES = ENQUIRY_STATUSES;
 
 export type EnquiryState = (typeof ENQUIRY_STATES)[number];
 

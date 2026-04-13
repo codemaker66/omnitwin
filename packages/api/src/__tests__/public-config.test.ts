@@ -297,8 +297,8 @@ describe("POST /public/configurations/:configId/thumbnail", () => {
   });
 
   it("returns 400 when thumbnail exceeds size limit", async () => {
-    // 200 KB of base64 = ~266 KB string, well over the limit
-    const huge = "data:image/png;base64," + "A".repeat(250_000);
+    // 270 KB string limit (≈200 KB decoded PNG). Generate a string over the limit.
+    const huge = "data:image/png;base64," + "A".repeat(280_000);
     const res = await server.inject({
       method: "POST",
       url: `/public/configurations/${CONFIG_ID}/thumbnail`,
@@ -341,8 +341,8 @@ describe("public-configs.ts thumbnail security — source-grep (#24)", () => {
 
   it("enforces a size cap on the thumbnail body", async () => {
     const { codeOnly } = await readSource();
-    expect(codeOnly).toContain("MAX_THUMBNAIL_BYTES");
-    expect(codeOnly).toMatch(/MAX_THUMBNAIL_BYTES\s*=\s*200[_0]*0/);
+    expect(codeOnly).toContain("MAX_THUMBNAIL_STRING_LEN");
+    expect(codeOnly).toMatch(/MAX_THUMBNAIL_STRING_LEN\s*=\s*270[_0]*0/);
   });
 
   it("restricts to public preview configs only", async () => {

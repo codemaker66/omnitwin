@@ -3,6 +3,10 @@ import { CanvasTexture } from "three";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { generateDiagramLabels } from "../lib/diagram-labels.js";
 
+// Diagram label visibility is controlled imperatively by ortho-capture.ts
+// via the THREE scene graph (group.visible), NOT via React state. This
+// avoids the non-reactive module-global boolean anti-pattern.
+
 // ---------------------------------------------------------------------------
 // DiagramLabels — renders alphanumeric codes above furniture in the 3D scene
 //
@@ -10,32 +14,26 @@ import { generateDiagramLabels } from "../lib/diagram-labels.js";
 // floor plan diagram. Also visible in the editor when sheet mode is active.
 // ---------------------------------------------------------------------------
 
-/** Whether diagram labels are currently visible (set before capture). */
-let labelsVisible = false;
-
-/** Show/hide diagram labels globally. */
-export function setDiagramLabelsVisible(visible: boolean): void {
-  labelsVisible = visible;
-}
-
-export function isDiagramLabelsVisible(): boolean {
-  return labelsVisible;
-}
-
 /**
  * Renders floating text sprites above each labelled item.
  * Uses Three.js Sprite + CanvasTexture for renderer-native text
  * (works with orthographic capture, unlike Html overlays).
+ *
+ * The group is always mounted in the scene graph (visible=false by
+ * default). The ortho-capture utility imperatively sets
+ * `group.visible = true` before rendering the floor plan PNG, then
+ * restores it. This avoids the non-reactive module-global boolean
+ * problem: React re-render is not needed for the capture path.
  */
 export function DiagramLabels(): React.ReactElement | null {
   const placedItems = usePlacementStore((s) => s.placedItems);
 
   const labels = useMemo(() => generateDiagramLabels(placedItems), [placedItems]);
 
-  if (!labelsVisible || labels.length === 0) return null;
+  if (labels.length === 0) return null;
 
   return (
-    <group name="diagram-labels">
+    <group name="diagram-labels" visible={false}>
       {labels.map((label) => (
         <LabelSprite
           key={label.id}

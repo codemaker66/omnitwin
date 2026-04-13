@@ -211,12 +211,17 @@ export async function registerAutoSave(
             };
             if (obj.sortOrder !== undefined) setData["sortOrder"] = obj.sortOrder;
             // clothed and groupId are stored in metadata JSONB, not as top-level columns.
-            // The placed_objects table has: positionX/Y/Z, rotationX/Y/Z, scale, sortOrder, metadata.
+            // Merge with existing metadata to preserve any other keys.
             if (obj.clothed !== undefined || obj.groupId !== undefined) {
-              const meta: Record<string, unknown> = {};
-              if (obj.clothed !== undefined) meta["clothed"] = obj.clothed;
-              if (obj.groupId !== undefined) meta["groupId"] = obj.groupId;
-              setData["metadata"] = meta;
+              const [existing] = await tx.select({ metadata: placedObjects.metadata })
+                .from(placedObjects)
+                .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
+                .limit(1);
+              const existingMeta = (existing?.metadata as Record<string, unknown> | null) ?? {};
+              const merged: Record<string, unknown> = { ...existingMeta };
+              if (obj.clothed !== undefined) merged["clothed"] = obj.clothed;
+              if (obj.groupId !== undefined) merged["groupId"] = obj.groupId;
+              setData["metadata"] = merged;
             }
             await tx.update(placedObjects).set(setData).where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)));
           }

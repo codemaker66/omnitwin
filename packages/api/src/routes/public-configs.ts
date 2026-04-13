@@ -34,14 +34,15 @@ const BatchBody = z.object({
 });
 
 // Punch list #24: accepts a data URL (PNG) as the thumbnail for a public
-// preview config. Max 200 KB covers a 800×533 PNG comfortably (~30-50 KB
-// typical). The long-term answer is R2 upload with a presigned URL; this
-// is the pragmatic single-tenant path that works without R2 configured.
-const MAX_THUMBNAIL_BYTES = 200_000;
+// preview config. The .max() checks data URL string length (not decoded
+// payload bytes). Base64 inflates by ~33%, so 270KB string ≈ 200KB decoded PNG.
+// 800×533 captures are typically 30-50 KB. The long-term answer is R2
+// upload with a presigned URL; this is the pragmatic single-tenant path.
+const MAX_THUMBNAIL_STRING_LEN = 270_000;
 const ThumbnailBody = z.object({
   thumbnailUrl: z.string()
     .startsWith("data:image/png;base64,", "Must be a PNG data URL")
-    .max(MAX_THUMBNAIL_BYTES, `Thumbnail must be under ${String(MAX_THUMBNAIL_BYTES)} bytes`),
+    .max(MAX_THUMBNAIL_STRING_LEN, "Thumbnail data URL too large (max ~200KB decoded PNG)"),
 });
 
 // ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ import {
   Scene,
   Color,
 } from "three";
-import { setDiagramLabelsVisible } from "../components/DiagramLabels.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -48,10 +47,15 @@ export function captureOrthographic(
     background = "#f5f5f0",
   } = options;
 
-  try {
-    // Enable diagram labels (T1, S1, etc.) for the capture
-    setDiagramLabelsVisible(true);
+  // Show diagram labels (T1, S1, etc.) imperatively on the scene graph.
+  // The DiagramLabels React component keeps labels hidden by default
+  // (visible=false). Since renderer.render() traverses the THREE scene
+  // graph directly (not React), we toggle the group's .visible flag.
+  const labelsGroup = scene.getObjectByName("diagram-labels");
+  const labelsWereVisible = labelsGroup?.visible ?? false;
+  if (labelsGroup !== undefined) labelsGroup.visible = true;
 
+  try {
     // Offscreen renderer — separate from the main canvas
     const renderer = new WebGLRenderer({
       antialias: true,
@@ -99,11 +103,11 @@ export function captureOrthographic(
 
     // Cleanup
     renderer.dispose();
-    setDiagramLabelsVisible(false);
+    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
 
     return dataUrl;
   } catch {
-    setDiagramLabelsVisible(false);
+    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
     return null;
   }
 }

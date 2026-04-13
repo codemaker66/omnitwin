@@ -106,7 +106,8 @@ export async function webhookRoutes(
         const email = getPrimaryEmail(data);
         const name = getFullName(data);
         const role = sanitizeRole(data.public_metadata?.["role"]);
-        const venueId = (data.public_metadata?.["venueId"] as string) ?? null;
+        const rawVenueId = data.public_metadata?.["venueId"];
+        const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
 
         const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);

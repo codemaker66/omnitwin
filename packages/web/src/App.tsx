@@ -92,11 +92,15 @@ export function App(): React.ReactElement {
         <SceneProvider />
         <SectionPlane />
         <InvalidateOnToggle />
-        <AutoWallSelector />
         {roomGeometry !== null ? (
+          /* RoomMesh has its own CameraWallDriver — no AutoWallSelector needed */
           <RoomMesh geometry={roomGeometry} />
         ) : (
-          <GrandHallRoom />
+          /* GrandHallRoom needs the standalone wall driver */
+          <>
+            <AutoWallSelector />
+            <GrandHallRoom />
+          </>
         )}
         <XrayToggle />
         <MeasurementTool />

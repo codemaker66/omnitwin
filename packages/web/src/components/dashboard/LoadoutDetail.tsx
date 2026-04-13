@@ -20,6 +20,7 @@ interface LoadoutDetailProps {
 
 export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }: LoadoutDetailProps): React.ReactElement {
   const [loadout, setLoadout] = useState<LoadoutDetailData | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState("");
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
@@ -31,10 +32,11 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
   const addToast = useToastStore((s) => s.addToast);
 
   const refresh = (): void => {
+    setLoadError(false);
     void loadoutsApi.getLoadout(venueId, spaceId, loadoutId).then((data) => {
       setLoadout(data);
       setNameValue(data.name);
-    }).catch(() => { addToast("Failed to load loadout", "error"); });
+    }).catch(() => { setLoadError(true); addToast("Failed to load loadout", "error"); });
   };
 
   useEffect(refresh, [venueId, spaceId, loadoutId, addToast]);
@@ -124,6 +126,21 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       .catch(() => { addToast("Failed to reorder", "error"); });
   };
 
+  if (loadError) {
+    return (
+      <div>
+        <button type="button" onClick={onBack}
+          style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}>
+          &larr; Back to loadouts
+        </button>
+        <p style={{ color: "#ef4444" }}>Failed to load loadout.</p>
+        <button type="button" onClick={refresh}
+          style={{ padding: "6px 12px", fontSize: 13, border: "1px solid #d1d5db", borderRadius: 6, background: "#fff", cursor: "pointer" }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (loadout === null) return <p style={{ color: "#999" }}>Loading...</p>;
 
   return (

@@ -31,7 +31,7 @@ export interface RoomGeometry {
 // ---------------------------------------------------------------------------
 
 const GRAND_HALL_HW = 10.5; // half width (21/2)
-const GRAND_HALL_HL = 5.25; // half length (10.5/2)
+const GRAND_HALL_HL = 5;    // half length (10/2) — official: 21m × 10m
 
 const grandHallPolygon: readonly (readonly [number, number])[] = [
   [-GRAND_HALL_HW, -GRAND_HALL_HL],

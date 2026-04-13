@@ -70,6 +70,7 @@ export const HallkeeperSheetDataSchema = z.object({
   }),
   diagramUrl: z.string().nullable(),
   webViewUrl: z.string(),
+  generatedAt: z.string().datetime(),
 });
 
 export type HallkeeperSheetData = z.infer<typeof HallkeeperSheetDataSchema>;

@@ -122,8 +122,8 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
 
       {uploads.length > 0 && (
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          {uploads.map((u, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          {uploads.map((u) => (
+            <div key={`${u.file.name}-${String(u.file.size)}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {u.file.name}
               </span>

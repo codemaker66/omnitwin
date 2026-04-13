@@ -169,47 +169,22 @@ export function SelectionSystem(): null {
         return;
       }
 
-      // Q — rotate selected items counter-clockwise (negative Y rotation)
-      if (event.code === "KeyQ" && !event.ctrlKey && !event.metaKey) {
+      // Q — rotate selected counter-clockwise | E — same | R — clockwise (legacy)
+      // Batch rotation: push one undo snapshot, then update all items in a single
+      // set() call. Prevents rapid Q/E from filling the undo buffer with per-item
+      // snapshots and avoids N separate React batches for N selected items.
+      if ((event.code === "KeyQ" || event.code === "KeyE" || event.code === "KeyR") && !event.ctrlKey && !event.metaKey) {
         if (selectedIds.size === 0) return;
-        const placedItems = usePlacementStore.getState().placedItems;
-        for (const id of selectedIds) {
-          const item = placedItems.find((p) => p.id === id);
-          if (item !== undefined) {
-            const newRotation = snapRotation(item.rotationY - ROTATION_SNAP_RAD);
-            usePlacementStore.getState().rotateItem(id, newRotation);
-          }
-        }
-        invalidateRef.current();
-        return;
-      }
-
-      // E — rotate selected items right (clockwise from top = -Y)
-      if (event.code === "KeyE" && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        const placedItems = usePlacementStore.getState().placedItems;
-        for (const id of selectedIds) {
-          const item = placedItems.find((p) => p.id === id);
-          if (item !== undefined) {
-            const newRotation = snapRotation(item.rotationY - ROTATION_SNAP_RAD);
-            usePlacementStore.getState().rotateItem(id, newRotation);
-          }
-        }
-        invalidateRef.current();
-        return;
-      }
-
-      // R — rotate selected items clockwise (same as E, legacy binding)
-      if (event.code === "KeyR" && !event.ctrlKey && !event.metaKey) {
-        if (selectedIds.size === 0) return;
-        const placedItems = usePlacementStore.getState().placedItems;
-        for (const id of selectedIds) {
-          const item = placedItems.find((p) => p.id === id);
-          if (item !== undefined) {
-            const newRotation = snapRotation(item.rotationY + ROTATION_SNAP_RAD);
-            usePlacementStore.getState().rotateItem(id, newRotation);
-          }
-        }
+        const delta = event.code === "KeyR" ? ROTATION_SNAP_RAD : -ROTATION_SNAP_RAD;
+        const store = usePlacementStore.getState();
+        usePlacementStore.setState({
+          placedItems: store.placedItems.map((item) => {
+            if (!selectedIds.has(item.id)) return item;
+            return { ...item, rotationY: snapRotation(item.rotationY + delta) };
+          }),
+          undoStack: [...store.undoStack, store.placedItems].slice(-50),
+          redoStack: [],
+        });
         invalidateRef.current();
         return;
       }
@@ -465,6 +440,8 @@ export function SelectionSystem(): null {
     function onPointerUp(event: PointerEvent): void {
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
+      // Don't interfere with measurement or guideline tools
+      if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
       if (isMarquee.current) {
         // Cancel any pending rAF from marquee drag

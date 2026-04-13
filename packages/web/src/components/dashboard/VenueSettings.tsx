@@ -93,6 +93,15 @@ export function VenueSettings(): React.ReactElement {
     );
   }
 
+  if (venue === null) {
+    return (
+      <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
+        <h2 style={{ fontSize: 20, fontWeight: 600 }}>Venue Settings</h2>
+        <p style={{ color: "#ef4444" }}>Failed to load venue settings.</p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 560 }}>
       <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 24 }}>Venue Settings</h2>
@@ -163,12 +172,10 @@ export function VenueSettings(): React.ReactElement {
       </div>
 
       {/* Venue info (read-only) */}
-      {venue !== null && (
-        <div style={{ marginTop: 24, padding: 12, background: "#f9fafb", borderRadius: 8, fontSize: 12, color: "#888" }}>
-          <div>Slug: {venue.slug}</div>
-          <div>Spaces: {venue.spaces.length}</div>
-        </div>
-      )}
+      <div style={{ marginTop: 24, padding: 12, background: "#f9fafb", borderRadius: 8, fontSize: 12, color: "#888" }}>
+        <div>Slug: {venue.slug}</div>
+        <div>Spaces: {venue.spaces.length}</div>
+      </div>
 
       <div style={{ marginTop: 24 }}>
         <button

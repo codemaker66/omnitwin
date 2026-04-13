@@ -91,7 +91,7 @@ export async function venueRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const existing = await db.select({ id: venues.id }).from(venues).where(eq(venues.slug, parsed.data.slug)).limit(1);
+    const existing = await db.select({ id: venues.id }).from(venues).where(and(eq(venues.slug, parsed.data.slug), isNull(venues.deletedAt))).limit(1);
     if (existing.length > 0) {
       return reply.status(409).send({ error: "Slug already exists", code: "SLUG_EXISTS" });
     }

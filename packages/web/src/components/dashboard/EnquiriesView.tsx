@@ -106,6 +106,10 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     try {
       const updated = await enquiriesApi.transitionEnquiry(transition.id, transition.status, note);
       setEnquiries((prev) => prev.map((e) => e.id === updated.id ? updated : e));
+      // Also update preselected record so the detail view reflects the change
+      if (preselectedEnquiry !== null && preselectedEnquiry.id === updated.id) {
+        setPreselectedEnquiry(updated);
+      }
       addToast(`Enquiry ${transition.status.replace(/_/g, " ")}`, "success");
       setTransition(null);
       // Refresh history

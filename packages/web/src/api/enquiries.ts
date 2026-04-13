@@ -91,11 +91,14 @@ export async function downloadHallkeeperPdf(id: string): Promise<void> {
   if (!res.ok) throw new ApiError(res.status, "Failed to download PDF", "DOWNLOAD_ERROR");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `hallkeeper-sheet-${id}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hallkeeper-sheet-${id}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

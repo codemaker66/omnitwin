@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { BufferGeometry, Float32BufferAttribute, LineDashedMaterial } from "three";
 import { useSelectionStore } from "../stores/selection-store.js";
 import {
@@ -66,6 +66,14 @@ export function SnapGuides(): React.ReactElement | null {
   const geometries = useMemo(() => {
     return activeGuides.map((g) => guideGeometry(g));
   }, [activeGuides]);
+
+  // Dispose previous geometries when guides change
+  const prevGeoRef = useRef<BufferGeometry[]>([]);
+  useEffect(() => {
+    const prev = prevGeoRef.current;
+    prevGeoRef.current = [...geometries];
+    return () => { for (const g of prev) g.dispose(); };
+  }, [geometries]);
 
   if (activeGuides.length === 0) return null;
 

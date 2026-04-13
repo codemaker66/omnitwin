@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { Shape, ShapeGeometry, DoubleSide } from "three";
 import { useSelectionStore } from "../stores/selection-store.js";
 
@@ -81,6 +81,20 @@ export function MarqueeSelect(): React.ReactElement | null {
     const shape = buildBorderShape(bounds.w, bounds.h, bw);
     return new ShapeGeometry(shape);
   }, [bounds]);
+
+  // Dispose previous geometries when they change
+  const prevFillRef = useRef<ShapeGeometry | null>(null);
+  const prevBorderRef = useRef<ShapeGeometry | null>(null);
+  useEffect(() => {
+    const prevFill = prevFillRef.current;
+    const prevBorder = prevBorderRef.current;
+    prevFillRef.current = fillGeometry;
+    prevBorderRef.current = borderGeometry;
+    return () => {
+      prevFill?.dispose();
+      prevBorder?.dispose();
+    };
+  }, [fillGeometry, borderGeometry]);
 
   if (!marqueeActive || bounds === null || fillGeometry === null || borderGeometry === null) {
     return null;
