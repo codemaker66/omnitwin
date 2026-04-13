@@ -1,5 +1,5 @@
 import type { FloorPlanPoint } from "../space.js";
-import type { PlacedObject } from "../configuration.js";
+import type { SolverPlacedObject } from "./types.js";
 import type { SolverInput, SolverOutput, SolverConfig, FireExit } from "./types.js";
 import { SOLVER_ASSETS, SOLVER_ASSET_DIMENSIONS } from "./types.js";
 import {
@@ -69,12 +69,12 @@ function generateUUID(): string {
   return result;
 }
 
-function createPlacedObject(
+function createSolverPlacedObject(
   furnitureItemId: string,
   x: number,
   z: number,
   rotationY: number = 0,
-): PlacedObject {
+): SolverPlacedObject {
   return {
     id: generateUUID(),
     furnitureItemId,
@@ -104,7 +104,7 @@ function clearOfFixedObjects(
   x: number,
   z: number,
   radius: number,
-  fixedObjects: readonly PlacedObject[],
+  fixedObjects: readonly SolverPlacedObject[],
   minGap: number,
 ): boolean {
   for (const obj of fixedObjects) {
@@ -115,7 +115,7 @@ function clearOfFixedObjects(
 }
 
 function buildOutput(
-  objects: readonly PlacedObject[],
+  objects: readonly SolverPlacedObject[],
   capacity: number,
   input: SolverInput,
   config: SolverConfig,
@@ -139,7 +139,7 @@ function buildOutput(
 export function solveDinnerRounds(input: SolverInput, config: SolverConfig): SolverOutput {
   if (input.guestCount === 0) return buildOutput([], 0, input, config);
 
-  const seatsPerTable = config.chairSpacingDegrees <= 36 ? 10 : 8;
+  const seatsPerTable = config.chairSpacingDeg <= 36 ? 10 : 8;
   const tablesNeeded = Math.ceil(input.guestCount / seatsPerTable);
   const fixed = input.fixedObjects ?? [];
 
@@ -169,11 +169,11 @@ export function solveDinnerRounds(input: SolverInput, config: SolverConfig): Sol
   // Take only as many tables as needed
   const tablesToPlace = withAisle.slice(0, tablesNeeded);
 
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
 
   for (const pos of tablesToPlace) {
-    objects.push(createPlacedObject(SOLVER_ASSETS.ROUND_TABLE_5FT, pos.x, pos.y));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.ROUND_TABLE_5FT, pos.x, pos.y));
 
     // Place chairs radially
     const angleDeg = 360 / seatsPerTable;
@@ -187,7 +187,7 @@ export function solveDinnerRounds(input: SolverInput, config: SolverConfig): Sol
       const chairPos: FloorPlanPoint = { x: cx, y: cz };
 
       if (pointInPolygon(chairPos, input.roomPolygon)) {
-        objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, cx, cz, facingAngle));
+        objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, cx, cz, facingAngle));
         totalSeats++;
       }
     }
@@ -219,7 +219,7 @@ export function solveTheatre(input: SolverInput, config: SolverConfig): SolverOu
 
   const rowsNeeded = Math.ceil(input.guestCount / chairsPerRow);
 
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
 
   for (let row = 0; row < rowsNeeded; row++) {
@@ -238,7 +238,7 @@ export function solveTheatre(input: SolverInput, config: SolverConfig): SolverOu
       if (!pointInPolygon(pos, input.roomPolygon)) continue;
       if (!clearOfFixedObjects(x, z, CHAIR_WIDTH / 2, fixed, config.minTableSpacingM)) continue;
 
-      objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
+      objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
       totalSeats++;
       if (totalSeats >= input.guestCount) break;
     }
@@ -253,7 +253,7 @@ export function solveTheatre(input: SolverInput, config: SolverConfig): SolverOu
       if (!pointInPolygon(pos, input.roomPolygon)) continue;
       if (!clearOfFixedObjects(x, z, CHAIR_WIDTH / 2, fixed, config.minTableSpacingM)) continue;
 
-      objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
+      objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
       totalSeats++;
       if (totalSeats >= input.guestCount) break;
     }
@@ -275,7 +275,7 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
   const centerX = roomW / 2;
   const centerZ = roomL / 2;
 
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
 
   if (input.guestCount <= 20) {
@@ -285,7 +285,7 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
     const tableLength = Math.max(RECT_TABLE_WIDTH, chairsPerSide * RECT_CHAIR_SPACING);
     const tableDepth = RECT_TABLE_DEPTH;
 
-    objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, centerX, centerZ, 0));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, centerX, centerZ, 0));
 
     // Chairs along both long sides
     for (let side = 0; side < 2; side++) {
@@ -299,7 +299,7 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
         const pos: FloorPlanPoint = { x, y: zOff };
         if (!pointInPolygon(pos, input.roomPolygon)) continue;
 
-        objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, zOff, facing));
+        objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, zOff, facing));
         totalSeats++;
         if (totalSeats >= input.guestCount) break;
       }
@@ -308,13 +308,13 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
   } else {
     // U-shape: head table + two wing tables
     const headZ = SIDE_AISLE_MARGIN + RECT_TABLE_DEPTH / 2;
-    objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, centerX, headZ, 0));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, centerX, headZ, 0));
 
     // Head table chairs (outside edge only)
     const headChairs = Math.min(6, Math.floor(RECT_TABLE_WIDTH / RECT_CHAIR_SPACING));
     for (let i = 0; i < headChairs; i++) {
       const x = centerX - (RECT_TABLE_WIDTH / 2) + RECT_CHAIR_SPACING / 2 + i * RECT_CHAIR_SPACING;
-      objects.push(createPlacedObject(
+      objects.push(createSolverPlacedObject(
         SOLVER_ASSETS.CHAIR_STANDARD, x,
         headZ - RECT_TABLE_DEPTH / 2 - CHAIR_DEPTH / 2 - 0.05,
         0,
@@ -326,11 +326,11 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
     const wingLength = roomL - SIDE_AISLE_MARGIN * 2 - RECT_TABLE_DEPTH;
     const wingX = centerX - roomW / 4;
     const wingZ = headZ + RECT_TABLE_DEPTH / 2 + wingLength / 2;
-    objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, wingX, wingZ, Math.PI / 2));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, wingX, wingZ, Math.PI / 2));
 
     // Right wing
     const wingXR = centerX + roomW / 4;
-    objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, wingXR, wingZ, Math.PI / 2));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, wingXR, wingZ, Math.PI / 2));
 
     // Chairs along inner edge of wings
     const wingChairs = Math.floor(wingLength / RECT_CHAIR_SPACING);
@@ -339,7 +339,7 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
       if (z > roomL - SIDE_AISLE_MARGIN) break;
 
       // Left wing — chairs on right side (inner)
-      objects.push(createPlacedObject(
+      objects.push(createSolverPlacedObject(
         SOLVER_ASSETS.CHAIR_STANDARD,
         wingX + RECT_TABLE_DEPTH / 2 + CHAIR_DEPTH / 2 + 0.05, z,
         -Math.PI / 2,
@@ -347,7 +347,7 @@ export function solveBoardroom(input: SolverInput, config: SolverConfig): Solver
       totalSeats++;
 
       // Right wing — chairs on left side (inner)
-      objects.push(createPlacedObject(
+      objects.push(createSolverPlacedObject(
         SOLVER_ASSETS.CHAIR_STANDARD,
         wingXR - RECT_TABLE_DEPTH / 2 - CHAIR_DEPTH / 2 - 0.05, z,
         Math.PI / 2,
@@ -385,11 +385,11 @@ export function solveCabaret(input: SolverInput, config: SolverConfig): SolverOu
   });
 
   const tablesToPlace = validPositions.slice(0, tablesNeeded);
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
 
   for (const pos of tablesToPlace) {
-    objects.push(createPlacedObject(SOLVER_ASSETS.ROUND_TABLE_5FT, pos.x, pos.y));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.ROUND_TABLE_5FT, pos.x, pos.y));
 
     // Place 5 chairs on the stage-facing side (front 180°, which is the
     // side facing z=0 / the short wall where the stage would be)
@@ -405,7 +405,7 @@ export function solveCabaret(input: SolverInput, config: SolverConfig): SolverOu
       // Chairs face forward (toward stage at z=0)
       const chairPos: FloorPlanPoint = { x: cx, y: cz };
       if (pointInPolygon(chairPos, input.roomPolygon)) {
-        objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, cx, cz, 0));
+        objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, cx, cz, 0));
         totalSeats++;
       }
     }
@@ -449,10 +449,10 @@ export function solveCocktail(input: SolverInput, config: SolverConfig): SolverO
   });
 
   const tablesToPlace = withOpenCenter.slice(0, tablesNeeded);
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
 
   for (const pos of tablesToPlace) {
-    objects.push(createPlacedObject(SOLVER_ASSETS.HIGHBOY_TABLE, pos.x, pos.y));
+    objects.push(createSolverPlacedObject(SOLVER_ASSETS.HIGHBOY_TABLE, pos.x, pos.y));
   }
 
   // No seated chairs — cocktail standing only
@@ -486,7 +486,7 @@ export function solveCeremony(input: SolverInput, config: SolverConfig): SolverO
   const reservedRowSpacing = 1.1;
   const rowsNeeded = Math.ceil(input.guestCount / chairsPerRow);
 
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
 
   for (let row = 0; row < rowsNeeded; row++) {
@@ -505,7 +505,7 @@ export function solveCeremony(input: SolverInput, config: SolverConfig): SolverO
       if (!pointInPolygon(pos, input.roomPolygon)) continue;
       if (!clearOfFixedObjects(x, z, CHAIR_WIDTH / 2, fixed, config.minTableSpacingM)) continue;
 
-      objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
+      objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
       totalSeats++;
       if (totalSeats >= input.guestCount) break;
     }
@@ -520,7 +520,7 @@ export function solveCeremony(input: SolverInput, config: SolverConfig): SolverO
       if (!pointInPolygon(pos, input.roomPolygon)) continue;
       if (!clearOfFixedObjects(x, z, CHAIR_WIDTH / 2, fixed, config.minTableSpacingM)) continue;
 
-      objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
+      objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, x, z, 0));
       totalSeats++;
       if (totalSeats >= input.guestCount) break;
     }
@@ -558,20 +558,20 @@ export function solveDinnerBanquet(input: SolverInput, config: SolverConfig): So
   const crossAisleInterval = 3;
   const crossAisleWidth = 1.2;
 
-  const objects: PlacedObject[] = [];
+  const objects: SolverPlacedObject[] = [];
   let totalSeats = 0;
   let tablesPlaced = 0;
 
   // Head table perpendicular at front
   const headTableZ = SIDE_AISLE_MARGIN + RECT_TABLE_DEPTH / 2;
   const headTableX = roomW / 2;
-  objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, headTableX, headTableZ, Math.PI / 2));
+  objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, headTableX, headTableZ, Math.PI / 2));
 
   // Head table chairs (facing the room)
   const headChairs = Math.floor(RECT_TABLE_WIDTH / RECT_CHAIR_SPACING);
   for (let i = 0; i < headChairs; i++) {
     const x = headTableX - RECT_TABLE_WIDTH / 2 + RECT_CHAIR_SPACING / 2 + i * RECT_CHAIR_SPACING;
-    objects.push(createPlacedObject(
+    objects.push(createSolverPlacedObject(
       SOLVER_ASSETS.CHAIR_STANDARD, x,
       headTableZ - RECT_TABLE_DEPTH / 2 - CHAIR_DEPTH / 2 - 0.05,
       0,
@@ -600,7 +600,7 @@ export function solveDinnerBanquet(input: SolverInput, config: SolverConfig): So
       if (!pointInPolygon(pos, input.roomPolygon)) { z += tableRunLength; tableIdx++; continue; }
       if (!clearOfFixedObjects(rowX, z, RECT_TABLE_WIDTH / 2, fixed, config.minTableSpacingM)) { z += tableRunLength; tableIdx++; continue; }
 
-      objects.push(createPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, rowX, z, Math.PI / 2));
+      objects.push(createSolverPlacedObject(SOLVER_ASSETS.RECTANGULAR_TABLE_6FT, rowX, z, Math.PI / 2));
       tablesPlaced++;
 
       // Chairs on both sides
@@ -616,7 +616,7 @@ export function solveDinnerBanquet(input: SolverInput, config: SolverConfig): So
           const cPos: FloorPlanPoint = { x: xOff, y: cz };
           if (!pointInPolygon(cPos, input.roomPolygon)) continue;
 
-          objects.push(createPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, xOff, cz, facing));
+          objects.push(createSolverPlacedObject(SOLVER_ASSETS.CHAIR_STANDARD, xOff, cz, facing));
           totalSeats++;
           if (totalSeats >= input.guestCount) break;
         }

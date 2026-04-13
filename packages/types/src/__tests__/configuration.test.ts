@@ -19,31 +19,42 @@ const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const VALID_VENUE_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
 const VALID_SPACE_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
 const VALID_USER_UUID = "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80";
-const VALID_FURNITURE_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
+const VALID_ASSET_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
-const validVec3 = { x: 1, y: 2, z: 3 };
-const zeroVec3 = { x: 0, y: 0, z: 0 };
-const unitScale = { x: 1, y: 1, z: 1 };
+// ---------------------------------------------------------------------------
+// New flat PlacedObject shape (matches DB columns)
+// ---------------------------------------------------------------------------
 
 const validPlacedObject = {
   id: VALID_UUID,
-  furnitureItemId: VALID_FURNITURE_UUID,
-  position: validVec3,
-  rotation: zeroVec3,
-  scale: unitScale,
+  configurationId: VALID_SPACE_UUID, // any valid UUID
+  assetDefinitionId: VALID_ASSET_UUID,
+  positionX: "1.000",
+  positionY: "0.000",
+  positionZ: "2.500",
+  rotationX: "0.000",
+  rotationY: "1.571",
+  rotationZ: "0.000",
+  scale: "1.000",
+  sortOrder: 0,
+  metadata: null,
 };
 
 const validConfiguration = {
   id: VALID_UUID,
   venueId: VALID_VENUE_UUID,
   spaceId: VALID_SPACE_UUID,
+  userId: VALID_USER_UUID,
   name: "Wedding Setup A",
-  status: "draft" as const,
+  state: "draft" as const,
   layoutStyle: "ceremony" as const,
-  placedObjects: [validPlacedObject],
+  isPublicPreview: false,
+  guestCount: 100,
+  isTemplate: false,
+  visibility: "private" as const,
+  thumbnailUrl: null,
   lightmapUrl: null,
-  createdBy: VALID_USER_UUID,
   publishedAt: null,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
@@ -54,7 +65,6 @@ const validCreateConfiguration = {
   spaceId: VALID_SPACE_UUID,
   name: "Wedding Setup A",
   layoutStyle: "ceremony" as const,
-  placedObjects: [validPlacedObject],
 };
 
 // ---------------------------------------------------------------------------
@@ -215,7 +225,7 @@ describe("Vec3Schema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PlacedObjectSchema
+// PlacedObjectSchema — flat DB shape
 // ---------------------------------------------------------------------------
 
 describe("PlacedObjectSchema", () => {
@@ -229,19 +239,34 @@ describe("PlacedObjectSchema", () => {
     expect(PlacedObjectSchema.safeParse(noId).success).toBe(false);
   });
 
-  it("rejects missing furnitureItemId", () => {
-    const { furnitureItemId: _, ...noFurnitureId } = validPlacedObject;
-    expect(PlacedObjectSchema.safeParse(noFurnitureId).success).toBe(false);
+  it("rejects missing configurationId", () => {
+    const { configurationId: _, ...noConfigId } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noConfigId).success).toBe(false);
   });
 
-  it("rejects missing position", () => {
-    const { position: _, ...noPosition } = validPlacedObject;
-    expect(PlacedObjectSchema.safeParse(noPosition).success).toBe(false);
+  it("rejects missing assetDefinitionId", () => {
+    const { assetDefinitionId: _, ...noAssetId } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noAssetId).success).toBe(false);
   });
 
-  it("rejects missing rotation", () => {
-    const { rotation: _, ...noRotation } = validPlacedObject;
-    expect(PlacedObjectSchema.safeParse(noRotation).success).toBe(false);
+  it("rejects missing positionX", () => {
+    const { positionX: _, ...noPos } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noPos).success).toBe(false);
+  });
+
+  it("rejects missing positionY", () => {
+    const { positionY: _, ...noPos } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noPos).success).toBe(false);
+  });
+
+  it("rejects missing positionZ", () => {
+    const { positionZ: _, ...noPos } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noPos).success).toBe(false);
+  });
+
+  it("rejects missing rotationX", () => {
+    const { rotationX: _, ...noRot } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noRot).success).toBe(false);
   });
 
   it("rejects missing scale", () => {
@@ -249,35 +274,40 @@ describe("PlacedObjectSchema", () => {
     expect(PlacedObjectSchema.safeParse(noScale).success).toBe(false);
   });
 
+  it("rejects missing sortOrder", () => {
+    const { sortOrder: _, ...noSort } = validPlacedObject;
+    expect(PlacedObjectSchema.safeParse(noSort).success).toBe(false);
+  });
+
   it("rejects invalid UUID for id", () => {
     expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, id: "bad" }).success).toBe(false);
   });
 
-  it("rejects invalid UUID for furnitureItemId", () => {
-    expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, furnitureItemId: "bad" }).success).toBe(false);
+  it("rejects invalid UUID for assetDefinitionId", () => {
+    expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, assetDefinitionId: "bad" }).success).toBe(false);
   });
 
-  it("rejects position with NaN", () => {
-    expect(
-      PlacedObjectSchema.safeParse({ ...validPlacedObject, position: { x: NaN, y: 0, z: 0 } }).success,
-    ).toBe(false);
+  it("rejects negative sortOrder", () => {
+    expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, sortOrder: -1 }).success).toBe(false);
   });
 
-  it("rejects rotation with Infinity", () => {
-    expect(
-      PlacedObjectSchema.safeParse({ ...validPlacedObject, rotation: { x: 0, y: Infinity, z: 0 } }).success,
-    ).toBe(false);
+  it("rejects float sortOrder", () => {
+    expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, sortOrder: 1.5 }).success).toBe(false);
   });
 
-  it("accepts non-uniform scale", () => {
+  it("accepts metadata as null", () => {
+    expect(PlacedObjectSchema.safeParse({ ...validPlacedObject, metadata: null }).success).toBe(true);
+  });
+
+  it("accepts metadata as a record of unknown values", () => {
     expect(
-      PlacedObjectSchema.safeParse({ ...validPlacedObject, scale: { x: 2, y: 0.5, z: 1.5 } }).success,
+      PlacedObjectSchema.safeParse({ ...validPlacedObject, metadata: { note: "front row", priority: 1 } }).success,
     ).toBe(true);
   });
 
-  it("accepts negative position values", () => {
+  it("accepts numeric string for positionX", () => {
     expect(
-      PlacedObjectSchema.safeParse({ ...validPlacedObject, position: { x: -5, y: -10, z: -1 } }).success,
+      PlacedObjectSchema.safeParse({ ...validPlacedObject, positionX: "-5.123" }).success,
     ).toBe(true);
   });
 });
@@ -292,21 +322,21 @@ describe("ConfigurationSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("Wedding Setup A");
-      expect(result.data.status).toBe("draft");
+      expect(result.data.state).toBe("draft");
     }
   });
 
   it("accepts a published configuration with lightmapUrl and publishedAt", () => {
     const published = {
       ...validConfiguration,
-      status: "published",
+      state: "published",
       lightmapUrl: "https://cdn.example.com/lightmap.exr",
       publishedAt: "2025-02-01T14:00:00.000Z",
     };
     const result = ConfigurationSchema.safeParse(published);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.status).toBe("published");
+      expect(result.data.state).toBe("published");
       expect(result.data.lightmapUrl).toBe("https://cdn.example.com/lightmap.exr");
       expect(result.data.publishedAt).toBe("2025-02-01T14:00:00.000Z");
     }
@@ -321,24 +351,28 @@ describe("ConfigurationSchema", () => {
     }
   });
 
-  it("accepts empty placedObjects array", () => {
-    const result = ConfigurationSchema.safeParse({ ...validConfiguration, placedObjects: [] });
+  it("accepts null userId (anonymous configuration)", () => {
+    const result = ConfigurationSchema.safeParse({ ...validConfiguration, userId: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.userId).toBeNull();
+    }
+  });
+
+  it("accepts isPublicPreview true", () => {
+    const result = ConfigurationSchema.safeParse({ ...validConfiguration, isPublicPreview: true });
     expect(result.success).toBe(true);
   });
 
-  it("accepts multiple placed objects", () => {
-    const secondObject = {
-      ...validPlacedObject,
-      id: "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f809102",
-      position: { x: 5, y: 0, z: 3 },
-    };
-    const result = ConfigurationSchema.safeParse({
-      ...validConfiguration,
-      placedObjects: [validPlacedObject, secondObject],
-    });
+  it("accepts isTemplate true", () => {
+    const result = ConfigurationSchema.safeParse({ ...validConfiguration, isTemplate: true });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.placedObjects).toHaveLength(2);
+  });
+
+  it("accepts all visibility values", () => {
+    for (const vis of ["private", "staff", "public"] as const) {
+      const result = ConfigurationSchema.safeParse({ ...validConfiguration, visibility: vis });
+      expect(result.success).toBe(true);
     }
   });
 
@@ -386,9 +420,9 @@ describe("ConfigurationSchema", () => {
     expect(ConfigurationSchema.safeParse(noName).success).toBe(false);
   });
 
-  it("rejects missing status", () => {
-    const { status: _, ...noStatus } = validConfiguration;
-    expect(ConfigurationSchema.safeParse(noStatus).success).toBe(false);
+  it("rejects missing state", () => {
+    const { state: _, ...noState } = validConfiguration;
+    expect(ConfigurationSchema.safeParse(noState).success).toBe(false);
   });
 
   it("rejects missing layoutStyle", () => {
@@ -396,19 +430,9 @@ describe("ConfigurationSchema", () => {
     expect(ConfigurationSchema.safeParse(noLayout).success).toBe(false);
   });
 
-  it("rejects missing placedObjects", () => {
-    const { placedObjects: _, ...noObjects } = validConfiguration;
-    expect(ConfigurationSchema.safeParse(noObjects).success).toBe(false);
-  });
-
   it("rejects missing lightmapUrl (required but nullable)", () => {
     const { lightmapUrl: _, ...noLightmap } = validConfiguration;
     expect(ConfigurationSchema.safeParse(noLightmap).success).toBe(false);
-  });
-
-  it("rejects missing createdBy", () => {
-    const { createdBy: _, ...noCreatedBy } = validConfiguration;
-    expect(ConfigurationSchema.safeParse(noCreatedBy).success).toBe(false);
   });
 
   it("rejects missing publishedAt (required but nullable)", () => {
@@ -438,12 +462,8 @@ describe("ConfigurationSchema", () => {
     expect(ConfigurationSchema.safeParse({ ...validConfiguration, spaceId: "bad" }).success).toBe(false);
   });
 
-  it("rejects invalid UUID for createdBy", () => {
-    expect(ConfigurationSchema.safeParse({ ...validConfiguration, createdBy: "bad" }).success).toBe(false);
-  });
-
-  it("rejects invalid status value", () => {
-    expect(ConfigurationSchema.safeParse({ ...validConfiguration, status: "pending" }).success).toBe(false);
+  it("rejects invalid state value", () => {
+    expect(ConfigurationSchema.safeParse({ ...validConfiguration, state: "pending" }).success).toBe(false);
   });
 
   it("rejects invalid layoutStyle value", () => {
@@ -462,19 +482,19 @@ describe("ConfigurationSchema", () => {
     expect(ConfigurationSchema.safeParse({ ...validConfiguration, createdAt: "nope" }).success).toBe(false);
   });
 
-  it("rejects placedObjects with invalid item in array", () => {
-    const result = ConfigurationSchema.safeParse({
-      ...validConfiguration,
-      placedObjects: [{ id: "bad", furnitureItemId: "bad", position: {}, rotation: {}, scale: {} }],
-    });
-    expect(result.success).toBe(false);
-  });
-
   it("accepts all layout styles in a configuration", () => {
     for (const style of LAYOUT_STYLES) {
       const result = ConfigurationSchema.safeParse({ ...validConfiguration, layoutStyle: style });
       expect(result.success).toBe(true);
     }
+  });
+
+  it("rejects negative guestCount", () => {
+    expect(ConfigurationSchema.safeParse({ ...validConfiguration, guestCount: -1 }).success).toBe(false);
+  });
+
+  it("accepts guestCount of 0", () => {
+    expect(ConfigurationSchema.safeParse({ ...validConfiguration, guestCount: 0 }).success).toBe(true);
   });
 });
 
@@ -486,6 +506,30 @@ describe("CreateConfigurationSchema", () => {
   it("accepts a valid create configuration payload", () => {
     const result = CreateConfigurationSchema.safeParse(validCreateConfiguration);
     expect(result.success).toBe(true);
+  });
+
+  it("defaults guestCount to 0 when omitted", () => {
+    const result = CreateConfigurationSchema.safeParse(validCreateConfiguration);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.guestCount).toBe(0);
+    }
+  });
+
+  it("defaults isTemplate to false when omitted", () => {
+    const result = CreateConfigurationSchema.safeParse(validCreateConfiguration);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.isTemplate).toBe(false);
+    }
+  });
+
+  it("defaults visibility to 'private' when omitted", () => {
+    const result = CreateConfigurationSchema.safeParse(validCreateConfiguration);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.visibility).toBe("private");
+    }
   });
 
   it("rejects missing venueId", () => {
@@ -508,16 +552,6 @@ describe("CreateConfigurationSchema", () => {
     expect(CreateConfigurationSchema.safeParse(noLayout).success).toBe(false);
   });
 
-  it("rejects missing placedObjects", () => {
-    const { placedObjects: _, ...noObjects } = validCreateConfiguration;
-    expect(CreateConfigurationSchema.safeParse(noObjects).success).toBe(false);
-  });
-
-  it("accepts empty placedObjects array", () => {
-    const result = CreateConfigurationSchema.safeParse({ ...validCreateConfiguration, placedObjects: [] });
-    expect(result.success).toBe(true);
-  });
-
   it("does not accept id field (strips extra keys)", () => {
     const result = CreateConfigurationSchema.safeParse({ ...validCreateConfiguration, id: VALID_UUID });
     expect(result.success).toBe(true);
@@ -526,11 +560,11 @@ describe("CreateConfigurationSchema", () => {
     }
   });
 
-  it("does not accept status field (strips extra keys)", () => {
-    const result = CreateConfigurationSchema.safeParse({ ...validCreateConfiguration, status: "draft" });
+  it("does not accept state field (strips extra keys)", () => {
+    const result = CreateConfigurationSchema.safeParse({ ...validCreateConfiguration, state: "draft" });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect("status" in result.data).toBe(false);
+      expect("state" in result.data).toBe(false);
     }
   });
 

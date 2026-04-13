@@ -1,5 +1,4 @@
 // @omnitwin/types — Shared TypeScript interfaces, Zod schemas, and enums
-// Modules are re-exported here as they are built.
 
 export {
   VenueIdSchema,
@@ -38,8 +37,11 @@ export {
   CONFIGURATION_STATUSES,
   LayoutStyleSchema,
   LAYOUT_STYLES,
+  VISIBILITY_OPTIONS,
+  VisibilitySchema,
   Vec3Schema,
   PlacedObjectIdSchema,
+  AssetDefinitionIdSchema,
   FurnitureItemIdSchema,
   PlacedObjectSchema,
   ConfigurationSchema,
@@ -47,6 +49,7 @@ export {
   type ConfigurationId,
   type ConfigurationStatus,
   type LayoutStyle,
+  type Visibility,
   type Vec3,
   type PlacedObjectId,
   type PlacedObject,
@@ -67,10 +70,14 @@ export {
   FURNITURE_CATEGORIES,
   FurnitureCategorySchema,
   FurnitureDimensionsSchema,
+  AssetDefinitionSchema,
+  CreateAssetDefinitionSchema,
   FurnitureItemSchema,
   CreateFurnitureItemSchema,
   type FurnitureCategory,
   type FurnitureDimensions,
+  type AssetDefinition,
+  type CreateAssetDefinition,
   type FurnitureItem,
   type CreateFurnitureItem,
 } from "./furniture.js";
@@ -149,10 +156,12 @@ export {
 export {
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
+  HallkeeperSheetDataSchema,
   HallkeeperSheetSchema,
   GenerateHallkeeperSheetRequestSchema,
   type HallkeeperSheetId,
   type ManifestItem,
+  type HallkeeperSheetData,
   type HallkeeperSheet,
   type GenerateHallkeeperSheetRequest,
 } from "./hallkeeper.js";
@@ -172,9 +181,7 @@ export {
 } from "./photo.js";
 
 export {
-  // Solver — entry point
   solveLayout,
-  // Solver — types & schemas
   SolverInputSchema,
   SolverOutputSchema,
   SolverConfigSchema,
@@ -188,7 +195,6 @@ export {
   type SolverConfig,
   type ComplianceReport,
   type FireExit,
-  // Solver — geometry
   pointInPolygon,
   distanceToEdge,
   distanceToPoint,
@@ -196,12 +202,10 @@ export {
   rectInPolygon,
   lineIntersectsRect,
   generateGridPoints,
-  // Solver — compliance
   checkAisleWidths,
   checkFireExitClearance,
   checkMaxTravelDistance,
   generateComplianceReport,
-  // Solver — layout strategies
   solveDinnerRounds,
   solveTheatre,
   solveBoardroom,

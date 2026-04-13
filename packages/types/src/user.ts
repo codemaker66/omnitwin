@@ -34,44 +34,39 @@ export const EmailSchema = z
   .email("Email must be a valid email address");
 
 // ---------------------------------------------------------------------------
-// User — the full persisted entity
+// User — the full persisted entity (matches DB columns)
 //
-// Punch list #35 / Prompt 16: `venueId` is singular and nullable to match
-// the runtime DB column (`packages/api/src/db/schema.ts` users table) and
-// the `JwtUser` interface in `packages/api/src/middleware/auth.ts`. The
-// previous schema declared `venueIds: VenueId[]` (plural array), which
-// silently disagreed with the runtime since day one — a future engineer
-// trusting the shared schema would have written code that compiled but
-// crashed at runtime.
-//
-// OMNITWIN today is single-tenant Trades Hall with one venue per user.
-// When the SaaS multi-tenant rebuild happens (multiple venues per user
-// is a real product requirement at that point), this becomes a proper
-// `user_venues` join table with a database migration. Tracked in
-// memory at project_multi_venue_findings.md. The decision NOT to model
-// many-to-many today is deliberate — speculative work without a real
-// customer to inform the design.
+// Includes Clerk-specific fields (clerkId) and profile fields
+// (displayName, phone, organizationName) that the previous schema omitted.
 // ---------------------------------------------------------------------------
 
 export const UserSchema = z.object({
   id: UserIdSchema,
+  clerkId: z.string().nullable(),
   email: EmailSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
+  name: z.string().trim().min(1).max(200),
+  displayName: z.string().nullable(),
+  phone: z.string().nullable(),
+  organizationName: z.string().nullable(),
   role: UserRoleSchema,
   venueId: VenueIdSchema.nullable(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 
 export type User = z.infer<typeof UserSchema>;
 
 // ---------------------------------------------------------------------------
-// CreateUser — fields needed to create a new user
+// CreateUser — fields needed to create a new user (via webhook or admin)
 // ---------------------------------------------------------------------------
 
 export const CreateUserSchema = z.object({
+  clerkId: z.string().min(1).optional(),
   email: EmailSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
+  name: z.string().trim().min(1).max(200),
+  displayName: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  organizationName: z.string().nullable().optional(),
   role: UserRoleSchema,
   venueId: VenueIdSchema.nullable(),
 });
@@ -79,38 +74,41 @@ export const CreateUserSchema = z.object({
 export type CreateUser = z.infer<typeof CreateUserSchema>;
 
 // ---------------------------------------------------------------------------
-// Login / Register request schemas
+// Legacy auth schemas — DEPRECATED
+//
+// These model the old pre-Clerk password+JWT auth flow that no longer exists.
+// Kept for backward compatibility with existing tests but should not be used
+// in new code. The running system uses Clerk session tokens exclusively.
 // ---------------------------------------------------------------------------
 
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 128;
-
+/** @deprecated Pre-Clerk auth. Use Clerk session tokens instead. */
 export const LoginRequestSchema = z.object({
   email: EmailSchema,
-  password: z.string().min(MIN_PASSWORD_LENGTH, `Password must be at least ${String(MIN_PASSWORD_LENGTH)} characters`),
+  password: z.string().min(8),
 });
 
+/** @deprecated Pre-Clerk auth. */
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
+/** @deprecated Pre-Clerk auth. Use Clerk SignUp component instead. */
 export const RegisterRequestSchema = z.object({
   email: EmailSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
-  password: z
-    .string()
-    .min(MIN_PASSWORD_LENGTH, `Password must be at least ${String(MIN_PASSWORD_LENGTH)} characters`)
-    .max(MAX_PASSWORD_LENGTH, `Password must be at most ${String(MAX_PASSWORD_LENGTH)} characters`),
+  name: z.string().trim().min(1).max(200),
+  password: z.string().min(8).max(128),
 });
 
+/** @deprecated Pre-Clerk auth. */
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
-// ---------------------------------------------------------------------------
-// Auth Tokens — JWT access + refresh token pair
-// ---------------------------------------------------------------------------
-
+/** @deprecated Pre-Clerk auth. Use Clerk session tokens instead. */
 export const AuthTokensSchema = z.object({
-  accessToken: z.string().min(1, "Access token must not be empty"),
-  refreshToken: z.string().min(1, "Refresh token must not be empty"),
-  expiresAt: z.string().datetime({ message: "expiresAt must be an ISO 8601 datetime string" }),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresAt: z.string().datetime(),
 });
 
+/** @deprecated Pre-Clerk auth. */
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export type AuthTokens = z.infer<typeof AuthTokensSchema>;

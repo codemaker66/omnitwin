@@ -1,5 +1,5 @@
 import type { FloorPlanPoint } from "../space.js";
-import type { PlacedObject } from "../configuration.js";
+import type { SolverPlacedObject } from "./types.js";
 import type { ComplianceReport, FireExit, SolverConfig } from "./types.js";
 import { SOLVER_ASSETS, SOLVER_ASSET_DIMENSIONS } from "./types.js";
 import { distanceToPoint } from "./geometry.js";
@@ -22,7 +22,7 @@ const MAX_TRAVEL_DISTANCE_M = 18;
  * @returns Object with validity flag and human-readable violation descriptions.
  */
 export function checkAisleWidths(
-  placedObjects: readonly PlacedObject[],
+  placedObjects: readonly SolverPlacedObject[],
   config: SolverConfig,
 ): { readonly valid: boolean; readonly violations: readonly string[] } {
   const tables = placedObjects.filter((obj) => isTable(obj.furnitureItemId));
@@ -68,7 +68,7 @@ export function checkAisleWidths(
  * zone in front of fire exits.
  */
 export function checkFireExitClearance(
-  placedObjects: readonly PlacedObject[],
+  placedObjects: readonly SolverPlacedObject[],
   fireExits: readonly FireExit[],
   config: SolverConfig,
 ): { readonly valid: boolean; readonly violations: readonly string[] } {
@@ -108,7 +108,7 @@ export function checkFireExitClearance(
  * (actual travel distance along aisles would be longer).
  */
 export function checkMaxTravelDistance(
-  placedObjects: readonly PlacedObject[],
+  placedObjects: readonly SolverPlacedObject[],
   fireExits: readonly FireExit[],
   _roomPolygon: readonly FloorPlanPoint[],
 ): { readonly valid: boolean; readonly violations: readonly string[] } {
@@ -147,7 +147,7 @@ export function checkMaxTravelDistance(
  * Generates a complete compliance report for a solved layout.
  */
 export function generateComplianceReport(
-  placedObjects: readonly PlacedObject[],
+  placedObjects: readonly SolverPlacedObject[],
   fireExits: readonly FireExit[],
   roomPolygon: readonly FloorPlanPoint[],
   config: SolverConfig,

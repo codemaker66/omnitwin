@@ -407,12 +407,13 @@ describe("solveLayout", () => {
     expectValidOutput(result);
   });
 
-  it("accepts custom config", () => {
+  it("accepts custom config with correct field names", () => {
+    // SolverConfig uses minTableSpacingM and chairSpacingDeg (not chairSpacingDegrees)
     const customConfig: SolverConfig = {
       minAisleWidthM: 1.5,
       fireExitClearanceM: 1.5,
       minTableSpacingM: 1.0,
-      chairSpacingDegrees: 60,
+      chairSpacingDeg: 60,
     };
     const result = solveLayout(makeInput("dinner-rounds", 16), customConfig);
     expectValidOutput(result);

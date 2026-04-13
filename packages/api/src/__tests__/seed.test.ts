@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   CreateVenueSchema,
   CreateSpaceSchema,
-  CreateFurnitureItemSchema,
+  CreateAssetDefinitionSchema,
   CreateUserSchema,
 } from "@omnitwin/types";
 
@@ -41,8 +41,9 @@ describe("seed spaces pass CreateSpaceSchema", () => {
         venueId: UUID,
         name: s.name,
         slug: s.slug,
-        description: "",
-        dimensions: { width: s.width, length: s.length, height: s.height },
+        widthM: s.width,
+        lengthM: s.length,
+        heightM: s.height,
         sortOrder: 0,
         floorPlanOutline: [
           { x: -hw, y: -hl },
@@ -50,19 +51,13 @@ describe("seed spaces pass CreateSpaceSchema", () => {
           { x: hw, y: hl },
           { x: -hw, y: hl },
         ],
-        meshUrl: null,
-        thumbnailUrl: null,
       });
       expect(result.success).toBe(true);
     });
   }
 });
 
-describe("seed assets pass CreateFurnitureItemSchema", () => {
-  // Note: DB asset_definitions uses different categories than @omnitwin/types
-  // FurnitureCategory. This test validates items that map cleanly to the
-  // @omnitwin/types schema. Items like "staging", "danceFloor", "misc" are
-  // DB-only categories that don't map 1:1 to the frontend FurnitureCategory.
+describe("seed assets pass CreateAssetDefinitionSchema", () => {
   const assets = [
     { name: "Round Table 5ft", category: "table", width: 1.524, depth: 1.524, height: 0.762 },
     { name: "Round Table 6ft", category: "table", width: 1.829, depth: 1.829, height: 0.762 },
@@ -72,15 +67,13 @@ describe("seed assets pass CreateFurnitureItemSchema", () => {
 
   for (const a of assets) {
     it(`validates ${a.name}`, () => {
-      const result = CreateFurnitureItemSchema.safeParse({
-        venueId: UUID,
+      const result = CreateAssetDefinitionSchema.safeParse({
         name: a.name,
         category: a.category,
-        defaultDimensions: { width: a.width, depth: a.depth, height: a.height },
-        meshUrl: null,
-        thumbnailUrl: null,
-        stackable: false,
-        maxStack: 1,
+        widthM: a.width,
+        depthM: a.depth,
+        heightM: a.height,
+        collisionType: "box",
       });
       expect(result.success).toBe(true);
     });

@@ -6,7 +6,7 @@ import {
   generateComplianceReport,
 } from "../compliance.js";
 import { DEFAULT_SOLVER_CONFIG, SOLVER_ASSETS } from "../types.js";
-import type { PlacedObject } from "../../configuration.js";
+import type { SolverPlacedObject } from "../types.js";
 import type { FloorPlanPoint } from "../../space.js";
 import type { FireExit, SolverConfig } from "../types.js";
 
@@ -20,7 +20,7 @@ function testUUID(): string {
   return `00000000-0000-4000-8000-${String(testIdCounter).padStart(12, "0")}`;
 }
 
-function makeTable(x: number, z: number, type: string = SOLVER_ASSETS.ROUND_TABLE_5FT): PlacedObject {
+function makeTable(x: number, z: number, type: string = SOLVER_ASSETS.ROUND_TABLE_5FT): SolverPlacedObject {
   return {
     id: testUUID(),
     furnitureItemId: type,
@@ -30,7 +30,7 @@ function makeTable(x: number, z: number, type: string = SOLVER_ASSETS.ROUND_TABL
   };
 }
 
-function makeChair(x: number, z: number): PlacedObject {
+function makeChair(x: number, z: number): SolverPlacedObject {
   return {
     id: testUUID(),
     furnitureItemId: SOLVER_ASSETS.CHAIR_STANDARD,

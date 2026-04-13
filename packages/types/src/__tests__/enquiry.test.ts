@@ -21,20 +21,24 @@ const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80";
 const VALID_USER_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
+// New schema shape: state (not status), guestPhone (not phone),
+// preferredDate date-only string, estimatedGuests (not guestCount).
 const validEnquiry = {
   id: VALID_UUID,
   venueId: VALID_VENUE_UUID,
   spaceId: VALID_SPACE_UUID,
   configurationId: VALID_CONFIG_UUID,
+  userId: VALID_USER_UUID,
   name: "John Doe",
   email: "john@example.com",
-  phone: "+44 7911 123456",
+  guestPhone: "+44 7911 123456",
+  guestEmail: "john.guest@example.com",
+  guestName: "John Doe",
+  eventType: "wedding",
   message: "We would like to book the Grand Hall for a wedding.",
-  eventDate: "2025-06-15T14:00:00.000Z",
-  guestCount: 150,
-  status: "submitted" as const,
-  respondedBy: null,
-  respondedAt: null,
+  preferredDate: "2025-06-15",
+  estimatedGuests: 150,
+  state: "submitted" as const,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
 };
@@ -42,12 +46,12 @@ const validEnquiry = {
 const validCreateEnquiry = {
   venueId: VALID_VENUE_UUID,
   spaceId: VALID_SPACE_UUID,
-  configurationId: null,
+  configurationId: VALID_CONFIG_UUID,
   name: "John Doe",
   email: "john@example.com",
   message: "We would like to book the Grand Hall.",
-  eventDate: "2025-06-15T14:00:00.000Z",
-  guestCount: 150,
+  preferredDate: "2025-06-15",
+  estimatedGuests: 150,
 };
 
 // ---------------------------------------------------------------------------
@@ -77,12 +81,20 @@ describe("EnquiryStatusSchema", () => {
     expect(EnquiryStatusSchema.safeParse(status).success).toBe(true);
   });
 
-  it("has exactly 5 statuses", () => {
-    expect(ENQUIRY_STATUSES).toHaveLength(5);
+  it("has exactly 7 statuses", () => {
+    expect(ENQUIRY_STATUSES).toHaveLength(7);
   });
 
   it("contains the expected statuses in order", () => {
-    expect(ENQUIRY_STATUSES).toEqual(["submitted", "viewed", "responded", "converted", "lost"]);
+    expect(ENQUIRY_STATUSES).toEqual([
+      "draft",
+      "submitted",
+      "under_review",
+      "approved",
+      "rejected",
+      "withdrawn",
+      "archived",
+    ]);
   });
 
   it("rejects 'Submitted' (case sensitive)", () => {
@@ -91,6 +103,18 @@ describe("EnquiryStatusSchema", () => {
 
   it("rejects 'pending' (not a valid status)", () => {
     expect(EnquiryStatusSchema.safeParse("pending").success).toBe(false);
+  });
+
+  it("rejects 'viewed' (old status, removed)", () => {
+    expect(EnquiryStatusSchema.safeParse("viewed").success).toBe(false);
+  });
+
+  it("rejects 'converted' (old status, removed)", () => {
+    expect(EnquiryStatusSchema.safeParse("converted").success).toBe(false);
+  });
+
+  it("rejects 'lost' (old status, removed)", () => {
+    expect(EnquiryStatusSchema.safeParse("lost").success).toBe(false);
   });
 
   it("rejects empty string", () => {
@@ -107,28 +131,36 @@ describe("EnquiryStatusSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("VALID_ENQUIRY_TRANSITIONS", () => {
-  it("defines transitions for all 5 statuses", () => {
-    expect(Object.keys(VALID_ENQUIRY_TRANSITIONS)).toHaveLength(5);
+  it("defines transitions for all 7 statuses", () => {
+    expect(Object.keys(VALID_ENQUIRY_TRANSITIONS)).toHaveLength(7);
   });
 
-  it("submitted can only transition to viewed", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.submitted).toEqual(["viewed"]);
+  it("draft can only transition to submitted", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.draft).toEqual(["submitted"]);
   });
 
-  it("viewed can transition to responded or lost", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.viewed).toEqual(["responded", "lost"]);
+  it("submitted can transition to under_review or withdrawn", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.submitted).toEqual(["under_review", "withdrawn"]);
   });
 
-  it("responded can transition to converted or lost", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.responded).toEqual(["converted", "lost"]);
+  it("under_review can transition to approved, rejected, or withdrawn", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.under_review).toEqual(["approved", "rejected", "withdrawn"]);
   });
 
-  it("converted is terminal (no transitions)", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.converted).toEqual([]);
+  it("approved can transition to archived", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.approved).toEqual(["archived"]);
   });
 
-  it("lost is terminal (no transitions)", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.lost).toEqual([]);
+  it("rejected can transition to archived", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.rejected).toEqual(["archived"]);
+  });
+
+  it("withdrawn is terminal (no transitions)", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.withdrawn).toEqual([]);
+  });
+
+  it("archived is terminal (no transitions)", () => {
+    expect(VALID_ENQUIRY_TRANSITIONS.archived).toEqual([]);
   });
 });
 
@@ -138,74 +170,74 @@ describe("VALID_ENQUIRY_TRANSITIONS", () => {
 
 describe("isValidEnquiryTransition", () => {
   // --- Legal transitions ---
-  it("submitted → viewed is valid", () => {
-    expect(isValidEnquiryTransition("submitted", "viewed")).toBe(true);
+  it("draft → submitted is valid", () => {
+    expect(isValidEnquiryTransition("draft", "submitted")).toBe(true);
   });
 
-  it("viewed → responded is valid", () => {
-    expect(isValidEnquiryTransition("viewed", "responded")).toBe(true);
+  it("submitted → under_review is valid", () => {
+    expect(isValidEnquiryTransition("submitted", "under_review")).toBe(true);
   });
 
-  it("viewed → lost is valid", () => {
-    expect(isValidEnquiryTransition("viewed", "lost")).toBe(true);
+  it("submitted → withdrawn is valid", () => {
+    expect(isValidEnquiryTransition("submitted", "withdrawn")).toBe(true);
   });
 
-  it("responded → converted is valid", () => {
-    expect(isValidEnquiryTransition("responded", "converted")).toBe(true);
+  it("under_review → approved is valid", () => {
+    expect(isValidEnquiryTransition("under_review", "approved")).toBe(true);
   });
 
-  it("responded → lost is valid", () => {
-    expect(isValidEnquiryTransition("responded", "lost")).toBe(true);
+  it("under_review → rejected is valid", () => {
+    expect(isValidEnquiryTransition("under_review", "rejected")).toBe(true);
+  });
+
+  it("under_review → withdrawn is valid", () => {
+    expect(isValidEnquiryTransition("under_review", "withdrawn")).toBe(true);
+  });
+
+  it("approved → archived is valid", () => {
+    expect(isValidEnquiryTransition("approved", "archived")).toBe(true);
+  });
+
+  it("rejected → archived is valid", () => {
+    expect(isValidEnquiryTransition("rejected", "archived")).toBe(true);
   });
 
   // --- Illegal transitions ---
-  it("submitted → responded is invalid (must go through viewed)", () => {
-    expect(isValidEnquiryTransition("submitted", "responded")).toBe(false);
+  it("draft → approved is invalid (skips steps)", () => {
+    expect(isValidEnquiryTransition("draft", "approved")).toBe(false);
   });
 
-  it("submitted → converted is invalid (skips steps)", () => {
-    expect(isValidEnquiryTransition("submitted", "converted")).toBe(false);
-  });
-
-  it("submitted → lost is invalid (must be viewed first)", () => {
-    expect(isValidEnquiryTransition("submitted", "lost")).toBe(false);
+  it("submitted → approved is invalid (must go through under_review)", () => {
+    expect(isValidEnquiryTransition("submitted", "approved")).toBe(false);
   });
 
   it("submitted → submitted is invalid (self-transition)", () => {
     expect(isValidEnquiryTransition("submitted", "submitted")).toBe(false);
   });
 
-  it("viewed → viewed is invalid (self-transition)", () => {
-    expect(isValidEnquiryTransition("viewed", "viewed")).toBe(false);
+  it("under_review → under_review is invalid (self-transition)", () => {
+    expect(isValidEnquiryTransition("under_review", "under_review")).toBe(false);
   });
 
-  it("viewed → converted is invalid (must respond first)", () => {
-    expect(isValidEnquiryTransition("viewed", "converted")).toBe(false);
+  it("approved → submitted is invalid (backward)", () => {
+    expect(isValidEnquiryTransition("approved", "submitted")).toBe(false);
   });
 
-  it("viewed → submitted is invalid (backward)", () => {
-    expect(isValidEnquiryTransition("viewed", "submitted")).toBe(false);
-  });
-
-  it("responded → submitted is invalid (backward)", () => {
-    expect(isValidEnquiryTransition("responded", "submitted")).toBe(false);
-  });
-
-  it("responded → viewed is invalid (backward)", () => {
-    expect(isValidEnquiryTransition("responded", "viewed")).toBe(false);
-  });
-
-  it("converted → anything is invalid (terminal)", () => {
-    const allStatuses: EnquiryStatus[] = ["submitted", "viewed", "responded", "converted", "lost"];
+  it("withdrawn → anything is invalid (terminal)", () => {
+    const allStatuses: EnquiryStatus[] = [
+      "draft", "submitted", "under_review", "approved", "rejected", "withdrawn", "archived",
+    ];
     for (const status of allStatuses) {
-      expect(isValidEnquiryTransition("converted", status)).toBe(false);
+      expect(isValidEnquiryTransition("withdrawn", status)).toBe(false);
     }
   });
 
-  it("lost → anything is invalid (terminal)", () => {
-    const allStatuses: EnquiryStatus[] = ["submitted", "viewed", "responded", "converted", "lost"];
+  it("archived → anything is invalid (terminal)", () => {
+    const allStatuses: EnquiryStatus[] = [
+      "draft", "submitted", "under_review", "approved", "rejected", "withdrawn", "archived",
+    ];
     for (const status of allStatuses) {
-      expect(isValidEnquiryTransition("lost", status)).toBe(false);
+      expect(isValidEnquiryTransition("archived", status)).toBe(false);
     }
   });
 });
@@ -220,8 +252,8 @@ describe("EnquirySchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("John Doe");
-      expect(result.data.status).toBe("submitted");
-      expect(result.data.guestCount).toBe(150);
+      expect(result.data.state).toBe("submitted");
+      expect(result.data.estimatedGuests).toBe(150);
     }
   });
 
@@ -229,27 +261,36 @@ describe("EnquirySchema", () => {
     expect(EnquirySchema.safeParse({ ...validEnquiry, configurationId: null }).success).toBe(true);
   });
 
-  it("accepts responded enquiry with respondedBy and respondedAt", () => {
-    const responded = {
-      ...validEnquiry,
-      status: "responded",
-      respondedBy: VALID_USER_UUID,
-      respondedAt: "2025-01-20T09:00:00.000Z",
-    };
-    const result = EnquirySchema.safeParse(responded);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.respondedBy).toBe(VALID_USER_UUID);
-    }
+  it("accepts null userId", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, userId: null }).success).toBe(true);
   });
 
-  it("defaults phone to empty string when omitted", () => {
-    const { phone: _, ...noPhone } = validEnquiry;
-    const result = EnquirySchema.safeParse(noPhone);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.phone).toBe("");
-    }
+  it("accepts null guestPhone", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, guestPhone: null }).success).toBe(true);
+  });
+
+  it("accepts null guestEmail", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, guestEmail: null }).success).toBe(true);
+  });
+
+  it("accepts null guestName", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, guestName: null }).success).toBe(true);
+  });
+
+  it("accepts null eventType", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, eventType: null }).success).toBe(true);
+  });
+
+  it("accepts null preferredDate", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, preferredDate: null }).success).toBe(true);
+  });
+
+  it("accepts null estimatedGuests", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: null }).success).toBe(true);
+  });
+
+  it("accepts null message", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, message: null }).success).toBe(true);
   });
 
   it("trims whitespace from name", () => {
@@ -257,14 +298,6 @@ describe("EnquirySchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("John Doe");
-    }
-  });
-
-  it("trims whitespace from message", () => {
-    const result = EnquirySchema.safeParse({ ...validEnquiry, message: "  Hello  " });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.message).toBe("Hello");
     }
   });
 
@@ -285,11 +318,6 @@ describe("EnquirySchema", () => {
     expect(EnquirySchema.safeParse(noSpaceId).success).toBe(false);
   });
 
-  it("rejects missing configurationId (required but nullable)", () => {
-    const { configurationId: _, ...noConfigId } = validEnquiry;
-    expect(EnquirySchema.safeParse(noConfigId).success).toBe(false);
-  });
-
   it("rejects missing name", () => {
     const { name: _, ...noName } = validEnquiry;
     expect(EnquirySchema.safeParse(noName).success).toBe(false);
@@ -300,34 +328,9 @@ describe("EnquirySchema", () => {
     expect(EnquirySchema.safeParse(noEmail).success).toBe(false);
   });
 
-  it("rejects missing message", () => {
-    const { message: _, ...noMessage } = validEnquiry;
-    expect(EnquirySchema.safeParse(noMessage).success).toBe(false);
-  });
-
-  it("rejects missing eventDate", () => {
-    const { eventDate: _, ...noEventDate } = validEnquiry;
-    expect(EnquirySchema.safeParse(noEventDate).success).toBe(false);
-  });
-
-  it("rejects missing guestCount", () => {
-    const { guestCount: _, ...noGuestCount } = validEnquiry;
-    expect(EnquirySchema.safeParse(noGuestCount).success).toBe(false);
-  });
-
-  it("rejects missing status", () => {
-    const { status: _, ...noStatus } = validEnquiry;
-    expect(EnquirySchema.safeParse(noStatus).success).toBe(false);
-  });
-
-  it("rejects missing respondedBy (required but nullable)", () => {
-    const { respondedBy: _, ...noRespondedBy } = validEnquiry;
-    expect(EnquirySchema.safeParse(noRespondedBy).success).toBe(false);
-  });
-
-  it("rejects missing respondedAt (required but nullable)", () => {
-    const { respondedAt: _, ...noRespondedAt } = validEnquiry;
-    expect(EnquirySchema.safeParse(noRespondedAt).success).toBe(false);
+  it("rejects missing state", () => {
+    const { state: _, ...noState } = validEnquiry;
+    expect(EnquirySchema.safeParse(noState).success).toBe(false);
   });
 
   it("rejects missing createdAt", () => {
@@ -346,8 +349,8 @@ describe("EnquirySchema", () => {
     expect(EnquirySchema.safeParse({ ...validEnquiry, email: "not-email" }).success).toBe(false);
   });
 
-  it("rejects invalid status", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, status: "pending" }).success).toBe(false);
+  it("rejects invalid state", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, state: "pending" }).success).toBe(false);
   });
 
   it("rejects empty name", () => {
@@ -358,60 +361,48 @@ describe("EnquirySchema", () => {
     expect(EnquirySchema.safeParse({ ...validEnquiry, name: "   " }).success).toBe(false);
   });
 
-  it("rejects empty message", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "" }).success).toBe(false);
+  it("rejects message exceeding 2000 characters", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "A".repeat(2001) }).success).toBe(false);
   });
 
-  it("rejects whitespace-only message", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "   " }).success).toBe(false);
+  it("accepts message of exactly 2000 characters", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "A".repeat(2000) }).success).toBe(true);
   });
 
-  it("rejects message exceeding 5000 characters", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "A".repeat(5001) }).success).toBe(false);
+  it("rejects guestPhone exceeding 30 characters", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, guestPhone: "1".repeat(31) }).success).toBe(false);
   });
 
-  it("accepts message of exactly 5000 characters", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, message: "A".repeat(5000) }).success).toBe(true);
+  it("rejects negative estimatedGuests", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: -5 }).success).toBe(false);
   });
 
-  it("rejects phone exceeding 50 characters", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, phone: "1".repeat(51) }).success).toBe(false);
+  it("rejects float estimatedGuests", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: 10.5 }).success).toBe(false);
   });
 
-  it("rejects zero guest count", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: 0 }).success).toBe(false);
+  it("accepts estimatedGuests of 0", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: 0 }).success).toBe(true);
   });
 
-  it("rejects negative guest count", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: -5 }).success).toBe(false);
+  it("accepts estimatedGuests of 10000 (maximum)", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: 10000 }).success).toBe(true);
   });
 
-  it("rejects float guest count", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: 10.5 }).success).toBe(false);
+  it("rejects estimatedGuests exceeding 10000", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, estimatedGuests: 10001 }).success).toBe(false);
   });
 
-  it("accepts guest count of 1 (minimum)", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: 1 }).success).toBe(true);
+  it("rejects preferredDate that is not YYYY-MM-DD format", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, preferredDate: "15/06/2025" }).success).toBe(false);
   });
 
-  it("accepts guest count of 10000 (maximum)", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: 10000 }).success).toBe(true);
+  it("rejects preferredDate that is a datetime string", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, preferredDate: "2025-06-15T14:00:00.000Z" }).success).toBe(false);
   });
 
-  it("rejects guest count exceeding 10000", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, guestCount: 10001 }).success).toBe(false);
-  });
-
-  it("rejects invalid datetime for eventDate", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, eventDate: "nope" }).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for respondedBy", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, respondedBy: "bad" }).success).toBe(false);
-  });
-
-  it("rejects invalid datetime for respondedAt", () => {
-    expect(EnquirySchema.safeParse({ ...validEnquiry, respondedAt: "bad" }).success).toBe(false);
+  it("accepts preferredDate in YYYY-MM-DD format", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, preferredDate: "2026-12-31" }).success).toBe(true);
   });
 });
 
@@ -424,12 +415,15 @@ describe("CreateEnquirySchema", () => {
     expect(CreateEnquirySchema.safeParse(validCreateEnquiry).success).toBe(true);
   });
 
-  it("defaults phone to empty string when omitted", () => {
-    const result = CreateEnquirySchema.safeParse(validCreateEnquiry);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.phone).toBe("");
-    }
+  it("accepts optional fields omitted", () => {
+    const minimal = {
+      venueId: VALID_VENUE_UUID,
+      spaceId: VALID_SPACE_UUID,
+      configurationId: VALID_CONFIG_UUID,
+      name: "Jane Doe",
+      email: "jane@example.com",
+    };
+    expect(CreateEnquirySchema.safeParse(minimal).success).toBe(true);
   });
 
   it("rejects missing venueId", () => {
@@ -447,16 +441,6 @@ describe("CreateEnquirySchema", () => {
     expect(CreateEnquirySchema.safeParse(noEmail).success).toBe(false);
   });
 
-  it("rejects missing message", () => {
-    const { message: _, ...noMessage } = validCreateEnquiry;
-    expect(CreateEnquirySchema.safeParse(noMessage).success).toBe(false);
-  });
-
-  it("rejects missing guestCount", () => {
-    const { guestCount: _, ...noGuestCount } = validCreateEnquiry;
-    expect(CreateEnquirySchema.safeParse(noGuestCount).success).toBe(false);
-  });
-
   it("does not accept id field (strips extra keys)", () => {
     const result = CreateEnquirySchema.safeParse({ ...validCreateEnquiry, id: VALID_UUID });
     expect(result.success).toBe(true);
@@ -465,11 +449,11 @@ describe("CreateEnquirySchema", () => {
     }
   });
 
-  it("does not accept status field (strips extra keys)", () => {
-    const result = CreateEnquirySchema.safeParse({ ...validCreateEnquiry, status: "submitted" });
+  it("does not accept state field (strips extra keys)", () => {
+    const result = CreateEnquirySchema.safeParse({ ...validCreateEnquiry, state: "submitted" });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect("status" in result.data).toBe(false);
+      expect("state" in result.data).toBe(false);
     }
   });
 });

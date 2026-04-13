@@ -13,15 +13,18 @@ export const EnquiryIdSchema = z.string().uuid();
 export type EnquiryId = z.infer<typeof EnquiryIdSchema>;
 
 // ---------------------------------------------------------------------------
-// Enquiry Status — state machine for enquiry lifecycle
+// Enquiry State — matches the runtime state machine in
+// packages/api/src/state-machines/enquiry.ts
 // ---------------------------------------------------------------------------
 
 export const ENQUIRY_STATUSES = [
+  "draft",
   "submitted",
-  "viewed",
-  "responded",
-  "converted",
-  "lost",
+  "under_review",
+  "approved",
+  "rejected",
+  "withdrawn",
+  "archived",
 ] as const;
 
 export const EnquiryStatusSchema = z.enum(ENQUIRY_STATUSES);
@@ -29,23 +32,19 @@ export const EnquiryStatusSchema = z.enum(ENQUIRY_STATUSES);
 export type EnquiryStatus = z.infer<typeof EnquiryStatusSchema>;
 
 // ---------------------------------------------------------------------------
-// Valid Enquiry Transitions — typed map of legal state transitions
-//
-// submitted  → viewed
-// viewed     → responded | lost
-// responded  → converted | lost
-// converted  → (terminal)
-// lost       → (terminal)
+// Valid Enquiry Transitions — mirrors runtime state machine
 // ---------------------------------------------------------------------------
 
 export const VALID_ENQUIRY_TRANSITIONS: Readonly<
   Record<EnquiryStatus, readonly EnquiryStatus[]>
 > = {
-  submitted: ["viewed"],
-  viewed: ["responded", "lost"],
-  responded: ["converted", "lost"],
-  converted: [],
-  lost: [],
+  draft: ["submitted"],
+  submitted: ["under_review", "withdrawn"],
+  under_review: ["approved", "rejected", "withdrawn"],
+  approved: ["archived"],
+  rejected: ["archived"],
+  withdrawn: [],
+  archived: [],
 };
 
 /**
@@ -59,62 +58,48 @@ export function isValidEnquiryTransition(
 }
 
 // ---------------------------------------------------------------------------
-// Enquiry — the full persisted entity
+// Enquiry — the full persisted entity (matches DB columns)
 // ---------------------------------------------------------------------------
 
 const MAX_GUEST_COUNT = 10000;
-const MAX_MESSAGE_LENGTH = 5000;
+const MAX_MESSAGE_LENGTH = 2000;
 
 export const EnquirySchema = z.object({
   id: EnquiryIdSchema,
   venueId: VenueIdSchema,
   spaceId: SpaceIdSchema,
   configurationId: ConfigurationIdSchema.nullable(),
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
-  email: z.string().trim().min(1, "Email must not be empty").email("Email must be a valid email address"),
-  phone: z.string().trim().max(50, "Phone must be at most 50 characters").optional().default(""),
-  message: z
-    .string()
-    .trim()
-    .min(1, "Message must not be empty")
-    .max(MAX_MESSAGE_LENGTH, `Message must be at most ${String(MAX_MESSAGE_LENGTH)} characters`),
-  eventDate: z.string().datetime({ message: "eventDate must be an ISO 8601 datetime string" }),
-  guestCount: z
-    .number()
-    .int("Guest count must be an integer")
-    .min(1, "Guest count must be at least 1")
-    .max(MAX_GUEST_COUNT, `Guest count must be at most ${String(MAX_GUEST_COUNT)}`),
-  status: EnquiryStatusSchema,
-  respondedBy: UserIdSchema.nullable(),
-  respondedAt: z.string().datetime({ message: "respondedAt must be an ISO 8601 datetime string" }).nullable(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  userId: UserIdSchema.nullable(),
+  name: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(255),
+  eventType: z.string().trim().max(100).nullable(),
+  preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  estimatedGuests: z.number().int().nonnegative().max(MAX_GUEST_COUNT).nullable(),
+  message: z.string().max(MAX_MESSAGE_LENGTH).nullable(),
+  state: EnquiryStatusSchema,
+  guestEmail: z.string().email().nullable(),
+  guestPhone: z.string().max(30).nullable(),
+  guestName: z.string().max(200).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 
 export type Enquiry = z.infer<typeof EnquirySchema>;
 
 // ---------------------------------------------------------------------------
-// CreateEnquiry — fields submitted by the client via the enquiry form
+// CreateEnquiry — fields submitted via the enquiry form
 // ---------------------------------------------------------------------------
 
 export const CreateEnquirySchema = z.object({
+  configurationId: ConfigurationIdSchema,
   venueId: VenueIdSchema,
   spaceId: SpaceIdSchema,
-  configurationId: ConfigurationIdSchema.nullable(),
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
-  email: z.string().trim().min(1, "Email must not be empty").email("Email must be a valid email address"),
-  phone: z.string().trim().max(50, "Phone must be at most 50 characters").optional().default(""),
-  message: z
-    .string()
-    .trim()
-    .min(1, "Message must not be empty")
-    .max(MAX_MESSAGE_LENGTH, `Message must be at most ${String(MAX_MESSAGE_LENGTH)} characters`),
-  eventDate: z.string().datetime({ message: "eventDate must be an ISO 8601 datetime string" }),
-  guestCount: z
-    .number()
-    .int("Guest count must be an integer")
-    .min(1, "Guest count must be at least 1")
-    .max(MAX_GUEST_COUNT, `Guest count must be at most ${String(MAX_GUEST_COUNT)}`),
+  name: z.string().trim().min(1).max(200),
+  email: z.string().trim().email().max(255),
+  eventType: z.string().trim().max(100).nullable().optional(),
+  preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  estimatedGuests: z.number().int().nonnegative().max(MAX_GUEST_COUNT).nullable().optional(),
+  message: z.string().max(MAX_MESSAGE_LENGTH).nullable().optional(),
 });
 
 export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;

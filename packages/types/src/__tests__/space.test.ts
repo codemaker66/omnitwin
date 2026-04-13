@@ -35,13 +35,17 @@ const validRectangle = [
   { x: 0, y: 10.5 },
 ];
 
+// New flat shape: widthM/lengthM/heightM as strings (numeric columns from DB).
+// description is string | null (not optional with default).
 const validSpace = {
   id: VALID_UUID,
   venueId: VALID_VENUE_UUID,
   name: "Grand Hall",
   slug: "grand-hall",
   description: "The flagship hall.",
-  dimensions: { width: 21, length: 10.5, height: 8 },
+  widthM: "21.00",
+  lengthM: "10.50",
+  heightM: "8.00",
   sortOrder: 0,
   floorPlanOutline: validRectangle,
   meshUrl: "https://example.com/mesh.glb",
@@ -50,15 +54,16 @@ const validSpace = {
   updatedAt: VALID_DATETIME,
 };
 
+// CreateSpaceSchema uses numeric widthM/lengthM/heightM (not strings).
 const validCreateSpace = {
   venueId: VALID_VENUE_UUID,
   name: "Grand Hall",
   slug: "grand-hall",
-  dimensions: { width: 21, length: 10.5, height: 8 },
+  widthM: 21,
+  lengthM: 10.5,
+  heightM: 8,
   sortOrder: 0,
   floorPlanOutline: validRectangle,
-  meshUrl: null,
-  thumbnailUrl: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -110,7 +115,7 @@ describe("SpaceSlugSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SpaceDimensionsSchema
+// SpaceDimensionsSchema — client-side convenience type (numbers, not strings)
 // ---------------------------------------------------------------------------
 
 describe("SpaceDimensionsSchema", () => {
@@ -273,7 +278,7 @@ describe("FloorPlanOutlineSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SpaceSchema — full entity
+// SpaceSchema — full entity (flat widthM/lengthM/heightM strings)
 // ---------------------------------------------------------------------------
 
 describe("SpaceSchema", () => {
@@ -282,24 +287,15 @@ describe("SpaceSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("Grand Hall");
-      expect(result.data.dimensions.width).toBe(21);
+      expect(result.data.widthM).toBe("21.00");
     }
   });
 
-  it("defaults description to empty string when omitted", () => {
-    const { description: _, ...noDescription } = validSpace;
-    const result = SpaceSchema.safeParse(noDescription);
+  it("accepts null description", () => {
+    const result = SpaceSchema.safeParse({ ...validSpace, description: null });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.description).toBe("");
-    }
-  });
-
-  it("trims whitespace from description", () => {
-    const result = SpaceSchema.safeParse({ ...validSpace, description: "  hello  " });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.description).toBe("hello");
+      expect(result.data.description).toBeNull();
     }
   });
 
@@ -346,9 +342,19 @@ describe("SpaceSchema", () => {
     expect(SpaceSchema.safeParse(noSlug).success).toBe(false);
   });
 
-  it("rejects missing dimensions", () => {
-    const { dimensions: _, ...noDimensions } = validSpace;
-    expect(SpaceSchema.safeParse(noDimensions).success).toBe(false);
+  it("rejects missing widthM", () => {
+    const { widthM: _, ...noWidth } = validSpace;
+    expect(SpaceSchema.safeParse(noWidth).success).toBe(false);
+  });
+
+  it("rejects missing lengthM", () => {
+    const { lengthM: _, ...noLength } = validSpace;
+    expect(SpaceSchema.safeParse(noLength).success).toBe(false);
+  });
+
+  it("rejects missing heightM", () => {
+    const { heightM: _, ...noHeight } = validSpace;
+    expect(SpaceSchema.safeParse(noHeight).success).toBe(false);
   });
 
   it("rejects missing sortOrder", () => {
@@ -432,10 +438,14 @@ describe("SpaceSchema", () => {
   it("accepts floorPlanOutline with exactly 3 points (triangle)", () => {
     expect(SpaceSchema.safeParse({ ...validSpace, floorPlanOutline: validTriangle }).success).toBe(true);
   });
+
+  it("widthM can be a numeric string", () => {
+    expect(SpaceSchema.safeParse({ ...validSpace, widthM: "9.70" }).success).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// CreateSpaceSchema — creation payload
+// CreateSpaceSchema — creation payload (numeric widthM/lengthM/heightM)
 // ---------------------------------------------------------------------------
 
 describe("CreateSpaceSchema", () => {
@@ -444,11 +454,12 @@ describe("CreateSpaceSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("defaults description to empty string when omitted", () => {
-    const result = CreateSpaceSchema.safeParse(validCreateSpace);
+  it("defaults sortOrder to 0 when omitted", () => {
+    const { sortOrder: _, ...noSort } = validCreateSpace;
+    const result = CreateSpaceSchema.safeParse(noSort);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.description).toBe("");
+      expect(result.data.sortOrder).toBe(0);
     }
   });
 
@@ -462,9 +473,19 @@ describe("CreateSpaceSchema", () => {
     expect(CreateSpaceSchema.safeParse(noName).success).toBe(false);
   });
 
-  it("rejects missing dimensions", () => {
-    const { dimensions: _, ...noDims } = validCreateSpace;
-    expect(CreateSpaceSchema.safeParse(noDims).success).toBe(false);
+  it("rejects missing widthM", () => {
+    const { widthM: _, ...noWidth } = validCreateSpace;
+    expect(CreateSpaceSchema.safeParse(noWidth).success).toBe(false);
+  });
+
+  it("rejects missing lengthM", () => {
+    const { lengthM: _, ...noLength } = validCreateSpace;
+    expect(CreateSpaceSchema.safeParse(noLength).success).toBe(false);
+  });
+
+  it("rejects missing heightM", () => {
+    const { heightM: _, ...noHeight } = validCreateSpace;
+    expect(CreateSpaceSchema.safeParse(noHeight).success).toBe(false);
   });
 
   it("does not accept id field (strips extra keys)", () => {
@@ -481,6 +502,14 @@ describe("CreateSpaceSchema", () => {
     if (result.success) {
       expect("createdAt" in result.data).toBe(false);
     }
+  });
+
+  it("rejects zero widthM", () => {
+    expect(CreateSpaceSchema.safeParse({ ...validCreateSpace, widthM: 0 }).success).toBe(false);
+  });
+
+  it("rejects negative heightM", () => {
+    expect(CreateSpaceSchema.safeParse({ ...validCreateSpace, heightM: -1 }).success).toBe(false);
   });
 });
 

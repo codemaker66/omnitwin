@@ -13,15 +13,24 @@ import {
 const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const VALID_VENUE_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
 const VALID_SPACE_UUID = "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f";
-const VALID_FURNITURE_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
+const VALID_CONFIG_UUID = "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80";
+const VALID_ASSET_UUID = "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
+// Flat DB shape: configurationId, assetDefinitionId, positionX/Y/Z, rotationX/Y/Z, scale, sortOrder, metadata
 const validPlacedObject = {
   id: VALID_UUID,
-  furnitureItemId: VALID_FURNITURE_UUID,
-  position: { x: 0, y: 0, z: 0 },
-  rotation: { x: 0, y: 0, z: 0 },
-  scale: { x: 1, y: 1, z: 1 },
+  configurationId: VALID_CONFIG_UUID,
+  assetDefinitionId: VALID_ASSET_UUID,
+  positionX: "0.000",
+  positionY: "0.000",
+  positionZ: "0.000",
+  rotationX: "0.000",
+  rotationY: "0.000",
+  rotationZ: "0.000",
+  scale: "1.000",
+  sortOrder: 0,
+  metadata: null,
 };
 
 const validTemplate = {
@@ -251,7 +260,7 @@ describe("LayoutTemplateSchema", () => {
   it("rejects placedObjects with an invalid item", () => {
     const result = LayoutTemplateSchema.safeParse({
       ...validTemplate,
-      placedObjects: [{ id: "bad", furnitureItemId: "bad", position: {}, rotation: {}, scale: {} }],
+      placedObjects: [{ id: "bad", assetDefinitionId: "bad", positionX: "0", sortOrder: 0, metadata: null }],
     });
     expect(result.success).toBe(false);
   });

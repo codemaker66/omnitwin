@@ -107,8 +107,12 @@ describe("User.venueId source-of-truth (#35 / Prompt 16)", () => {
 
   const validUser = {
     id: VALID_USER_UUID,
+    clerkId: null,
     email: "alice@example.com",
     name: "Alice Smith",
+    displayName: null,
+    phone: null,
+    organizationName: null,
     role: "staff" as const,
     venueId: VALID_VENUE_UUID,
     createdAt: VALID_DATETIME,

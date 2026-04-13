@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
+  HallkeeperSheetDataSchema,
   HallkeeperSheetSchema,
   GenerateHallkeeperSheetRequestSchema,
 } from "../hallkeeper.js";
@@ -22,6 +23,45 @@ const validManifestItem = {
   notes: "Linen covers required",
 };
 
+// HallkeeperSheetDataSchema — the live API response shape
+const validSheetData = {
+  config: {
+    id: VALID_CONFIG_UUID,
+    name: "Wedding Ceremony",
+    guestCount: 120,
+    layoutStyle: "ceremony",
+  },
+  venue: {
+    name: "Trades Hall Glasgow",
+    address: "85 Glassford Street, Glasgow, G1 1UH",
+  },
+  space: {
+    name: "Grand Hall",
+    widthM: "21.00",
+    lengthM: "10.00",
+    heightM: "7.00",
+  },
+  manifest: {
+    rows: [
+      {
+        code: "TBL-001",
+        item: "Round Table (6ft)",
+        qty: 12,
+        position: "Centre",
+        notes: "White linen",
+        setupGroup: "Tables",
+      },
+    ],
+    summary: {
+      totalItems: 12,
+      categories: { table: 12 },
+    },
+  },
+  diagramUrl: "https://cdn.omnitwin.com/diagrams/abc123.svg",
+  webViewUrl: "https://app.omnitwin.com/config/b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+};
+
+// HallkeeperSheetSchema — legacy @deprecated persistent shape
 const validHallkeeperSheet = {
   id: VALID_UUID,
   configurationId: VALID_CONFIG_UUID,
@@ -164,10 +204,110 @@ describe("ManifestItemSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// HallkeeperSheetSchema
+// HallkeeperSheetDataSchema — new live API response shape
 // ---------------------------------------------------------------------------
 
-describe("HallkeeperSheetSchema", () => {
+describe("HallkeeperSheetDataSchema", () => {
+  it("accepts a fully valid sheet data object", () => {
+    const result = HallkeeperSheetDataSchema.safeParse(validSheetData);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.config.name).toBe("Wedding Ceremony");
+      expect(result.data.manifest.rows).toHaveLength(1);
+    }
+  });
+
+  it("accepts null diagramUrl", () => {
+    const result = HallkeeperSheetDataSchema.safeParse({ ...validSheetData, diagramUrl: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.diagramUrl).toBeNull();
+    }
+  });
+
+  it("accepts empty manifest rows", () => {
+    const result = HallkeeperSheetDataSchema.safeParse({
+      ...validSheetData,
+      manifest: { rows: [], summary: { totalItems: 0, categories: {} } },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts manifest summary with multiple categories", () => {
+    const result = HallkeeperSheetDataSchema.safeParse({
+      ...validSheetData,
+      manifest: {
+        rows: [],
+        summary: {
+          totalItems: 108,
+          categories: { table: 12, chair: 96 },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing config", () => {
+    const { config: _, ...noConfig } = validSheetData;
+    expect(HallkeeperSheetDataSchema.safeParse(noConfig).success).toBe(false);
+  });
+
+  it("rejects missing venue", () => {
+    const { venue: _, ...noVenue } = validSheetData;
+    expect(HallkeeperSheetDataSchema.safeParse(noVenue).success).toBe(false);
+  });
+
+  it("rejects missing space", () => {
+    const { space: _, ...noSpace } = validSheetData;
+    expect(HallkeeperSheetDataSchema.safeParse(noSpace).success).toBe(false);
+  });
+
+  it("rejects missing manifest", () => {
+    const { manifest: _, ...noManifest } = validSheetData;
+    expect(HallkeeperSheetDataSchema.safeParse(noManifest).success).toBe(false);
+  });
+
+  it("rejects missing webViewUrl", () => {
+    const { webViewUrl: _, ...noUrl } = validSheetData;
+    expect(HallkeeperSheetDataSchema.safeParse(noUrl).success).toBe(false);
+  });
+
+  it("rejects invalid UUID for config.id", () => {
+    expect(
+      HallkeeperSheetDataSchema.safeParse({
+        ...validSheetData,
+        config: { ...validSheetData.config, id: "bad" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects negative guestCount in config", () => {
+    expect(
+      HallkeeperSheetDataSchema.safeParse({
+        ...validSheetData,
+        config: { ...validSheetData.config, guestCount: -1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects negative totalItems in summary", () => {
+    expect(
+      HallkeeperSheetDataSchema.safeParse({
+        ...validSheetData,
+        manifest: {
+          rows: [],
+          summary: { totalItems: -1, categories: {} },
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HallkeeperSheetSchema — @deprecated legacy persistent entity
+// ---------------------------------------------------------------------------
+
+describe("HallkeeperSheetSchema (deprecated)", () => {
   it("accepts a fully valid hallkeeper sheet", () => {
     const result = HallkeeperSheetSchema.safeParse(validHallkeeperSheet);
     expect(result.success).toBe(true);

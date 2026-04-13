@@ -3,6 +3,8 @@ import {
   FURNITURE_CATEGORIES,
   FurnitureCategorySchema,
   FurnitureDimensionsSchema,
+  AssetDefinitionSchema,
+  CreateAssetDefinitionSchema,
   FurnitureItemSchema,
   CreateFurnitureItemSchema,
 } from "../furniture.js";
@@ -12,34 +14,37 @@ import {
 // ---------------------------------------------------------------------------
 
 const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
-const VALID_VENUE_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
 const validDimensions = { width: 0.5, height: 0.9, depth: 0.5 };
 
-const validFurnitureItem = {
+// New AssetDefinition shape: no venueId, no stackable, no maxStack.
+// Has widthM/depthM/heightM as strings, seatCount (nullable), collisionType.
+// No updatedAt (only createdAt).
+const validAssetDefinition = {
   id: VALID_UUID,
-  venueId: VALID_VENUE_UUID,
   name: "Chiavari Chair",
   category: "chair" as const,
-  defaultDimensions: validDimensions,
-  meshUrl: "https://example.com/chair.glb",
   thumbnailUrl: "https://example.com/chair-thumb.jpg",
-  stackable: true,
-  maxStack: 10,
+  meshUrl: "https://example.com/chair.glb",
+  widthM: "0.450",
+  depthM: "0.450",
+  heightM: "0.900",
+  seatCount: 1,
+  collisionType: "box",
   createdAt: VALID_DATETIME,
-  updatedAt: VALID_DATETIME,
 };
 
-const validCreateFurnitureItem = {
-  venueId: VALID_VENUE_UUID,
+const validCreateAssetDefinition = {
   name: "Chiavari Chair",
   category: "chair" as const,
-  defaultDimensions: validDimensions,
+  widthM: 0.45,
+  depthM: 0.45,
+  heightM: 0.9,
+  seatCount: 1,
+  collisionType: "box",
   meshUrl: null,
   thumbnailUrl: null,
-  stackable: true,
-  maxStack: 10,
 };
 
 // ---------------------------------------------------------------------------
@@ -95,7 +100,7 @@ describe("FurnitureCategorySchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FurnitureDimensionsSchema
+// FurnitureDimensionsSchema — client-side convenience type (numbers)
 // ---------------------------------------------------------------------------
 
 describe("FurnitureDimensionsSchema", () => {
@@ -165,39 +170,38 @@ describe("FurnitureDimensionsSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FurnitureItemSchema — full entity
+// AssetDefinitionSchema — full entity (new canonical name)
 // ---------------------------------------------------------------------------
 
-describe("FurnitureItemSchema", () => {
-  it("accepts a fully valid furniture item", () => {
-    const result = FurnitureItemSchema.safeParse(validFurnitureItem);
+describe("AssetDefinitionSchema", () => {
+  it("accepts a fully valid asset definition", () => {
+    const result = AssetDefinitionSchema.safeParse(validAssetDefinition);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("Chiavari Chair");
       expect(result.data.category).toBe("chair");
-      expect(result.data.stackable).toBe(true);
-      expect(result.data.maxStack).toBe(10);
+      expect(result.data.collisionType).toBe("box");
     }
   });
 
   it("accepts null meshUrl", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, meshUrl: null }).success).toBe(true);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, meshUrl: null }).success).toBe(true);
   });
 
   it("accepts null thumbnailUrl", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, thumbnailUrl: null }).success).toBe(true);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, thumbnailUrl: null }).success).toBe(true);
   });
 
-  it("accepts non-stackable item", () => {
-    const result = FurnitureItemSchema.safeParse({ ...validFurnitureItem, stackable: false, maxStack: 1 });
+  it("accepts null seatCount (non-seating assets)", () => {
+    const result = AssetDefinitionSchema.safeParse({ ...validAssetDefinition, seatCount: null });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.stackable).toBe(false);
+      expect(result.data.seatCount).toBeNull();
     }
   });
 
   it("trims whitespace from name", () => {
-    const result = FurnitureItemSchema.safeParse({ ...validFurnitureItem, name: "  Chiavari Chair  " });
+    const result = AssetDefinitionSchema.safeParse({ ...validAssetDefinition, name: "  Chiavari Chair  " });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe("Chiavari Chair");
@@ -206,200 +210,178 @@ describe("FurnitureItemSchema", () => {
 
   it("accepts all furniture categories", () => {
     for (const category of FURNITURE_CATEGORIES) {
-      expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, category }).success).toBe(true);
+      expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, category }).success).toBe(true);
     }
   });
 
   // --- Missing required fields ---
 
   it("rejects missing id", () => {
-    const { id: _, ...noId } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noId).success).toBe(false);
-  });
-
-  it("rejects missing venueId", () => {
-    const { venueId: _, ...noVenueId } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noVenueId).success).toBe(false);
+    const { id: _, ...noId } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noId).success).toBe(false);
   });
 
   it("rejects missing name", () => {
-    const { name: _, ...noName } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noName).success).toBe(false);
+    const { name: _, ...noName } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noName).success).toBe(false);
   });
 
   it("rejects missing category", () => {
-    const { category: _, ...noCategory } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noCategory).success).toBe(false);
+    const { category: _, ...noCategory } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noCategory).success).toBe(false);
   });
 
-  it("rejects missing defaultDimensions", () => {
-    const { defaultDimensions: _, ...noDims } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noDims).success).toBe(false);
+  it("rejects missing widthM", () => {
+    const { widthM: _, ...noWidth } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noWidth).success).toBe(false);
   });
 
-  it("rejects missing meshUrl (required but nullable)", () => {
-    const { meshUrl: _, ...noMesh } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noMesh).success).toBe(false);
+  it("rejects missing depthM", () => {
+    const { depthM: _, ...noDepth } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noDepth).success).toBe(false);
   });
 
-  it("rejects missing thumbnailUrl (required but nullable)", () => {
-    const { thumbnailUrl: _, ...noThumb } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noThumb).success).toBe(false);
+  it("rejects missing heightM", () => {
+    const { heightM: _, ...noHeight } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noHeight).success).toBe(false);
   });
 
-  it("rejects missing stackable", () => {
-    const { stackable: _, ...noStackable } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noStackable).success).toBe(false);
-  });
-
-  it("rejects missing maxStack", () => {
-    const { maxStack: _, ...noMaxStack } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noMaxStack).success).toBe(false);
+  it("rejects missing collisionType", () => {
+    const { collisionType: _, ...noCollision } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noCollision).success).toBe(false);
   });
 
   it("rejects missing createdAt", () => {
-    const { createdAt: _, ...noCreatedAt } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noCreatedAt).success).toBe(false);
-  });
-
-  it("rejects missing updatedAt", () => {
-    const { updatedAt: _, ...noUpdatedAt } = validFurnitureItem;
-    expect(FurnitureItemSchema.safeParse(noUpdatedAt).success).toBe(false);
+    const { createdAt: _, ...noCreatedAt } = validAssetDefinition;
+    expect(AssetDefinitionSchema.safeParse(noCreatedAt).success).toBe(false);
   });
 
   // --- Invalid field values ---
 
   it("rejects invalid UUID for id", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, id: "bad" }).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for venueId", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, venueId: "bad" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, id: "bad" }).success).toBe(false);
   });
 
   it("rejects empty string name", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, name: "" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, name: "" }).success).toBe(false);
   });
 
   it("rejects whitespace-only name", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, name: "   " }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, name: "   " }).success).toBe(false);
   });
 
   it("rejects name exceeding 200 characters", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, name: "A".repeat(201) }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, name: "A".repeat(201) }).success).toBe(false);
   });
 
   it("accepts name of exactly 200 characters", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, name: "A".repeat(200) }).success).toBe(true);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, name: "A".repeat(200) }).success).toBe(true);
   });
 
   it("rejects invalid category", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, category: "sofa" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, category: "sofa" }).success).toBe(false);
   });
 
   it("rejects invalid URL for meshUrl", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, meshUrl: "not-a-url" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, meshUrl: "not-a-url" }).success).toBe(false);
   });
 
   it("rejects invalid URL for thumbnailUrl", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, thumbnailUrl: "not-a-url" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, thumbnailUrl: "not-a-url" }).success).toBe(false);
   });
 
   it("rejects invalid datetime for createdAt", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, createdAt: "nope" }).success).toBe(false);
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, createdAt: "nope" }).success).toBe(false);
   });
 
-  it("rejects string for stackable (must be boolean)", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, stackable: "true" }).success).toBe(false);
+  it("rejects zero seatCount (must be positive integer or null)", () => {
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, seatCount: 0 }).success).toBe(false);
   });
 
-  it("rejects number for stackable (must be boolean)", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, stackable: 1 }).success).toBe(false);
+  it("rejects negative seatCount", () => {
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, seatCount: -1 }).success).toBe(false);
   });
 
-  // --- maxStack edge cases ---
-
-  it("accepts maxStack of 1 (minimum)", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: 1 }).success).toBe(true);
+  it("rejects float seatCount", () => {
+    expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, seatCount: 1.5 }).success).toBe(false);
   });
 
-  it("accepts maxStack of 100 (maximum)", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: 100 }).success).toBe(true);
+  it("accepts collisionType of exactly 20 characters", () => {
+    expect(
+      AssetDefinitionSchema.safeParse({ ...validAssetDefinition, collisionType: "a".repeat(20) }).success,
+    ).toBe(true);
   });
 
-  it("rejects maxStack of 0", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: 0 }).success).toBe(false);
-  });
-
-  it("rejects negative maxStack", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: -1 }).success).toBe(false);
-  });
-
-  it("rejects maxStack exceeding 100", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: 101 }).success).toBe(false);
-  });
-
-  it("rejects float maxStack", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: 5.5 }).success).toBe(false);
-  });
-
-  it("rejects NaN maxStack", () => {
-    expect(FurnitureItemSchema.safeParse({ ...validFurnitureItem, maxStack: NaN }).success).toBe(false);
+  it("rejects collisionType exceeding 20 characters", () => {
+    expect(
+      AssetDefinitionSchema.safeParse({ ...validAssetDefinition, collisionType: "a".repeat(21) }).success,
+    ).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// CreateFurnitureItemSchema — creation payload
+// FurnitureItemSchema — legacy alias, same schema as AssetDefinitionSchema
 // ---------------------------------------------------------------------------
 
-describe("CreateFurnitureItemSchema", () => {
-  it("accepts a valid create furniture item payload", () => {
-    const result = CreateFurnitureItemSchema.safeParse(validCreateFurnitureItem);
+describe("FurnitureItemSchema (legacy alias)", () => {
+  it("accepts a fully valid asset definition via legacy alias", () => {
+    const result = FurnitureItemSchema.safeParse(validAssetDefinition);
     expect(result.success).toBe(true);
   });
 
-  it("rejects missing venueId", () => {
-    const { venueId: _, ...noVenueId } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noVenueId).success).toBe(false);
+  it("FurnitureItemSchema is structurally identical to AssetDefinitionSchema", () => {
+    const r1 = AssetDefinitionSchema.safeParse(validAssetDefinition);
+    const r2 = FurnitureItemSchema.safeParse(validAssetDefinition);
+    expect(r1.success).toBe(r2.success);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CreateAssetDefinitionSchema — creation payload (numeric dimensions)
+// ---------------------------------------------------------------------------
+
+describe("CreateAssetDefinitionSchema", () => {
+  it("accepts a valid create asset definition payload", () => {
+    const result = CreateAssetDefinitionSchema.safeParse(validCreateAssetDefinition);
+    expect(result.success).toBe(true);
+  });
+
+  it("defaults collisionType to 'box' when omitted", () => {
+    const { collisionType: _, ...noCollision } = validCreateAssetDefinition;
+    const result = CreateAssetDefinitionSchema.safeParse(noCollision);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.collisionType).toBe("box");
+    }
   });
 
   it("rejects missing name", () => {
-    const { name: _, ...noName } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noName).success).toBe(false);
+    const { name: _, ...noName } = validCreateAssetDefinition;
+    expect(CreateAssetDefinitionSchema.safeParse(noName).success).toBe(false);
   });
 
   it("rejects missing category", () => {
-    const { category: _, ...noCategory } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noCategory).success).toBe(false);
+    const { category: _, ...noCategory } = validCreateAssetDefinition;
+    expect(CreateAssetDefinitionSchema.safeParse(noCategory).success).toBe(false);
   });
 
-  it("rejects missing defaultDimensions", () => {
-    const { defaultDimensions: _, ...noDims } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noDims).success).toBe(false);
+  it("rejects missing widthM", () => {
+    const { widthM: _, ...noWidth } = validCreateAssetDefinition;
+    expect(CreateAssetDefinitionSchema.safeParse(noWidth).success).toBe(false);
   });
 
-  it("rejects missing meshUrl (required but nullable)", () => {
-    const { meshUrl: _, ...noMesh } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noMesh).success).toBe(false);
+  it("rejects missing depthM", () => {
+    const { depthM: _, ...noDepth } = validCreateAssetDefinition;
+    expect(CreateAssetDefinitionSchema.safeParse(noDepth).success).toBe(false);
   });
 
-  it("rejects missing thumbnailUrl (required but nullable)", () => {
-    const { thumbnailUrl: _, ...noThumb } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noThumb).success).toBe(false);
-  });
-
-  it("rejects missing stackable", () => {
-    const { stackable: _, ...noStackable } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noStackable).success).toBe(false);
-  });
-
-  it("rejects missing maxStack", () => {
-    const { maxStack: _, ...noMaxStack } = validCreateFurnitureItem;
-    expect(CreateFurnitureItemSchema.safeParse(noMaxStack).success).toBe(false);
+  it("rejects missing heightM", () => {
+    const { heightM: _, ...noHeight } = validCreateAssetDefinition;
+    expect(CreateAssetDefinitionSchema.safeParse(noHeight).success).toBe(false);
   });
 
   it("does not accept id field (strips extra keys)", () => {
-    const result = CreateFurnitureItemSchema.safeParse({ ...validCreateFurnitureItem, id: VALID_UUID });
+    const result = CreateAssetDefinitionSchema.safeParse({ ...validCreateAssetDefinition, id: VALID_UUID });
     expect(result.success).toBe(true);
     if (result.success) {
       expect("id" in result.data).toBe(false);
@@ -407,8 +389,8 @@ describe("CreateFurnitureItemSchema", () => {
   });
 
   it("does not accept createdAt field (strips extra keys)", () => {
-    const result = CreateFurnitureItemSchema.safeParse({
-      ...validCreateFurnitureItem,
+    const result = CreateAssetDefinitionSchema.safeParse({
+      ...validCreateAssetDefinition,
       createdAt: VALID_DATETIME,
     });
     expect(result.success).toBe(true);
@@ -417,20 +399,32 @@ describe("CreateFurnitureItemSchema", () => {
     }
   });
 
-  it("rejects zero maxStack", () => {
-    expect(CreateFurnitureItemSchema.safeParse({ ...validCreateFurnitureItem, maxStack: 0 }).success).toBe(false);
+  it("rejects zero widthM", () => {
+    expect(CreateAssetDefinitionSchema.safeParse({ ...validCreateAssetDefinition, widthM: 0 }).success).toBe(false);
   });
 
-  it("rejects float maxStack", () => {
-    expect(CreateFurnitureItemSchema.safeParse({ ...validCreateFurnitureItem, maxStack: 3.7 }).success).toBe(false);
-  });
-
-  it("rejects invalid dimensions (negative width)", () => {
+  it("rejects float seatCount", () => {
     expect(
-      CreateFurnitureItemSchema.safeParse({
-        ...validCreateFurnitureItem,
-        defaultDimensions: { width: -1, height: 1, depth: 1 },
+      CreateAssetDefinitionSchema.safeParse({ ...validCreateAssetDefinition, seatCount: 3.7 }).success,
+    ).toBe(false);
+  });
+
+  it("rejects invalid dimensions (negative widthM)", () => {
+    expect(
+      CreateAssetDefinitionSchema.safeParse({
+        ...validCreateAssetDefinition,
+        widthM: -1,
       }).success,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CreateFurnitureItemSchema — legacy alias
+// ---------------------------------------------------------------------------
+
+describe("CreateFurnitureItemSchema (legacy alias)", () => {
+  it("accepts a valid create payload via legacy alias", () => {
+    expect(CreateFurnitureItemSchema.safeParse(validCreateAssetDefinition).success).toBe(true);
   });
 });

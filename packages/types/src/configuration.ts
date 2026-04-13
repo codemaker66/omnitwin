@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { VenueIdSchema } from "./venue.js";
 import { SpaceIdSchema } from "./space.js";
+import { UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
 // Configuration ID — UUID v4
@@ -11,7 +12,7 @@ export const ConfigurationIdSchema = z.string().uuid();
 export type ConfigurationId = z.infer<typeof ConfigurationIdSchema>;
 
 // ---------------------------------------------------------------------------
-// Configuration Status — state machine for publish lifecycle
+// Configuration State — draft/published lifecycle (DB column: `state`)
 // ---------------------------------------------------------------------------
 
 export const CONFIGURATION_STATUSES = ["draft", "published"] as const;
@@ -40,54 +41,82 @@ export const LayoutStyleSchema = z.enum(LAYOUT_STYLES);
 export type LayoutStyle = z.infer<typeof LayoutStyleSchema>;
 
 // ---------------------------------------------------------------------------
-// Vec3 — 3D position/rotation/scale vector
+// Visibility — who can see this configuration
+// ---------------------------------------------------------------------------
+
+export const VISIBILITY_OPTIONS = ["private", "staff", "public"] as const;
+
+export const VisibilitySchema = z.enum(VISIBILITY_OPTIONS);
+
+export type Visibility = z.infer<typeof VisibilitySchema>;
+
+// ---------------------------------------------------------------------------
+// Vec3 — 3D position/rotation/scale vector (used by solver, not DB)
 // ---------------------------------------------------------------------------
 
 export const Vec3Schema = z.object({
-  x: z.number().finite("x must be finite"),
-  y: z.number().finite("y must be finite"),
-  z: z.number().finite("z must be finite"),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  z: z.number().finite(),
 });
 
 export type Vec3 = z.infer<typeof Vec3Schema>;
 
 // ---------------------------------------------------------------------------
 // Placed Object — a furniture item positioned in 3D space
+//
+// Matches DB: flat positionX/Y/Z, rotationX/Y/Z, scale (single number),
+// sortOrder, metadata (JSONB). NOT nested Vec3 objects.
 // ---------------------------------------------------------------------------
 
 export const PlacedObjectIdSchema = z.string().uuid();
 
 export type PlacedObjectId = z.infer<typeof PlacedObjectIdSchema>;
 
-export const FurnitureItemIdSchema = z.string().uuid();
+/** Asset definition ID (global catalogue, not venue-scoped). */
+export const AssetDefinitionIdSchema = z.string().uuid();
+
+/** @deprecated Use AssetDefinitionIdSchema. Legacy alias for solver compatibility. */
+export const FurnitureItemIdSchema = AssetDefinitionIdSchema;
 
 export const PlacedObjectSchema = z.object({
   id: PlacedObjectIdSchema,
-  furnitureItemId: FurnitureItemIdSchema,
-  position: Vec3Schema,
-  rotation: Vec3Schema,
-  scale: Vec3Schema,
+  configurationId: ConfigurationIdSchema,
+  assetDefinitionId: AssetDefinitionIdSchema,
+  positionX: z.string(), // numeric(8,3) stored as string
+  positionY: z.string(),
+  positionZ: z.string(),
+  rotationX: z.string(),
+  rotationY: z.string(),
+  rotationZ: z.string(),
+  scale: z.string(),
+  sortOrder: z.number().int().nonnegative(),
+  metadata: z.record(z.unknown()).nullable(),
 });
 
 export type PlacedObject = z.infer<typeof PlacedObjectSchema>;
 
 // ---------------------------------------------------------------------------
-// Configuration — a saved room layout (full persisted entity)
+// Configuration — the full persisted entity (matches DB schema)
 // ---------------------------------------------------------------------------
 
 export const ConfigurationSchema = z.object({
   id: ConfigurationIdSchema,
   venueId: VenueIdSchema,
   spaceId: SpaceIdSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
-  status: ConfigurationStatusSchema,
+  userId: UserIdSchema.nullable(),
+  name: z.string().trim().min(1).max(200),
+  state: ConfigurationStatusSchema,
   layoutStyle: LayoutStyleSchema,
-  placedObjects: z.array(PlacedObjectSchema),
-  lightmapUrl: z.string().url("Lightmap URL must be a valid URL").nullable(),
-  createdBy: z.string().uuid(),
-  publishedAt: z.string().datetime({ message: "publishedAt must be an ISO 8601 datetime string" }).nullable(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  isPublicPreview: z.boolean(),
+  guestCount: z.number().int().nonnegative(),
+  isTemplate: z.boolean(),
+  visibility: VisibilitySchema,
+  thumbnailUrl: z.string().url().nullable(),
+  lightmapUrl: z.string().url().nullable(),
+  publishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 
 export type Configuration = z.infer<typeof ConfigurationSchema>;
@@ -99,9 +128,11 @@ export type Configuration = z.infer<typeof ConfigurationSchema>;
 export const CreateConfigurationSchema = z.object({
   venueId: VenueIdSchema,
   spaceId: SpaceIdSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
+  name: z.string().trim().min(1).max(200),
   layoutStyle: LayoutStyleSchema,
-  placedObjects: z.array(PlacedObjectSchema),
+  guestCount: z.number().int().nonnegative().default(0),
+  isTemplate: z.boolean().default(false),
+  visibility: VisibilitySchema.default("private"),
 });
 
 export type CreateConfiguration = z.infer<typeof CreateConfigurationSchema>;

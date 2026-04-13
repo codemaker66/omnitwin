@@ -19,10 +19,15 @@ const VALID_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const VALID_VENUE_UUID = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e";
 const VALID_DATETIME = "2025-01-15T10:30:00.000Z";
 
+// New UserSchema: adds clerkId, displayName, phone, organizationName (all nullable).
 const validUser = {
   id: VALID_UUID,
+  clerkId: "user_2abc123def456",
   email: "alice@example.com",
   name: "Alice Smith",
+  displayName: "Alice",
+  phone: "+44 7911 000001",
+  organizationName: "Acme Events",
   role: "staff" as const,
   venueId: VALID_VENUE_UUID,
   createdAt: VALID_DATETIME,
@@ -157,12 +162,40 @@ describe("UserSchema", () => {
     }
   });
 
-  // Punch list #35 / Prompt 16: venueId is singular and nullable to match
-  // the runtime DB. The previous schema declared venueIds: VenueId[] which
-  // silently disagreed with the runtime. Multi-venue users (one user
-  // belonging to many venues) is a future SaaS feature; today's
-  // single-tenant model is one venue per user, with `null` for client
-  // users who don't belong to any specific venue.
+  it("accepts null clerkId (users created before Clerk migration)", () => {
+    const result = UserSchema.safeParse({ ...validUser, clerkId: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.clerkId).toBeNull();
+    }
+  });
+
+  it("accepts null displayName", () => {
+    const result = UserSchema.safeParse({ ...validUser, displayName: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.displayName).toBeNull();
+    }
+  });
+
+  it("accepts null phone", () => {
+    const result = UserSchema.safeParse({ ...validUser, phone: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.phone).toBeNull();
+    }
+  });
+
+  it("accepts null organizationName", () => {
+    const result = UserSchema.safeParse({ ...validUser, organizationName: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.organizationName).toBeNull();
+    }
+  });
+
+  // venueId is singular and nullable to match the runtime DB.
+  // Multi-venue is a future SaaS milestone.
   it("accepts null venueId (client users without a venue)", () => {
     const result = UserSchema.safeParse({ ...validUser, venueId: null });
     expect(result.success).toBe(true);
@@ -203,7 +236,7 @@ describe("UserSchema", () => {
     expect(UserSchema.safeParse(noRole).success).toBe(false);
   });
 
-  it("rejects missing venueId", () => {
+  it("rejects missing venueId (must be present, even if null)", () => {
     const { venueId: _, ...noVenueId } = validUser;
     expect(UserSchema.safeParse(noVenueId).success).toBe(false);
   });
@@ -252,6 +285,30 @@ describe("CreateUserSchema", () => {
     expect(CreateUserSchema.safeParse(validCreateUser).success).toBe(true);
   });
 
+  it("accepts optional clerkId", () => {
+    expect(
+      CreateUserSchema.safeParse({ ...validCreateUser, clerkId: "user_2abc123" }).success,
+    ).toBe(true);
+  });
+
+  it("accepts optional displayName", () => {
+    expect(
+      CreateUserSchema.safeParse({ ...validCreateUser, displayName: "Alice" }).success,
+    ).toBe(true);
+  });
+
+  it("accepts optional phone", () => {
+    expect(
+      CreateUserSchema.safeParse({ ...validCreateUser, phone: "+44 7911 000001" }).success,
+    ).toBe(true);
+  });
+
+  it("accepts optional organizationName", () => {
+    expect(
+      CreateUserSchema.safeParse({ ...validCreateUser, organizationName: "Acme Events" }).success,
+    ).toBe(true);
+  });
+
   it("rejects missing email", () => {
     const { email: _, ...noEmail } = validCreateUser;
     expect(CreateUserSchema.safeParse(noEmail).success).toBe(false);
@@ -294,7 +351,7 @@ describe("CreateUserSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// LoginRequestSchema
+// LoginRequestSchema — @deprecated but still exported and tested
 // ---------------------------------------------------------------------------
 
 describe("LoginRequestSchema", () => {
@@ -324,7 +381,7 @@ describe("LoginRequestSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// RegisterRequestSchema
+// RegisterRequestSchema — @deprecated but still exported and tested
 // ---------------------------------------------------------------------------
 
 describe("RegisterRequestSchema", () => {
@@ -391,7 +448,7 @@ describe("RegisterRequestSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AuthTokensSchema
+// AuthTokensSchema — @deprecated but still exported and tested
 // ---------------------------------------------------------------------------
 
 describe("AuthTokensSchema", () => {

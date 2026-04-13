@@ -103,7 +103,7 @@ import type {
 const VENUE_ID = "a1111111-1111-4111-8111-111111111111";
 const SPACE_ID = "b2222222-2222-4222-8222-222222222222";
 const CONFIG_ID = "c3333333-3333-4333-8333-333333333333";
-const FURNITURE_ITEM_ID = "e5555555-5555-4555-8555-555555555555";
+const ASSET_DEF_ID = "e5555555-5555-4555-8555-555555555555";
 const PLACED_OBJECT_ID = "f6666666-6666-4666-8666-666666666666";
 const USER_ID = "a7777777-7777-4777-8777-777777777777";
 const ENQUIRY_ID = "b8888888-8888-4888-8888-888888888888";
@@ -213,7 +213,7 @@ describe("barrel export completeness", () => {
 
   it("exports VALID_ENQUIRY_TRANSITIONS map", () => {
     expect(typeof VALID_ENQUIRY_TRANSITIONS).toBe("object");
-    expect(Object.keys(VALID_ENQUIRY_TRANSITIONS)).toHaveLength(5);
+    expect(Object.keys(VALID_ENQUIRY_TRANSITIONS)).toHaveLength(7);
   });
 
   it("exports isValidEnquiryTransition function", () => {
@@ -233,9 +233,12 @@ describe("cross-module ID consistency", () => {
       venueId,
       name: "Grand Hall",
       slug: "grand-hall",
-      dimensions: { width: 21, length: 10.5, height: 8 },
+      description: null,
+      widthM: "21.00",
+      lengthM: "10.00",
+      heightM: "7.00",
       sortOrder: 0,
-      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }],
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10 }],
       meshUrl: null,
       thumbnailUrl: null,
       createdAt: NOW,
@@ -249,12 +252,16 @@ describe("cross-module ID consistency", () => {
       id: CONFIG_ID,
       venueId: VENUE_ID,
       spaceId: SPACE_ID,
+      userId: USER_ID,
       name: "Wedding Setup",
-      status: "draft",
+      state: "draft",
       layoutStyle: "ceremony",
-      placedObjects: [],
+      isPublicPreview: false,
+      guestCount: 100,
+      isTemplate: false,
+      visibility: "private",
+      thumbnailUrl: null,
       lightmapUrl: null,
-      createdBy: USER_ID,
       publishedAt: null,
       createdAt: NOW,
       updatedAt: NOW,
@@ -288,20 +295,23 @@ describe("cross-module ID consistency", () => {
     expect(photo.success).toBe(true);
   });
 
-  it("UserIdSchema accepted by EnquirySchema.respondedBy", () => {
+  it("UserIdSchema accepted by EnquirySchema.userId", () => {
     const enquiry = EnquirySchema.safeParse({
       id: ENQUIRY_ID,
       venueId: VENUE_ID,
       spaceId: SPACE_ID,
       configurationId: null,
+      userId: USER_ID,
       name: "Jane Doe",
       email: "jane@example.com",
+      guestPhone: null,
+      guestEmail: null,
+      guestName: null,
+      eventType: null,
       message: "Interested in booking",
-      eventDate: NOW,
-      guestCount: 100,
-      status: "responded",
-      respondedBy: USER_ID,
-      respondedAt: NOW,
+      preferredDate: "2025-12-01",
+      estimatedGuests: 100,
+      state: "submitted",
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -342,13 +352,20 @@ describe("cross-module ID consistency", () => {
     ).toBe(true);
   });
 
-  it("FurnitureItemId accepted by PlacedObjectSchema", () => {
+  it("AssetDefinitionId (FurnitureItemId alias) accepted by PlacedObjectSchema", () => {
     const placed = PlacedObjectSchema.safeParse({
       id: PLACED_OBJECT_ID,
-      furnitureItemId: FURNITURE_ITEM_ID,
-      position: { x: 1, y: 0, z: 2 },
-      rotation: { x: 0, y: 90, z: 0 },
-      scale: { x: 1, y: 1, z: 1 },
+      configurationId: CONFIG_ID,
+      assetDefinitionId: ASSET_DEF_ID,
+      positionX: "1.000",
+      positionY: "0.000",
+      positionZ: "2.000",
+      rotationX: "0.000",
+      rotationY: "1.571",
+      rotationZ: "0.000",
+      scale: "1.000",
+      sortOrder: 0,
+      metadata: null,
     });
     expect(placed.success).toBe(true);
   });
@@ -368,13 +385,14 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     brandColour: "#2C3E50",
   };
 
-  // Step 2: Create space
+  // Step 2: Create space (numeric dimensions in CreateSpaceSchema)
   const createSpaceData = {
     venueId: VENUE_ID,
     name: "Grand Hall",
     slug: "grand-hall",
-    description: "The flagship hall with stunning architecture",
-    dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS,
+    widthM: 21,
+    lengthM: 10,
+    heightM: 7,
     sortOrder: 0,
     floorPlanOutline: [
       { x: 0, y: 0 },
@@ -382,47 +400,54 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
       { x: 21, y: 10 },
       { x: 0, y: 10 },
     ],
-    meshUrl: "https://cdn.omnitwin.com/meshes/grand-hall.glb",
-    thumbnailUrl: "https://cdn.omnitwin.com/thumbs/grand-hall.jpg",
   };
 
-  // Step 3: Create furniture item
-  const createFurnitureData = {
-    venueId: VENUE_ID,
+  // Step 3: Create asset definition (new schema: no venueId, no stackable/maxStack)
+  const createAssetData = {
     name: "Round Table (6ft)",
     category: "table" as const,
-    defaultDimensions: { width: 1.83, height: 0.76, depth: 1.83 },
+    widthM: 1.83,
+    depthM: 1.83,
+    heightM: 0.76,
+    seatCount: 8,
+    collisionType: "circle",
     meshUrl: "https://cdn.omnitwin.com/meshes/round-table-6ft.glb",
     thumbnailUrl: "https://cdn.omnitwin.com/thumbs/round-table-6ft.jpg",
-    stackable: false,
-    maxStack: 1,
   };
 
-  // Step 4: Create configuration with placed objects
+  // Step 4: Create configuration (no placedObjects in CreateConfiguration)
   const createConfigData = {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     name: "Wedding Ceremony - 120 guests",
     layoutStyle: "ceremony" as const,
-    placedObjects: [
-      {
-        id: PLACED_OBJECT_ID,
-        furnitureItemId: FURNITURE_ITEM_ID,
-        position: { x: 5, y: 0, z: 3 },
-        rotation: { x: 0, y: 0, z: 0 },
-        scale: { x: 1, y: 1, z: 1 },
-      },
-    ],
+    guestCount: 120,
   };
 
   // Step 5: Create template from configuration
+  // LayoutTemplateSchema still uses PlacedObjectSchema (flat shape)
   const createTemplateData = {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     name: "Standard Ceremony",
     layoutStyle: "ceremony" as const,
     description: "Standard ceremony layout for up to 150 guests",
-    placedObjects: createConfigData.placedObjects,
+    placedObjects: [
+      {
+        id: PLACED_OBJECT_ID,
+        configurationId: CONFIG_ID,
+        assetDefinitionId: ASSET_DEF_ID,
+        positionX: "5.000",
+        positionY: "0.000",
+        positionZ: "3.000",
+        rotationX: "0.000",
+        rotationY: "0.000",
+        rotationZ: "0.000",
+        scale: "1.000",
+        sortOrder: 0,
+        metadata: null,
+      },
+    ],
     guestCapacity: 150,
     thumbnailUrl: "https://cdn.omnitwin.com/thumbs/ceremony-template.jpg",
   };
@@ -441,17 +466,16 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     venueId: VENUE_ID,
   };
 
-  // Step 7: Create enquiry
+  // Step 7: Create enquiry (new field names)
   const createEnquiryData = {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     configurationId: CONFIG_ID,
     name: "Sarah & James",
     email: "sarah.james@gmail.com",
-    phone: "+44 7700 900123",
     message: "We would like to book the Grand Hall for our wedding on 15th August 2026.",
-    eventDate: "2026-08-15T14:00:00.000Z",
-    guestCount: 120,
+    preferredDate: "2026-08-15",
+    estimatedGuests: 120,
   };
 
   // Step 8: Create pricing rule (matches actual API schema)
@@ -487,20 +511,21 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     const result = CreateSpaceSchema.safeParse(createSpaceData);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.dimensions).toEqual(TRADES_HALL_GRAND_HALL_DIMENSIONS);
+      expect(result.data.widthM).toBe(21);
+      expect(result.data.lengthM).toBe(10);
     }
   });
 
-  it("Step 3: CreateFurnitureItemSchema validates furniture creation data", () => {
-    const result = CreateFurnitureItemSchema.safeParse(createFurnitureData);
+  it("Step 3: CreateFurnitureItemSchema validates asset definition creation data", () => {
+    const result = CreateFurnitureItemSchema.safeParse(createAssetData);
     expect(result.success).toBe(true);
   });
 
-  it("Step 4: CreateConfigurationSchema validates configuration with placed objects", () => {
+  it("Step 4: CreateConfigurationSchema validates configuration creation data", () => {
     const result = CreateConfigurationSchema.safeParse(createConfigData);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.placedObjects).toHaveLength(1);
+      expect(result.data.guestCount).toBe(120);
     }
   });
 
@@ -529,7 +554,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     const result = CreateEnquirySchema.safeParse(createEnquiryData);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.guestCount).toBe(120);
+      expect(result.data.estimatedGuests).toBe(120);
     }
   });
 
@@ -563,7 +588,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     }
   });
 
-  it("Step 10: HallkeeperSheetSchema validates generated PDF sheet", () => {
+  it("Step 10: HallkeeperSheetSchema (deprecated) validates generated PDF sheet", () => {
     const result = HallkeeperSheetSchema.safeParse({
       id: HALLKEEPER_SHEET_ID,
       configurationId: CONFIG_ID,
@@ -655,32 +680,38 @@ describe("scene state cross-module references", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Enquiry state machine integration
+// 5. Enquiry state machine integration (new states)
 // ---------------------------------------------------------------------------
 
 describe("enquiry state machine integration", () => {
-  it("full lifecycle: submitted → viewed → responded → converted", () => {
-    expect(isValidEnquiryTransition("submitted", "viewed")).toBe(true);
-    expect(isValidEnquiryTransition("viewed", "responded")).toBe(true);
-    expect(isValidEnquiryTransition("responded", "converted")).toBe(true);
+  it("full lifecycle: draft → submitted → under_review → approved → archived", () => {
+    expect(isValidEnquiryTransition("draft", "submitted")).toBe(true);
+    expect(isValidEnquiryTransition("submitted", "under_review")).toBe(true);
+    expect(isValidEnquiryTransition("under_review", "approved")).toBe(true);
+    expect(isValidEnquiryTransition("approved", "archived")).toBe(true);
   });
 
-  it("full lifecycle: submitted → viewed → lost", () => {
-    expect(isValidEnquiryTransition("submitted", "viewed")).toBe(true);
-    expect(isValidEnquiryTransition("viewed", "lost")).toBe(true);
+  it("full lifecycle: submitted → under_review → rejected → archived", () => {
+    expect(isValidEnquiryTransition("submitted", "under_review")).toBe(true);
+    expect(isValidEnquiryTransition("under_review", "rejected")).toBe(true);
+    expect(isValidEnquiryTransition("rejected", "archived")).toBe(true);
   });
 
-  it("cannot skip states: submitted → responded is illegal", () => {
-    expect(isValidEnquiryTransition("submitted", "responded")).toBe(false);
+  it("withdrawn path: submitted → withdrawn", () => {
+    expect(isValidEnquiryTransition("submitted", "withdrawn")).toBe(true);
   });
 
-  it("cannot skip states: submitted → converted is illegal", () => {
-    expect(isValidEnquiryTransition("submitted", "converted")).toBe(false);
+  it("cannot skip states: submitted → approved is illegal", () => {
+    expect(isValidEnquiryTransition("submitted", "approved")).toBe(false);
+  });
+
+  it("cannot skip states: draft → under_review is illegal", () => {
+    expect(isValidEnquiryTransition("draft", "under_review")).toBe(false);
   });
 
   it("terminal states have no outbound transitions", () => {
-    expect(VALID_ENQUIRY_TRANSITIONS.converted).toHaveLength(0);
-    expect(VALID_ENQUIRY_TRANSITIONS.lost).toHaveLength(0);
+    expect(VALID_ENQUIRY_TRANSITIONS.withdrawn).toHaveLength(0);
+    expect(VALID_ENQUIRY_TRANSITIONS.archived).toHaveLength(0);
   });
 
   it("every ENQUIRY_STATUS is a key in VALID_ENQUIRY_TRANSITIONS", () => {
@@ -700,12 +731,16 @@ describe("type-level compatibility", () => {
       id: CONFIG_ID,
       venueId: VENUE_ID,
       spaceId: SPACE_ID,
+      userId: null,
       name: "Test",
-      status: "draft",
+      state: "draft",
       layoutStyle: "ceremony",
-      placedObjects: [],
+      isPublicPreview: false,
+      guestCount: 0,
+      isTemplate: false,
+      visibility: "private",
+      thumbnailUrl: null,
       lightmapUrl: null,
-      createdBy: USER_ID,
       publishedAt: null,
       createdAt: NOW,
       updatedAt: NOW,
@@ -714,24 +749,34 @@ describe("type-level compatibility", () => {
     expect(VenueIdSchema.safeParse(venueId).success).toBe(true);
   });
 
-  it("PlacedObject.furnitureItemId is a valid UUID accepted by FurnitureItemIdSchema", () => {
+  it("PlacedObject.assetDefinitionId is a valid UUID accepted by FurnitureItemIdSchema", () => {
     const obj: PlacedObject = PlacedObjectSchema.parse({
       id: PLACED_OBJECT_ID,
-      furnitureItemId: FURNITURE_ITEM_ID,
-      position: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-      scale: { x: 1, y: 1, z: 1 },
+      configurationId: CONFIG_ID,
+      assetDefinitionId: ASSET_DEF_ID,
+      positionX: "0.000",
+      positionY: "0.000",
+      positionZ: "0.000",
+      rotationX: "0.000",
+      rotationY: "0.000",
+      rotationZ: "0.000",
+      scale: "1.000",
+      sortOrder: 0,
+      metadata: null,
     });
-    expect(FurnitureItemIdSchema.safeParse(obj.furnitureItemId).success).toBe(true);
+    expect(FurnitureItemIdSchema.safeParse(obj.assetDefinitionId).success).toBe(true);
   });
 
   it("User.venueId is a valid VenueId (or null for client users)", () => {
-    // Punch list #35 / Prompt 16: schema migrated from venueIds: VenueId[]
-    // to venueId: VenueId | null to match the runtime DB column.
+    // venueId is singular and nullable — multi-venue is a future SaaS milestone.
     const user: User = UserSchema.parse({
       id: USER_ID,
+      clerkId: null,
       email: "admin@tradeshall.co.uk",
       name: "Admin",
+      displayName: null,
+      phone: null,
+      organizationName: null,
       role: "admin",
       venueId: VENUE_ID,
       createdAt: NOW,
@@ -748,14 +793,17 @@ describe("type-level compatibility", () => {
       venueId: VENUE_ID,
       spaceId: SPACE_ID,
       configurationId: CONFIG_ID,
+      userId: null,
       name: "Test",
       email: "test@example.com",
+      guestPhone: null,
+      guestEmail: null,
+      guestName: null,
+      eventType: null,
       message: "Testing",
-      eventDate: NOW,
-      guestCount: 50,
-      status: "submitted",
-      respondedBy: null,
-      respondedAt: null,
+      preferredDate: null,
+      estimatedGuests: null,
+      state: "submitted",
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -793,11 +841,16 @@ describe("Trades Hall rooms validate as CreateSpace (with venueId)", () => {
   it.each(
     TRADES_HALL_ROOMS.map((room) => [room.name, room] as const),
   )("%s validates through CreateSpaceSchema", (_name, room) => {
+    // TRADES_HALL_ROOMS use dimensions object — convert to flat numeric fields
     const result = CreateSpaceSchema.safeParse({
-      ...room,
       venueId: VENUE_ID,
-      meshUrl: null,
-      thumbnailUrl: null,
+      name: room.name,
+      slug: room.slug,
+      widthM: room.dimensions.width,
+      lengthM: room.dimensions.length,
+      heightM: room.dimensions.height,
+      sortOrder: room.sortOrder,
+      floorPlanOutline: room.floorPlanOutline,
     });
     expect(result.success).toBe(true);
   });
@@ -835,8 +888,8 @@ describe("export count verification", () => {
     expect(USER_ROLES).toHaveLength(5);
   });
 
-  it("ENQUIRY_STATUSES has exactly 5 statuses", () => {
-    expect(ENQUIRY_STATUSES).toHaveLength(5);
+  it("ENQUIRY_STATUSES has exactly 7 statuses", () => {
+    expect(ENQUIRY_STATUSES).toHaveLength(7);
   });
 
   it("CONFIGURATION_STATUSES has exactly 2 statuses", () => {

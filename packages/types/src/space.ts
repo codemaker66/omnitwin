@@ -15,33 +15,23 @@ export type SpaceId = z.infer<typeof SpaceIdSchema>;
 
 export const SpaceSlugSchema = z
   .string()
-  .min(1, "Slug must not be empty")
-  .max(100, "Slug must be at most 100 characters")
-  .regex(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-    "Slug must be lowercase alphanumeric with hyphens, not starting or ending with a hyphen",
-  );
+  .min(1)
+  .max(100)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 // ---------------------------------------------------------------------------
-// Space Dimensions — width, length, height in metres (all positive)
+// Space Dimensions — convenience type for width/length/height in metres.
+// Used by the web client for rendering. NOT stored as a nested object in DB
+// (DB has separate widthM, lengthM, heightM numeric columns).
 // ---------------------------------------------------------------------------
 
 const MAX_DIMENSION_METRES = 200;
 const MAX_HEIGHT_METRES = 50;
 
 export const SpaceDimensionsSchema = z.object({
-  width: z
-    .number()
-    .positive("Width must be positive")
-    .max(MAX_DIMENSION_METRES, `Width must be at most ${String(MAX_DIMENSION_METRES)}m`),
-  length: z
-    .number()
-    .positive("Length must be positive")
-    .max(MAX_DIMENSION_METRES, `Length must be at most ${String(MAX_DIMENSION_METRES)}m`),
-  height: z
-    .number()
-    .positive("Height must be positive")
-    .max(MAX_HEIGHT_METRES, `Height must be at most ${String(MAX_HEIGHT_METRES)}m`),
+  width: z.number().positive().max(MAX_DIMENSION_METRES),
+  length: z.number().positive().max(MAX_DIMENSION_METRES),
+  height: z.number().positive().max(MAX_HEIGHT_METRES),
 });
 
 export type SpaceDimensions = z.infer<typeof SpaceDimensionsSchema>;
@@ -51,130 +41,79 @@ export type SpaceDimensions = z.infer<typeof SpaceDimensionsSchema>;
 // ---------------------------------------------------------------------------
 
 export const FloorPlanPointSchema = z.object({
-  x: z.number().finite("X coordinate must be finite"),
-  y: z.number().finite("Y coordinate must be finite"),
+  x: z.number().finite(),
+  y: z.number().finite(),
 });
 
 export type FloorPlanPoint = z.infer<typeof FloorPlanPointSchema>;
-
-// ---------------------------------------------------------------------------
-// Floor Plan Outline — minimum 3 points to form a polygon
-// ---------------------------------------------------------------------------
 
 const MIN_POLYGON_POINTS = 3;
 
 export const FloorPlanOutlineSchema = z
   .array(FloorPlanPointSchema)
-  .min(MIN_POLYGON_POINTS, `Floor plan outline must have at least ${String(MIN_POLYGON_POINTS)} points`);
+  .min(MIN_POLYGON_POINTS);
 
 // ---------------------------------------------------------------------------
-// Space — the full persisted entity
+// Space — the full persisted entity (matches DB columns)
+//
+// DB stores dimensions as separate numeric columns: widthM, lengthM, heightM.
+// NOT as a nested dimensions object. The SpaceDimensions type above is a
+// client-side convenience, not a DB shape.
 // ---------------------------------------------------------------------------
 
 export const SpaceSchema = z.object({
   id: SpaceIdSchema,
   venueId: VenueIdSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
+  name: z.string().trim().min(1).max(200),
   slug: SpaceSlugSchema,
-  description: z.string().trim().max(2000, "Description must be at most 2000 characters").optional().default(""),
-  dimensions: SpaceDimensionsSchema,
-  sortOrder: z.number().int("Sort order must be an integer").nonnegative("Sort order must not be negative"),
+  description: z.string().max(2000).nullable(),
+  widthM: z.string(), // numeric(6,2) stored as string by Drizzle
+  lengthM: z.string(),
+  heightM: z.string(),
   floorPlanOutline: FloorPlanOutlineSchema,
-  meshUrl: z.string().url("Mesh URL must be a valid URL").nullable(),
-  thumbnailUrl: z.string().url("Thumbnail URL must be a valid URL").nullable(),
-  createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
-  updatedAt: z.string().datetime({ message: "updatedAt must be an ISO 8601 datetime string" }),
+  meshUrl: z.string().url().nullable(),
+  thumbnailUrl: z.string().url().nullable(),
+  sortOrder: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 
 export type Space = z.infer<typeof SpaceSchema>;
 
 // ---------------------------------------------------------------------------
-// CreateSpace — fields needed to create a new space (no id, no timestamps)
+// CreateSpace — fields needed to create a new space
 // ---------------------------------------------------------------------------
 
 export const CreateSpaceSchema = z.object({
   venueId: VenueIdSchema,
-  name: z.string().trim().min(1, "Name must not be empty").max(200, "Name must be at most 200 characters"),
+  name: z.string().trim().min(1).max(200),
   slug: SpaceSlugSchema,
-  description: z.string().trim().max(2000, "Description must be at most 2000 characters").optional().default(""),
-  dimensions: SpaceDimensionsSchema,
-  sortOrder: z.number().int("Sort order must be an integer").nonnegative("Sort order must not be negative"),
+  widthM: z.number().positive().max(MAX_DIMENSION_METRES),
+  lengthM: z.number().positive().max(MAX_DIMENSION_METRES),
+  heightM: z.number().positive().max(MAX_HEIGHT_METRES),
   floorPlanOutline: FloorPlanOutlineSchema,
-  meshUrl: z.string().url("Mesh URL must be a valid URL").nullable(),
-  thumbnailUrl: z.string().url("Thumbnail URL must be a valid URL").nullable(),
+  sortOrder: z.number().int().nonnegative().default(0),
 });
 
 export type CreateSpace = z.infer<typeof CreateSpaceSchema>;
 
 // ---------------------------------------------------------------------------
-// Trades Hall Room Constants
+// Trades Hall Room Constants (client-side convenience)
 // ---------------------------------------------------------------------------
 
-/** Builds a rectangular floor plan outline from width and length. */
+export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21, length: 10, height: 7 };
+export const TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS: SpaceDimensions = { width: 9.7, length: 5.6, height: 2.18 };
+export const TRADES_HALL_RECEPTION_ROOM_DIMENSIONS: SpaceDimensions = { width: 13.4, length: 11.2, height: 3.2 };
+export const TRADES_HALL_SALOON_DIMENSIONS: SpaceDimensions = { width: 12, length: 7, height: 5.4 };
+
+/** Builds a rectangular floor plan from width and length. */
 function rectangleOutline(width: number, length: number): readonly FloorPlanPoint[] {
-  return [
-    { x: 0, y: 0 },
-    { x: width, y: 0 },
-    { x: width, y: length },
-    { x: 0, y: length },
-  ] as const;
+  return [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: length }, { x: 0, y: length }];
 }
 
-export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = {
-  width: 21,
-  length: 10,
-  height: 7,
-};
-
-export const TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS: SpaceDimensions = {
-  width: 9.7,
-  length: 5.6,
-  height: 2.18,
-};
-
-export const TRADES_HALL_RECEPTION_ROOM_DIMENSIONS: SpaceDimensions = {
-  width: 13.4,
-  length: 11.2,
-  height: 3.2,
-};
-
-export const TRADES_HALL_SALOON_DIMENSIONS: SpaceDimensions = {
-  width: 12,
-  length: 7,
-  height: 5.4,
-};
-
 export const TRADES_HALL_ROOMS = [
-  {
-    name: "Grand Hall",
-    slug: "grand-hall",
-    description: "The flagship hall of Trades Hall Glasgow, 21m × 10m with 7m ceilings and a 7m dome.",
-    dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS,
-    sortOrder: 0,
-    floorPlanOutline: rectangleOutline(21, 10),
-  },
-  {
-    name: "Robert Adam Room",
-    slug: "robert-adam-room",
-    description: "An elegant intimate room designed by Robert Adam, 9.7m × 5.6m.",
-    dimensions: TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS,
-    sortOrder: 1,
-    floorPlanOutline: rectangleOutline(9.7, 5.6),
-  },
-  {
-    name: "Reception Room",
-    slug: "reception-room",
-    description: "A versatile space for receptions and events, 13.4m × 11.2m.",
-    dimensions: TRADES_HALL_RECEPTION_ROOM_DIMENSIONS,
-    sortOrder: 2,
-    floorPlanOutline: rectangleOutline(13.4, 11.2),
-  },
-  {
-    name: "Saloon",
-    slug: "saloon",
-    description: "A grand entertaining room with high ceilings, 12m × 7m.",
-    dimensions: TRADES_HALL_SALOON_DIMENSIONS,
-    sortOrder: 3,
-    floorPlanOutline: rectangleOutline(12, 7),
-  },
+  { name: "Grand Hall", slug: "grand-hall", description: "The flagship hall, 21m x 10m with 7m dome.", dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS, sortOrder: 0, floorPlanOutline: rectangleOutline(21, 10) },
+  { name: "Robert Adam Room", slug: "robert-adam-room", description: "Elegant intimate room, 9.7m x 5.6m.", dimensions: TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS, sortOrder: 1, floorPlanOutline: rectangleOutline(9.7, 5.6) },
+  { name: "Reception Room", slug: "reception-room", description: "Versatile event space, 13.4m x 11.2m.", dimensions: TRADES_HALL_RECEPTION_ROOM_DIMENSIONS, sortOrder: 2, floorPlanOutline: rectangleOutline(13.4, 11.2) },
+  { name: "Saloon", slug: "saloon", description: "Grand entertaining room, 12m x 7m.", dimensions: TRADES_HALL_SALOON_DIMENSIONS, sortOrder: 3, floorPlanOutline: rectangleOutline(12, 7) },
 ] as const;

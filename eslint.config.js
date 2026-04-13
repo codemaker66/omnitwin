@@ -37,7 +37,15 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-argument": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
       "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/no-deprecated": "off",
       "no-console": "off",
+    },
+  },
+  {
+    files: ["**/index.ts"],
+    rules: {
+      // Barrel re-exports deprecated symbols for backward compatibility
+      "@typescript-eslint/no-deprecated": "off",
     },
   },
   {
