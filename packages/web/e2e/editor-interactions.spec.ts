@@ -15,7 +15,25 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Editor Interactions", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    // Navigate directly to /editor/:configId — SpacePicker requires a live
+    // API for venue data and has no canvas. Mock the config load so the 3D
+    // editor mounts without a running backend.
+    await page.route("http://localhost:3001/public/configurations/e2e-config-001", (route) => {
+      void route.fulfill({
+        json: {
+          data: {
+            id: "e2e-config-001",
+            spaceId: "e2e-space-001",
+            venueId: "e2e-venue-001",
+            userId: null,
+            name: "Test Layout",
+            isPublicPreview: true,
+            objects: [],
+          },
+        },
+      });
+    });
+    await page.goto("/editor/e2e-config-001");
     await page.waitForSelector("canvas", { timeout: 15_000 });
     // Ensure canvas has focus so keyboard events reach window listeners
     await page.locator("canvas").click();

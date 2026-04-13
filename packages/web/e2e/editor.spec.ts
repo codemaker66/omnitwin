@@ -13,7 +13,25 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Public Editor", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    // Navigate directly to /editor/:configId (bypasses SpacePicker, which
+    // requires a live API for venue/space data). Mock the config-load call
+    // so the 3D editor mounts without a real backend.
+    await page.route("http://localhost:3001/public/configurations/e2e-config-001", (route) => {
+      void route.fulfill({
+        json: {
+          data: {
+            id: "e2e-config-001",
+            spaceId: "e2e-space-001",
+            venueId: "e2e-venue-001",
+            userId: null,
+            name: "Test Layout",
+            isPublicPreview: true,
+            objects: [],
+          },
+        },
+      });
+    });
+    await page.goto("/editor/e2e-config-001");
     // Wait for the R3F canvas to mount before every test
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
