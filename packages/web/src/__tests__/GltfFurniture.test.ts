@@ -66,6 +66,13 @@ describe("FurnitureProxy glTF routing (#28)", () => {
     expect(codeOnly).toContain("fallback={procedural}");
   });
 
+  it("wraps GltfFurniture in MeshErrorBoundary so a bad GLB doesn't crash the scene", async () => {
+    const { codeOnly } = await readSource("src/components/FurnitureProxy.tsx");
+    expect(codeOnly).toContain("<MeshErrorBoundary");
+    expect(codeOnly).toContain("class MeshErrorBoundary");
+    expect(codeOnly).toContain("getDerivedStateFromError");
+  });
+
   it("renders procedural mesh directly when meshUrl is null", async () => {
     const { codeOnly } = await readSource("src/components/FurnitureProxy.tsx");
     // The ternary: meshUrl !== null ? <Suspense>...<GltfFurniture/> : procedural

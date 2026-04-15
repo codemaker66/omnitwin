@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Component, Suspense, type ReactNode } from "react";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { GltfFurniture } from "./meshes/GltfFurniture.js";
 import { RoundTableMesh } from "./meshes/RoundTableMesh.js";
@@ -59,19 +59,79 @@ export function FurnitureProxy({
       rotation={[0, rotationY, 0]}
     >
       {item.meshUrl !== null ? (
-        <Suspense fallback={procedural}>
-          <GltfFurniture
-            meshUrl={item.meshUrl}
-            item={item}
-            opacity={opacity}
-            colorOverride={colorOverride}
-          />
-        </Suspense>
+        // Suspense covers the LOAD path (procedural shows while drei fetches);
+        // MeshErrorBoundary covers the FAIL path (404, malformed GLB, network
+        // error). Without the boundary, a single bad meshUrl would propagate
+        // up to the root error boundary and crash the entire scene — every
+        // other piece of furniture, the camera rig, the editor UI all gone.
+        // Falling back to the procedural mesh keeps the rest of the scene
+        // alive and the user can still interact with their layout.
+        <MeshErrorBoundary fallback={procedural} meshUrl={item.meshUrl}>
+          <Suspense fallback={procedural}>
+            <GltfFurniture
+              meshUrl={item.meshUrl}
+              item={item}
+              opacity={opacity}
+              colorOverride={colorOverride}
+            />
+          </Suspense>
+        </MeshErrorBoundary>
       ) : (
         procedural
       )}
     </group>
   );
+}
+
+// ---------------------------------------------------------------------------
+// MeshErrorBoundary — confines GLB load failures to the failing instance.
+//
+// Why a local boundary instead of the root one: the root boundary unmounts
+// the entire React tree on catch, which for a 3D editor means the user
+// loses the canvas, their camera position, every other placed item, and
+// their unsaved interactions since the last auto-save. Per-furniture
+// containment turns a single bad asset into a single visual fallback.
+//
+// `meshUrl` is part of the key so changing the URL re-attempts the load
+// rather than staying stuck on the previous failure.
+// ---------------------------------------------------------------------------
+
+interface MeshErrorBoundaryProps {
+  readonly children: ReactNode;
+  readonly fallback: ReactNode;
+  readonly meshUrl: string;
+}
+
+interface MeshErrorBoundaryState {
+  readonly hasError: boolean;
+}
+
+export class MeshErrorBoundary extends Component<MeshErrorBoundaryProps, MeshErrorBoundaryState> {
+  constructor(props: MeshErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): MeshErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  override componentDidCatch(error: Error): void {
+    // eslint-disable-next-line no-console
+    console.warn(`OMNITWIN: GLB load failed for ${this.props.meshUrl}, falling back to procedural mesh.`, error);
+  }
+
+  override componentDidUpdate(prevProps: MeshErrorBoundaryProps): void {
+    // Reset on URL change so a corrected meshUrl is retried.
+    if (prevProps.meshUrl !== this.props.meshUrl && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  override render(): ReactNode {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
 }
 
 function renderMesh(
