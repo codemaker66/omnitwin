@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactElement } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
+import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -108,7 +109,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/",
-    element: <Navigate to="/editor" replace />,
+    element: <RoleAwareRedirect />,
   },
   {
     path: "*",
