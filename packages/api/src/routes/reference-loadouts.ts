@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { referenceLoadouts, referencePhotos, files, spaces } from "../db/schema.js";
+import { referenceLoadouts, referencePhotos, files, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -40,6 +40,20 @@ export async function referenceLoadoutRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
+    // Verify venue and space are active — prevents leaking child data for soft-deleted parents
+    const [venue] = await db.select({ id: venues.id }).from(venues)
+      .where(and(eq(venues.id, params.data.venueId), isNull(venues.deletedAt)))
+      .limit(1);
+    if (venue === undefined) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+    }
+    const [space] = await db.select({ id: spaces.id }).from(spaces)
+      .where(and(eq(spaces.id, params.data.spaceId), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined) {
+      return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
+    }
+
     const rows = await db.select({
       id: referenceLoadouts.id,
       name: referenceLoadouts.name,
@@ -66,10 +80,25 @@ export async function referenceLoadoutRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
+    // Verify venue and space are active
+    const [venue] = await db.select({ id: venues.id }).from(venues)
+      .where(and(eq(venues.id, params.data.venueId), isNull(venues.deletedAt)))
+      .limit(1);
+    if (venue === undefined) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+    }
+    const [space] = await db.select({ id: spaces.id }).from(spaces)
+      .where(and(eq(spaces.id, params.data.spaceId), eq(spaces.venueId, params.data.venueId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined) {
+      return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
+    }
+
     const [loadout] = await db.select()
       .from(referenceLoadouts)
       .where(and(
         eq(referenceLoadouts.id, params.data.id),
+        eq(referenceLoadouts.venueId, params.data.venueId),
         eq(referenceLoadouts.spaceId, params.data.spaceId),
         isNull(referenceLoadouts.deletedAt),
       ))

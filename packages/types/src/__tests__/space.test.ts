@@ -7,6 +7,7 @@ import {
   FloorPlanOutlineSchema,
   SpaceSchema,
   CreateSpaceSchema,
+  polygonBoundingBox,
   TRADES_HALL_ROOMS,
   TRADES_HALL_GRAND_HALL_DIMENSIONS,
   TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS,
@@ -586,6 +587,73 @@ describe("Trades Hall room constants", () => {
     for (const room of TRADES_HALL_ROOMS) {
       expect(room.name.length).toBeGreaterThan(0);
       expect(room.slug.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("polygonBoundingBox", () => {
+  it("computes bbox of a unit square anchored at origin", () => {
+    const bbox = polygonBoundingBox([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ]);
+    expect(bbox).toEqual({ widthM: 1, lengthM: 1 });
+  });
+
+  it("computes bbox of the Grand Hall rectangle (21 x 10)", () => {
+    const bbox = polygonBoundingBox([
+      { x: 0, y: 0 },
+      { x: 21, y: 0 },
+      { x: 21, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+    expect(bbox).toEqual({ widthM: 21, lengthM: 10 });
+  });
+
+  it("handles rectangles centered on origin (negative coordinates)", () => {
+    const bbox = polygonBoundingBox([
+      { x: -10.5, y: -5 },
+      { x: 10.5, y: -5 },
+      { x: 10.5, y: 5 },
+      { x: -10.5, y: 5 },
+    ]);
+    expect(bbox).toEqual({ widthM: 21, lengthM: 10 });
+  });
+
+  it("handles non-rectangular convex polygons (L-shape via bbox)", () => {
+    // L-shaped room: the bbox is the axis-aligned enclosing rectangle,
+    // which ignores the indented corner.
+    const bbox = polygonBoundingBox([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 4 },
+      { x: 4, y: 4 },
+      { x: 4, y: 8 },
+      { x: 0, y: 8 },
+    ]);
+    expect(bbox).toEqual({ widthM: 10, lengthM: 8 });
+  });
+
+  it("throws when given fewer than 3 points (matches FloorPlanOutlineSchema)", () => {
+    expect(() => polygonBoundingBox([{ x: 0, y: 0 }, { x: 1, y: 1 }]))
+      .toThrow(/at least 3 points/);
+  });
+
+  it("produces the same bbox as the Trades Hall seed constants for every room", () => {
+    const expected: Record<string, { w: number; l: number }> = {
+      "grand-hall": { w: 21, l: 10 },
+      "robert-adam-room": { w: 9.7, l: 5.6 },
+      "reception-room": { w: 13.4, l: 11.2 },
+      "saloon": { w: 12, l: 7 },
+    };
+    for (const room of TRADES_HALL_ROOMS) {
+      const bbox = polygonBoundingBox(room.floorPlanOutline);
+      const target = expected[room.slug];
+      expect(target).toBeDefined();
+      expect(bbox.widthM).toBeCloseTo(target!.w, 5);
+      expect(bbox.lengthM).toBeCloseTo(target!.l, 5);
     }
   });
 });

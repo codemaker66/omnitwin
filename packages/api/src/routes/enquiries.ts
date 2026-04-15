@@ -270,10 +270,22 @@ export async function enquiryRoutes(
           ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/editor/${enquiry.configurationId}`
           : null;
         const emailData = enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
-        sendEmailAsync({ to: recipientEmail, ...emailData });
+        // Idempotency: one approved notification per enquiry, regardless
+        // of how many times the transition handler re-fires. An accidental
+        // double-click, a client retry, or a replayed webhook all converge
+        // to a single email.
+        sendEmailAsync({ to: recipientEmail, ...emailData }, {
+          db,
+          idempotencyKey: `enquiry-approved:${enquiry.id}`,
+          logger: request.log,
+        });
       } else {
         const emailData = enquiryRejected({ venueName, spaceName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
-        sendEmailAsync({ to: recipientEmail, ...emailData });
+        sendEmailAsync({ to: recipientEmail, ...emailData }, {
+          db,
+          idempotencyKey: `enquiry-rejected:${enquiry.id}`,
+          logger: request.log,
+        });
       }
     }
 

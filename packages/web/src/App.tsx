@@ -31,7 +31,7 @@ import { useChairDialogStore } from "./stores/chair-dialog-store.js";
 import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
-import { roomGeometries, computeBoundingBox } from "./data/room-geometries.js";
+import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
 
 // Initialize stores with Grand Hall dimensions (default).
 // Runs once at module load. The useEffect in App() re-initializes when
@@ -41,27 +41,29 @@ useBookmarkStore.getState().initialize(GRAND_HALL_RENDER_DIMENSIONS);
 
 /**
  * Computes render dimensions from room geometry polygon data.
- * Falls back to Grand Hall dimensions if no match.
+ * Falls back to Grand Hall dimensions if no space is loaded.
  */
 function useRoomDimensions(): SpaceDimensions {
   const space = useEditorStore((s) => s.space);
   return useMemo(() => {
     if (space === null) return GRAND_HALL_RENDER_DIMENSIONS;
 
-    const geom = roomGeometries[space.name];
-    if (geom === undefined) {
+    const geom = resolveRoomGeometry(space);
+    if (geom !== null) {
+      const bbox = computeBoundingBox(geom.wallPolygon);
       return scaleForRendering({
-        width: parseFloat(space.widthM),
-        length: parseFloat(space.lengthM),
-        height: parseFloat(space.heightM),
+        width: bbox.width,
+        length: bbox.depth,
+        height: geom.ceilingHeight,
       });
     }
 
-    const bbox = computeBoundingBox(geom.wallPolygon);
+    // Defensive: no polygon available (shouldn't happen post Prompt 7,
+    // which makes floor-plan outlines required on every space write).
     return scaleForRendering({
-      width: bbox.width,
-      length: bbox.depth,
-      height: geom.ceilingHeight,
+      width: parseFloat(space.widthM),
+      length: parseFloat(space.lengthM),
+      height: parseFloat(space.heightM),
     });
   }, [space]);
 }
@@ -78,8 +80,11 @@ export function App(): React.ReactElement {
     useRoomDimensionsStore.getState().setDimensions({ width: dimW, length: dimL, height: dimH });
   }, [dimW, dimL, dimH]);
 
-  const spaceName = space?.name ?? null;
-  const roomGeometry = spaceName !== null ? roomGeometries[spaceName] ?? null : null;
+  // Prefer the hand-authored Trades Hall geometry when the space name
+  // matches; fall back to the space's own polygon (any admin-authored or
+  // second-venue space); fall through to the GrandHallRoom stand-in when
+  // no space is loaded at all.
+  const roomGeometry = space !== null ? resolveRoomGeometry(space) : null;
 
   return (
     <>

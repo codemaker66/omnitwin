@@ -19,7 +19,12 @@ export function EditorPage(): React.ReactElement {
   const error = useEditorStore((s) => s.error);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  // Load config from URL on mount.
+  // Load config from URL on mount. The first load uses the current
+  // isAuthenticated value (false before Clerk resolves). For public configs
+  // this succeeds immediately. For private/claimed configs the public path
+  // may 404 — when auth later resolves and isAuthenticated flips to true,
+  // the effect re-fires because storeConfigId is still null (set() is not
+  // called on error), retrying via the authenticated endpoint.
   useEffect(() => {
     if (urlConfigId !== undefined && urlConfigId !== storeConfigId) {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);

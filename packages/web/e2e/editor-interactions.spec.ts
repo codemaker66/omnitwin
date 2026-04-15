@@ -51,6 +51,14 @@ test.describe("Editor Interactions", () => {
   test("F key with panel already open closes it", async ({ page }) => {
     await page.keyboard.press("f");
     await page.getByTestId("furniture-panel").waitFor({ state: "visible" });
+    // Wait for open animation to settle (450ms) before toggling —
+    // Playwright may dispatch the second keypress before React commits
+    // the state that enables the toggle.
+    await page.waitForTimeout(500);
+    // The panel search input auto-focuses on open — click canvas to restore
+    // focus so the next 'f' keypress reaches the window shortcut handler
+    // (keydown on an input is swallowed by the shortcut guard).
+    await page.locator("canvas").click();
     await page.keyboard.press("f");
     await expect(page.getByTestId("furniture-panel")).not.toBeVisible({ timeout: 5_000 });
   });
@@ -159,6 +167,9 @@ test.describe("Editor Interactions", () => {
   test("auth modal closes when Escape is pressed", async ({ page }) => {
     await page.getByRole("button", { name: "Sign In" }).click();
     await page.getByRole("dialog").waitFor({ state: "visible" });
+    // Click the modal heading to move focus from the Clerk SignIn iframe
+    // (which would swallow keyboard events) back to the React tree.
+    await page.getByRole("heading", { name: "Sign In to Save" }).click();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 3_000 });
   });

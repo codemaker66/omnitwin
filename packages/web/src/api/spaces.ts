@@ -1,3 +1,4 @@
+import type { FloorPlanPoint } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -18,9 +19,15 @@ export interface Space {
   readonly venueId: string;
   readonly name: string;
   readonly slug: string;
+  // widthM / lengthM are denormalised bbox values derived from
+  // floorPlanOutline on every write (see backend invariant in
+  // packages/api/src/db/schema.ts). They remain in the response because
+  // several hot-path web readers consume them directly; but on create/
+  // update the API accepts the polygon only.
   readonly widthM: string;
   readonly lengthM: string;
   readonly heightM: string;
+  readonly floorPlanOutline: readonly FloorPlanPoint[];
   readonly loadoutCount?: number;
 }
 
@@ -64,10 +71,8 @@ export async function createVenue(data: CreateVenueInput): Promise<Venue> {
 export interface CreateSpaceInput {
   readonly name: string;
   readonly slug: string;
-  readonly widthM: number;
-  readonly lengthM: number;
   readonly heightM: number;
-  readonly floorPlanOutline: readonly { readonly x: number; readonly y: number }[];
+  readonly floorPlanOutline: readonly FloorPlanPoint[];
 }
 
 export async function createSpace(venueId: string, data: CreateSpaceInput): Promise<Space> {
@@ -84,9 +89,8 @@ export async function getSpace(venueId: string, spaceId: string): Promise<Space>
 
 export interface UpdateSpaceInput {
   readonly name?: string;
-  readonly widthM?: number;
-  readonly lengthM?: number;
   readonly heightM?: number;
+  readonly floorPlanOutline?: readonly FloorPlanPoint[];
 }
 
 export async function updateSpace(venueId: string, spaceId: string, data: UpdateSpaceInput): Promise<Space> {

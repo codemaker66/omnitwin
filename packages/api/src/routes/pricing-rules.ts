@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
-import { pricingRules, spaces } from "../db/schema.js";
+import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -62,6 +62,14 @@ export async function pricingRuleRoutes(
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
 
+    // Verify venue is active — prevents leaking pricing for soft-deleted venues
+    const [venueCheck] = await db.select({ id: venues.id }).from(venues)
+      .where(and(eq(venues.id, params.data.venueId), isNull(venues.deletedAt)))
+      .limit(1);
+    if (venueCheck === undefined) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+    }
+
     const rows = await db.select().from(pricingRules)
       .where(and(
         eq(pricingRules.venueId, params.data.venueId),
@@ -78,6 +86,14 @@ export async function pricingRuleRoutes(
     const params = RuleIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+
+    // Verify venue is active
+    const [venueCheck] = await db.select({ id: venues.id }).from(venues)
+      .where(and(eq(venues.id, params.data.venueId), isNull(venues.deletedAt)))
+      .limit(1);
+    if (venueCheck === undefined) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
     const [rule] = await db.select().from(pricingRules)
@@ -234,6 +250,31 @@ export async function pricingRuleRoutes(
     const parsed = EstimateBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    // Verify venue is active
+    const [venueCheck] = await db.select({ id: venues.id }).from(venues)
+      .where(and(eq(venues.id, params.data.venueId), isNull(venues.deletedAt)))
+      .limit(1);
+    if (venueCheck === undefined) {
+      return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
+    }
+
+    // Verify spaceId belongs to this venue (prevents cross-entity estimation)
+    const [space] = await db.select({ id: spaces.id }).from(spaces)
+      .where(and(
+        eq(spaces.id, parsed.data.spaceId),
+        eq(spaces.venueId, params.data.venueId),
+        isNull(spaces.deletedAt),
+      ))
+      .limit(1);
+    if (space === undefined) {
+      return reply.status(404).send({ error: "Space not found in this venue", code: "NOT_FOUND" });
+    }
+
+    // Reject inverted time ranges — computeHours would silently return 0
+    if (parsed.data.startTime >= parsed.data.endTime) {
+      return reply.status(400).send({ error: "startTime must be before endTime", code: "VALIDATION_ERROR" });
     }
 
     // Fetch active, non-deleted rules for this venue

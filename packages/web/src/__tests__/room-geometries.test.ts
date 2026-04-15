@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { roomGeometries, computeBoundingBox, isPointInPolygon } from "../data/room-geometries.js";
+import {
+  roomGeometries,
+  computeBoundingBox,
+  isPointInPolygon,
+  resolveRoomGeometry,
+  type SpaceLike,
+} from "../data/room-geometries.js";
 
 // ---------------------------------------------------------------------------
 // Room geometry data tests
@@ -117,5 +123,95 @@ describe("isPointInPolygon", () => {
     expect(isPointInPolygon(0, 4, reception)).toBe(true);
     // Far corner outside L should be outside
     expect(isPointInPolygon(4.5, 4, reception)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveRoomGeometry — per-space fallback resolution
+// ---------------------------------------------------------------------------
+
+describe("resolveRoomGeometry", () => {
+  it("returns the hand-authored geometry when the space name matches a Trades Hall room", () => {
+    const space: SpaceLike = {
+      name: "Grand Hall",
+      heightM: "7",
+      // Even if the DB polygon is a plain rectangle, the named lookup wins —
+      // it preserves the hand-authored dome metadata that the polygon alone
+      // can't express.
+      floorPlanOutline: [
+        { x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10 }, { x: 0, y: 10 },
+      ],
+    };
+    const geom = resolveRoomGeometry(space);
+    expect(geom).not.toBeNull();
+    expect(geom?.hasDome).toBe(true);
+    expect(geom?.domeRadius).toBe(3.5);
+  });
+
+  it("derives a polygon geometry from floorPlanOutline when the name is unknown", () => {
+    const space: SpaceLike = {
+      name: "Some Custom Room",
+      heightM: "3.5",
+      floorPlanOutline: [
+        { x: 0, y: 0 },
+        { x: 8, y: 0 },
+        { x: 8, y: 6 },
+        { x: 0, y: 6 },
+      ],
+    };
+    const geom = resolveRoomGeometry(space);
+    expect(geom).not.toBeNull();
+    expect(geom?.ceilingHeight).toBe(3.5);
+    expect(geom?.hasDome).toBe(false);
+    // wallPolygon is the outline mapped to [x, z] tuples in the same order.
+    expect(geom?.wallPolygon).toEqual([[0, 0], [8, 0], [8, 6], [0, 6]]);
+  });
+
+  it("preserves L-shaped outlines end-to-end", () => {
+    // A non-rectangular outline — the whole point of the polygon-as-truth
+    // invariant. If the resolver degraded to a bbox rectangle here, the
+    // test below would see a 4-vertex polygon instead of 6.
+    const space: SpaceLike = {
+      name: "L-Shaped Hall",
+      heightM: "3",
+      floorPlanOutline: [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 4 },
+        { x: 4, y: 4 },
+        { x: 4, y: 10 },
+        { x: 0, y: 10 },
+      ],
+    };
+    const geom = resolveRoomGeometry(space);
+    expect(geom).not.toBeNull();
+    expect(geom?.wallPolygon).toHaveLength(6);
+    // The carved-out corner at (7, 7) is outside the rendered polygon,
+    // proving the fallback preserves the shape (not just a bbox).
+    expect(isPointInPolygon(7, 7, geom?.wallPolygon ?? [])).toBe(false);
+    // And a point in the L's occupied arm is inside.
+    expect(isPointInPolygon(2, 7, geom?.wallPolygon ?? [])).toBe(true);
+  });
+
+  it("returns null when the space has neither a known name nor a usable polygon", () => {
+    const space: SpaceLike = {
+      name: "Degenerate",
+      heightM: "3",
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 1, y: 0 }], // < 3 points
+    };
+    expect(resolveRoomGeometry(space)).toBeNull();
+  });
+
+  it("falls back to a safe ceiling height when heightM is not a positive number", () => {
+    const space: SpaceLike = {
+      name: "Bad Height",
+      heightM: "nope",
+      floorPlanOutline: [
+        { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 },
+      ],
+    };
+    const geom = resolveRoomGeometry(space);
+    expect(geom).not.toBeNull();
+    expect(geom?.ceilingHeight).toBe(3); // the defensive default
   });
 });

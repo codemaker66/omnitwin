@@ -5,11 +5,33 @@ import { test, expect } from "@playwright/test";
 //
 // Verifies that routes load correctly and key UI elements are present.
 // These tests don't require authentication.
+//
+// Note: "/" redirects to "/editor" which shows SpacePicker (no canvas).
+// Tests that need the 3D editor navigate to /editor/:configId with a
+// mocked config-load response so the Canvas mounts.
 // ---------------------------------------------------------------------------
 
+const API = "http://localhost:3001";
+const CONFIG_ID = "e2e-config-001";
+
 test.describe("Navigation", () => {
-  test("homepage loads the editor", async ({ page }) => {
-    await page.goto("/");
+  test("editor route loads with a visible WebGL canvas", async ({ page }) => {
+    await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
+      void route.fulfill({
+        json: {
+          data: {
+            id: CONFIG_ID,
+            spaceId: "e2e-space-001",
+            venueId: "e2e-venue-001",
+            userId: null,
+            name: "Test Layout",
+            isPublicPreview: true,
+            objects: [],
+          },
+        },
+      });
+    });
+    await page.goto(`/editor/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
     await expect(page.locator("canvas")).toBeVisible();
   });

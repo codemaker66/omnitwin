@@ -57,6 +57,20 @@
       "when": 1774628400000,
       "tag": "0006_clerk_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776556800000,
+      "tag": "0007_polygon_bbox_invariant",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776643200000,
+      "tag": "0008_email_sends",
+      "breakpoints": true
     }
   ]
 }

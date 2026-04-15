@@ -5,6 +5,11 @@ import { placedObjects, configurations } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
+import {
+  validatePlacementsInPolygon,
+  loadSpacePolygon,
+  placementOutOfBoundsBody,
+} from "../lib/placement-validation.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -130,6 +135,19 @@ export async function placedObjectRoutes(
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
 
+    // Polygon containment check — reject placements outside the room.
+    const outline = await loadSpacePolygon(db, result.config.spaceId);
+    if (outline === null) {
+      return reply.status(500).send({ error: "Space outline missing for configuration", code: "INTERNAL_ERROR" });
+    }
+    const invalid = validatePlacementsInPolygon(
+      [{ positionX: parsed.data.positionX, positionZ: parsed.data.positionZ }],
+      outline,
+    );
+    if (invalid.length > 0) {
+      return reply.status(422).send(placementOutOfBoundsBody(invalid));
+    }
+
     const [obj] = await db.insert(placedObjects).values({
       configurationId: params.data.configId,
       assetDefinitionId: parsed.data.assetDefinitionId,
@@ -171,6 +189,23 @@ export async function placedObjectRoutes(
 
     if (existing === undefined) {
       return reply.status(404).send({ error: "Placed object not found", code: "NOT_FOUND" });
+    }
+
+    // Validate only when the edit touches positionX or positionZ. Height
+    // (positionY), rotation, scale and metadata edits bypass the polygon
+    // check — they can't move the object's floor-plan footprint, and
+    // re-validating pre-invariant objects would fail rotation-only edits.
+    if (parsed.data.positionX !== undefined || parsed.data.positionZ !== undefined) {
+      const outline = await loadSpacePolygon(db, result.config.spaceId);
+      if (outline === null) {
+        return reply.status(500).send({ error: "Space outline missing for configuration", code: "INTERNAL_ERROR" });
+      }
+      const finalX = parsed.data.positionX ?? Number(existing.positionX);
+      const finalZ = parsed.data.positionZ ?? Number(existing.positionZ);
+      const invalid = validatePlacementsInPolygon([{ positionX: finalX, positionZ: finalZ }], outline);
+      if (invalid.length > 0) {
+        return reply.status(422).send(placementOutOfBoundsBody(invalid));
+      }
     }
 
     const updateData: Record<string, unknown> = {};
@@ -233,6 +268,21 @@ export async function placedObjectRoutes(
     const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
+    }
+
+    // Polygon containment check. Batches are atomic — we validate every
+    // placement before opening the transaction; any failure fails the whole
+    // batch with a 422 that lists every offending row so the client can
+    // highlight them all at once.
+    if (parsed.data.objects.length > 0) {
+      const outline = await loadSpacePolygon(db, result.config.spaceId);
+      if (outline === null) {
+        return reply.status(500).send({ error: "Space outline missing for configuration", code: "INTERNAL_ERROR" });
+      }
+      const invalid = validatePlacementsInPolygon(parsed.data.objects, outline);
+      if (invalid.length > 0) {
+        return reply.status(422).send(placementOutOfBoundsBody(invalid));
+      }
     }
 
     // Full-sync batch: delete stale + update existing + insert new, all atomic.

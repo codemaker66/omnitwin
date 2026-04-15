@@ -1,16 +1,24 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Three independent jobs run in parallel against every push to master and
-# every pull request targeting master:
+# Four jobs run in parallel against every push to master and every pull
+# request targeting master:
 #
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
-#   test       — Vitest across all packages, all 2,436 tests must pass
+#   test       — Vitest across all packages, all tests must pass
+#   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
 # match the local development environment, the lockfile is enforced via
 # --frozen-lockfile, and Node 22 (current LTS) is the only supported runtime.
+#
+# E2E notes:
+#   - All API calls are intercepted with page.route() — no backend required
+#   - Playwright starts the Vite dev server itself via playwright.config.ts
+#     webServer config (reuseExistingServer: false in CI)
+#   - On failure, screenshots and traces from test-results/ are uploaded as
+#     a workflow artifact for debugging
 # =============================================================================
 
 name: CI
@@ -99,3 +107,47 @@ jobs:
 
       - name: Test (Vitest)
         run: pnpm -r test
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        # --with-deps installs OS-level Chromium system dependencies on Ubuntu
+        # (libgtk, libnss, etc.) in addition to the browser binary itself.
+        # Only Chromium is installed because playwright.config.ts defines a
+        # single "chromium" project — skipping Firefox/WebKit saves ~300 MB.
+        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: pnpm --filter @omnitwin/web e2e
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ github.run_id }}
+          # Default outputDir is ./test-results relative to playwright.config.ts
+          # (packages/web/). Contains screenshots (only-on-failure) and traces
+          # (on-first-retry) as configured in playwright.config.ts.
+          path: packages/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

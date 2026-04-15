@@ -1,35 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
+import type { HallkeeperSheetData } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 
 // ---------------------------------------------------------------------------
-// Types — mirrors the API SheetData response
+// SheetData — imported from @omnitwin/types (HallkeeperSheetData).
+// The API may return extra fields (venue.id, config.userId) used by the route
+// handler for auth checks; we ignore them here via structural typing.
 // ---------------------------------------------------------------------------
-
-interface ManifestRow {
-  readonly code: string;
-  readonly item: string;
-  readonly qty: number;
-  readonly position: string;
-  readonly notes: string;
-  readonly setupGroup: string;
-}
-
-interface ManifestTotals {
-  readonly entries: readonly { readonly item: string; readonly qty: number }[];
-  readonly totalChairs: number;
-}
-
-interface SheetData {
-  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: string | null };
-  readonly space: { readonly name: string; readonly widthM: number; readonly lengthM: number; readonly heightM: number };
-  readonly config: { readonly id: string; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
-  readonly manifest: { readonly rows: readonly ManifestRow[]; readonly totals: ManifestTotals };
-  readonly diagramUrl: string | null;
-  readonly webViewUrl: string;
-  readonly generatedAt: string;
-}
+type SheetData = HallkeeperSheetData;
+type ManifestRow = SheetData["manifest"]["rows"][number];
 
 // ---------------------------------------------------------------------------
 // Styles — dark theme with gold accents, matching the editor aesthetic
@@ -62,17 +43,33 @@ export function HallkeeperPage(): React.ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(GROUP_ORDER));
   const manifestRef = useRef<HTMLDivElement>(null);
 
-  // Fetch sheet data with authentication
+  // Fetch sheet data.
+  //
+  // The route is gated by ProtectedRoute, so the caller is guaranteed to be
+  // an authenticated staff user by the time this effect runs. Per-resource
+  // authorization (403) is still possible — e.g., a planner trying to view
+  // a config owned by another venue. That case renders a distinct message.
   useEffect(() => {
     if (configId === undefined) return;
     setLoading(true);
+    setError(null);
     void (async () => {
       try {
         const token = await getAuthToken();
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/data`, { headers });
-        if (!res.ok) throw new Error(`${String(res.status)} — Configuration not found`);
+        if (res.status === 403) {
+          setError("You don't have permission to view this events sheet.");
+          return;
+        }
+        if (res.status === 404) {
+          setError("Configuration not found.");
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(`Failed to load events sheet (${String(res.status)})`);
+        }
         const json = (await res.json()) as { data: SheetData };
         setData(json.data);
       } catch (err: unknown) {

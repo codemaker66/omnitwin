@@ -1,7 +1,18 @@
+import { z } from "zod";
+import type { GuestEnquiry } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Response schemas — Zod validation at the API boundary
+//
+// Every response from the configurations API is now validated through a Zod
+// schema before reaching application code. This catches contract drift (a
+// renamed field, a missing column, a number where a string was expected)
+// at the network boundary instead of deep in component code.
+//
+// Request types (BatchObjectInput, GuestEnquiryInput) remain plain interfaces
+// because they are outbound payloads composed by application code, not parsed
+// from untrusted JSON.
 // ---------------------------------------------------------------------------
 
 /**
@@ -16,30 +27,52 @@ export interface ObjectMetadata {
   readonly groupId?: string | null;
 }
 
-export interface PlacedObject {
-  readonly id: string;
-  readonly configurationId: string;
-  readonly assetDefinitionId: string;
-  readonly positionX: string;
-  readonly positionY: string;
-  readonly positionZ: string;
-  readonly rotationX: string;
-  readonly rotationY: string;
-  readonly rotationZ: string;
-  readonly scale: string;
-  readonly sortOrder: number;
-  readonly metadata: ObjectMetadata | null;
-}
+const ObjectMetadataResponseSchema = z.object({
+  clothed: z.boolean().optional(),
+  groupId: z.string().nullable().optional(),
+}).nullable();
 
-export interface Configuration {
-  readonly id: string;
-  readonly spaceId: string;
-  readonly venueId: string;
-  readonly userId: string | null;
-  readonly name: string;
-  readonly isPublicPreview: boolean;
-  readonly objects?: readonly PlacedObject[];
-}
+const PlacedObjectResponseSchema = z.object({
+  id: z.string(),
+  configurationId: z.string(),
+  assetDefinitionId: z.string(),
+  positionX: z.string(),
+  positionY: z.string(),
+  positionZ: z.string(),
+  rotationX: z.string(),
+  rotationY: z.string(),
+  rotationZ: z.string(),
+  scale: z.string(),
+  sortOrder: z.number(),
+  metadata: ObjectMetadataResponseSchema,
+});
+
+export type PlacedObject = z.infer<typeof PlacedObjectResponseSchema>;
+
+const ConfigurationResponseSchema = z.object({
+  id: z.string(),
+  spaceId: z.string(),
+  venueId: z.string(),
+  userId: z.string().nullable(),
+  name: z.string(),
+  isPublicPreview: z.boolean(),
+  objects: z.array(PlacedObjectResponseSchema).optional(),
+});
+
+export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
+
+const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
+
+const GuestEnquiryResponseSchema = z.object({
+  enquiryId: z.string(),
+  message: z.string(),
+});
+
+export type GuestEnquiryResponse = z.infer<typeof GuestEnquiryResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Request types (outbound payloads — not schema-validated)
+// ---------------------------------------------------------------------------
 
 export interface BatchObjectInput {
   readonly id?: string;
@@ -55,29 +88,31 @@ export interface BatchObjectInput {
   readonly metadata?: ObjectMetadata | null;
 }
 
+/** Re-export the canonical guest enquiry input type from @omnitwin/types. */
+export type GuestEnquiryInput = GuestEnquiry;
+
 // ---------------------------------------------------------------------------
 // Public endpoints (no auth)
 // ---------------------------------------------------------------------------
 
 export async function createPublicConfig(spaceId: string, name?: string): Promise<Configuration> {
-  return api.post<Configuration>("/public/configurations", { spaceId, name }, true);
+  return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
 }
 
 export async function publicBatchSave(configId: string, objects: readonly BatchObjectInput[]): Promise<PlacedObject[]> {
-  return api.post<PlacedObject[]>(`/public/configurations/${configId}/objects/batch`, { objects }, true);
+  return api.post(`/public/configurations/${configId}/objects/batch`, { objects }, true, PlacedObjectArraySchema);
 }
 
 export async function getPublicConfig(configId: string): Promise<Configuration> {
-  return api.get<Configuration>(`/public/configurations/${configId}`);
+  return api.get(`/public/configurations/${configId}`, ConfigurationResponseSchema);
 }
 
 /**
  * Set the floor plan thumbnail on a public preview config.
  * Accepts a PNG data URL from the orthographic capture.
- * Punch list #24: wires the ortho-capture utility to the hallkeeper sheet.
  */
 export async function updatePublicThumbnail(configId: string, thumbnailUrl: string): Promise<Configuration> {
-  return api.post<Configuration>(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true);
+  return api.post(`/public/configurations/${configId}/thumbnail`, { thumbnailUrl }, true, ConfigurationResponseSchema);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,37 +120,21 @@ export async function updatePublicThumbnail(configId: string, thumbnailUrl: stri
 // ---------------------------------------------------------------------------
 
 export async function getConfig(configId: string): Promise<Configuration> {
-  return api.get<Configuration>(`/configurations/${configId}`);
+  return api.get(`/configurations/${configId}`, ConfigurationResponseSchema);
 }
 
 export async function claimConfig(configId: string): Promise<Configuration> {
-  return api.post<Configuration>(`/configurations/${configId}/claim`);
+  return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
 }
 
 export async function authBatchSave(configId: string, objects: readonly BatchObjectInput[]): Promise<PlacedObject[]> {
-  return api.post<PlacedObject[]>(`/configurations/${configId}/objects/batch`, { objects });
+  return api.post(`/configurations/${configId}/objects/batch`, { objects }, undefined, PlacedObjectArraySchema);
 }
 
 // ---------------------------------------------------------------------------
 // Guest enquiry
 // ---------------------------------------------------------------------------
 
-export interface GuestEnquiryInput {
-  readonly configurationId: string;
-  readonly email: string;
-  readonly phone?: string;
-  readonly name?: string;
-  readonly eventDate?: string;
-  readonly eventType?: string;
-  readonly guestCount?: number;
-  readonly message?: string;
-}
-
-export interface GuestEnquiryResponse {
-  readonly enquiryId: string;
-  readonly message: string;
-}
-
 export async function submitGuestEnquiry(input: GuestEnquiryInput): Promise<GuestEnquiryResponse> {
-  return api.post<GuestEnquiryResponse>("/public/enquiries", input, true);
+  return api.post("/public/enquiries", input, true, GuestEnquiryResponseSchema);
 }

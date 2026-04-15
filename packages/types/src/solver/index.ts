@@ -11,6 +11,12 @@ import { solveDinnerBanquet } from "./layouts.js";
 
 // ---------------------------------------------------------------------------
 // Auto-Layout Solver — main entry point
+//
+// @aspirational This solver is a computational model tested in isolation.
+// It is NOT yet consumed by @omnitwin/web or @omnitwin/api at runtime.
+// It uses its own asset ID namespace (SOLVER_ASSETS) and Vec3 transforms
+// that would need translation before persisting to placed_objects.
+// When the auto-layout feature ships, wire this into the editor.
 // ---------------------------------------------------------------------------
 
 /** Layout strategy dispatch table. "custom" is not auto-solvable. */

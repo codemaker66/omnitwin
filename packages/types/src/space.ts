@@ -54,6 +54,43 @@ export const FloorPlanOutlineSchema = z
   .min(MIN_POLYGON_POINTS);
 
 // ---------------------------------------------------------------------------
+// Polygon bounding box — the single canonical derivation of width/length
+// from a floor-plan outline.
+//
+// The backend treats `floorPlanOutline` as the authoritative shape of a space.
+// `spaces.widthM` / `spaces.lengthM` in the DB are denormalised bounding-box
+// values, recomputed from the polygon on every write via this helper. Keeping
+// the derivation in one place — exported from the shared types package — means
+// the API, seed, and any future client all compute bbox the same way.
+// ---------------------------------------------------------------------------
+
+export interface PolygonBoundingBox {
+  readonly widthM: number;
+  readonly lengthM: number;
+}
+
+export function polygonBoundingBox(
+  outline: readonly FloorPlanPoint[],
+): PolygonBoundingBox {
+  if (outline.length < MIN_POLYGON_POINTS) {
+    throw new Error(
+      `polygon outline must have at least ${String(MIN_POLYGON_POINTS)} points`,
+    );
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of outline) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { widthM: maxX - minX, lengthM: maxY - minY };
+}
+
+// ---------------------------------------------------------------------------
 // Space — the full persisted entity (matches DB columns)
 //
 // DB stores dimensions as separate numeric columns: widthM, lengthM, heightM.

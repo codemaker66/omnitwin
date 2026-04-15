@@ -46,11 +46,12 @@ describe("GET /venues/:venueId/spaces", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /venues/:venueId/spaces", () => {
+  // Polygon-only body: post-Prompt-5, requests must provide EITHER a polygon
+  // OR widthM+lengthM, never both. Polygon is the source of truth, so the
+  // canonical path is polygon-only.
   const validBody = {
     name: "Test Hall",
     slug: "test-hall",
-    widthM: 10,
-    lengthM: 8,
     heightM: 4,
     floorPlanOutline: [{ x: -5, y: -4 }, { x: 5, y: -4 }, { x: 5, y: 4 }, { x: -5, y: 4 }],
   };
@@ -126,6 +127,117 @@ describe("POST /venues/:venueId/spaces", () => {
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
     expect(res.statusCode).not.toBe(403);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Polygon is the sole shape input on the request side (Prompts 5 + 7).
+  // widthM/lengthM no longer appear on the request schemas — Zod strips them
+  // silently, so the behaviour when a legacy client sends them is "as if they
+  // weren't there". The regression we guard against is the server generating
+  // or accepting any shape that isn't the posted polygon.
+  // ---------------------------------------------------------------------------
+
+  it("400 when POST body omits floorPlanOutline (polygon is required on create)", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/venues/${VENUE_ID}/spaces`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { name: "No Shape", slug: "no-shape", heightM: 4 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("400 when POST polygon has fewer than 3 points", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/venues/${VENUE_ID}/spaces`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        name: "Two-Point",
+        slug: "two-point",
+        heightM: 4,
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("legacy widthM/lengthM in the POST body are silently ignored; polygon drives the write", async () => {
+    // The schema no longer declares widthM/lengthM, so Zod strips them. A
+    // body that also carries a valid polygon passes validation and goes
+    // through to the DB (which fails under the mock URL — non-400 status
+    // means we cleared validation).
+    const res = await server.inject({
+      method: "POST",
+      url: `/venues/${VENUE_ID}/spaces`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        name: "Legacy Extra",
+        slug: "legacy-extra",
+        heightM: 4,
+        widthM: 99,    // silently dropped by Zod
+        lengthM: 77,   // silently dropped by Zod
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 8 }, { x: 0, y: 8 }],
+      },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /venues/:venueId/spaces/:id — polygon-only shape edits
+// ---------------------------------------------------------------------------
+
+describe("PATCH /venues/:venueId/spaces/:id (polygon shape)", () => {
+  const SPACE_ID = "00000000-0000-0000-0000-000000000042";
+
+  it("400 when PATCH polygon has fewer than 3 points", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/venues/${VENUE_ID}/spaces/${SPACE_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("passes validation for polygon-only PATCH", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/venues/${VENUE_ID}/spaces/${SPACE_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        floorPlanOutline: [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 9 }, { x: 0, y: 9 }],
+      },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it("legacy widthM/lengthM PATCH is silently ignored (treated as metadata-only)", async () => {
+    // widthM/lengthM are no longer on the schema; Zod strips them, and
+    // without a polygon in the body there is no shape change. This is
+    // equivalent to a metadata-only PATCH — validation passes.
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/venues/${VENUE_ID}/spaces/${SPACE_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { widthM: 12, lengthM: 9 },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it("passes validation for metadata-only PATCH (no shape change)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/venues/${VENUE_ID}/spaces/${SPACE_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { name: "Renamed" },
+    });
+    expect(res.statusCode).not.toBe(400);
   });
 });
 

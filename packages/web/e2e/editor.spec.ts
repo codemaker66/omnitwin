@@ -88,6 +88,8 @@ test.describe("Public Editor", () => {
     const btn = page.getByRole("button", { name: "Add Furniture" });
     await btn.click();
     await page.getByTestId("furniture-panel").waitFor({ state: "visible" });
+    // Wait for the panel's open animation (450ms) to complete before toggling
+    await page.waitForTimeout(500);
     // Second click toggles the panel closed
     await btn.click();
     await expect(page.getByTestId("furniture-panel")).not.toBeVisible({ timeout: 5_000 });

@@ -126,7 +126,7 @@ export async function publicEnquiryRoutes(
       .from(spaces).where(eq(spaces.id, config.spaceId)).limit(1);
     const spaceName = spaceForName[0]?.name ?? "Unknown space";
 
-    const hallkeepers = await db.select({ email: users.email })
+    const hallkeepers = await db.select({ id: users.id, email: users.email })
       .from(users)
       .where(and(eq(users.venueId, space.venueId), eq(users.role, "hallkeeper")));
 
@@ -142,7 +142,13 @@ export async function publicEnquiryRoutes(
         message: parsed.data.message ?? null,
         dashboardUrl: `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/dashboard`,
       });
-      sendEmailAsync({ to: hk.email, ...emailData });
+      // Idempotency key scoped to (enquiry, recipient) so a webhook replay
+      // or retry of the POST doesn't double-notify any one hallkeeper.
+      sendEmailAsync({ to: hk.email, ...emailData }, {
+        db,
+        idempotencyKey: `enquiry-new:${enquiry.id}:${hk.id}`,
+        logger: request.log,
+      });
     }
 
     return reply.status(201).send({

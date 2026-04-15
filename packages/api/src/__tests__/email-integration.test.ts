@@ -89,11 +89,10 @@ describe("email integration — enquiry notifications", () => {
     expect(typeof res.statusCode).toBe("number");
   });
 
-  it("sendEmailAsync is importable and callable", async () => {
-    const { sendEmailAsync } = await import("../services/email.js");
-    expect(typeof sendEmailAsync).toBe("function");
-    // Should not throw when called
-    sendEmailAsync({ to: "test@test.com", subject: "Test", html: "<p>Test</p>" });
+  it("sendEmailAsync and sendEmail are importable functions", async () => {
+    const mod = await import("../services/email.js");
+    expect(typeof mod.sendEmailAsync).toBe("function");
+    expect(typeof mod.sendEmail).toBe("function");
   });
 
   it("email templates are importable", async () => {

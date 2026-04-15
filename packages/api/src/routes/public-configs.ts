@@ -3,6 +3,11 @@ import { z } from "zod";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { configurations, placedObjects, spaces, assetDefinitions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import {
+  validatePlacementsInPolygon,
+  loadSpacePolygon,
+  placementOutOfBoundsBody,
+} from "../lib/placement-validation.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -132,6 +137,22 @@ export async function publicConfigRoutes(
           code: "ASSET_NOT_FOUND",
           details: { missingIds },
         });
+      }
+    }
+
+    // Polygon containment check — every placement must lie inside the
+    // space's floor-plan outline. Guest submissions get the same gate as
+    // authenticated batches; we don't want anonymous users inserting
+    // objects outside the room either (they'd just show up as visual
+    // glitches in the hallkeeper sheet later).
+    if (parsed.data.objects.length > 0) {
+      const outline = await loadSpacePolygon(db, config.spaceId);
+      if (outline === null) {
+        return reply.status(500).send({ error: "Space outline missing for configuration", code: "INTERNAL_ERROR" });
+      }
+      const invalid = validatePlacementsInPolygon(parsed.data.objects, outline);
+      if (invalid.length > 0) {
+        return reply.status(422).send(placementOutOfBoundsBody(invalid));
       }
     }
 

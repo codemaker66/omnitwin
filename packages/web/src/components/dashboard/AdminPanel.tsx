@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import type { FloorPlanPoint } from "@omnitwin/types";
 import * as spacesApi from "../../api/spaces.js";
 import * as pricingApi from "../../api/pricing.js";
 import type { Venue, VenueDetail, Space } from "../../api/spaces.js";
 import type { PricingRule } from "../../api/pricing.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
+import { PolygonEditor } from "./PolygonEditor.js";
 
 // ---------------------------------------------------------------------------
 // AdminPanel — venue + space management for admin users
@@ -46,11 +48,21 @@ function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-/** Rectangular floor plan outline for a given width and length. */
-function rectOutline(w: number, l: number): readonly { readonly x: number; readonly y: number }[] {
-  const hw = w / 2;
-  const hl = l / 2;
-  return [{ x: -hw, y: -hl }, { x: hw, y: -hl }, { x: hw, y: hl }, { x: -hw, y: hl }];
+const MIN_POLYGON_POINTS = 3;
+
+/** Exact-equality check for two polygons (same vertex count, same order). */
+function polygonsEqual(
+  a: readonly FloorPlanPoint[],
+  b: readonly FloorPlanPoint[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const pa = a[i];
+    const pb = b[i];
+    if (pa === undefined || pb === undefined) return false;
+    if (pa.x !== pb.x || pa.y !== pb.y) return false;
+  }
+  return true;
 }
 
 export function AdminPanel(): React.ReactElement {
@@ -65,21 +77,20 @@ export function AdminPanel(): React.ReactElement {
   const [venueName, setVenueName] = useState("");
   const [venueAddress, setVenueAddress] = useState("");
 
-  // Create space form
+  // Create space form — polygon is authored directly (no width/length inputs);
+  // heightM stays because ceiling height is orthogonal to the floor plan.
   const [spaceName, setSpaceName] = useState("");
-  const [spaceWidth, setSpaceWidth] = useState("");
-  const [spaceLength, setSpaceLength] = useState("");
   const [spaceHeight, setSpaceHeight] = useState("");
+  const [spaceOutline, setSpaceOutline] = useState<readonly FloorPlanPoint[]>([]);
 
   // Venue delete
   const [showDeleteVenue, setShowDeleteVenue] = useState(false);
 
-  // Space edit/delete
+  // Space edit — polygon is edited in-place; dimension bbox updates live.
   const [editingSpace, setEditingSpace] = useState<Space | null>(null);
   const [editSpaceName, setEditSpaceName] = useState("");
-  const [editSpaceWidth, setEditSpaceWidth] = useState("");
-  const [editSpaceLength, setEditSpaceLength] = useState("");
   const [editSpaceHeight, setEditSpaceHeight] = useState("");
+  const [editSpaceOutline, setEditSpaceOutline] = useState<readonly FloorPlanPoint[]>([]);
   const [deletingSpaceId, setDeletingSpaceId] = useState<string | null>(null);
 
   // Pricing rules
@@ -169,28 +180,27 @@ export function AdminPanel(): React.ReactElement {
 
   const handleCreateSpace = async (): Promise<void> => {
     if (selectedVenue === null || spaceName.trim() === "") return;
-    const w = parseFloat(spaceWidth);
-    const l = parseFloat(spaceLength);
     const h = parseFloat(spaceHeight);
-    if (Number.isNaN(w) || Number.isNaN(l) || Number.isNaN(h) || w <= 0 || l <= 0 || h <= 0) {
-      addToast("Dimensions must be positive numbers", "error");
+    if (Number.isNaN(h) || h <= 0) {
+      addToast("Height must be a positive number", "error");
+      return;
+    }
+    if (spaceOutline.length < MIN_POLYGON_POINTS) {
+      addToast("Polygon needs at least 3 points", "error");
       return;
     }
     try {
       await spacesApi.createSpace(selectedVenue.id, {
         name: spaceName.trim(),
         slug: slugify(spaceName),
-        widthM: w,
-        lengthM: l,
         heightM: h,
-        floorPlanOutline: rectOutline(w, l),
+        floorPlanOutline: spaceOutline,
       });
       addToast("Space created", "success");
       setShowCreateSpace(false);
       setSpaceName("");
-      setSpaceWidth("");
-      setSpaceLength("");
       setSpaceHeight("");
+      setSpaceOutline([]);
       handleSelectVenue(selectedVenue.id);
     } catch {
       addToast("Failed to create space", "error");
@@ -213,26 +223,30 @@ export function AdminPanel(): React.ReactElement {
   const openEditSpace = (space: Space): void => {
     setEditingSpace(space);
     setEditSpaceName(space.name);
-    setEditSpaceWidth(space.widthM);
-    setEditSpaceLength(space.lengthM);
     setEditSpaceHeight(space.heightM);
+    setEditSpaceOutline(space.floorPlanOutline);
   };
 
   const handleEditSpace = async (): Promise<void> => {
     if (selectedVenue === null || editingSpace === null) return;
-    const w = parseFloat(editSpaceWidth);
-    const l = parseFloat(editSpaceLength);
     const h = parseFloat(editSpaceHeight);
-    if (editSpaceName.trim() === "" || Number.isNaN(w) || Number.isNaN(l) || Number.isNaN(h) || w <= 0 || l <= 0 || h <= 0) {
-      addToast("Name and positive dimensions required", "error");
+    if (editSpaceName.trim() === "" || Number.isNaN(h) || h <= 0) {
+      addToast("Name and positive height required", "error");
+      return;
+    }
+    if (editSpaceOutline.length < MIN_POLYGON_POINTS) {
+      addToast("Polygon needs at least 3 points", "error");
       return;
     }
     try {
+      // Send the polygon only if it differs from the saved one so the
+      // PATCH endpoint skips the shape-update branch when the user only
+      // changed the name or height.
+      const polygonChanged = !polygonsEqual(editSpaceOutline, editingSpace.floorPlanOutline);
       await spacesApi.updateSpace(selectedVenue.id, editingSpace.id, {
         name: editSpaceName.trim(),
-        widthM: w,
-        lengthM: l,
         heightM: h,
+        ...(polygonChanged ? { floorPlanOutline: editSpaceOutline } : {}),
       });
       addToast("Space updated", "success");
       setEditingSpace(null);
@@ -318,7 +332,7 @@ export function AdminPanel(): React.ReactElement {
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 480, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>New Space</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div>
@@ -326,28 +340,26 @@ export function AdminPanel(): React.ReactElement {
                   <input type="text" value={spaceName} onChange={(e) => { setSpaceName(e.target.value); }}
                     style={inputStyle} placeholder="e.g. Grand Hall" />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  <div>
-                    <label style={labelStyle}>Width (m)</label>
-                    <input type="number" value={spaceWidth} onChange={(e) => { setSpaceWidth(e.target.value); }}
-                      style={inputStyle} placeholder="21" step="0.1" min="0" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Length (m)</label>
-                    <input type="number" value={spaceLength} onChange={(e) => { setSpaceLength(e.target.value); }}
-                      style={inputStyle} placeholder="10" step="0.1" min="0" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Height (m)</label>
-                    <input type="number" value={spaceHeight} onChange={(e) => { setSpaceHeight(e.target.value); }}
-                      style={inputStyle} placeholder="7" step="0.1" min="0" />
-                  </div>
+                <div>
+                  <label style={labelStyle}>Floor plan</label>
+                  <PolygonEditor value={spaceOutline} onChange={setSpaceOutline} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Height (m)</label>
+                  <input type="number" value={spaceHeight} onChange={(e) => { setSpaceHeight(e.target.value); }}
+                    style={inputStyle} placeholder="7" step="0.1" min="0" />
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
-                <button type="button" style={btnSecondary} onClick={() => { setShowCreateSpace(false); }}>Cancel</button>
-                <button type="button" style={btnPrimary} onClick={() => { void handleCreateSpace(); }}
-                  disabled={spaceName.trim() === ""}>Create Space</button>
+                <button type="button" style={btnSecondary} onClick={() => { setShowCreateSpace(false); setSpaceOutline([]); }}>Cancel</button>
+                <button
+                  type="button"
+                  style={btnPrimary}
+                  onClick={() => { void handleCreateSpace(); }}
+                  disabled={spaceName.trim() === "" || spaceOutline.length < MIN_POLYGON_POINTS || spaceHeight.trim() === ""}
+                >
+                  Create Space
+                </button>
               </div>
             </div>
           </div>
@@ -492,7 +504,7 @@ export function AdminPanel(): React.ReactElement {
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 100,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
+            <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: 480, boxShadow: "0 8px 32px rgba(0,0,0,0.15)" }}>
               <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Edit Space</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div>
@@ -500,28 +512,26 @@ export function AdminPanel(): React.ReactElement {
                   <input type="text" value={editSpaceName} onChange={(e) => { setEditSpaceName(e.target.value); }}
                     style={inputStyle} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  <div>
-                    <label style={labelStyle}>Width (m)</label>
-                    <input type="number" value={editSpaceWidth} onChange={(e) => { setEditSpaceWidth(e.target.value); }}
-                      style={inputStyle} step="0.1" min="0" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Length (m)</label>
-                    <input type="number" value={editSpaceLength} onChange={(e) => { setEditSpaceLength(e.target.value); }}
-                      style={inputStyle} step="0.1" min="0" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Height (m)</label>
-                    <input type="number" value={editSpaceHeight} onChange={(e) => { setEditSpaceHeight(e.target.value); }}
-                      style={inputStyle} step="0.1" min="0" />
-                  </div>
+                <div>
+                  <label style={labelStyle}>Floor plan</label>
+                  <PolygonEditor value={editSpaceOutline} onChange={setEditSpaceOutline} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Height (m)</label>
+                  <input type="number" value={editSpaceHeight} onChange={(e) => { setEditSpaceHeight(e.target.value); }}
+                    style={inputStyle} step="0.1" min="0" />
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 20, justifyContent: "flex-end" }}>
                 <button type="button" style={btnSecondary} onClick={() => { setEditingSpace(null); }}>Cancel</button>
-                <button type="button" style={btnPrimary} onClick={() => { void handleEditSpace(); }}
-                  disabled={editSpaceName.trim() === ""}>Save Changes</button>
+                <button
+                  type="button"
+                  style={btnPrimary}
+                  onClick={() => { void handleEditSpace(); }}
+                  disabled={editSpaceName.trim() === "" || editSpaceOutline.length < MIN_POLYGON_POINTS || editSpaceHeight.trim() === ""}
+                >
+                  Save Changes
+                </button>
               </div>
             </div>
           </div>

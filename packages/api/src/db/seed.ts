@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb } from "./client.js";
 import {
@@ -14,8 +15,10 @@ import {
 // Run: pnpm --filter @omnitwin/api db:seed
 // ---------------------------------------------------------------------------
 
-/** Rectangular floor plan from width/length, centered at origin. */
-function rectOutline(w: number, l: number): readonly { x: number; y: number }[] {
+/** Rectangular floor plan centred at origin. The polygon is the source of
+ *  truth; the seed derives width/length via `polygonBoundingBox` so the
+ *  dataflow matches the runtime invariant documented in db/schema.ts. */
+function rectOutline(w: number, l: number): readonly FloorPlanPoint[] {
   const hw = w / 2;
   const hl = l / 2;
   return [
@@ -44,6 +47,12 @@ async function seed(): Promise<void> {
   console.log(`  Venue: ${venue.name} (${venue.id})`);
 
   // --- 2. Spaces (real dimensions from official Trades Hall website) ---
+  // Dataflow: we pick canonical source dimensions for each room, build the
+  // rectangular polygon from them, then derive widthM/lengthM from the
+  // polygon's bbox. The derived values equal the source by construction for
+  // rectangles — but running them through `polygonBoundingBox` makes the
+  // seed express the same polygon-is-source-of-truth invariant that the
+  // write path enforces at runtime.
   const spaceData = [
     { name: "Grand Hall", slug: "grand-hall", width: 21, length: 10, height: 7, sort: 0 },
     { name: "Saloon", slug: "saloon", width: 12, length: 7, height: 5.4, sort: 1 },
@@ -54,16 +63,20 @@ async function seed(): Promise<void> {
   ] as const;
 
   const insertedSpaces = await db.insert(spaces).values(
-    spaceData.map((s) => ({
-      venueId: venue.id,
-      name: s.name,
-      slug: s.slug,
-      widthM: String(s.width),
-      lengthM: String(s.length),
-      heightM: String(s.height),
-      floorPlanOutline: rectOutline(s.width, s.length),
-      sortOrder: s.sort,
-    })),
+    spaceData.map((s) => {
+      const outline = rectOutline(s.width, s.length);
+      const bbox = polygonBoundingBox(outline);
+      return {
+        venueId: venue.id,
+        name: s.name,
+        slug: s.slug,
+        widthM: String(bbox.widthM),
+        lengthM: String(bbox.lengthM),
+        heightM: String(s.height),
+        floorPlanOutline: outline,
+        sortOrder: s.sort,
+      };
+    }),
   ).returning();
 
   for (const s of insertedSpaces) {

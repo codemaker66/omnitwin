@@ -52,9 +52,14 @@ const RECT_CHAIR_SPACING = 0.7;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Generates a cryptographically random UUID v4.
- *  Uses the Web Crypto API (globalThis.crypto.randomUUID), available in
- *  Node 19+ and all modern browsers. */
+/** Minimal ambient declaration for the Web Crypto API global.
+ *  The types package compiles with `lib: ["ES2022"]` (no DOM, no @types/node)
+ *  to stay isomorphic, so we declare the sliver of `crypto` we actually use.
+ *  At runtime this resolves to `globalThis.crypto`, which exists in Node 19+
+ *  and all modern browsers — no polyfill required. */
+declare const crypto: { readonly randomUUID: () => string };
+
+/** Generates a cryptographically random UUID v4. */
 function generateUUID(): string {
   return crypto.randomUUID();
 }

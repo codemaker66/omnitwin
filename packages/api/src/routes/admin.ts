@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Database } from "../db/client.js";
 import { authenticate, authorize } from "../middleware/auth.js";
-import { cleanupPreviewConfigurations } from "../services/cleanup.js";
+import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
 
 // ---------------------------------------------------------------------------
 // Plugin — admin-only endpoints
@@ -17,7 +17,14 @@ export async function adminRoutes(
   server.post("/cleanup", {
     preHandler: [authenticate, authorize("admin")],
   }, async () => {
-    const deletedCount = await cleanupPreviewConfigurations(db);
-    return { data: { deletedCount, message: `Cleaned up ${String(deletedCount)} stale preview configuration(s)` } };
+    const deletedConfigs = await cleanupPreviewConfigurations(db);
+    const deletedFiles = await cleanupOrphanedFiles(db);
+    return {
+      data: {
+        deletedConfigs,
+        deletedFiles,
+        message: `Cleaned up ${String(deletedConfigs)} stale preview configuration(s) and ${String(deletedFiles)} orphaned file(s)`,
+      },
+    };
   });
 }

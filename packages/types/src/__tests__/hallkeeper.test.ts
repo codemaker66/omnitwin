@@ -21,7 +21,7 @@ const validManifestItem = {
   notes: "Linen covers required",
 };
 
-// HallkeeperSheetDataSchema — the live API response shape
+// HallkeeperSheetDataSchema — matches the live hallkeeper-sheet-v2 API response
 const validSheetData = {
   config: {
     id: VALID_CONFIG_UUID,
@@ -32,12 +32,13 @@ const validSheetData = {
   venue: {
     name: "Trades Hall Glasgow",
     address: "85 Glassford Street, Glasgow, G1 1UH",
+    logoUrl: null,
   },
   space: {
     name: "Grand Hall",
-    widthM: "21.00",
-    lengthM: "10.00",
-    heightM: "7.00",
+    widthM: 21,
+    lengthM: 10,
+    heightM: 7,
   },
   manifest: {
     rows: [
@@ -50,9 +51,9 @@ const validSheetData = {
         setupGroup: "Tables",
       },
     ],
-    summary: {
-      totalItems: 12,
-      categories: { table: 12 },
+    totals: {
+      entries: [{ item: "Round Table (6ft)", qty: 12 }],
+      totalChairs: 0,
     },
   },
   diagramUrl: "https://cdn.omnitwin.com/diagrams/abc123.svg",
@@ -215,19 +216,19 @@ describe("HallkeeperSheetDataSchema", () => {
   it("accepts empty manifest rows", () => {
     const result = HallkeeperSheetDataSchema.safeParse({
       ...validSheetData,
-      manifest: { rows: [], summary: { totalItems: 0, categories: {} } },
+      manifest: { rows: [], totals: { entries: [], totalChairs: 0 } },
     });
     expect(result.success).toBe(true);
   });
 
-  it("accepts manifest summary with multiple categories", () => {
+  it("accepts manifest totals with multiple entries and chairs", () => {
     const result = HallkeeperSheetDataSchema.safeParse({
       ...validSheetData,
       manifest: {
         rows: [],
-        summary: {
-          totalItems: 108,
-          categories: { table: 12, chair: 96 },
+        totals: {
+          entries: [{ item: "Round Table", qty: 12 }, { item: "Stage Platform", qty: 2 }],
+          totalChairs: 96,
         },
       },
     });
@@ -277,13 +278,13 @@ describe("HallkeeperSheetDataSchema", () => {
     ).toBe(false);
   });
 
-  it("rejects negative totalItems in summary", () => {
+  it("rejects negative totalChairs in totals", () => {
     expect(
       HallkeeperSheetDataSchema.safeParse({
         ...validSheetData,
         manifest: {
           rows: [],
-          summary: { totalItems: -1, categories: {} },
+          totals: { entries: [], totalChairs: -1 },
         },
       }).success,
     ).toBe(false);

@@ -46,6 +46,10 @@ vi.mock("@react-three/drei", () => ({
   OrbitControls: vi.fn(() => null),
 }));
 
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 // Import App after mock is registered
 const { App } = await import("../../App.js");
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigurationIdSchema } from "./configuration.js";
+import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { FurnitureCategorySchema } from "./furniture.js";
 
 // ---------------------------------------------------------------------------
@@ -42,17 +42,18 @@ export const HallkeeperSheetDataSchema = z.object({
     id: ConfigurationIdSchema,
     name: z.string(),
     guestCount: z.number().int().nonnegative(),
-    layoutStyle: z.string(),
+    layoutStyle: LayoutStyleSchema,
   }),
   venue: z.object({
     name: z.string(),
     address: z.string(),
+    logoUrl: z.string().nullable().optional(),
   }),
   space: z.object({
     name: z.string(),
-    widthM: z.string(),
-    lengthM: z.string(),
-    heightM: z.string(),
+    widthM: z.number(),
+    lengthM: z.number(),
+    heightM: z.number(),
   }),
   manifest: z.object({
     rows: z.array(z.object({
@@ -63,9 +64,9 @@ export const HallkeeperSheetDataSchema = z.object({
       notes: z.string(),
       setupGroup: z.string(),
     })),
-    summary: z.object({
-      totalItems: z.number().int().nonnegative(),
-      categories: z.record(z.number().int().nonnegative()),
+    totals: z.object({
+      entries: z.array(z.object({ item: z.string(), qty: z.number().int().nonnegative() })),
+      totalChairs: z.number().int().nonnegative(),
     }),
   }),
   diagramUrl: z.string().nullable(),

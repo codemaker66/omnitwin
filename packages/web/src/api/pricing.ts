@@ -1,15 +1,21 @@
+import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — PricingType, LineItem, Modifier imported from @omnitwin/types.
+// PricingRule and CreatePricingRuleInput are kept local because the API
+// returns amount as string (DB numeric column) while the shared schema uses
+// number. PriceEstimateInput matches PriceEstimateRequest in @omnitwin/types.
 // ---------------------------------------------------------------------------
+
+export type { LineItem };
 
 export interface PricingRule {
   readonly id: string;
   readonly venueId: string;
   readonly spaceId: string | null;
   readonly name: string;
-  readonly type: "flat_rate" | "per_hour" | "per_head" | "tiered";
+  readonly type: PricingType;
   readonly amount: string;
   readonly currency: string;
   readonly minHours: number | null;
@@ -21,7 +27,7 @@ export interface PricingRule {
 
 export interface CreatePricingRuleInput {
   readonly name: string;
-  readonly type: "flat_rate" | "per_hour" | "per_head" | "tiered";
+  readonly type: PricingType;
   readonly amount: number;
   readonly currency?: string;
   readonly spaceId?: string | null;
@@ -36,16 +42,10 @@ export interface PriceEstimateInput {
   readonly guestCount: number;
 }
 
-export interface LineItem {
-  readonly ruleName: string;
-  readonly description: string;
-  readonly amount: number;
-}
-
 export interface PriceEstimate {
   readonly lineItems: readonly LineItem[];
   readonly subtotal: number;
-  readonly modifiers: readonly { readonly name: string; readonly multiplier: number }[];
+  readonly modifiers: readonly Modifier[];
   readonly total: number;
   readonly currency: string;
 }

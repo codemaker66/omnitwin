@@ -193,6 +193,53 @@ export const roomGeometries: Readonly<Record<string, RoomGeometry>> = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-space geometry resolution — prefers the hand-authored Trades Hall
+// geometry (balconies, dome, alcoves), falls back to the space's own
+// floorPlanOutline, and null only as a last resort.
+//
+// Historically the editor looked up geometries by space NAME. That meant any
+// space outside the original four Trades Hall rooms — future venues, custom
+// admin-authored spaces — rendered against the generic GrandHallRoom fallback
+// instead of its own floor plan. This resolver honours the polygon-as-source-
+// of-truth invariant from the backend: if the space has a polygon, we render
+// that polygon.
+// ---------------------------------------------------------------------------
+
+export interface SpaceLike {
+  readonly name: string;
+  readonly heightM: string;
+  readonly floorPlanOutline: readonly { readonly x: number; readonly y: number }[];
+}
+
+const MIN_POLYGON_POINTS = 3;
+
+export function resolveRoomGeometry(space: SpaceLike): RoomGeometry | null {
+  // 1. Hand-authored geometry for known Trades Hall rooms.
+  const named = roomGeometries[space.name];
+  if (named !== undefined) return named;
+
+  // 2. Derive from the space's own polygon. The backend guarantees a
+  //    ≥3-point outline on every space (enforced by routes/spaces.ts +
+  //    the 0007 migration) — this is the polygon-driven runtime path.
+  if (space.floorPlanOutline.length >= MIN_POLYGON_POINTS) {
+    const wallPolygon: readonly (readonly [number, number])[] = space.floorPlanOutline.map(
+      (p) => [p.x, p.y] as const,
+    );
+    const height = parseFloat(space.heightM);
+    return {
+      wallPolygon,
+      ceilingHeight: Number.isFinite(height) && height > 0 ? height : 3,
+      features: [],
+      hasDome: false,
+      domeRadius: 0,
+    };
+  }
+
+  // 3. No usable polygon — caller falls back to the hard-coded GrandHallRoom.
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Utility: compute bounding box of a polygon
 // ---------------------------------------------------------------------------
 

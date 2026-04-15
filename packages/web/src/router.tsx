@@ -69,13 +69,31 @@ export const router = createBrowserRouter([
     element: withSuspense(<EditorPage />),
   },
   {
+    // Venue-scoped editor entry (B2). Opt-in multi-venue routing — when a
+    // known slug is present, SpacePicker loads that venue's spaces instead
+    // of defaulting to the first venue. Unknown slugs fall back silently,
+    // so stale bookmarks don't 404. When a SaaS onboarding flow lands,
+    // this becomes the primary URL; `/editor` stays as the single-tenant
+    // shortcut for the flagship customer.
+    path: "/v/:venueSlug/editor",
+    element: withSuspense(<EditorPage />),
+  },
+  {
+    // Hallkeeper sheets expose PII (enquiry contact details, event info) and
+    // the API enforces auth on both /data and /sheet endpoints. The frontend
+    // route guard matches that policy — unauthenticated users redirect to
+    // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
-    element: withSuspense(<HallkeeperPage />),
+    element: (
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
+        {withSuspense(<HallkeeperPage />)}
+      </ProtectedRoute>
+    ),
   },
   {
     path: "/dashboard",
     element: (
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper"]}>
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
         {withSuspense(<DashboardPage />)}
       </ProtectedRoute>
     ),

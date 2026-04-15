@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
-// Role-aware default route — admin/hallkeeper → dashboard, others → editor
+// Role-aware default route — staff roles → dashboard, others → editor
 // ---------------------------------------------------------------------------
 
 export function getDefaultRoute(role: string): string {
-  if (role === "admin" || role === "hallkeeper") return "/dashboard";
+  if (role === "admin" || role === "hallkeeper" || role === "planner") return "/dashboard";
   return "/editor";
 }

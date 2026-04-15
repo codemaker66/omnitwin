@@ -23,11 +23,17 @@ const AddPhotoBody = z.object({
 const UpdatePhotoBody = z.object({
   caption: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().nonnegative().optional(),
-});
+}).refine(
+  (data) => data.caption !== undefined || data.sortOrder !== undefined,
+  { message: "At least one field (caption or sortOrder) must be provided" },
+);
 
 const ReorderBody = z.object({
   photoIds: z.array(z.string().uuid()).min(1),
-});
+}).refine(
+  (data) => new Set(data.photoIds).size === data.photoIds.length,
+  { message: "photoIds must not contain duplicates" },
+);
 
 // ---------------------------------------------------------------------------
 // Helper: verify loadout access
@@ -191,6 +197,28 @@ export async function referencePhotoRoutes(
     const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user.role, request.user.venueId);
     if ("error" in access) {
       return reply.status(access.status).send({ error: access.error, code: access.code });
+    }
+
+    // Verify the submitted list covers every photo in the loadout — partial
+    // or surplus lists would leave stale ordering or silently skip IDs.
+    const currentPhotos = await db.select({ id: referencePhotos.id })
+      .from(referencePhotos)
+      .where(eq(referencePhotos.loadoutId, params.data.loadoutId));
+
+    if (currentPhotos.length !== parsed.data.photoIds.length) {
+      return reply.status(400).send({
+        error: `photoIds must contain exactly ${String(currentPhotos.length)} IDs (the complete set for this loadout)`,
+        code: "VALIDATION_ERROR",
+      });
+    }
+
+    const currentIdSet = new Set(currentPhotos.map((p) => p.id));
+    const unknownIds = parsed.data.photoIds.filter((id) => !currentIdSet.has(id));
+    if (unknownIds.length > 0) {
+      return reply.status(400).send({
+        error: "photoIds contains IDs that do not belong to this loadout",
+        code: "VALIDATION_ERROR",
+      });
     }
 
     // Update each photo's sortOrder atomically to prevent interleaving

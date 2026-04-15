@@ -7,10 +7,15 @@ import {
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
-// Hallkeeper sheet — structured data for operational documents
+// Hallkeeper sheet v1 — enquiry-centric operational document
+//
+// NOTE: This is the LEGACY sheet shape (tied to an enquiry, not a config).
+// The live runtime uses hallkeeper-sheet-v2.ts with the config-centric
+// EnquirySheetData type exported from @omnitwin/types. This interface
+// is named EnquirySheetData to avoid collision with the shared type.
 // ---------------------------------------------------------------------------
 
-export interface HallkeeperSheetData {
+export interface EnquirySheetData {
   readonly venue: { readonly name: string; readonly address: string };
   readonly space: { readonly name: string; readonly widthM: string; readonly lengthM: string; readonly heightM: string };
   readonly event: {
@@ -35,7 +40,7 @@ export interface HallkeeperSheetData {
 export async function generateHallkeeperSheet(
   db: Database,
   enquiryId: string,
-): Promise<HallkeeperSheetData | null> {
+): Promise<EnquirySheetData | null> {
   // Fetch enquiry
   const [enquiry] = await db.select().from(enquiries).where(eq(enquiries.id, enquiryId)).limit(1);
   if (enquiry === undefined) return null;
@@ -149,7 +154,7 @@ export async function generateHallkeeperSheet(
  * Generates a PDF buffer from hallkeeper sheet data.
  * Uses pdfkit — imported dynamically to avoid loading in tests.
  */
-export async function generateHallkeeperPdf(data: HallkeeperSheetData): Promise<Buffer> {
+export async function generateHallkeeperPdf(data: EnquirySheetData): Promise<Buffer> {
   const PDFDocument = (await import("pdfkit")).default;
 
   return new Promise<Buffer>((resolve, reject) => {

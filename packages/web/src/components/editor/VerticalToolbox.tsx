@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText,
@@ -98,13 +99,19 @@ const cameraItemStyle: React.CSSProperties = {
 
 function useDelayedUnmount(isOpen: boolean, delayMs: number): boolean {
   const [mounted, setMounted] = useState(isOpen);
-  const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // The previous `alive` ref guard (`if (alive.current) setMounted(false)`)
+  // was intended to prevent state updates on unmounted components — but React
+  // StrictMode double-invokes the mount/unmount cycle, leaving the ref stuck
+  // at `false` after the simulated unmount. The timeout callback then skips
+  // `setMounted(false)`, so the element is never removed from the DOM.
+  // React 18 silently discards state updates on truly unmounted components,
+  // making the guard unnecessary. The cleanup return already handles the
+  // timeout lifecycle correctly via clearTimeout.
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
     } else {
-      const t = setTimeout(() => { if (alive.current) setMounted(false); }, delayMs);
+      const t = setTimeout(() => { setMounted(false); }, delayMs);
       return () => { clearTimeout(t); };
     }
   }, [isOpen, delayMs]);
@@ -341,6 +348,7 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
 type ActiveTool = "select" | "add" | "rotate" | "delete";
 
 export function VerticalToolbox(): React.ReactElement {
+  const navigate = useNavigate();
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [panelOpen, setPanelOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -520,7 +528,7 @@ export function VerticalToolbox(): React.ReactElement {
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { window.location.href = "/dashboard"; } else { setShowAuth(true); } }}>
+        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>

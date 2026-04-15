@@ -27,6 +27,10 @@ vi.mock("@react-three/drei", () => ({
   Html: vi.fn(({ children }: { children?: React.ReactNode }) => children),
 }));
 
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 import { App } from "../App.js";
 
 /** Extract the props object from the first CanvasMock call. */

@@ -2,8 +2,8 @@
 // Price calculator — pure functions, no DB access
 // ---------------------------------------------------------------------------
 
-/** Pricing rule type. */
-export type PricingType = "flat_rate" | "per_hour" | "per_head" | "tiered";
+import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
+export type { PricingType, LineItem, Modifier };
 
 /** A pricing rule as received from DB (parsed). */
 export interface PricingRuleInput {
@@ -31,19 +31,6 @@ export interface PriceCalculationInput {
   readonly startTime: string;
   readonly endTime: string;
   readonly guestCount: number;
-}
-
-/** A single line item in the price breakdown. */
-export interface LineItem {
-  readonly ruleName: string;
-  readonly description: string;
-  readonly amount: number;
-}
-
-/** A modifier applied to the subtotal. */
-export interface Modifier {
-  readonly name: string;
-  readonly multiplier: number;
 }
 
 /** Full price calculation result. */

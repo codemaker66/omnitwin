@@ -1,4 +1,4 @@
-import { ENQUIRY_STATUSES } from "@omnitwin/types";
+import { ENQUIRY_STATUSES, type EnquiryStatus } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Enquiry state machine — pure functions, no side effects
@@ -7,7 +7,8 @@ import { ENQUIRY_STATUSES } from "@omnitwin/types";
 /** All valid enquiry states — imported from @omnitwin/types (single source of truth). */
 export const ENQUIRY_STATES = ENQUIRY_STATUSES;
 
-export type EnquiryState = (typeof ENQUIRY_STATES)[number];
+/** Re-export the canonical type from @omnitwin/types rather than re-deriving. */
+export type EnquiryState = EnquiryStatus;
 
 /** Roles relevant to enquiry transitions.
  *

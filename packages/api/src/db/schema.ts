@@ -31,6 +31,22 @@ export const venues = pgTable("venues", {
 
 // ---------------------------------------------------------------------------
 // 2. spaces
+//
+// Shape invariant (enforced by routes/spaces.ts on every write, backfilled
+// once by migration 0007_polygon_bbox_invariant):
+//
+//   width_m  = MAX(p.x) - MIN(p.x) over floor_plan_outline
+//   length_m = MAX(p.y) - MIN(p.y) over floor_plan_outline
+//
+// `floor_plan_outline` is the authoritative shape. `width_m` / `length_m` are
+// denormalised bounding-box values kept because hot-path readers
+// (spatial-classifier, hallkeeper-sheet, manifest-generator) want the box
+// dimensions without iterating the polygon each call. `height_m` is
+// orthogonal — ceiling height, not a floor-plan concept.
+//
+// Never write width_m / length_m independently of floor_plan_outline. Routes
+// run everything through `polygonBoundingBox` (@omnitwin/types) on insert
+// and update; seed data is polygon-first.
 // ---------------------------------------------------------------------------
 
 export const spaces = pgTable("spaces", {
@@ -286,4 +302,34 @@ export const referencePhotos = pgTable("reference_photos", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("reference_photos_loadout_idx").on(table.loadoutId),
+]);
+
+// ---------------------------------------------------------------------------
+// 13. email_sends — audit log + idempotency store for every transactional
+// email the API attempts to deliver.
+//
+// `idempotency_key` has a UNIQUE constraint. Callers insert this row BEFORE
+// calling Resend; a duplicate key is a PostgreSQL unique-violation that
+// the email service catches and treats as "already sent" — this is the
+// primary dedup mechanism and survives process restarts (in-memory LRUs
+// would not). `provider_message_id` is populated on success. `attempt_count`
+// + `last_error` support post-mortem of transient failures during the
+// bounded-retry loop in services/email.ts.
+// ---------------------------------------------------------------------------
+
+export const emailSends = pgTable("email_sends", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  recipient: text("recipient").notNull(),
+  subject: text("subject").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  providerMessageId: text("provider_message_id"),
+  lastError: text("last_error"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("email_sends_status_idx").on(table.status),
+  index("email_sends_created_at_idx").on(table.createdAt),
 ]);

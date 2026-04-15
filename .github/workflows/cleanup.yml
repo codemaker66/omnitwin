@@ -1,0 +1,46 @@
+# =============================================================================
+# OMNITWIN — Scheduled Cleanup
+# =============================================================================
+# Runs daily at 02:00 UTC to remove:
+#   1. Stale preview configurations (unclaimed, >72h old, no enquiry)
+#   2. Orphaned file rows (loadout context, >24h old, no photo link)
+#
+# Can also be triggered manually from the GitHub Actions UI (workflow_dispatch).
+#
+# Requires the DATABASE_URL secret to be set in the repository settings.
+# =============================================================================
+
+name: Scheduled Cleanup
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Run cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run cleanup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @omnitwin/api cleanup

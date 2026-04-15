@@ -127,10 +127,10 @@ describe("GET /enquiries/:id/quote", () => {
 });
 
 // ---------------------------------------------------------------------------
-// HallkeeperSheetData shape validation (pure data test)
+// EnquirySheetData shape validation (pure data test)
 // ---------------------------------------------------------------------------
 
-describe("HallkeeperSheetData structure", () => {
+describe("EnquirySheetData structure", () => {
   it("type import works", async () => {
     const { generateHallkeeperPdf } = await import("../services/hallkeeper-sheet.js");
     expect(typeof generateHallkeeperPdf).toBe("function");

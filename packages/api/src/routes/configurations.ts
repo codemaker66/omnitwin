@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { LayoutStyleSchema } from "@omnitwin/types";
+import { LayoutStyleSchema, ConfigurationStatusSchema, VisibilitySchema } from "@omnitwin/types";
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -27,15 +27,15 @@ const CreateConfigBody = z.object({
   layoutStyle: LayoutStyleSchema,
   guestCount: z.number().int().nonnegative().default(0),
   isTemplate: z.boolean().default(false),
-  visibility: z.enum(["private", "staff", "public"]).default("private"),
+  visibility: VisibilitySchema.default("private"),
 });
 
 const UpdateConfigBody = z.object({
   name: z.string().trim().min(1).max(200).optional(),
-  state: z.enum(["draft", "published"]).optional(),
+  state: ConfigurationStatusSchema.optional(),
   layoutStyle: LayoutStyleSchema.optional(),
   guestCount: z.number().int().nonnegative().optional(),
-  visibility: z.enum(["private", "staff", "public"]).optional(),
+  visibility: VisibilitySchema.optional(),
   thumbnailUrl: z.string().refine(
     (s) => s.startsWith("data:image/") || /^https?:\/\//.test(s),
     { message: "Must be a data:image/* URL or an https URL" },

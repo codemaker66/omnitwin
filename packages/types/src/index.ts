@@ -1,4 +1,10 @@
 // @omnitwin/types — Shared TypeScript interfaces, Zod schemas, and enums
+//
+// Modules below are grouped by runtime status:
+//   LIVE    — actively consumed by @omnitwin/api and/or @omnitwin/web
+//   ASPIRATIONAL — tested and exported, but not yet consumed at runtime;
+//                  the web/API packages should import from here when the
+//                  feature ships, rather than re-declaring types locally
 
 export {
   VenueIdSchema,
@@ -19,9 +25,11 @@ export {
   FloorPlanOutlineSchema,
   SpaceSchema,
   CreateSpaceSchema,
+  polygonBoundingBox,
   type SpaceId,
   type SpaceDimensions,
   type FloorPlanPoint,
+  type PolygonBoundingBox,
   type Space,
   type CreateSpace,
   TRADES_HALL_GRAND_HALL_DIMENSIONS,
@@ -56,6 +64,7 @@ export {
   type CreateConfiguration,
 } from "./configuration.js";
 
+// --- ASPIRATIONAL: template management not yet implemented in web/API ---
 export {
   LayoutTemplateIdSchema,
   LayoutTemplateSchema,
@@ -77,6 +86,7 @@ export {
   type CreateAssetDefinition,
 } from "./furniture.js";
 
+// --- ASPIRATIONAL: unified scene-state store not yet consumed by web ---
 export {
   VIEW_MODES,
   ViewModeSchema,
@@ -111,10 +121,12 @@ export {
   isValidEnquiryTransition,
   EnquirySchema,
   CreateEnquirySchema,
+  GuestEnquirySchema,
   type EnquiryId,
   type EnquiryStatus,
   type Enquiry,
   type CreateEnquiry,
+  type GuestEnquiry,
 } from "./enquiry.js";
 
 export {
@@ -160,13 +172,16 @@ export {
   PhotoSchema,
   PhotoUploadRequestSchema,
   PhotoUploadResponseSchema,
+  ReferencePhotoSchema,
   type PhotoId,
   type PhotoContentType,
   type Photo,
   type PhotoUploadRequest,
   type PhotoUploadResponse,
+  type ReferencePhoto,
 } from "./photo.js";
 
+// --- ASPIRATIONAL: solver not yet consumed by web/API at runtime ---
 export {
   solveLayout,
   SolverInputSchema,

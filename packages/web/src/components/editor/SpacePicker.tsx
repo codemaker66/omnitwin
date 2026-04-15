@@ -1,7 +1,28 @@
 import { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
 import { motion, useInView } from "framer-motion";
 import type { Venue, Space } from "../../api/spaces.js";
 import * as spacesApi from "../../api/spaces.js";
+
+// ---------------------------------------------------------------------------
+// Venue selection policy:
+//   1. URL `/v/:venueSlug/editor` wins if the slug matches a known venue.
+//   2. Otherwise, first venue in the list — the original single-tenant
+//      behaviour, preserved for `/editor` and for unknown slugs.
+// An unknown slug silently falls back rather than erroring; this is the
+// minimum-harm multi-venue hook (B2) — it enables URL-based venue switching
+// without breaking any existing entry point.
+// ---------------------------------------------------------------------------
+export function selectVenueFromSlug(
+  venues: readonly Venue[],
+  slug: string | undefined,
+): Venue | undefined {
+  if (slug !== undefined && slug !== "") {
+    const match = venues.find((v) => v.slug === slug);
+    if (match !== undefined) return match;
+  }
+  return venues[0];
+}
 
 // ---------------------------------------------------------------------------
 // SpacePicker — cinematic landing page for venue space selection
@@ -57,6 +78,7 @@ interface SpacePickerProps {
 }
 
 export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactElement {
+  const { venueSlug } = useParams<{ venueSlug?: string }>();
   const [venues, setVenues] = useState<Venue[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +95,9 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
         const venueList = await spacesApi.listVenues();
         if (!isActive()) return;
         setVenues(venueList);
-        const firstVenue = venueList[0];
-        if (firstVenue !== undefined) {
-          const spaceList = await spacesApi.listSpaces(firstVenue.id);
+        const picked = selectVenueFromSlug(venueList, venueSlug);
+        if (picked !== undefined) {
+          const spaceList = await spacesApi.listSpaces(picked.id);
           if (isActive()) setSpaces(spaceList);
         }
       } catch (err) {
@@ -85,9 +107,9 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
       }
     })();
     return () => { controller.abort(); };
-  }, []);
+  }, [venueSlug]);
 
-  const venue = venues[0];
+  const venue = selectVenueFromSlug(venues, venueSlug);
 
   const handleSelectSpace = (space: Space): void => {
     if (venue !== undefined) onSelectSpace(space.id, venue.id);

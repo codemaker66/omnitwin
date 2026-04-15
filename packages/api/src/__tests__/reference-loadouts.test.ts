@@ -306,7 +306,7 @@ describe("space endpoint includes loadoutCount", () => {
 // ---------------------------------------------------------------------------
 
 describe("hallkeeper sheet includes reference loadout metadata", () => {
-  it("HallkeeperSheetData type includes referenceLoadouts field", async () => {
+  it("EnquirySheetData type includes referenceLoadouts field", async () => {
     const { generateHallkeeperSheet } = await import("../services/hallkeeper-sheet.js");
     // The function signature accepts the right params — type-level check
     expect(typeof generateHallkeeperSheet).toBe("function");

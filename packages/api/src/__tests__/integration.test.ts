@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 import "dotenv/config";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { createDb, type Database } from "../db/client.js";
 import {
   users, configurations, placedObjects, enquiries,
-  enquiryStatusHistory, guestLeads,
+  enquiryStatusHistory, guestLeads, spaces, emailSends,
 } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +54,10 @@ const GUEST_EMAIL = `guest-${Date.now().toString(36)}@integration.test`;
 const CLAIMER_EMAIL = `claimer-${Date.now().toString(36)}@integration.test`;
 let claimerToken = "";
 let claimerUserId = "";
+
+// Prompt 6: L-shape space for polygon-containment regression tests
+let lShapeSpaceId = "";
+let lShapeConfigId = "";
 
 // ---------------------------------------------------------------------------
 // Helper: create a mock token for the auth middleware
@@ -106,7 +110,23 @@ afterAll(async () => {
       await db.delete(placedObjects).where(eq(placedObjects.configurationId, configId));
       await db.delete(configurations).where(eq(configurations.id, configId));
     }
+    if (lShapeConfigId !== "") {
+      await db.delete(placedObjects).where(eq(placedObjects.configurationId, lShapeConfigId));
+      await db.delete(configurations).where(eq(configurations.id, lShapeConfigId));
+    }
+    if (lShapeSpaceId !== "") {
+      await db.delete(spaces).where(eq(spaces.id, lShapeSpaceId));
+    }
     await db.delete(guestLeads).where(eq(guestLeads.email, GUEST_EMAIL));
+    // Email audit rows — keys for this run all start with "enquiry-" and
+    // embed an id the cleanup already knows. Wildcard-match on the run id
+    // to scrub every audit row this run emitted.
+    if (enquiryId !== "") {
+      await db.delete(emailSends).where(like(emailSends.idempotencyKey, `%${enquiryId}%`));
+    }
+    if (guestEnquiryId !== "") {
+      await db.delete(emailSends).where(like(emailSends.idempotencyKey, `%${guestEnquiryId}%`));
+    }
     const testUserIds = [plannerUserId, hallkeeperUserId, claimerUserId].filter((id) => id !== "");
     if (testUserIds.length > 0) {
       await db.delete(users).where(inArray(users.id, testUserIds));
@@ -273,12 +293,16 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
   }, 30000);
 
   // --- 10. POST batch upsert (5 objects) ---
+  // Fixture coordinates must stay inside the seeded Grand Hall polygon
+  // (centred rect, x ∈ [-10.5, 10.5], z ∈ [-5, 5]). The polygon containment
+  // check added in Prompt 6 rejects anything outside the room; the pre-check
+  // fixture (i*3, i*2) spilled over the z-bound at i ≥ 3.
   it("10. batch upsert 5 objects", async () => {
     const batchObjects = Array.from({ length: 5 }, (_, i) => ({
       assetDefinitionId: assetId,
-      positionX: i * 3,
+      positionX: i * 2,
       positionY: 0,
-      positionZ: i * 2,
+      positionZ: i * 0.8,
       rotationY: 0,
       scale: 1,
       sortOrder: i,
@@ -644,5 +668,282 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     const { cleanupPreviewConfigurations } = await import("../services/cleanup.js");
     const deleted = await cleanupPreviewConfigurations(db);
     expect(deleted).toBe(0);
+  }, 15000);
+
+  // =========================================================================
+  // Prompt 6: polygon-aware placement validation (L-shape regression)
+  //
+  // A bbox-only check would accept a point like (7, 7) inside a 10×10 L-shape
+  // because it falls within the enclosing rectangle. The ray-cast polygon
+  // check correctly rejects it — it's in the carved-out corner.
+  // =========================================================================
+
+  // --- 31. Create an L-shaped space via POST /venues/:venueId/spaces ---
+  it("31. hallkeeper creates an L-shaped space at Trades Hall", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/venues/${venueId}/spaces`,
+      headers: auth(hallkeeperToken),
+      payload: {
+        name: `L-Shape Test ${RUN_ID}`,
+        slug: `l-shape-test-${RUN_ID.toLowerCase()}`,
+        heightM: 3,
+        // Anchored at origin; top-right quadrant carved out.
+        // Bounding box is 10×10; carved-out region is [4..10] × [4..10].
+        floorPlanOutline: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 4 },
+          { x: 4, y: 4 },
+          { x: 4, y: 10 },
+          { x: 0, y: 10 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body) as { data: { id: string; widthM: string; lengthM: string } };
+    lShapeSpaceId = body.data.id;
+    // Invariant from Prompt 5 — bbox derived from polygon.
+    expect(Number(body.data.widthM)).toBe(10);
+    expect(Number(body.data.lengthM)).toBe(10);
+  }, 15000);
+
+  // --- 32. Planner creates a config against the L-shape space ---
+  it("32. planner creates a configuration in the L-shape space", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/configurations",
+      headers: auth(plannerToken),
+      payload: {
+        spaceId: lShapeSpaceId,
+        venueId,
+        name: `L-Shape Config ${RUN_ID}`,
+        layoutStyle: "custom",
+        guestCount: 0,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body) as { data: { id: string } };
+    lShapeConfigId = body.data.id;
+  }, 15000);
+
+  // --- 33. REGRESSION: single-object POST with a bbox-only-valid point ---
+  it("33. POST /objects rejects (7, 0, 7) — inside bbox, outside L polygon", async () => {
+    // Sanity: (7, 7) is inside the 10×10 bounding box, which is what a
+    // naive bbox-only check would see. The polygon check must reject it
+    // because it lies in the carved-out quadrant.
+    const res = await server.inject({
+      method: "POST",
+      url: `/configurations/${lShapeConfigId}/objects`,
+      headers: auth(plannerToken),
+      payload: {
+        assetDefinitionId: assetId,
+        positionX: 7,
+        positionY: 0,
+        positionZ: 7,
+        scale: 1,
+      },
+    });
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body) as {
+      code: string;
+      details: { invalid: { index: number; positionX: number; positionZ: number }[] };
+    };
+    expect(body.code).toBe("PLACEMENT_OUT_OF_BOUNDS");
+    expect(body.details.invalid).toEqual([{ index: 0, positionX: 7, positionZ: 7 }]);
+  }, 15000);
+
+  // --- 34. Same point accepted when inside the L's occupied arm ---
+  it("34. POST /objects accepts (2, 0, 2) — inside the L's occupied region", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/configurations/${lShapeConfigId}/objects`,
+      headers: auth(plannerToken),
+      payload: {
+        assetDefinitionId: assetId,
+        positionX: 2,
+        positionY: 0,
+        positionZ: 2,
+        scale: 1,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  }, 15000);
+
+  // --- 35. Batch rejects atomically and reports every out-of-bounds index ---
+  it("35. POST /objects/batch rejects a mixed batch and lists every bad index", async () => {
+    const batch = [
+      { assetDefinitionId: assetId, positionX: 1, positionY: 0, positionZ: 1, scale: 1 }, // ok
+      { assetDefinitionId: assetId, positionX: 8, positionY: 0, positionZ: 8, scale: 1 }, // BAD (carved)
+      { assetDefinitionId: assetId, positionX: 2, positionY: 0, positionZ: 9, scale: 1 }, // ok (left arm)
+      { assetDefinitionId: assetId, positionX: 5, positionY: 0, positionZ: 7, scale: 1 }, // BAD (carved)
+    ];
+    const res = await server.inject({
+      method: "POST",
+      url: `/configurations/${lShapeConfigId}/objects/batch`,
+      headers: auth(plannerToken),
+      payload: { objects: batch },
+    });
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body) as {
+      code: string;
+      details: { invalid: { index: number }[] };
+    };
+    expect(body.code).toBe("PLACEMENT_OUT_OF_BOUNDS");
+    expect(body.details.invalid.map((i) => i.index)).toEqual([1, 3]);
+
+    // Atomic: no objects from the rejected batch should have been written.
+    const listRes = await server.inject({
+      method: "GET",
+      url: `/configurations/${lShapeConfigId}/objects`,
+      headers: auth(plannerToken),
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = JSON.parse(listRes.body) as { data: { id: string }[] };
+    // Only the single object from test 34 should exist.
+    expect(listBody.data).toHaveLength(1);
+  }, 15000);
+
+  // --- 36. Public batch path enforces the same invariant ---
+  it("36. public batch POST also rejects placements outside the L polygon", async () => {
+    // Create a public preview config against the L-shape space, then try
+    // to batch-save a point in the carved corner. Must get 422.
+    const createRes = await server.inject({
+      method: "POST",
+      url: "/public/configurations",
+      payload: { spaceId: lShapeSpaceId },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = JSON.parse(createRes.body) as { data: { id: string } };
+    const publicLConfigId = created.data.id;
+
+    try {
+      const batchRes = await server.inject({
+        method: "POST",
+        url: `/public/configurations/${publicLConfigId}/objects/batch`,
+        payload: {
+          objects: [
+            { assetDefinitionId: assetId, positionX: 9, positionY: 0, positionZ: 9 },
+          ],
+        },
+      });
+      expect(batchRes.statusCode).toBe(422);
+      const body = JSON.parse(batchRes.body) as { code: string };
+      expect(body.code).toBe("PLACEMENT_OUT_OF_BOUNDS");
+    } finally {
+      await db.delete(placedObjects).where(eq(placedObjects.configurationId, publicLConfigId));
+      await db.delete(configurations).where(eq(configurations.id, publicLConfigId));
+    }
+  }, 20000);
+
+  // =========================================================================
+  // Prompt 9: email audit + idempotency against real Neon
+  //
+  // Tests 13–15 above already drove the approval/rejection transitions,
+  // each of which fires an email via the new sendEmailAsync pipeline.
+  // That pipeline INSERTs an `email_sends` row keyed by
+  // "enquiry-approved:{id}" / "enquiry-rejected:{id}". These tests poll
+  // for the audit row and then verify that re-firing the same transition
+  // does not produce a duplicate row — the UNIQUE constraint on
+  // idempotency_key is the load-bearing dedup mechanism.
+  // =========================================================================
+
+  async function pollForEmailRow(key: string, timeoutMs = 5000): Promise<{ status: string; idempotencyKey: string } | null> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rows = await db.select({ status: emailSends.status, idempotencyKey: emailSends.idempotencyKey })
+        .from(emailSends)
+        .where(eq(emailSends.idempotencyKey, key))
+        .limit(1);
+      if (rows.length > 0 && rows[0] !== undefined) return rows[0];
+      await new Promise((resolve) => { setTimeout(resolve, 100); });
+    }
+    return null;
+  }
+
+  // --- 37. Approval transition wrote an audit row ---
+  it("37. enquiryApproved fired by test 15 created an email_sends row", async () => {
+    // Test 15 approved the main test enquiry; sendEmailAsync is fire-and-
+    // forget via setImmediate, so we poll for a short window. RESEND_API_KEY
+    // is unset in CI/test so status should land on "dev_mode".
+    const key = `enquiry-approved:${enquiryId}`;
+    const row = await pollForEmailRow(key);
+    expect(row).not.toBeNull();
+    expect(row?.idempotencyKey).toBe(key);
+    // Status is either "dev_mode" (no provider key) or "sent" (provider
+    // configured) — both are terminal and dedup-eligible.
+    // Any terminal status is acceptable — the audit guarantee is "the row
+    // exists and isn't stuck at pending". Which terminal state depends on
+    // the test environment: RESEND_API_KEY unset → "dev_mode"; set but
+    // pointed at Resend with fake-domain recipients → "failed"; set and
+    // the recipient is a real address → "sent".
+    expect(row?.status).not.toBe("pending");
+    expect(["dev_mode", "sent", "failed"]).toContain(row?.status);
+  }, 15000);
+
+  // --- 38. Re-firing an already-sent transition does NOT double-send ---
+  it("38. approving again (idempotency-key collision) produces no second audit row", async () => {
+    // The main enquiry is already "approved". Trying to transition to
+    // "approved" again is a 422 from the state machine (no valid
+    // approved → approved transition) — BUT even if a caller found a
+    // path to re-fire the email (double-click on a different row,
+    // webhook replay), the idempotency key would collide with the
+    // existing audit row and dedup_skip rather than send twice.
+    //
+    // We verify this at the audit layer directly: by counting rows for
+    // the key before and after a second transition attempt, no new row
+    // should appear.
+    const key = `enquiry-approved:${enquiryId}`;
+    const countRowsFor = async (): Promise<number> => {
+      const rows = await db.select({ id: emailSends.id })
+        .from(emailSends)
+        .where(eq(emailSends.idempotencyKey, key));
+      return rows.length;
+    };
+
+    const before = await countRowsFor();
+    expect(before).toBe(1);
+
+    // Attempt a transition that would (if the state machine permitted)
+    // re-fire the approved email. The state machine rejects with 422 —
+    // what matters for this test is that no second audit row lands.
+    await server.inject({
+      method: "POST",
+      url: `/enquiries/${enquiryId}/transition`,
+      headers: auth(hallkeeperToken),
+      payload: { status: "approved" },
+    });
+
+    // Give setImmediate a tick to drain if any fire-and-forget leaked out.
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+
+    const after = await countRowsFor();
+    expect(after).toBe(1); // no duplicate
+  }, 15000);
+
+  // --- 39. Guest enquiry fired per-hallkeeper notifications with distinct keys ---
+  it("39. guest enquiry submission produced at most one audit row per hallkeeper", async () => {
+    // Test 27 submitted a guest enquiry. The route loops over hallkeepers
+    // for that venue — a single hallkeeper exists in this test run
+    // (hallkeeperUserId). The key pattern is
+    // "enquiry-new:{guestEnquiryId}:{hallkeeperUserId}".
+    const key = `enquiry-new:${guestEnquiryId}:${hallkeeperUserId}`;
+    const row = await pollForEmailRow(key);
+    expect(row).not.toBeNull();
+    expect(row?.idempotencyKey).toBe(key);
+    // Any terminal status is acceptable — the audit guarantee is "the row
+    // exists and isn't stuck at pending". Which terminal state depends on
+    // the test environment: RESEND_API_KEY unset → "dev_mode"; set but
+    // pointed at Resend with fake-domain recipients → "failed"; set and
+    // the recipient is a real address → "sent".
+    expect(row?.status).not.toBe("pending");
+    expect(["dev_mode", "sent", "failed"]).toContain(row?.status);
+
+    // And cross-check there's no silent double-notification: exactly one
+    // row for that hallkeeper + enquiry.
+    const all = await db.select({ id: emailSends.id })
+      .from(emailSends)
+      .where(eq(emailSends.idempotencyKey, key));
+    expect(all).toHaveLength(1);
   }, 15000);
 });

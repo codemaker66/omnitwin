@@ -75,10 +75,18 @@ export async function clientRoutes(
       ))
       .limit(20);
 
-    // Search guest leads — only those with enquiries at this venue
+    // Search guest leads — only those with enquiries at this venue.
+    //
+    // A row in `enquiries` is "guest-originated" iff `guest_email` is set;
+    // that bit is historical and permanent. When a user later claims the
+    // public config the guest submitted against, the enquiry gets a
+    // `user_id` but keeps its `guest_email` — the lead shouldn't vanish
+    // from hallkeeper search just because the config changed hands. The
+    // venue scope is enforced by joining on `guest_email` + `venue_id`
+    // alone; claim state is irrelevant.
     const venueLeadFilter = isAdmin
       ? undefined
-      : sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${venueId})`;
+      : sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`;
 
     const matchedLeads = await db.select({
       id: guestLeads.id,
@@ -86,8 +94,8 @@ export async function clientRoutes(
       phone: guestLeads.phone,
       name: guestLeads.name,
       enquiryCount: isAdmin
-        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL)`
-        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${venueId})`,
+        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
+        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
       convertedToUserId: guestLeads.convertedToUserId,
     })
       .from(guestLeads)
@@ -234,13 +242,16 @@ export async function clientRoutes(
     const leadIsAdmin = request.user.role === "admin";
 
     // Non-admin: verify this lead has enquiries at the hallkeeper's venue
-    // BEFORE returning any PII
+    // BEFORE returning any PII. See venueLeadFilter above — the join is on
+    // `guest_email` + `venue_id`; we deliberately don't require
+    // `user_id IS NULL` so that previously claimed enquiries still count
+    // toward "this lead has been in contact with our venue".
     if (!leadIsAdmin) {
       const [hasRelation] = await db.select({ n: sql<number>`1` })
         .from(guestLeads)
         .where(and(
           eq(guestLeads.id, params.data.leadId),
-          sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND user_id IS NULL AND venue_id = ${leadVenueId})`,
+          sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${leadVenueId})`,
         ))
         .limit(1);
       if (hasRelation === undefined) {
@@ -257,6 +268,10 @@ export async function clientRoutes(
       return reply.status(404).send({ error: "Guest lead not found", code: "NOT_FOUND" });
     }
 
+    // All enquiries this lead has submitted at this venue. We match on
+    // `guest_email` alone (not `user_id IS NULL`) so claimed enquiries
+    // still appear in the lead's history — the lead profile is about the
+    // contact, not the current ownership of the underlying config.
     const leadEnquiries = await db.select({
       id: enquiries.id,
       state: enquiries.state,
@@ -268,7 +283,6 @@ export async function clientRoutes(
       .from(enquiries)
       .where(and(
         eq(enquiries.guestEmail, lead.email),
-        isNull(enquiries.userId),
         leadIsAdmin ? undefined : eq(enquiries.venueId, leadVenueId ?? ""),
       ));
 
