@@ -14,7 +14,7 @@ import { test, expect, type Page } from "@playwright/test";
 //   - Totals bar:       getByText("TOTALS")
 //
 // All API calls are intercepted with page.route(). HallkeeperPage calls
-// GET /hallkeeper/:configId/data with an auth token (null for unauthenticated
+// GET /hallkeeper/:configId/v2 with an auth token (null for unauthenticated
 // users). Playwright intercepts at CDP level before the request leaves the
 // browser, so the actual auth middleware is bypassed entirely.
 //
@@ -30,92 +30,80 @@ const CONFIG_ID = "e2e-config-001";
 // Typed mock fixture — mirrors HallkeeperPage.tsx SheetData interface
 // ---------------------------------------------------------------------------
 
-interface MockManifestRow {
-  readonly code: string;
-  readonly item: string;
+interface MockV2Row {
+  readonly key: string;
+  readonly name: string;
+  readonly category: string;
   readonly qty: number;
-  readonly position: string;
+  readonly afterDepth: number;
+  readonly isAccessory: boolean;
   readonly notes: string;
-  readonly setupGroup: string;
 }
 
-interface MockSheetData {
-  readonly venue: {
-    readonly name: string;
-    readonly address: string;
-    readonly logoUrl: null;
-  };
-  readonly space: {
-    readonly name: string;
-    readonly widthM: number;
-    readonly lengthM: number;
-    readonly heightM: number;
-  };
-  readonly config: {
-    readonly id: string;
-    readonly name: string;
-    readonly layoutStyle: string;
-    readonly guestCount: number;
-  };
-  readonly manifest: {
-    readonly rows: readonly MockManifestRow[];
-    readonly totals: {
-      readonly entries: readonly { readonly item: string; readonly qty: number }[];
-      readonly totalChairs: number;
-    };
+interface MockSheetDataV2 {
+  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: null };
+  readonly space: { readonly name: string; readonly widthM: number; readonly lengthM: number; readonly heightM: number };
+  readonly config: { readonly id: string; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
+  readonly timing: null | { readonly eventStart: string; readonly setupBy: string; readonly bufferMinutes: number };
+  readonly phases: readonly {
+    readonly phase: string;
+    readonly zones: readonly { readonly zone: string; readonly rows: readonly MockV2Row[] }[];
+  }[];
+  readonly totals: {
+    readonly entries: readonly { readonly name: string; readonly category: string; readonly qty: number }[];
+    readonly totalRows: number;
+    readonly totalItems: number;
   };
   readonly diagramUrl: null;
   readonly webViewUrl: string;
   readonly generatedAt: string;
 }
 
-const MOCK_SHEET: MockSheetData = {
+const MOCK_SHEET: MockSheetDataV2 = {
   venue: {
     name: "Trades Hall Glasgow",
     address: "85 Glassford Street, Glasgow G1 1UH",
     logoUrl: null,
   },
   space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
-  config: {
-    id: CONFIG_ID,
-    name: "Annual Gala",
-    layoutStyle: "banquet",
-    guestCount: 120,
-  },
-  manifest: {
-    rows: [
-      {
-        code: "T-01",
-        item: "6ft Round Table",
-        qty: 10,
-        position: "Centre zone",
-        notes: "",
-        setupGroup: "table",
-      },
-      {
-        code: "C-01",
-        item: "Banquet Chair",
-        qty: 100,
-        position: "Around all tables",
-        notes: "10 chairs per table",
-        setupGroup: "table",
-      },
-      {
-        code: "S-01",
-        item: "Stage Platform",
-        qty: 1,
-        position: "North end",
-        notes: "",
-        setupGroup: "stage",
-      },
-    ],
-    totals: {
-      entries: [
-        { item: "6ft Round Table", qty: 10 },
-        { item: "Stage Platform", qty: 1 },
+  config: { id: CONFIG_ID, name: "Annual Gala", layoutStyle: "dinner-banquet", guestCount: 120 },
+  timing: null,
+  phases: [
+    {
+      phase: "structure",
+      zones: [
+        { zone: "North wall", rows: [
+          { key: "structure|North wall|Stage Platform|0", name: "Stage Platform", category: "stage", qty: 1, afterDepth: 0, isAccessory: false, notes: "" },
+        ] },
       ],
-      totalChairs: 100,
     },
+    {
+      phase: "furniture",
+      zones: [
+        { zone: "Centre", rows: [
+          { key: "furniture|Centre|6ft Round Table with 10 chairs|0", name: "6ft Round Table with 10 chairs", category: "table", qty: 10, afterDepth: 0, isAccessory: false, notes: "" },
+        ] },
+      ],
+    },
+    {
+      phase: "dress",
+      zones: [
+        { zone: "Centre", rows: [
+          { key: "dress|Centre|Ivory Tablecloth|0", name: "Ivory Tablecloth", category: "decor", qty: 10, afterDepth: 0, isAccessory: true, notes: "" },
+          { key: "dress|Centre|Gold Organza Runner|1", name: "Gold Organza Runner", category: "decor", qty: 10, afterDepth: 1, isAccessory: true, notes: "" },
+        ] },
+      ],
+    },
+  ],
+  totals: {
+    entries: [
+      { name: "6ft Round Table with 10 chairs", category: "table", qty: 10 },
+      { name: "Gold Organza Runner", category: "decor", qty: 10 },
+      { name: "Ivory Tablecloth", category: "decor", qty: 10 },
+      { name: "Stage Platform", category: "stage", qty: 1 },
+    ],
+    totalRows: 4,
+    totalItems: 31,
   },
   diagramUrl: null,
   webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
@@ -123,11 +111,12 @@ const MOCK_SHEET: MockSheetData = {
 };
 
 // ---------------------------------------------------------------------------
-// Route-mock helper
+// Route-mock helper — fulfils /v2 (new) and leaves /data (v1) unmocked
+// so a stale consumer fails loud rather than pretending to work.
 // ---------------------------------------------------------------------------
 
-async function mockSheetData(page: Page, data: MockSheetData = MOCK_SHEET): Promise<void> {
-  await page.route(`${API}/hallkeeper/${CONFIG_ID}/data`, (route) => {
+async function mockSheetData(page: Page, data: MockSheetDataV2 = MOCK_SHEET): Promise<void> {
+  await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
     void route.fulfill({ json: { data } });
   });
 }
@@ -200,65 +189,40 @@ test.describe("Hallkeeper Page", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Manifest accordion
+  // Phase sections — v2 replaces the single "Setup Manifest" accordion
+  // with per-phase blocks (structure / furniture / dress / technical /
+  // final). Each phase has zone subheaders and checkable rows.
   // -------------------------------------------------------------------------
 
-  test("Setup Manifest heading is visible", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Setup Manifest" })).toBeVisible();
+  test("renders a phase heading for every phase in the payload", async ({ page }) => {
+    await expect(page.getByText(/Phase 1 — Structure/)).toBeVisible();
+    await expect(page.getByText(/Phase 2 — Furniture/)).toBeVisible();
+    await expect(page.getByText(/Phase 3 — Dress/)).toBeVisible();
   });
 
-  test("manifest rows from the API response are rendered", async ({ page }) => {
-    // { exact: true } avoids matching the totals span "× 6ft Round Table"
-    await expect(page.getByText("6ft Round Table", { exact: true }).first()).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText("Stage Platform", { exact: true })).toBeVisible();
+  test("renders item rows with their quantities", async ({ page }) => {
+    await expect(page.getByText("6ft Round Table with 10 chairs")).toBeVisible();
+    await expect(page.getByText("Stage Platform")).toBeVisible();
+    await expect(page.getByText("Ivory Tablecloth")).toBeVisible();
   });
 
-  test("manifest group header shows the correct item count", async ({ page }) => {
-    // Tables & Seating group has T-01 and C-01 — 2 items
-    await expect(page.getByText(/2 items/)).toBeVisible();
+  test("accessory rows with afterDepth > 0 show an 'after' badge", async ({ page }) => {
+    // Gold Organza Runner has afterDepth=1 → should carry the badge
+    const runnerRow = page.getByText("Gold Organza Runner").locator("..");
+    await expect(runnerRow.getByText("after")).toBeVisible();
   });
 
-  test("manifest row notes are visible when non-empty", async ({ page }) => {
-    // C-01 Banquet Chair has notes: "10 chairs per table"
-    await expect(page.getByText("10 chairs per table")).toBeVisible();
+  test("zone subheaders are rendered under each phase", async ({ page }) => {
+    // The mock has all items in "Centre" and one in "North wall"
+    await expect(page.getByText(/▹ North wall/).first()).toBeVisible();
+    await expect(page.getByText(/▹ Centre/).first()).toBeVisible();
   });
 
-  test("clicking a manifest group header collapses its rows", async ({ page }) => {
-    const groupBtn = page.getByRole("button", { name: /Tables & Seating/ });
-    await groupBtn.waitFor({ state: "visible" });
-    // { exact: true } targets the manifest row div "6ft Round Table" — not the
-    // totals span "× 6ft Round Table" which stays visible after collapse.
-    await expect(page.getByText("6ft Round Table", { exact: true }).first()).toBeVisible();
-    // Collapse
-    await groupBtn.click();
-    // After collapse, React removes the rows from the DOM (conditional render).
-    // The totals span "× 6ft Round Table" remains — exact match avoids it.
-    await expect(page.getByText("6ft Round Table", { exact: true })).not.toBeVisible({ timeout: 3_000 });
-  });
-
-  test("clicking a collapsed group header re-expands the rows", async ({ page }) => {
-    const groupBtn = page.getByRole("button", { name: /Tables & Seating/ });
-    await groupBtn.waitFor({ state: "visible" });
-    // Collapse
-    await groupBtn.click();
-    await expect(page.getByText("6ft Round Table", { exact: true })).not.toBeVisible({ timeout: 3_000 });
-    // Re-expand
-    await groupBtn.click();
-    await expect(page.getByText("6ft Round Table", { exact: true }).first()).toBeVisible({ timeout: 3_000 });
-  });
-
-  // -------------------------------------------------------------------------
-  // Totals bar
-  // -------------------------------------------------------------------------
-
-  test("totals bar is visible with a TOTALS label", async ({ page }) => {
-    await expect(page.getByText("TOTALS")).toBeVisible();
-  });
-
-  test("totals bar shows the chair count from manifest totals", async ({ page }) => {
-    // totalChairs: 100 renders as a standalone <span>100</span> in the totals
-    // bar — distinct from manifest row qty which renders as "\u00d7100" (×100)
-    await expect(page.getByText("100").first()).toBeVisible();
+  test("clicking a row toggles its checkbox (aria-checked)", async ({ page }) => {
+    const row = page.getByRole("checkbox", { name: /Stage Platform/ });
+    await expect(row).toHaveAttribute("aria-checked", "false");
+    await row.click();
+    await expect(row).toHaveAttribute("aria-checked", "true");
   });
 
   // -------------------------------------------------------------------------
@@ -303,7 +267,7 @@ test.describe("Hallkeeper Page — route protection", () => {
 test.describe("Hallkeeper Page — authorized error states", () => {
   test("shows configuration-not-found message when the API returns 404", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
-    await page.route(`${API}/hallkeeper/${CONFIG_ID}/data`, (route) => {
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
       void route.fulfill({
         status: 404,
         json: { error: "Configuration not found", code: "NOT_FOUND" },
@@ -318,7 +282,7 @@ test.describe("Hallkeeper Page — authorized error states", () => {
   test("shows permission-denied message when the API returns 403", async ({ page }) => {
     // A planner authenticated but lacking access to THIS config (e.g., wrong venue)
     await seedAuthenticatedPlanner(page);
-    await page.route(`${API}/hallkeeper/${CONFIG_ID}/data`, (route) => {
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
       void route.fulfill({
         status: 403,
         json: { error: "Insufficient permissions", code: "FORBIDDEN" },

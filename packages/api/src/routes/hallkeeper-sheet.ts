@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { assembleSheetData, generateSheetPdf } from "../services/hallkeeper-sheet-v2.js";
+import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 
@@ -86,5 +87,29 @@ export async function hallkeeperSheetRoutes(
     }
 
     return { data };
+  });
+
+  // GET /hallkeeper/:configId/v2 — NEW phase/zone data shape for the
+  // redesigned sheet. Lives alongside /data (v1) until the v1 web view
+  // retires, so a rollback to v1 is a routing-level change with no data
+  // migration. Same auth policy as /data.
+  server.get("/:configId/v2", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = ConfigIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
+    }
+
+    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
+
+    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    if (result === null) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+
+    if (!canAccessResource(request.user, result.authPivot.configUserId, result.authPivot.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    return { data: result.payload };
   });
 }

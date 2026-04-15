@@ -55,6 +55,37 @@ describe("GET /hallkeeper/:configId/sheet", () => {
   });
 });
 
+describe("GET /hallkeeper/:configId/v2 — new phase/zone sheet", () => {
+  it("returns 401 without authentication", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/v2`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for invalid config ID (with auth)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/hallkeeper/not-a-uuid/v2",
+      headers: adminAuth,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("authenticated request reaches the v2 handler (passes auth + validation)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/v2`,
+      headers: adminAuth,
+    });
+    // Mock DB eventually 404s; what matters is the auth + validation
+    // gates both pass so the v2 handler is actually reachable.
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(400);
+  });
+});
+
 describe("GET /hallkeeper/:configId/data", () => {
   it("returns 401 without authentication", async () => {
     const res = await server.inject({
