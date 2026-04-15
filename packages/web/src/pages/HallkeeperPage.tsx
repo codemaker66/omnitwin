@@ -89,10 +89,26 @@ export function HallkeeperPage(): React.ReactElement {
     });
   }, []);
 
-  // Highlight a manifest item (bidirectional: tap row → flash, tap diagram → scroll)
+  // Highlight a manifest item.
+  //
+  // Today this is one-directional: tapping a row flashes that row (and
+  // scrolls it into view in case the manifest scrolled off-screen).
+  // The reverse direction (tap diagram → highlight matching row) needs
+  // a coordinate-mapping sidecar on the diagram PNG that the backend
+  // doesn't emit yet — left for when the diagram pipeline grows that
+  // metadata. The state shape (highlightedCode keyed on the row code)
+  // is already what diagram→row would consume, so the work to wire
+  // that direction is purely on the data side.
   const handleRowTap = useCallback((code: string) => {
     setHighlightedCode(code);
     setTimeout(() => { setHighlightedCode(null); }, 2000);
+    // scrollIntoView is a no-op on rows already in viewport, so this is
+    // safe to call unconditionally. `block: "nearest"` keeps scrolling
+    // minimal — the row only moves if it's off-screen.
+    const node = manifestRef.current?.querySelector(`[data-row-code="${code}"]`);
+    if (node !== null && node !== undefined) {
+      (node as HTMLElement).scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   }, []);
 
   // Download PDF with authentication
@@ -228,6 +244,7 @@ export function HallkeeperPage(): React.ReactElement {
                   {rows.map((row) => (
                     <div
                       key={row.code}
+                      data-row-code={row.code}
                       style={{
                         ...manifestRowStyle,
                         background: highlightedCode === row.code

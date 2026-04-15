@@ -17,8 +17,28 @@ import type { PlacedItem } from "../../lib/placement.js";
 // every commit would bounce between them indefinitely. The ref is set
 // synchronously before each push and cleared synchronously after, so any
 // store emission that arrives mid-push is recognised as a self-echo and
-// ignored. `itemsMatch` is a secondary guard for the rare case where
-// multiple subscribers re-enter through React's batched-update window.
+// ignored. `itemsMatch` is a secondary guard so a benign no-op write
+// doesn't trigger an unnecessary auto-save schedule.
+//
+// **Concurrency model — single-instance assumption.** EditorBridge is
+// designed to be mounted exactly once. The `syncing` ref lives on a
+// component instance, so a second mounted instance would have its own
+// ref and the cross-instance feedback loop would not be guarded. To make
+// that regression loud rather than silent, we assert mount uniqueness
+// at mount time via a module-level counter — a misconfigured second
+// mount throws synchronously instead of producing mysterious sync drift.
+//
+// **Ordering between the two effects.** The placement→editor effect
+// uses `usePlacementStore.subscribe`, which fires synchronously inside
+// the placement-store mutation. The editor→placement effect uses
+// React's `useEffect`, which fires after commit. So:
+//   - placement mutation → subscribe handler → editor-store write →
+//     React reconciles → editor→placement effect runs → itemsMatch
+//     short-circuits because the placement-store already matches.
+//   - editor mutation → React reconciles → editor→placement effect →
+//     placement-store write → subscribe handler runs → syncing=true
+//     short-circuits.
+// Both paths converge to a steady state in one round-trip.
 // ---------------------------------------------------------------------------
 
 /**
@@ -91,15 +111,49 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
   return true;
 }
 
+// Module-level mount counter — see the concurrency-model comment above.
+// React StrictMode mounts every component twice in development; the
+// second mount runs cleanup before the second mount-effect, so the
+// steady-state count is still 1. We only flag when the count exceeds 1
+// AFTER a real mount cycle.
+let mountedInstances = 0;
+
+/** Test-only: reset the counter between tests so each renders cleanly. */
+export function __resetEditorBridgeMountCountForTests(): void {
+  mountedInstances = 0;
+}
+
 /**
  * EditorBridge component — renders nothing, just syncs stores.
  * Mount this inside the EditorPage, outside the Canvas.
+ *
+ * Singleton: mount exactly one instance per page. A second concurrent
+ * instance throws because the syncing ref is per-instance and a second
+ * mount would silently drop sync events.
  */
 export function EditorBridge(): null {
   const editorObjects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
   const authState = useAuthStore((s) => s.isAuthenticated);
   const isAuthenticated = useRef(authState);
+
+  useEffect(() => {
+    mountedInstances += 1;
+    if (mountedInstances > 1) {
+      // Don't throw — that would white-screen the editor on a dev mistake.
+      // Loud-warn instead so the regression is obvious in any console
+      // (browser dev tools, server-side log, CI test output) without
+      // taking the user offline.
+      // eslint-disable-next-line no-console
+      console.error(
+        "OMNITWIN: EditorBridge mounted more than once (" + String(mountedInstances) + " instances). " +
+        "The bridge owns the editor↔placement sync ref; a second instance silently " +
+        "loses cross-instance updates. Move EditorBridge to a single mount point " +
+        "(typically EditorPage).",
+      );
+    }
+    return () => { mountedInstances = Math.max(0, mountedInstances - 1); };
+  }, []);
 
   // Keep auth ref in sync so auto-save uses the correct endpoint
   useEffect(() => { isAuthenticated.current = authState; }, [authState]);

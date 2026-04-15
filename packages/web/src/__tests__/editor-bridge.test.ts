@@ -83,6 +83,38 @@ describe("EditorBridge component", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Mount uniqueness: a second concurrent EditorBridge logs a console.error
+  // so a future refactor that accidentally double-mounts the bridge surfaces
+  // the regression in any console (browser, CI, server) without taking the
+  // user offline. We don't throw because a sync-flag mistake shouldn't
+  // white-screen the editor — loud warning is the right runtime behaviour.
+  // -------------------------------------------------------------------------
+  it("logs an error if a second EditorBridge mounts concurrently", async () => {
+    const React = await import("react");
+    const { render, cleanup } = await import("@testing-library/react");
+    const { EditorBridge, __resetEditorBridgeMountCountForTests } = await import("../components/editor/EditorBridge.js");
+
+    __resetEditorBridgeMountCountForTests();
+    useEditorStore.setState({ configId: "cfg-uniq" });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+
+    const { unmount: unmount1 } = render(React.createElement(EditorBridge));
+    const { unmount: unmount2 } = render(React.createElement(EditorBridge));
+
+    const warned = errSpy.mock.calls.some((call) => {
+      const msg = call[0];
+      return typeof msg === "string" && msg.includes("EditorBridge mounted more than once");
+    });
+    expect(warned).toBe(true);
+
+    errSpy.mockRestore();
+    unmount2();
+    unmount1();
+    cleanup();
+    __resetEditorBridgeMountCountForTests();
+  });
+
+  // -------------------------------------------------------------------------
   // Sync-flag pin: a placement-store update should round-trip into the
   // editor-store EXACTLY ONCE per change. Without the `syncing` ref, the
   // editor→placement effect would re-fire on the placement→editor write,
@@ -94,9 +126,11 @@ describe("EditorBridge component", () => {
   it("placement-store update flows into editor-store exactly once (no self-echo)", async () => {
     const React = await import("react");
     const { render, cleanup } = await import("@testing-library/react");
-    const { EditorBridge } = await import("../components/editor/EditorBridge.js");
+    const { EditorBridge, __resetEditorBridgeMountCountForTests } = await import("../components/editor/EditorBridge.js");
     const { usePlacementStore } = await import("../stores/placement-store.js");
 
+    // Reset the singleton counter from the previous test run.
+    __resetEditorBridgeMountCountForTests();
     // Seed a configId so the placement→editor effect is enabled
     useEditorStore.setState({ configId: "cfg-test" });
     usePlacementStore.setState({ placedItems: [] });

@@ -3,6 +3,7 @@ import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { isValidEmail } from "../../lib/email-validation.js";
 
 // ---------------------------------------------------------------------------
 // GuestEnquiryModal — premium conversion moment
@@ -58,8 +59,6 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
   document.head.appendChild(s);
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -112,7 +111,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     return () => { clearTimeout(timer); };
   }, []);
 
-  const emailValid = EMAIL_RE.test(email.trim());
+  const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
 
   const handleSubmit = useCallback(async (e: React.FormEvent): Promise<void> => {
