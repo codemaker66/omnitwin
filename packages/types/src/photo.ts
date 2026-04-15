@@ -3,16 +3,25 @@ import { ConfigurationIdSchema } from "./configuration.js";
 import { UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
-// NOTE: PhotoSchema below models an old `photo_references` table that is no
-// longer the active runtime schema. The live system uses `reference_photos`
-// (linked to a loadout, not a configuration), which is modelled by
-// ReferencePhotoSchema at the bottom of this file. PhotoSchema is retained for
-// backward compatibility with existing tests and any future consumer that needs
-// the configuration-photo concept.
+// Photo schemas — two coexisting shapes, named to make the difference obvious:
+//
+//   - LegacyPhotoSchema / LegacyPhoto / LegacyPhotoUpload* model the OLD
+//     `photo_references` table (configuration-scoped, direct URL stored in
+//     the row). Retained because removing them would break older tests and
+//     any future consumer that wants the configuration-photo concept back.
+//
+//   - ReferencePhotoSchema / ReferencePhoto model the LIVE `reference_photos`
+//     table (loadout-scoped, references a `files` row instead of storing a
+//     URL directly). This is what the production API actually serves; new
+//     consumers should target this shape.
+//
+// Shared infrastructure (PhotoIdSchema, PhotoContentTypeSchema,
+// ALLOWED_PHOTO_CONTENT_TYPES) is intentionally NOT prefixed — it's reused
+// across both shapes and renaming it would force unrelated churn.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Photo ID — UUID v4
+// Photo ID — UUID v4 (shared)
 // ---------------------------------------------------------------------------
 
 export const PhotoIdSchema = z.string().uuid();
@@ -20,7 +29,7 @@ export const PhotoIdSchema = z.string().uuid();
 export type PhotoId = z.infer<typeof PhotoIdSchema>;
 
 // ---------------------------------------------------------------------------
-// Allowed Content Types — restricted to common image formats
+// Allowed Content Types — restricted to common image formats (shared)
 // ---------------------------------------------------------------------------
 
 export const ALLOWED_PHOTO_CONTENT_TYPES = [
@@ -34,13 +43,13 @@ export const PhotoContentTypeSchema = z.enum(ALLOWED_PHOTO_CONTENT_TYPES);
 export type PhotoContentType = z.infer<typeof PhotoContentTypeSchema>;
 
 // ---------------------------------------------------------------------------
-// Photo — the full persisted entity (metadata stored in DB, file in S3)
+// LegacyPhoto — old configuration-scoped persisted entity
 // ---------------------------------------------------------------------------
 
 const MAX_CAPTION_LENGTH = 1000;
 const MAX_FILENAME_LENGTH = 255;
 
-export const PhotoSchema = z.object({
+export const LegacyPhotoSchema = z.object({
   id: PhotoIdSchema,
   configurationId: ConfigurationIdSchema,
   uploadedBy: UserIdSchema,
@@ -55,13 +64,13 @@ export const PhotoSchema = z.object({
   createdAt: z.string().datetime({ message: "createdAt must be an ISO 8601 datetime string" }),
 });
 
-export type Photo = z.infer<typeof PhotoSchema>;
+export type LegacyPhoto = z.infer<typeof LegacyPhotoSchema>;
 
 // ---------------------------------------------------------------------------
-// Photo Upload Request — client requests a presigned URL for direct S3 upload
+// LegacyPhotoUploadRequest — old presigned-URL request shape
 // ---------------------------------------------------------------------------
 
-export const PhotoUploadRequestSchema = z.object({
+export const LegacyPhotoUploadRequestSchema = z.object({
   configurationId: ConfigurationIdSchema,
   filename: z
     .string()
@@ -77,22 +86,22 @@ export const PhotoUploadRequestSchema = z.object({
     .default(""),
 });
 
-export type PhotoUploadRequest = z.infer<typeof PhotoUploadRequestSchema>;
+export type LegacyPhotoUploadRequest = z.infer<typeof LegacyPhotoUploadRequestSchema>;
 
 // ---------------------------------------------------------------------------
-// Photo Upload Response — presigned URL for browser-to-S3 direct upload
+// LegacyPhotoUploadResponse — old presigned-URL response shape
 // ---------------------------------------------------------------------------
 
-export const PhotoUploadResponseSchema = z.object({
+export const LegacyPhotoUploadResponseSchema = z.object({
   photoId: PhotoIdSchema,
   presignedUrl: z.string().url("Presigned URL must be a valid URL"),
   expiresAt: z.string().datetime({ message: "expiresAt must be an ISO 8601 datetime string" }),
 });
 
-export type PhotoUploadResponse = z.infer<typeof PhotoUploadResponseSchema>;
+export type LegacyPhotoUploadResponse = z.infer<typeof LegacyPhotoUploadResponseSchema>;
 
 // ---------------------------------------------------------------------------
-// ReferencePhotoSchema — matches the live `reference_photos` DB table
+// ReferencePhotoSchema — matches the LIVE `reference_photos` DB table
 //
 // Photos are linked to a reference loadout (not a configuration), and
 // reference a `files` row rather than storing a direct URL.

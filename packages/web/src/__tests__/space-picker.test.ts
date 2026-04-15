@@ -66,6 +66,23 @@ describe("SpacePicker", () => {
     // The component passes onSelectSpace(space.id, venue.id) on card click
     expect(SpacePicker).toBeDefined();
   });
+
+  // Pin the responsive + scrollbar polish by inspecting the source file.
+  // Rendering the full component to query the live <style> tag would require
+  // resolving the loading-state useEffect, which the smoke-test mocks above
+  // intentionally don't satisfy. A source-text assertion catches the
+  // regression case (a refactor stripping the rules) without needing a heavy
+  // render harness.
+  it("includes the 640px breakpoint and custom scrollbar rules", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    // Vitest runs from the @omnitwin/web package root.
+    const path = resolve(process.cwd(), "src/components/editor/SpacePicker.tsx");
+    const source = readFileSync(path, "utf8");
+    expect(source).toContain("@media (max-width: 640px)");
+    expect(source).toContain("::-webkit-scrollbar");
+    expect(source).toContain("scrollbar-width: thin");
+  });
 });
 
 // AssetPalette and EditorToolbar were deleted — superseded by VerticalToolbox.

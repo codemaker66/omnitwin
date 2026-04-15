@@ -78,9 +78,9 @@ import {
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
   PhotoContentTypeSchema,
-  PhotoSchema,
-  PhotoUploadRequestSchema,
-  PhotoUploadResponseSchema,
+  LegacyPhotoSchema,
+  LegacyPhotoUploadRequestSchema,
+  LegacyPhotoUploadResponseSchema,
 } from "../index.js";
 
 import type {
@@ -165,9 +165,9 @@ describe("barrel export completeness", () => {
       GenerateHallkeeperSheetRequestSchema,
       PhotoIdSchema,
       PhotoContentTypeSchema,
-      PhotoSchema,
-      PhotoUploadRequestSchema,
-      PhotoUploadResponseSchema,
+      LegacyPhotoSchema,
+      LegacyPhotoUploadRequestSchema,
+      LegacyPhotoUploadResponseSchema,
     ];
 
     for (const schema of schemas) {
@@ -266,7 +266,7 @@ describe("cross-module ID consistency", () => {
     ).toBe(true);
 
     expect(
-      PhotoUploadRequestSchema.safeParse({
+      LegacyPhotoUploadRequestSchema.safeParse({
         configurationId: CONFIG_ID,
         filename: "photo.jpg",
         contentType: "image/jpeg",
@@ -274,8 +274,8 @@ describe("cross-module ID consistency", () => {
     ).toBe(true);
   });
 
-  it("UserIdSchema accepted by PhotoSchema.uploadedBy", () => {
-    const photo = PhotoSchema.safeParse({
+  it("UserIdSchema accepted by LegacyPhotoSchema.uploadedBy", () => {
+    const photo = LegacyPhotoSchema.safeParse({
       id: PHOTO_ID,
       configurationId: CONFIG_ID,
       uploadedBy: USER_ID,
@@ -574,7 +574,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
   // The running system uses HallkeeperSheetDataSchema for on-the-fly generation.
 
   it("Step 11: Photo upload flow — request → response → stored entity", () => {
-    const uploadReq = PhotoUploadRequestSchema.safeParse({
+    const uploadReq = LegacyPhotoUploadRequestSchema.safeParse({
       configurationId: CONFIG_ID,
       filename: "grand-hall-ceremony.jpg",
       contentType: "image/jpeg",
@@ -582,14 +582,14 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     });
     expect(uploadReq.success).toBe(true);
 
-    const uploadResp = PhotoUploadResponseSchema.safeParse({
+    const uploadResp = LegacyPhotoUploadResponseSchema.safeParse({
       photoId: PHOTO_ID,
       presignedUrl: "https://s3.eu-west-2.amazonaws.com/omnitwin-photos/grand-hall-ceremony.jpg?X-Amz-Signature=abc",
       expiresAt: "2025-06-15T15:00:00.000Z",
     });
     expect(uploadResp.success).toBe(true);
 
-    const storedPhoto = PhotoSchema.safeParse({
+    const storedPhoto = LegacyPhotoSchema.safeParse({
       id: PHOTO_ID,
       configurationId: CONFIG_ID,
       uploadedBy: USER_ID,

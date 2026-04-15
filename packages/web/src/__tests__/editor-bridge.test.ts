@@ -81,6 +81,50 @@ describe("EditorBridge component", () => {
     const { EditorBridge } = await import("../components/editor/EditorBridge.js");
     expect(typeof EditorBridge).toBe("function");
   });
+
+  // -------------------------------------------------------------------------
+  // Sync-flag pin: a placement-store update should round-trip into the
+  // editor-store EXACTLY ONCE per change. Without the `syncing` ref, the
+  // editor→placement effect would re-fire on the placement→editor write,
+  // bouncing forever. We mount the bridge, push a placement, and assert
+  // that React's effects settled inside one tick (no infinite loop), and
+  // that the editor-store has the new item but didn't accumulate
+  // duplicates from a self-echo.
+  // -------------------------------------------------------------------------
+  it("placement-store update flows into editor-store exactly once (no self-echo)", async () => {
+    const React = await import("react");
+    const { render, cleanup } = await import("@testing-library/react");
+    const { EditorBridge } = await import("../components/editor/EditorBridge.js");
+    const { usePlacementStore } = await import("../stores/placement-store.js");
+
+    // Seed a configId so the placement→editor effect is enabled
+    useEditorStore.setState({ configId: "cfg-test" });
+    usePlacementStore.setState({ placedItems: [] });
+
+    const { unmount } = render(React.createElement(EditorBridge));
+
+    // Push directly into placement-store to simulate a user interaction.
+    usePlacementStore.setState({
+      placedItems: [
+        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, groupId: null },
+      ],
+    });
+
+    // Yield to React for the subscription effect to flush.
+    await new Promise((r) => { setTimeout(r, 0); });
+
+    const editorObjects = useEditorStore.getState().objects;
+    expect(editorObjects).toHaveLength(1);
+    expect(editorObjects[0]?.id).toBe("p1");
+
+    // The placement store should still have exactly one item — if the
+    // sync-flag had failed, the editor→placement effect would have
+    // re-fired on its own write and we'd see a thrash signature here.
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+
+    unmount();
+    cleanup();
+  });
 });
 
 describe("keyboard-driven actions", () => {

@@ -249,12 +249,18 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
           />
         )}
 
-        {/* Vertex handles */}
+        {/* Vertex handles.
+            Why index-as-key: vertices have no stable identity in the data model
+            (just {x, y} pairs). The previous key included canvas coords, which
+            changed every mousemove during a drag — React was unmounting and
+            remounting the circle on every tick. Index is the one stable
+            identifier across drag, and a delete-and-re-add WANTS a remount,
+            so this is the correct semantic. */}
         {value.map((p, i) => {
           const { cx, cy } = worldToCanvas(p, viewport);
           return (
             <circle
-              key={`${String(cx)}-${String(cy)}-${String(i)}`}
+              key={i}
               data-testid={`polygon-vertex-${String(i)}`}
               cx={cx}
               cy={cy}

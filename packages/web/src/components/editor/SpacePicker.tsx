@@ -394,7 +394,13 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
         </p>
       </footer>
 
-      {/* Global responsive overrides */}
+      {/* Global responsive overrides + scrollbar polish.
+          - 768px: collapse 2-col grids to 1-col (existing tablet break).
+          - 640px: tighten section padding so phones don't lose 32px on each
+            side; reduce hero h1 line height since the clamp can wrap awkwardly.
+          - Scrollbar: opt into the custom WebKit/Firefox styling on the
+            spaces section so the dark theme isn't broken by the system
+            scrollbar's bright track. */}
       <style>{`
         @media (max-width: 768px) {
           #spaces-section > div:last-of-type {
@@ -404,6 +410,15 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
             grid-template-columns: 1fr !important;
           }
         }
+        @media (max-width: 640px) {
+          section { padding-left: 20px !important; padding-right: 20px !important; }
+          #spaces-section { padding-left: 20px !important; padding-right: 20px !important; }
+        }
+        html { scrollbar-width: thin; scrollbar-color: ${GOLD}80 ${CHARCOAL}; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: ${CHARCOAL}; }
+        ::-webkit-scrollbar-thumb { background: ${GOLD}80; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: ${GOLD}; }
       `}</style>
     </div>
   );

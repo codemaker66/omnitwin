@@ -3,9 +3,9 @@ import {
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
   PhotoContentTypeSchema,
-  PhotoSchema,
-  PhotoUploadRequestSchema,
-  PhotoUploadResponseSchema,
+  LegacyPhotoSchema,
+  LegacyPhotoUploadRequestSchema,
+  LegacyPhotoUploadResponseSchema,
   ReferencePhotoSchema,
 } from "../photo.js";
 
@@ -98,12 +98,12 @@ describe("PhotoContentTypeSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PhotoSchema
+// LegacyPhotoSchema
 // ---------------------------------------------------------------------------
 
-describe("PhotoSchema", () => {
+describe("LegacyPhotoSchema", () => {
   it("accepts a fully valid photo", () => {
-    const result = PhotoSchema.safeParse(validPhoto);
+    const result = LegacyPhotoSchema.safeParse(validPhoto);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.caption).toBe("Grand Hall ceremony setup");
@@ -112,7 +112,7 @@ describe("PhotoSchema", () => {
   });
 
   it("accepts null thumbnailUrl", () => {
-    const result = PhotoSchema.safeParse({ ...validPhoto, thumbnailUrl: null });
+    const result = LegacyPhotoSchema.safeParse({ ...validPhoto, thumbnailUrl: null });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.thumbnailUrl).toBeNull();
@@ -121,7 +121,7 @@ describe("PhotoSchema", () => {
 
   it("accepts photo without caption (defaults to empty string)", () => {
     const { caption: _, ...noCaption } = validPhoto;
-    const result = PhotoSchema.safeParse(noCaption);
+    const result = LegacyPhotoSchema.safeParse(noCaption);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.caption).toBe("");
@@ -129,7 +129,7 @@ describe("PhotoSchema", () => {
   });
 
   it("trims whitespace from caption", () => {
-    const result = PhotoSchema.safeParse({ ...validPhoto, caption: "  Trimmed  " });
+    const result = LegacyPhotoSchema.safeParse({ ...validPhoto, caption: "  Trimmed  " });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.caption).toBe("Trimmed");
@@ -137,70 +137,70 @@ describe("PhotoSchema", () => {
   });
 
   it("rejects caption exceeding 1000 characters", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, caption: "A".repeat(1001) }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, caption: "A".repeat(1001) }).success).toBe(false);
   });
 
   it("accepts caption of exactly 1000 characters", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, caption: "A".repeat(1000) }).success).toBe(true);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, caption: "A".repeat(1000) }).success).toBe(true);
   });
 
   it("rejects missing id", () => {
     const { id: _, ...noId } = validPhoto;
-    expect(PhotoSchema.safeParse(noId).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse(noId).success).toBe(false);
   });
 
   it("rejects invalid UUID for id", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, id: "bad" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, id: "bad" }).success).toBe(false);
   });
 
   it("rejects missing configurationId", () => {
     const { configurationId: _, ...noConfig } = validPhoto;
-    expect(PhotoSchema.safeParse(noConfig).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse(noConfig).success).toBe(false);
   });
 
   it("rejects invalid UUID for configurationId", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, configurationId: "bad" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, configurationId: "bad" }).success).toBe(false);
   });
 
   it("rejects missing uploadedBy", () => {
     const { uploadedBy: _, ...noUploader } = validPhoto;
-    expect(PhotoSchema.safeParse(noUploader).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse(noUploader).success).toBe(false);
   });
 
   it("rejects invalid UUID for uploadedBy", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, uploadedBy: "bad" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, uploadedBy: "bad" }).success).toBe(false);
   });
 
   it("rejects missing url", () => {
     const { url: _, ...noUrl } = validPhoto;
-    expect(PhotoSchema.safeParse(noUrl).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse(noUrl).success).toBe(false);
   });
 
   it("rejects invalid url", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, url: "not-a-url" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, url: "not-a-url" }).success).toBe(false);
   });
 
   it("rejects invalid thumbnailUrl (not a URL and not null)", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, thumbnailUrl: "not-a-url" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, thumbnailUrl: "not-a-url" }).success).toBe(false);
   });
 
   it("rejects missing createdAt", () => {
     const { createdAt: _, ...noCreated } = validPhoto;
-    expect(PhotoSchema.safeParse(noCreated).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse(noCreated).success).toBe(false);
   });
 
   it("rejects invalid datetime for createdAt", () => {
-    expect(PhotoSchema.safeParse({ ...validPhoto, createdAt: "bad" }).success).toBe(false);
+    expect(LegacyPhotoSchema.safeParse({ ...validPhoto, createdAt: "bad" }).success).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// PhotoUploadRequestSchema
+// LegacyPhotoUploadRequestSchema
 // ---------------------------------------------------------------------------
 
-describe("PhotoUploadRequestSchema", () => {
+describe("LegacyPhotoUploadRequestSchema", () => {
   it("accepts a valid upload request", () => {
-    const result = PhotoUploadRequestSchema.safeParse(validUploadRequest);
+    const result = LegacyPhotoUploadRequestSchema.safeParse(validUploadRequest);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.filename).toBe("ceremony-setup.jpg");
@@ -210,7 +210,7 @@ describe("PhotoUploadRequestSchema", () => {
 
   it("accepts request without caption (defaults to empty string)", () => {
     const { caption: _, ...noCaption } = validUploadRequest;
-    const result = PhotoUploadRequestSchema.safeParse(noCaption);
+    const result = LegacyPhotoUploadRequestSchema.safeParse(noCaption);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.caption).toBe("");
@@ -218,7 +218,7 @@ describe("PhotoUploadRequestSchema", () => {
   });
 
   it("trims whitespace from filename", () => {
-    const result = PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "  photo.jpg  " });
+    const result = LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "  photo.jpg  " });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.filename).toBe("photo.jpg");
@@ -227,69 +227,69 @@ describe("PhotoUploadRequestSchema", () => {
 
   it("rejects empty filename", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "" }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "" }).success,
     ).toBe(false);
   });
 
   it("rejects whitespace-only filename", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "   " }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "   " }).success,
     ).toBe(false);
   });
 
   it("rejects filename exceeding 255 characters", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "A".repeat(256) }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "A".repeat(256) }).success,
     ).toBe(false);
   });
 
   it("accepts filename of exactly 255 characters", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "A".repeat(251) + ".jpg" }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, filename: "A".repeat(251) + ".jpg" }).success,
     ).toBe(true);
   });
 
   it("rejects missing configurationId", () => {
     const { configurationId: _, ...noConfig } = validUploadRequest;
-    expect(PhotoUploadRequestSchema.safeParse(noConfig).success).toBe(false);
+    expect(LegacyPhotoUploadRequestSchema.safeParse(noConfig).success).toBe(false);
   });
 
   it("rejects invalid UUID for configurationId", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, configurationId: "bad" }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, configurationId: "bad" }).success,
     ).toBe(false);
   });
 
   it("rejects missing filename", () => {
     const { filename: _, ...noFile } = validUploadRequest;
-    expect(PhotoUploadRequestSchema.safeParse(noFile).success).toBe(false);
+    expect(LegacyPhotoUploadRequestSchema.safeParse(noFile).success).toBe(false);
   });
 
   it("rejects missing contentType", () => {
     const { contentType: _, ...noCt } = validUploadRequest;
-    expect(PhotoUploadRequestSchema.safeParse(noCt).success).toBe(false);
+    expect(LegacyPhotoUploadRequestSchema.safeParse(noCt).success).toBe(false);
   });
 
   it("rejects invalid contentType", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, contentType: "image/gif" }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, contentType: "image/gif" }).success,
     ).toBe(false);
   });
 
   it.each([...ALLOWED_PHOTO_CONTENT_TYPES])("accepts contentType '%s'", (ct) => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, contentType: ct }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, contentType: ct }).success,
     ).toBe(true);
   });
 
   it("rejects caption exceeding 1000 characters", () => {
     expect(
-      PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, caption: "A".repeat(1001) }).success,
+      LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, caption: "A".repeat(1001) }).success,
     ).toBe(false);
   });
 
   it("trims whitespace from caption", () => {
-    const result = PhotoUploadRequestSchema.safeParse({ ...validUploadRequest, caption: "  Nice  " });
+    const result = LegacyPhotoUploadRequestSchema.safeParse({ ...validUploadRequest, caption: "  Nice  " });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.caption).toBe("Nice");
@@ -298,12 +298,12 @@ describe("PhotoUploadRequestSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PhotoUploadResponseSchema
+// LegacyPhotoUploadResponseSchema
 // ---------------------------------------------------------------------------
 
-describe("PhotoUploadResponseSchema", () => {
+describe("LegacyPhotoUploadResponseSchema", () => {
   it("accepts a valid upload response", () => {
-    const result = PhotoUploadResponseSchema.safeParse(validUploadResponse);
+    const result = LegacyPhotoUploadResponseSchema.safeParse(validUploadResponse);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.photoId).toBe(VALID_UUID);
@@ -312,46 +312,46 @@ describe("PhotoUploadResponseSchema", () => {
 
   it("rejects missing photoId", () => {
     const { photoId: _, ...noId } = validUploadResponse;
-    expect(PhotoUploadResponseSchema.safeParse(noId).success).toBe(false);
+    expect(LegacyPhotoUploadResponseSchema.safeParse(noId).success).toBe(false);
   });
 
   it("rejects invalid UUID for photoId", () => {
     expect(
-      PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, photoId: "bad" }).success,
+      LegacyPhotoUploadResponseSchema.safeParse({ ...validUploadResponse, photoId: "bad" }).success,
     ).toBe(false);
   });
 
   it("rejects missing presignedUrl", () => {
     const { presignedUrl: _, ...noUrl } = validUploadResponse;
-    expect(PhotoUploadResponseSchema.safeParse(noUrl).success).toBe(false);
+    expect(LegacyPhotoUploadResponseSchema.safeParse(noUrl).success).toBe(false);
   });
 
   it("rejects invalid presignedUrl", () => {
     expect(
-      PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, presignedUrl: "not-a-url" }).success,
+      LegacyPhotoUploadResponseSchema.safeParse({ ...validUploadResponse, presignedUrl: "not-a-url" }).success,
     ).toBe(false);
   });
 
   it("rejects empty presignedUrl", () => {
     expect(
-      PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, presignedUrl: "" }).success,
+      LegacyPhotoUploadResponseSchema.safeParse({ ...validUploadResponse, presignedUrl: "" }).success,
     ).toBe(false);
   });
 
   it("rejects missing expiresAt", () => {
     const { expiresAt: _, ...noExpiry } = validUploadResponse;
-    expect(PhotoUploadResponseSchema.safeParse(noExpiry).success).toBe(false);
+    expect(LegacyPhotoUploadResponseSchema.safeParse(noExpiry).success).toBe(false);
   });
 
   it("rejects invalid datetime for expiresAt", () => {
     expect(
-      PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, expiresAt: "not-a-date" }).success,
+      LegacyPhotoUploadResponseSchema.safeParse({ ...validUploadResponse, expiresAt: "not-a-date" }).success,
     ).toBe(false);
   });
 
   it("rejects null for expiresAt", () => {
     expect(
-      PhotoUploadResponseSchema.safeParse({ ...validUploadResponse, expiresAt: null }).success,
+      LegacyPhotoUploadResponseSchema.safeParse({ ...validUploadResponse, expiresAt: null }).success,
     ).toBe(false);
   });
 });

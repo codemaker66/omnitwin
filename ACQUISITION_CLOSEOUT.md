@@ -17,7 +17,7 @@ OMNITWIN is a browser-based photorealistic venue-planning platform for Trades Ha
 |---|---|
 | `pnpm typecheck` | exit 0 — zero errors across 3 packages |
 | `pnpm lint` | exit 0 — zero warnings under strict typescript-eslint |
-| `pnpm test` (unit) | **2,718 passed / 2,718** across 105 files |
+| `pnpm test` (unit) | **2,730 passed / 2,730** across 106 files (after B→A sweep) |
 | `pnpm test` (api integration, real Neon) | **39 / 39** green |
 | `pnpm build` | exit 0 — all workspaces |
 
@@ -29,14 +29,24 @@ OMNITWIN is a browser-based photorealistic venue-planning platform for Trades Ha
 | `@omnitwin/api` | 16 routes + 8 services + migrations | **A** | `services/email.ts`, `lib/placement-validation.ts`, `drizzle/0007`, `drizzle/0008` grade **S** |
 | `@omnitwin/web` | 197 files incl. e2e | **A** | `components/dashboard/PolygonEditor.tsx`, `data/room-geometries.ts` grade **S** |
 
-**Grade distribution across entire codebase** (n ≈ 323 source files):
+**Grade distribution across entire codebase** (n ≈ 324 source files, after B→A sweep):
 
 | Grade | Count | % |
 |---|---|---|
 | S (exemplary / reference) | 6 | ~2% |
-| A (shippable as-is) | ~300 | ~93% |
-| B (polish gap, no correctness issue) | ~17 | ~5% |
+| A (shippable as-is) | ~306 | ~94% |
+| B (polish gap, no correctness issue) | ~12 | ~4% |
 | C–F | 0 | 0% |
+
+**B→A sweep (2026-04-15, post-closeout):** five of the twelve B items were lifted to A in a single commit:
+
+- PolygonEditor SVG keys (index-based, remount-free across drag)
+- Root error boundary error-class classification (network vs render)
+- SpacePicker 640px breakpoint + custom scrollbar polish
+- `Photo*` → `LegacyPhoto*` rename disambiguating legacy vs live schemas
+- EditorBridge `syncing` ref now has a `**Why:**` comment and a round-trip regression test
+
+One item was pulled from the sweep: the grader's "useGLTF timeout fallback in RoomMesh" was based on a misread — `RoomMesh.tsx` builds geometry from polygons and doesn't use `useGLTF`. The closest actual GLTF surface is `GltfFurniture.tsx`; left open for a separate decision.
 
 ---
 

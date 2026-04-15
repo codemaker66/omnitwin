@@ -10,6 +10,15 @@ import type { PlacedItem } from "../../lib/placement.js";
 //
 // Backend load → editor-store → placement-store (initial population)
 // User interaction → placement-store → editor-store (for auto-save)
+//
+// **Why the `syncing` ref:** the two effects below are mutually triggering
+// — editor-store updates push into placement-store, and the placement-store
+// subscription pushes the result back into editor-store. Without a guard,
+// every commit would bounce between them indefinitely. The ref is set
+// synchronously before each push and cleared synchronously after, so any
+// store emission that arrives mid-push is recognised as a self-echo and
+// ignored. `itemsMatch` is a secondary guard for the rare case where
+// multiple subscribers re-enter through React's batched-update window.
 // ---------------------------------------------------------------------------
 
 /**

@@ -144,6 +144,25 @@ describe("PolygonEditor", () => {
     expect(at(after, 0).y).toBeCloseTo((100 - 200) / scale, 2);
   });
 
+  it("preserves vertex DOM identity across a drag (stable React key)", () => {
+    // Regression: the previous key included canvas coordinates, so React
+    // unmounted and remounted the circle on every mousemove — wasteful
+    // and a smell that future expensive children (drei labels, refs)
+    // would silently churn. Index-based key is the only stable identifier.
+    const { container, getByRole, getByTestId } = render(<TestHarness initial={RECTANGLE_10X10} />);
+    const svg = getByRole("application");
+
+    const before = getByTestId("polygon-vertex-0");
+    fireEvent.mouseDown(svg, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(svg, { clientX: 120, clientY: 120 });
+    fireEvent.mouseMove(svg, { clientX: 140, clientY: 140 });
+    fireEvent.mouseMove(svg, { clientX: 160, clientY: 160 });
+    fireEvent.mouseUp(svg);
+    const after = container.querySelector("[data-testid='polygon-vertex-0']");
+    // Same DOM node — React reused it instead of remounting on each tick.
+    expect(after).toBe(before);
+  });
+
   it("does not move any vertex when the user clicks far from every handle", () => {
     // Click on empty canvas with a non-empty polygon → appends a new vertex,
     // does NOT move an existing one.
