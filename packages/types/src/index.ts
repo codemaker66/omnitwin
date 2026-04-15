@@ -166,6 +166,33 @@ export {
 } from "./hallkeeper.js";
 
 export {
+  SETUP_PHASES,
+  SetupPhaseSchema,
+  ImpliedAccessorySchema,
+  ACCESSORY_RULES,
+  accessoriesFor,
+  defaultPhaseForCategory,
+  type SetupPhase,
+  type ImpliedAccessory,
+} from "./hallkeeper-accessories.js";
+
+export {
+  ZONES,
+  ZoneSchema,
+  ManifestRowV2Schema,
+  PhaseZoneSchema,
+  PhaseSchema,
+  TimingSchema,
+  HallkeeperSheetV2Schema,
+  type Zone,
+  type ManifestRowV2,
+  type PhaseZone,
+  type Phase,
+  type Timing,
+  type HallkeeperSheetV2,
+} from "./hallkeeper-v2.js";
+
+export {
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
   PhotoContentTypeSchema,
