@@ -27,14 +27,16 @@ export const ManifestItemSchema = z.object({
 export type ManifestItem = z.infer<typeof ManifestItemSchema>;
 
 // ---------------------------------------------------------------------------
-// Hallkeeper Sheet Data — the generated-on-the-fly response from the API
+// Hallkeeper Sheet Data — LEGACY flat-manifest response shape.
 //
-// The live system does NOT persist hallkeeper sheets as a DB entity.
-// Instead, GET /hallkeeper/:configId/data assembles the data from the
-// configuration, venue, space, and placed objects, then returns this shape.
-// GET /hallkeeper/:configId/sheet generates a PDF binary on-the-fly.
+// Status: superseded by HallkeeperSheetV2 (see hallkeeper-v2.ts). The web
+// view migrated to /v2 during the phase-zone redesign. This shape stays
+// alive because the PDF renderer still consumes it; new consumers should
+// target HallkeeperSheetV2.
 //
-// Fields match hallkeeper-sheet-v2.ts assembleSheetData() return shape.
+// GET /hallkeeper/:configId/data returns this shape.
+// GET /hallkeeper/:configId/sheet generates a PDF from the same shape.
+// GET /hallkeeper/:configId/v2 returns HallkeeperSheetV2 (new).
 // ---------------------------------------------------------------------------
 
 export const HallkeeperSheetDataSchema = z.object({

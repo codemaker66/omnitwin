@@ -68,7 +68,18 @@ export async function hallkeeperSheetRoutes(
       .send(pdfBuffer);
   });
 
-  // GET /hallkeeper/:configId/data — JSON data for web view (authenticated)
+  // GET /hallkeeper/:configId/data — JSON data (authenticated).
+  //
+  // Status: LEGACY. The web HallkeeperPage migrated to /v2 in the phase-zone
+  // redesign; this endpoint remains live because:
+  //   1. The PDF renderer (assembleSheetData -> generateSheetPdf) still
+  //      consumes the flat manifest shape — retiring /data before the PDF
+  //      is rewritten against v2 would break downloads.
+  //   2. External integrations (if any) may reference /data; we keep the
+  //      contract until we're confident nothing reaches it.
+  //
+  // When the PDF is ported to v2, retire /data and delete assembleSheetData
+  // + the v1 manifest-generator.ts.
   server.get("/:configId/data", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
