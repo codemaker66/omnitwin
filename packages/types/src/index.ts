@@ -157,11 +157,9 @@ export {
 export {
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
-  HallkeeperSheetDataSchema,
   GenerateHallkeeperSheetRequestSchema,
   type HallkeeperSheetId,
   type ManifestItem,
-  type HallkeeperSheetData,
   type GenerateHallkeeperSheetRequest,
 } from "./hallkeeper.js";
 

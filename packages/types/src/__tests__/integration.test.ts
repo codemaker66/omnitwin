@@ -571,7 +571,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
   });
 
   // Step 10 (HallkeeperSheetSchema) removed — deprecated persistent entity deleted.
-  // The running system uses HallkeeperSheetDataSchema for on-the-fly generation.
+  // The running system uses HallkeeperSheetV2Schema for on-the-fly generation.
 
   it("Step 11: Photo upload flow — request → response → stored entity", () => {
     const uploadReq = LegacyPhotoUploadRequestSchema.safeParse({

@@ -1,24 +1,29 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
-import { assembleSheetData, generateSheetPdf } from "../services/hallkeeper-sheet-v2.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
+import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
-// Hallkeeper sheet routes — PDF generation and data endpoint
+// Hallkeeper sheet routes — v2 end-to-end
 //
-// SECURITY: these endpoints expose PII (contact name, email, phone, event
-// details). They MUST be authenticated. Access is granted to:
-//   - The config owner (the user who claimed the config)
+// Two endpoints, both authenticated:
+//   GET /hallkeeper/:configId/sheet  → portrait A4 PDF (phase/zone layout)
+//   GET /hallkeeper/:configId/v2     → JSON HallkeeperSheetV2 (for web view)
+//
+// Both routes share the same assembleSheetDataV2 data path, so the PDF
+// and the web view are guaranteed to show the same manifest — no risk
+// of shape drift between "what the planner sees" and "what the
+// hallkeeper gets printed".
+//
+// SECURITY: these endpoints expose PII (contact name, email, phone,
+// event details). Access is granted to:
+//   - The config owner (the user who claimed it)
 //   - Venue staff / hallkeepers for the config's venue
 //   - Admin
-//
-// Punch list #4: the previous version was anonymous — anyone with a guessed
-// or leaked UUID could retrieve full event PII. The signed-share-URL UX
-// (e.g. one-time link generated from the dashboard) is a follow-up; for
-// now we require an auth session, which the dashboard already has.
+// Anonymous access is blocked — punch list #4.
 // ---------------------------------------------------------------------------
 
 const ConfigIdParam = z.object({ configId: z.string().uuid() });
@@ -48,18 +53,17 @@ export async function hallkeeperSheetRoutes(
 
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
-    const data = await assembleSheetData(db, params.data.configId, baseUrl);
-    if (data === null) {
+    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    if (result === null) {
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }
 
-    if (!canAccessResource(request.user, data.config.userId, data.venue.id)) {
+    if (!canAccessResource(request.user, result.authPivot.configUserId, result.authPivot.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const pdfBuffer = await generateSheetPdf(data);
-
-    const filename = `hallkeeper-sheet-${data.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
+    const pdfBuffer = await generateSheetPdfV2(result.payload);
+    const filename = `hallkeeper-sheet-${result.payload.config.name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-")}.pdf`;
 
     void reply
       .header("Content-Type", "application/pdf")
@@ -68,42 +72,7 @@ export async function hallkeeperSheetRoutes(
       .send(pdfBuffer);
   });
 
-  // GET /hallkeeper/:configId/data — JSON data (authenticated).
-  //
-  // Status: LEGACY. The web HallkeeperPage migrated to /v2 in the phase-zone
-  // redesign; this endpoint remains live because:
-  //   1. The PDF renderer (assembleSheetData -> generateSheetPdf) still
-  //      consumes the flat manifest shape — retiring /data before the PDF
-  //      is rewritten against v2 would break downloads.
-  //   2. External integrations (if any) may reference /data; we keep the
-  //      contract until we're confident nothing reaches it.
-  //
-  // When the PDF is ported to v2, retire /data and delete assembleSheetData
-  // + the v1 manifest-generator.ts.
-  server.get("/:configId/data", { preHandler: [authenticate] }, async (request, reply) => {
-    const params = ConfigIdParam.safeParse(request.params);
-    if (!params.success) {
-      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
-    }
-
-    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
-
-    const data = await assembleSheetData(db, params.data.configId, baseUrl);
-    if (data === null) {
-      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
-    }
-
-    if (!canAccessResource(request.user, data.config.userId, data.venue.id)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-
-    return { data };
-  });
-
-  // GET /hallkeeper/:configId/v2 — NEW phase/zone data shape for the
-  // redesigned sheet. Lives alongside /data (v1) until the v1 web view
-  // retires, so a rollback to v1 is a routing-level change with no data
-  // migration. Same auth policy as /data.
+  // GET /hallkeeper/:configId/v2 — JSON HallkeeperSheetV2 payload
   server.get("/:configId/v2", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {

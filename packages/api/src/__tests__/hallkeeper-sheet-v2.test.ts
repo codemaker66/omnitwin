@@ -86,25 +86,8 @@ describe("GET /hallkeeper/:configId/v2 — new phase/zone sheet", () => {
   });
 });
 
-describe("GET /hallkeeper/:configId/data", () => {
-  it("returns 401 without authentication", async () => {
-    const res = await server.inject({
-      method: "GET",
-      url: `/hallkeeper/${FAKE_CONFIG_ID}/data`,
-    });
-    expect(res.statusCode).toBe(401);
-  });
-
-  it("returns 400 for invalid config ID (with auth)", async () => {
-    const res = await server.inject({
-      method: "GET",
-      url: "/hallkeeper/not-a-uuid/data",
-      headers: adminAuth,
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it("accepts download query parameter (with auth)", async () => {
+describe("GET /hallkeeper/:configId/sheet — download query param", () => {
+  it("accepts ?download=true (with auth)", async () => {
     const res = await server.inject({
       method: "GET",
       url: `/hallkeeper/${FAKE_CONFIG_ID}/sheet?download=true`,
@@ -112,5 +95,16 @@ describe("GET /hallkeeper/:configId/data", () => {
     });
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
+  });
+});
+
+describe("GET /hallkeeper/:configId/data — retired", () => {
+  it("returns 404 (route removed when the PDF ported to v2)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/data`,
+      headers: adminAuth,
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

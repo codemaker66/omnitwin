@@ -9,7 +9,7 @@ import { generateManifestV2, type ManifestObjectV2 } from "./manifest-generator-
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
 //
-// Mirrors assembleSheetData (v1) but produces the v2 HallkeeperSheetV2
+// Produces the HallkeeperSheetV2
 // shape instead of the flat manifest. The v2 shape is phase/zone
 // grouped with dependency ordering and stable keys — see
 // @omnitwin/types/hallkeeper-v2.ts for the schema contract.
@@ -27,8 +27,7 @@ const SETUP_BUFFER_MINUTES = 90;
 
 /**
  * Returns v2 data with the auth-pivot fields (venue.id, config.userId)
- * alongside the schema-shaped response — same pattern as assembleSheetData
- * in hallkeeper-sheet-v2.ts so the route handler can call canAccessResource
+ * alongside the schema-shaped response so the route handler can call canAccessResource
  * without loading a second query.
  */
 export interface SheetDataV2Internal {

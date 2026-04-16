@@ -440,20 +440,21 @@ describe("old auth routes removed", () => {
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet auth — punch list #4
 //
-// REGRESSION: the previous version of /hallkeeper/:configId/sheet and
-// /hallkeeper/:configId/data were anonymous endpoints that exposed full
+// REGRESSION: earlier versions of /hallkeeper/:configId/sheet and
+// /hallkeeper/:configId/v2 were anonymous endpoints that exposed full
 // event PII (contact name, email, phone, event details) to anyone who
 // guessed or was given a UUID. They are now authenticated. These tests
 // pin the requirement so a future refactor can't silently make them
-// anonymous again.
+// anonymous again. The old /data route was retired when the PDF ported
+// to the v2 data shape -- /v2 is its replacement.
 // ---------------------------------------------------------------------------
 
 describe("hallkeeper sheet auth requirement", () => {
   const VALID_UUID = "00000000-0000-0000-0000-000000000099";
 
-  it("GET /hallkeeper/:id/data without auth: rejected with 401", async () => {
+  it("GET /hallkeeper/:id/v2 without auth: rejected with 401", async () => {
     const res = await server.inject({
-      method: "GET", url: `/hallkeeper/${VALID_UUID}/data`,
+      method: "GET", url: `/hallkeeper/${VALID_UUID}/v2`,
     });
     expect(res.statusCode).toBe(401);
   });
@@ -465,13 +466,10 @@ describe("hallkeeper sheet auth requirement", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("GET /hallkeeper/:id/data with auth: passes the auth gate (NOT 401)", async () => {
-    // Positive case — sanity check that an authenticated user can at least
-    // reach the handler. May be 403/404 from the mock DB downstream;
-    // what matters is that 401 isn't blocking legitimate access.
+  it("GET /hallkeeper/:id/v2 with auth: passes the auth gate (NOT 401)", async () => {
     const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
     const res = await server.inject({
-      method: "GET", url: `/hallkeeper/${VALID_UUID}/data`,
+      method: "GET", url: `/hallkeeper/${VALID_UUID}/v2`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).not.toBe(401);
@@ -486,9 +484,9 @@ describe("hallkeeper sheet auth requirement", () => {
     expect(res.statusCode).not.toBe(401);
   });
 
-  it("GET /hallkeeper/:id/data with bad auth: 401 (regression marker)", async () => {
+  it("GET /hallkeeper/:id/v2 with bad auth: 401 (regression marker)", async () => {
     const res = await server.inject({
-      method: "GET", url: `/hallkeeper/${VALID_UUID}/data`,
+      method: "GET", url: `/hallkeeper/${VALID_UUID}/v2`,
       headers: { authorization: "Bearer not-a-real-token" },
     });
     expect(res.statusCode).toBe(401);

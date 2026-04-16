@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   HallkeeperSheetIdSchema,
   ManifestItemSchema,
-  HallkeeperSheetDataSchema,
   GenerateHallkeeperSheetRequestSchema,
 } from "../hallkeeper.js";
 import { FURNITURE_CATEGORIES } from "../furniture.js";
@@ -19,46 +18,6 @@ const validManifestItem = {
   category: "table" as const,
   quantity: 12,
   notes: "Linen covers required",
-};
-
-// HallkeeperSheetDataSchema — matches the live hallkeeper-sheet-v2 API response
-const validSheetData = {
-  config: {
-    id: VALID_CONFIG_UUID,
-    name: "Wedding Ceremony",
-    guestCount: 120,
-    layoutStyle: "ceremony",
-  },
-  venue: {
-    name: "Trades Hall Glasgow",
-    address: "85 Glassford Street, Glasgow, G1 1UH",
-    logoUrl: null,
-  },
-  space: {
-    name: "Grand Hall",
-    widthM: 21,
-    lengthM: 10,
-    heightM: 7,
-  },
-  manifest: {
-    rows: [
-      {
-        code: "TBL-001",
-        item: "Round Table (6ft)",
-        qty: 12,
-        position: "Centre",
-        notes: "White linen",
-        setupGroup: "Tables",
-      },
-    ],
-    totals: {
-      entries: [{ item: "Round Table (6ft)", qty: 12 }],
-      totalChairs: 0,
-    },
-  },
-  diagramUrl: "https://cdn.omnitwin.com/diagrams/abc123.svg",
-  webViewUrl: "https://app.omnitwin.com/config/b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-  generatedAt: "2025-01-15T10:30:00.000Z",
 };
 
 
@@ -191,108 +150,9 @@ describe("ManifestItemSchema", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// HallkeeperSheetDataSchema — new live API response shape
-// ---------------------------------------------------------------------------
-
-describe("HallkeeperSheetDataSchema", () => {
-  it("accepts a fully valid sheet data object", () => {
-    const result = HallkeeperSheetDataSchema.safeParse(validSheetData);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.config.name).toBe("Wedding Ceremony");
-      expect(result.data.manifest.rows).toHaveLength(1);
-    }
-  });
-
-  it("accepts null diagramUrl", () => {
-    const result = HallkeeperSheetDataSchema.safeParse({ ...validSheetData, diagramUrl: null });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.diagramUrl).toBeNull();
-    }
-  });
-
-  it("accepts empty manifest rows", () => {
-    const result = HallkeeperSheetDataSchema.safeParse({
-      ...validSheetData,
-      manifest: { rows: [], totals: { entries: [], totalChairs: 0 } },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts manifest totals with multiple entries and chairs", () => {
-    const result = HallkeeperSheetDataSchema.safeParse({
-      ...validSheetData,
-      manifest: {
-        rows: [],
-        totals: {
-          entries: [{ item: "Round Table", qty: 12 }, { item: "Stage Platform", qty: 2 }],
-          totalChairs: 96,
-        },
-      },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects missing config", () => {
-    const { config: _, ...noConfig } = validSheetData;
-    expect(HallkeeperSheetDataSchema.safeParse(noConfig).success).toBe(false);
-  });
-
-  it("rejects missing venue", () => {
-    const { venue: _, ...noVenue } = validSheetData;
-    expect(HallkeeperSheetDataSchema.safeParse(noVenue).success).toBe(false);
-  });
-
-  it("rejects missing space", () => {
-    const { space: _, ...noSpace } = validSheetData;
-    expect(HallkeeperSheetDataSchema.safeParse(noSpace).success).toBe(false);
-  });
-
-  it("rejects missing manifest", () => {
-    const { manifest: _, ...noManifest } = validSheetData;
-    expect(HallkeeperSheetDataSchema.safeParse(noManifest).success).toBe(false);
-  });
-
-  it("rejects missing webViewUrl", () => {
-    const { webViewUrl: _, ...noUrl } = validSheetData;
-    expect(HallkeeperSheetDataSchema.safeParse(noUrl).success).toBe(false);
-  });
-
-  it("rejects invalid UUID for config.id", () => {
-    expect(
-      HallkeeperSheetDataSchema.safeParse({
-        ...validSheetData,
-        config: { ...validSheetData.config, id: "bad" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects negative guestCount in config", () => {
-    expect(
-      HallkeeperSheetDataSchema.safeParse({
-        ...validSheetData,
-        config: { ...validSheetData.config, guestCount: -1 },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects negative totalChairs in totals", () => {
-    expect(
-      HallkeeperSheetDataSchema.safeParse({
-        ...validSheetData,
-        manifest: {
-          rows: [],
-          totals: { entries: [], totalChairs: -1 },
-        },
-      }).success,
-    ).toBe(false);
-  });
-});
-
-// HallkeeperSheetSchema (deprecated persistent entity) was deleted —
-// the running system generates sheets on-the-fly, not as DB entities.
+// HallkeeperSheetDataSchema was retired when the PDF and web view both
+// moved to the HallkeeperSheetV2 (phase/zone) shape — see hallkeeper-v2.ts
+// for the live schema + tests.
 
 // ---------------------------------------------------------------------------
 // GenerateHallkeeperSheetRequestSchema

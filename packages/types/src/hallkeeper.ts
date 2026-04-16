@@ -1,18 +1,29 @@
 import { z } from "zod";
-import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
+import { ConfigurationIdSchema } from "./configuration.js";
 import { FurnitureCategorySchema } from "./furniture.js";
 
 // ---------------------------------------------------------------------------
-// Hallkeeper Sheet ID — UUID v4
+// Hallkeeper primitives
+//
+// The full sheet payload now lives in hallkeeper-v2.ts (HallkeeperSheetV2,
+// phase/zone shape). This file keeps the small shared primitives that the
+// enquiry-based hallkeeper route still uses plus the trigger request:
+//
+//   - HallkeeperSheetIdSchema — UUID for any entity that needs to address
+//     a specific generated sheet instance (currently nothing persistent,
+//     but kept for when the draft/revision concept lands)
+//   - ManifestItemSchema — line-item shape used by the enquiry-based
+//     generator (services/hallkeeper-sheet.ts)
+//   - GenerateHallkeeperSheetRequest — the POST-trigger body shape
+//
+// The old HallkeeperSheetData + HallkeeperSheetDataSchema (flat manifest
+// with setupGroup) were retired when the PDF and web view both moved to
+// the v2 phase/zone layout.
 // ---------------------------------------------------------------------------
 
 export const HallkeeperSheetIdSchema = z.string().uuid();
 
 export type HallkeeperSheetId = z.infer<typeof HallkeeperSheetIdSchema>;
-
-// ---------------------------------------------------------------------------
-// Manifest Item — one line in the furniture manifest (name + count + notes)
-// ---------------------------------------------------------------------------
 
 const MAX_MANIFEST_QUANTITY = 10_000;
 const MAX_NOTES_LENGTH = 500;
@@ -26,65 +37,8 @@ export const ManifestItemSchema = z.object({
 
 export type ManifestItem = z.infer<typeof ManifestItemSchema>;
 
-// ---------------------------------------------------------------------------
-// Hallkeeper Sheet Data — LEGACY flat-manifest response shape.
-//
-// Status: superseded by HallkeeperSheetV2 (see hallkeeper-v2.ts). The web
-// view migrated to /v2 during the phase-zone redesign. This shape stays
-// alive because the PDF renderer still consumes it; new consumers should
-// target HallkeeperSheetV2.
-//
-// GET /hallkeeper/:configId/data returns this shape.
-// GET /hallkeeper/:configId/sheet generates a PDF from the same shape.
-// GET /hallkeeper/:configId/v2 returns HallkeeperSheetV2 (new).
-// ---------------------------------------------------------------------------
-
-export const HallkeeperSheetDataSchema = z.object({
-  config: z.object({
-    id: ConfigurationIdSchema,
-    name: z.string(),
-    guestCount: z.number().int().nonnegative(),
-    layoutStyle: LayoutStyleSchema,
-  }),
-  venue: z.object({
-    name: z.string(),
-    address: z.string(),
-    logoUrl: z.string().nullable().optional(),
-  }),
-  space: z.object({
-    name: z.string(),
-    widthM: z.number(),
-    lengthM: z.number(),
-    heightM: z.number(),
-  }),
-  manifest: z.object({
-    rows: z.array(z.object({
-      code: z.string(),
-      item: z.string(),
-      qty: z.number().int().nonnegative(),
-      position: z.string(),
-      notes: z.string(),
-      setupGroup: z.string(),
-    })),
-    totals: z.object({
-      entries: z.array(z.object({ item: z.string(), qty: z.number().int().nonnegative() })),
-      totalChairs: z.number().int().nonnegative(),
-    }),
-  }),
-  diagramUrl: z.string().nullable(),
-  webViewUrl: z.string(),
-  generatedAt: z.string().datetime(),
-});
-
-export type HallkeeperSheetData = z.infer<typeof HallkeeperSheetDataSchema>;
-
-// ---------------------------------------------------------------------------
-// Generate request — triggers PDF generation
-// ---------------------------------------------------------------------------
-
 export const GenerateHallkeeperSheetRequestSchema = z.object({
   configurationId: ConfigurationIdSchema,
 });
 
 export type GenerateHallkeeperSheetRequest = z.infer<typeof GenerateHallkeeperSheetRequestSchema>;
-
