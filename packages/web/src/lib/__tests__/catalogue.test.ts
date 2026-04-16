@@ -3,6 +3,7 @@ import {
   CATALOGUE_ITEMS,
   CATALOGUE_CATEGORIES,
   getCatalogueItem,
+  getCatalogueItemBySlug,
   getCatalogueByCategory,
   categoryLabel,
 } from "../catalogue.js";
@@ -68,37 +69,58 @@ describe("CATALOGUE_ITEMS", () => {
     }
   });
 
-  it("contains the 6ft round table", () => {
-    const item = getCatalogueItem("round-table-6ft");
+  it("items have UUIDs as ids (not slugs)", () => {
+    for (const item of CATALOGUE_ITEMS) {
+      expect(item.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    }
+  });
+
+  it("items have stable slugs for icon dispatch", () => {
+    for (const item of CATALOGUE_ITEMS) {
+      expect((item as CatalogueItem & { slug: string }).slug.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("contains the 6ft round table (by slug)", () => {
+    const item = getCatalogueItemBySlug("round-table-6ft");
     expect(item).toBeDefined();
     expect(item?.width).toBeCloseTo(1.83);
     expect(item?.tableShape).toBe("round");
   });
 
-  it("contains the 6ft trestle table", () => {
-    const item = getCatalogueItem("trestle-6ft");
+  it("contains the 6ft trestle table (by slug)", () => {
+    const item = getCatalogueItemBySlug("trestle-6ft");
     expect(item).toBeDefined();
     expect(item?.width).toBeCloseTo(1.83);
     expect(item?.tableShape).toBe("rectangular");
   });
 
-  it("contains the 4ft trestle table", () => {
-    const item = getCatalogueItem("trestle-4ft");
+  it("contains the 4ft trestle table (by slug)", () => {
+    const item = getCatalogueItemBySlug("trestle-4ft");
     expect(item).toBeDefined();
     expect(item?.width).toBeCloseTo(1.22);
     expect(item?.tableShape).toBe("rectangular");
   });
 
-  it("contains the banquet chair", () => {
-    const item = getCatalogueItem("banquet-chair");
+  it("contains the banquet chair (by slug)", () => {
+    const item = getCatalogueItemBySlug("banquet-chair");
     expect(item).toBeDefined();
     expect(item?.category).toBe("chair");
   });
 
-  it("contains the platform", () => {
-    const item = getCatalogueItem("platform");
+  it("contains the platform (by slug)", () => {
+    const item = getCatalogueItemBySlug("platform");
     expect(item).toBeDefined();
     expect(item?.category).toBe("stage");
+  });
+
+  it("getCatalogueItem works by UUID", () => {
+    const bySlug = getCatalogueItemBySlug("round-table-6ft");
+    expect(bySlug).toBeDefined();
+    if (bySlug !== undefined) {
+      const byUuid = getCatalogueItem(bySlug.id);
+      expect(byUuid).toBe(bySlug); // same reference — both maps point to the same object
+    }
   });
 });
 

@@ -22,6 +22,7 @@ import { clientRoutes } from "./routes/clients.js";
 import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
+import { assetRoutes } from "./routes/assets.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 
@@ -98,6 +99,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
+  await server.register(assetRoutes, { db, prefix: "/assets" });
 
   // --- WebSocket ---
   await server.register(websocket);

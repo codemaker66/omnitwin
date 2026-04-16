@@ -206,6 +206,14 @@ export {
   type ReferencePhoto,
 } from "./photo.js";
 
+export {
+  CANONICAL_ASSETS,
+  getCanonicalAssetById,
+  getCanonicalAssetBySlug,
+  type CanonicalAsset,
+  type TableShape,
+} from "./asset-catalogue.js";
+
 // --- ASPIRATIONAL: solver not yet consumed by web/API at runtime ---
 export {
   solveLayout,

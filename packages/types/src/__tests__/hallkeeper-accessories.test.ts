@@ -83,7 +83,7 @@ describe("ACCESSORY_RULES — shape integrity", () => {
   });
 });
 
-describe("ACCESSORY_RULES — contents spot-check", () => {
+describe("ACCESSORY_RULES — contents spot-check (canonical names)", () => {
   it("6ft Round Table generates a cloth, a runner (after cloth), candles", () => {
     const rules = accessoriesFor("6ft Round Table");
     const cloth = rules.find((r) => r.name === "Ivory Tablecloth");
@@ -97,17 +97,23 @@ describe("ACCESSORY_RULES — contents spot-check", () => {
     expect(candles?.quantityPerParent).toBe(3);
   });
 
-  it("Chiavari Chair implies a sash per chair", () => {
-    const rules = accessoriesFor("Chiavari Chair");
+  it("Banquet Chair implies a sash per chair", () => {
+    const rules = accessoriesFor("Banquet Chair");
     expect(rules).toHaveLength(1);
     expect(rules[0]?.name).toBe("Gold Chair Sash");
     expect(rules[0]?.quantityPerParent).toBe(1);
   });
 
-  it("PA Speaker implies a wireless mic + spare XLR in technical phase", () => {
-    const rules = accessoriesFor("PA Speaker");
-    expect(rules.find((r) => r.name === "Wireless Microphone")?.phase).toBe("technical");
-    expect(rules.find((r) => r.name === "XLR Cable (spare)")?.phase).toBe("technical");
+  it("Laser Projector implies an HDMI cable in technical phase", () => {
+    const rules = accessoriesFor("Laser Projector");
+    expect(rules.find((r) => r.name === "HDMI Cable (5m)")?.phase).toBe("technical");
+  });
+
+  it("Platform implies a stage skirt in dress phase", () => {
+    const rules = accessoriesFor("Platform");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.name).toBe("Black Stage Skirt");
+    expect(rules[0]?.phase).toBe("dress");
   });
 });
 
@@ -118,8 +124,8 @@ describe("accessoriesFor", () => {
   });
 
   it("returns the static list verbatim for known assets", () => {
-    const a = accessoriesFor("Trestle Table");
-    const b = accessoriesFor("Trestle Table");
+    const a = accessoriesFor("6ft Trestle Table");
+    const b = accessoriesFor("6ft Trestle Table");
     expect(a).toBe(b); // same readonly reference — the lookup is not cloned
   });
 });

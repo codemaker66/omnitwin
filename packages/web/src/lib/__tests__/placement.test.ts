@@ -27,6 +27,7 @@ import type { SpaceDimensions } from "@omnitwin/types";
 // A small test item: 1m × 0.5m × 1m real-world
 const smallItem: CatalogueItem = {
   id: "test-small",
+  slug: "test-small",
   name: "Small Table",
   category: "table",
   width: 1,
@@ -42,6 +43,7 @@ const smallItem: CatalogueItem = {
 // A large item: 3m × 0.75m × 3m real-world
 const largeItem: CatalogueItem = {
   id: "test-large",
+  slug: "test-large",
   name: "Large Dance Floor",
   category: "other",
   width: 3,
@@ -384,6 +386,7 @@ describe("createPlacedItem y position", () => {
 
 const platformItem: CatalogueItem = {
   id: "platform",
+  slug: "platform",
   name: "Platform",
   category: "stage",
   width: 2.44,

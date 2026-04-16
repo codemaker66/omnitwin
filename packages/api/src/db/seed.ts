@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
+import { type FloorPlanPoint, polygonBoundingBox, CANONICAL_ASSETS } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb } from "./client.js";
 import {
@@ -83,27 +83,27 @@ async function seed(): Promise<void> {
     console.log(`  Space: ${s.name} (${s.id})`);
   }
 
-  // --- 3. Asset definitions (placeholder furniture catalogue) ---
-  const assets = [
-    { name: "Round Table 5ft", category: "table", width: 1.524, depth: 1.524, height: 0.762, seats: 8, collision: "cylinder" },
-    { name: "Round Table 6ft", category: "table", width: 1.829, depth: 1.829, height: 0.762, seats: 10, collision: "cylinder" },
-    { name: "Rectangular Table 6ft", category: "table", width: 1.829, depth: 0.762, height: 0.762, seats: null, collision: "box" },
-    { name: "Standard Chair", category: "chair", width: 0.45, depth: 0.45, height: 0.9, seats: 1, collision: "box" },
-    { name: "Highboy Cocktail Table", category: "table", width: 0.6, depth: 0.6, height: 1.1, seats: null, collision: "cylinder" },
-    { name: "Stage Platform", category: "staging", width: 2.4, depth: 1.2, height: 0.2, seats: null, collision: "box" },
-    { name: "Dance Floor Panel", category: "danceFloor", width: 1.2, depth: 1.2, height: 0.03, seats: null, collision: "box" },
-    { name: "Lectern", category: "misc", width: 0.6, depth: 0.5, height: 1.1, seats: null, collision: "box" },
-  ] as const;
-
+  // --- 3. Asset definitions — derived from the canonical catalogue in
+  // @omnitwin/types/asset-catalogue.ts. Each item uses a deterministic
+  // UUID v5 as its primary key (overriding defaultRandom()), so the DB
+  // rows have the same IDs that the web catalogue references. Re-running
+  // the seed with the same slugs produces the same UUIDs — idempotent.
+  //
+  // The canonical catalogue also guarantees that names, categories, and
+  // dimensions match the web's rendering metadata. The old seed used
+  // different names ("Round Table 6ft" vs "6ft Round Table") and invalid
+  // categories ("staging", "danceFloor", "misc") which broke the FK
+  // linkage and the hallkeeper accessory lookup.
   const insertedAssets = await db.insert(assetDefinitions).values(
-    assets.map((a) => ({
+    CANONICAL_ASSETS.map((a) => ({
+      id: a.id,
       name: a.name,
       category: a.category,
-      widthM: String(a.width),
-      depthM: String(a.depth),
-      heightM: String(a.height),
-      seatCount: a.seats,
-      collisionType: a.collision,
+      widthM: String(a.widthM),
+      depthM: String(a.depthM),
+      heightM: String(a.heightM),
+      seatCount: a.seatCount,
+      collisionType: a.collisionType,
     })),
   ).returning();
 

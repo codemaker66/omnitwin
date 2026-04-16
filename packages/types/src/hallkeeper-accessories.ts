@@ -86,6 +86,10 @@ export type ImpliedAccessory = z.infer<typeof ImpliedAccessorySchema>;
 // unstable across environments). Unknown assets return [].
 // ---------------------------------------------------------------------------
 
+// Keys match the `name` field in CANONICAL_ASSETS (the single source of
+// truth for asset naming). Items not in the canonical catalogue can also
+// have rules here for future admin-created assets — `accessoriesFor`
+// returns [] for unknown names, so missing rules are safe.
 export const ACCESSORY_RULES: Readonly<Record<string, readonly ImpliedAccessory[]>> = {
   // --- Tables → cloth, runner, centrepiece, candles, number card ---
   "6ft Round Table": [
@@ -95,57 +99,42 @@ export const ACCESSORY_RULES: Readonly<Record<string, readonly ImpliedAccessory[
     { name: "Acrylic Table Number", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
     { name: "LED Pillar Candle", category: "decor", quantityPerParent: 3, phase: "final", afterDepth: 0 },
   ],
-  "5ft Round Table": [
-    { name: "Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-    { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
-    { name: "Floral Centrepiece (low)", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
-    { name: "Acrylic Table Number", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
-  ],
-  "Trestle Table": [
+  "6ft Trestle Table": [
     { name: "Rectangular Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
     { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
   ],
-  "Banquet Table": [
+  "4ft Trestle Table": [
     { name: "Rectangular Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
     { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
-  ],
-  "Registration Desk": [
-    { name: "Black Desk Skirt", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
 
   // --- Chairs → sash (one per chair, dressing phase) ---
-  "Chiavari Chair": [
-    { name: "Gold Chair Sash", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-  ],
   "Banquet Chair": [
     { name: "Gold Chair Sash", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
-  "Folding Chair": [
-    { name: "White Chair Cover", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-  ],
 
   // --- Stage → skirt to hide structure ---
-  "Stage Platform": [
+  "Platform": [
     { name: "Black Stage Skirt", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
-  "Stage Riser": [
+  "Narrow Platform": [
     { name: "Black Stage Skirt", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
 
-  // --- AV → mic for the PA, laptop for the projector ---
-  "PA Speaker": [
-    { name: "Wireless Microphone", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 1 },
-    { name: "XLR Cable (spare)", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 1 },
-  ],
-  "Projector": [
+  // --- AV → cables, associated kit ---
+  "Laser Projector": [
     { name: "HDMI Cable (5m)", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 1 },
-    { name: "Laptop (speaker deck)", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 2 },
   ],
   "Projector Screen": [], // explicit — no accessories
-  "Microphone": [],
+  "Table Microphone": [],
+  "Mic Stand": [],
+  "Laptop": [],
   "Lectern": [
     { name: "Bottled Water (500ml)", category: "decor", quantityPerParent: 1, phase: "final", afterDepth: 0 },
   ],
+
+  // --- Decor ---
+  "Black Table Cloth": [], // placed explicitly — no secondary dressings
 };
 
 /**

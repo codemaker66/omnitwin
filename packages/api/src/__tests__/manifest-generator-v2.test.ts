@@ -47,8 +47,8 @@ describe("generateManifestV2 — empty input", () => {
 describe("generateManifestV2 — single round table with chairs", () => {
   const placed: readonly ManifestObjectV2[] = [
     obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
-    obj({ id: "c1", assetName: "Chiavari Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
-    obj({ id: "c2", assetName: "Chiavari Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
+    obj({ id: "c1", assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
+    obj({ id: "c2", assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
   ];
 
   const out = generateManifestV2(placed, ROOM);
@@ -125,30 +125,30 @@ describe("generateManifestV2 — distinct zones do NOT collapse", () => {
   });
 });
 
-describe("generateManifestV2 — PA speakers imply mics", () => {
+describe("generateManifestV2 — Laser Projectors imply HDMI cables", () => {
   const placed: readonly ManifestObjectV2[] = [
-    obj({ id: "pa1", assetName: "PA Speaker", assetCategory: "av", positionX: -8, positionZ: -4.8 }),
-    obj({ id: "pa2", assetName: "PA Speaker", assetCategory: "av", positionX: 8, positionZ: -4.8 }),
+    obj({ id: "proj1", assetName: "Laser Projector", assetCategory: "av", positionX: -8, positionZ: -4.8 }),
+    obj({ id: "proj2", assetName: "Laser Projector", assetCategory: "av", positionX: 8, positionZ: -4.8 }),
   ];
   const out = generateManifestV2(placed, ROOM);
 
-  it("lands PAs in technical phase North wall", () => {
+  it("lands projectors in technical phase North wall", () => {
     const tech = out.phases.find((p) => p.phase === "technical");
-    const pa = tech?.zones.flatMap((z) => z.rows).find((r) => r.name === "PA Speaker");
-    expect(pa?.qty).toBe(2);
+    const proj = tech?.zones.flatMap((z) => z.rows).find((r) => r.name === "Laser Projector");
+    expect(proj?.qty).toBe(2);
   });
 
-  it("emits 2 wireless microphones (one per PA) in the SAME zone, technical phase", () => {
+  it("emits 2 HDMI cables (one per projector) in the SAME zone, technical phase", () => {
     const tech = out.phases.find((p) => p.phase === "technical");
-    const mic = tech?.zones.flatMap((z) => z.rows).find((r) => r.name === "Wireless Microphone");
-    expect(mic?.qty).toBe(2);
+    const cable = tech?.zones.flatMap((z) => z.rows).find((r) => r.name === "HDMI Cable (5m)");
+    expect(cable?.qty).toBe(2);
   });
 });
 
 describe("generateManifestV2 — totals", () => {
   const placed: readonly ManifestObjectV2[] = [
     obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
-    obj({ id: "c1", assetName: "Chiavari Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
+    obj({ id: "c1", assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
   ];
   const out = generateManifestV2(placed, ROOM);
 
