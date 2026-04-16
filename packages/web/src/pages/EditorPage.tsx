@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -6,6 +6,8 @@ import { useAuthStore } from "../stores/auth-store.js";
 import { SpacePicker } from "../components/editor/SpacePicker.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
+import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
+import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 
 // ---------------------------------------------------------------------------
 // EditorPage — public 3D editor with space picker + save/send flow
@@ -81,11 +83,51 @@ export function EditorPage(): React.ReactElement {
   }
 
   return (
+    <PlannerCommsLayer />
+  );
+}
+
+/**
+ * Groups the 3D editor with the planner-authored comms layer:
+ *   - ObjectNotePanel: floating input for per-object notes, appears
+ *     when a single object is selected
+ *   - EventDetailsPanel: modal for event-level instructions, opened
+ *     via a top-right button. Only visible when a config is loaded
+ *     (configId !== null).
+ *
+ * Pulled into its own component because the panel open/close state is
+ * local — EditorPage above handles URL/store bootstrap and shouldn't
+ * re-render on every UI state flip.
+ */
+function PlannerCommsLayer(): React.ReactElement {
+  const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
+  const configId = useEditorStore((s) => s.configId);
+  return (
     <>
       <EditorBridge />
       <div style={{ height: "100vh", boxSizing: "border-box" }}>
         <Editor3D />
       </div>
+      {configId !== null && (
+        <button
+          type="button"
+          onClick={() => { setEventDetailsOpen(true); }}
+          style={{
+            position: "fixed", top: 16, right: 16, zIndex: 30,
+            padding: "8px 14px", borderRadius: 8,
+            background: "rgba(20,19,17,0.85)",
+            backdropFilter: "blur(8px)",
+            border: "1px solid rgba(201,168,76,0.35)",
+            color: "#c9a84c", fontSize: 12, fontWeight: 600,
+            cursor: "pointer", fontFamily: "'Inter', system-ui, sans-serif",
+            letterSpacing: "0.04em",
+          }}
+        >
+          ★ EVENT DETAILS
+        </button>
+      )}
+      <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
+      <ObjectNotePanel />
       <SaveSendPanel />
     </>
   );

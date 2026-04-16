@@ -24,6 +24,12 @@ export interface EditorObject {
   readonly clothed: boolean;
   /** Group ID — items sharing a groupId move together. Persisted in metadata. */
   readonly groupId: string | null;
+  /**
+   * Planner-authored note surfaced on the hallkeeper sheet ("VIP
+   * table", "needs HDMI run"). Persisted in metadata. Empty string
+   * when no note is attached.
+   */
+  readonly notes: string;
 }
 
 /**
@@ -48,6 +54,7 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     sortOrder: p.sortOrder,
     clothed: meta.clothed === true,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
+    notes: typeof meta.notes === "string" ? meta.notes : "",
   };
 }
 
@@ -69,7 +76,11 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
     rotationZ: o.rotationZ,
     scale: o.scale,
     sortOrder: o.sortOrder,
-    metadata: { clothed: o.clothed, groupId: o.groupId },
+    metadata: {
+      clothed: o.clothed,
+      groupId: o.groupId,
+      ...(o.notes.length > 0 ? { notes: o.notes } : {}),
+    },
   };
 }
 
@@ -116,6 +127,12 @@ interface EditorActions {
   readonly createPublicConfig: (spaceId: string) => Promise<string>;
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
   readonly updateObject: (objectId: string, transform: Partial<Pick<EditorObject, "positionX" | "positionY" | "positionZ" | "rotationX" | "rotationY" | "rotationZ" | "scale">>) => void;
+  /**
+   * Set the planner's note on a placed object. Empty string clears.
+   * Marks the editor dirty so the auto-save / batch flow picks it up
+   * and rounds it through metadata.notes.
+   */
+  readonly setObjectNotes: (objectId: string, notes: string) => void;
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
@@ -246,7 +263,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: get().objects.length,
-      clothed: false, groupId: null,
+      clothed: false, groupId: null, notes: "",
     };
     set((s) => ({ objects: [...s.objects, obj], isDirty: true }));
 
@@ -258,6 +275,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
     }));
 
+  },
+
+  setObjectNotes: (objectId, notes) => {
+    set((s) => ({
+      objects: s.objects.map((o) => o.id === objectId ? { ...o, notes } : o),
+      isDirty: true,
+    }));
   },
 
   removeObject: (objectId) => {

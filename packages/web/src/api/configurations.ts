@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { GuestEnquiry } from "@omnitwin/types";
+import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
@@ -25,11 +25,14 @@ import { api } from "./client.js";
 export interface ObjectMetadata {
   readonly clothed?: boolean;
   readonly groupId?: string | null;
+  /** Planner-authored note surfaced on the hallkeeper sheet. */
+  readonly notes?: string;
 }
 
 const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
   groupId: z.string().nullable().optional(),
+  notes: z.string().optional(),
 }).nullable();
 
 const PlacedObjectResponseSchema = z.object({
@@ -129,6 +132,27 @@ export async function claimConfig(configId: string): Promise<Configuration> {
 
 export async function authBatchSave(configId: string, objects: readonly BatchObjectInput[]): Promise<PlacedObject[]> {
   return api.post(`/configurations/${configId}/objects/batch`, { objects }, undefined, PlacedObjectArraySchema);
+}
+
+// ---------------------------------------------------------------------------
+// Event-level instructions — configurations.metadata.instructions
+//
+// The planner's human layer: special instructions, day-of contact, per-
+// phase deadlines, access notes. Persists to the configurations.metadata
+// JSONB column via the auth PATCH endpoint. Pass null to clear.
+// ---------------------------------------------------------------------------
+
+export interface ConfigMetadataInput {
+  readonly instructions?: EventInstructions | null;
+}
+
+const PatchConfigResponseSchema = z.object({ id: z.string() }).passthrough();
+
+export async function patchConfigMetadata(
+  configId: string,
+  metadata: ConfigMetadataInput | null,
+): Promise<unknown> {
+  return api.patch(`/configurations/${configId}`, { metadata }, PatchConfigResponseSchema);
 }
 
 // ---------------------------------------------------------------------------

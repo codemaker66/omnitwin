@@ -143,6 +143,39 @@ describe("updateObject", () => {
   });
 });
 
+describe("setObjectNotes", () => {
+  it("attaches a planner note to a placed object and marks dirty", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+    useEditorStore.getState().setObjectNotes(id, "VIP table — reserved for bride's family");
+
+    const obj = useEditorStore.getState().objects[0];
+    expect(obj?.notes).toBe("VIP table — reserved for bride's family");
+    expect(useEditorStore.getState().isDirty).toBe(true);
+  });
+
+  it("clears the note when passed an empty string", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+    useEditorStore.getState().setObjectNotes(id, "VIP");
+    useEditorStore.getState().setObjectNotes(id, "");
+
+    expect(useEditorStore.getState().objects[0]?.notes).toBe("");
+  });
+
+  it("is a no-op for unknown object ids (defensive)", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const initialObjects = useEditorStore.getState().objects;
+
+    useEditorStore.getState().setObjectNotes("not-a-real-id", "should not appear");
+
+    expect(useEditorStore.getState().objects[0]?.notes).toBe("");
+    expect(useEditorStore.getState().objects).toHaveLength(initialObjects.length);
+  });
+});
+
 describe("removeObject", () => {
   it("removes object and marks dirty", () => {
     useEditorStore.getState().addObject("a1", 0, 0, 0);

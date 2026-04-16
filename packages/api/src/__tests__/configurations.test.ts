@@ -173,6 +173,52 @@ describe("PATCH /configurations/:id", () => {
     });
     expect(res.statusCode).not.toBe(400);
   });
+
+  it("accepts a well-formed instructions metadata block", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        metadata: {
+          instructions: {
+            specialInstructions: "Fire exits must remain clear.",
+            dayOfContact: { name: "Sarah", role: "Planner", phone: "+44 7700 900000", email: "sarah@example.com" },
+            phaseDeadlines: [{ phase: "furniture", deadline: "2026-06-15T14:30:00.000Z", reason: "" }],
+            accessNotes: "Service entrance at south door.",
+          },
+        },
+      },
+    });
+    // Validation must pass — 403/404 are acceptable (fake UUID), 400 is not.
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it("rejects a malformed instructions block (non-ISO deadline)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        metadata: {
+          instructions: {
+            phaseDeadlines: [{ phase: "furniture", deadline: "not-an-iso-string", reason: "" }],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("accepts null metadata to clear instructions", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/configurations/00000000-0000-0000-0000-000000000001",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { metadata: null },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
 });
 
 // ---------------------------------------------------------------------------

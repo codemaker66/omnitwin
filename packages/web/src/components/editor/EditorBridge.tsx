@@ -92,6 +92,7 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     sortOrder: existing?.sortOrder ?? 0,
     clothed: item.clothed,
     groupId: item.groupId,
+    notes: existing?.notes ?? "",
   };
 }
 

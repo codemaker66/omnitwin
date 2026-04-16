@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { LayoutStyleSchema, ConfigurationStatusSchema, VisibilitySchema } from "@omnitwin/types";
+import {
+  ConfigurationMetadataSchema,
+  ConfigurationStatusSchema,
+  LayoutStyleSchema,
+  VisibilitySchema,
+} from "@omnitwin/types";
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -40,6 +45,14 @@ const UpdateConfigBody = z.object({
     (s) => s.startsWith("data:image/") || /^https?:\/\//.test(s),
     { message: "Must be a data:image/* URL or an https URL" },
   ).nullable().optional(),
+  /**
+   * Planner-authored context — special instructions, day-of contact,
+   * phase deadlines, access notes. Validated against the canonical
+   * ConfigurationMetadataSchema which uses passthrough so forward-
+   * compatible keys are preserved without breaking existing records.
+   * Pass null to clear all instructions.
+   */
+  metadata: ConfigurationMetadataSchema.nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -190,6 +203,7 @@ export async function configurationRoutes(
     if (parsed.data.guestCount !== undefined) updateData["guestCount"] = parsed.data.guestCount;
     if (parsed.data.visibility !== undefined) updateData["visibility"] = parsed.data.visibility;
     if (parsed.data.thumbnailUrl !== undefined) updateData["thumbnailUrl"] = parsed.data.thumbnailUrl;
+    if (parsed.data.metadata !== undefined) updateData["metadata"] = parsed.data.metadata;
 
     const [updated] = await db.update(configurations)
       .set(updateData)
