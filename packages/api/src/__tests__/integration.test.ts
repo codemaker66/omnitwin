@@ -6,7 +6,7 @@ import { createDb, type Database } from "../db/client.js";
 import {
   users, configurations, placedObjects, enquiries,
   enquiryStatusHistory, guestLeads, spaces, emailSends,
-  assetDefinitions, assetAccessories,
+  assetDefinitions, assetAccessories, hallkeeperProgress,
 } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +126,7 @@ afterAll(async () => {
     }
     // Hallkeeper pipeline test cleanup
     if (hkConfigId !== "") {
+      await db.delete(hallkeeperProgress).where(eq(hallkeeperProgress.configId, hkConfigId));
       await db.delete(placedObjects).where(eq(placedObjects.configurationId, hkConfigId));
       await db.delete(configurations).where(eq(configurations.id, hkConfigId));
     }
@@ -1158,15 +1159,59 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(res.rawPayload.slice(0, 4).toString("ascii")).toBe("%PDF");
   }, 15000);
 
-  it("46. /v2 returns 401 without auth (no regression)", async () => {
+  it("46. PATCH /progress checks a row, GET /progress returns it", async () => {
+    // Check a row
+    const patchRes = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${hkConfigId}/progress`,
+      headers: auth(plannerToken),
+      payload: { rowKey: "dress|Centre|Ivory Tablecloth|0" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patchBody = JSON.parse(patchRes.body) as { data: { checked: boolean } };
+    expect(patchBody.data.checked).toBe(true);
+
+    // GET progress — the key should be present
+    const getRes = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${hkConfigId}/progress`,
+      headers: auth(plannerToken),
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = JSON.parse(getRes.body) as { data: { checked: Record<string, string> } };
+    expect(getBody.data.checked["dress|Centre|Ivory Tablecloth|0"]).toBeDefined();
+  }, 15000);
+
+  it("47. PATCH same rowKey again unchecks it (toggle)", async () => {
+    const patchRes = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${hkConfigId}/progress`,
+      headers: auth(plannerToken),
+      payload: { rowKey: "dress|Centre|Ivory Tablecloth|0" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    const patchBody = JSON.parse(patchRes.body) as { data: { checked: boolean } };
+    expect(patchBody.data.checked).toBe(false);
+
+    // GET should no longer have the key
+    const getRes = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${hkConfigId}/progress`,
+      headers: auth(plannerToken),
+    });
+    const getBody = JSON.parse(getRes.body) as { data: { checked: Record<string, string> } };
+    expect(getBody.data.checked["dress|Centre|Ivory Tablecloth|0"]).toBeUndefined();
+  }, 15000);
+
+  it("48. /progress returns 401 without auth", async () => {
     const res = await server.inject({
       method: "GET",
-      url: `/hallkeeper/${hkConfigId}/v2`,
+      url: `/hallkeeper/${hkConfigId}/progress`,
     });
     expect(res.statusCode).toBe(401);
   }, 15000);
 
-  it("47. /v2 returns 404 for non-existent config", async () => {
+  it("49. /v2 returns 404 for non-existent config", async () => {
     const res = await server.inject({
       method: "GET",
       url: "/hallkeeper/00000000-0000-0000-0000-ffffffffffff/v2",

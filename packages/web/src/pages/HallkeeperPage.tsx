@@ -3,7 +3,6 @@ import { useParams } from "react-router-dom";
 import type { HallkeeperSheetV2, Phase, SetupPhase } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
-import { loadChecks, saveChecks, toggleCheck, type CheckMap } from "../lib/hallkeeper-checks.js";
 
 // ---------------------------------------------------------------------------
 // HallkeeperPage — phase/zone sheet with dependency-aware ordering
@@ -62,6 +61,9 @@ if (typeof document !== "undefined" && document.getElementById(PRINT_STYLE_ID) =
 }
 
 // ---------------------------------------------------------------------------
+type CheckMap = Readonly<Record<string, boolean>>;
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -73,13 +75,7 @@ export function HallkeeperPage(): React.ReactElement {
   const [checks, setChecks] = useState<CheckMap>({});
   const manifestRef = useRef<HTMLDivElement>(null);
 
-  // --- Load checks from storage when configId resolves ---
-  useEffect(() => {
-    if (configId === undefined) return;
-    setChecks(loadChecks(configId));
-  }, [configId]);
-
-  // --- Fetch v2 sheet data ---
+  // --- Fetch sheet data + progress in parallel ---
   useEffect(() => {
     if (configId === undefined) return;
     setLoading(true);
@@ -89,12 +85,28 @@ export function HallkeeperPage(): React.ReactElement {
         const token = await getAuthToken();
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
-        const res = await fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers });
-        if (res.status === 403) { setError("You don't have permission to view this events sheet."); return; }
-        if (res.status === 404) { setError("Configuration not found."); return; }
-        if (!res.ok) throw new Error(`Failed to load events sheet (${String(res.status)})`);
-        const json = (await res.json()) as { data: HallkeeperSheetV2 };
-        setData(json.data);
+
+        // Parallel fetch: sheet data + progress state
+        const [sheetRes, progressRes] = await Promise.all([
+          fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers }),
+          fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers }),
+        ]);
+
+        if (sheetRes.status === 403) { setError("You don't have permission to view this events sheet."); return; }
+        if (sheetRes.status === 404) { setError("Configuration not found."); return; }
+        if (!sheetRes.ok) throw new Error(`Failed to load events sheet (${String(sheetRes.status)})`);
+
+        const sheetJson = (await sheetRes.json()) as { data: HallkeeperSheetV2 };
+        setData(sheetJson.data);
+
+        if (progressRes.ok) {
+          const progressJson = (await progressRes.json()) as { data: { checked: Record<string, string> } };
+          const loaded: Record<string, boolean> = {};
+          for (const key of Object.keys(progressJson.data.checked)) {
+            loaded[key] = true;
+          }
+          setChecks(loaded);
+        }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
@@ -103,15 +115,45 @@ export function HallkeeperPage(): React.ReactElement {
     })();
   }, [configId]);
 
-  // --- Toggle a row. Persists to localStorage on every change. ---
+  // --- Toggle a row — optimistic UI + server PATCH ---
+  // Updates the checkbox immediately (optimistic), then sends PATCH to
+  // the server. On failure, rolls back. The hallkeeper never waits for
+  // the network to tick a box.
   const handleToggle = useCallback((rowKey: string) => {
     if (configId === undefined) return;
+    const wasChecked = checks[rowKey] === true;
+
+    // Optimistic update
     setChecks((prev) => {
-      const next = toggleCheck(prev, rowKey);
-      saveChecks(configId, next);
+      const next = { ...prev };
+      if (wasChecked) { delete (next as Record<string, boolean>)[rowKey]; }
+      else { next[rowKey] = true; }
       return next;
     });
-  }, [configId]);
+
+    // Fire-and-forget PATCH with rollback on failure
+    void (async () => {
+      try {
+        const token = await getAuthToken();
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ rowKey }),
+        });
+        if (!res.ok) throw new Error("toggle failed");
+      } catch {
+        // Rollback on failure — restore the previous state
+        setChecks((prev) => {
+          const rolled = { ...prev };
+          if (wasChecked) { rolled[rowKey] = true; }
+          else { delete (rolled as Record<string, boolean>)[rowKey]; }
+          return rolled;
+        });
+      }
+    })();
+  }, [configId, checks]);
 
   // --- Download / print handlers ---
   const handleDownload = useCallback(() => {

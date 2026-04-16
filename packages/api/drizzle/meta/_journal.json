@@ -78,6 +78,13 @@
       "when": 1776729600000,
       "tag": "0009_asset_accessories",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776816000000,
+      "tag": "0010_hallkeeper_progress",
+      "breakpoints": true
     }
   ]
 }

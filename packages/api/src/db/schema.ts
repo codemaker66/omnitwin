@@ -131,6 +131,31 @@ export const assetAccessories = pgTable("asset_accessories", {
 ]);
 
 // ---------------------------------------------------------------------------
+// 4c. hallkeeper_progress — per-row checkbox state for the events sheet
+//
+// When a hallkeeper ticks off "Ivory Tablecloth × 5" on their tablet,
+// this table records that tick. Multiple hallkeepers (and the events
+// manager's dashboard) all read from the same rows — no localStorage
+// isolation. The row_key matches the stable manifest key
+// (phase|zone|name|afterDepth) so checkbox state survives config
+// re-saves without resetting.
+//
+// Unique on (config_id, row_key) — one tick per manifest row per config.
+// The checked_by / checked_at fields are audit — who ticked what when.
+// ---------------------------------------------------------------------------
+
+export const hallkeeperProgress = pgTable("hallkeeper_progress", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configId: uuid("config_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  rowKey: varchar("row_key", { length: 300 }).notNull(),
+  checkedBy: uuid("checked_by").references(() => users.id),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("hallkeeper_progress_config_row_unique").on(table.configId, table.rowKey),
+  index("hallkeeper_progress_config_idx").on(table.configId),
+]);
+
+// ---------------------------------------------------------------------------
 // 5. configurations
 // ---------------------------------------------------------------------------
 
