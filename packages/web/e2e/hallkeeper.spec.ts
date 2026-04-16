@@ -119,6 +119,18 @@ async function mockSheetData(page: Page, data: MockSheetDataV2 = MOCK_SHEET): Pr
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
     void route.fulfill({ json: { data } });
   });
+  // Mock the progress endpoint — starts with no checked rows
+  await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
+    if (route.request().method() === "GET") {
+      void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
+    } else if (route.request().method() === "PATCH") {
+      // Optimistic UI — the page updates locally before the PATCH resolves
+      const body = route.request().postDataJSON() as { rowKey: string };
+      void route.fulfill({ json: { data: { configId: CONFIG_ID, rowKey: body.rowKey, checked: true } } });
+    } else {
+      void route.continue();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -154,8 +166,8 @@ test.describe("Hallkeeper Page", () => {
     await seedAuthenticatedPlanner(page);
     await mockSheetData(page);
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    // Loading state shows "Loading events sheet..." with no h1.
-    // Wait for the fetch to resolve and the h1 to appear.
+    // The skeleton shows during parallel fetch of /v2 + /progress.
+    // Wait for the h1 (event name) to confirm data has loaded.
     await page.waitForSelector("h1", { timeout: 10_000 });
   });
 

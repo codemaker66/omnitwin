@@ -5,17 +5,20 @@ import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 
 // ---------------------------------------------------------------------------
-// HallkeeperPage — phase/zone sheet with dependency-aware ordering
+// HallkeeperPage — S+ operations-grade events sheet
 //
-// Data contract: GET /hallkeeper/:configId/v2 returns HallkeeperSheetV2
-// (see @omnitwin/types/hallkeeper-v2.ts). Each row has a stable `key`
-// used for localStorage checkbox persistence — the hallkeeper can
-// refresh/switch tabs without losing progress.
+// Server-backed: fetches /v2 (manifest) + /progress (checkboxes) in
+// parallel. Checkbox toggles are optimistic with rollback on failure.
+// Multiple hallkeepers share the same state.
 //
-// Print: the styles below include an @media print block that flattens
-// the dark theme to print-safe monochrome and forces page breaks
-// between phases so an A4 printout is legible.
+// Design principles (matching the PDF):
+//   - Scanability: phase headers are bold + collapsible
+//   - Pen-friendliness: checkboxes are 44px touch targets
+//   - Authority: gold accents, structured info grid, progress bar
+//   - Responsive: works on phone (320px) through desktop (1200px)
 // ---------------------------------------------------------------------------
+
+type CheckMap = Readonly<Record<string, boolean>>;
 
 const GOLD = "#c9a84c";
 const GREEN = "#5ba870";
@@ -34,8 +37,7 @@ const PHASE_META: Readonly<Record<SetupPhase, { label: string; icon: string; ord
 };
 
 // ---------------------------------------------------------------------------
-// Inject print styles once per module load. Inline so the page is
-// self-contained — no CSS module dependency.
+// Print styles (injected once)
 // ---------------------------------------------------------------------------
 const PRINT_STYLE_ID = "omnitwin-hallkeeper-print";
 if (typeof document !== "undefined" && document.getElementById(PRINT_STYLE_ID) === null) {
@@ -44,24 +46,27 @@ if (typeof document !== "undefined" && document.getElementById(PRINT_STYLE_ID) =
   style.textContent = `
     @media print {
       body, .hk-page { background: #fff !important; color: #000 !important; }
-      .hk-page { max-width: 100% !important; padding: 0 !important; }
+      .hk-page { max-width: 100% !important; padding: 0 12px !important; }
       .hk-card { background: #fff !important; border: 1px solid #ccc !important; }
-      .hk-chip { background: #f3f3f3 !important; color: #000 !important; border-color: #ccc !important; }
       .hk-phase { page-break-inside: avoid; }
-      .hk-actions, .hk-summary-sticky { display: none !important; }
+      .hk-actions, .hk-summary-sticky, .hk-retry-btn { display: none !important; }
       .hk-row { background: #fff !important; }
-      .hk-row.checked { background: #f3f3f3 !important; }
+      .hk-row:nth-child(even) { background: #f5f5f5 !important; }
       h1, h2, h3 { color: #000 !important; }
-      .hk-phase-title { color: #000 !important; }
       .hk-checkbox { border-color: #000 !important; }
-      .hk-qty { color: #000 !important; }
+    }
+    @keyframes hk-pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 0.15; }
+    }
+    @keyframes hk-celebrate {
+      0% { transform: scale(0.8); opacity: 0; }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
     }
   `;
   document.head.appendChild(style);
 }
-
-// ---------------------------------------------------------------------------
-type CheckMap = Readonly<Record<string, boolean>>;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -73,28 +78,34 @@ export function HallkeeperPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<CheckMap>({});
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const manifestRef = useRef<HTMLDivElement>(null);
+  const fetchCountRef = useRef(0);
 
   // --- Fetch sheet data + progress in parallel ---
-  useEffect(() => {
+  const loadData = useCallback(() => {
     if (configId === undefined) return;
     setLoading(true);
     setError(null);
+    fetchCountRef.current += 1;
+    const thisFetch = fetchCountRef.current;
     void (async () => {
       try {
         const token = await getAuthToken();
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-        // Parallel fetch: sheet data + progress state
         const [sheetRes, progressRes] = await Promise.all([
           fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers }),
           fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers }),
         ]);
 
+        // Stale-request guard
+        if (thisFetch !== fetchCountRef.current) return;
+
         if (sheetRes.status === 403) { setError("You don't have permission to view this events sheet."); return; }
         if (sheetRes.status === 404) { setError("Configuration not found."); return; }
-        if (!sheetRes.ok) throw new Error(`Failed to load events sheet (${String(sheetRes.status)})`);
+        if (!sheetRes.ok) throw new Error(`Failed to load (${String(sheetRes.status)})`);
 
         const sheetJson = (await sheetRes.json()) as { data: HallkeeperSheetV2 };
         setData(sheetJson.data);
@@ -108,22 +119,21 @@ export function HallkeeperPage(): React.ReactElement {
           setChecks(loaded);
         }
       } catch (err: unknown) {
+        if (thisFetch !== fetchCountRef.current) return;
         setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
-        setLoading(false);
+        if (thisFetch === fetchCountRef.current) setLoading(false);
       }
     })();
   }, [configId]);
 
-  // --- Toggle a row — optimistic UI + server PATCH ---
-  // Updates the checkbox immediately (optimistic), then sends PATCH to
-  // the server. On failure, rolls back. The hallkeeper never waits for
-  // the network to tick a box.
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // --- Toggle with optimistic UI + server PATCH ---
   const handleToggle = useCallback((rowKey: string) => {
     if (configId === undefined) return;
     const wasChecked = checks[rowKey] === true;
 
-    // Optimistic update
     setChecks((prev) => {
       const next = { ...prev };
       if (wasChecked) { delete (next as Record<string, boolean>)[rowKey]; }
@@ -131,20 +141,16 @@ export function HallkeeperPage(): React.ReactElement {
       return next;
     });
 
-    // Fire-and-forget PATCH with rollback on failure
     void (async () => {
       try {
         const token = await getAuthToken();
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({ rowKey }),
+          method: "PATCH", headers, body: JSON.stringify({ rowKey }),
         });
         if (!res.ok) throw new Error("toggle failed");
       } catch {
-        // Rollback on failure — restore the previous state
         setChecks((prev) => {
           const rolled = { ...prev };
           if (wasChecked) { rolled[rowKey] = true; }
@@ -155,7 +161,15 @@ export function HallkeeperPage(): React.ReactElement {
     })();
   }, [configId, checks]);
 
-  // --- Download / print handlers ---
+  // --- Phase collapse ---
+  const toggleCollapse = useCallback((phase: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) next.delete(phase); else next.add(phase);
+      return next;
+    });
+  }, []);
+
   const handleDownload = useCallback(() => {
     if (configId === undefined) return;
     void (async () => {
@@ -172,56 +186,125 @@ export function HallkeeperPage(): React.ReactElement {
         a.download = `hallkeeper-${configId}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
-      } catch { /* swallow — silent download failure */ }
+      } catch { /* swallow */ }
     })();
   }, [configId]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
 
-  // --- Derived counts for the progress bar ---
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
 
-  // --- Loading / error / empty states ---
+  // =====================================================================
+  // LOADING SKELETON
+  // =====================================================================
   if (loading) {
     return (
       <div className="hk-page" style={pageStyle}>
-        <div style={{ color: TEXT_MUT, fontSize: 16, textAlign: "center", paddingTop: 120 }}>
-          Loading events sheet...
-        </div>
-      </div>
-    );
-  }
-  if (error !== null || data === null) {
-    return (
-      <div className="hk-page" style={pageStyle}>
-        <div role="alert" style={{ color: "#cc4444", fontSize: 16, textAlign: "center", paddingTop: 120 }}>
-          {error ?? "Configuration not found"}
+        <div style={{ paddingTop: 20 }}>
+          {/* Skeleton header */}
+          <div style={{ ...skeletonBar, width: 120, height: 10, marginBottom: 8 }} />
+          <div style={{ ...skeletonBar, width: "70%", height: 24, marginBottom: 12 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ ...skeletonBar, height: 14 }} />
+            <div style={{ ...skeletonBar, height: 14 }} />
+            <div style={{ ...skeletonBar, height: 14 }} />
+            <div style={{ ...skeletonBar, height: 14 }} />
+          </div>
+          <div style={{ ...skeletonBar, width: "100%", height: 160, marginTop: 16, borderRadius: 8 }} />
+          {/* Skeleton rows */}
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} style={{ ...skeletonBar, height: 16, marginTop: 8, width: `${String(80 - i * 5)}%` }} />
+          ))}
         </div>
       </div>
     );
   }
 
+  // =====================================================================
+  // ERROR STATE + RETRY
+  // =====================================================================
+  if (error !== null || data === null) {
+    return (
+      <div className="hk-page" style={pageStyle}>
+        <div style={{ textAlign: "center", paddingTop: 100 }}>
+          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.15 }}>⚠</div>
+          <div role="alert" style={{ color: "#ef4444", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+            {error ?? "Configuration not found"}
+          </div>
+          <p style={{ color: TEXT_MUT, fontSize: 13, marginBottom: 20 }}>
+            {error?.includes("permission") ? "Ask the events manager to share access." : "Check the link and try again."}
+          </p>
+          <button
+            type="button"
+            className="hk-retry-btn"
+            onClick={loadData}
+            style={{
+              padding: "10px 28px", fontSize: 14, fontWeight: 600, borderRadius: 8,
+              background: GOLD, color: "#111", border: "none", cursor: "pointer",
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================================
+  // EMPTY STATE (config has no phases / no placed items)
+  // =====================================================================
+  if (data.phases.length === 0) {
+    return (
+      <div className="hk-page" style={pageStyle}>
+        <header style={headerStyle}>
+          <div style={labelStyle}>Hallkeeper Sheet</div>
+          <h1 style={eventNameStyle}>{data.config.name}</h1>
+        </header>
+        <div style={{ textAlign: "center", paddingTop: 60 }}>
+          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.1 }}>▣</div>
+          <div style={{ color: TEXT_SEC, fontSize: 15, fontWeight: 500 }}>No items placed yet</div>
+          <p style={{ color: TEXT_MUT, fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto 0" }}>
+            The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================================
+  // MAIN RENDER
+  // =====================================================================
   return (
     <div className="hk-page" style={pageStyle}>
       {/* === HEADER === */}
       <header style={headerStyle}>
-        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 3 }}>
-          Hallkeeper Sheet
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={labelStyle}>Hallkeeper Sheet</div>
+            <h1 style={eventNameStyle}>{data.config.name}</h1>
+          </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 32, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{data.config.guestCount}</div>
+            <div style={{ fontSize: 9, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: 1.5 }}>guests</div>
+          </div>
         </div>
-        <h1 style={eventNameStyle}>{data.config.name}</h1>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 14px", fontSize: 11, color: TEXT_SEC, marginTop: 8 }}>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 14px", fontSize: 11, color: TEXT_SEC, marginTop: 10 }}>
           <div><span style={{ color: TEXT_MUT }}>Venue </span>{data.venue.name}</div>
-          <div><span style={{ color: TEXT_MUT }}>Guests </span><strong style={{ color: "#fff" }}>{data.config.guestCount}</strong></div>
           <div><span style={{ color: TEXT_MUT }}>Room </span>{data.space.name} · {formatDims(data.space)}</div>
+          <div><span style={{ color: TEXT_MUT }}>Layout </span>{formatLayoutStyle(data.config.layoutStyle)}</div>
           <div><span style={{ color: TEXT_MUT }}>Items </span><strong style={{ color: "#fff" }}>{data.totals.totalItems}</strong></div>
-          {data.timing !== null && (
-            <div style={{ gridColumn: "1 / span 2", marginTop: 4 }}>
-              <span style={{ color: TEXT_MUT }}>Setup by </span>
-              <strong style={{ color: GOLD }}>{formatLocalTime(data.timing.setupBy)}</strong>
-              <span style={{ color: TEXT_MUT }}> · Event {formatLocalTime(data.timing.eventStart)}</span>
-            </div>
-          )}
         </div>
+
+        {data.timing !== null && (
+          <div style={{
+            marginTop: 10, padding: "8px 12px", borderRadius: 8,
+            background: "rgba(201,168,76,0.08)", border: `1px solid rgba(201,168,76,0.2)`,
+          }}>
+            <strong style={{ color: GOLD, fontSize: 13 }}>Setup by {formatLocalTime(data.timing.setupBy)}</strong>
+            <span style={{ color: TEXT_SEC, fontSize: 12, marginLeft: 10 }}>Event {formatLocalTime(data.timing.eventStart)}</span>
+          </div>
+        )}
       </header>
 
       {/* === DIAGRAM === */}
@@ -246,9 +329,27 @@ export function HallkeeperPage(): React.ReactElement {
             phase={phase}
             checks={checks}
             onToggle={handleToggle}
+            isCollapsed={collapsed.has(phase.phase)}
+            onToggleCollapse={() => { toggleCollapse(phase.phase); }}
           />
         ))}
       </section>
+
+      {/* === COMPLETION CELEBRATION === */}
+      {counts.allDone && (
+        <div style={{
+          textAlign: "center", padding: "24px 16px", marginBottom: 16,
+          background: "rgba(91,168,112,0.08)", borderRadius: 12,
+          border: `1px solid rgba(91,168,112,0.2)`,
+          animation: "hk-celebrate 0.5s ease forwards",
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: GREEN }}>Setup Complete</div>
+          <div style={{ fontSize: 12, color: TEXT_SEC, marginTop: 4 }}>
+            All {counts.totalRows} items verified. Ready for the event.
+          </div>
+        </div>
+      )}
 
       {/* === ACTION BUTTONS === */}
       <div className="hk-actions" style={actionsRow}>
@@ -256,24 +357,22 @@ export function HallkeeperPage(): React.ReactElement {
         <button type="button" style={actionBtnSecondary} onClick={handlePrint}>Print</button>
       </div>
 
-      {/* === STICKY PROGRESS SUMMARY === */}
+      {/* === STICKY PROGRESS === */}
       <div className="hk-summary-sticky" style={stickyBar}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 5 }}>
           {data.phases.map((p) => {
             const rows = p.zones.reduce((s, z) => s + z.rows.length, 0);
             const done = p.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
-            const qtyTotal = p.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + r.qty, s), 0);
-            const qtyDone = p.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + (checks[r.key] === true ? r.qty : 0), s), 0);
             const complete = rows > 0 && done === rows;
             const meta = PHASE_META[p.phase];
             return (
               <span key={p.phase} className="hk-chip" style={{
-                padding: "1px 7px", borderRadius: 100, fontSize: 9, fontWeight: 600, fontFamily: "DM Mono, monospace",
+                padding: "1px 7px", borderRadius: 100, fontSize: 9, fontWeight: 600,
                 background: complete ? "rgba(91,168,112,0.1)" : "#1a1a1d",
                 color: complete ? GREEN : TEXT_SEC,
                 border: `1px solid ${complete ? GREEN : BORDER}`,
               }}>
-                {meta.icon} {qtyDone}/{qtyTotal}
+                {meta.icon} {done}/{rows}
               </span>
             );
           })}
@@ -281,41 +380,39 @@ export function HallkeeperPage(): React.ReactElement {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, height: 4, background: BORDER, borderRadius: 2, overflow: "hidden" }}>
             <div style={{
-              height: "100%", borderRadius: 2, transition: "width 0.25s",
+              height: "100%", borderRadius: 2, transition: "width 0.3s ease",
               width: `${String(counts.totalRows > 0 ? (counts.checkedRows / counts.totalRows) * 100 : 0)}%`,
               background: counts.allDone ? GREEN : GOLD,
             }} />
           </div>
-          <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: counts.allDone ? GREEN : TEXT_SEC, whiteSpace: "nowrap", fontWeight: 600 }}>
-            {counts.checkedRows}/{counts.totalRows}{counts.allDone ? " COMPLETE" : " rows"}
+          <span style={{ fontSize: 10, fontWeight: 600, color: counts.allDone ? GREEN : TEXT_SEC, whiteSpace: "nowrap" }}>
+            {counts.checkedRows}/{counts.totalRows}{counts.allDone ? " ✓" : ""}
           </span>
         </div>
       </div>
 
       {/* === FOOTER === */}
       <footer style={footerStyle}>
-        <div style={{ fontSize: 10, color: TEXT_MUT }}>
-          {data.space.name} — {formatDims(data.space)}
-        </div>
-        <div style={{ fontSize: 9, color: "#444", marginTop: 4 }}>
-          Generated by OMNITWIN — {new Date(data.generatedAt).toLocaleString()}
-        </div>
+        <div style={{ fontSize: 10, color: TEXT_MUT }}>{data.space.name} — {formatDims(data.space)}</div>
+        <div style={{ fontSize: 9, color: "#444", marginTop: 4 }}>Generated by OMNITWIN — {new Date(data.generatedAt).toLocaleString()}</div>
       </footer>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// PhaseBlock — a single phase section with its zones
+// PhaseBlock — collapsible phase section
 // ---------------------------------------------------------------------------
 
 interface PhaseBlockProps {
   readonly phase: Phase;
   readonly checks: CheckMap;
   readonly onToggle: (rowKey: string) => void;
+  readonly isCollapsed: boolean;
+  readonly onToggleCollapse: () => void;
 }
 
-function PhaseBlock({ phase, checks, onToggle }: PhaseBlockProps): React.ReactElement {
+function PhaseBlock({ phase, checks, onToggle, isCollapsed, onToggleCollapse }: PhaseBlockProps): React.ReactElement {
   const meta = PHASE_META[phase.phase];
   const rowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
   const doneCount = phase.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
@@ -324,81 +421,95 @@ function PhaseBlock({ phase, checks, onToggle }: PhaseBlockProps): React.ReactEl
   const phaseDone = rowCount > 0 && doneCount === rowCount;
 
   return (
-    <section className="hk-phase" style={{ marginBottom: 16 }}>
-      <div className="hk-phase-title" style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "7px 0 3px", borderBottom: `1px solid ${BORDER}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ color: GOLD, fontSize: 11 }}>{meta.icon}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: phaseDone ? GREEN : "#ddd" }}>
+    <section className="hk-phase" style={{ marginBottom: 12 }}>
+      <button
+        type="button"
+        onClick={onToggleCollapse}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          width: "100%", padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+          background: phaseDone ? "rgba(91,168,112,0.06)" : CARD_BG,
+          border: `1px solid ${phaseDone ? "rgba(91,168,112,0.2)" : BORDER}`,
+          fontFamily: "inherit", textAlign: "left",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: GOLD, fontSize: 12 }}>{meta.icon}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: phaseDone ? GREEN : "#ddd" }}>
             Phase {meta.order + 1} — {meta.label}
           </span>
         </div>
-        <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: phaseDone ? GREEN : TEXT_MUT }}>
-          {qtyDone}/{qtyTotal}{phaseDone ? " ✓" : ""}
-        </span>
-      </div>
-
-      {phase.zones.map(({ zone, rows }) => (
-        <div key={zone}>
-          <div style={{ padding: "4px 4px 2px", fontSize: 9, fontWeight: 600, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            ▹ {zone}
-          </div>
-          {rows.map((row, i) => {
-            const done = checks[row.key] === true;
-            return (
-              <div
-                key={row.key}
-                data-row-key={row.key}
-                className={`hk-row${done ? " checked" : ""}`}
-                style={{
-                  display: "grid", gridTemplateColumns: "1fr 40px", alignItems: "center",
-                  padding: "5px 4px 5px 12px", borderRadius: 3, cursor: "pointer", userSelect: "none",
-                  background: done ? "rgba(91,168,112,0.08)" : (i % 2 === 0 ? "transparent" : "#1a1a1d"),
-                  borderLeft: done ? `2px solid ${GREEN}` : "2px solid transparent",
-                  transition: "all 0.12s",
-                }}
-                onClick={() => { onToggle(row.key); }}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
-                role="checkbox"
-                aria-checked={done}
-                tabIndex={0}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span className="hk-checkbox" style={{
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    width: 13, height: 13, borderRadius: 2, flexShrink: 0,
-                    border: `1.5px solid ${done ? GREEN : TEXT_MUT}`,
-                    background: done ? GREEN : "transparent",
-                    fontSize: 8, color: "#fff",
-                  }}>{done ? "✓" : ""}</span>
-                  <span style={{
-                    fontSize: 12, fontWeight: 500,
-                    color: done ? TEXT_MUT : "#eee",
-                    textDecoration: done ? "line-through" : "none",
-                  }}>
-                    {row.name}
-                  </span>
-                  {row.afterDepth > 0 && (
-                    <span style={{
-                      fontSize: 8, color: "rgba(201,168,76,0.7)",
-                      background: "rgba(201,168,76,0.1)", padding: "0 4px",
-                      borderRadius: 2, fontWeight: 600,
-                    }}>after</span>
-                  )}
-                </div>
-                <div className="hk-qty" style={{
-                  textAlign: "right", fontFamily: "DM Mono, monospace",
-                  fontWeight: 600, fontSize: 12, color: done ? TEXT_MUT : GOLD,
-                }}>
-                  ×{row.qty}
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 600, color: phaseDone ? GREEN : TEXT_MUT }}>
+            {qtyDone}/{qtyTotal}{phaseDone ? " ✓" : ""}
+          </span>
+          <span style={{ fontSize: 10, color: TEXT_MUT }}>{isCollapsed ? "▸" : "▾"}</span>
         </div>
-      ))}
+      </button>
+
+      {!isCollapsed && (
+        <div style={{ marginTop: 4 }}>
+          {phase.zones.map(({ zone, rows }) => (
+            <div key={zone}>
+              <div style={{ padding: "4px 6px 2px", fontSize: 9, fontWeight: 600, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                ▹ {zone}
+              </div>
+              {rows.map((row, i) => {
+                const done = checks[row.key] === true;
+                return (
+                  <div
+                    key={row.key}
+                    data-row-key={row.key}
+                    className={`hk-row${done ? " checked" : ""}`}
+                    style={{
+                      display: "grid", gridTemplateColumns: "1fr 40px", alignItems: "center",
+                      padding: "6px 6px 6px 12px", borderRadius: 4, cursor: "pointer", userSelect: "none",
+                      background: done ? "rgba(91,168,112,0.08)" : (i % 2 === 0 ? "transparent" : "#1a1a1d"),
+                      borderLeft: done ? `2px solid ${GREEN}` : "2px solid transparent",
+                      transition: "all 0.12s",
+                      minHeight: 44, // touch target
+                    }}
+                    onClick={() => { onToggle(row.key); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
+                    role="checkbox"
+                    aria-checked={done}
+                    tabIndex={0}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="hk-checkbox" style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                        border: `1.5px solid ${done ? GREEN : TEXT_MUT}`,
+                        background: done ? GREEN : "transparent",
+                        fontSize: 10, color: "#fff", transition: "all 0.15s",
+                      }}>{done ? "✓" : ""}</span>
+                      <span style={{
+                        fontSize: 13, fontWeight: 500,
+                        color: done ? TEXT_MUT : "#eee",
+                        textDecoration: done ? "line-through" : "none",
+                      }}>
+                        {row.name}
+                      </span>
+                      {row.afterDepth > 0 && (
+                        <span style={{
+                          fontSize: 8, color: "rgba(201,168,76,0.7)",
+                          background: "rgba(201,168,76,0.1)", padding: "1px 5px",
+                          borderRadius: 3, fontWeight: 600,
+                        }}>after</span>
+                      )}
+                    </div>
+                    <div style={{
+                      textAlign: "right", fontWeight: 700, fontSize: 13, color: done ? TEXT_MUT : GOLD,
+                    }}>
+                      ×{row.qty}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -408,8 +519,7 @@ function PhaseBlock({ phase, checks, onToggle }: PhaseBlockProps): React.ReactEl
 // ---------------------------------------------------------------------------
 
 function computeCounts(
-  data: HallkeeperSheetV2 | null,
-  checks: CheckMap,
+  data: HallkeeperSheetV2 | null, checks: CheckMap,
 ): { totalRows: number; checkedRows: number; allDone: boolean } {
   if (data === null) return { totalRows: 0, checkedRows: 0, allDone: false };
   let totalRows = 0;
@@ -422,11 +532,7 @@ function computeCounts(
       }
     }
   }
-  return {
-    totalRows,
-    checkedRows,
-    allDone: totalRows > 0 && checkedRows === totalRows,
-  };
+  return { totalRows, checkedRows, allDone: totalRows > 0 && checkedRows === totalRows };
 }
 
 function formatDims(space: { widthM: number; lengthM: number; heightM: number }): string {
@@ -439,75 +545,61 @@ function formatLocalTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatLayoutStyle(style: string): string {
+  return style.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
+const skeletonBar: React.CSSProperties = {
+  background: "#252320", borderRadius: 4,
+  animation: "hk-pulse 1.5s ease-in-out infinite",
+};
+
 const pageStyle: React.CSSProperties = {
-  minHeight: "100vh",
-  background: DARK_BG,
-  color: "#ddd",
+  minHeight: "100vh", background: DARK_BG, color: "#ddd",
   fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-  maxWidth: 640,
-  margin: "0 auto",
-  padding: "0 16px 32px",
+  maxWidth: 640, margin: "0 auto", padding: "0 16px 32px",
 };
 
 const headerStyle: React.CSSProperties = {
-  paddingTop: 20,
-  paddingBottom: 14,
-  borderBottom: `2px solid ${GOLD}`,
+  paddingTop: 20, paddingBottom: 14, borderBottom: `2px solid ${GOLD}`,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 3,
 };
 
 const eventNameStyle: React.CSSProperties = {
-  fontSize: 22,
-  fontWeight: 800,
-  color: "#fff",
-  margin: "4px 0 2px",
-  fontFamily: "'Playfair Display', serif",
-  lineHeight: 1.2,
+  fontSize: 22, fontWeight: 800, color: "#fff", margin: "4px 0 2px",
+  fontFamily: "'Playfair Display', serif", lineHeight: 1.2,
 };
 
 const diagramPlaceholder: React.CSSProperties = {
-  height: 200,
-  border: "1px dashed #333",
-  borderRadius: 12,
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
+  height: 160, border: "1px dashed #333", borderRadius: 12,
+  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
 };
 
-const actionsRow: React.CSSProperties = {
-  display: "flex",
-  gap: 12,
-  marginBottom: 24,
-};
+const actionsRow: React.CSSProperties = { display: "flex", gap: 12, marginBottom: 24 };
 
 const actionBtnPrimary: React.CSSProperties = {
   flex: 1, padding: "14px 0", borderRadius: 10, border: "none",
   background: `linear-gradient(135deg, #a8872e, ${GOLD}, #dfc06a)`,
-  color: "#111", fontSize: 15, fontWeight: 700, cursor: "pointer",
-  fontFamily: "inherit", letterSpacing: 0.5,
+  color: "#111", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
 };
 
 const actionBtnSecondary: React.CSSProperties = {
   flex: 1, padding: "14px 0", borderRadius: 10, border: "1px solid #333",
-  background: "transparent", color: "#aaa", fontSize: 15, fontWeight: 500,
-  cursor: "pointer", fontFamily: "inherit",
+  background: "transparent", color: "#aaa", fontSize: 15, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
 };
 
 const stickyBar: React.CSSProperties = {
-  position: "sticky" as const,
-  bottom: 0,
-  background: CARD_BG,
-  borderTop: `1px solid ${BORDER}`,
-  padding: "7px 14px 10px",
-  margin: "0 -16px",
+  position: "sticky", bottom: 0, background: CARD_BG,
+  borderTop: `1px solid ${BORDER}`, padding: "7px 14px 10px", margin: "0 -16px",
 };
 
 const footerStyle: React.CSSProperties = {
-  textAlign: "center" as const,
-  paddingTop: 16,
-  borderTop: "1px solid #222",
+  textAlign: "center", paddingTop: 16, borderTop: "1px solid #222",
 };
