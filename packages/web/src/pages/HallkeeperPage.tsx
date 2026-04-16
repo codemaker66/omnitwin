@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import type { HallkeeperSheetV2, Phase, SetupPhase } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
+import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
+import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
 
 // ---------------------------------------------------------------------------
 // HallkeeperPage — S+ operations-grade events sheet
@@ -79,7 +81,9 @@ export function HallkeeperPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<CheckMap>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
   const manifestRef = useRef<HTMLDivElement>(null);
+  const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
 
   // --- Fetch sheet data + progress in parallel ---
@@ -168,6 +172,28 @@ export function HallkeeperPage(): React.ReactElement {
       if (next.has(phase)) next.delete(phase); else next.add(phase);
       return next;
     });
+  }, []);
+
+  // --- Highlight handoff: row click → floor plan, marker click → row ---
+  //
+  // Clicking a manifest row toggles its highlight state; the floor plan
+  // pulses that row's markers and dims the rest. Clicking a marker sets
+  // the same state AND scrolls the manifest row into view so a
+  // hallkeeper asking "what's that one?" can tap a marker and see the
+  // checklist jump straight to it.
+  const handleHighlightRow = useCallback((rowKey: string) => {
+    setHighlightedRowKey((prev) => prev === rowKey ? null : rowKey);
+    if (diagramRef.current !== null) {
+      diagramRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, []);
+
+  const handleMarkerClick = useCallback((rowKey: string) => {
+    setHighlightedRowKey(rowKey);
+    const el = document.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(rowKey)}"]`);
+    if (el !== null) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }, []);
 
   const handleDownload = useCallback(() => {
@@ -307,17 +333,32 @@ export function HallkeeperPage(): React.ReactElement {
         )}
       </header>
 
-      {/* === DIAGRAM === */}
-      <section style={{ margin: "14px 0" }}>
-        {data.diagramUrl !== null ? (
-          <img src={data.diagramUrl} alt="Floor plan" style={{ width: "100%", height: "auto", borderRadius: 8 }} />
-        ) : (
-          <div style={diagramPlaceholder}>
-            <div style={{ fontSize: 13, color: TEXT_MUT }}>Floor plan diagram</div>
-            <div style={{ fontSize: 11, color: "#444", marginTop: 3 }}>
-              Available after generating from the 3D editor
-            </div>
-          </div>
+      {/* === INSTRUCTIONS BANNER === */}
+      {data.instructions !== null && (
+        <InstructionsBanner instructions={data.instructions} />
+      )}
+
+      {/* === DIAGRAM — interactive floor plan with row↔marker link === */}
+      <section ref={diagramRef} style={{ margin: "14px 0" }}>
+        <InteractiveFloorPlan
+          room={data.space}
+          phases={data.phases}
+          highlightedRowKey={highlightedRowKey}
+          onMarkerClick={handleMarkerClick}
+        />
+        {highlightedRowKey !== null && (
+          <button
+            type="button"
+            onClick={() => { setHighlightedRowKey(null); }}
+            style={{
+              marginTop: 8, padding: "6px 12px", borderRadius: 6,
+              background: "transparent", color: TEXT_SEC,
+              border: `1px solid ${BORDER}`, cursor: "pointer",
+              fontSize: 11, fontFamily: "inherit",
+            }}
+          >
+            Clear highlight
+          </button>
         )}
       </section>
 
@@ -329,6 +370,8 @@ export function HallkeeperPage(): React.ReactElement {
             phase={phase}
             checks={checks}
             onToggle={handleToggle}
+            highlightedRowKey={highlightedRowKey}
+            onHighlightRow={handleHighlightRow}
             isCollapsed={collapsed.has(phase.phase)}
             onToggleCollapse={() => { toggleCollapse(phase.phase); }}
           />
@@ -408,11 +451,13 @@ interface PhaseBlockProps {
   readonly phase: Phase;
   readonly checks: CheckMap;
   readonly onToggle: (rowKey: string) => void;
+  readonly highlightedRowKey: string | null;
+  readonly onHighlightRow: (rowKey: string) => void;
   readonly isCollapsed: boolean;
   readonly onToggleCollapse: () => void;
 }
 
-function PhaseBlock({ phase, checks, onToggle, isCollapsed, onToggleCollapse }: PhaseBlockProps): React.ReactElement {
+function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow, isCollapsed, onToggleCollapse }: PhaseBlockProps): React.ReactElement {
   const meta = PHASE_META[phase.phase];
   const rowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
   const doneCount = phase.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
@@ -456,26 +501,39 @@ function PhaseBlock({ phase, checks, onToggle, isCollapsed, onToggleCollapse }: 
               </div>
               {rows.map((row, i) => {
                 const done = checks[row.key] === true;
+                const highlighted = highlightedRowKey === row.key;
+                const locatable = row.positions.length > 0;
                 return (
                   <div
                     key={row.key}
                     data-row-key={row.key}
-                    className={`hk-row${done ? " checked" : ""}`}
+                    className={`hk-row${done ? " checked" : ""}${highlighted ? " highlighted" : ""}`}
                     style={{
-                      display: "grid", gridTemplateColumns: "1fr 40px", alignItems: "center",
-                      padding: "6px 6px 6px 12px", borderRadius: 4, cursor: "pointer", userSelect: "none",
-                      background: done ? "rgba(91,168,112,0.08)" : (i % 2 === 0 ? "transparent" : "#1a1a1d"),
-                      borderLeft: done ? `2px solid ${GREEN}` : "2px solid transparent",
+                      display: "grid", gridTemplateColumns: locatable ? "1fr 28px 40px" : "1fr 40px",
+                      alignItems: "center",
+                      padding: "6px 6px 6px 12px", borderRadius: 4, userSelect: "none",
+                      background: done
+                        ? "rgba(91,168,112,0.08)"
+                        : highlighted
+                          ? "rgba(201,168,76,0.12)"
+                          : (i % 2 === 0 ? "transparent" : "#1a1a1d"),
+                      borderLeft: done
+                        ? `2px solid ${GREEN}`
+                        : highlighted
+                          ? `2px solid ${GOLD}`
+                          : "2px solid transparent",
                       transition: "all 0.12s",
                       minHeight: 44, // touch target
                     }}
-                    onClick={() => { onToggle(row.key); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
-                    role="checkbox"
-                    aria-checked={done}
-                    tabIndex={0}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div
+                      onClick={() => { onToggle(row.key); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
+                      role="checkbox"
+                      aria-checked={done}
+                      tabIndex={0}
+                      style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minHeight: 32 }}
+                    >
                       <span className="hk-checkbox" style={{
                         display: "inline-flex", alignItems: "center", justifyContent: "center",
                         width: 16, height: 16, borderRadius: 3, flexShrink: 0,
@@ -483,21 +541,56 @@ function PhaseBlock({ phase, checks, onToggle, isCollapsed, onToggleCollapse }: 
                         background: done ? GREEN : "transparent",
                         fontSize: 10, color: "#fff", transition: "all 0.15s",
                       }}>{done ? "✓" : ""}</span>
-                      <span style={{
-                        fontSize: 13, fontWeight: 500,
-                        color: done ? TEXT_MUT : "#eee",
-                        textDecoration: done ? "line-through" : "none",
-                      }}>
-                        {row.name}
-                      </span>
-                      {row.afterDepth > 0 && (
-                        <span style={{
-                          fontSize: 8, color: "rgba(201,168,76,0.7)",
-                          background: "rgba(201,168,76,0.1)", padding: "1px 5px",
-                          borderRadius: 3, fontWeight: 600,
-                        }}>after</span>
-                      )}
+                      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{
+                            fontSize: 13, fontWeight: 500,
+                            color: done ? TEXT_MUT : "#eee",
+                            textDecoration: done ? "line-through" : "none",
+                          }}>
+                            {row.name}
+                          </span>
+                          {row.afterDepth > 0 && (
+                            <span style={{
+                              fontSize: 8, color: "rgba(201,168,76,0.7)",
+                              background: "rgba(201,168,76,0.1)", padding: "1px 5px",
+                              borderRadius: 3, fontWeight: 600,
+                            }}>after</span>
+                          )}
+                        </div>
+                        {row.notes.length > 0 && (
+                          <div
+                            className="hk-row-note"
+                            style={{
+                              fontSize: 11, fontStyle: "italic",
+                              color: done ? TEXT_MUT : GOLD,
+                              marginTop: 1, lineHeight: 1.3,
+                            }}
+                          >
+                            ▸ {row.notes}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    {locatable && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onHighlightRow(row.key); }}
+                        aria-label={highlighted ? "Hide on floor plan" : "Locate on floor plan"}
+                        style={{
+                          width: 28, height: 28, borderRadius: 4,
+                          background: highlighted ? "rgba(201,168,76,0.25)" : "transparent",
+                          border: `1px solid ${highlighted ? GOLD : BORDER}`,
+                          color: highlighted ? GOLD : TEXT_SEC,
+                          cursor: "pointer", fontSize: 13,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontFamily: "inherit",
+                        }}
+                        title={highlighted ? "Hide on floor plan" : `Locate ×${String(row.positions.length)} on floor plan`}
+                      >
+                        ◎
+                      </button>
+                    )}
                     <div style={{
                       textAlign: "right", fontWeight: 700, fontSize: 13, color: done ? TEXT_MUT : GOLD,
                     }}>
@@ -575,11 +668,6 @@ const labelStyle: React.CSSProperties = {
 const eventNameStyle: React.CSSProperties = {
   fontSize: 22, fontWeight: 800, color: "#fff", margin: "4px 0 2px",
   fontFamily: "'Playfair Display', serif", lineHeight: 1.2,
-};
-
-const diagramPlaceholder: React.CSSProperties = {
-  height: 160, border: "1px dashed #333", borderRadius: 12,
-  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
 };
 
 const actionsRow: React.CSSProperties = { display: "flex", gap: 12, marginBottom: 24 };
