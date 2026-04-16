@@ -1,4 +1,12 @@
-import type { HallkeeperSheetV2, SetupPhase } from "@omnitwin/types";
+/// <reference types="pdfkit" />
+import type {
+  EventInstructions,
+  HallkeeperSheetV2,
+  ManifestRowV2,
+  SetupPhase,
+} from "@omnitwin/types";
+
+type Doc = PDFKit.PDFDocument;
 
 // ---------------------------------------------------------------------------
 // Hallkeeper PDF V2 — portrait A4, operations-grade events sheet
@@ -128,9 +136,12 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     // Timing callout box (if timing is available)
     let headerBottom = gridY + 52;
     if (data.timing !== null) {
+      const deadlines = data.instructions?.phaseDeadlines ?? [];
+      const hasDeadlines = deadlines.length > 0;
+      const boxH = hasDeadlines ? 50 : 28;
       const boxY = headerBottom + 4;
       doc.save();
-      doc.roundedRect(MARGIN, boxY, CONTENT_W, 28, 4)
+      doc.roundedRect(MARGIN, boxY, CONTENT_W, boxH, 4)
         .fillAndStroke("#faf8f2", GOLD_LIGHT);
       doc.restore();
       doc.font("Helvetica-Bold").fontSize(10).fillColor(GOLD);
@@ -143,13 +154,53 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
         `Event starts ${fmtTime(data.timing.eventStart)}  ·  ${String(data.timing.bufferMinutes)} min buffer`,
         MARGIN + 160, boxY + 9,
       );
-      headerBottom = boxY + 36;
+
+      if (hasDeadlines) {
+        // Mini per-phase deadline chart — one chip per deadline, ordered
+        // by phase. Keeps the hallkeeper's eye on the milestones that
+        // matter for this specific event.
+        doc.font("Helvetica").fontSize(7).fillColor(INK_FAINT);
+        doc.text("PHASE DEADLINES", MARGIN + 12, boxY + 26);
+        const chipsY = boxY + 36;
+        const sortedDeadlines = [...deadlines].sort(
+          (a, b) => PHASE_META[a.phase].order - PHASE_META[b.phase].order,
+        );
+        let chipX = MARGIN + 12;
+        for (const d of sortedDeadlines) {
+          const label = `${PHASE_META[d.phase].label} · ${fmtTime(d.deadline)}`;
+          const w = doc.widthOfString(label) + 12;
+          if (chipX + w > A4_W - MARGIN - 12) break;
+          doc.save();
+          doc.roundedRect(chipX, chipsY, w, 11, 2).fillAndStroke("#ffffff", GOLD_LIGHT);
+          doc.restore();
+          doc.font("Helvetica").fontSize(7.5).fillColor(GOLD);
+          doc.text(label, chipX + 6, chipsY + 2.5);
+          chipX += w + 6;
+        }
+      }
+
+      headerBottom = boxY + boxH + 8;
     }
 
     // Gold rule below header
     doc.moveTo(MARGIN, headerBottom).lineTo(A4_W - MARGIN, headerBottom)
       .strokeColor(GOLD).lineWidth(1.5).stroke();
     doc.y = headerBottom + 10;
+
+    // =================================================================
+    // INSTRUCTIONS SECTION — planner's human layer
+    //
+    // Only rendered if the planner has filled in any instruction content.
+    // Three sub-blocks, each independently optional:
+    //   - Special instructions (free-form paragraph, gold-accented box)
+    //   - Day-of contact (name + role + phone + email)
+    //   - Access notes (service entrance, parking, load-in rules)
+    //
+    // Rendered BEFORE the diagram so the hallkeeper reads it first.
+    // =================================================================
+    if (data.instructions !== null) {
+      renderInstructions(doc, data.instructions);
+    }
 
     // =================================================================
     // DIAGRAM
@@ -210,14 +261,15 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
 
         let rowIdx = 0;
         for (const row of zoneGroup.rows) {
-          ensureSpace(doc, ROW_H);
+          const rowHeight = rowHeightFor(row);
+          ensureSpace(doc, rowHeight);
           const rowY = doc.y;
           const indent = row.afterDepth > 0 ? 16 : 0;
 
-          // Alternating row shade
+          // Alternating row shade — covers the full variable height
           if (rowIdx % 2 === 0) {
             doc.save();
-            doc.rect(MARGIN, rowY, CONTENT_W, ROW_H).fill(ROW_SHADE);
+            doc.rect(MARGIN, rowY, CONTENT_W, rowHeight).fill(ROW_SHADE);
             doc.restore();
           }
 
@@ -245,7 +297,13 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
           doc.font("Helvetica-Bold").fontSize(10).fillColor(GOLD);
           doc.text(`×${String(row.qty)}`, A4_W - MARGIN - qtyColW, rowY + 3, { width: qtyColW, align: "right" });
 
-          doc.y = rowY + ROW_H;
+          // Planner note (second line, italic gold)
+          if (row.notes.length > 0) {
+            doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(GOLD);
+            doc.text(`▸ ${row.notes}`, textX, rowY + 16, { width: nameW });
+          }
+
+          doc.y = rowY + rowHeight;
           rowIdx++;
         }
         doc.y += 3;
@@ -346,7 +404,7 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
 // Helpers
 // ---------------------------------------------------------------------------
 
-function ensureSpace(doc: { y: number; addPage: () => void }, needed: number): void {
+function ensureSpace(doc: Doc, needed: number): void {
   if (doc.y + needed > A4_H - FOOTER_H - 10) {
     doc.addPage();
     doc.y = MARGIN;
@@ -376,6 +434,128 @@ function decodeDataUrl(url: string): Buffer | null {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Instructions block renderer
+//
+// Renders the planner's human layer: special instructions, day-of
+// contact, access notes. Each sub-block is independently optional.
+// Structured so the hallkeeper's eye lands on special instructions
+// first (fire safety, VIP guests, etc.) — that block is the gold
+// one with a heavy rule on the left edge.
+// ---------------------------------------------------------------------------
+
+function renderInstructions(doc: Doc, ins: EventInstructions): void {
+  const blockStartY = doc.y;
+  let anyRendered = false;
+
+  // ---- Special instructions (the headline) ------------------------------
+  if (ins.specialInstructions.trim().length > 0) {
+    const text = ins.specialInstructions.trim();
+    const innerW = CONTENT_W - 16;
+    const textH = doc.heightOfString(text, { width: innerW });
+    const blockH = Math.max(28, textH + 24);
+    const y0 = doc.y;
+    doc.save();
+    doc.roundedRect(MARGIN, y0, CONTENT_W, blockH, 4).fill("#fff9e8");
+    doc.rect(MARGIN, y0, 3, blockH).fill(GOLD);
+    doc.restore();
+    doc.font("Helvetica-Bold").fontSize(7).fillColor(GOLD);
+    doc.text("SPECIAL INSTRUCTIONS", MARGIN + 12, y0 + 6);
+    doc.font("Helvetica").fontSize(9).fillColor(INK);
+    doc.text(text, MARGIN + 12, y0 + 17, { width: innerW });
+    doc.y = y0 + blockH + 6;
+    anyRendered = true;
+  }
+
+  // ---- Day-of contact + access notes side-by-side -----------------------
+  const hasContact = ins.dayOfContact !== null;
+  const hasAccess = ins.accessNotes.trim().length > 0;
+
+  if (hasContact || hasAccess) {
+    const y0 = doc.y;
+    const colW = hasContact && hasAccess ? (CONTENT_W - 8) / 2 : CONTENT_W;
+    let blockH = 0;
+
+    if (hasContact && ins.dayOfContact !== null) {
+      const c = ins.dayOfContact;
+      const contactH = renderContactBlock(doc, c, MARGIN, y0, colW);
+      blockH = Math.max(blockH, contactH);
+    }
+
+    if (hasAccess) {
+      const accessX = hasContact ? MARGIN + colW + 8 : MARGIN;
+      const accessH = renderAccessBlock(doc, ins.accessNotes.trim(), accessX, y0, colW);
+      blockH = Math.max(blockH, accessH);
+    }
+
+    doc.y = y0 + blockH + 6;
+    anyRendered = true;
+  }
+
+  if (anyRendered) {
+    // Thin rule to separate the instructions block from the diagram below
+    doc.moveTo(MARGIN, doc.y).lineTo(A4_W - MARGIN, doc.y)
+      .strokeColor(RULE).lineWidth(0.3).stroke();
+    doc.y += 10;
+  } else {
+    // If no content was rendered (shouldn't happen — resolveInstructions
+    // filters empty blocks — but guard anyway), reset y to start.
+    doc.y = blockStartY;
+  }
+}
+
+function renderContactBlock(
+  doc: Doc,
+  c: { name: string; role: string; phone: string; email: string },
+  x: number,
+  y: number,
+  w: number,
+): number {
+  const lines: string[] = [c.name];
+  if (c.role.length > 0) lines[0] = `${c.name}  ·  ${c.role}`;
+  if (c.phone.length > 0) lines.push(c.phone);
+  if (c.email.length > 0) lines.push(c.email);
+
+  const h = 18 + lines.length * 12;
+  doc.save();
+  doc.roundedRect(x, y, w, h, 4).fillAndStroke("#f4f1e8", RULE);
+  doc.restore();
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(INK_DIM);
+  doc.text("DAY-OF CONTACT", x + 10, y + 6);
+
+  doc.font("Helvetica-Bold").fontSize(10).fillColor(INK);
+  doc.text(lines[0] ?? "", x + 10, y + 18, { width: w - 20 });
+  if (lines.length > 1) {
+    doc.font("Helvetica").fontSize(9).fillColor(INK_DIM);
+    for (let i = 1; i < lines.length; i++) {
+      doc.text(lines[i] ?? "", x + 10, y + 18 + i * 12, { width: w - 20 });
+    }
+  }
+  return h;
+}
+
+function renderAccessBlock(doc: Doc, text: string, x: number, y: number, w: number): number {
+  const innerW = w - 20;
+  const textH = doc.heightOfString(text, { width: innerW });
+  const h = 22 + textH;
+  doc.save();
+  doc.roundedRect(x, y, w, h, 4).fillAndStroke("#f4f1e8", RULE);
+  doc.restore();
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(INK_DIM);
+  doc.text("ACCESS & LOAD-IN", x + 10, y + 6);
+  doc.font("Helvetica").fontSize(9).fillColor(INK);
+  doc.text(text, x + 10, y + 18, { width: innerW });
+  return h;
+}
+
+/**
+ * Row height is variable: standard rows are ROW_H; rows with a planner
+ * note grow by one line to accommodate the italic second line.
+ */
+function rowHeightFor(row: ManifestRowV2): number {
+  return row.notes.length > 0 ? ROW_H + 10 : ROW_H;
 }
 
 async function generateQr(url: string, size: number): Promise<Buffer | null> {
