@@ -1,5 +1,4 @@
 import {
-  accessoriesFor,
   defaultPhaseForCategory,
   SETUP_PHASES,
   type ManifestRowV2,
@@ -11,25 +10,15 @@ import {
 import { classifyZoneV2, zoneSortKey, type RoomDimensions } from "./spatial-classifier-v2.js";
 
 // ---------------------------------------------------------------------------
-// Manifest Generator V2 — produces the phase ▸ zone ▸ row hierarchy
+// Manifest Generator V2 — produces the phase > zone > row hierarchy
 //
-// The v2 generator takes the same placed-object input as v1 but emits
-// the new shape. Each placed object contributes:
-//   - ONE parent row in its natural (phase, zone)
-//   - ZERO OR MORE accessory rows from the ACCESSORY_RULES lookup,
-//     each in the accessory's declared phase and parented into the
-//     SAME zone so the hallkeeper only has to walk the room once per
-//     phase
+// Accessory expansion is now driven by a map passed in from the caller
+// (loaded from the asset_accessories DB table), NOT a static TypeScript
+// lookup. The generator is pure — it has no DB dependency itself.
 //
-// Chair aggregation: instead of a separate "CH" row like v1, chairs
-// with a groupId are rolled into the parent table's row name
-// ("6ft Round Table with 10 chairs") AND contribute a separate
-// per-chair accessory expansion (10 sashes) that lands in the dress
-// phase of the SAME zone. The hallkeeper sees one table row in
-// furniture and one sash row in dress — no hunting.
-//
-// Keys are stable across re-saves (phase|zone|name|afterDepth), so
-// localStorage checkbox state survives a config save round-trip.
+// The caller (hallkeeper-sheet-v2-data.ts) loads the map via one JOIN:
+//   asset_accessories LEFT JOIN asset_definitions ON parent_asset_id
+// and passes it in keyed by parent asset NAME.
 // ---------------------------------------------------------------------------
 
 export interface ManifestObjectV2 {
@@ -40,11 +29,21 @@ export interface ManifestObjectV2 {
   readonly positionY: number;
   readonly positionZ: number;
   readonly rotationY: number;
-  /** For table placements: chairs grouped into this table via groupId. */
   readonly chairCount: number;
-  /** Group ID — table + chairs share one. */
   readonly groupId: string | null;
 }
+
+/** One accessory rule, as loaded from the asset_accessories table. */
+export interface AccessoryRule {
+  readonly name: string;
+  readonly category: string;
+  readonly quantityPerParent: number;
+  readonly phase: SetupPhase;
+  readonly afterDepth: number;
+}
+
+/** Map from parent asset NAME to its accessory rules. */
+export type AccessoryMap = ReadonlyMap<string, readonly AccessoryRule[]>;
 
 interface WorkingRow {
   readonly phase: SetupPhase;
@@ -56,23 +55,17 @@ interface WorkingRow {
   qty: number;
 }
 
-/**
- * Build a stable manifest key. Same (phase, zone, name, depth) across
- * re-saves produces the same key, so checkbox state in localStorage
- * keyed on this string survives a config save.
- */
 export function manifestKey(row: Pick<WorkingRow, "phase" | "zone" | "name" | "afterDepth">): string {
   return `${row.phase}|${row.zone}|${row.name}|${String(row.afterDepth)}`;
 }
 
 /**
- * Generate a v2 manifest. Returns phases in the fixed
- * structure → furniture → dress → technical → final order, each with
- * zones sorted by walk-order, each with rows sorted by depth then name.
+ * Generate a v2 manifest from placed objects + DB-loaded accessory rules.
  */
 export function generateManifestV2(
   objects: readonly ManifestObjectV2[],
   room: RoomDimensions,
+  accessories: AccessoryMap,
 ): {
   phases: Phase[];
   totals: {
@@ -81,14 +74,8 @@ export function generateManifestV2(
     totalItems: number;
   };
 } {
-  // Accumulator keyed on the stable manifest key. Accessories from
-  // multiple parents in the same zone collapse here (5 tables in
-  // Centre zone → one "Ivory Tablecloth x5" row, not five rows).
   const bucket = new Map<string, WorkingRow>();
 
-  // Tables with groupId get chair counts from placed chairs; we pre-scan
-  // so the parent row says "with N chairs" and the per-chair sash
-  // accessory multiplies correctly.
   const chairsByGroup = new Map<string, number>();
   for (const obj of objects) {
     if (obj.assetCategory === "chair" && obj.groupId !== null) {
@@ -97,13 +84,8 @@ export function generateManifestV2(
   }
 
   for (const obj of objects) {
-    // Chairs attached to a table are aggregated into the table's row;
-    // we skip the individual chair rows (but their sashes still come
-    // through via the Chiavari Chair accessory expansion below).
     if (obj.assetCategory === "chair" && obj.groupId !== null) {
-      // Handled via chairsByGroup on the parent table; emit a per-chair
-      // accessory row here so the sash quantity aggregates correctly.
-      addAccessoriesForChair(bucket, obj, room);
+      addAccessoriesForItem(bucket, obj, room, accessories);
       continue;
     }
 
@@ -124,24 +106,11 @@ export function generateManifestV2(
       qty: 1,
     });
 
-    // Expand the parent's declared accessories (cloth/runner/candles/…).
-    // Chair-derived accessories (sashes) come from each grouped chair
-    // separately below — the table doesn't know what kind of chair is
-    // attached to it, so the chair's own rules drive the expansion.
-    for (const acc of accessoriesFor(obj.assetName)) {
-      addRow(bucket, {
-        phase: acc.phase,
-        zone,
-        name: acc.name,
-        category: acc.category,
-        afterDepth: acc.afterDepth,
-        isAccessory: true,
-        qty: acc.quantityPerParent,
-      });
-    }
+    // Expand parent's accessories from the DB-loaded map.
+    addAccessoriesForItem(bucket, obj, room, accessories);
   }
 
-  // Ungrouped chairs keep their own row + expand their own sash.
+  // Ungrouped chairs keep their own row + expand accessories.
   for (const obj of objects) {
     if (obj.assetCategory === "chair" && obj.groupId === null) {
       const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
@@ -154,20 +123,23 @@ export function generateManifestV2(
         isAccessory: false,
         qty: 1,
       });
-      addAccessoriesForChair(bucket, obj, room);
+      addAccessoriesForItem(bucket, obj, room, accessories);
     }
   }
 
   return assemblePhases(bucket);
 }
 
-function addAccessoriesForChair(
+function addAccessoriesForItem(
   bucket: Map<string, WorkingRow>,
-  chair: ManifestObjectV2,
+  obj: ManifestObjectV2,
   room: RoomDimensions,
+  accessories: AccessoryMap,
 ): void {
-  const zone = classifyZoneV2(chair.positionX, chair.positionZ, room);
-  for (const acc of accessoriesFor(chair.assetName)) {
+  const rules = accessories.get(obj.assetName);
+  if (rules === undefined) return;
+  const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
+  for (const acc of rules) {
     addRow(bucket, {
       phase: acc.phase,
       zone,
@@ -198,7 +170,6 @@ function assemblePhases(bucket: Map<string, WorkingRow>): {
     totalItems: number;
   };
 } {
-  // Group rows by phase, then by zone.
   const byPhase = new Map<SetupPhase, Map<Zone, WorkingRow[]>>();
   for (const row of bucket.values()) {
     let zoneMap = byPhase.get(row.phase);
@@ -214,8 +185,6 @@ function assemblePhases(bucket: Map<string, WorkingRow>): {
     rows.push(row);
   }
 
-  // Assemble in SETUP_PHASES order. Empty phases are skipped — the
-  // sheet shouldn't show a phase heading with zero rows under it.
   const phases: Phase[] = [];
   for (const phase of SETUP_PHASES) {
     const zoneMap = byPhase.get(phase);
@@ -243,7 +212,6 @@ function assemblePhases(bucket: Map<string, WorkingRow>): {
     phases.push({ phase, zones });
   }
 
-  // Totals: one entry per distinct (name, category), sum across zones.
   const totalsMap = new Map<string, { name: string; category: string; qty: number }>();
   let totalRows = 0;
   let totalItems = 0;

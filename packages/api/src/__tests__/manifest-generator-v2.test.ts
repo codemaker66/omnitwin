@@ -3,6 +3,8 @@ import {
   generateManifestV2,
   manifestKey,
   type ManifestObjectV2,
+  type AccessoryMap,
+  type AccessoryRule,
 } from "../services/manifest-generator-v2.js";
 
 const ROOM = { widthM: 21, lengthM: 10 };
@@ -18,6 +20,31 @@ function obj(partial: Partial<ManifestObjectV2> & { id: string; assetName: strin
     ...partial,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Test accessory map — matches the Trades Hall seed data.
+// In production this comes from the asset_accessories DB table.
+// ---------------------------------------------------------------------------
+
+function buildTestAccessories(): AccessoryMap {
+  const m = new Map<string, AccessoryRule[]>();
+  m.set("6ft Round Table", [
+    { name: "Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
+    { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
+    { name: "Floral Centrepiece (low)", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
+    { name: "Acrylic Table Number", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
+    { name: "LED Pillar Candle", category: "decor", quantityPerParent: 3, phase: "final", afterDepth: 0 },
+  ]);
+  m.set("Banquet Chair", [
+    { name: "Gold Chair Sash", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
+  ]);
+  m.set("Laser Projector", [
+    { name: "HDMI Cable (5m)", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 1 },
+  ]);
+  return m;
+}
+
+const ACC = buildTestAccessories();
 
 describe("manifestKey — stability", () => {
   it("produces the same key across equivalent rows", () => {
@@ -37,7 +64,7 @@ describe("manifestKey — stability", () => {
 
 describe("generateManifestV2 — empty input", () => {
   it("returns zero phases, zero totals", () => {
-    const out = generateManifestV2([], ROOM);
+    const out = generateManifestV2([], ROOM, ACC);
     expect(out.phases).toHaveLength(0);
     expect(out.totals.totalRows).toBe(0);
     expect(out.totals.totalItems).toBe(0);
@@ -51,7 +78,7 @@ describe("generateManifestV2 — single round table with chairs", () => {
     obj({ id: "c2", assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
   ];
 
-  const out = generateManifestV2(placed, ROOM);
+  const out = generateManifestV2(placed, ROOM, ACC);
 
   it("emits a furniture phase with one table row named 'with 2 chairs'", () => {
     const furniture = out.phases.find((p) => p.phase === "furniture");
@@ -100,7 +127,7 @@ describe("generateManifestV2 — accessories collapse across same-zone parents",
     obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
     obj({ id: "t2", assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", positionX: 1, positionZ: 0.5 }),
   ];
-  const out = generateManifestV2(placed, ROOM);
+  const out = generateManifestV2(placed, ROOM, ACC);
 
   it("two same-zone tables produce ONE cloth row with qty=2, not two rows", () => {
     const dress = out.phases.find((p) => p.phase === "dress");
@@ -112,10 +139,10 @@ describe("generateManifestV2 — accessories collapse across same-zone parents",
 
 describe("generateManifestV2 — distinct zones do NOT collapse", () => {
   const placed: readonly ManifestObjectV2[] = [
-    obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: -4.8 }),   // North wall
-    obj({ id: "t2", assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", positionX: 0, positionZ: 4.5 }),    // South wall
+    obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: -4.8 }),
+    obj({ id: "t2", assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", positionX: 0, positionZ: 4.5 }),
   ];
-  const out = generateManifestV2(placed, ROOM);
+  const out = generateManifestV2(placed, ROOM, ACC);
 
   it("two different-zone tables produce two cloth rows (one per zone)", () => {
     const dress = out.phases.find((p) => p.phase === "dress");
@@ -130,7 +157,7 @@ describe("generateManifestV2 — Laser Projectors imply HDMI cables", () => {
     obj({ id: "proj1", assetName: "Laser Projector", assetCategory: "av", positionX: -8, positionZ: -4.8 }),
     obj({ id: "proj2", assetName: "Laser Projector", assetCategory: "av", positionX: 8, positionZ: -4.8 }),
   ];
-  const out = generateManifestV2(placed, ROOM);
+  const out = generateManifestV2(placed, ROOM, ACC);
 
   it("lands projectors in technical phase North wall", () => {
     const tech = out.phases.find((p) => p.phase === "technical");
@@ -145,12 +172,25 @@ describe("generateManifestV2 — Laser Projectors imply HDMI cables", () => {
   });
 });
 
+describe("generateManifestV2 — empty accessory map produces no accessories", () => {
+  const placed: readonly ManifestObjectV2[] = [
+    obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table" }),
+  ];
+  const out = generateManifestV2(placed, ROOM, new Map());
+
+  it("only the parent item appears, no accessories", () => {
+    const allRows = out.phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+    expect(allRows).toHaveLength(1);
+    expect(allRows[0]?.isAccessory).toBe(false);
+  });
+});
+
 describe("generateManifestV2 — totals", () => {
   const placed: readonly ManifestObjectV2[] = [
     obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
     obj({ id: "c1", assetName: "Banquet Chair", assetCategory: "chair", groupId: "g1", positionX: 0, positionZ: 0 }),
   ];
-  const out = generateManifestV2(placed, ROOM);
+  const out = generateManifestV2(placed, ROOM, ACC);
 
   it("totalRows matches the number of distinct (phase, zone, name, depth) rows", () => {
     let count = 0;
@@ -175,8 +215,8 @@ describe("generateManifestV2 — stable keys survive re-save", () => {
     const placed: readonly ManifestObjectV2[] = [
       obj({ id: "t1", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
     ];
-    const a = generateManifestV2(placed, ROOM);
-    const b = generateManifestV2(placed, ROOM);
+    const a = generateManifestV2(placed, ROOM, ACC);
+    const b = generateManifestV2(placed, ROOM, ACC);
     const keysA = a.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key)));
     const keysB = b.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key)));
     expect(keysA).toEqual(keysB);
@@ -185,11 +225,11 @@ describe("generateManifestV2 — stable keys survive re-save", () => {
   it("re-saving with a different placed-object id does NOT change the keys", () => {
     const a = generateManifestV2(
       [obj({ id: "first", assetName: "6ft Round Table", assetCategory: "table", groupId: "g1" })],
-      ROOM,
+      ROOM, ACC,
     );
     const b = generateManifestV2(
       [obj({ id: "second-after-save", assetName: "6ft Round Table", assetCategory: "table", groupId: "g9" })],
-      ROOM,
+      ROOM, ACC,
     );
     const keysA = a.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key))).sort();
     const keysB = b.phases.flatMap((p) => p.zones.flatMap((z) => z.rows.map((r) => r.key))).sort();

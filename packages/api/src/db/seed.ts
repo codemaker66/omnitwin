@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { type FloorPlanPoint, polygonBoundingBox, CANONICAL_ASSETS } from "@omnitwin/types";
+import { type FloorPlanPoint, polygonBoundingBox, CANONICAL_ASSETS, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb } from "./client.js";
 import {
@@ -7,6 +7,7 @@ import {
   spaces,
   users,
   assetDefinitions,
+  assetAccessories,
   pricingRules,
 } from "./schema.js";
 
@@ -110,6 +111,45 @@ async function seed(): Promise<void> {
   for (const a of insertedAssets) {
     console.log(`  Asset: ${a.name} (${a.id})`);
   }
+
+  // --- 3b. Asset accessories (hallkeeper setup rules) ---
+  // Convert ACCESSORY_RULES (static lookup keyed by asset name) into DB
+  // rows keyed by the parent asset's UUID. The name→UUID mapping comes
+  // from the just-inserted assets. Accessories for assets not in the
+  // seed (future admin-created items) are silently skipped.
+  const assetIdByName = new Map<string, string>();
+  for (const a of insertedAssets) {
+    assetIdByName.set(a.name, a.id);
+  }
+
+  const accessoryRows: {
+    parentAssetId: string;
+    name: string;
+    category: string;
+    quantityPerParent: number;
+    phase: string;
+    afterDepth: number;
+  }[] = [];
+
+  for (const [assetName, rules] of Object.entries(ACCESSORY_RULES)) {
+    const parentId = assetIdByName.get(assetName);
+    if (parentId === undefined) continue; // asset not in this seed run
+    for (const rule of rules) {
+      accessoryRows.push({
+        parentAssetId: parentId,
+        name: rule.name,
+        category: rule.category,
+        quantityPerParent: rule.quantityPerParent,
+        phase: rule.phase,
+        afterDepth: rule.afterDepth,
+      });
+    }
+  }
+
+  if (accessoryRows.length > 0) {
+    await db.insert(assetAccessories).values(accessoryRows);
+  }
+  console.log(`  Accessories: ${String(accessoryRows.length)} rules created`);
 
   // --- 4. Users (Clerk manages auth — these are local profile records) ---
   // clerkId is null until real Clerk users are created and linked via webhook

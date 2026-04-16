@@ -106,6 +106,31 @@ export const assetDefinitions = pgTable("asset_definitions", {
 });
 
 // ---------------------------------------------------------------------------
+// 4b. asset_accessories — implied items for the hallkeeper sheet
+//
+// When a 6ft Round Table is placed, the hallkeeper needs to set up a
+// tablecloth, a runner, a centrepiece, candles, and an acrylic number
+// card. This table stores those rules so the manifest generator can
+// expand placed items into the full setup list.
+//
+// Keyed on parent_asset_id (FK → asset_definitions). The hallkeeper
+// sheet JOINs this table once per config to expand all accessories.
+// ---------------------------------------------------------------------------
+
+export const assetAccessories = pgTable("asset_accessories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  parentAssetId: uuid("parent_asset_id").notNull().references(() => assetDefinitions.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 200 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  quantityPerParent: integer("quantity_per_parent").notNull().default(1),
+  phase: varchar("phase", { length: 20 }).notNull(),
+  afterDepth: integer("after_depth").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("asset_accessories_parent_idx").on(table.parentAssetId),
+]);
+
+// ---------------------------------------------------------------------------
 // 5. configurations
 // ---------------------------------------------------------------------------
 

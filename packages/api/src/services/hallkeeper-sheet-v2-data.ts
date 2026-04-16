@@ -1,10 +1,10 @@
 import { eq, and, isNull, inArray, desc } from "drizzle-orm";
-import type { HallkeeperSheetV2, Timing } from "@omnitwin/types";
+import type { HallkeeperSheetV2, Timing, SetupPhase } from "@omnitwin/types";
 import {
-  configurations, placedObjects, assetDefinitions, spaces, venues, enquiries,
+  configurations, placedObjects, assetDefinitions, assetAccessories, spaces, venues, enquiries,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { generateManifestV2, type ManifestObjectV2 } from "./manifest-generator-v2.js";
+import { generateManifestV2, type ManifestObjectV2, type AccessoryRule } from "./manifest-generator-v2.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
@@ -101,8 +101,37 @@ export async function assembleSheetDataV2(
     };
   });
 
+  // Load accessory rules from the DB in one query. JOIN asset_definitions
+  // to get the parent asset name, which is the key the generator uses.
+  const accessoryRows = await db.select({
+    parentName: assetDefinitions.name,
+    name: assetAccessories.name,
+    category: assetAccessories.category,
+    quantityPerParent: assetAccessories.quantityPerParent,
+    phase: assetAccessories.phase,
+    afterDepth: assetAccessories.afterDepth,
+  })
+    .from(assetAccessories)
+    .innerJoin(assetDefinitions, eq(assetAccessories.parentAssetId, assetDefinitions.id));
+
+  const accessoryMap: Map<string, AccessoryRule[]> = new Map();
+  for (const row of accessoryRows) {
+    let list = accessoryMap.get(row.parentName);
+    if (list === undefined) {
+      list = [];
+      accessoryMap.set(row.parentName, list);
+    }
+    list.push({
+      name: row.name,
+      category: row.category,
+      quantityPerParent: row.quantityPerParent,
+      phase: row.phase as SetupPhase,
+      afterDepth: row.afterDepth,
+    });
+  }
+
   const roomDims = { widthM: Number(space.widthM), lengthM: Number(space.lengthM) };
-  const manifest = generateManifestV2(manifestObjects, roomDims);
+  const manifest = generateManifestV2(manifestObjects, roomDims, accessoryMap);
 
   const timing = await resolveTiming(db, configId);
 

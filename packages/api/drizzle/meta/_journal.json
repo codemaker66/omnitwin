@@ -71,6 +71,13 @@
       "when": 1776643200000,
       "tag": "0008_email_sends",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776729600000,
+      "tag": "0009_asset_accessories",
+      "breakpoints": true
     }
   ]
 }
