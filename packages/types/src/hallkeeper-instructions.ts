@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
+import { SETUP_PHASES, SetupPhaseSchema } from "./hallkeeper-accessories.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Instructions — the human layer
@@ -70,8 +70,12 @@ export const EventInstructionsSchema = z.object({
   specialInstructions: z.string().max(4000).default(""),
   /** Day-of contact block — who the hallkeeper rings on the day. */
   dayOfContact: DayOfContactSchema.nullable().default(null),
-  /** Per-phase deadlines — optional override of the global setupBy time. */
-  phaseDeadlines: z.array(PhaseDeadlineSchema).max(8).default([]),
+  /**
+   * Per-phase deadlines — optional override of the global setupBy time.
+   * Capped at one deadline per phase; SETUP_PHASES has 5 entries today,
+   * the cap moves with it.
+   */
+  phaseDeadlines: z.array(PhaseDeadlineSchema).max(SETUP_PHASES.length).default([]),
   /**
    * Access / load-in notes — "service entrance at south door, parking
    * in the cobbled yard, no vehicles after 15:00". Rendered in a

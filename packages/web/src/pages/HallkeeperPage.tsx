@@ -1,10 +1,14 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import type { HallkeeperSheetV2, Phase, SetupPhase } from "@omnitwin/types";
+import type { HallkeeperSheetV2, Phase } from "@omnitwin/types";
+import { PHASE_METADATA } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
+import {
+  GOLD, GREEN, DARK_BG, CARD_BG, BORDER, TEXT_MUT, TEXT_SEC,
+} from "../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
 // HallkeeperPage — S+ operations-grade events sheet
@@ -21,22 +25,6 @@ import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorP
 // ---------------------------------------------------------------------------
 
 type CheckMap = Readonly<Record<string, boolean>>;
-
-const GOLD = "#c9a84c";
-const GREEN = "#5ba870";
-const DARK_BG = "#111";
-const CARD_BG = "#1a1a1a";
-const BORDER = "#252320";
-const TEXT_MUT = "#5c5955";
-const TEXT_SEC = "#9a9690";
-
-const PHASE_META: Readonly<Record<SetupPhase, { label: string; icon: string; order: number }>> = {
-  structure: { label: "Structure", icon: "▣", order: 0 },
-  furniture: { label: "Furniture", icon: "▬", order: 1 },
-  dress: { label: "Dress", icon: "✦", order: 2 },
-  technical: { label: "Technical", icon: "⚡", order: 3 },
-  final: { label: "Final Touches", icon: "★", order: 4 },
-};
 
 // ---------------------------------------------------------------------------
 // Print styles (injected once)
@@ -82,7 +70,6 @@ export function HallkeeperPage(): React.ReactElement {
   const [checks, setChecks] = useState<CheckMap>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
-  const manifestRef = useRef<HTMLDivElement>(null);
   const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
 
@@ -363,7 +350,7 @@ export function HallkeeperPage(): React.ReactElement {
       </section>
 
       {/* === PHASES === */}
-      <section ref={manifestRef} style={{ marginBottom: 16 }}>
+      <section style={{ marginBottom: 16 }}>
         {data.phases.map((phase) => (
           <PhaseBlock
             key={phase.phase}
@@ -407,7 +394,7 @@ export function HallkeeperPage(): React.ReactElement {
             const rows = p.zones.reduce((s, z) => s + z.rows.length, 0);
             const done = p.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
             const complete = rows > 0 && done === rows;
-            const meta = PHASE_META[p.phase];
+            const meta = PHASE_METADATA[p.phase];
             return (
               <span key={p.phase} className="hk-chip" style={{
                 padding: "1px 7px", borderRadius: 100, fontSize: 9, fontWeight: 600,
@@ -458,7 +445,7 @@ interface PhaseBlockProps {
 }
 
 function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow, isCollapsed, onToggleCollapse }: PhaseBlockProps): React.ReactElement {
-  const meta = PHASE_META[phase.phase];
+  const meta = PHASE_METADATA[phase.phase];
   const rowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
   const doneCount = phase.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
   const qtyTotal = phase.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + r.qty, s), 0);
@@ -481,7 +468,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ color: GOLD, fontSize: 12 }}>{meta.icon}</span>
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: phaseDone ? GREEN : "#ddd" }}>
-            Phase {meta.order + 1} — {meta.label}
+            Phase {meta.order} — {meta.label}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

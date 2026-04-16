@@ -1,6 +1,6 @@
 import { eq, and, isNull, inArray, desc } from "drizzle-orm";
 import type { EventInstructions, HallkeeperSheetV2, Timing, SetupPhase } from "@omnitwin/types";
-import { ConfigurationMetadataSchema, hasInstructionContent } from "@omnitwin/types";
+import { hasInstructionContent } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories, spaces, venues, enquiries,
 } from "../db/schema.js";
@@ -174,22 +174,15 @@ export async function assembleSheetDataV2(
 }
 
 /**
- * Parse the configuration.metadata JSONB column into an EventInstructions
- * block. Returns null if the column is empty OR if the instructions
- * block is all-empty — the renderer uses the null signal to skip the
- * instructions section rather than render an empty callout.
- *
- * Uses the canonical ConfigurationMetadataSchema from @omnitwin/types so
- * partial / legacy shapes don't break the sheet — Zod coerces missing
- * fields to their defaults and tolerates unknown keys via passthrough.
+ * Pull EventInstructions out of configurations.metadata. The PATCH
+ * route validates the shape on write (ConfigurationMetadataSchema), so
+ * here we just cast and gate on `hasInstructionContent` to avoid
+ * rendering an empty callout.
  */
 function resolveInstructions(raw: unknown): EventInstructions | null {
-  if (raw === null || raw === undefined) return null;
-  const parsed = ConfigurationMetadataSchema.safeParse(raw);
-  if (!parsed.success) return null;
-  const instructions = parsed.data.instructions;
-  if (instructions === undefined) return null;
-  if (!hasInstructionContent(instructions)) return null;
+  const metadata = raw as { instructions?: EventInstructions } | null;
+  const instructions = metadata?.instructions;
+  if (instructions === undefined || !hasInstructionContent(instructions)) return null;
   return instructions;
 }
 

@@ -83,8 +83,8 @@ describe("EventInstructionsSchema", () => {
     }
   });
 
-  it("caps phase deadlines at 8", () => {
-    const tooMany = Array.from({ length: 9 }).map(() => ({
+  it("caps phase deadlines at the number of setup phases (one per phase)", () => {
+    const tooMany = Array.from({ length: 6 }).map(() => ({
       phase: "furniture" as const,
       deadline: "2026-06-15T14:00:00.000Z",
     }));

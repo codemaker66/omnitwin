@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { EventInstructions, PhaseDeadline, SetupPhase } from "@omnitwin/types";
-import { emptyEventInstructions } from "@omnitwin/types";
+import { emptyEventInstructions, PHASE_METADATA, SETUP_PHASES } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
+import { GOLD, BORDER, CARD_BG, INPUT_BG, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
 // EventDetailsPanel — modal-style drawer for event-level instructions.
@@ -14,26 +15,8 @@ import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
 //   - Optional per-phase deadlines
 //
 // Persists to configurations.metadata.instructions via the auth PATCH
-// endpoint. Passing null clears all instructions. Forward-compatible:
-// if more instruction sub-blocks appear later, they slot into the same
-// metadata JSONB without migrations.
+// endpoint. Passing null clears all instructions.
 // ---------------------------------------------------------------------------
-
-const GOLD = "#c9a84c";
-const BORDER = "#2a2824";
-const CARD = "#1a1a1d";
-const BG = "#111";
-const TEXT_MUT = "#5c5955";
-const TEXT_SEC = "#9a9690";
-
-const SETUP_PHASES: readonly SetupPhase[] = ["structure", "furniture", "dress", "technical", "final"];
-const PHASE_LABEL: Readonly<Record<SetupPhase, string>> = {
-  structure: "Structure",
-  furniture: "Furniture",
-  dress: "Dress",
-  technical: "Technical",
-  final: "Final Touches",
-};
 
 export interface EventDetailsPanelProps {
   readonly open: boolean;
@@ -153,7 +136,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
         style={{
           width: 640, maxWidth: "calc(100% - 32px)",
           marginTop: 40, marginBottom: 40,
-          background: CARD,
+          background: CARD_BG,
           border: `1px solid ${BORDER}`, borderRadius: 12,
           color: "#ddd", fontFamily: "'Inter', system-ui, sans-serif",
         }}
@@ -256,7 +239,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
             {state.phaseDeadlines.map((d, i) => (
               <div key={`${String(i)}-${d.phase}`} style={{ display: "grid", gridTemplateColumns: "120px 160px 1fr 28px", gap: 6, alignItems: "center", marginBottom: 6 }}>
                 <select value={d.phase} onChange={(e) => { updateDeadline(i, { phase: e.target.value as SetupPhase }); }} style={inputStyle}>
-                  {SETUP_PHASES.map((p) => <option key={p} value={p}>{PHASE_LABEL[p]}</option>)}
+                  {SETUP_PHASES.map((p) => <option key={p} value={p}>{PHASE_METADATA[p].label}</option>)}
                 </select>
                 <input
                   type="datetime-local"
@@ -327,7 +310,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputStyle: React.CSSProperties = {
   padding: "6px 8px", borderRadius: 4,
-  background: BG, color: "#eee",
+  background: INPUT_BG, color: "#eee",
   border: `1px solid ${BORDER}`,
   fontSize: 13, fontFamily: "inherit",
   width: "100%", boxSizing: "border-box",

@@ -1,5 +1,7 @@
 import { useState } from "react";
-import type { EventInstructions, SetupPhase } from "@omnitwin/types";
+import type { EventInstructions } from "@omnitwin/types";
+import { PHASE_METADATA } from "@omnitwin/types";
+import { GOLD, BORDER, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
 // InstructionsBanner — the planner's human layer, shown at the top of
@@ -10,27 +12,6 @@ import type { EventInstructions, SetupPhase } from "@omnitwin/types";
 // the whole point is that the hallkeeper sees this content at least
 // once.
 // ---------------------------------------------------------------------------
-
-const GOLD = "#c9a84c";
-const BORDER = "#252320";
-const TEXT_MUT = "#5c5955";
-const TEXT_SEC = "#9a9690";
-
-const PHASE_LABEL: Readonly<Record<SetupPhase, string>> = {
-  structure: "Structure",
-  furniture: "Furniture",
-  dress: "Dress",
-  technical: "Technical",
-  final: "Final Touches",
-};
-
-const PHASE_ORDER: Readonly<Record<SetupPhase, number>> = {
-  structure: 0,
-  furniture: 1,
-  dress: 2,
-  technical: 3,
-  final: 4,
-};
 
 export interface InstructionsBannerProps {
   readonly instructions: EventInstructions;
@@ -112,7 +93,7 @@ export function InstructionsBanner({ instructions }: InstructionsBannerProps): R
               <div style={instructionLabelStyle}>Phase Deadlines</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
                 {[...instructions.phaseDeadlines]
-                  .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase])
+                  .sort((a, b) => PHASE_METADATA[a.phase].order - PHASE_METADATA[b.phase].order)
                   .map((d) => (
                     <span
                       key={`${d.phase}|${d.deadline}`}
@@ -125,7 +106,7 @@ export function InstructionsBanner({ instructions }: InstructionsBannerProps): R
                         color: "#eee",
                       }}
                     >
-                      <span style={{ color: GOLD, marginRight: 6 }}>{PHASE_LABEL[d.phase]}</span>
+                      <span style={{ color: GOLD, marginRight: 6 }}>{PHASE_METADATA[d.phase].label}</span>
                       {formatDeadlineTime(d.deadline)}
                       {d.reason.length > 0 && (
                         <span style={{ color: TEXT_MUT, marginLeft: 6 }}>· {d.reason}</span>

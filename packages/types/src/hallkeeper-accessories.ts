@@ -42,6 +42,24 @@ export const SETUP_PHASES = [
 export const SetupPhaseSchema = z.enum(SETUP_PHASES);
 export type SetupPhase = z.infer<typeof SetupPhaseSchema>;
 
+/**
+ * Shared display metadata for each setup phase — label, icon, ordinal.
+ * Single source of truth for every renderer (tablet page, PDF,
+ * event-details form, instructions banner). Ordinal is 1-based to
+ * match how the PDF numbers phases ("Phase 1 — Structure").
+ */
+export const PHASE_METADATA: Readonly<Record<SetupPhase, {
+  readonly label: string;
+  readonly icon: string;
+  readonly order: number;
+}>> = {
+  structure: { label: "Structure",      icon: "▣", order: 1 },
+  furniture: { label: "Furniture",      icon: "▬", order: 2 },
+  dress:     { label: "Dress",          icon: "✦", order: 3 },
+  technical: { label: "Technical",      icon: "⚡", order: 4 },
+  final:     { label: "Final Touches",  icon: "★", order: 5 },
+};
+
 /** Default phase for a category when no override is specified. */
 export function defaultPhaseForCategory(category: string): SetupPhase {
   switch (category) {

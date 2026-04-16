@@ -1,11 +1,11 @@
-/// <reference types="pdfkit" />
-import type {
-  EventInstructions,
-  HallkeeperSheetV2,
-  ManifestRowV2,
-  SetupPhase,
+import {
+  PHASE_METADATA,
+  type EventInstructions,
+  type HallkeeperSheetV2,
+  type ManifestRowV2,
 } from "@omnitwin/types";
 
+// `PDFKit` comes from the global namespace declared in @types/pdfkit.
 type Doc = PDFKit.PDFDocument;
 
 // ---------------------------------------------------------------------------
@@ -45,14 +45,6 @@ const INK_DIM = "#555555";
 const INK_FAINT = "#999999";
 const RULE = "#d0c8b0";
 const ROW_SHADE = "#f7f5f0";
-
-const PHASE_META: Readonly<Record<SetupPhase, { label: string; order: number; icon: string }>> = {
-  structure: { label: "Structure", order: 1, icon: "▣" },
-  furniture: { label: "Furniture", order: 2, icon: "▬" },
-  dress: { label: "Dress", order: 3, icon: "✦" },
-  technical: { label: "Technical", order: 4, icon: "⚡" },
-  final: { label: "Final Touches", order: 5, icon: "★" },
-};
 
 const ROW_H = 16;
 const FOOTER_H = 50;
@@ -163,11 +155,11 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
         doc.text("PHASE DEADLINES", MARGIN + 12, boxY + 26);
         const chipsY = boxY + 36;
         const sortedDeadlines = [...deadlines].sort(
-          (a, b) => PHASE_META[a.phase].order - PHASE_META[b.phase].order,
+          (a, b) => PHASE_METADATA[a.phase].order - PHASE_METADATA[b.phase].order,
         );
         let chipX = MARGIN + 12;
         for (const d of sortedDeadlines) {
-          const label = `${PHASE_META[d.phase].label} · ${fmtTime(d.deadline)}`;
+          const label = `${PHASE_METADATA[d.phase].label} · ${fmtTime(d.deadline)}`;
           const w = doc.widthOfString(label) + 12;
           if (chipX + w > A4_W - MARGIN - 12) break;
           doc.save();
@@ -232,7 +224,7 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     // =================================================================
     for (const phase of data.phases) {
       if (phase.zones.length === 0) continue;
-      const meta = PHASE_META[phase.phase];
+      const meta = PHASE_METADATA[phase.phase];
       const phaseItemCount = phase.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + r.qty, s), 0);
       const phaseRowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
 

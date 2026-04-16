@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
 // ObjectNotePanel — floating input for attaching a planner note to the
@@ -14,12 +15,6 @@ import { useEditorStore } from "../../stores/editor-store.js";
 // Only renders when exactly one object is selected; multi-select or
 // zero-select hides the panel to keep the viewport clean.
 // ---------------------------------------------------------------------------
-
-const GOLD = "#c9a84c";
-const BORDER = "#2a2824";
-const CARD = "#1a1a1d";
-const TEXT_SEC = "#9a9690";
-const TEXT_MUT = "#5c5955";
 
 const MAX_NOTE = 500;
 
@@ -68,7 +63,7 @@ export function ObjectNotePanel(): React.ReactElement | null {
         bottom: 20, right: 20,
         width: 320, maxWidth: "calc(100vw - 40px)",
         padding: 14, borderRadius: 12,
-        background: CARD,
+        background: CARD_BG,
         border: `1px solid ${BORDER}`,
         boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
         zIndex: 40,

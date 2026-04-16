@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Phase } from "@omnitwin/types";
+import { GOLD } from "../../constants/ui-palette.js";
 import {
   collectFloorPlanMarkers,
   markerColourFor,
@@ -22,7 +23,6 @@ import {
 // pixel-perfect aligned with the placement data.
 // ---------------------------------------------------------------------------
 
-const GOLD = "#c9a84c";
 const BG = "#141311";
 const GRID = "#252320";
 const WALL = "#3a3631";
@@ -122,10 +122,6 @@ export function InteractiveFloorPlan({
           </text>
         )}
       </svg>
-
-      {/* Compass — anchored top-right so the hallkeeper orients
-          themselves against the real room */}
-      <Compass />
     </div>
   );
 }
@@ -158,25 +154,5 @@ function ScaleBar({ room, svgH }: { room: RoomDims; svgH: number }): React.React
         stroke="#aaa" strokeWidth={2} strokeLinecap="round" />
       <text x={28 + oneMetreInSvg} y={svgH - 20} fontSize={14} fill="#aaa" fontFamily="Inter, sans-serif">1m</text>
     </g>
-  );
-}
-
-function Compass(): React.ReactElement {
-  return (
-    <div
-      style={{
-        position: "absolute", top: 10, right: 10,
-        width: 34, height: 34, borderRadius: 17,
-        background: "rgba(0,0,0,0.6)",
-        border: `1px solid ${WALL}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "#ddd", fontSize: 11, fontWeight: 700,
-        letterSpacing: "0.05em",
-      }}
-      aria-hidden
-    >
-      <span style={{ color: GOLD }}>N</span>
-      <span style={{ color: "#555", margin: "0 1px" }}>↑</span>
-    </div>
   );
 }

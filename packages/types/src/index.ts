@@ -166,6 +166,7 @@ export {
 export {
   SETUP_PHASES,
   SetupPhaseSchema,
+  PHASE_METADATA,
   ImpliedAccessorySchema,
   ACCESSORY_RULES,
   accessoriesFor,
