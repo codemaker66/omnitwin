@@ -6,6 +6,7 @@ import { createDb, type Database } from "../db/client.js";
 import {
   users, configurations, placedObjects, enquiries,
   enquiryStatusHistory, guestLeads, spaces, emailSends,
+  assetDefinitions, assetAccessories,
 } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,12 @@ let claimerUserId = "";
 // Prompt 6: L-shape space for polygon-containment regression tests
 let lShapeSpaceId = "";
 let lShapeConfigId = "";
+
+// Prompt 3 (hallkeeper S+): hallkeeper pipeline integration
+let hkTableAssetId = "";
+let hkChairAssetId = "";
+let hkConfigId = "";
+const hkAccessoryIds: string[] = [];
 
 // ---------------------------------------------------------------------------
 // Helper: create a mock token for the auth middleware
@@ -116,6 +123,20 @@ afterAll(async () => {
     }
     if (lShapeSpaceId !== "") {
       await db.delete(spaces).where(eq(spaces.id, lShapeSpaceId));
+    }
+    // Hallkeeper pipeline test cleanup
+    if (hkConfigId !== "") {
+      await db.delete(placedObjects).where(eq(placedObjects.configurationId, hkConfigId));
+      await db.delete(configurations).where(eq(configurations.id, hkConfigId));
+    }
+    if (hkAccessoryIds.length > 0) {
+      await db.delete(assetAccessories).where(inArray(assetAccessories.id, hkAccessoryIds));
+    }
+    if (hkTableAssetId !== "") {
+      await db.delete(assetDefinitions).where(eq(assetDefinitions.id, hkTableAssetId));
+    }
+    if (hkChairAssetId !== "") {
+      await db.delete(assetDefinitions).where(eq(assetDefinitions.id, hkChairAssetId));
     }
     await db.delete(guestLeads).where(eq(guestLeads.email, GUEST_EMAIL));
     // Email audit rows — keys for this run all start with "enquiry-" and
@@ -922,7 +943,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
   }, 15000);
 
   // --- 39. Guest enquiry fired per-hallkeeper notifications with distinct keys ---
-  it("39. guest enquiry submission produced at most one audit row per hallkeeper", async () => {
+  it("39. guest enquiry submission produced at most one audit row per hallkeeper (email)", async () => {
     // Test 27 submitted a guest enquiry. The route loops over hallkeepers
     // for that venue — a single hallkeeper exists in this test run
     // (hallkeeperUserId). The key pattern is
@@ -945,5 +966,212 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
       .from(emailSends)
       .where(eq(emailSends.idempotencyKey, key));
     expect(all).toHaveLength(1);
+  }, 15000);
+
+  // =========================================================================
+  // HALLKEEPER PIPELINE — full end-to-end against real Neon
+  //
+  // These tests prove the pipeline that the hallkeeper sheet depends on:
+  //   insert assets → insert accessories → place objects → /v2 → verify
+  //
+  // Self-contained: creates its own test assets + accessories so the test
+  // doesn't depend on the seed having been run with the canonical catalogue.
+  // Cleans up in afterAll.
+  // =========================================================================
+
+  it("40. insert test assets for hallkeeper pipeline (table + chair)", async () => {
+    const [table] = await db.insert(assetDefinitions).values({
+      id: "e0e0e0e0-0000-4000-a000-000000000001",
+      name: "HK Test Round Table",
+      category: "table",
+      widthM: "1.83",
+      depthM: "1.83",
+      heightM: "0.76",
+      seatCount: 10,
+      collisionType: "cylinder",
+    }).returning();
+    expect(table).toBeDefined();
+    hkTableAssetId = table!.id;
+
+    const [chair] = await db.insert(assetDefinitions).values({
+      id: "e0e0e0e0-0000-4000-a000-000000000002",
+      name: "HK Test Chair",
+      category: "chair",
+      widthM: "0.45",
+      depthM: "0.45",
+      heightM: "0.90",
+      seatCount: 1,
+      collisionType: "box",
+    }).returning();
+    expect(chair).toBeDefined();
+    hkChairAssetId = chair!.id;
+  }, 15000);
+
+  it("41. insert accessory rules for the test table + chair", async () => {
+    const rows = await db.insert(assetAccessories).values([
+      {
+        parentAssetId: hkTableAssetId,
+        name: "Ivory Tablecloth",
+        category: "decor",
+        quantityPerParent: 1,
+        phase: "dress",
+        afterDepth: 0,
+      },
+      {
+        parentAssetId: hkTableAssetId,
+        name: "Gold Runner",
+        category: "decor",
+        quantityPerParent: 1,
+        phase: "dress",
+        afterDepth: 1,
+      },
+      {
+        parentAssetId: hkTableAssetId,
+        name: "LED Candle",
+        category: "decor",
+        quantityPerParent: 3,
+        phase: "final",
+        afterDepth: 0,
+      },
+      {
+        parentAssetId: hkChairAssetId,
+        name: "Chair Sash",
+        category: "decor",
+        quantityPerParent: 1,
+        phase: "dress",
+        afterDepth: 0,
+      },
+    ]).returning();
+    expect(rows).toHaveLength(4);
+    for (const r of rows) hkAccessoryIds.push(r.id);
+  }, 15000);
+
+  it("42. create a configuration for the hallkeeper pipeline", async () => {
+    const [cfg] = await db.insert(configurations).values({
+      spaceId: spaceId,
+      venueId: venueId,
+      userId: plannerUserId,
+      name: `HK Pipeline ${RUN_ID}`,
+      layoutStyle: "dinner-rounds",
+    }).returning();
+    expect(cfg).toBeDefined();
+    hkConfigId = cfg!.id;
+  }, 15000);
+
+  it("43. place a table + 2 chairs via API (auth batch save)", async () => {
+    const groupId = `hk-group-${RUN_ID}`;
+    const res = await server.inject({
+      method: "POST",
+      url: `/configurations/${hkConfigId}/objects`,
+      headers: auth(plannerToken),
+      payload: {
+        assetDefinitionId: hkTableAssetId,
+        positionX: 0,
+        positionY: 0,
+        positionZ: 0,
+        rotationY: 0,
+        scale: 1,
+        metadata: { groupId },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    for (let i = 0; i < 2; i++) {
+      const chairRes = await server.inject({
+        method: "POST",
+        url: `/configurations/${hkConfigId}/objects`,
+        headers: auth(plannerToken),
+        payload: {
+          assetDefinitionId: hkChairAssetId,
+          positionX: i * 0.5,
+          positionY: 0,
+          positionZ: 0.5,
+          rotationY: 0,
+          scale: 1,
+          metadata: { groupId },
+        },
+      });
+      expect(chairRes.statusCode).toBe(201);
+    }
+  }, 15000);
+
+  it("44. GET /hallkeeper/:configId/v2 returns phase/zone manifest with accessories", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${hkConfigId}/v2`,
+      headers: auth(plannerToken),
+    });
+    expect(res.statusCode).toBe(200);
+
+    const body = JSON.parse(res.body) as {
+      data: {
+        phases: { phase: string; zones: { zone: string; rows: { name: string; qty: number; isAccessory: boolean; afterDepth: number }[] }[] }[];
+        totals: { totalRows: number; totalItems: number };
+      };
+    };
+    const { data } = body;
+
+    // The response must have phases
+    expect(data.phases.length).toBeGreaterThan(0);
+
+    // Flatten all rows for inspection
+    const allRows = data.phases.flatMap((p) => p.zones.flatMap((z) => z.rows));
+
+    // The parent table row should be present
+    const tableRow = allRows.find((r) => r.name.includes("HK Test Round Table"));
+    expect(tableRow).toBeDefined();
+    expect(tableRow?.name).toContain("with 2 chairs");
+
+    // Accessory rows should be present (from the DB, not a static lookup)
+    const cloth = allRows.find((r) => r.name === "Ivory Tablecloth");
+    expect(cloth).toBeDefined();
+    expect(cloth?.isAccessory).toBe(true);
+    expect(cloth?.qty).toBe(1);
+
+    const runner = allRows.find((r) => r.name === "Gold Runner");
+    expect(runner).toBeDefined();
+    expect(runner?.afterDepth).toBe(1); // after the cloth
+
+    const candle = allRows.find((r) => r.name === "LED Candle");
+    expect(candle).toBeDefined();
+    expect(candle?.qty).toBe(3); // 3 per table
+
+    // Chair sashes — 2 chairs placed, each generates 1 sash = 2 total
+    const sash = allRows.find((r) => r.name === "Chair Sash");
+    expect(sash).toBeDefined();
+    expect(sash?.qty).toBe(2);
+
+    // Totals must account for everything
+    expect(data.totals.totalRows).toBeGreaterThanOrEqual(5); // table + cloth + runner + candle + sash (minimum)
+    expect(data.totals.totalItems).toBeGreaterThanOrEqual(8); // 1 table + 1 cloth + 1 runner + 3 candles + 2 sash
+  }, 15000);
+
+  it("45. GET /hallkeeper/:configId/sheet returns a PDF buffer", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${hkConfigId}/sheet`,
+      headers: auth(plannerToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("application/pdf");
+    // PDF magic bytes: %PDF
+    expect(res.rawPayload.slice(0, 4).toString("ascii")).toBe("%PDF");
+  }, 15000);
+
+  it("46. /v2 returns 401 without auth (no regression)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${hkConfigId}/v2`,
+    });
+    expect(res.statusCode).toBe(401);
+  }, 15000);
+
+  it("47. /v2 returns 404 for non-existent config", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/hallkeeper/00000000-0000-0000-0000-ffffffffffff/v2",
+      headers: auth(plannerToken),
+    });
+    expect(res.statusCode).toBe(404);
   }, 15000);
 });
