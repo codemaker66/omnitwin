@@ -3,6 +3,7 @@ import {
   ZONES,
   ZoneSchema,
   ManifestRowV2Schema,
+  RowPositionSchema,
   PhaseZoneSchema,
   PhaseSchema,
   TimingSchema,
@@ -17,6 +18,7 @@ const SAMPLE_ROW = {
   afterDepth: 0,
   isAccessory: false,
   notes: "",
+  positions: [],
 } as const;
 
 describe("ZoneSchema", () => {
@@ -54,6 +56,49 @@ describe("ManifestRowV2Schema", () => {
 
   it("requires key to be non-empty", () => {
     expect(ManifestRowV2Schema.safeParse({ ...SAMPLE_ROW, key: "" }).success).toBe(false);
+  });
+});
+
+describe("RowPositionSchema", () => {
+  const VALID = {
+    objectId: "00000000-0000-0000-0000-000000000001",
+    x: 5.5,
+    z: -3.2,
+    rotationY: 1.5708,
+  };
+
+  it("accepts valid coordinates", () => {
+    expect(RowPositionSchema.safeParse(VALID).success).toBe(true);
+  });
+
+  it("rejects non-UUID objectId", () => {
+    expect(RowPositionSchema.safeParse({ ...VALID, objectId: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("accepts negative coordinates (floor plan can straddle origin)", () => {
+    expect(RowPositionSchema.safeParse({ ...VALID, x: -10, z: -10 }).success).toBe(true);
+  });
+});
+
+describe("ManifestRowV2Schema — positions", () => {
+  it("defaults positions to [] when omitted", () => {
+    const { positions: _drop, ...rest } = SAMPLE_ROW;
+    const parsed = ManifestRowV2Schema.safeParse(rest);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.positions).toEqual([]);
+  });
+
+  it("accepts multiple positions on an aggregated row", () => {
+    const parsed = ManifestRowV2Schema.safeParse({
+      ...SAMPLE_ROW,
+      qty: 3,
+      positions: [
+        { objectId: "00000000-0000-0000-0000-00000000000a", x: 1, z: 2, rotationY: 0 },
+        { objectId: "00000000-0000-0000-0000-00000000000b", x: 3, z: 4, rotationY: 0 },
+        { objectId: "00000000-0000-0000-0000-00000000000c", x: 5, z: 6, rotationY: 0 },
+      ],
+    });
+    expect(parsed.success).toBe(true);
   });
 });
 
@@ -130,6 +175,7 @@ describe("HallkeeperSheetV2Schema — full roundtrip", () => {
     diagramUrl: null,
     webViewUrl: "http://localhost:5173/hallkeeper/cfg",
     generatedAt: "2026-04-15T10:00:00.000Z",
+    instructions: null,
   };
 
   it("parses a full sample payload", () => {
@@ -138,6 +184,21 @@ describe("HallkeeperSheetV2Schema — full roundtrip", () => {
 
   it("accepts timing=null (unscheduled config)", () => {
     const parsed = HallkeeperSheetV2Schema.safeParse({ ...(SAMPLE as Record<string, unknown>), timing: null });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts a populated instructions block", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      instructions: {
+        specialInstructions: "Fire exits must remain clear at all times.",
+        dayOfContact: { name: "Sarah Wright", role: "Planner", phone: "+44 7700 900000", email: "" },
+        phaseDeadlines: [
+          { phase: "structure", deadline: "2026-06-15T14:00:00.000Z", reason: "" },
+        ],
+        accessNotes: "Service entrance at south door.",
+      },
+    });
     expect(parsed.success).toBe(true);
   });
 });

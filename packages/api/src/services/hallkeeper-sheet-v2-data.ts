@@ -1,5 +1,6 @@
 import { eq, and, isNull, inArray, desc } from "drizzle-orm";
-import type { HallkeeperSheetV2, Timing, SetupPhase } from "@omnitwin/types";
+import type { EventInstructions, HallkeeperSheetV2, Timing, SetupPhase } from "@omnitwin/types";
+import { ConfigurationMetadataSchema, hasInstructionContent } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories, spaces, venues, enquiries,
 } from "../db/schema.js";
@@ -88,6 +89,8 @@ export async function assembleSheetDataV2(
     const meta = obj.metadata as Record<string, unknown> | null;
     const rawGroupId = meta?.["groupId"];
     const groupId = typeof rawGroupId === "string" ? rawGroupId : null;
+    const rawNotes = meta?.["notes"];
+    const notes = typeof rawNotes === "string" ? rawNotes : null;
     return {
       id: obj.id,
       assetName: asset?.name ?? "Unknown",
@@ -98,6 +101,7 @@ export async function assembleSheetDataV2(
       rotationY: Number(obj.rotationY),
       chairCount: 0,
       groupId,
+      notes,
     };
   });
 
@@ -134,6 +138,7 @@ export async function assembleSheetDataV2(
   const manifest = generateManifestV2(manifestObjects, roomDims, accessoryMap);
 
   const timing = await resolveTiming(db, configId);
+  const instructions = resolveInstructions(config.metadata);
 
   const payload: HallkeeperSheetV2 = {
     config: {
@@ -154,6 +159,7 @@ export async function assembleSheetDataV2(
       heightM: Number(space.heightM),
     },
     timing,
+    instructions,
     phases: manifest.phases,
     totals: manifest.totals,
     diagramUrl: config.thumbnailUrl,
@@ -165,6 +171,26 @@ export async function assembleSheetDataV2(
     authPivot: { venueId: venue.id, configUserId: config.userId },
     payload,
   };
+}
+
+/**
+ * Parse the configuration.metadata JSONB column into an EventInstructions
+ * block. Returns null if the column is empty OR if the instructions
+ * block is all-empty — the renderer uses the null signal to skip the
+ * instructions section rather than render an empty callout.
+ *
+ * Uses the canonical ConfigurationMetadataSchema from @omnitwin/types so
+ * partial / legacy shapes don't break the sheet — Zod coerces missing
+ * fields to their defaults and tolerates unknown keys via passthrough.
+ */
+function resolveInstructions(raw: unknown): EventInstructions | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = ConfigurationMetadataSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const instructions = parsed.data.instructions;
+  if (instructions === undefined) return null;
+  if (!hasInstructionContent(instructions)) return null;
+  return instructions;
 }
 
 /**

@@ -1,0 +1,25 @@
+-- -----------------------------------------------------------------------------
+-- 0011_configuration_metadata
+--
+-- Add metadata JSONB column to configurations so the planner can attach
+-- human-readable context that isn't captured by placed-object geometry:
+-- special instructions for the hallkeeper, day-of contact, per-phase
+-- deadlines, access / load-in notes.
+--
+-- Schema shape defined in @omnitwin/types hallkeeper-instructions.ts:
+--
+--   {
+--     "instructions": {
+--       "specialInstructions": string,
+--       "dayOfContact": { name, role, phone, email } | null,
+--       "phaseDeadlines": [{ phase, deadline, reason }],
+--       "accessNotes": string
+--     }
+--   }
+--
+-- Nullable / defaults to NULL so existing rows keep rendering the sheet
+-- exactly as before — the renderer falls through to its empty state when
+-- the column is null.
+-- -----------------------------------------------------------------------------
+
+ALTER TABLE "configurations" ADD COLUMN IF NOT EXISTS "metadata" jsonb;

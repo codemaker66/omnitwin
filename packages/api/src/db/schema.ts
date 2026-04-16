@@ -173,6 +173,14 @@ export const configurations = pgTable("configurations", {
   visibility: varchar("visibility", { length: 20 }).notNull().default("private"),
   thumbnailUrl: text("thumbnail_url"),
   lightmapUrl: text("lightmap_url"),
+  /**
+   * Planner-authored context that isn't captured by placed-object
+   * geometry: special instructions, day-of contact, per-phase deadlines,
+   * access notes. Shape defined in @omnitwin/types hallkeeper-instructions.ts
+   * (ConfigurationMetadataSchema). Nullable — the hallkeeper sheet
+   * renderer falls through cleanly when unset.
+   */
+  metadata: jsonb("metadata"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

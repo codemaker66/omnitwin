@@ -210,6 +210,112 @@ describe("generateManifestV2 — totals", () => {
   });
 });
 
+describe("generateManifestV2 — per-row positions", () => {
+  const UUID_A = "00000000-0000-0000-0000-00000000000a";
+  const UUID_B = "00000000-0000-0000-0000-00000000000b";
+  const UUID_C = "00000000-0000-0000-0000-00000000000c";
+
+  it("emits one position per non-accessory placement, none per accessory", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({ id: UUID_A, assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 2, positionZ: 1, rotationY: 0.5 }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const furniture = out.phases.find((p) => p.phase === "furniture");
+    const tableRow = furniture?.zones.flatMap((z) => z.rows).find((r) => !r.isAccessory);
+    expect(tableRow?.positions).toHaveLength(1);
+    expect(tableRow?.positions[0]?.objectId).toBe(UUID_A);
+    expect(tableRow?.positions[0]?.x).toBe(2);
+    expect(tableRow?.positions[0]?.z).toBe(1);
+    expect(tableRow?.positions[0]?.rotationY).toBe(0.5);
+
+    const dress = out.phases.find((p) => p.phase === "dress");
+    const cloth = dress?.zones.flatMap((z) => z.rows).find((r) => r.name === "Ivory Tablecloth");
+    expect(cloth?.positions).toEqual([]);
+  });
+
+  it("aggregated parent rows accumulate one position per placement", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({ id: UUID_A, assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", positionX: 0, positionZ: 0 }),
+      obj({ id: UUID_B, assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", positionX: 0.2, positionZ: 0.2 }),
+      obj({ id: UUID_C, assetName: "6ft Round Table", assetCategory: "table", groupId: "g3", positionX: -0.2, positionZ: -0.2 }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const furniture = out.phases.find((p) => p.phase === "furniture");
+    const tableRow = furniture?.zones.flatMap((z) => z.rows).find((r) => !r.isAccessory);
+    expect(tableRow?.qty).toBe(3);
+    expect(tableRow?.positions).toHaveLength(3);
+    const ids = tableRow?.positions.map((p) => p.objectId).sort();
+    expect(ids).toEqual([UUID_A, UUID_B, UUID_C].sort());
+  });
+});
+
+describe("generateManifestV2 — per-row notes", () => {
+  const UUID_A = "00000000-0000-0000-0000-00000000000a";
+  const UUID_B = "00000000-0000-0000-0000-00000000000b";
+
+  it("row notes carry the planner's annotation", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({
+        id: UUID_A,
+        assetName: "6ft Round Table",
+        assetCategory: "table",
+        groupId: "g1",
+        notes: "VIP table — reserved for the Anderson family",
+      }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const tableRow = out.phases.find((p) => p.phase === "furniture")?.zones[0]?.rows[0];
+    expect(tableRow?.notes).toBe("VIP table — reserved for the Anderson family");
+  });
+
+  it("accessories inherit the parent's note (so the hallkeeper knows the VIP tablecloth is VIP too)", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({
+        id: UUID_A,
+        assetName: "6ft Round Table",
+        assetCategory: "table",
+        groupId: "g1",
+        notes: "VIP table",
+      }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const cloth = out.phases.find((p) => p.phase === "dress")?.zones.flatMap((z) => z.rows).find((r) => r.name === "Ivory Tablecloth");
+    expect(cloth?.notes).toBe("VIP table");
+  });
+
+  it("distinct notes from aggregated placements are joined with a separator", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({ id: UUID_A, assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", notes: "VIP" }),
+      obj({ id: UUID_B, assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", notes: "Needs extra chair" }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const tableRow = out.phases.find((p) => p.phase === "furniture")?.zones[0]?.rows[0];
+    expect(tableRow?.notes).toContain("VIP");
+    expect(tableRow?.notes).toContain("Needs extra chair");
+    expect(tableRow?.notes).toContain(" · ");
+  });
+
+  it("duplicate notes are deduplicated", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({ id: UUID_A, assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", notes: "VIP" }),
+      obj({ id: UUID_B, assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", notes: "VIP" }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const tableRow = out.phases.find((p) => p.phase === "furniture")?.zones[0]?.rows[0];
+    expect(tableRow?.notes).toBe("VIP");
+  });
+
+  it("empty / whitespace notes are ignored", () => {
+    const placed: readonly ManifestObjectV2[] = [
+      obj({ id: UUID_A, assetName: "6ft Round Table", assetCategory: "table", groupId: "g1", notes: "   " }),
+      obj({ id: UUID_B, assetName: "6ft Round Table", assetCategory: "table", groupId: "g2", notes: null }),
+    ];
+    const out = generateManifestV2(placed, ROOM, ACC);
+    const tableRow = out.phases.find((p) => p.phase === "furniture")?.zones[0]?.rows[0];
+    expect(tableRow?.notes).toBe("");
+  });
+});
+
 describe("generateManifestV2 — stable keys survive re-save", () => {
   it("same placement input produces identical keys across two calls", () => {
     const placed: readonly ManifestObjectV2[] = [

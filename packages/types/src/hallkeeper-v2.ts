@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
+import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — phase ▸ zone ▸ row hierarchy
@@ -45,6 +46,29 @@ export type Zone = z.infer<typeof ZoneSchema>;
 // ManifestRowV2 — single manifest line
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// RowPosition — floor-plan coordinates for one placement aggregated into
+// this row. Used by the tablet page to draw markers on the diagram and
+// by the PDF for a "see diagram" reference grid. Coordinates are in the
+// space's floor-plan frame, same units as space.widthM / lengthM.
+// ---------------------------------------------------------------------------
+
+export const RowPositionSchema = z.object({
+  /** Source placed-object UUID — lets the tablet link back to the 3D scene. */
+  objectId: z.string().uuid(),
+  /** X in metres, floor-plan frame. */
+  x: z.number(),
+  /** Z in metres, floor-plan frame. */
+  z: z.number(),
+  /** Y rotation in radians — lets the renderer orient the marker. */
+  rotationY: z.number(),
+});
+export type RowPosition = z.infer<typeof RowPositionSchema>;
+
+// ---------------------------------------------------------------------------
+// ManifestRowV2 — single manifest line
+// ---------------------------------------------------------------------------
+
 export const ManifestRowV2Schema = z.object({
   /** Stable idempotent key — survives re-saves. phase|zone|name|afterDepth. */
   key: z.string().min(1).max(300),
@@ -61,8 +85,18 @@ export const ManifestRowV2Schema = z.object({
   afterDepth: z.number().int().nonnegative().max(5),
   /** True if this row is an accessory implied by a parent placement. */
   isAccessory: z.boolean(),
-  /** Optional notes from the spatial classifier or planner. */
-  notes: z.string().max(500).default(""),
+  /**
+   * Planner-authored notes from the union of placed-object `notes`
+   * fields that aggregate into this row. Empty string when no source
+   * placement carried a note.
+   */
+  notes: z.string().max(2000).default(""),
+  /**
+   * Floor-plan coordinates for every placement that aggregates into
+   * this row. Empty for accessory rows — accessories don't have their
+   * own coordinates, they follow their parent's.
+   */
+  positions: z.array(RowPositionSchema).default([]),
 });
 
 export type ManifestRowV2 = z.infer<typeof ManifestRowV2Schema>;
@@ -120,6 +154,14 @@ export const HallkeeperSheetV2Schema = z.object({
     heightM: z.number(),
   }),
   timing: TimingSchema.nullable(),
+  /**
+   * Planner-authored human context — special instructions, day-of
+   * contact, per-phase deadlines, access notes. Null when the planner
+   * hasn't filled any of it out yet; renderers should hide the
+   * instructions section cleanly in that case rather than showing a
+   * stub.
+   */
+  instructions: EventInstructionsSchema.nullable(),
   phases: z.array(PhaseSchema),
   totals: z.object({
     /** One entry per distinct item name, summed across phases + zones. */

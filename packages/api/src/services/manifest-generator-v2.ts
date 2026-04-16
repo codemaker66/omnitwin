@@ -4,6 +4,7 @@ import {
   type ManifestRowV2,
   type Phase,
   type PhaseZone,
+  type RowPosition,
   type SetupPhase,
   type Zone,
 } from "@omnitwin/types";
@@ -31,6 +32,13 @@ export interface ManifestObjectV2 {
   readonly rotationY: number;
   readonly chairCount: number;
   readonly groupId: string | null;
+  /**
+   * Planner-authored note attached to this specific placement. When the
+   * manifest generator aggregates placements into a row, all distinct
+   * notes get concatenated into the row's `notes` string. Empty / null
+   * = no note.
+   */
+  readonly notes?: string | null;
 }
 
 /** One accessory rule, as loaded from the asset_accessories table. */
@@ -53,10 +61,27 @@ interface WorkingRow {
   readonly afterDepth: number;
   readonly isAccessory: boolean;
   qty: number;
+  positions: RowPosition[];
+  /** Distinct notes collected from the source placements. */
+  notes: string[];
 }
 
 export function manifestKey(row: Pick<WorkingRow, "phase" | "zone" | "name" | "afterDepth">): string {
   return `${row.phase}|${row.zone}|${row.name}|${String(row.afterDepth)}`;
+}
+
+/**
+ * Merge a note from a placement into a row's notes list. Deduplicates
+ * exact matches — if five tables all have the same "VIP table" note, we
+ * record it once, not five times. Empty / whitespace-only notes are
+ * dropped.
+ */
+function mergeNote(row: WorkingRow, note: string | null | undefined): void {
+  if (note === null || note === undefined) return;
+  const trimmed = note.trim();
+  if (trimmed.length === 0) return;
+  if (row.notes.includes(trimmed)) return;
+  row.notes.push(trimmed);
 }
 
 /**
@@ -104,6 +129,7 @@ export function generateManifestV2(
       afterDepth: 0,
       isAccessory: false,
       qty: 1,
+      source: obj,
     });
 
     // Expand parent's accessories from the DB-loaded map.
@@ -122,6 +148,7 @@ export function generateManifestV2(
         afterDepth: 0,
         isAccessory: false,
         qty: 1,
+        source: obj,
       });
       addAccessoriesForItem(bucket, obj, room, accessories);
     }
@@ -140,6 +167,9 @@ function addAccessoriesForItem(
   if (rules === undefined) return;
   const zone = classifyZoneV2(obj.positionX, obj.positionZ, room);
   for (const acc of rules) {
+    // Accessories inherit their parent's note so a "VIP table" tablecloth
+    // shows the context too — but they do NOT inherit positions, which
+    // would just duplicate markers on the diagram.
     addRow(bucket, {
       phase: acc.phase,
       zone,
@@ -148,17 +178,62 @@ function addAccessoriesForItem(
       afterDepth: acc.afterDepth,
       isAccessory: true,
       qty: acc.quantityPerParent,
+      source: obj,
+      skipPosition: true,
     });
   }
 }
 
-function addRow(bucket: Map<string, WorkingRow>, row: WorkingRow): void {
-  const key = manifestKey(row);
+interface AddRowArgs {
+  phase: SetupPhase;
+  zone: Zone;
+  name: string;
+  category: string;
+  afterDepth: number;
+  isAccessory: boolean;
+  qty: number;
+  /** The placed object that contributed this row — used for positions + notes. */
+  source: ManifestObjectV2;
+  /** If true, don't attach position (for accessories). */
+  skipPosition?: boolean;
+}
+
+function addRow(bucket: Map<string, WorkingRow>, args: AddRowArgs): void {
+  const key = manifestKey(args);
   const existing = bucket.get(key);
   if (existing === undefined) {
-    bucket.set(key, { ...row });
+    const row: WorkingRow = {
+      phase: args.phase,
+      zone: args.zone,
+      name: args.name,
+      category: args.category,
+      afterDepth: args.afterDepth,
+      isAccessory: args.isAccessory,
+      qty: args.qty,
+      positions: [],
+      notes: [],
+    };
+    if (args.skipPosition !== true) {
+      row.positions.push({
+        objectId: args.source.id,
+        x: args.source.positionX,
+        z: args.source.positionZ,
+        rotationY: args.source.rotationY,
+      });
+    }
+    mergeNote(row, args.source.notes);
+    bucket.set(key, row);
   } else {
-    existing.qty += row.qty;
+    existing.qty += args.qty;
+    if (args.skipPosition !== true) {
+      existing.positions.push({
+        objectId: args.source.id,
+        x: args.source.positionX,
+        z: args.source.positionZ,
+        rotationY: args.source.rotationY,
+      });
+    }
+    mergeNote(existing, args.source.notes);
   }
 }
 
@@ -205,7 +280,8 @@ function assemblePhases(bucket: Map<string, WorkingRow>): {
           qty: r.qty,
           afterDepth: r.afterDepth,
           isAccessory: r.isAccessory,
-          notes: "",
+          notes: r.notes.join(" · "),
+          positions: [...r.positions],
         })),
       });
     }

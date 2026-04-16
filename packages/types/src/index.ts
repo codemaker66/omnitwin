@@ -178,17 +178,34 @@ export {
   ZONES,
   ZoneSchema,
   ManifestRowV2Schema,
+  RowPositionSchema,
   PhaseZoneSchema,
   PhaseSchema,
   TimingSchema,
   HallkeeperSheetV2Schema,
   type Zone,
   type ManifestRowV2,
+  type RowPosition,
   type PhaseZone,
   type Phase,
   type Timing,
   type HallkeeperSheetV2,
 } from "./hallkeeper-v2.js";
+
+export {
+  DayOfContactSchema,
+  PhaseDeadlineSchema,
+  EventInstructionsSchema,
+  ConfigurationMetadataSchema,
+  PlacedObjectMetadataSchema,
+  emptyEventInstructions,
+  hasInstructionContent,
+  type DayOfContact,
+  type PhaseDeadline,
+  type EventInstructions,
+  type ConfigurationMetadata,
+  type PlacedObjectMetadata,
+} from "./hallkeeper-instructions.js";
 
 export {
   PhotoIdSchema,
