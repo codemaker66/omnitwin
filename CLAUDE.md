@@ -53,6 +53,54 @@ No skeletons. No TODOs. No "good enough." Production-ready or it doesn't ship.
 Say "I'm not certain about [X] — please verify before using this code."
 NEVER say "yes that should work" without verification.
 
+## Library & API Documentation
+
+Always use the Context7 MCP server when you need library or API
+documentation (React, R3F, drei, Three.js, Fastify, Drizzle, Zod,
+Zustand, Vitest, pdfkit, etc.). Prefer Context7 over guessing from
+memory — it pins answers to the installed version.
+
+## Specialist Agents — Prefer Them Over Monolithic Work
+
+The Everything Claude Code plugin installs specialist sub-agents. Reach for
+them via `Agent(subagent_type="…")` instead of doing everything yourself,
+especially for planning, review, and verification.
+
+**Planning & architecture:**
+
+- `everything-claude-code:planner` — non-trivial features / refactors
+- `everything-claude-code:architect` — system design, scalability decisions
+
+**Review before shipping (mandatory in the stated contexts):**
+
+- `everything-claude-code:typescript-reviewer` — all TS/JS changes
+- `everything-claude-code:security-reviewer` — auth, user input, API endpoints, secrets, anything touching PII
+- `everything-claude-code:code-reviewer` — major step / chunk review
+- `superpowers:code-reviewer` — second opinion when the change is load-bearing
+
+**Build, test, verify:**
+
+- `everything-claude-code:tdd-guide` — new features, bug fixes (write tests first)
+- `everything-claude-code:build-error-resolver` — when build/typecheck fails
+- `everything-claude-code:e2e-runner` — user-flow tests with Playwright
+- `/simplify` skill — dead code / over-engineering sweep before commit
+- `/review` skill — lightweight PR-style review
+- `/security-review` skill — quick security pass
+
+**Verification tools now available:**
+
+- Playwright MCP — drive a real browser for UI verification (no more "couldn't
+  test the UI" caveats on frontend work)
+- Neon MCP — run SQL, migrations, and integration tests against the live DB
+- Context7 MCP — library docs (see "Library & API Documentation" above)
+
+## Continuous Learning
+
+claude-mem and the auto-memory system are both active. Write `project`,
+`feedback`, and `reference` memories for anything non-obvious that'll matter
+next session — prior incidents, validated judgment calls, where external
+context lives. Read existing memories before starting relevant work.
+
 ## When A Task Is Too Large
 Say "This needs N more prompts. Here's the breakdown. Ask me to do [next chunk]."
 NEVER silently simplify requirements or skip parts of the task.
