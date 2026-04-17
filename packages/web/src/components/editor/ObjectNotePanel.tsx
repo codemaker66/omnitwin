@@ -20,38 +20,51 @@ const MAX_NOTE = 500;
 
 export function ObjectNotePanel(): React.ReactElement | null {
   const selectedId = useEditorStore((s) => s.selectedObjectId);
-  const object = useEditorStore((s) =>
-    s.objects.find((o) => o.id === selectedId) ?? null,
-  );
+  // Subscribe to the notes primitive only, not the whole object. `.find()`
+  // returns a fresh reference on every mutation to the selected object
+  // (drag, rotate, autosave round-trip that replaces `objects` wholesale),
+  // so selecting the whole object would rebuild this component's view
+  // constantly. Subscribing to a primitive is Object.is-stable until the
+  // note string actually changes, which is what we care about.
+  const savedNotes = useEditorStore((s) => {
+    if (selectedId === null) return null;
+    const o = s.objects.find((x) => x.id === selectedId);
+    return o === undefined ? null : o.notes;
+  });
   const setObjectNotes = useEditorStore((s) => s.setObjectNotes);
 
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
 
-  // Re-sync the draft when the selection changes. Without this, the
-  // input would stay on the previous object's note after switching
-  // selection — a confusing foot-gun.
+  // Re-sync the draft ONLY when the selection changes. Depending on the
+  // object identity (or savedNotes directly) would silently wipe an
+  // in-progress draft on every store tick that touches the selected
+  // object — autosave round-trip, drag, rotate all trigger new object
+  // references even though the planner hasn't moved on. Keep dirty
+  // drafts sacrosanct; only reset when the user picks a different
+  // object or deselects.
   useEffect(() => {
-    if (object !== null) {
-      setDraft(object.notes);
-      setDirty(false);
-    }
-  }, [selectedId, object]);
+    // savedNotes read through a ref-free closure: read the current store
+    // state directly so this effect doesn't fire on note-string changes.
+    const current = useEditorStore.getState().objects.find((o) => o.id === selectedId);
+    setDraft(current?.notes ?? "");
+    setDirty(false);
+  }, [selectedId]);
 
-  if (object === null) return null;
+  if (selectedId === null || savedNotes === null) return null;
 
   const handleSave = (): void => {
-    setObjectNotes(object.id, draft.trim());
+    setObjectNotes(selectedId, draft.trim());
     setDirty(false);
   };
 
   const handleClear = (): void => {
     setDraft("");
-    setObjectNotes(object.id, "");
+    setObjectNotes(selectedId, "");
     setDirty(false);
   };
 
-  const hasNote = object.notes.length > 0;
+  const hasNote = savedNotes.length > 0;
   const charsLeft = MAX_NOTE - draft.length;
 
   return (
@@ -95,7 +108,7 @@ export function ObjectNotePanel(): React.ReactElement | null {
         onChange={(e) => {
           const next = e.target.value.slice(0, MAX_NOTE);
           setDraft(next);
-          setDirty(next !== object.notes);
+          setDirty(next !== savedNotes);
         }}
         placeholder="e.g. VIP table, needs HDMI run, keep exit clear…"
         rows={3}

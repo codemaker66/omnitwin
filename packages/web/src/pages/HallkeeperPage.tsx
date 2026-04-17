@@ -26,6 +26,21 @@ import {
 
 type CheckMap = Readonly<Record<string, boolean>>;
 
+/**
+ * Set-or-clear a row's checked state without dynamic `delete`, which is
+ * banned by @typescript-eslint/no-dynamic-delete. We rebuild the map
+ * each toggle — map sizes are small (≤ hundreds of rows) so this is
+ * cheaper than the allocator overhead of a `Set`.
+ */
+function toggleCheck(prev: CheckMap, rowKey: string, next: boolean): CheckMap {
+  if (next) return { ...prev, [rowKey]: true };
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(prev)) {
+    if (k !== rowKey) out[k] = v;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Print styles (injected once)
 // ---------------------------------------------------------------------------
@@ -125,12 +140,7 @@ export function HallkeeperPage(): React.ReactElement {
     if (configId === undefined) return;
     const wasChecked = checks[rowKey] === true;
 
-    setChecks((prev) => {
-      const next = { ...prev };
-      if (wasChecked) { delete (next as Record<string, boolean>)[rowKey]; }
-      else { next[rowKey] = true; }
-      return next;
-    });
+    setChecks((prev) => toggleCheck(prev, rowKey, !wasChecked));
 
     void (async () => {
       try {
@@ -142,12 +152,8 @@ export function HallkeeperPage(): React.ReactElement {
         });
         if (!res.ok) throw new Error("toggle failed");
       } catch {
-        setChecks((prev) => {
-          const rolled = { ...prev };
-          if (wasChecked) { rolled[rowKey] = true; }
-          else { delete (rolled as Record<string, boolean>)[rowKey]; }
-          return rolled;
-        });
+        // Roll back to the prior state.
+        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
       }
     })();
   }, [configId, checks]);
@@ -245,7 +251,7 @@ export function HallkeeperPage(): React.ReactElement {
             {error ?? "Configuration not found"}
           </div>
           <p style={{ color: TEXT_MUT, fontSize: 13, marginBottom: 20 }}>
-            {error?.includes("permission") ? "Ask the events manager to share access." : "Check the link and try again."}
+            {error !== null && error.includes("permission") ? "Ask the events manager to share access." : "Check the link and try again."}
           </p>
           <button
             type="button"
@@ -495,6 +501,11 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                     key={row.key}
                     data-row-key={row.key}
                     className={`hk-row${done ? " checked" : ""}${highlighted ? " highlighted" : ""}`}
+                    onClick={() => { onToggle(row.key); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
+                    role="checkbox"
+                    aria-checked={done}
+                    tabIndex={0}
                     style={{
                       display: "grid", gridTemplateColumns: locatable ? "1fr 28px 40px" : "1fr 40px",
                       alignItems: "center",
@@ -510,16 +521,12 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                           ? `2px solid ${GOLD}`
                           : "2px solid transparent",
                       transition: "all 0.12s",
-                      minHeight: 44, // touch target
+                      minHeight: 44, // touch target — whole row is tap-to-tick
+                      cursor: "pointer",
                     }}
                   >
                     <div
-                      onClick={() => { onToggle(row.key); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
-                      role="checkbox"
-                      aria-checked={done}
-                      tabIndex={0}
-                      style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minHeight: 32 }}
+                      style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32 }}
                     >
                       <span className="hk-checkbox" style={{
                         display: "inline-flex", alignItems: "center", justifyContent: "center",

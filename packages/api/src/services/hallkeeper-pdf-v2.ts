@@ -130,8 +130,41 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     if (data.timing !== null) {
       const deadlines = data.instructions?.phaseDeadlines ?? [];
       const hasDeadlines = deadlines.length > 0;
-      const boxH = hasDeadlines ? 50 : 28;
       const boxY = headerBottom + 4;
+
+      // Lay out phase-deadline chips first (measure only) so we can size
+      // the callout box to fit however many wrap-rows we need. Measure at
+      // the draw font (Helvetica 7.5pt): widthOfString uses the current
+      // font, so measuring at a different size would under-count and
+      // overflow the chips past the border.
+      const chipRight = A4_W - MARGIN - 12;
+      const chipsX0 = MARGIN + 12;
+      const chipsY0 = boxY + 36;
+      let chipRows = 1;
+      let sortedDeadlines: typeof deadlines = [];
+      const chipsLayout: { label: string; w: number; x: number; y: number }[] = [];
+      if (hasDeadlines) {
+        sortedDeadlines = [...deadlines].sort(
+          (a, b) => PHASE_METADATA[a.phase].order - PHASE_METADATA[b.phase].order,
+        );
+        doc.font("Helvetica").fontSize(7.5);
+        let cx = chipsX0;
+        let cy = chipsY0;
+        for (const d of sortedDeadlines) {
+          const label = `${PHASE_METADATA[d.phase].label} · ${fmtTime(d.deadline)}`;
+          const w = doc.widthOfString(label) + 12;
+          if (cx !== chipsX0 && cx + w > chipRight) {
+            cx = chipsX0;
+            cy += 13;
+            chipRows += 1;
+          }
+          chipsLayout.push({ label, w, x: cx, y: cy });
+          cx += w + 6;
+        }
+      }
+
+      const boxH = hasDeadlines ? 38 + chipRows * 13 : 28;
+
       doc.save();
       doc.roundedRect(MARGIN, boxY, CONTENT_W, boxH, 4)
         .fillAndStroke("#faf8f2", GOLD_LIGHT);
@@ -148,26 +181,16 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       );
 
       if (hasDeadlines) {
-        // Mini per-phase deadline chart — one chip per deadline, ordered
-        // by phase. Keeps the hallkeeper's eye on the milestones that
-        // matter for this specific event.
+        // Heading above the chip row(s). Keeps the hallkeeper's eye on
+        // the milestones that matter for this specific event.
         doc.font("Helvetica").fontSize(7).fillColor(INK_FAINT);
         doc.text("PHASE DEADLINES", MARGIN + 12, boxY + 26);
-        const chipsY = boxY + 36;
-        const sortedDeadlines = [...deadlines].sort(
-          (a, b) => PHASE_METADATA[a.phase].order - PHASE_METADATA[b.phase].order,
-        );
-        let chipX = MARGIN + 12;
-        for (const d of sortedDeadlines) {
-          const label = `${PHASE_METADATA[d.phase].label} · ${fmtTime(d.deadline)}`;
-          const w = doc.widthOfString(label) + 12;
-          if (chipX + w > A4_W - MARGIN - 12) break;
+        for (const chip of chipsLayout) {
           doc.save();
-          doc.roundedRect(chipX, chipsY, w, 11, 2).fillAndStroke("#ffffff", GOLD_LIGHT);
+          doc.roundedRect(chip.x, chip.y, chip.w, 11, 2).fillAndStroke("#ffffff", GOLD_LIGHT);
           doc.restore();
           doc.font("Helvetica").fontSize(7.5).fillColor(GOLD);
-          doc.text(label, chipX + 6, chipsY + 2.5);
-          chipX += w + 6;
+          doc.text(chip.label, chip.x + 6, chip.y + 2.5);
         }
       }
 
@@ -253,7 +276,7 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
 
         let rowIdx = 0;
         for (const row of zoneGroup.rows) {
-          const rowHeight = rowHeightFor(row);
+          const rowHeight = rowHeightFor(doc, row);
           ensureSpace(doc, rowHeight);
           const rowY = doc.y;
           const indent = row.afterDepth > 0 ? 16 : 0;
@@ -446,8 +469,19 @@ function renderInstructions(doc: Doc, ins: EventInstructions): void {
   if (ins.specialInstructions.trim().length > 0) {
     const text = ins.specialInstructions.trim();
     const innerW = CONTENT_W - 16;
+    // Set the draw font BEFORE measuring: heightOfString uses the
+    // currently-active font/size. Measuring at whatever was last set
+    // (could be 7.5pt from the timing-callout chips) while drawing at
+    // 9pt under-measured the box by ~17–20% and spilled the last lines
+    // into the diagram below.
+    doc.font("Helvetica").fontSize(9);
     const textH = doc.heightOfString(text, { width: innerW });
     const blockH = Math.max(28, textH + 24);
+    // Reserve space before drawing: doc.text auto-paginates when it
+    // overflows, but doc.roundedRect does not — so without ensureSpace a
+    // long paragraph near the bottom of the page would clip its yellow
+    // box off-page while the text alone paginates to page 2.
+    ensureSpace(doc, blockH + 6);
     const y0 = doc.y;
     doc.save();
     doc.roundedRect(MARGIN, y0, CONTENT_W, blockH, 4).fill("#fff9e8");
@@ -466,20 +500,28 @@ function renderInstructions(doc: Doc, ins: EventInstructions): void {
   const hasAccess = ins.accessNotes.trim().length > 0;
 
   if (hasContact || hasAccess) {
-    const y0 = doc.y;
     const colW = hasContact && hasAccess ? (CONTENT_W - 8) / 2 : CONTENT_W;
-    let blockH = 0;
 
+    // Measure both sub-blocks (at their draw font) to determine the row
+    // height, then ensureSpace and draw. Same rationale as above.
+    let blockH = 0;
     if (hasContact && ins.dayOfContact !== null) {
-      const c = ins.dayOfContact;
-      const contactH = renderContactBlock(doc, c, MARGIN, y0, colW);
-      blockH = Math.max(blockH, contactH);
+      blockH = Math.max(blockH, measureContactBlock(ins.dayOfContact));
+    }
+    if (hasAccess) {
+      doc.font("Helvetica").fontSize(9);
+      blockH = Math.max(blockH, measureAccessBlock(doc, ins.accessNotes.trim(), colW));
     }
 
+    ensureSpace(doc, blockH + 6);
+    const y0 = doc.y;
+
+    if (hasContact && ins.dayOfContact !== null) {
+      renderContactBlock(doc, ins.dayOfContact, MARGIN, y0, colW);
+    }
     if (hasAccess) {
       const accessX = hasContact ? MARGIN + colW + 8 : MARGIN;
-      const accessH = renderAccessBlock(doc, ins.accessNotes.trim(), accessX, y0, colW);
-      blockH = Math.max(blockH, accessH);
+      renderAccessBlock(doc, ins.accessNotes.trim(), accessX, y0, colW);
     }
 
     doc.y = y0 + blockH + 6;
@@ -498,6 +540,26 @@ function renderInstructions(doc: Doc, ins: EventInstructions): void {
   }
 }
 
+function contactLines(c: { name: string; role: string; phone: string; email: string }): string[] {
+  const lines: string[] = [c.name];
+  if (c.role.length > 0) lines[0] = `${c.name}  ·  ${c.role}`;
+  if (c.phone.length > 0) lines.push(c.phone);
+  if (c.email.length > 0) lines.push(c.email);
+  return lines;
+}
+
+function measureContactBlock(
+  c: { name: string; role: string; phone: string; email: string },
+): number {
+  return 18 + contactLines(c).length * 12;
+}
+
+function measureAccessBlock(doc: Doc, text: string, w: number): number {
+  // Caller is responsible for setting the draw font before calling.
+  const innerW = w - 20;
+  return 22 + doc.heightOfString(text, { width: innerW });
+}
+
 function renderContactBlock(
   doc: Doc,
   c: { name: string; role: string; phone: string; email: string },
@@ -505,12 +567,8 @@ function renderContactBlock(
   y: number,
   w: number,
 ): number {
-  const lines: string[] = [c.name];
-  if (c.role.length > 0) lines[0] = `${c.name}  ·  ${c.role}`;
-  if (c.phone.length > 0) lines.push(c.phone);
-  if (c.email.length > 0) lines.push(c.email);
-
-  const h = 18 + lines.length * 12;
+  const lines = contactLines(c);
+  const h = measureContactBlock(c);
   doc.save();
   doc.roundedRect(x, y, w, h, 4).fillAndStroke("#f4f1e8", RULE);
   doc.restore();
@@ -530,8 +588,8 @@ function renderContactBlock(
 
 function renderAccessBlock(doc: Doc, text: string, x: number, y: number, w: number): number {
   const innerW = w - 20;
-  const textH = doc.heightOfString(text, { width: innerW });
-  const h = 22 + textH;
+  doc.font("Helvetica").fontSize(9);
+  const h = measureAccessBlock(doc, text, w);
   doc.save();
   doc.roundedRect(x, y, w, h, 4).fillAndStroke("#f4f1e8", RULE);
   doc.restore();
@@ -544,10 +602,28 @@ function renderAccessBlock(doc: Doc, text: string, x: number, y: number, w: numb
 
 /**
  * Row height is variable: standard rows are ROW_H; rows with a planner
- * note grow by one line to accommodate the italic second line.
+ * note grow to accommodate however many wrapped lines the note produces
+ * at the draw font (Helvetica-Oblique 7.5pt, constrained to `nameW`).
+ * A fixed +10pt allowance only covered one line — multi-line notes
+ * then spilled into the following row's shade and content, and the
+ * page-break guard (ensureSpace) reserved too little space near the
+ * footer. Measuring against the draw font keeps shade, next-row
+ * positioning, and page breaks in agreement.
+ *
+ * `nameW` is the text column width for the row: CONTENT_W minus the
+ * textX offset (26 + indent for nested rows) and the 44pt qty column.
+ * We take the non-indented width here — long notes on nested rows
+ * truncate to the same budget, which is conservative (the actual
+ * render has slightly less room when afterDepth > 0).
  */
-function rowHeightFor(row: ManifestRowV2): number {
-  return row.notes.length > 0 ? ROW_H + 10 : ROW_H;
+function rowHeightFor(doc: Doc, row: ManifestRowV2): number {
+  if (row.notes.length === 0) return ROW_H;
+  const nameW = CONTENT_W - 26 - 44;
+  doc.font("Helvetica-Oblique").fontSize(7.5);
+  const notesH = doc.heightOfString(`▸ ${row.notes}`, { width: nameW });
+  // Base row + 3pt lead between name and note + measured note height
+  // + 3pt trailing pad so the next row's shade doesn't touch the note.
+  return ROW_H + 3 + notesH + 3;
 }
 
 async function generateQr(url: string, size: number): Promise<Buffer | null> {

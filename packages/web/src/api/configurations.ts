@@ -60,6 +60,15 @@ const ConfigurationResponseSchema = z.object({
   name: z.string(),
   isPublicPreview: z.boolean(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
+  // Event-level metadata (special instructions, day-of contact, phase
+  // deadlines, access notes). Absent on legacy rows, null on cleared rows,
+  // an object on populated rows. Typed as unknown so Zod preserves the
+  // JSONB without stripping keys — the strong schema lives in
+  // @omnitwin/types.ConfigurationMetadataSchema and is applied at the
+  // component boundary that actually reads the fields. Without this
+  // field, Zod's default object mode strips metadata entirely and the
+  // Event Details panel loads blank on every reopen.
+  metadata: z.unknown().optional(),
 });
 
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;

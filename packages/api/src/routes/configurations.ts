@@ -203,7 +203,18 @@ export async function configurationRoutes(
     if (parsed.data.guestCount !== undefined) updateData["guestCount"] = parsed.data.guestCount;
     if (parsed.data.visibility !== undefined) updateData["visibility"] = parsed.data.visibility;
     if (parsed.data.thumbnailUrl !== undefined) updateData["thumbnailUrl"] = parsed.data.thumbnailUrl;
-    if (parsed.data.metadata !== undefined) updateData["metadata"] = parsed.data.metadata;
+    if (parsed.data.metadata !== undefined) {
+      // Preserve the .passthrough() contract declared on ConfigurationMetadataSchema:
+      // unknown sibling keys (e.g. a future seatingChart or dietary flags) must
+      // survive a partial PATCH that only updates `instructions`. Null clears the
+      // column outright; any object merges onto the existing blob.
+      if (parsed.data.metadata === null) {
+        updateData["metadata"] = null;
+      } else {
+        const existing = (config.metadata ?? {}) as Record<string, unknown>;
+        updateData["metadata"] = { ...existing, ...parsed.data.metadata };
+      }
+    }
 
     const [updated] = await db.update(configurations)
       .set(updateData)

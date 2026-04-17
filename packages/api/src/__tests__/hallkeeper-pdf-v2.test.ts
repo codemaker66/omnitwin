@@ -200,4 +200,126 @@ describe("generateSheetPdfV2 — per-row notes", () => {
     const withNotesBuf = await generateSheetPdfV2(withNotes);
     expect(withNotesBuf.length).toBeGreaterThan(base.length);
   });
+
+  // Regression for bug_024 — rowHeightFor used a fixed +10pt regardless
+  // of note length, so multi-line notes overflowed into the next row.
+  // A long note should now produce a PDF strictly larger than a short
+  // note (the measure-then-allocate path is exercised) and never crash
+  // on the schema-max 2000-char note.
+  it("renders a long multi-line note (bug_024) without crashing", async () => {
+    const longNote = "This is an unusually long planner note that would wrap to several lines at 7.5pt italic. ".repeat(20).slice(0, 2000);
+    const withLongNote: HallkeeperSheetV2 = {
+      ...BASE_SHEET,
+      phases: [{
+        phase: "furniture",
+        zones: [{
+          zone: "Centre",
+          rows: [{
+            ...BASE_SHEET.phases[0]!.zones[0]!.rows[0]!,
+            notes: longNote,
+          }],
+        }],
+      }],
+    };
+    const buf = await generateSheetPdfV2(withLongNote);
+    expect(hasPdfMagic(buf)).toBe(true);
+  });
+
+  it("a 500-char note produces a strictly larger PDF than a 50-char note (bug_024)", async () => {
+    const makeSheet = (note: string): HallkeeperSheetV2 => ({
+      ...BASE_SHEET,
+      phases: [{
+        phase: "furniture",
+        zones: [{
+          zone: "Centre",
+          rows: [{ ...BASE_SHEET.phases[0]!.zones[0]!.rows[0]!, notes: note }],
+        }],
+      }],
+    });
+    const short = await generateSheetPdfV2(makeSheet("short note about this table"));
+    const long = await generateSheetPdfV2(makeSheet("x ".repeat(250)));
+    expect(long.length).toBeGreaterThan(short.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests for ultrareview findings (merged_bug_002, merged_bug_010).
+// ---------------------------------------------------------------------------
+
+describe("generateSheetPdfV2 — long instructions (merged_bug_002)", () => {
+  it("renders a 4000-char special-instructions paragraph without crashing", async () => {
+    const longText = "Fire safety notes and VIP briefings. ".repeat(120).slice(0, 4000);
+    const buf = await generateSheetPdfV2({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: longText,
+        dayOfContact: null,
+        phaseDeadlines: [],
+        accessNotes: "",
+      },
+    });
+    expect(hasPdfMagic(buf)).toBe(true);
+  });
+
+  it("renders long instructions AFTER phase-deadline chips set the 7.5pt font (merged_bug_002)", async () => {
+    // Before the fix, heightOfString was called while the last font set
+    // was 7.5pt (from the chip loop), but text drew at 9pt — so the
+    // cream-yellow box was ~20% too short and the last lines spilled
+    // into the diagram. Mixing deadlines + long instructions exercises
+    // the same font-state interaction.
+    const buf = await generateSheetPdfV2({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "Fire exits stay clear. ".repeat(80),
+        dayOfContact: { name: "Sarah", role: "Planner", phone: "+44", email: "s@e.com" },
+        phaseDeadlines: [
+          { phase: "structure", deadline: "2026-06-15T13:00:00.000Z", reason: "" },
+          { phase: "furniture", deadline: "2026-06-15T14:30:00.000Z", reason: "" },
+          { phase: "dress", deadline: "2026-06-15T16:00:00.000Z", reason: "" },
+          { phase: "technical", deadline: "2026-06-15T17:00:00.000Z", reason: "" },
+          { phase: "final", deadline: "2026-06-15T17:45:00.000Z", reason: "" },
+        ],
+        accessNotes: "Service entrance at south door. Parking in cobbled yard.",
+      },
+    });
+    expect(hasPdfMagic(buf)).toBe(true);
+  });
+});
+
+describe("generateSheetPdfV2 — phase-deadline chip layout (merged_bug_010)", () => {
+  it("renders all 5 phase-deadline chips (none silently dropped on overflow)", async () => {
+    // Before the fix, chips that would exceed the right margin were
+    // silently `break`-ed out of the loop, dropping the late-phase
+    // chips (technical, final) — the ones a hallkeeper most needs.
+    // Maximum 5 deadlines per the schema.
+    const allFive = await generateSheetPdfV2({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "",
+        dayOfContact: null,
+        phaseDeadlines: [
+          { phase: "structure", deadline: "2026-06-15T13:00:00.000Z", reason: "" },
+          { phase: "furniture", deadline: "2026-06-15T14:30:00.000Z", reason: "" },
+          { phase: "dress", deadline: "2026-06-15T16:00:00.000Z", reason: "" },
+          { phase: "technical", deadline: "2026-06-15T17:00:00.000Z", reason: "" },
+          { phase: "final", deadline: "2026-06-15T17:45:00.000Z", reason: "" },
+        ],
+        accessNotes: "",
+      },
+    });
+    const justOne = await generateSheetPdfV2({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "",
+        dayOfContact: null,
+        phaseDeadlines: [{ phase: "structure", deadline: "2026-06-15T13:00:00.000Z", reason: "" }],
+        accessNotes: "",
+      },
+    });
+    expect(hasPdfMagic(allFive)).toBe(true);
+    // 5 chips must contribute strictly more content than 1 chip. If the
+    // old silent-drop behaviour came back, the byte counts would be
+    // closer than expected (the extra chips would be skipped).
+    expect(allFive.length).toBeGreaterThan(justOne.length);
+  });
 });

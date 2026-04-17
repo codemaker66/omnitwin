@@ -102,13 +102,20 @@ export function EditorPage(): React.ReactElement {
 function PlannerCommsLayer(): React.ReactElement {
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const configId = useEditorStore((s) => s.configId);
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  // The Event Details panel writes to the auth-only PATCH endpoint. Showing
+  // it on unclaimed public-preview configs would 401 on every save and
+  // discard the planner's work with a generic "Failed to save". Hide until
+  // the config is claimed; the panel itself renders a sign-in hint if it
+  // ever opens in that state (defense-in-depth).
+  const canEditEventDetails = configId !== null && !isPublicPreview;
   return (
     <>
       <EditorBridge />
       <div style={{ height: "100vh", boxSizing: "border-box" }}>
         <Editor3D />
       </div>
-      {configId !== null && (
+      {canEditEventDetails && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
