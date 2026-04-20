@@ -155,6 +155,8 @@ function PlannerCommsLayer(): React.ReactElement {
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  const saveError = useEditorStore((s) => s.saveError);
+  const authState = useAuthStore((s) => s.isAuthenticated);
   // The Event Details panel writes to the auth-only PATCH endpoint. Showing
   // it on unclaimed public-preview configs would 401 on every save and
   // discard the planner's work with a generic "Failed to save". Hide until
@@ -191,7 +193,68 @@ function PlannerCommsLayer(): React.ReactElement {
       <ObjectNotePanel />
       <SaveSendPanel />
       <SubmitForReviewPanel />
+      {saveError !== null ? (
+        <SaveErrorToast message={saveError} isAuthenticated={authState} />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Non-destructive save-failure toast. Docks bottom-centre so it doesn't
+ * overlap the SaveSendPanel (bottom-right). Provides an inline retry
+ * (re-fires saveToServer) and a dismiss. The 3D Canvas above stays
+ * mounted — the user's in-progress layout is preserved. */
+function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthenticated: boolean }): React.ReactElement {
+  const retry = (): void => {
+    useEditorStore.getState().clearSaveError();
+    void useEditorStore.getState().saveToServer(isAuthenticated);
+  };
+  const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+        zIndex: 40,
+        background: "rgba(20,19,17,0.95)",
+        border: "1px solid rgba(201,168,76,0.5)",
+        borderRadius: 8,
+        padding: "12px 16px",
+        display: "flex", alignItems: "center", gap: 12,
+        fontFamily: "'Inter', system-ui, sans-serif",
+        color: "#f5f0e8", fontSize: 13,
+        maxWidth: "90vw",
+        boxShadow: "0 8px 24px -8px rgba(0,0,0,0.6)",
+      }}
+    >
+      <span style={{ color: "#e88", fontSize: 15 }}>⚠</span>
+      <span style={{ flex: 1 }}>Couldn't save — {message}. Your layout is safe; we'll try again.</span>
+      <button
+        type="button"
+        onClick={retry}
+        style={{
+          padding: "4px 12px", fontSize: 12, fontWeight: 600,
+          background: "#c9a84c", color: "#141311", border: "none",
+          borderRadius: 4, cursor: "pointer",
+        }}
+      >
+        Retry
+      </button>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        style={{
+          padding: "4px 10px", fontSize: 14, background: "transparent",
+          color: "#f5f0e8", border: "1px solid rgba(245,240,232,0.25)",
+          borderRadius: 4, cursor: "pointer",
+        }}
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 

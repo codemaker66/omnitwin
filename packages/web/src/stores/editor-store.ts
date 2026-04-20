@@ -101,6 +101,14 @@ interface EditorState {
   readonly lastSavedAt: Date | null;
   readonly isLoading: boolean;
   readonly error: string | null;
+  /**
+   * Save-path error. Separated from `error` (which is load-path) because a
+   * failed save must NOT swap the editor out to an error screen — that
+   * unmounts the Canvas, loses the WebGL context, and drops whatever the
+   * user just placed. The editor surfaces this as a non-destructive toast
+   * and leaves the scene rendering.
+   */
+  readonly saveError: string | null;
   // Punch list #24: the live Three.js scene ref, set by SceneProvider
   // inside the Canvas. Needed by the ortho-capture utility which runs
   // outside the Canvas (in SaveSendPanel) to generate the floor plan
@@ -138,6 +146,8 @@ interface EditorActions {
   readonly deselectObject: () => void;
   /** Save to server. Uses public endpoint for preview configs, authenticated for claimed. */
   readonly saveToServer: (isAuthenticated?: boolean) => Promise<void>;
+  /** Dismiss the current save-error toast. */
+  readonly clearSaveError: () => void;
   readonly reset: () => void;
 }
 
@@ -171,6 +181,7 @@ const INITIAL_STATE: EditorState = {
   lastSavedAt: null,
   isLoading: false,
   error: null,
+  saveError: null,
   scene: null,
 };
 
@@ -305,7 +316,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Public preview configs always use the public endpoint.
     const useAuthPath = !isPublicPreview || isAuthenticated === true;
 
-    set({ isSaving: true });
+    set({ isSaving: true, saveError: null });
     try {
       const batch = objects.map(editorToBatch);
       let saved: configApi.PlacedObject[];
@@ -319,9 +330,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({ objects: serverObjects, isDirty: false, isSaving: false, lastSavedAt: new Date() });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Save failed";
-      set({ isSaving: false, error: message });
+      // Log the failing payload so we can see which field the server rejects.
+      // Safe to log — no PII in the placed-object batch.
+      // eslint-disable-next-line no-console
+      console.error("[editor-store] save failed:", message, { objects });
+      // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's
+      // main render path alive, so the Canvas stays mounted and the user
+      // doesn't lose their in-progress layout.
+      set({ isSaving: false, saveError: message });
     }
   },
+
+  clearSaveError: () => { set({ saveError: null }); },
 
   reset: () => {
     // Preserve the scene ref — reset clears editor data but the Three.js
