@@ -252,8 +252,11 @@ function placeStyle(p: MetrePlacement): { left: string; top: string; width: stri
   };
 }
 
+type ItemKind = "stage" | "bar" | "dancefloor" | "round" | "poseur" | "top-table" | "lectern" | "row";
+
 interface PlannerItem {
   readonly id: string;
+  readonly kind: ItemKind;
   readonly x: number;
   readonly y: number;
   readonly widthM: number;
@@ -264,6 +267,30 @@ interface PlannerItem {
   readonly body: string;
 }
 
+// Catalogue kinds the visitor can drag from the sidebar into the stage.
+// Each entry describes what to create on drop — dimensions, visual class,
+// tag/body text — in one place. "Long 12" is deliberately absent: Trades
+// Hall doesn't stock 12-seat trestle tables for this venue.
+interface CatalogueEntry {
+  readonly kind: ItemKind;
+  readonly label: string;
+  readonly widthM: number;
+  readonly heightM: number;
+  readonly klass: PlannerItem["klass"];
+  readonly tag?: string;
+  readonly tagDark?: boolean;
+  readonly body: string;
+}
+
+const CATALOGUE: readonly CatalogueEntry[] = [
+  { kind: "round",      label: "◯ Round 10",   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { kind: "stage",      label: "■ Stage",      widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",      body: "Stage" },
+  { kind: "bar",        label: "Ⅱ Bar",        widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",          tagDark: true, body: "Bar" },
+  { kind: "dancefloor", label: "❋ Dancefloor", widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m", tagDark: true, body: "Parquet" },
+];
+
+const CATALOGUE_MIME = "application/x-th-catalogue-kind";
+
 type EventType = "wedding" | "gala" | "conference";
 
 // Door positions on the north wall (gaps in the room outline):
@@ -273,55 +300,54 @@ type EventType = "wedding" | "gala" | "conference";
 // layout starts its back-wall items at y = 1.1 m for clearance.
 
 const WEDDING_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",      x: 1.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
+  { id: "stage",      kind: "stage",      x: 1.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
   // Bar tucked between door 2 (ends at x≈11.4) and door 3 (starts at x≈17.9).
-  { id: "bar",        x: 11.5, y: 1.1, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
-  { id: "dancefloor", x: 13.5, y: 2.5, widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
-  { id: "round-0",    x: 1.1,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-1",    x: 3.5,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-2",    x: 5.9,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-3",    x: 8.3,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-4",    x: 10.7, y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-5",    x: 1.1,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-6",    x: 3.5,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-7",    x: 5.9,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-8",    x: 8.3,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-9",    x: 10.7, y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "top-table",  x: 8.1,  y: 9.3, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
+  { id: "bar",        kind: "bar",        x: 11.5, y: 1.1, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
+  { id: "dancefloor", kind: "dancefloor", x: 13.5, y: 2.5, widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
+  { id: "round-0",    kind: "round",      x: 1.1,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-1",    kind: "round",      x: 3.5,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-2",    kind: "round",      x: 5.9,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-3",    kind: "round",      x: 8.3,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-4",    kind: "round",      x: 10.7, y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-5",    kind: "round",      x: 1.1,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-6",    kind: "round",      x: 3.5,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-7",    kind: "round",      x: 5.9,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-8",    kind: "round",      x: 8.3,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-9",    kind: "round",      x: 10.7, y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "top-table",  kind: "top-table",  x: 8.1,  y: 9.3, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
 ];
 
 // Gala: standing/mingling emphasis. Two linear bars, a larger central
-// dancefloor, a dozen poseur high-tops scattered around. No big rounds.
+// dancefloor, poseur high-tops scattered around. No big rounds.
 const GALA_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",       x: 6.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",       body: "Stage" },
-  { id: "bar-left",    x: 1.5,  y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark", tag: "BAR · 4m",           tagDark: true, body: "Bar" },
-  { id: "bar-right",   x: 15.5, y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark", tag: "BAR · 4m",           tagDark: true, body: "Bar" },
-  { id: "dancefloor",  x: 6,    y: 5.5, widthM: 9,   heightM: 3,   klass: "furn dark", tag: "DANCEFLOOR · 9×3m",  tagDark: true, body: "Parquet" },
-  { id: "poseur-0",    x: 2.5,  y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-1",    x: 2.5,  y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-2",    x: 4.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-3",    x: 6.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-4",    x: 8.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-5",    x: 10.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-6",    x: 12.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-7",    x: 14.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-8",    x: 17.5, y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-9",    x: 17.5, y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "stage",      kind: "stage",      x: 6.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
+  { id: "bar-left",   kind: "bar",        x: 1.5,  y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 4m",           tagDark: true, body: "Bar" },
+  { id: "bar-right",  kind: "bar",        x: 15.5, y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 4m",           tagDark: true, body: "Bar" },
+  { id: "dancefloor", kind: "dancefloor", x: 6,    y: 5.5, widthM: 9,   heightM: 3,   klass: "furn dark",  tag: "DANCEFLOOR · 9×3m",  tagDark: true, body: "Parquet" },
+  { id: "poseur-0",   kind: "poseur",     x: 2.5,  y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-1",   kind: "poseur",     x: 2.5,  y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-2",   kind: "poseur",     x: 4.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-3",   kind: "poseur",     x: 6.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-4",   kind: "poseur",     x: 8.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-5",   kind: "poseur",     x: 10.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-6",   kind: "poseur",     x: 12.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-7",   kind: "poseur",     x: 14.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-8",   kind: "poseur",     x: 17.5, y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-9",   kind: "poseur",     x: 17.5, y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
 ];
 
-// Conference: stage at the back + lectern + 6 rows of delegate tables
-// facing the stage (left + right columns with a central aisle).
+// Conference: stage + lectern + delegate rows facing the stage.
 const CONFERENCE_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",   x: 6.5, y: 1.1, widthM: 8,  heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",    body: "Stage" },
-  { id: "lectern", x: 9.8, y: 4.3, widthM: 1,  heightM: 0.7, klass: "furn dark", tag: "LECTERN",         tagDark: true, body: "Lectern" },
-  { id: "row-1-l", x: 1,   y: 5.6, widthM: 8,  heightM: 0.8, klass: "furn",      tag: "ROW · 16 seats",  body: "Row 1" },
-  { id: "row-1-r", x: 12,  y: 5.6, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 1" },
-  { id: "row-2-l", x: 1,   y: 6.9, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 2" },
-  { id: "row-2-r", x: 12,  y: 6.9, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 2" },
-  { id: "row-3-l", x: 1,   y: 8.2, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 3" },
-  { id: "row-3-r", x: 12,  y: 8.2, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 3" },
-  { id: "row-4-l", x: 1,   y: 9.5, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 4" },
-  { id: "row-4-r", x: 12,  y: 9.5, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 4" },
+  { id: "stage",   kind: "stage",   x: 6.5, y: 1.1, widthM: 8, heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",   body: "Stage" },
+  { id: "lectern", kind: "lectern", x: 9.8, y: 4.3, widthM: 1, heightM: 0.7, klass: "furn dark", tag: "LECTERN",        tagDark: true, body: "Lectern" },
+  { id: "row-1-l", kind: "row",     x: 1,   y: 5.6, widthM: 8, heightM: 0.8, klass: "furn",      tag: "ROW · 16 seats", body: "Row 1" },
+  { id: "row-1-r", kind: "row",     x: 12,  y: 5.6, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 1" },
+  { id: "row-2-l", kind: "row",     x: 1,   y: 6.9, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 2" },
+  { id: "row-2-r", kind: "row",     x: 12,  y: 6.9, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 2" },
+  { id: "row-3-l", kind: "row",     x: 1,   y: 8.2, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 3" },
+  { id: "row-3-r", kind: "row",     x: 12,  y: 8.2, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 3" },
+  { id: "row-4-l", kind: "row",     x: 1,   y: 9.5, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 4" },
+  { id: "row-4-r", kind: "row",     x: 12,  y: 9.5, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 4" },
 ];
 
 const LAYOUTS: Record<EventType, readonly PlannerItem[]> = {
@@ -346,8 +372,8 @@ const ROOM_W_M = 21;
 const ROOM_H_M = 10.5;
 
 /** Per-seat chair placement around a round table. Ring of N chairs at
- *  an offset radius just past the table edge. Returns centre-of-chair
- *  positions in the room's metre space. */
+ *  an offset radius just past the table edge. Returns top-left (for the
+ *  CSS-positioned chair div) positions in the room's metre space. */
 function chairRingPositions(
   cx: number,
   cy: number,
@@ -367,19 +393,144 @@ function chairRingPositions(
   return out;
 }
 
+/** Row of bar stools along the front edge of a bar (the edge facing into
+ *  the room — assumed to be the "south" edge given our layouts place bars
+ *  along the back wall or walls). Returns top-left positions. Stool count
+ *  scales with bar length: one stool per ~0.75 m of bar. */
+function barStoolPositions(
+  barX: number,
+  barY: number,
+  barW: number,
+  barH: number,
+): readonly { x: number; y: number }[] {
+  const stoolR = 0.22; // 0.44 m seat, big enough to read from 1 m
+  const gap = 0.15;    // pull-out from bar edge
+  const count = Math.max(3, Math.round(barW / 0.75));
+  const frontY = barY + barH + gap;
+  const spacing = barW / count;
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const cx = barX + spacing * (i + 0.5);
+    out.push({ x: cx - stoolR, y: frontY });
+  }
+  return out;
+}
+
+/** Convert a viewport mouse point to room-metre coordinates via the stage's
+ *  bounding rect. Returns null when the event source is unusable. */
+function clientToMetres(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+): { xM: number; yM: number } | null {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const pxPerMX = (rect.width * W_PER_M) / 100;
+  const pxPerMY = (rect.height * H_PER_M) / 100;
+  const roomPxLeft = (rect.width * ROOM_LEFT_PCT) / 100;
+  const roomPxTop = (rect.height * ROOM_TOP_PCT) / 100;
+  const xM = (clientX - rect.left - roomPxLeft) / pxPerMX;
+  const yM = (clientY - rect.top - roomPxTop) / pxPerMY;
+  return { xM, yM };
+}
+
 function PlannerPreview(): ReactElement {
   const [eventType, setEventType] = useState<EventType>("wedding");
   const [selectedId, setSelectedId] = useState<string>("round-3");
   const [items, setItems] = useState<readonly PlannerItem[]>(WEDDING_ITEMS);
+  /** Live-tracked room-metre cursor coordinates — drives the coord chip in
+   *  the bottom-right of the stage so visitors can see exactly where the
+   *  real planner would place their drop. */
+  const [cursor, setCursor] = useState<{ xM: number; yM: number } | null>(null);
+  /** When a catalogue chip is mid-drag, we highlight the stage with a
+   *  subtle overlay to cue "drop here". */
+  const [dropHint, setDropHint] = useState<boolean>(false);
   const dragRef = useRef<DragState | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  /** Incremented for each new item dropped from the catalogue so IDs stay
+   *  unique across mounts without pulling in a uuid dep. */
+  const newItemCounter = useRef<number>(0);
 
   const switchLayout = (next: EventType): void => {
     setEventType(next);
     setItems(LAYOUTS[next]);
-    // Reset selection to something that exists in the new layout.
     const first = LAYOUTS[next][0];
     setSelectedId(first?.id ?? "");
+  };
+
+  /** Drop an item at room-metre (xM, yM) — used by the catalogue-chip
+   *  drag-and-drop flow. Generates a fresh id, clamps to room bounds so
+   *  nothing escapes the walls, and selects the new item. */
+  const dropCatalogueItem = (entry: CatalogueEntry, xM: number, yM: number): void => {
+    newItemCounter.current += 1;
+    const id = `new-${entry.kind}-${String(newItemCounter.current)}`;
+    const clampedX = Math.max(0, Math.min(ROOM_W_M - entry.widthM, xM - entry.widthM / 2));
+    const clampedY = Math.max(0, Math.min(ROOM_H_M - entry.heightM, yM - entry.heightM / 2));
+    const next: PlannerItem = {
+      id,
+      kind: entry.kind,
+      x: clampedX,
+      y: clampedY,
+      widthM: entry.widthM,
+      heightM: entry.heightM,
+      klass: entry.klass,
+      tag: entry.tag,
+      tagDark: entry.tagDark,
+      body: entry.body,
+    };
+    setItems((prev) => [...prev, next]);
+    setSelectedId(id);
+  };
+
+  /** Delete the selected item (Del/Backspace keyboard). */
+  const deleteSelected = (): void => {
+    setItems((prev) => {
+      const filtered = prev.filter((i) => i.id !== selectedId);
+      return filtered.length === prev.length ? prev : filtered;
+    });
+    setSelectedId("");
+  };
+
+  /** Pointer-move over the stage — updates the live coord chip. Fires
+   *  every mouse frame while hovering, cheap because state only stores
+   *  two numbers + the chip re-renders from them. */
+  const onStagePointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (stageRef.current === null) return;
+    const rect = stageRef.current.getBoundingClientRect();
+    const m = clientToMetres(e.clientX, e.clientY, rect);
+    if (m === null) return;
+    setCursor({
+      xM: Math.max(0, Math.min(ROOM_W_M, m.xM)),
+      yM: Math.max(0, Math.min(ROOM_H_M, m.yM)),
+    });
+  };
+
+  const onStagePointerLeave = (): void => { setCursor(null); };
+
+  /** DragOver on the stage — keeps the drop target valid during a
+   *  catalogue-chip drag. preventDefault is what makes the drop handler
+   *  fire at all. */
+  const onStageDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    // Only accept our own catalogue payload; ignore images/text/etc.
+    if (!Array.from(e.dataTransfer.types).includes(CATALOGUE_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    if (!dropHint) setDropHint(true);
+  };
+
+  const onStageDragLeave = (): void => { setDropHint(false); };
+
+  const onStageDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    setDropHint(false);
+    if (stageRef.current === null) return;
+    const kind = e.dataTransfer.getData(CATALOGUE_MIME);
+    if (kind === "") return;
+    const entry = CATALOGUE.find((c) => c.kind === kind);
+    if (entry === undefined) return;
+    e.preventDefault();
+    const rect = stageRef.current.getBoundingClientRect();
+    const m = clientToMetres(e.clientX, e.clientY, rect);
+    if (m === null) return;
+    dropCatalogueItem(entry, m.xM, m.yM);
   };
 
   const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
@@ -486,16 +637,47 @@ function PlannerPreview(): ReactElement {
           <div>
             <h4>Drag &amp; drop</h4>
             <div className="pill-row" style={{ marginTop: 10 }}>
-              <button type="button" className="pill">◯ Round 10</button>
-              <button type="button" className="pill">▭ Long 12</button>
-              <button type="button" className="pill">■ Stage</button>
-              <button type="button" className="pill">Ⅱ Bar</button>
-              <button type="button" className="pill">❋ Dancefloor</button>
+              {CATALOGUE.map((entry) => (
+                <button
+                  key={entry.kind + entry.label}
+                  type="button"
+                  className="pill"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(CATALOGUE_MIME, entry.kind);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onClick={() => {
+                    // Keyboard / non-drag fallback — drop a fresh item
+                    // into the centre of the room.
+                    dropCatalogueItem(entry, ROOM_W_M / 2, ROOM_H_M / 2);
+                  }}
+                  title={`Drag into the room, or click to drop at centre (${String(entry.widthM)} × ${String(entry.heightM)} m)`}
+                >
+                  {entry.label}
+                </button>
+              ))}
             </div>
           </div>
         </aside>
 
-        <div className="stage" aria-label="Floor plan preview — drag furniture to move, tap to inspect" ref={stageRef}>
+        <div
+          className={dropHint ? "stage stage-drop-hint" : "stage"}
+          aria-label="Floor plan preview — drag furniture to move, tap to inspect, Del to remove"
+          ref={stageRef}
+          tabIndex={0}
+          onPointerMove={onStagePointerMove}
+          onPointerLeave={onStagePointerLeave}
+          onDragOver={onStageDragOver}
+          onDragLeave={onStageDragLeave}
+          onDrop={onStageDrop}
+          onKeyDown={(e) => {
+            if ((e.key === "Delete" || e.key === "Backspace") && selectedId !== "") {
+              e.preventDefault();
+              deleteSelected();
+            }
+          }}
+        >
           <svg
             className="room-svg"
             viewBox="0 0 840 470"
@@ -570,11 +752,12 @@ function PlannerPreview(): ReactElement {
             </div>
           </div>
 
-          {/* Chairs — rendered BEHIND the tables (earlier in z-order) so
-              tapping a table hits the table, not a chair. 10 chairs around
-              each round 1.8 m table; 4 around each 0.7 m poseur. */}
-          {items.filter((it) => it.klass === "furn round").flatMap((table) => {
-            const seats = Number(table.body) || (table.widthM > 1 ? 10 : 4);
+          {/* Chairs — 10 around each wedding round, 4 around each gala
+              poseur. Rendered under the table so drags still hit the
+              table. kind-filtered so dropping a new round into the scene
+              also gets its chair ring automatically. */}
+          {items.filter((it) => it.kind === "round" || it.kind === "poseur").flatMap((table) => {
+            const seats = Number.parseInt(table.body, 10) || (table.kind === "round" ? 10 : 4);
             const cx = table.x + table.widthM / 2;
             const cy = table.y + table.heightM / 2;
             return chairRingPositions(cx, cy, table.widthM, seats).map((pos, idx) => (
@@ -589,6 +772,22 @@ function PlannerPreview(): ReactElement {
               />
             ));
           })}
+          {/* Bar stools — a row of small discs along the front edge of
+              each bar, so the bar reads as a drinks service rather than a
+              solid mass. Stool count scales with bar length. */}
+          {items.filter((it) => it.kind === "bar").flatMap((bar) =>
+            barStoolPositions(bar.x, bar.y, bar.widthM, bar.heightM).map((pos, idx) => (
+              <div
+                key={`stool-${bar.id}-${String(idx)}`}
+                className="stool"
+                style={{
+                  ...placeStyle({ x: pos.x, y: pos.y, widthM: 0.44, heightM: 0.44 }),
+                  pointerEvents: "none",
+                }}
+                aria-hidden
+              />
+            )),
+          )}
           {/* Every piece is draggable. Pointer-based so it works on
               mouse + touch + pen; setPointerCapture keeps the drag alive
               when the cursor leaves the element. onClick stays usable for
@@ -626,7 +825,11 @@ function PlannerPreview(): ReactElement {
               <div className="chip">Rounds <b>10</b></div>
               <div className="chip">Egress <b style={{ color: "oklch(0.55 0.15 145)" }}>✓</b></div>
             </div>
-            <div className="coord">X 420 · Y 210 · 1:50</div>
+            <div className="coord">
+              {cursor === null
+                ? "— · — · 1:50"
+                : `X ${cursor.xM.toFixed(1)} m · Y ${cursor.yM.toFixed(1)} m · 1:50`}
+            </div>
           </div>
         </div>
 

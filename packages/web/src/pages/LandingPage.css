@@ -376,6 +376,38 @@
   box-sizing: border-box;
 }
 
+/* Bar stool — filled disc along the front edge of a bar. Bigger and
+   darker than a chair so the row of stools reads as "bar service"
+   rather than "small chair ring". Pointer-events: none set inline. */
+.th-landing .stool {
+  position: absolute;
+  border: 1.5px solid var(--ink);
+  background: color-mix(in oklab, var(--ink) 55%, var(--panel));
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+/* Drop hint — subtle oxblood wash + dashed outline on the stage while
+   a catalogue chip is being dragged over it. Signals "drop here"
+   without obscuring the floor plan. */
+.th-landing .stage.stage-drop-hint::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border: 2px dashed color-mix(in oklab, var(--accent) 45%, transparent);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Catalogue chip — grabbable cursor so visitors realise the chips are
+   draggable (their click handler drops to room-centre as a fallback). */
+.th-landing .sidebar .pill[draggable="true"] {
+  cursor: grab;
+}
+.th-landing .sidebar .pill[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 /* summary chips along bottom of stage */
 .th-landing .summary {
   position: absolute; left: 14px; bottom: 14px; right: 14px;
