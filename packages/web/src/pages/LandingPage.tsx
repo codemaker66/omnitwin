@@ -104,8 +104,8 @@ function TopNav(): ReactElement {
         </Link>
         <ul />
         <div className="actions">
-          <Link className="btn ghost" to="/editor">Sign in</Link>
-          <Link className="btn primary" to="/editor">
+          <Link className="btn ghost" to="/login">Sign in</Link>
+          <Link className="btn primary" to="/plan">
             Open planner <span aria-hidden>→</span>
           </Link>
         </div>
@@ -150,7 +150,7 @@ function Hero(): ReactElement {
             <PlannerPreview />
             <div className="preview-caption">
               <span>↑ Live preview · scaled floor plan</span>
-              <Link to="/editor">Open the real thing →</Link>
+              <Link to="/plan">Open the real thing →</Link>
             </div>
           </div>
         </div>
@@ -316,7 +316,7 @@ function PlannerPreview(): ReactElement {
               <div className="chip">Rounds <b>10</b></div>
               <div className="chip">Egress <b style={{ color: "oklch(0.55 0.15 145)" }}>✓</b></div>
             </div>
-            <Link to="/editor" className="cta-in">
+            <Link to="/plan" className="cta-in">
               Send for quote <span aria-hidden>→</span>
             </Link>
           </div>
@@ -508,7 +508,7 @@ function Rooms(): ReactElement {
             <Link
               key={room.slug}
               className={`room-card size-${room.size}`}
-              to="/editor"
+              to="/plan"
               aria-label={`Open ${room.title} in the planner`}
             >
               <div className="image">
@@ -530,7 +530,7 @@ function Rooms(): ReactElement {
         </div>
 
         <div style={{ marginTop: 44, display: "flex", justifyContent: "center" }}>
-          <Link to="/editor" className="btn primary big">
+          <Link to="/plan" className="btn primary big">
             Open the planner with an empty room <span aria-hidden>→</span>
           </Link>
         </div>
@@ -635,7 +635,7 @@ function FinalCTA(): ReactElement {
           save your draft when you're ready to share it with our team.
         </p>
         <div className="ctas">
-          <Link to="/editor" className="btn primary big">Open the planner</Link>
+          <Link to="/plan" className="btn primary big">Open the planner</Link>
           <a href="#contact" className="btn big">Book a site visit instead</a>
         </div>
       </div>
@@ -669,7 +669,7 @@ function SiteFooter(): ReactElement {
           <div>
             <h5>Plan</h5>
             <ul>
-              <li><Link to="/editor">Open planner</Link></li>
+              <li><Link to="/plan">Open planner</Link></li>
               <li><a href="#rooms">Choose a room</a></li>
               <li><a href="#how">Example layouts</a></li>
               <li><a href="#planner">Pricing guide</a></li>

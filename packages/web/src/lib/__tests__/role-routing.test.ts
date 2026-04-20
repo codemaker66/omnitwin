@@ -23,20 +23,20 @@ describe("getDefaultRoute", () => {
     expect(getDefaultRoute("planner")).toBe("/dashboard");
   });
 
-  it("routes client to /editor (default)", () => {
-    expect(getDefaultRoute("client")).toBe("/editor");
+  it("routes client to /plan (default)", () => {
+    expect(getDefaultRoute("client")).toBe("/plan");
   });
 
-  it("routes staff to /editor (current behavior — not in the dashboard group)", () => {
+  it("routes staff to /plan (current behavior — not in the dashboard group)", () => {
     // Documenting that staff is NOT in the dashboard-default group.
     // If this is a bug, the assertion will fail loudly when the fix
     // lands, prompting the test author to confirm the new intent.
-    expect(getDefaultRoute("staff")).toBe("/editor");
+    expect(getDefaultRoute("staff")).toBe("/plan");
   });
 
-  it("routes unknown roles to /editor (fail-soft default)", () => {
-    expect(getDefaultRoute("")).toBe("/editor");
-    expect(getDefaultRoute("future_role")).toBe("/editor");
-    expect(getDefaultRoute("ADMIN")).toBe("/editor"); // case-sensitive
+  it("routes unknown roles to /plan (fail-soft default)", () => {
+    expect(getDefaultRoute("")).toBe("/plan");
+    expect(getDefaultRoute("future_role")).toBe("/plan");
+    expect(getDefaultRoute("ADMIN")).toBe("/plan"); // case-sensitive
   });
 });

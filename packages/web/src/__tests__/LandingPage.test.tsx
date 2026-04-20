@@ -98,17 +98,17 @@ describe("LandingPage — rooms gallery", () => {
 });
 
 describe("LandingPage — CTAs + nav links", () => {
-  it("nav 'Open planner' routes to /editor", () => {
+  it("nav 'Open planner' routes to /plan", () => {
     mount();
     const openPlanner = screen.getAllByRole("link", { name: /Open planner/i })[0];
     expect(openPlanner).toBeTruthy();
-    expect(openPlanner?.getAttribute("href")).toBe("/editor");
+    expect(openPlanner?.getAttribute("href")).toBe("/plan");
   });
 
-  it("nav 'Sign in' routes to /editor (Clerk handles auth flow)", () => {
+  it("nav 'Sign in' routes to /login", () => {
     mount();
     const link = screen.getByRole("link", { name: /Sign in/i });
-    expect(link.getAttribute("href")).toBe("/editor");
+    expect(link.getAttribute("href")).toBe("/login");
   });
 
   it("'Choose a room' hero CTA scrolls to #rooms", () => {
@@ -120,14 +120,14 @@ describe("LandingPage — CTAs + nav links", () => {
     expect(ctas[0]?.getAttribute("href")).toBe("#rooms");
   });
 
-  it("'Open the planner' rooms-CTA + final CTA both route to /editor", () => {
+  it("'Open the planner' rooms-CTA + final CTA both route to /plan", () => {
     mount();
     // Matches: "Open the planner with an empty room →" (rooms section),
     // "Open the planner" (final CTA), and the footer column link "Open planner".
-    // Filter to the two main-body CTAs by asserting each href is /editor or #contact.
+    // Filter to the two main-body CTAs by asserting each href is /plan.
     const plannerCtas = screen.getAllByRole("link", { name: /Open the planner/i });
-    const editorCtas = plannerCtas.filter((el) => el.getAttribute("href") === "/editor");
-    expect(editorCtas.length).toBeGreaterThanOrEqual(2);
+    const plannerHrefs = plannerCtas.filter((el) => el.getAttribute("href") === "/plan");
+    expect(plannerHrefs.length).toBeGreaterThanOrEqual(2);
   });
 });
 

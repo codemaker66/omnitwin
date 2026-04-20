@@ -36,10 +36,10 @@ export function LegalPage({ type }: LegalPageProps): React.ReactElement {
           {body}
         </p>
         <a
-          href="/editor"
+          href="/plan"
           style={{ color: "#c9a84c", textDecoration: "none", fontWeight: 600, fontSize: 14 }}
         >
-          Back to editor
+          Back to the planner
         </a>
       </div>
     </div>

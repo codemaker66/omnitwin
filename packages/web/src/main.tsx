@@ -54,7 +54,7 @@ if ((CLERK_KEY === undefined || CLERK_KEY === "") && import.meta.env.PROD) {
 
 function AppRoot(): React.ReactElement {
   return (
-    <ClerkProvider publishableKey={CLERK_KEY ?? ""} afterSignOutUrl="/editor">
+    <ClerkProvider publishableKey={CLERK_KEY ?? ""} afterSignOutUrl="/">
       {E2E_ENABLED ? null : <ClerkAuthBridge />}
       <RouterProvider router={router} />
     </ClerkProvider>

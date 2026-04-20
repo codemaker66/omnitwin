@@ -75,18 +75,29 @@ export const router = createBrowserRouter([
     element: withSuspense(<RegisterPage />),
   },
   {
+    // `/editor` is the URL Trades Hall already shares publicly (on flyers,
+    // on their own website, in email signatures). We render the marketing
+    // LandingPage there so visitors see the new design, not the planner
+    // app's login wall. The actual planner moved to `/plan` (below).
     path: "/editor",
+    element: withSuspense(<LandingPage />),
+  },
+  {
+    // `/plan` is the new home of the planner app. `/editor` used to live
+    // here; it now renders the landing page. Takes optional configId for
+    // deep-link.
+    path: "/plan",
     element: withSuspense(<EditorPage />),
   },
   {
-    path: "/editor/:configId",
+    path: "/plan/:configId",
     element: withSuspense(<EditorPage />),
   },
   {
-    // 2D top-down blueprint editor. Mounted alongside the 3D editor rather
-    // than replacing it — both views share the same underlying scene data;
-    // the blueprint is the planner's flat-paper draft, the 3D editor is the
-    // photoreal walkthrough. Takes optional configId for deep-link.
+    // 2D top-down blueprint editor. Mounted alongside the 3D planner — both
+    // views share the same underlying scene data; the blueprint is the
+    // planner's flat-paper draft, the 3D view is the photoreal walkthrough.
+    // Takes optional configId for deep-link.
     path: "/blueprint",
     element: withSuspense(<BlueprintPage />),
   },
@@ -95,13 +106,13 @@ export const router = createBrowserRouter([
     element: withSuspense(<BlueprintPage />),
   },
   {
-    // Venue-scoped editor entry (B2). Opt-in multi-venue routing — when a
+    // Venue-scoped planner entry (B2). Opt-in multi-venue routing — when a
     // known slug is present, SpacePicker loads that venue's spaces instead
     // of defaulting to the first venue. Unknown slugs fall back silently,
     // so stale bookmarks don't 404. When a SaaS onboarding flow lands,
-    // this becomes the primary URL; `/editor` stays as the single-tenant
+    // this becomes the primary URL; `/plan` stays as the single-tenant
     // shortcut for the flagship customer.
-    path: "/v/:venueSlug/editor",
+    path: "/v/:venueSlug/plan",
     element: withSuspense(<EditorPage />),
   },
   {

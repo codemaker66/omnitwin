@@ -37,6 +37,6 @@ export function RoleAwareRedirect(): ReactElement {
   const user = useAuthStore((s) => s.user);
 
   if (isLoading) return <LoadingView />;
-  if (!isAuthenticated || user === null) return <Navigate to="/editor" replace />;
+  if (!isAuthenticated || user === null) return <Navigate to="/plan" replace />;
   return <Navigate to={getDefaultRoute(user.role)} replace />;
 }

@@ -71,7 +71,7 @@ export function EditorPage(): React.ReactElement {
         <p style={{ fontSize: 13, color: "#999" }}>{error}</p>
         <button
           type="button"
-          onClick={() => { void navigate("/editor", { replace: true }); }}
+          onClick={() => { void navigate("/plan", { replace: true }); }}
           style={{
             padding: "8px 20px", fontSize: 13, fontWeight: 600,
             background: "#1a1a2e", color: "#fff", border: "none",

@@ -228,18 +228,18 @@ describe("Router", () => {
     expect(router).toBeDefined();
   });
 
-  it("has /editor route without ProtectedRoute", async () => {
+  it("has /plan route without ProtectedRoute", async () => {
     const { router } = await import("../router.js");
     // Router is an array of route configs (since createBrowserRouter is mocked)
     const routes = router as unknown as { path: string }[];
-    const editorRoute = routes.find((r) => r.path === "/editor");
-    expect(editorRoute).toBeDefined();
+    const planRoute = routes.find((r) => r.path === "/plan");
+    expect(planRoute).toBeDefined();
   });
 
-  it("has /editor/:configId route", async () => {
+  it("has /plan/:configId route", async () => {
     const { router } = await import("../router.js");
     const routes = router as unknown as { path: string }[];
-    const configRoute = routes.find((r) => r.path === "/editor/:configId");
+    const configRoute = routes.find((r) => r.path === "/plan/:configId");
     expect(configRoute).toBeDefined();
   });
 });

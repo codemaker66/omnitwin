@@ -39,13 +39,13 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).not.toContain("Navigate->");
   });
 
-  it("redirects an unauthenticated visitor to /editor", () => {
+  it("redirects an unauthenticated visitor to /plan", () => {
     setAuth({ isAuthenticated: false, isLoading: false, user: null });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/editor(replace)");
+    expect(container.textContent).toBe("Navigate->/plan(replace)");
   });
 
-  it("redirects an admin straight to /dashboard (no /editor bounce)", () => {
+  it("redirects an admin straight to /dashboard (no /plan bounce)", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
@@ -75,19 +75,19 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
   });
 
-  it("sends a logged-in client to /editor (their working surface)", () => {
+  it("sends a logged-in client to /plan (their working surface)", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
       user: { id: "u4", email: "c@x.com", role: "client", venueId: null, name: "Client" },
     });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/editor(replace)");
+    expect(container.textContent).toBe("Navigate->/plan(replace)");
   });
 
   it("treats isAuthenticated=true with user=null defensively (anon path)", () => {
     setAuth({ isAuthenticated: true, isLoading: false, user: null });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/editor(replace)");
+    expect(container.textContent).toBe("Navigate->/plan(replace)");
   });
 });
