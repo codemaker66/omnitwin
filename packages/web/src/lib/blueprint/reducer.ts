@@ -87,6 +87,12 @@ export type BlueprintAction =
   | { readonly type: "raise-to-top" }
   /** Send selected items to the start of the items array (backmost). */
   | { readonly type: "lower-to-bottom" }
+  /**
+   * Reorder the items array by a desired id sequence. IDs missing from
+   * `ids` are appended in their original relative order; unknown ids in
+   * `ids` are ignored. Used by the layer-panel drag-reorder handler.
+   */
+  | { readonly type: "set-items-order"; readonly ids: readonly string[] }
   | { readonly type: "set-event-type"; readonly eventType: EventType }
   | { readonly type: "set-guests"; readonly guestCount: number }
   | { readonly type: "undo" }
@@ -292,6 +298,26 @@ export function reduce(state: BlueprintEditorState, action: BlueprintAction): Bl
       return reorderSelected(state, "top");
     case "lower-to-bottom":
       return reorderSelected(state, "bottom");
+
+    case "set-items-order": {
+      const byId = new Map<string, BlueprintItem>(state.scene.items.map((it) => [it.id, it]));
+      const desired: BlueprintItem[] = [];
+      const claimed = new Set<string>();
+      for (const id of action.ids) {
+        const item = byId.get(id);
+        if (item === undefined || claimed.has(id)) continue;
+        desired.push(item);
+        claimed.add(id);
+      }
+      // Anything the caller didn't name keeps its original relative order
+      // at the end — prevents silent data loss if the panel sends a
+      // partial list.
+      const tail = state.scene.items.filter((it) => !claimed.has(it.id));
+      const nextItems = [...desired, ...tail];
+      if (nextItems.every((it, i) => it.id === state.scene.items[i]?.id)) return state;
+      const next: BlueprintScene = { ...state.scene, items: nextItems };
+      return pushMutation(state, next);
+    }
 
     case "set-event-type":
       return { ...state, scene: { ...state.scene, eventType: action.eventType } };

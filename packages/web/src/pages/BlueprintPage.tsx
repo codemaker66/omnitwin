@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -376,6 +377,7 @@ function BlueprintDemo(): ReactElement {
             }
           }}
           onToggleLayerLock={(id) => { dispatch({ type: "toggle-lock", id }); }}
+          onReorderLayers={(ids) => { dispatch({ type: "set-items-order", ids }); }}
         />
       </div>
       <StatusBar metrics={metrics} onSendForQuote={handleSendForQuote} onExportPng={handleExportPng} />
@@ -761,6 +763,7 @@ function BlueprintFromStore(): ReactElement {
           layers={layers}
           onSelectLayer={(id) => { handleSelect(id); }}
           onToggleLayerLock={null}
+          onReorderLayers={null}
         />
       </div>
       <StatusBar metrics={metrics} onSendForQuote={noop} onExportPng={null} />
@@ -1824,8 +1827,9 @@ function RightInspector(props: {
   layers: readonly LayerRow[];
   onSelectLayer: ((id: string, additive: boolean) => void) | null;
   onToggleLayerLock: ((id: string) => void) | null;
+  onReorderLayers: ((itemsOrderedIds: readonly string[]) => void) | null;
 }): ReactElement {
-  const { scene, selected, onRotate, onRemove, onPatchItem, onToggleLock, onRaise, onLower, onRaiseToTop, onLowerToBottom, layers, onSelectLayer, onToggleLayerLock } = props;
+  const { scene, selected, onRotate, onRemove, onPatchItem, onToggleLock, onRaise, onLower, onRaiseToTop, onLowerToBottom, layers, onSelectLayer, onToggleLayerLock, onReorderLayers } = props;
   const editable = onPatchItem !== null;
   const isLocked = selected?.locked === true;
   return (
@@ -1958,19 +1962,46 @@ function RightInspector(props: {
         layers={layers}
         onSelectLayer={onSelectLayer}
         onToggleLayerLock={onToggleLayerLock}
+        onReorderLayers={onReorderLayers}
       />
     </aside>
   );
+}
+
+/**
+ * Given panel rows (top-to-bottom) and a from/to move within that panel,
+ * returns the new items-array order (first = bottom of stack, last = top).
+ * Pure — split out so it's trivially testable.
+ */
+function reorderedItemsArray(
+  layers: readonly LayerRow[],
+  fromIndex: number,
+  toIndex: number,
+): readonly string[] {
+  const panelIds = layers.map((r) => r.id);
+  if (fromIndex < 0 || fromIndex >= panelIds.length) return panelIds.slice().reverse();
+  const moved = panelIds[fromIndex];
+  if (moved === undefined) return panelIds.slice().reverse();
+  const clamped = Math.max(0, Math.min(toIndex, panelIds.length));
+  const withoutMoved = panelIds.filter((_, i) => i !== fromIndex);
+  const adjustedTo = clamped > fromIndex ? clamped - 1 : clamped;
+  withoutMoved.splice(adjustedTo, 0, moved);
+  return withoutMoved.slice().reverse();
 }
 
 function LayersPanel(props: {
   layers: readonly LayerRow[];
   onSelectLayer: ((id: string, additive: boolean) => void) | null;
   onToggleLayerLock: ((id: string) => void) | null;
+  onReorderLayers: ((itemsOrderedIds: readonly string[]) => void) | null;
 }): ReactElement | null {
-  const { layers, onSelectLayer, onToggleLayerLock } = props;
+  const { layers, onSelectLayer, onToggleLayerLock, onReorderLayers } = props;
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   if (layers.length === 0) return null;
   const interactive = onSelectLayer !== null;
+  const dragEnabled = onReorderLayers !== null;
+
   return (
     <div style={layersPanelStyle} aria-label="Layers">
       <div style={layersHeaderStyle}>
@@ -1978,41 +2009,81 @@ function LayersPanel(props: {
         <span style={{ color: INK_FAINT }}>{String(layers.length)}</span>
       </div>
       <div role="list" style={layersListStyle}>
-        {layers.map((row) => (
-          <div
-            key={row.id}
-            role="listitem"
-            onClick={(e) => {
-              if (!interactive) return;
-              onSelectLayer(row.id, e.shiftKey || e.metaKey || e.ctrlKey);
-            }}
-            style={{
-              ...layerRowStyle,
-              background: row.selected ? PAPER_DEEP : "transparent",
-              color: row.selected ? INK : INK,
-              cursor: interactive ? "pointer" : "default",
-              fontWeight: row.selected ? 500 : 400,
-            }}
-          >
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {row.label}
-            </span>
-            {onToggleLayerLock !== null ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onToggleLayerLock(row.id); }}
-                style={layerLockBtnStyle}
-                aria-pressed={row.locked}
-                aria-label={row.locked ? `Unlock ${row.label}` : `Lock ${row.label}`}
-                title={row.locked ? "Unlock" : "Lock"}
+        {layers.map((row, index) => {
+          const isDragging = dragId === row.id;
+          const showDropAbove = dragEnabled && dropIndex === index && dragId !== row.id;
+          return (
+            <Fragment key={row.id}>
+              {showDropAbove ? <div style={layerDropIndicatorStyle} /> : null}
+              <div
+                role="listitem"
+                draggable={dragEnabled}
+                onDragStart={(e) => {
+                  if (!dragEnabled) return;
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", row.id);
+                  setDragId(row.id);
+                }}
+                onDragOver={(e) => {
+                  if (!dragEnabled || dragId === null) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const before = e.clientY < rect.top + rect.height / 2;
+                  setDropIndex(before ? index : index + 1);
+                }}
+                onDragEnd={() => { setDragId(null); setDropIndex(null); }}
+                onDrop={(e) => {
+                  if (onReorderLayers === null || dragId === null) return;
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const before = e.clientY < rect.top + rect.height / 2;
+                  const toIndex = before ? index : index + 1;
+                  const fromIndex = layers.findIndex((r) => r.id === dragId);
+                  if (fromIndex >= 0 && fromIndex !== toIndex && fromIndex !== toIndex - 1) {
+                    onReorderLayers(reorderedItemsArray(layers, fromIndex, toIndex));
+                  }
+                  setDragId(null);
+                  setDropIndex(null);
+                }}
+                onClick={(e) => {
+                  if (!interactive) return;
+                  onSelectLayer(row.id, e.shiftKey || e.metaKey || e.ctrlKey);
+                }}
+                style={{
+                  ...layerRowStyle,
+                  background: row.selected ? PAPER_DEEP : "transparent",
+                  color: INK,
+                  cursor: interactive ? (dragEnabled ? "grab" : "pointer") : "default",
+                  fontWeight: row.selected ? 500 : 400,
+                  opacity: isDragging ? 0.4 : 1,
+                }}
               >
-                {row.locked ? "●" : "○"}
-              </button>
-            ) : row.locked ? (
-              <span aria-label="Locked" title="Locked" style={{ color: INK_FAINT, fontSize: 11 }}>●</span>
-            ) : null}
-          </div>
-        ))}
+                {dragEnabled ? (
+                  <span aria-hidden style={layerGripStyle}>⠿</span>
+                ) : null}
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {row.label}
+                </span>
+                {onToggleLayerLock !== null ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onToggleLayerLock(row.id); }}
+                    style={layerLockBtnStyle}
+                    aria-pressed={row.locked}
+                    aria-label={row.locked ? `Unlock ${row.label}` : `Lock ${row.label}`}
+                    title={row.locked ? "Unlock" : "Lock"}
+                  >
+                    {row.locked ? "●" : "○"}
+                  </button>
+                ) : row.locked ? (
+                  <span aria-label="Locked" title="Locked" style={{ color: INK_FAINT, fontSize: 11 }}>●</span>
+                ) : null}
+              </div>
+            </Fragment>
+          );
+        })}
+        {dropIndex === layers.length ? <div style={layerDropIndicatorStyle} /> : null}
       </div>
     </div>
   );
@@ -2356,6 +2427,22 @@ const layerLockBtnStyle: CSSProperties = {
   fontSize: 12,
   cursor: "pointer",
   borderRadius: 2,
+};
+
+const layerDropIndicatorStyle: CSSProperties = {
+  height: 2,
+  background: ACCENT_RED,
+  margin: "0 4px",
+  borderRadius: 1,
+};
+
+const layerGripStyle: CSSProperties = {
+  color: INK_FAINT,
+  fontSize: 10,
+  letterSpacing: -1,
+  cursor: "grab",
+  userSelect: "none",
+  lineHeight: 1,
 };
 
 const statusBar: CSSProperties = {

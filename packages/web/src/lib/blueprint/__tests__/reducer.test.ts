@@ -907,6 +907,51 @@ describe("reducer: z-order", () => {
     expect(topIdx - stageIdx).toBe(1);
   });
 
+  it("set-items-order reorders by the provided id sequence", () => {
+    const s = initialEditorState(DEMO_SCENE);
+    const reversed = s.scene.items.map((i) => i.id).reverse();
+    const s2 = reduce(s, { type: "set-items-order", ids: reversed });
+    expect(s2.scene.items.map((i) => i.id)).toEqual(reversed);
+    expect(s2.past).toHaveLength(1);
+  });
+
+  it("set-items-order places named ids first and keeps unnamed ids in their original relative order", () => {
+    const s = initialEditorState(DEMO_SCENE);
+    // Name two items — they become the new head of the items array.
+    // Everything else keeps its original relative order behind them.
+    const ids = ["bar", "dancefloor"];
+    const s2 = reduce(s, { type: "set-items-order", ids });
+    const afterIds = s2.scene.items.map((i) => i.id);
+    expect(afterIds[0]).toBe("bar");
+    expect(afterIds[1]).toBe("dancefloor");
+    const originalTail = s.scene.items
+      .map((i) => i.id)
+      .filter((id) => id !== "bar" && id !== "dancefloor");
+    expect(afterIds.slice(2)).toEqual(originalTail);
+  });
+
+  it("set-items-order ignores unknown ids and dedupes repeats", () => {
+    const s = initialEditorState(DEMO_SCENE);
+    const s2 = reduce(s, {
+      type: "set-items-order",
+      ids: ["stage", "stage", "does-not-exist", "bar"],
+    });
+    const ids = s2.scene.items.map((i) => i.id);
+    expect(ids[0]).toBe("stage");
+    expect(ids[1]).toBe("bar");
+    // No duplicate stage, no phantom id.
+    expect(ids.filter((id) => id === "stage")).toHaveLength(1);
+    expect(ids).not.toContain("does-not-exist");
+    expect(ids.length).toBe(s.scene.items.length);
+  });
+
+  it("set-items-order is a no-op when the order is unchanged", () => {
+    const s = initialEditorState(DEMO_SCENE);
+    const sameOrder = s.scene.items.map((i) => i.id);
+    const s2 = reduce(s, { type: "set-items-order", ids: sameOrder });
+    expect(s2).toBe(s);
+  });
+
   it("raise-to-top is a no-op when the selection is already at the top", () => {
     const items = DEMO_SCENE.items;
     const tailIds = [items[items.length - 2]?.id, items[items.length - 1]?.id].filter(
