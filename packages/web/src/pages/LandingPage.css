@@ -395,10 +395,59 @@
 }
 
 .th-landing .preview-caption {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.th-landing .preview-caption > span:first-child {
   font-family: var(--mono); font-size: 11px; color: var(--muted);
   letter-spacing: 0.08em; text-transform: uppercase;
-  margin-top: 14px;
-  display: flex; justify-content: space-between;
+}
+
+/* Expressive "open the real planner" CTA under the preview. Pill with
+   oxblood fill, larger than the in-stage chips, arrow slides on hover. */
+.th-landing .preview-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  border: 1px solid var(--accent);
+  box-shadow: 0 6px 18px -8px color-mix(in oklab, var(--accent) 70%, transparent);
+  transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.th-landing .preview-cta:hover,
+.th-landing .preview-cta:focus-visible {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -8px color-mix(in oklab, var(--accent) 80%, transparent);
+}
+.th-landing .preview-cta .arrow {
+  display: inline-block;
+  transition: transform .2s ease;
+}
+.th-landing .preview-cta:hover .arrow,
+.th-landing .preview-cta:focus-visible .arrow {
+  transform: translateX(5px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-landing .preview-cta,
+  .th-landing .preview-cta .arrow { transition: none; }
+  .th-landing .preview-cta:hover,
+  .th-landing .preview-cta:focus-visible { transform: none; }
+  .th-landing .preview-cta:hover .arrow,
+  .th-landing .preview-cta:focus-visible .arrow { transform: none; }
 }
 
 /* —————————————— MARQUEE —————————————— */

@@ -149,8 +149,11 @@ function Hero(): ReactElement {
           <div className="hero-right rise" style={{ transitionDelay: ".12s" }}>
             <PlannerPreview />
             <div className="preview-caption">
-              <span>↑ Live preview · scaled floor plan</span>
-              <Link to="/plan">Open the real thing →</Link>
+              <span>↑ Tap any piece of furniture — this is a taste</span>
+              <Link to="/plan" className="preview-cta">
+                <span>Open the real planner</span>
+                <span className="arrow" aria-hidden>→</span>
+              </Link>
             </div>
           </div>
         </div>
@@ -412,9 +415,6 @@ function PlannerPreview(): ReactElement {
               <div className="chip">Rounds <b>10</b></div>
               <div className="chip">Egress <b style={{ color: "oklch(0.55 0.15 145)" }}>✓</b></div>
             </div>
-            <Link to="/plan" className="cta-in">
-              Send for quote <span aria-hidden>→</span>
-            </Link>
           </div>
         </div>
 
