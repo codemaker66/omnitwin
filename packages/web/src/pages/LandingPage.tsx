@@ -299,55 +299,73 @@ type EventType = "wedding" | "gala" | "conference";
 // against the back wall at y < 1.1 m will overlap those arcs, so every
 // layout starts its back-wall items at y = 1.1 m for clearance.
 
+// Door arc spans on the north wall (from the SVG):
+//   door 1: x ≈ 1.48–3.36 m   door 2: x ≈ 9.83–11.44 m   door 3: x ≈ 17.91–19.80 m
+// Largest clear gap on the north wall is 6.47 m (3.36–9.83 or 11.44–17.91).
+// An 8 m stage therefore MUST NOT be placed against the north wall — it
+// physically blocks a fire exit. Every layout here either shrinks the
+// stage to 6 m or puts it against the door-free west wall.
+
 const WEDDING_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",      kind: "stage",      x: 1.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
-  // Bar tucked between door 2 (ends at x≈11.4) and door 3 (starts at x≈17.9).
+  // 6 × 3 m stage in the gap between doors 1 and 2 (3.36–9.83 m = 6.47 m clear).
+  { id: "stage",      kind: "stage",      x: 3.5,  y: 1.1, widthM: 6,   heightM: 3,   klass: "furn",       tag: "STAGE · 6×3m",       body: "Stage" },
+  // 6 m bar in the gap between doors 2 and 3 (11.44–17.91 m = 6.47 m clear).
   { id: "bar",        kind: "bar",        x: 11.5, y: 1.1, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
-  { id: "dancefloor", kind: "dancefloor", x: 13.5, y: 2.5, widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
-  { id: "round-0",    kind: "round",      x: 1.1,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-1",    kind: "round",      x: 3.5,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-2",    kind: "round",      x: 5.9,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-3",    kind: "round",      x: 8.3,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-4",    kind: "round",      x: 10.7, y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-5",    kind: "round",      x: 1.1,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-6",    kind: "round",      x: 3.5,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-7",    kind: "round",      x: 5.9,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-8",    kind: "round",      x: 8.3,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-9",    kind: "round",      x: 10.7, y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "dancefloor", kind: "dancefloor", x: 13.5, y: 4,   widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
+  { id: "round-0",    kind: "round",      x: 0.7,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-1",    kind: "round",      x: 3.1,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-2",    kind: "round",      x: 5.5,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-3",    kind: "round",      x: 7.9,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-4",    kind: "round",      x: 10.3, y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-5",    kind: "round",      x: 0.7,  y: 7,   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-6",    kind: "round",      x: 3.1,  y: 7,   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-7",    kind: "round",      x: 5.5,  y: 7,   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-8",    kind: "round",      x: 7.9,  y: 7,   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-9",    kind: "round",      x: 10.3, y: 7,   widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
   { id: "top-table",  kind: "top-table",  x: 8.1,  y: 9.3, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
 ];
 
-// Gala: standing/mingling emphasis. Two linear bars, a larger central
-// dancefloor, poseur high-tops scattered around. No big rounds.
+// Gala: standing/mingling emphasis. 6 m stage in a north-wall gap, a
+// central dancefloor, a long service bar on the door-free east wall,
+// poseur high-tops around the perimeter (away from door arcs on the
+// north wall).
 const GALA_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",      kind: "stage",      x: 6.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
-  { id: "bar-left",   kind: "bar",        x: 1.5,  y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 4m",           tagDark: true, body: "Bar" },
-  { id: "bar-right",  kind: "bar",        x: 15.5, y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 4m",           tagDark: true, body: "Bar" },
-  { id: "dancefloor", kind: "dancefloor", x: 6,    y: 5.5, widthM: 9,   heightM: 3,   klass: "furn dark",  tag: "DANCEFLOOR · 9×3m",  tagDark: true, body: "Parquet" },
-  { id: "poseur-0",   kind: "poseur",     x: 2.5,  y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-1",   kind: "poseur",     x: 2.5,  y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-2",   kind: "poseur",     x: 4.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-3",   kind: "poseur",     x: 6.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-4",   kind: "poseur",     x: 8.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-5",   kind: "poseur",     x: 10.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-6",   kind: "poseur",     x: 12.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-7",   kind: "poseur",     x: 14.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-8",   kind: "poseur",     x: 17.5, y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
-  { id: "poseur-9",   kind: "poseur",     x: 17.5, y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "stage",      kind: "stage",      x: 3.5,  y: 1.1, widthM: 6,   heightM: 3,   klass: "furn",       tag: "STAGE · 6×3m",       body: "Stage" },
+  // Service bar on the east wall — rotated so its long edge runs
+  // north-south. The east wall has no doors.
+  { id: "bar",        kind: "bar",        x: 19.8, y: 2,   widthM: 0.9, heightM: 6,   klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
+  { id: "dancefloor", kind: "dancefloor", x: 6,    y: 5,   widthM: 9,   heightM: 3,   klass: "furn dark",  tag: "DANCEFLOOR · 9×3m",  tagDark: true, body: "Parquet" },
+  // Poseurs — all below y = 1.5 m so they clear the north-wall door arcs.
+  { id: "poseur-0",   kind: "poseur",     x: 1,    y: 4.5, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-1",   kind: "poseur",     x: 1,    y: 6,   widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-2",   kind: "poseur",     x: 1,    y: 7.5, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-3",   kind: "poseur",     x: 3,    y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-4",   kind: "poseur",     x: 5,    y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-5",   kind: "poseur",     x: 9,    y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-6",   kind: "poseur",     x: 11,   y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-7",   kind: "poseur",     x: 13,   y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-8",   kind: "poseur",     x: 15,   y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-9",   kind: "poseur",     x: 17,   y: 9.3, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
 ];
 
-// Conference: stage + lectern + delegate rows facing the stage.
+// Conference: stage on the WEST short wall (door-free), rows of delegate
+// tables running north-south so attendees face west toward the stage.
+// Traditional theatre layout for a 21 × 10.5 m long hall.
 const CONFERENCE_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",   kind: "stage",   x: 6.5, y: 1.1, widthM: 8, heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",   body: "Stage" },
-  { id: "lectern", kind: "lectern", x: 9.8, y: 4.3, widthM: 1, heightM: 0.7, klass: "furn dark", tag: "LECTERN",        tagDark: true, body: "Lectern" },
-  { id: "row-1-l", kind: "row",     x: 1,   y: 5.6, widthM: 8, heightM: 0.8, klass: "furn",      tag: "ROW · 16 seats", body: "Row 1" },
-  { id: "row-1-r", kind: "row",     x: 12,  y: 5.6, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 1" },
-  { id: "row-2-l", kind: "row",     x: 1,   y: 6.9, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 2" },
-  { id: "row-2-r", kind: "row",     x: 12,  y: 6.9, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 2" },
-  { id: "row-3-l", kind: "row",     x: 1,   y: 8.2, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 3" },
-  { id: "row-3-r", kind: "row",     x: 12,  y: 8.2, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 3" },
-  { id: "row-4-l", kind: "row",     x: 1,   y: 9.5, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 4" },
-  { id: "row-4-r", kind: "row",     x: 12,  y: 9.5, widthM: 8, heightM: 0.8, klass: "furn",                             body: "Row 4" },
+  { id: "stage",   kind: "stage",   x: 0.3, y: 1.25, widthM: 3,   heightM: 8,   klass: "furn",      tag: "STAGE · 3×8m",   body: "Stage" },
+  // Lectern just east of the stage, facing the audience. Body is empty —
+  // the tag above already says "LECTERN" and the item itself is too small
+  // to comfortably fit the word inside its 1 × 0.7 m box (which was causing
+  // the text to overflow the dark background).
+  { id: "lectern", kind: "lectern", x: 3.6, y: 5,    widthM: 0.7, heightM: 1,   klass: "furn dark", tag: "LECTERN",        tagDark: true, body: "" },
+  // Five rows of 0.8 × 6 m delegate tables, spaced 2.6 m apart so each
+  // row leaves ~1.8 m for chairs behind it. People sit on the WEST side
+  // of each row facing the stage.
+  { id: "row-1",   kind: "row",     x: 6,   y: 2.25, widthM: 0.8, heightM: 6,   klass: "furn",      tag: "ROW · 10 seats", body: "" },
+  { id: "row-2",   kind: "row",     x: 8.6, y: 2.25, widthM: 0.8, heightM: 6,   klass: "furn",                             body: "" },
+  { id: "row-3",   kind: "row",     x: 11.2, y: 2.25, widthM: 0.8, heightM: 6,  klass: "furn",                             body: "" },
+  { id: "row-4",   kind: "row",     x: 13.8, y: 2.25, widthM: 0.8, heightM: 6,  klass: "furn",                             body: "" },
+  { id: "row-5",   kind: "row",     x: 16.4, y: 2.25, widthM: 0.8, heightM: 6,  klass: "furn",                             body: "" },
 ];
 
 const LAYOUTS: Record<EventType, readonly PlannerItem[]> = {
@@ -371,47 +389,46 @@ interface DragState {
 const ROOM_W_M = 21;
 const ROOM_H_M = 10.5;
 
-/** Per-seat chair placement around a round table. Ring of N chairs at
- *  an offset radius just past the table edge. Returns top-left (for the
- *  CSS-positioned chair div) positions in the room's metre space. */
-function chairRingPositions(
-  cx: number,
-  cy: number,
-  tableDiameterM: number,
-  seats: number,
-): readonly { x: number; y: number }[] {
-  const chairR = 0.25;               // half of a 0.5 × 0.5 m chair footprint
-  const ringR = tableDiameterM / 2 + chairR + 0.05; // 5 cm pull-out gap
-  const out: { x: number; y: number }[] = [];
-  for (let i = 0; i < seats; i += 1) {
-    const theta = (i / seats) * Math.PI * 2 - Math.PI / 2;
-    out.push({
-      x: cx + Math.cos(theta) * ringR - chairR,
-      y: cy + Math.sin(theta) * ringR - chairR,
-    });
-  }
-  return out;
-}
-
-/** Row of bar stools along the front edge of a bar (the edge facing into
- *  the room — assumed to be the "south" edge given our layouts place bars
- *  along the back wall or walls). Returns top-left positions. Stool count
- *  scales with bar length: one stool per ~0.75 m of bar. */
+/** Row of bar stools along the service edge of a bar. Orientation is
+ *  inferred: a bar whose height > width is vertical (e.g. service bar
+ *  against a long wall), stools line the long edge facing into the
+ *  room. Horizontal bars get stools along the south edge by default.
+ *  Count scales with bar length: one stool per ~0.75 m. */
 function barStoolPositions(
-  barX: number,
-  barY: number,
-  barW: number,
-  barH: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
 ): readonly { x: number; y: number }[] {
-  const stoolR = 0.22; // 0.44 m seat, big enough to read from 1 m
-  const gap = 0.15;    // pull-out from bar edge
-  const count = Math.max(3, Math.round(barW / 0.75));
-  const frontY = barY + barH + gap;
-  const spacing = barW / count;
+  const stoolR = 0.22;
+  const gap = 0.15;
+  const isVertical = bh > bw;
+  const longEdge = isVertical ? bh : bw;
+  const count = Math.max(3, Math.round(longEdge / 0.75));
+  const spacing = longEdge / count;
   const out: { x: number; y: number }[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const cx = barX + spacing * (i + 0.5);
-    out.push({ x: cx - stoolR, y: frontY });
+  if (isVertical) {
+    const cx = bx + bw / 2;
+    // If the bar sits on the east side of the room, its service edge
+    // faces west (stools to the left); otherwise stools to the right.
+    const frontX = cx > ROOM_W_M / 2
+      ? bx - 2 * stoolR - gap
+      : bx + bw + gap;
+    for (let i = 0; i < count; i += 1) {
+      const cy = by + spacing * (i + 0.5);
+      out.push({ x: frontX, y: cy - stoolR });
+    }
+  } else {
+    const cy = by + bh / 2;
+    // Bar on the north side of the room → stools south of it; bar on
+    // the south side → stools north of it.
+    const frontY = cy < ROOM_H_M / 2
+      ? by + bh + gap
+      : by - 2 * stoolR - gap;
+    for (let i = 0; i < count; i += 1) {
+      const cx = bx + spacing * (i + 0.5);
+      out.push({ x: cx - stoolR, y: frontY });
+    }
   }
   return out;
 }
@@ -488,6 +505,28 @@ function PlannerPreview(): ReactElement {
       return filtered.length === prev.length ? prev : filtered;
     });
     setSelectedId("");
+  };
+
+  /** Rotate the selected item 90° around its own centre, swapping
+   *  widthM ↔ heightM and clamping the new bounds to the room. Round
+   *  and poseur items are rotationally symmetric — no-op. Wired to
+   *  both the Rotate toolbar button and the R keyboard shortcut. */
+  const rotateSelected = (): void => {
+    setItems((prev) => prev.map((it) => {
+      if (it.id !== selectedId) return it;
+      if (it.kind === "round" || it.kind === "poseur") return it;
+      const cx = it.x + it.widthM / 2;
+      const cy = it.y + it.heightM / 2;
+      const newW = it.heightM;
+      const newH = it.widthM;
+      return {
+        ...it,
+        widthM: newW,
+        heightM: newH,
+        x: Math.max(0, Math.min(ROOM_W_M - newW, cx - newW / 2)),
+        y: Math.max(0, Math.min(ROOM_H_M - newH, cy - newH / 2)),
+      };
+    }));
   };
 
   /** Pointer-move over the stage — updates the live coord chip. Fires
@@ -675,6 +714,11 @@ function PlannerPreview(): ReactElement {
             if ((e.key === "Delete" || e.key === "Backspace") && selectedId !== "") {
               e.preventDefault();
               deleteSelected();
+              return;
+            }
+            if ((e.key === "r" || e.key === "R") && selectedId !== "") {
+              e.preventDefault();
+              rotateSelected();
             }
           }}
         >
@@ -746,35 +790,31 @@ function PlannerPreview(): ReactElement {
           <div className="topbar">
             <div className="tool-group" role="toolbar" aria-hidden>
               <div className="tool on" title="Select">⌖</div>
-              <div className="tool" title="Pan">✥</div>
-              <div className="tool" title="Rotate">↻</div>
-              <div className="tool" title="Measure">⟷</div>
+              <div className="tool" title="Pan (scroll to pan)">✥</div>
+              <div
+                className="tool"
+                title="Rotate selected 90°"
+                role="button"
+                tabIndex={0}
+                onClick={rotateSelected}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    rotateSelected();
+                  }
+                }}
+              >
+                ↻
+              </div>
+              <div className="tool" title="Measure (coming soon)">⟷</div>
             </div>
           </div>
 
-          {/* Chairs — 10 around each wedding round, 4 around each gala
-              poseur. Rendered under the table so drags still hit the
-              table. kind-filtered so dropping a new round into the scene
-              also gets its chair ring automatically. */}
-          {items.filter((it) => it.kind === "round" || it.kind === "poseur").flatMap((table) => {
-            const seats = Number.parseInt(table.body, 10) || (table.kind === "round" ? 10 : 4);
-            const cx = table.x + table.widthM / 2;
-            const cy = table.y + table.heightM / 2;
-            return chairRingPositions(cx, cy, table.widthM, seats).map((pos, idx) => (
-              <div
-                key={`chair-${table.id}-${String(idx)}`}
-                className="chair"
-                style={{
-                  ...placeStyle({ x: pos.x, y: pos.y, widthM: 0.5, heightM: 0.5 }),
-                  pointerEvents: "none",
-                }}
-                aria-hidden
-              />
-            ));
-          })}
           {/* Bar stools — a row of small discs along the front edge of
-              each bar, so the bar reads as a drinks service rather than a
-              solid mass. Stool count scales with bar length. */}
+              each bar. For bars running vertically (heightM > widthM —
+              e.g. the Gala bar on the east wall), stools line the west
+              side; for horizontal bars they line the south side.
+              Kind-filtered, non-interactive. */}
           {items.filter((it) => it.kind === "bar").flatMap((bar) =>
             barStoolPositions(bar.x, bar.y, bar.widthM, bar.heightM).map((pos, idx) => (
               <div
@@ -815,7 +855,11 @@ function PlannerPreview(): ReactElement {
               {item.tag !== undefined ? (
                 <span className={item.tagDark === true ? "tag dark" : "tag"}>{item.tag}</span>
               ) : null}
-              {item.body}
+              {/* Skip body text on items smaller than ~1 m on either
+                  axis — their text was overflowing the filled background
+                  (e.g. "Lectern" on a 1 × 0.7 m box). Tag above carries
+                  the label; inside stays empty and reads clean. */}
+              {item.body !== "" && item.widthM >= 1.2 && item.heightM >= 0.8 ? item.body : null}
             </div>
           ))}
 
