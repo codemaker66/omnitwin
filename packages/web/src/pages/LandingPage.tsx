@@ -509,6 +509,7 @@ function PlannerPreview(): ReactElement {
               <div className="chip">Rounds <b>10</b></div>
               <div className="chip">Egress <b style={{ color: "oklch(0.55 0.15 145)" }}>✓</b></div>
             </div>
+            <div className="coord">X 420 · Y 210 · 1:50</div>
           </div>
         </div>
 
