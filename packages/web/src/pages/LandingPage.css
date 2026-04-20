@@ -408,104 +408,16 @@
   color: var(--muted);
 }
 
-/* The hero's load-bearing CTA. Every downstream conversion depends on
-   this click, so the treatment is deliberately loud:
-   - full-row pill anchored below the preview, not inline with caption
-   - oxblood fill + white text at 22px (biggest type outside the h1)
-   - two-line content: label on top, benefits line underneath
-   - soft accent-hued glow that deepens on hover
-   - subtle 2.4s breathing animation so it's the only motion on the fold
-   - arrow slides right + rotates slightly on hover
-   - prefers-reduced-motion kills all animation/transform */
-@keyframes th-cta-breath {
-  0%,100% { transform: scale(1); }
-  50%     { transform: scale(1.015); }
-}
+/* The hero's load-bearing CTA. Uses the site's standard primary button
+   treatment (.btn.primary.big); the only override is that it spans the
+   full width below the preview and centres its content. Keeping it
+   consistent with every other primary button in the layout is the
+   whole point — this isn't a flashy hero stunt, it's the same serious
+   button the nav and final-CTA use, just wider. */
 .th-landing .preview-cta {
   margin-top: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
   width: 100%;
-  padding: 22px 30px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--ui);
-  text-decoration: none;
-  border: 1px solid var(--accent);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.12) inset,
-    0 10px 28px -10px color-mix(in oklab, var(--accent) 75%, transparent),
-    0 24px 60px -24px color-mix(in oklab, var(--accent) 60%, transparent);
-  transition:
-    background .2s ease, border-color .2s ease,
-    transform .2s ease, box-shadow .2s ease, letter-spacing .2s ease;
-  animation: th-cta-breath 2.4s ease-in-out infinite;
-}
-.th-landing .preview-cta:hover,
-.th-landing .preview-cta:focus-visible {
-  background: var(--accent-2);
-  border-color: var(--accent-2);
-  transform: translateY(-2px) scale(1.01);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.14) inset,
-    0 16px 36px -8px color-mix(in oklab, var(--accent) 85%, transparent),
-    0 40px 80px -24px color-mix(in oklab, var(--accent) 70%, transparent);
-  letter-spacing: 0.02em;
-  animation-play-state: paused;
-}
-.th-landing .preview-cta-body {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-width: 0;
-}
-.th-landing .preview-cta-label {
-  font-family: var(--display);
-  font-size: clamp(22px, 2.4vw, 28px);
-  font-weight: 500;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-}
-.th-landing .preview-cta-sub {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: color-mix(in oklab, #fff 75%, var(--accent));
-}
-.th-landing .preview-cta-arrow {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: color-mix(in oklab, #fff 14%, transparent);
-  font-size: 22px;
-  flex: 0 0 auto;
-  transition: transform .25s ease, background .2s ease;
-}
-.th-landing .preview-cta:hover .preview-cta-arrow,
-.th-landing .preview-cta:focus-visible .preview-cta-arrow {
-  transform: translateX(6px);
-  background: color-mix(in oklab, #fff 22%, transparent);
-}
-@media (max-width: 560px) {
-  .th-landing .preview-cta { padding: 18px 22px; gap: 14px; }
-  .th-landing .preview-cta-label { font-size: 20px; }
-  .th-landing .preview-cta-arrow { width: 38px; height: 38px; font-size: 18px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .th-landing .preview-cta,
-  .th-landing .preview-cta-arrow { transition: none; animation: none; }
-  .th-landing .preview-cta:hover,
-  .th-landing .preview-cta:focus-visible { transform: none; letter-spacing: 0.01em; }
-  .th-landing .preview-cta:hover .preview-cta-arrow,
-  .th-landing .preview-cta:focus-visible .preview-cta-arrow { transform: none; }
 }
 
 /* —————————————— MARQUEE —————————————— */

@@ -152,12 +152,9 @@ function Hero(): ReactElement {
               <span>↑ Tap any piece of furniture — this is a taste</span>
               <span className="preview-caption-sub">Scaled 1:50 · Grand Hall banquet</span>
             </div>
-            <Link to="/plan" className="preview-cta" aria-label="Open the real planner">
-              <span className="preview-cta-body">
-                <span className="preview-cta-label">Open the real planner</span>
-                <span className="preview-cta-sub">Free · No signup · ~90 seconds to a layout</span>
-              </span>
-              <span className="preview-cta-arrow" aria-hidden>→</span>
+            <Link to="/plan" className="btn primary big preview-cta">
+              Open the real planner
+              <span className="arrow" aria-hidden>→</span>
             </Link>
           </div>
         </div>
