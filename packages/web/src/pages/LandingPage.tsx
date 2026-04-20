@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import "./LandingPage.css";
 
@@ -149,7 +149,7 @@ function Hero(): ReactElement {
           <div className="hero-right rise" style={{ transitionDelay: ".12s" }}>
             <PlannerPreview />
             <div className="preview-caption">
-              <span>↑ Tap any piece of furniture — this is a taste</span>
+              <span>↑ Drag anything — this is a taste of the real thing</span>
               <span className="preview-caption-sub">Scaled 1:50 · Grand Hall banquet</span>
             </div>
             <Link to="/plan" className="btn primary big preview-cta">
@@ -252,14 +252,113 @@ function placeStyle(p: MetrePlacement): { left: string; top: string; width: stri
   };
 }
 
+interface PlannerItem {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly widthM: number;
+  readonly heightM: number;
+  readonly klass: "furn" | "furn dark" | "furn round";
+  readonly tag?: string;
+  readonly tagDark?: boolean;
+  readonly body: string;
+}
+
+const INITIAL_ITEMS: readonly PlannerItem[] = [
+  { id: "stage",      x: 1.5,  y: 0.5, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
+  { id: "bar",        x: 13.5, y: 0.5, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
+  { id: "dancefloor", x: 13.5, y: 2.5, widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
+  { id: "round-0",    x: 1.1,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-1",    x: 3.5,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-2",    x: 5.9,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-3",    x: 8.3,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-4",    x: 10.7, y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-5",    x: 1.1,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-6",    x: 3.5,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-7",    x: 5.9,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-8",    x: 8.3,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-9",    x: 10.7, y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "top-table",  x: 8.1,  y: 8.8, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
+] as const;
+
+/** Drag-state tracked in a ref so pointermove doesn't trigger a re-render
+ *  on every tick — we only setState on real position changes. */
+interface DragState {
+  id: string;
+  startX: number;
+  startY: number;
+  origXM: number;
+  origYM: number;
+  moved: boolean;
+}
+
+/** Room bounds in metres, matching the design's 21 × 10.5 m Grand Hall. */
+const ROOM_W_M = 21;
+const ROOM_H_M = 10.5;
+
 function PlannerPreview(): ReactElement {
   const [selectedId, setSelectedId] = useState<string>("round-3");
+  const [items, setItems] = useState<readonly PlannerItem[]>(INITIAL_ITEMS);
+  const dragRef = useRef<DragState | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+
   const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
   const info: PreviewItem = PREVIEW_ITEMS[selectedKind] ?? ROUND_ITEM;
 
   const isSelected = (id: string): boolean => id === selectedId;
   const furnClass = (base: string, id: string): string =>
     isSelected(id) ? `${base} selected` : base;
+
+  const onItemPointerDown = (item: PlannerItem) => (e: ReactPointerEvent<HTMLDivElement>): void => {
+    e.stopPropagation();
+    (e.currentTarget).setPointerCapture(e.pointerId);
+    dragRef.current = {
+      id: item.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origXM: item.x,
+      origYM: item.y,
+      moved: false,
+    };
+  };
+
+  const onItemPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const d = dragRef.current;
+    if (d === null || stageRef.current === null) return;
+    const rect = stageRef.current.getBoundingClientRect();
+    const pxPerMX = (rect.width * W_PER_M) / 100;
+    const pxPerMY = (rect.height * H_PER_M) / 100;
+    if (pxPerMX <= 0 || pxPerMY <= 0) return;
+    const dxM = (e.clientX - d.startX) / pxPerMX;
+    const dyM = (e.clientY - d.startY) / pxPerMY;
+    // 2 pixel drag threshold before committing to a move — below that,
+    // treat the gesture as a click so selection still works on a tap.
+    if (!d.moved && Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) < 3) return;
+    d.moved = true;
+    setItems((prev) => prev.map((i) => {
+      if (i.id !== d.id) return i;
+      const maxX = Math.max(0, ROOM_W_M - i.widthM);
+      const maxY = Math.max(0, ROOM_H_M - i.heightM);
+      return {
+        ...i,
+        x: Math.max(0, Math.min(maxX, d.origXM + dxM)),
+        y: Math.max(0, Math.min(maxY, d.origYM + dyM)),
+      };
+    }));
+  };
+
+  const onItemPointerUp = (item: PlannerItem) => (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    try { (e.currentTarget).releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    // Tap without drag → selection. Drag finalises in-place (state already updated).
+    if (d !== null && !d.moved) setSelectedId(item.id);
+  };
+
+  const onItemPointerCancel = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    dragRef.current = null;
+    try { (e.currentTarget).releasePointerCapture(e.pointerId); } catch { /* already released */ }
+  };
   return (
     <div className="planner" aria-label="Planner preview (illustrative)">
       <div className="chrome">
@@ -298,7 +397,7 @@ function PlannerPreview(): ReactElement {
           </div>
         </aside>
 
-        <div className="stage" aria-label="Floor plan preview — click furniture to inspect">
+        <div className="stage" aria-label="Floor plan preview — drag furniture to move, tap to inspect" ref={stageRef}>
           <svg
             className="room-svg"
             viewBox="0 0 840 470"
@@ -374,77 +473,36 @@ function PlannerPreview(): ReactElement {
             <div className="coord">X 420 · Y 210 · 1:50</div>
           </div>
 
-          {/* Stage — back-left corner, 8 × 3 m */}
-          <div
-            className={furnClass("furn", "stage")}
-            style={placeStyle({ x: 1.5, y: 0.5, widthM: 8, heightM: 3 })}
-            onClick={() => { setSelectedId("stage"); }}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("stage"); } }}
-          >
-            <span className="tag">STAGE · 8×3m</span>
-            Stage
-          </div>
-          {/* Bar — back wall right of stage, 6 × 0.9 m */}
-          <div
-            className={furnClass("furn dark", "bar")}
-            style={placeStyle({ x: 13.5, y: 0.5, widthM: 6, heightM: 0.9 })}
-            onClick={() => { setSelectedId("bar"); }}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("bar"); } }}
-          >
-            <span className="tag dark">BAR · 6m</span>
-            Bar
-          </div>
-          {/* Dancefloor — right side below bar, 6 × 4 m */}
-          <div
-            className={furnClass("furn dark", "dancefloor")}
-            style={placeStyle({ x: 13.5, y: 2.5, widthM: 6, heightM: 4 })}
-            onClick={() => { setSelectedId("dancefloor"); }}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("dancefloor"); } }}
-          >
-            <span className="tag dark">DANCEFLOOR · 6×4m</span>
-            Parquet
-          </div>
-          {/* 10 round tables — 1.8 m / 6 ft diameter. Two rows × five.
-              Row centres at y=4.5 m and y=7.0 m; columns centre-spaced
-              2.4 m, first column centre at x=2.0 m. top-left = centre −
-              0.9 m (half the diameter). */}
-          {([
-            [2.0, 4.5], [4.4, 4.5], [6.8, 4.5], [9.2, 4.5], [11.6, 4.5],
-            [2.0, 7.0], [4.4, 7.0], [6.8, 7.0], [9.2, 7.0], [11.6, 7.0],
-          ] as const).map(([cx, cy], i) => {
-            const id = `round-${String(i)}`;
-            return (
-              <div
-                key={id}
-                className={furnClass("furn round", id)}
-                style={placeStyle({ x: cx - 0.9, y: cy - 0.9, widthM: 1.8, heightM: 1.8 })}
-                onClick={() => { setSelectedId(id); }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(id); } }}
-              >
-                10
-              </div>
-            );
-          })}
-          {/* Top table — centred front-of-room, 4.8 × 1 m */}
-          <div
-            className={furnClass("furn", "top-table")}
-            style={placeStyle({ x: 8.1, y: 8.8, widthM: 4.8, heightM: 1 })}
-            onClick={() => { setSelectedId("top-table"); }}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("top-table"); } }}
-          >
-            <span className="tag">TOP TABLE · 14</span>
-            Top table
-          </div>
+          {/* Every piece is draggable. Pointer-based so it works on
+              mouse + touch + pen; setPointerCapture keeps the drag alive
+              when the cursor leaves the element. onClick stays usable for
+              taps (the drag helpers short-circuit below a 3 px threshold
+              and fall through to selection). */}
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className={furnClass(item.klass, item.id)}
+              style={{ ...placeStyle(item), touchAction: "none" }}
+              onPointerDown={onItemPointerDown(item)}
+              onPointerMove={onItemPointerMove}
+              onPointerUp={onItemPointerUp(item)}
+              onPointerCancel={onItemPointerCancel}
+              role="button"
+              tabIndex={0}
+              aria-label={`${item.tag ?? item.body} — drag to move, tap to inspect`}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedId(item.id);
+                }
+              }}
+            >
+              {item.tag !== undefined ? (
+                <span className={item.tagDark === true ? "tag dark" : "tag"}>{item.tag}</span>
+              ) : null}
+              {item.body}
+            </div>
+          ))}
 
           <div className="summary">
             <div className="chips">
