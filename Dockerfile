@@ -26,7 +26,7 @@ FROM node:${NODE_VERSION}-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g pnpm@${PNPM_VERSION}
 
 # Copy only the files needed for `pnpm install` first — this layer is
 # cache-hit whenever the lockfile hasn't changed.
@@ -52,7 +52,7 @@ FROM node:${NODE_VERSION}-alpine AS build
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g pnpm@${PNPM_VERSION}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
