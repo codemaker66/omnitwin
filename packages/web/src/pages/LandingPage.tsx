@@ -565,7 +565,7 @@ const ROOMS: readonly RoomCardData[] = [
     banquet: 90,
   },
   {
-    slug: "robert-adam",
+    slug: "robert-adam-room",
     size: "md",
     image: "/rooms/robert-adam-wedding-opt.jpg",
     alt: "The Robert Adam Room with neoclassical plasterwork ceiling set for a ceremony",
@@ -575,7 +575,7 @@ const ROOMS: readonly RoomCardData[] = [
     banquet: 80,
   },
   {
-    slug: "reception",
+    slug: "reception-room",
     size: "md",
     image: "/rooms/reception-wedding-opt.jpg",
     alt: "Reception Room dressed for a wedding ceremony with floral arch",
@@ -606,7 +606,7 @@ function Rooms(): ReactElement {
             <Link
               key={room.slug}
               className={`room-card size-${room.size}`}
-              to="/plan"
+              to={`/plan?space=${room.slug}`}
               aria-label={`Open ${room.title} in the planner`}
             >
               <div className="image">
