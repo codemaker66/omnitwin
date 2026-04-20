@@ -176,10 +176,35 @@ describe("HallkeeperSheetV2Schema — full roundtrip", () => {
     webViewUrl: "http://localhost:5173/hallkeeper/cfg",
     generatedAt: "2026-04-15T10:00:00.000Z",
     instructions: null,
+    approval: null,
   };
 
   it("parses a full sample payload", () => {
     expect(HallkeeperSheetV2Schema.safeParse(SAMPLE).success).toBe(true);
+  });
+
+  it("accepts an approval stamp", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      approval: {
+        version: 3,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "Catherine Tait",
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects an approval with version < 1", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      approval: {
+        version: 0,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "Catherine Tait",
+      },
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("accepts timing=null (unscheduled config)", () => {
@@ -200,5 +225,55 @@ describe("HallkeeperSheetV2Schema — full roundtrip", () => {
       },
     });
     expect(parsed.success).toBe(true);
+  });
+
+  // ---- Pre-Phase-4c snapshot compatibility + jsonb guard contracts --
+  //
+  // `loadLatestApprovedSnapshotPayload` in the api package parses stored
+  // jsonb against this schema after backfilling `approval: null` for
+  // snapshots written before Phase 4c added the required key. These
+  // tests pin the two corners of that contract: pre-4c payloads accept
+  // after backfill; garbage payloads reject.
+
+  it("rejects a payload missing the required `approval` key (unfilled)", () => {
+    const pre4c = { ...(SAMPLE as Record<string, unknown>) };
+    delete pre4c["approval"];
+    expect(HallkeeperSheetV2Schema.safeParse(pre4c).success).toBe(false);
+  });
+
+  it("accepts a pre-4c payload after `approval: null` backfill", () => {
+    const pre4c = { ...(SAMPLE as Record<string, unknown>) };
+    delete pre4c["approval"];
+    const backfilled = { ...pre4c, approval: null };
+    expect(HallkeeperSheetV2Schema.safeParse(backfilled).success).toBe(true);
+  });
+
+  it("rejects garbage jsonb (wrong phases shape)", () => {
+    const garbage = { ...(SAMPLE as Record<string, unknown>), phases: "not-an-array" };
+    expect(HallkeeperSheetV2Schema.safeParse(garbage).success).toBe(false);
+  });
+
+  it("rejects an approval with a non-ISO approvedAt", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      approval: {
+        version: 1,
+        approvedAt: "yesterday afternoon",
+        approverName: "Catherine Tait",
+      },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects an approval with an empty approverName", () => {
+    const parsed = HallkeeperSheetV2Schema.safeParse({
+      ...(SAMPLE as Record<string, unknown>),
+      approval: {
+        version: 1,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "",
+      },
+    });
+    expect(parsed.success).toBe(false);
   });
 });

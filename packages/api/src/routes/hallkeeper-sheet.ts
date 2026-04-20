@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { hallkeeperProgress } from "../db/schema.js";
+import {
+  configurations,
+  configurationSheetSnapshots,
+  hallkeeperProgress,
+} from "../db/schema.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
+import type { JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +34,75 @@ const ConfigIdParam = z.object({ configId: z.string().uuid() });
 const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("false") });
 const ToggleBody = z.object({ rowKey: z.string().min(1).max(300) });
 
+/**
+ * Lightweight ownership probe for the progress routes — these routes
+ * don't need the full sheet assembly, just the auth pivot. Returns the
+ * (venueId, ownerId) pair the canAccessResource helper expects, or
+ * `null` when the config does not exist.
+ *
+ * Security fix (2026-04-17): before this helper existed, the progress
+ * GET/PATCH routes skipped `canAccessResource` entirely — any
+ * authenticated user with a valid `configId` UUID could read or mutate
+ * another venue's checkbox state. Adding this probe + the guard below
+ * closes that path.
+ */
+async function loadConfigAuthPivot(
+  db: Database,
+  configId: string,
+): Promise<{ venueId: string; ownerId: string | null } | null> {
+  const [row] = await db.select({
+    venueId: configurations.venueId,
+    ownerId: configurations.userId,
+  })
+    .from(configurations)
+    .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+    .limit(1);
+  return row === undefined ? null : row;
+}
+
+/**
+ * Look up the pre-rendered `pdfUrl` on the latest approved snapshot
+ * for a config, or null if none exists. Powers the CDN-redirect
+ * fast-path on the /sheet route.
+ *
+ * Ordered by version DESC so a re-approved config uses the newest
+ * pre-rendered artifact, not a stale one. The partial index added in
+ * migration 0014 covers this query: `configuration_id, version DESC
+ * WHERE approved_at IS NOT NULL`.
+ */
+async function findPrerenderedPdfUrl(
+  db: Database,
+  configId: string,
+): Promise<string | null> {
+  const [row] = await db.select({ pdfUrl: configurationSheetSnapshots.pdfUrl })
+    .from(configurationSheetSnapshots)
+    .where(and(
+      eq(configurationSheetSnapshots.configurationId, configId),
+      isNotNull(configurationSheetSnapshots.approvedAt),
+    ))
+    .orderBy(desc(configurationSheetSnapshots.version))
+    .limit(1);
+  return row?.pdfUrl ?? null;
+}
+
+async function requireConfigAccess(
+  db: Database,
+  configId: string,
+  user: JwtUser,
+): Promise<
+  | { ok: true }
+  | { ok: false; status: 404 | 403; error: string; code: string }
+> {
+  const pivot = await loadConfigAuthPivot(db, configId);
+  if (pivot === null) {
+    return { ok: false, status: 404, error: "Configuration not found", code: "NOT_FOUND" };
+  }
+  if (!canAccessResource(user, pivot.ownerId, pivot.venueId)) {
+    return { ok: false, status: 403, error: "Insufficient permissions", code: "FORBIDDEN" };
+  }
+  return { ok: true };
+}
+
 export async function hallkeeperSheetRoutes(
   server: FastifyInstance,
   opts: { db: Database },
@@ -37,7 +111,18 @@ export async function hallkeeperSheetRoutes(
 
   const frontendUrl = process.env["FRONTEND_URL"] ?? null;
 
-  // GET /hallkeeper/:configId/sheet — generate PDF (authenticated)
+  // GET /hallkeeper/:configId/sheet — pre-rendered CDN redirect OR on-demand render
+  //
+  // Fast path: if the latest approved snapshot has a `pdfUrl`, the
+  // PDF has been pre-rendered to R2. Return a 302 redirect to the
+  // CDN URL; the browser fetches bytes from the edge, not from our
+  // cpu-bound pdfkit event loop.
+  //
+  // Slow path: no pre-rendered PDF (R2 not configured / pre-render
+  // failed / snapshot not approved). Fall back to on-demand
+  // generation — the original behaviour. This keeps dev environments
+  // without R2 fully functional and gives us graceful degradation
+  // when the pre-render worker trips.
   server.get("/:configId/sheet", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
@@ -56,6 +141,19 @@ export async function hallkeeperSheetRoutes(
 
     if (!canAccessResource(request.user, result.authPivot.configUserId, result.authPivot.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    // Fast-path: pre-rendered CDN URL on the latest approved snapshot.
+    // The `download` query param is NOT honoured on the redirect path
+    // because Content-Disposition must be set by the CDN response;
+    // browsers opening the redirected URL render inline. To preserve
+    // download-mode for admin-triggered exports, we fall through to
+    // on-demand rendering when the caller asked for a download.
+    if (!isDownload) {
+      const cdn = await findPrerenderedPdfUrl(db, params.data.configId);
+      if (cdn !== null) {
+        return reply.redirect(cdn, 302);
+      }
     }
 
     const pdfBuffer = await generateSheetPdfV2(result.payload);
@@ -108,6 +206,11 @@ export async function hallkeeperSheetRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
+    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    if (!gate.ok) {
+      return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+    }
+
     const rows = await db.select({
       rowKey: hallkeeperProgress.rowKey,
       checkedAt: hallkeeperProgress.checkedAt,
@@ -133,6 +236,11 @@ export async function hallkeeperSheetRoutes(
     const body = ToggleBody.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
+    }
+
+    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    if (!gate.ok) {
+      return reply.status(gate.status).send({ error: gate.error, code: gate.code });
     }
 
     const { configId } = params.data;

@@ -131,7 +131,7 @@ export async function publicEnquiryRoutes(
       .where(and(eq(users.venueId, space.venueId), eq(users.role, "hallkeeper")));
 
     for (const hk of hallkeepers) {
-      const emailData = newEnquiryNotification({
+      const emailData = await newEnquiryNotification({
         spaceName,
         eventType: parsed.data.eventType ?? null,
         contactName: displayName,

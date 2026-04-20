@@ -22,47 +22,47 @@ describe("newEnquiryNotification", () => {
     dashboardUrl: "http://localhost:5173/dashboard",
   } as const;
 
-  it("includes space name in subject", () => {
-    const { subject } = newEnquiryNotification(baseData);
+  it("includes space name in subject", async () => {
+    const { subject } = await newEnquiryNotification(baseData);
     expect(subject).toContain("Grand Hall");
   });
 
-  it("includes event type in subject", () => {
-    const { subject } = newEnquiryNotification(baseData);
+  it("includes event type in subject", async () => {
+    const { subject } = await newEnquiryNotification(baseData);
     expect(subject).toContain("Wedding");
   });
 
-  it("includes contact info in body", () => {
-    const { html } = newEnquiryNotification(baseData);
+  it("includes contact info in body", async () => {
+    const { html } = await newEnquiryNotification(baseData);
     expect(html).toContain("jane@example.com");
     expect(html).toContain("Jane Smith");
     expect(html).toContain("+441234567890");
   });
 
-  it("includes event details in body", () => {
-    const { html } = newEnquiryNotification(baseData);
+  it("includes event details in body", async () => {
+    const { html } = await newEnquiryNotification(baseData);
     expect(html).toContain("2026-06-15");
     expect(html).toContain("120");
   });
 
-  it("includes message in body", () => {
-    const { html } = newEnquiryNotification(baseData);
+  it("includes message in body", async () => {
+    const { html } = await newEnquiryNotification(baseData);
     expect(html).toContain("reception here");
   });
 
-  it("includes dashboard link", () => {
-    const { html } = newEnquiryNotification(baseData);
+  it("includes dashboard link", async () => {
+    const { html } = await newEnquiryNotification(baseData);
     expect(html).toContain("http://localhost:5173/dashboard");
   });
 
-  it("handles null event type gracefully", () => {
-    const { subject, html } = newEnquiryNotification({ ...baseData, eventType: null });
+  it("handles null event type gracefully", async () => {
+    const { subject, html } = await newEnquiryNotification({ ...baseData, eventType: null });
     expect(subject).toBe("New enquiry for Grand Hall");
     expect(html).toContain("Grand Hall");
   });
 
-  it("handles null message gracefully", () => {
-    const { html } = newEnquiryNotification({ ...baseData, message: null });
+  it("handles null message gracefully", async () => {
+    const { html } = await newEnquiryNotification({ ...baseData, message: null });
     expect(html).not.toContain("reception here");
   });
 });
@@ -75,29 +75,29 @@ describe("enquiryApproved", () => {
     configUrl: "http://localhost:5173/editor/config-123",
   } as const;
 
-  it("includes space name in subject", () => {
-    const { subject } = enquiryApproved(baseData);
+  it("includes space name in subject", async () => {
+    const { subject } = await enquiryApproved(baseData);
     expect(subject).toContain("Grand Hall");
     expect(subject).toContain("approved");
   });
 
-  it("includes venue name in body", () => {
-    const { html } = enquiryApproved(baseData);
+  it("includes venue name in body", async () => {
+    const { html } = await enquiryApproved(baseData);
     expect(html).toContain("Trades Hall Glasgow");
   });
 
-  it("includes event date in body", () => {
-    const { html } = enquiryApproved(baseData);
+  it("includes event date in body", async () => {
+    const { html } = await enquiryApproved(baseData);
     expect(html).toContain("2026-06-15");
   });
 
-  it("includes config link", () => {
-    const { html } = enquiryApproved(baseData);
+  it("includes config link", async () => {
+    const { html } = await enquiryApproved(baseData);
     expect(html).toContain("editor/config-123");
   });
 
-  it("handles null configUrl", () => {
-    const { html } = enquiryApproved({ ...baseData, configUrl: null });
+  it("handles null configUrl", async () => {
+    const { html } = await enquiryApproved({ ...baseData, configUrl: null });
     expect(html).not.toContain("View Your Layout");
   });
 });
@@ -110,24 +110,24 @@ describe("enquiryRejected", () => {
     note: "Space is booked for that date",
   } as const;
 
-  it("includes space name in subject", () => {
-    const { subject } = enquiryRejected(baseData);
+  it("includes space name in subject", async () => {
+    const { subject } = await enquiryRejected(baseData);
     expect(subject).toContain("Grand Hall");
   });
 
-  it("includes note when provided", () => {
-    const { html } = enquiryRejected(baseData);
+  it("includes note when provided", async () => {
+    const { html } = await enquiryRejected(baseData);
     expect(html).toContain("Space is booked for that date");
   });
 
-  it("works without note", () => {
-    const { html } = enquiryRejected({ ...baseData, note: null });
+  it("works without note", async () => {
+    const { html } = await enquiryRejected({ ...baseData, note: null });
     expect(html).not.toContain("Note from the events team");
     expect(html).toContain("alternative");
   });
 
-  it("includes venue name", () => {
-    const { html } = enquiryRejected(baseData);
+  it("includes venue name", async () => {
+    const { html } = await enquiryRejected(baseData);
     expect(html).toContain("Trades Hall Glasgow");
   });
 });

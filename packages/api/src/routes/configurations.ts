@@ -10,6 +10,7 @@ import {
 import { configurations, spaces, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
+import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAccessResource } from "../utils/query.js";
 
@@ -169,7 +170,13 @@ export async function configurationRoutes(
   });
 
   // PATCH /configurations/:id — owner or admin
-  server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
+  // Blocked by requireEditableConfig when the config is in a
+  // submitted/under_review/approved review state (except for admin),
+  // to preserve the snapshot-immutability invariant of the approval
+  // workflow. See packages/api/src/middleware/require-editable-config.ts.
+  server.patch("/:id", {
+    preHandler: [authenticate, requireEditableConfig(db, { paramName: "id" })],
+  }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });

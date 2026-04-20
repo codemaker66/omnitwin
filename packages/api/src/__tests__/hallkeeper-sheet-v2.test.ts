@@ -108,3 +108,88 @@ describe("GET /hallkeeper/:configId/data — retired", () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Progress route — auth + validation gates
+//
+// Security fix (2026-04-17): both GET and PATCH previously had NO
+// `canAccessResource` check. Any authenticated user could read or
+// mutate another venue's checkbox state by guessing a config UUID.
+// These tests pin the new gate's presence.
+// ---------------------------------------------------------------------------
+
+describe("GET /hallkeeper/:configId/progress — auth gate", () => {
+  it("returns 401 without authentication", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for invalid config ID (with auth)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/hallkeeper/not-a-uuid/progress",
+      headers: adminAuth,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("authenticated request with valid UUID passes auth + validation gates", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      headers: adminAuth,
+    });
+    // Mock DB resolves the ownership-probe to 404; what matters for
+    // this test is that the auth (401) and UUID-validation (400)
+    // gates both pass so the ownership probe itself runs.
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(400);
+  });
+});
+
+describe("PATCH /hallkeeper/:configId/progress — auth gate", () => {
+  const validBody = { rowKey: "furniture|Centre|6ft Round Table|0" };
+
+  it("returns 401 without authentication", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      payload: validBody,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for invalid config ID (with auth)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: "/hallkeeper/not-a-uuid/progress",
+      headers: adminAuth,
+      payload: validBody,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for empty rowKey (with auth)", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      headers: adminAuth,
+      payload: { rowKey: "" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("authenticated request with valid body passes auth + validation gates", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      headers: adminAuth,
+      payload: validBody,
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(400);
+  });
+});

@@ -85,6 +85,48 @@
       "when": 1776816000000,
       "tag": "0010_hallkeeper_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776902400000,
+      "tag": "0011_configuration_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776988800000,
+      "tag": "0012_configuration_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777075200000,
+      "tag": "0013_configuration_sheet_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1777161600000,
+      "tag": "0014_snapshot_approved_partial_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1777248000000,
+      "tag": "0015_venue_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777334400000,
+      "tag": "0016_review_sessions",
+      "breakpoints": true
     }
   ]
 }

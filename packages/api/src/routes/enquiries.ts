@@ -5,10 +5,9 @@ import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, 
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageVenue } from "../utils/query.js";
+import { canAccessResource } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
-import { generateHallkeeperSheet, generateHallkeeperPdf } from "../services/hallkeeper-sheet.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
 
@@ -269,7 +268,7 @@ export async function enquiryRoutes(
         const configUrl = enquiry.configurationId !== null
           ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/editor/${enquiry.configurationId}`
           : null;
-        const emailData = enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
+        const emailData = await enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
         // Idempotency: one approved notification per enquiry, regardless
         // of how many times the transition handler re-fires. An accidental
         // double-click, a client retry, or a replayed webhook all converge
@@ -280,7 +279,7 @@ export async function enquiryRoutes(
           logger: request.log,
         });
       } else {
-        const emailData = enquiryRejected({ venueName, spaceName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
+        const emailData = await enquiryRejected({ venueName, spaceName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
         sendEmailAsync({ to: recipientEmail, ...emailData }, {
           db,
           idempotencyKey: `enquiry-rejected:${enquiry.id}`,
@@ -374,62 +373,8 @@ export async function enquiryRoutes(
     return { data: result };
   });
 
-  // GET /enquiries/:id/hallkeeper-sheet — JSON sheet data
-  server.get("/:id/hallkeeper-sheet", { preHandler: [authenticate] }, async (request, reply) => {
-    const params = IdParam.safeParse(request.params);
-    if (!params.success) {
-      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
-    }
-
-    const [enquiry] = await db.select().from(enquiries)
-      .where(eq(enquiries.id, params.data.id))
-      .limit(1);
-
-    if (enquiry === undefined) {
-      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
-    }
-
-    if (!canManageVenue(request.user, enquiry.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-
-    const sheet = await generateHallkeeperSheet(db, params.data.id);
-    if (sheet === null) {
-      return reply.status(500).send({ error: "Failed to generate sheet", code: "INTERNAL_ERROR" });
-    }
-
-    return { data: sheet };
-  });
-
-  // GET /enquiries/:id/hallkeeper-sheet/pdf — PDF download
-  server.get("/:id/hallkeeper-sheet/pdf", { preHandler: [authenticate] }, async (request, reply) => {
-    const params = IdParam.safeParse(request.params);
-    if (!params.success) {
-      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
-    }
-
-    const [enquiry] = await db.select().from(enquiries)
-      .where(eq(enquiries.id, params.data.id))
-      .limit(1);
-
-    if (enquiry === undefined) {
-      return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
-    }
-
-    if (!canManageVenue(request.user, enquiry.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-    }
-
-    const sheet = await generateHallkeeperSheet(db, params.data.id);
-    if (sheet === null) {
-      return reply.status(500).send({ error: "Failed to generate sheet", code: "INTERNAL_ERROR" });
-    }
-
-    const pdf = await generateHallkeeperPdf(sheet);
-
-    return reply
-      .header("Content-Type", "application/pdf")
-      .header("Content-Disposition", `attachment; filename="hallkeeper-sheet-${params.data.id}.pdf"`)
-      .send(pdf);
-  });
+  // v1 per-enquiry hallkeeper-sheet routes removed. The new approval
+  // workflow serves sheets from the snapshot service; see
+  // packages/api/src/routes/configuration-reviews.ts for
+  // GET /configurations/:configId/snapshot/latest.
 }

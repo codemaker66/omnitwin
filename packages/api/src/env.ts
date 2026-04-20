@@ -31,6 +31,17 @@ const EnvSchema = z.object({
   R2_PUBLIC_URL: z.string().url().optional(),
   // Frontend URL for email links (defaults to localhost)
   FRONTEND_URL: z.string().url().optional(),
+  // Sentry — error tracking. DSN is optional (disabled if unset); the
+  // SDK import itself is lazy so dev/test environments without Sentry
+  // configured don't pay the cold-start cost.
+  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_ENVIRONMENT: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  // Prometheus scrape token. When unset, /metrics returns 404 — the
+  // endpoint is not even discoverable. Production deployments set
+  // this + configure the scraper's Authorization header. Minimum 16
+  // chars so a weak token that slips through review is caught here.
+  METRICS_TOKEN: z.string().min(16).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. Without it, the route

@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { SETUP_PHASES, SetupPhaseSchema } from "./hallkeeper-accessories.js";
+import {
+  AccessibilityRequirementsSchema,
+  DietarySummarySchema,
+  DoorScheduleSchema,
+} from "./event-requirements.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Instructions — the human layer
@@ -82,6 +87,27 @@ export const EventInstructionsSchema = z.object({
    * separate callout so it stands apart from event instructions.
    */
   accessNotes: z.string().max(1500).default(""),
+  /**
+   * Accessibility requirements — hearing loops, wheelchair spaces,
+   * sign-language interpreters, large-print programmes. Rendered as a
+   * high-contrast CRITICAL callout on the hallkeeper sheet when any
+   * hearing-loop / wheelchair / interpreter flag is set, as a softer
+   * block otherwise. Null when the planner hasn't touched this block —
+   * renderer skips cleanly rather than printing an empty section.
+   */
+  accessibility: AccessibilityRequirementsSchema.nullable().default(null),
+  /**
+   * Per-diet guest counts + free-text allergy notes. Drives the catering
+   * row on the hallkeeper sheet. Null when the planner hasn't entered
+   * any counts.
+   */
+  dietary: DietarySummarySchema.nullable().default(null),
+  /**
+   * Per-door lock/unlock timeline. Rendered as a compact chronological
+   * table so the hallkeeper knows when to secure each entrance. Null
+   * when the planner hasn't authored a schedule.
+   */
+  doorSchedule: DoorScheduleSchema.nullable().default(null),
 });
 export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 
@@ -127,6 +153,9 @@ export function emptyEventInstructions(): EventInstructions {
     dayOfContact: null,
     phaseDeadlines: [],
     accessNotes: "",
+    accessibility: null,
+    dietary: null,
+    doorSchedule: null,
   };
 }
 
@@ -139,5 +168,8 @@ export function hasInstructionContent(i: EventInstructions): boolean {
   if (i.accessNotes.trim().length > 0) return true;
   if (i.phaseDeadlines.length > 0) return true;
   if (i.dayOfContact !== null) return true;
+  if (i.accessibility !== null) return true;
+  if (i.dietary !== null) return true;
+  if (i.doorSchedule !== null) return true;
   return false;
 }

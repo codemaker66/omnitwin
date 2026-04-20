@@ -11,6 +11,7 @@ import {
   date,
   index,
   unique,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,10 @@ export const venues = pgTable("venues", {
   address: varchar("address", { length: 500 }).notNull(),
   logoUrl: text("logo_url"),
   brandColour: varchar("brand_colour", { length: 7 }),
+  // IANA timezone — e.g. "Europe/London", "America/New_York". Drives
+  // audit-timestamp rendering (approval stamp, PDF footer) in the
+  // venue's operational clock rather than the server's process locale.
+  timezone: varchar("timezone", { length: 100 }).notNull().default("Europe/London"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -166,6 +171,20 @@ export const configurations = pgTable("configurations", {
   userId: uuid("user_id").references(() => users.id),
   name: varchar("name", { length: 200 }).notNull(),
   state: varchar("state", { length: 20 }).notNull().default("draft"),
+  /**
+   * Review lifecycle — ORTHOGONAL to `state` (draft/published).
+   * Values are the 8 statuses in CONFIGURATION_REVIEW_STATUSES from
+   * @omnitwin/types. See state-machines/config-review.ts for the
+   * role-gated transition matrix.
+   */
+  reviewStatus: varchar("review_status", { length: 30 }).notNull().default("draft"),
+  /** Set when `reviewStatus` first becomes "submitted". */
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  /** Set together with `approvedBy` when `reviewStatus` becomes "approved". */
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedBy: uuid("approved_by").references(() => users.id),
+  /** Optional context — required only for reject / changes_requested transitions. */
+  reviewNote: text("review_note"),
   layoutStyle: varchar("layout_style", { length: 50 }).notNull(),
   isPublicPreview: boolean("is_public_preview").notNull().default(false),
   guestCount: integer("guest_count").notNull().default(0),
@@ -176,7 +195,8 @@ export const configurations = pgTable("configurations", {
   /**
    * Planner-authored context that isn't captured by placed-object
    * geometry: special instructions, day-of contact, per-phase deadlines,
-   * access notes. Shape defined in @omnitwin/types hallkeeper-instructions.ts
+   * access notes, accessibility requirements, dietary summary, door
+   * schedule. Shape defined in @omnitwin/types hallkeeper-instructions.ts
    * (ConfigurationMetadataSchema). Nullable — the hallkeeper sheet
    * renderer falls through cleanly when unset.
    */
@@ -188,6 +208,78 @@ export const configurations = pgTable("configurations", {
 }, (table) => [
   index("configurations_space_state_idx").on(table.spaceId, table.state),
   index("configurations_venue_visibility_idx").on(table.venueId, table.visibility),
+  index("configurations_venue_review_status_idx").on(table.venueId, table.reviewStatus),
+]);
+
+// ---------------------------------------------------------------------------
+// 5b. configuration_review_history — audit trail for review transitions
+//
+// Shape parallels `enquiry_status_history` so the web timeline component
+// renders both. ON DELETE CASCADE from configurations cleans the trail
+// when a config is hard-deleted. `changed_by` is nullable for
+// system-automatic transitions (migration backfill, scheduled archive).
+// ---------------------------------------------------------------------------
+
+export const configurationReviewHistory = pgTable("configuration_review_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  fromStatus: varchar("from_status", { length: 30 }).notNull(),
+  toStatus: varchar("to_status", { length: 30 }).notNull(),
+  changedBy: uuid("changed_by").references(() => users.id),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("config_review_history_config_idx").on(table.configurationId),
+]);
+
+// ---------------------------------------------------------------------------
+// 5bb. review_sessions — presence tracking (who is viewing a review)
+//
+// Polling-based presence: viewer client heartbeats every ~10s while
+// the review detail is open, server upserts `last_seen_at = now()`.
+// The UI renders "Catherine is viewing" badges from rows whose
+// last_seen_at falls within the 30-second active window. See
+// migration 0016 for design rationale.
+// ---------------------------------------------------------------------------
+
+export const reviewSessions = pgTable("review_sessions", {
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.configurationId, table.userId] }),
+  index("review_sessions_config_last_seen_idx").on(table.configurationId, table.lastSeenAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 5c. configuration_sheet_snapshots — immutable hallkeeper-sheet artifacts
+//
+// The freeze boundary between the live config (edit-forever) and what
+// the hallkeeper sees (frozen at approval). See 0013 migration comment
+// for full semantics. Key invariants enforced at the DB level via CHECKs
+// declared in the SQL migration (not replicated in the Drizzle DSL):
+//   - version is a positive integer, gapless within a configuration
+//   - version is unique per configuration (UNIQUE constraint)
+//   - source_hash is 64 lowercase hex characters (CHECK regex)
+//   - approval columns are both-or-neither populated (CHECK)
+// ---------------------------------------------------------------------------
+
+export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  payload: jsonb("payload").notNull(),
+  diagramUrl: text("diagram_url"),
+  pdfUrl: text("pdf_url"),
+  sourceHash: varchar("source_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid("created_by").references(() => users.id),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedBy: uuid("approved_by").references(() => users.id),
+}, (table) => [
+  unique("config_sheet_snapshot_version_unique").on(table.configurationId, table.version),
+  index("config_sheet_snapshots_config_idx").on(table.configurationId),
+  index("config_sheet_snapshots_source_hash_idx").on(table.configurationId, table.sourceHash),
 ]);
 
 // ---------------------------------------------------------------------------

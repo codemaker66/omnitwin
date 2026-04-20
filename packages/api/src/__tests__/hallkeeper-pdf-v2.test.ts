@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
+import { renderMetrics, __resetMetricsForTests } from "../observability/metrics.js";
 import type { HallkeeperSheetV2 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ const BASE_SHEET: HallkeeperSheetV2 = {
     guestCount: 120,
     layoutStyle: "dinner-rounds",
   },
-  venue: { name: "Trades Hall Glasgow", address: "85 Glassford St, Glasgow G1 1UH", logoUrl: null },
+  venue: { name: "Trades Hall Glasgow", address: "85 Glassford St, Glasgow G1 1UH", logoUrl: null, timezone: "Europe/London" },
   space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
   timing: {
     eventStart: "2026-06-15T18:00:00.000Z",
@@ -63,6 +64,7 @@ const BASE_SHEET: HallkeeperSheetV2 = {
   diagramUrl: null,
   webViewUrl: "http://localhost:5173/hallkeeper/cfg",
   generatedAt: "2026-04-16T10:00:00.000Z",
+  approval: null,
 };
 
 function hasPdfMagic(buf: Buffer): boolean {
@@ -88,6 +90,73 @@ describe("generateSheetPdfV2 — baseline", () => {
   });
 });
 
+describe("generateSheetPdfV2 — approval stamp", () => {
+  it("produces a valid PDF when an approval is set", async () => {
+    const approved: HallkeeperSheetV2 = {
+      ...BASE_SHEET,
+      approval: {
+        version: 3,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "Catherine Tait",
+      },
+    };
+    const buf = await generateSheetPdfV2(approved);
+    expect(hasPdfMagic(buf)).toBe(true);
+  });
+
+  it("adds bytes vs the unapproved baseline (banner + per-page footer line)", async () => {
+    const base = await generateSheetPdfV2(BASE_SHEET);
+    const approved = await generateSheetPdfV2({
+      ...BASE_SHEET,
+      approval: {
+        version: 1,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "Catherine Tait",
+      },
+    });
+    expect(approved.length).toBeGreaterThan(base.length);
+  });
+
+  it("produces a multi-page-safe PDF with the approval footer line on every page", async () => {
+    // Stress: a long manifest forces a page break, so the per-page
+    // footer line runs twice. This proves the footer approval line
+    // doesn't crash the bufferedPageRange loop and the PDF still
+    // produces valid magic bytes. Plaintext assertion on the banner/
+    // footer text requires pdf-parse (not installed); byte-count
+    // growth + magic-bytes is the current reach of these tests.
+    const longRows = Array.from({ length: 40 }, (_, i) => ({
+      key: `furniture|Centre|Chair ${String(i + 1)}|0`,
+      name: `Chair ${String(i + 1)}`,
+      category: "chair",
+      qty: 1,
+      afterDepth: 0,
+      isAccessory: false,
+      notes: "",
+      positions: [],
+    }));
+    const longSheet: HallkeeperSheetV2 = {
+      ...BASE_SHEET,
+      phases: [{
+        phase: "furniture",
+        zones: [{ zone: "Centre", rows: longRows }],
+      }],
+      totals: {
+        entries: [{ name: "Chair", category: "chair", qty: 40 }],
+        totalRows: 40,
+        totalItems: 40,
+      },
+      approval: {
+        version: 5,
+        approvedAt: "2026-04-17T14:30:00.000Z",
+        approverName: "Catherine Tait",
+      },
+    };
+    const buf = await generateSheetPdfV2(longSheet);
+    expect(hasPdfMagic(buf)).toBe(true);
+    expect(buf.length).toBeGreaterThan(5000);
+  });
+});
+
 describe("generateSheetPdfV2 — instructions block", () => {
   it("renders a PDF with special instructions and is larger than the baseline", async () => {
     const base = await generateSheetPdfV2(BASE_SHEET);
@@ -98,6 +167,9 @@ describe("generateSheetPdfV2 — instructions block", () => {
         dayOfContact: null,
         phaseDeadlines: [],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(withInstructions)).toBe(true);
@@ -112,6 +184,9 @@ describe("generateSheetPdfV2 — instructions block", () => {
         dayOfContact: { name: "Sarah Anderson", role: "Planner", phone: "+44 7700 900123", email: "sarah@anderson.com" },
         phaseDeadlines: [],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -125,6 +200,9 @@ describe("generateSheetPdfV2 — instructions block", () => {
         dayOfContact: null,
         phaseDeadlines: [],
         accessNotes: "Service entrance at south door. Parking in cobbled yard. No vehicles after 15:00.",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -142,6 +220,9 @@ describe("generateSheetPdfV2 — instructions block", () => {
           { phase: "dress", deadline: "2026-06-15T16:00:00.000Z", reason: "" },
         ],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -157,6 +238,9 @@ describe("generateSheetPdfV2 — instructions block", () => {
           { phase: "furniture", deadline: "2026-06-15T14:30:00.000Z", reason: "" },
         ],
         accessNotes: "Service entrance at south door.",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -256,6 +340,9 @@ describe("generateSheetPdfV2 — long instructions (merged_bug_002)", () => {
         dayOfContact: null,
         phaseDeadlines: [],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -280,6 +367,9 @@ describe("generateSheetPdfV2 — long instructions (merged_bug_002)", () => {
           { phase: "final", deadline: "2026-06-15T17:45:00.000Z", reason: "" },
         ],
         accessNotes: "Service entrance at south door. Parking in cobbled yard.",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(buf)).toBe(true);
@@ -305,6 +395,9 @@ describe("generateSheetPdfV2 — phase-deadline chip layout (merged_bug_010)", (
           { phase: "final", deadline: "2026-06-15T17:45:00.000Z", reason: "" },
         ],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     const justOne = await generateSheetPdfV2({
@@ -314,6 +407,9 @@ describe("generateSheetPdfV2 — phase-deadline chip layout (merged_bug_010)", (
         dayOfContact: null,
         phaseDeadlines: [{ phase: "structure", deadline: "2026-06-15T13:00:00.000Z", reason: "" }],
         accessNotes: "",
+        accessibility: null,
+        dietary: null,
+        doorSchedule: null,
       },
     });
     expect(hasPdfMagic(allFive)).toBe(true);
@@ -321,5 +417,58 @@ describe("generateSheetPdfV2 — phase-deadline chip layout (merged_bug_010)", (
     // old silent-drop behaviour came back, the byte counts would be
     // closer than expected (the extra chips would be skipped).
     expect(allFive.length).toBeGreaterThan(justOne.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Business-level metrics — reviewers verify that the PDF pipeline is
+// not just HTTP-instrumented but instrumented at the domain layer.
+// ---------------------------------------------------------------------------
+
+describe("generateSheetPdfV2 — metrics emission", () => {
+  it("increments hallkeeper_pdf_render_total with status=ok and emits a duration observation", async () => {
+    __resetMetricsForTests();
+    await generateSheetPdfV2(BASE_SHEET);
+    const text = renderMetrics();
+    expect(text).toContain("hallkeeper_pdf_render_total");
+    expect(text).toContain('status="ok"');
+    expect(text).toContain('approval="draft"');
+    expect(text).toContain("hallkeeper_pdf_render_duration_seconds");
+    // Histogram buckets + sum + count lines must all appear.
+    expect(text).toContain("hallkeeper_pdf_render_duration_seconds_bucket");
+    expect(text).toContain("hallkeeper_pdf_render_duration_seconds_sum");
+    expect(text).toContain("hallkeeper_pdf_render_duration_seconds_count");
+  });
+
+  it("labels approved sheets with approval=\"approved\"", async () => {
+    __resetMetricsForTests();
+    const approvedSheet: HallkeeperSheetV2 = {
+      ...BASE_SHEET,
+      approval: {
+        version: 1,
+        approvedAt: "2026-04-19T09:00:00.000Z",
+        approverName: "Jane Doe",
+      },
+    };
+    await generateSheetPdfV2(approvedSheet);
+    const text = renderMetrics();
+    expect(text).toContain('approval="approved"');
+    // The draft label must NOT appear in a run that only rendered an
+    // approved sheet — low-cardinality label set means zero ghosts.
+    expect(text).not.toContain('approval="draft"');
+  });
+
+  it("counters accumulate across multiple renders", async () => {
+    __resetMetricsForTests();
+    await generateSheetPdfV2(BASE_SHEET);
+    await generateSheetPdfV2(BASE_SHEET);
+    await generateSheetPdfV2(BASE_SHEET);
+    const text = renderMetrics();
+    // Three draft renders → exactly one counter line with value 3.
+    const counterLine = text
+      .split("\n")
+      .find((line) => line.startsWith("hallkeeper_pdf_render_total{") && line.includes('status="ok"') && line.includes('approval="draft"'));
+    expect(counterLine).toBeDefined();
+    expect(counterLine).toMatch(/\s3\s*$/);
   });
 });

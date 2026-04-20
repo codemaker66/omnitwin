@@ -20,5 +20,6 @@ CREATE INDEX IF NOT EXISTS "hallkeeper_progress_config_idx" ON "hallkeeper_progr
 `;
 
 await db.execute(sql.raw(migration));
+// eslint-disable-next-line no-console -- CLI operator signal
 console.log("Migration 0010_hallkeeper_progress applied successfully");
 process.exit(0);

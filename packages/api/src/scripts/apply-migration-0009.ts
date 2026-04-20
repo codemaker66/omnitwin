@@ -22,5 +22,6 @@ CREATE INDEX IF NOT EXISTS "asset_accessories_parent_idx" ON "asset_accessories"
 `;
 
 await db.execute(sql.raw(migration));
+// eslint-disable-next-line no-console -- CLI operator signal
 console.log("Migration 0009_asset_accessories applied successfully");
 process.exit(0);

@@ -2,6 +2,14 @@ import { z } from "zod";
 import { ConfigurationIdSchema, LayoutStyleSchema } from "./configuration.js";
 import { SetupPhaseSchema } from "./hallkeeper-accessories.js";
 import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
+import { TimezoneSchema, DEFAULT_VENUE_TIMEZONE } from "./venue.js";
+import { ZONES, ZoneSchema, type Zone } from "./zone.js";
+
+// Re-export the Zone primitives so existing import paths through
+// hallkeeper-v2 (including the `index.ts` re-export block) continue to
+// resolve identically. Canonical source: `./zone.js`.
+export { ZONES, ZoneSchema };
+export type { Zone };
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — phase ▸ zone ▸ row hierarchy
@@ -25,22 +33,10 @@ import { EventInstructionsSchema } from "./hallkeeper-instructions.js";
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Zone — 7-zone classification (north/south/east/west walls + entrance +
-// perimeter + centre). The demo established this taxonomy; we inherit it.
+// Zone — canonical source now in ./zone.ts (extracted to break circular
+// imports with hallkeeper-instructions ↔ event-requirements). Re-exported
+// above so callers resolving via this module still work.
 // ---------------------------------------------------------------------------
-
-export const ZONES = [
-  "North wall",
-  "South wall",
-  "East wall",
-  "West wall",
-  "Entrance",
-  "Perimeter",
-  "Centre",
-] as const;
-
-export const ZoneSchema = z.enum(ZONES);
-export type Zone = z.infer<typeof ZoneSchema>;
 
 // ---------------------------------------------------------------------------
 // ManifestRowV2 — single manifest line
@@ -132,6 +128,28 @@ export const TimingSchema = z.object({
 export type Timing = z.infer<typeof TimingSchema>;
 
 // ---------------------------------------------------------------------------
+// SheetApproval — audit metadata for an approved sheet
+//
+// Populated by the data assembler when the linked configuration is in
+// the `approved` review state AND a sheet snapshot has been frozen.
+// Null otherwise — the renderer hides the approver stamp cleanly.
+//
+// `version` is the snapshot-table version (1-based, gapless within a
+// configuration). `approverName` is the display name of the staff user
+// who approved, falling back to their email if no name is set.
+// ---------------------------------------------------------------------------
+
+export const SheetApprovalSchema = z.object({
+  /** Snapshot version — starts at 1, increments on each new approval. */
+  version: z.number().int().min(1),
+  /** ISO-8601 datetime the approval was recorded. */
+  approvedAt: z.string().datetime(),
+  /** Display name of the approving staff user (email fallback). */
+  approverName: z.string().min(1).max(200),
+});
+export type SheetApproval = z.infer<typeof SheetApprovalSchema>;
+
+// ---------------------------------------------------------------------------
 // HallkeeperSheetV2 — full payload consumed by the web view / PDF renderer
 // ---------------------------------------------------------------------------
 
@@ -146,6 +164,13 @@ export const HallkeeperSheetV2Schema = z.object({
     name: z.string(),
     address: z.string(),
     logoUrl: z.string().nullable().optional(),
+    /**
+     * IANA timezone for this venue. Renderers use it to format audit
+     * timestamps (approval stamp, PDF footer) in the venue's
+     * operational clock. Defaults to the flagship tenant's zone to
+     * keep pre-timezone snapshots (before migration 0015) renderable.
+     */
+    timezone: TimezoneSchema.default(DEFAULT_VENUE_TIMEZONE),
   }),
   space: z.object({
     name: z.string(),
@@ -178,6 +203,14 @@ export const HallkeeperSheetV2Schema = z.object({
   diagramUrl: z.string().nullable(),
   webViewUrl: z.string(),
   generatedAt: z.string().datetime(),
+  /**
+   * Approval audit metadata. Set when the configuration is `approved`
+   * AND a sheet snapshot exists; null otherwise. Consumers render an
+   * "APPROVED — v{n} — {name} — {date}" stamp when this is non-null
+   * and omit it cleanly when null — draft/under-review sheets must
+   * not carry the visual authority of an approval stamp.
+   */
+  approval: SheetApprovalSchema.nullable(),
 });
 
 export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;

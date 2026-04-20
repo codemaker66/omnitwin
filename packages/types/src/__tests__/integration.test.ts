@@ -70,10 +70,6 @@ import {
   PricingRuleSchema,
   PriceEstimateRequestSchema,
   PriceEstimateResponseSchema,
-  // Hallkeeper
-  HallkeeperSheetIdSchema,
-  ManifestItemSchema,
-  GenerateHallkeeperSheetRequestSchema,
   // Photo
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
@@ -160,9 +156,6 @@ describe("barrel export completeness", () => {
       PricingRuleSchema,
       PriceEstimateRequestSchema,
       PriceEstimateResponseSchema,
-      HallkeeperSheetIdSchema,
-      ManifestItemSchema,
-      GenerateHallkeeperSheetRequestSchema,
       PhotoIdSchema,
       PhotoContentTypeSchema,
       LegacyPhotoSchema,
@@ -260,11 +253,7 @@ describe("cross-module ID consistency", () => {
     expect(config.success).toBe(true);
   });
 
-  it("ConfigurationId accepted by HallkeeperSheet and Photo", () => {
-    expect(
-      GenerateHallkeeperSheetRequestSchema.safeParse({ configurationId: CONFIG_ID }).success,
-    ).toBe(true);
-
+  it("ConfigurationId accepted by LegacyPhotoUploadRequestSchema", () => {
     expect(
       LegacyPhotoUploadRequestSchema.safeParse({
         configurationId: CONFIG_ID,
@@ -776,10 +765,6 @@ describe("type-level compatibility", () => {
     }
   });
 
-  it("ManifestItem.category values are valid FurnitureCategory", () => {
-    const item = ManifestItemSchema.parse({ furnitureName: "Chair", category: "chair", quantity: 50 });
-    expect(FurnitureCategorySchema.safeParse(item.category).success).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------

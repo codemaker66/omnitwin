@@ -4,6 +4,7 @@ import { eq, and, isNull, inArray } from "drizzle-orm";
 import { placedObjects, configurations } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
+import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { canAccessResource } from "../utils/query.js";
 import {
   validatePlacementsInPolygon,
@@ -99,7 +100,7 @@ export async function placedObjectRoutes(
   const { db } = opts;
 
   // GET /configurations/:configId/objects — authenticated
-  server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
+  server.get("/", { preHandler: [authenticate, requireEditableConfig(db, { paramName: "configId" })] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
@@ -119,7 +120,7 @@ export async function placedObjectRoutes(
   });
 
   // POST /configurations/:configId/objects — owner of config
-  server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
+  server.post("/", { preHandler: [authenticate, requireEditableConfig(db, { paramName: "configId" })] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
@@ -166,7 +167,7 @@ export async function placedObjectRoutes(
   });
 
   // PATCH /configurations/:configId/objects/:id — owner of config
-  server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
+  server.patch("/:id", { preHandler: [authenticate, requireEditableConfig(db, { paramName: "configId" })] }, async (request, reply) => {
     const params = ObjectIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
@@ -228,7 +229,7 @@ export async function placedObjectRoutes(
   });
 
   // DELETE /configurations/:configId/objects/:id — owner, hard delete
-  server.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
+  server.delete("/:id", { preHandler: [authenticate, requireEditableConfig(db, { paramName: "configId" })] }, async (request, reply) => {
     const params = ObjectIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
@@ -254,7 +255,7 @@ export async function placedObjectRoutes(
   });
 
   // POST /configurations/:configId/objects/batch — owner, upsert multiple
-  server.post("/batch", { preHandler: [authenticate] }, async (request, reply) => {
+  server.post("/batch", { preHandler: [authenticate, requireEditableConfig(db, { paramName: "configId" })] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
