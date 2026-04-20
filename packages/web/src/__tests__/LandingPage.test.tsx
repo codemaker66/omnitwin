@@ -105,10 +105,10 @@ describe("LandingPage — CTAs + nav links", () => {
     expect(openPlanner?.getAttribute("href")).toBe("/editor");
   });
 
-  it("nav 'Sign in' routes to /login", () => {
+  it("nav 'Sign in' routes to /editor (Clerk handles auth flow)", () => {
     mount();
     const link = screen.getByRole("link", { name: /Sign in/i });
-    expect(link.getAttribute("href")).toBe("/login");
+    expect(link.getAttribute("href")).toBe("/editor");
   });
 
   it("'Choose a room' hero CTA scrolls to #rooms", () => {
