@@ -60,7 +60,9 @@ function withSuspense(node: ReactElement): ReactElement {
 
 export const router = createBrowserRouter([
   {
-    // Public marketing homepage ported from the Claude Design handoff.
+    // Alias kept so any stale bookmarks of `/landing` still work.
+    // Canonical path for the marketing homepage is `/` (see the bottom
+    // of this route list).
     path: "/landing",
     element: withSuspense(<LandingPage />),
   },
@@ -131,11 +133,23 @@ export const router = createBrowserRouter([
     element: withSuspense(<TermsPage />),
   },
   {
+    // Public marketing homepage — ported from the Claude Design handoff
+    // (trades-house-landing-page, Apr 2026). Anonymous visitors see the
+    // hero + planner preview + rooms gallery + quote here, then click
+    // through to /editor to actually plan.
     path: "/",
+    element: withSuspense(<LandingPage />),
+  },
+  {
+    // Role-aware post-sign-in destination. Used by the in-app "OMNITWIN"
+    // logo click: signed-in staff land on their dashboard, admins on admin,
+    // planners on /editor. Kept off `/` so the public landing isn't
+    // bypassed for unauthenticated visitors.
+    path: "/app",
     element: <RoleAwareRedirect />,
   },
   {
     path: "*",
-    element: <Navigate to="/editor" replace />,
+    element: <Navigate to="/" replace />,
   },
 ]);
