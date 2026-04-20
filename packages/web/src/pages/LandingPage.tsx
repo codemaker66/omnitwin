@@ -69,7 +69,7 @@ export function LandingPage(): ReactElement {
     <div
       className="th-landing"
       data-mode="light"
-      data-layout="split"
+      data-layout="stacked"
       data-accent="oxblood"
       data-display="newsreader"
       ref={rootRef}

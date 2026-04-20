@@ -153,6 +153,25 @@
   .th-landing .hero-grid { grid-template-columns: 1fr; gap: 40px; }
 }
 
+/* Stacked hero layout (the design handoff's default): headline on top,
+   planner preview full-width below. Needed because the planner's body
+   grid (sidebar 280 + stage 1fr + rightcol 200) can't fit in a narrow
+   hero column — it squeezes the stage to nothing. Stacked mode gives
+   the preview the full 1200px. */
+.th-landing[data-layout="stacked"] .hero-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 48px;
+}
+.th-landing[data-layout="stacked"] .hero h1 {
+  max-width: 18ch;
+  font-size: clamp(48px, 8vw, 120px);
+}
+.th-landing[data-layout="stacked"] .hero-right {
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
 /* —————————————— PLANNER PREVIEW —————————————— */
 .th-landing .planner {
   background: var(--panel);
