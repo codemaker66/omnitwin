@@ -5,9 +5,11 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { SpacePicker } from "../components/editor/SpacePicker.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
+import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
+import { BlueprintPage } from "./BlueprintPage.js";
 
 // ---------------------------------------------------------------------------
 // EditorPage — public 3D editor with space picker + save/send flow
@@ -101,6 +103,7 @@ export function EditorPage(): React.ReactElement {
  */
 function PlannerCommsLayer(): React.ReactElement {
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   // The Event Details panel writes to the auth-only PATCH endpoint. Showing
@@ -113,9 +116,11 @@ function PlannerCommsLayer(): React.ReactElement {
     <>
       <EditorBridge />
       <div style={{ height: "100vh", boxSizing: "border-box" }}>
-        <Editor3D />
+        {viewMode === "3d" ? <Editor3D /> : <BlueprintPage source="editor-store" />}
       </div>
-      {canEditEventDetails && (
+      {/* 2D/3D view toggle — floats top-centre so it's always reachable */}
+      <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+      {canEditEventDetails && viewMode === "3d" && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
@@ -136,6 +141,56 @@ function PlannerCommsLayer(): React.ReactElement {
       <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
       <ObjectNotePanel />
       <SaveSendPanel />
+      <SubmitForReviewPanel />
     </>
+  );
+}
+
+function ViewModeToggle({ mode, onChange }: { mode: "3d" | "2d"; onChange: (m: "3d" | "2d") => void }): React.ReactElement {
+  const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
+    const active = mode === value;
+    return (
+      <button
+        type="button"
+        onClick={() => { onChange(value); }}
+        style={{
+          padding: "6px 14px",
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: "0.05em",
+          border: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          background: active ? "#c9a84c" : "transparent",
+          color: active ? "#141311" : "#c9a84c",
+          fontFamily: "'Inter', system-ui, sans-serif",
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 16,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 31,
+        display: "inline-flex",
+        gap: 2,
+        padding: 3,
+        borderRadius: 8,
+        background: "rgba(20,19,17,0.85)",
+        backdropFilter: "blur(8px)",
+        border: "1px solid rgba(201,168,76,0.35)",
+      }}
+      role="group"
+      aria-label="View mode"
+    >
+      {btn("3D", "3d")}
+      {btn("2D", "2d")}
+    </div>
   );
 }

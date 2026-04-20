@@ -1,11 +1,31 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import {
+  ackProgress,
+  enqueueProgress,
+  listPendingProgress,
+  opsStillNeedingReplay,
+} from "../lib/progress-sync-queue.js";
 import { useParams } from "react-router-dom";
-import type { HallkeeperSheetV2, Phase } from "@omnitwin/types";
-import { PHASE_METADATA } from "@omnitwin/types";
+import type {
+  HallkeeperSheetV2,
+  Phase,
+  AccessibilityCallout,
+  SheetApproval,
+} from "@omnitwin/types";
+import {
+  BRAND,
+  PHASE_METADATA,
+  SEVERITY_PALETTE,
+  buildAccessibilityCallouts,
+  buildDoorScheduleSummary,
+  dietaryTotal,
+  hasDietaryContent,
+} from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
+import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import {
   GOLD, GREEN, DARK_BG, CARD_BG, BORDER, TEXT_MUT, TEXT_SEC,
 } from "../constants/ui-palette.js";
@@ -85,6 +105,11 @@ export function HallkeeperPage(): React.ReactElement {
   const [checks, setChecks] = useState<CheckMap>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
+  // Count of progress toggles queued offline. Surfaces as a small
+  // badge on the page so the hallkeeper sees "3 edits pending sync"
+  // when WiFi drops mid-event-setup. The number drains to 0 when the
+  // online-event flush runs on reconnect.
+  const [pendingCount, setPendingCount] = useState(0);
   const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
 
@@ -135,12 +160,24 @@ export function HallkeeperPage(): React.ReactElement {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // --- Toggle with optimistic UI + server PATCH ---
+  // --- Toggle with optimistic UI + offline-resilient server PATCH ---
+  //
+  // Three-state behaviour:
+  //   1. PATCH succeeds → UI matches server, no queue work.
+  //   2. PATCH fails (network / 5xx) → ENQUEUE the desired state in
+  //      IDB and KEEP the optimistic UI. The hallkeeper's checkmark
+  //      stays checked even though the server hasn't heard yet.
+  //      An `online`-event listener flushes the queue on reconnect.
+  //   3. Old behaviour (rollback on any failure) caused users to
+  //      double-tap when WiFi was flaky and lose work — the new
+  //      enqueue path makes the tablet usable in the bad-network
+  //      conditions where it matters most.
   const handleToggle = useCallback((rowKey: string) => {
     if (configId === undefined) return;
     const wasChecked = checks[rowKey] === true;
+    const desiredChecked = !wasChecked;
 
-    setChecks((prev) => toggleCheck(prev, rowKey, !wasChecked));
+    setChecks((prev) => toggleCheck(prev, rowKey, desiredChecked));
 
     void (async () => {
       try {
@@ -152,10 +189,79 @@ export function HallkeeperPage(): React.ReactElement {
         });
         if (!res.ok) throw new Error("toggle failed");
       } catch {
-        // Roll back to the prior state.
-        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
+        // Network / server error — KEEP the optimistic UI and queue
+        // the intent for replay. The flush effect below drains on
+        // reconnect.
+        try {
+          await enqueueProgress(configId, rowKey, desiredChecked);
+          const pending = await listPendingProgress();
+          setPendingCount(pending.length);
+        } catch {
+          // IDB unreachable — last-resort rollback so the UI doesn't
+          // show a check that's neither on the server nor in IDB.
+          setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
+        }
       }
     })();
+  }, [configId, checks]);
+
+  // --- Flush queued progress on reconnect ---
+  //
+  // The browser fires a global `online` event when network comes
+  // back. We read the queue, filter to ops still needing replay
+  // (the server may already match, e.g. another device toggled the
+  // same row), then re-issue each PATCH. Successful replays delete
+  // their queue entry; failures stay queued for the next attempt.
+  useEffect(() => {
+    if (configId === undefined) return;
+
+    const flush = (): void => {
+      void (async () => {
+        try {
+          const queued = await listPendingProgress();
+          if (queued.length === 0) return;
+          const serverChecked = new Set(
+            Object.keys(checks).filter((k) => checks[k] === true),
+          );
+          const toReplay = opsStillNeedingReplay(queued, serverChecked);
+
+          const token = await getAuthToken();
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (token !== null) headers["Authorization"] = `Bearer ${token}`;
+
+          for (const op of toReplay) {
+            try {
+              const res = await fetch(`${API_URL}/hallkeeper/${op.configId}/progress`, {
+                method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey }),
+              });
+              if (res.ok) await ackProgress(op.configId, op.rowKey);
+            } catch {
+              // Leave queued for next flush.
+            }
+          }
+
+          // Acknowledge any ops that were already-converged no-ops too.
+          for (const op of queued) {
+            if (!toReplay.some((r) => r.rowKey === op.rowKey)) {
+              await ackProgress(op.configId, op.rowKey);
+            }
+          }
+
+          const remaining = await listPendingProgress();
+          setPendingCount(remaining.length);
+        } catch {
+          // Don't surface — flush failures are silent ops noise.
+        }
+      })();
+    };
+
+    // Initial drain on mount in case the previous session left ops.
+    flush();
+
+    window.addEventListener("online", flush);
+    return () => {
+      window.removeEventListener("online", flush);
+    };
   }, [configId, checks]);
 
   // --- Phase collapse ---
@@ -294,7 +400,52 @@ export function HallkeeperPage(): React.ReactElement {
   // MAIN RENDER
   // =====================================================================
   return (
-    <div className="hk-page" style={pageStyle}>
+    <main
+      className="hk-page"
+      style={pageStyle}
+      aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}
+    >
+      {/* Skip link — first focusable element; jumps keyboard users
+          past the header straight into the manifest. Off-screen
+          until focused — standard skip-link pattern so sighted
+          users don't see it unless they tab into it. */}
+      <a
+        href="#hk-manifest"
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 8,
+          padding: "8px 14px",
+          background: "#1a1a2e",
+          color: "#fff",
+          borderRadius: 6,
+          fontSize: 13,
+          textDecoration: "none",
+          zIndex: 1000,
+          transform: "translateY(-200%)",
+          transition: "transform 0.15s",
+        }}
+        onFocus={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+        onBlur={(e) => { e.currentTarget.style.transform = "translateY(-200%)"; }}
+      >
+        Skip to setup manifest
+      </a>
+
+      {/* === REVIEW STATUS BANNER ===
+          Surfaces whether this sheet is approved (source of truth) or a
+          preview. Gracefully no-ops for configs that pre-date the review
+          workflow — rendering nothing when the status / snapshot aren't
+          accessible. */}
+      <HallkeeperStatusBanner configId={data.config.id} />
+
+      {/* === OFFLINE QUEUE BADGE — visible when toggles are queued === */}
+      {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
+
+      {/* === APPROVAL STAMP — only renders on approved sheets === */}
+      {data.approval !== null && (
+        <ApprovalStampBanner approval={data.approval} timezone={data.venue.timezone} />
+      )}
+
       {/* === HEADER === */}
       <header style={headerStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -331,6 +482,26 @@ export function HallkeeperPage(): React.ReactElement {
         <InstructionsBanner instructions={data.instructions} />
       )}
 
+      {/* === ACCESSIBILITY CALLOUTS === */}
+      {data.instructions !== null && (
+        <AccessibilityCallouts
+          callouts={buildAccessibilityCallouts(data.instructions.accessibility)}
+        />
+      )}
+
+      {/* === DIETARY SUMMARY === */}
+      {data.instructions !== null && data.instructions.dietary !== null
+        && hasDietaryContent(data.instructions.dietary) && (
+        <DietarySummaryBlock dietary={data.instructions.dietary} />
+      )}
+
+      {/* === DOOR SCHEDULE === */}
+      {data.instructions !== null && (() => {
+        const summary = buildDoorScheduleSummary(data.instructions.doorSchedule);
+        if (summary === null) return null;
+        return <DoorScheduleBlock summary={summary} />;
+      })()}
+
       {/* === DIAGRAM — interactive floor plan with row↔marker link === */}
       <section ref={diagramRef} style={{ margin: "14px 0" }}>
         <InteractiveFloorPlan
@@ -356,7 +527,7 @@ export function HallkeeperPage(): React.ReactElement {
       </section>
 
       {/* === PHASES === */}
-      <section style={{ marginBottom: 16 }}>
+      <section id="hk-manifest" style={{ marginBottom: 16 }} aria-label="Setup manifest">
         {data.phases.map((phase) => (
           <PhaseBlock
             key={phase.phase}
@@ -432,7 +603,7 @@ export function HallkeeperPage(): React.ReactElement {
         <div style={{ fontSize: 10, color: TEXT_MUT }}>{data.space.name} — {formatDims(data.space)}</div>
         <div style={{ fontSize: 9, color: "#444", marginTop: 4 }}>Generated by OMNITWIN — {new Date(data.generatedAt).toLocaleString()}</div>
       </footer>
-    </div>
+    </main>
   );
 }
 
@@ -685,3 +856,372 @@ const stickyBar: React.CSSProperties = {
 const footerStyle: React.CSSProperties = {
   textAlign: "center", paddingTop: 16, borderTop: "1px solid #222",
 };
+
+// ---------------------------------------------------------------------------
+// AccessibilityCallouts — critical / warning / info bands.
+//
+// Critical callouts (hearing loop, wheelchair spaces, sign-language
+// interpreter) render FIRST in a red-bordered stack at the top so the
+// hallkeeper sees them before anything else. Warning + info callouts
+// follow in a compact info block. Empty → renders nothing.
+// ---------------------------------------------------------------------------
+
+function AccessibilityCallouts(
+  { callouts }: { callouts: readonly AccessibilityCallout[] },
+): React.ReactElement | null {
+  if (callouts.length === 0) return null;
+  const critical = callouts.filter((c) => c.severity === "critical");
+  const other = callouts.filter((c) => c.severity !== "critical");
+
+  return (
+    <section style={{ margin: "12px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+      {critical.length > 0 && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          style={{
+            padding: "12px 14px",
+            borderLeft: `4px solid ${SEVERITY_PALETTE.critical.border}`,
+            background: "rgba(239, 68, 68, 0.12)",
+            borderRadius: "0 6px 6px 0",
+          }}
+        >
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+            textTransform: "uppercase",
+            color: SEVERITY_PALETTE.critical.border,
+            marginBottom: 6,
+          }}>
+            Critical — action required before guests arrive
+          </div>
+          {critical.map((c, i) => (
+            <div key={`${c.label}-${String(i)}`} style={{ fontSize: 12, color: "#fff", padding: "3px 0" }}>
+              <strong style={{ color: SEVERITY_PALETTE.critical.border }}>{c.label}:</strong>{" "}
+              <span style={{ color: TEXT_SEC }}>{c.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {other.length > 0 && (
+        <div
+          role="status"
+          style={{
+            padding: "10px 14px",
+            borderLeft: `3px solid ${SEVERITY_PALETTE.info.border}`,
+            background: "rgba(255, 255, 255, 0.02)",
+            borderRadius: "0 6px 6px 0",
+            border: `1px solid ${BORDER}`,
+          }}
+        >
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+            textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
+          }}>
+            Accessibility
+          </div>
+          {other.map((c, i) => (
+            <div key={`${c.label}-${String(i)}`} style={{ fontSize: 12, color: TEXT_SEC, padding: "2px 0" }}>
+              <strong style={{ color: "#fff" }}>{c.label}:</strong> {c.detail}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DietarySummaryBlock — single-line summary row.
+//
+// Only counts with value > 0 render. Empty → parent gates via
+// hasDietaryContent. Total is bolded + gold so the hallkeeper's eye
+// lands on it first. Other allergies, when set, render on a second line.
+// ---------------------------------------------------------------------------
+
+import type { DietarySummary, DoorScheduleSummary } from "@omnitwin/types";
+
+type DietaryCountKey = "vegetarian" | "vegan" | "glutenFree" | "nutFree" | "halal" | "kosher";
+
+const DIETARY_LABELS: readonly { readonly key: DietaryCountKey; readonly label: string }[] = [
+  { key: "vegetarian", label: "Veg" },
+  { key: "vegan", label: "Vegan" },
+  { key: "glutenFree", label: "GF" },
+  { key: "nutFree", label: "Nut-free" },
+  { key: "halal", label: "Halal" },
+  { key: "kosher", label: "Kosher" },
+];
+
+function DietarySummaryBlock(
+  { dietary }: { dietary: DietarySummary },
+): React.ReactElement {
+  const total = dietaryTotal(dietary);
+  const entries = DIETARY_LABELS
+    .map((d) => ({ ...d, count: dietary[d.key] }))
+    .filter((d) => d.count > 0);
+
+  return (
+    <section
+      style={{
+        margin: "12px 0",
+        padding: "10px 14px",
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${BORDER}`,
+        borderRadius: 8,
+        borderLeft: `3px solid ${GOLD}`,
+      }}
+    >
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+        textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
+      }}>
+        Dietary — <span style={{ color: GOLD }}>{String(total)}</span> special meals
+      </div>
+      {entries.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: "#fff" }}>
+          {entries.map((d) => (
+            <span key={d.key}>
+              <strong style={{ color: GOLD, fontVariantNumeric: "tabular-nums" }}>{String(d.count)}</strong>
+              <span style={{ color: TEXT_SEC, marginLeft: 4 }}>{d.label}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {dietary.otherAllergies.trim().length > 0 && (
+        <div style={{
+          fontSize: 12, color: "#fff", marginTop: 6,
+          padding: "6px 10px",
+          background: "rgba(239, 68, 68, 0.12)",
+          borderLeft: `3px solid ${SEVERITY_PALETTE.critical.border}`,
+          borderRadius: "0 4px 4px 0",
+        }}>
+          <strong style={{ color: SEVERITY_PALETTE.critical.border }}>Allergies:</strong>{" "}
+          <span>{dietary.otherAllergies.trim()}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DoorScheduleBlock — compact per-door timeline.
+//
+// Each door renders a label + ordered list of {time} {open|lock} {note}
+// rows. Events already sorted by buildDoorScheduleSummary. Open events
+// get a green dot; lock events a muted dot — fast visual parsing.
+// ---------------------------------------------------------------------------
+
+function DoorScheduleBlock(
+  { summary }: { summary: DoorScheduleSummary },
+): React.ReactElement {
+  const fmtTime = (iso: string): string => {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <section
+      style={{
+        margin: "12px 0",
+        padding: "10px 14px",
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${BORDER}`,
+        borderRadius: 8,
+      }}
+    >
+      <div style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+        textTransform: "uppercase", color: TEXT_SEC, marginBottom: 8,
+      }}>
+        Door schedule
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {summary.entries.map((door, doorIdx) => (
+          <div key={`${door.label}-${String(doorIdx)}`}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 4 }}>
+              {door.label}
+            </div>
+            {door.events.length === 0 ? (
+              <div style={{ fontSize: 11, color: TEXT_MUT, paddingLeft: 12 }}>
+                No events scheduled
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {door.events.map((ev, eventIdx) => (
+                  <div
+                    key={`${String(doorIdx)}-${String(eventIdx)}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "10px 56px 60px 1fr",
+                      gap: 8,
+                      alignItems: "center",
+                      fontSize: 12,
+                      color: TEXT_SEC,
+                      padding: "2px 0",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: ev.kind === "open" ? GREEN : TEXT_MUT,
+                      }}
+                    />
+                    <span style={{ color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+                      {fmtTime(ev.at)}
+                    </span>
+                    <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 10, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
+                      {ev.kind}
+                    </span>
+                    <span>{ev.note}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ApprovalStampBanner — surfaces the PDF's approval band on the tablet.
+//
+// Renders a green full-width band at the top of the page (above the
+// status banner and header) with:
+//   - checkmark + "APPROVED" + snapshot version (left)
+//   - approver name + ISO-formatted date (right)
+//
+// Mirrors the PDF banner pixel-for-pixel in intent: one line, authoritative
+// colour from the shared `BRAND.greenDeep` token, no animation. The
+// hallkeeper sees the same proof-of-sign-off on paper and on screen.
+// ---------------------------------------------------------------------------
+
+function ApprovalStampBanner({
+  approval,
+  timezone,
+}: {
+  approval: SheetApproval;
+  timezone: string;
+}): React.ReactElement {
+  // Pin rendering to the venue's own IANA timezone so the displayed
+  // date matches the PDF and doesn't shift by a day near midnight UTC
+  // depending on the reader's device. `timezone` is passed through
+  // from /v2 → `data.venue.timezone` (migration 0015).
+  const approvedDate = new Date(approval.approvedAt).toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: timezone,
+  });
+  return (
+    <div
+      role="status"
+      aria-label={`Approved version ${String(approval.version)} by ${approval.approverName} on ${approvedDate}`}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 16px",
+        marginBottom: 10,
+        background: BRAND.greenDeep,
+        color: "#fff",
+        borderRadius: 8,
+        fontWeight: 600,
+        fontSize: 13,
+        letterSpacing: 0.3,
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span aria-hidden="true" style={{ fontSize: 16, fontWeight: 800 }}>✓</span>
+        <span style={{ textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 800 }}>
+          Approved
+        </span>
+        <span style={{ opacity: 0.8 }}>·</span>
+        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+          v{String(approval.version)}
+        </span>
+      </span>
+      <span
+        style={{
+          display: "flex", alignItems: "center", gap: 10,
+          opacity: 0.95, fontWeight: 500,
+          minWidth: 0, // allow flex shrink so long names truncate instead of overflow
+        }}
+      >
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 280,
+          }}
+          title={approval.approverName}
+        >
+          {approval.approverName}
+        </span>
+        <span aria-hidden="true" style={{ opacity: 0.6, flexShrink: 0 }}>·</span>
+        <span style={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+          {approvedDate}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OfflinePendingBadge — surfaces queued progress toggles
+//
+// When the tablet's WiFi drops mid-event-setup, each checkbox toggle
+// is enqueued to IDB by the toggle handler. This badge tells the
+// hallkeeper "your last 3 edits haven't synced yet" so they don't
+// double-tap or worry that the work is lost. Drains to 0 when the
+// online-event flush completes — the badge disappears automatically.
+//
+// `role="status"` + an aria-label so screen readers announce the
+// pending count change.
+// ---------------------------------------------------------------------------
+
+function OfflinePendingBadge({ count }: { count: number }): React.ReactElement {
+  const noun = count === 1 ? "edit" : "edits";
+  const label = `${String(count)} offline ${noun} pending sync`;
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 14px",
+        marginBottom: 10,
+        background: "#fff4e0",
+        border: "1px solid #eec98f",
+        borderRadius: 8,
+        color: "#8c5a00",
+        fontWeight: 500,
+        fontSize: 13,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "#d97706",
+        }}
+      />
+      <span>{label}</span>
+      <span style={{ marginLeft: "auto", fontSize: 11, opacity: 0.75 }}>
+        will sync when WiFi returns
+      </span>
+    </div>
+  );
+}

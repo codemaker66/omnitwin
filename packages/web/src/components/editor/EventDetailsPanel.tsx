@@ -1,6 +1,27 @@
 import { useEffect, useState } from "react";
-import type { EventInstructions, PhaseDeadline, SetupPhase } from "@omnitwin/types";
-import { emptyEventInstructions, PHASE_METADATA, SETUP_PHASES, ConfigurationMetadataSchema } from "@omnitwin/types";
+import type {
+  AccessibilityRequirements,
+  DietarySummary,
+  DoorEvent,
+  DoorEventType,
+  DoorSchedule,
+  DoorScheduleEntry,
+  EventInstructions,
+  PhaseDeadline,
+  SetupPhase,
+  Zone,
+} from "@omnitwin/types";
+import {
+  ConfigurationMetadataSchema,
+  DOOR_EVENT_TYPES,
+  PHASE_METADATA,
+  SETUP_PHASES,
+  ZONES,
+  emptyAccessibilityRequirements,
+  emptyDietarySummary,
+  emptyDoorSchedule,
+  emptyEventInstructions,
+} from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
 import { GOLD, BORDER, CARD_BG, INPUT_BG, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
@@ -154,6 +175,156 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       return {
         ...prev,
         phaseDeadlines: prev.phaseDeadlines.filter((_, i) => i !== index),
+      };
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Accessibility — hearing loop, wheelchair spaces, interpreter, notes.
+  //
+  // The block is nullable: null means "planner hasn't touched this".
+  // Users opt in via "+ Add accessibility requirements" which creates an
+  // `emptyAccessibilityRequirements()` object; "Remove" sets it back to
+  // null so a previously-filled-then-cleared block doesn't ship an
+  // all-default object downstream.
+  // -------------------------------------------------------------------------
+
+  const addAccessibility = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, accessibility: emptyAccessibilityRequirements() }));
+  };
+  const clearAccessibility = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, accessibility: null }));
+  };
+  const updateAccessibility = (patch: Partial<AccessibilityRequirements>): void => {
+    setState((prev) => {
+      if (prev === null || prev.accessibility === null) return prev;
+      return { ...prev, accessibility: { ...prev.accessibility, ...patch } };
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Dietary — per-diet guest counts + free-text allergy notes.
+  // -------------------------------------------------------------------------
+
+  const addDietary = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, dietary: emptyDietarySummary() }));
+  };
+  const clearDietary = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, dietary: null }));
+  };
+  const updateDietary = (patch: Partial<DietarySummary>): void => {
+    setState((prev) => {
+      if (prev === null || prev.dietary === null) return prev;
+      return { ...prev, dietary: { ...prev.dietary, ...patch } };
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Door schedule — per-door timeline of open/lock events.
+  //
+  // Door entries hold `label` + ordered `events`. Renderer sorts events
+  // chronologically on output (see event-sheet-extractor.ts). The editor
+  // keeps the author's input order so an accidental reorder during edit
+  // doesn't trip muscle memory.
+  // -------------------------------------------------------------------------
+
+  const addDoorSchedule = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, doorSchedule: emptyDoorSchedule() }));
+  };
+  const clearDoorSchedule = (): void => {
+    setState((prev) => (prev === null ? prev : { ...prev, doorSchedule: null }));
+  };
+  const addDoor = (): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      if (prev.doorSchedule.entries.length >= 12) return prev;
+      const next: DoorScheduleEntry = { label: "Front door", events: [] };
+      return {
+        ...prev,
+        doorSchedule: { entries: [...prev.doorSchedule.entries, next] },
+      };
+    });
+  };
+  const removeDoor = (doorIdx: number): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      return {
+        ...prev,
+        doorSchedule: {
+          entries: prev.doorSchedule.entries.filter((_, i) => i !== doorIdx),
+        },
+      };
+    });
+  };
+  const updateDoorLabel = (doorIdx: number, label: string): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      return {
+        ...prev,
+        doorSchedule: {
+          entries: prev.doorSchedule.entries.map((e, i) =>
+            i === doorIdx ? { ...e, label: label.slice(0, 100) } : e,
+          ),
+        },
+      };
+    });
+  };
+  const addDoorEvent = (doorIdx: number): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      const next: DoorEvent = {
+        at: defaultDeadlineTime(),
+        kind: "open",
+        note: "",
+      };
+      return {
+        ...prev,
+        doorSchedule: {
+          entries: prev.doorSchedule.entries.map((e, i) =>
+            i === doorIdx && e.events.length < 10
+              ? { ...e, events: [...e.events, next] }
+              : e,
+          ),
+        },
+      };
+    });
+  };
+  const removeDoorEvent = (doorIdx: number, eventIdx: number): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      return {
+        ...prev,
+        doorSchedule: {
+          entries: prev.doorSchedule.entries.map((e, i) =>
+            i === doorIdx
+              ? { ...e, events: e.events.filter((_, j) => j !== eventIdx) }
+              : e,
+          ),
+        },
+      };
+    });
+  };
+  const updateDoorEvent = (
+    doorIdx: number,
+    eventIdx: number,
+    patch: Partial<DoorEvent>,
+  ): void => {
+    setState((prev) => {
+      if (prev === null || prev.doorSchedule === null) return prev;
+      return {
+        ...prev,
+        doorSchedule: {
+          entries: prev.doorSchedule.entries.map((e, i) =>
+            i === doorIdx
+              ? {
+                  ...e,
+                  events: e.events.map((ev, j) =>
+                    j === eventIdx ? { ...ev, ...patch } : ev,
+                  ),
+                }
+              : e,
+          ),
+        },
       };
     });
   };
@@ -325,6 +496,62 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                   <button type="button" onClick={addDeadline} style={secondaryBtnStyle}>+ Add deadline</button>
                 )}
               </Section>
+
+              <Section
+                title="Accessibility"
+                hint="Hearing loops, wheelchair spaces, interpreters — anything the hallkeeper must have ready before guests arrive."
+              >
+                {state.accessibility === null ? (
+                  <button type="button" onClick={addAccessibility} style={secondaryBtnStyle}>
+                    + Add accessibility requirements
+                  </button>
+                ) : (
+                  <AccessibilityEditor
+                    value={state.accessibility}
+                    onChange={updateAccessibility}
+                    onClear={clearAccessibility}
+                  />
+                )}
+              </Section>
+
+              <Section
+                title="Dietary"
+                hint="Per-diet guest counts — drives the catering line on the hallkeeper sheet."
+              >
+                {state.dietary === null ? (
+                  <button type="button" onClick={addDietary} style={secondaryBtnStyle}>
+                    + Add dietary counts
+                  </button>
+                ) : (
+                  <DietaryEditor
+                    value={state.dietary}
+                    onChange={updateDietary}
+                    onClear={clearDietary}
+                  />
+                )}
+              </Section>
+
+              <Section
+                title="Door schedule"
+                hint="When each door opens and locks — the hallkeeper can page late arrivals to the right entrance."
+              >
+                {state.doorSchedule === null ? (
+                  <button type="button" onClick={addDoorSchedule} style={secondaryBtnStyle}>
+                    + Add door schedule
+                  </button>
+                ) : (
+                  <DoorScheduleEditor
+                    value={state.doorSchedule}
+                    onAddDoor={addDoor}
+                    onRemoveDoor={removeDoor}
+                    onUpdateDoorLabel={updateDoorLabel}
+                    onAddEvent={addDoorEvent}
+                    onRemoveEvent={removeDoorEvent}
+                    onUpdateEvent={updateDoorEvent}
+                    onClear={clearDoorSchedule}
+                  />
+                )}
+              </Section>
             </>
           )}
         </div>
@@ -493,4 +720,309 @@ function defaultDeadlineTime(): string {
   d.setDate(d.getDate() + 1);
   d.setHours(16, 30, 0, 0);
   return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Accessibility editor — flags, hearing-loop zone, wheelchair spaces,
+// large-print programmes, free-text notes. The "hearing loop requires a
+// zone" cross-field invariant is not enforced client-side here because
+// the extractor handles a null-zone case explicitly (it surfaces a
+// "planner action required" note in the callout rather than failing the
+// submit). Surfacing both states is more honest than client-side gating.
+// ---------------------------------------------------------------------------
+
+interface AccessibilityEditorProps {
+  readonly value: AccessibilityRequirements;
+  readonly onChange: (patch: Partial<AccessibilityRequirements>) => void;
+  readonly onClear: () => void;
+}
+
+function AccessibilityEditor({ value, onChange, onClear }: AccessibilityEditorProps): React.ReactElement {
+  const clampInt = (raw: string, max: number): number => {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 0) return 0;
+    return Math.min(n, max);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <CheckboxField
+          label="Hearing loop required"
+          checked={value.hearingLoopRequired}
+          onChange={(next) => { onChange({ hearingLoopRequired: next }); }}
+        />
+        {value.hearingLoopRequired && (
+          <div style={{ marginLeft: 22 }}>
+            <Field label="Zone the loop should cover">
+              <select
+                value={value.hearingLoopZone ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const zone: Zone | null = raw === "" ? null : (raw as Zone);
+                  onChange({ hearingLoopZone: zone });
+                }}
+                style={inputStyle}
+              >
+                <option value="">Not set — planner action required</option>
+                {ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+              </select>
+            </Field>
+          </div>
+        )}
+        <CheckboxField
+          label="Sign-language interpreter"
+          checked={value.signLanguageInterpreter}
+          onChange={(next) => { onChange({ signLanguageInterpreter: next }); }}
+        />
+        <CheckboxField
+          label="Step-free access required"
+          checked={value.stepFreeRouteRequired}
+          onChange={(next) => { onChange({ stepFreeRouteRequired: next }); }}
+        />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <Field label="Wheelchair spaces (0–50)">
+          <input
+            type="number" min={0} max={50}
+            value={value.wheelchairSpaces}
+            onChange={(e) => { onChange({ wheelchairSpaces: clampInt(e.target.value, 50) }); }}
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="Large-print programmes (0–500)">
+          <input
+            type="number" min={0} max={500}
+            value={value.largePrintProgrammes}
+            onChange={(e) => { onChange({ largePrintProgrammes: clampInt(e.target.value, 500) }); }}
+            style={inputStyle}
+          />
+        </Field>
+      </div>
+
+      <Field label="Notes">
+        <textarea
+          value={value.notes}
+          onChange={(e) => { onChange({ notes: e.target.value.slice(0, 1000) }); }}
+          rows={3}
+          placeholder="BSL interpreter stage-left. Assistance dogs welcome."
+          style={textareaStyle}
+        />
+      </Field>
+
+      <button type="button" onClick={onClear} style={secondaryBtnStyle}>
+        Remove accessibility block
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dietary editor — six per-diet counts + free-text allergy note.
+// Lays the six counts out in two rows of three so the form is scannable
+// without scrolling on a typical desktop panel.
+// ---------------------------------------------------------------------------
+
+interface DietaryEditorProps {
+  readonly value: DietarySummary;
+  readonly onChange: (patch: Partial<DietarySummary>) => void;
+  readonly onClear: () => void;
+}
+
+const DIETARY_FIELDS: readonly { readonly key: keyof DietarySummary; readonly label: string }[] = [
+  { key: "vegetarian", label: "Vegetarian" },
+  { key: "vegan", label: "Vegan" },
+  { key: "glutenFree", label: "Gluten-free" },
+  { key: "nutFree", label: "Nut-free" },
+  { key: "halal", label: "Halal" },
+  { key: "kosher", label: "Kosher" },
+];
+
+function DietaryEditor({ value, onChange, onClear }: DietaryEditorProps): React.ReactElement {
+  const clampInt = (raw: string): number => {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 0) return 0;
+    return Math.min(n, 10000);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {DIETARY_FIELDS.map(({ key, label }) => (
+          <Field key={key} label={label}>
+            <input
+              type="number" min={0} max={10000}
+              value={typeof value[key] === "number" ? value[key] : 0}
+              onChange={(e) => { onChange({ [key]: clampInt(e.target.value) } as Partial<DietarySummary>); }}
+              style={inputStyle}
+            />
+          </Field>
+        ))}
+      </div>
+
+      <Field label="Other allergies / notes">
+        <textarea
+          value={value.otherAllergies}
+          onChange={(e) => { onChange({ otherAllergies: e.target.value.slice(0, 1000) }); }}
+          rows={2}
+          placeholder="One guest: shellfish, severe. Two guests: sesame intolerance."
+          style={textareaStyle}
+        />
+      </Field>
+
+      <button type="button" onClick={onClear} style={secondaryBtnStyle}>
+        Remove dietary block
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Door schedule editor — add doors, add events per door, tune labels/kinds.
+// Caps mirror the Zod schema: 12 doors, 10 events/door.
+// ---------------------------------------------------------------------------
+
+interface DoorScheduleEditorProps {
+  readonly value: DoorSchedule;
+  readonly onAddDoor: () => void;
+  readonly onRemoveDoor: (doorIdx: number) => void;
+  readonly onUpdateDoorLabel: (doorIdx: number, label: string) => void;
+  readonly onAddEvent: (doorIdx: number) => void;
+  readonly onRemoveEvent: (doorIdx: number, eventIdx: number) => void;
+  readonly onUpdateEvent: (
+    doorIdx: number,
+    eventIdx: number,
+    patch: Partial<DoorEvent>,
+  ) => void;
+  readonly onClear: () => void;
+}
+
+function DoorScheduleEditor(props: DoorScheduleEditorProps): React.ReactElement {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {props.value.entries.map((door, doorIdx) => (
+        <div
+          key={doorIdx}
+          style={{
+            padding: 10,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 6,
+            background: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 28px", gap: 6, alignItems: "center", marginBottom: 8 }}>
+            <input
+              type="text"
+              value={door.label}
+              onChange={(e) => { props.onUpdateDoorLabel(doorIdx, e.target.value); }}
+              placeholder="Door label — e.g. Front door, Side door (Garthamlock St)"
+              style={inputStyle}
+            />
+            <button
+              type="button"
+              onClick={() => { props.onRemoveDoor(doorIdx); }}
+              aria-label="Remove door"
+              style={iconBtnStyle}
+            >
+              ×
+            </button>
+          </div>
+
+          {door.events.map((ev, eventIdx) => (
+            <div
+              key={eventIdx}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "90px 160px 1fr 28px",
+                gap: 6,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <select
+                value={ev.kind}
+                onChange={(e) => {
+                  props.onUpdateEvent(doorIdx, eventIdx, { kind: e.target.value as DoorEventType });
+                }}
+                style={inputStyle}
+              >
+                {DOOR_EVENT_TYPES.map((k) => (
+                  <option key={k} value={k}>{k === "open" ? "Open" : "Lock"}</option>
+                ))}
+              </select>
+              <input
+                type="datetime-local"
+                value={toDateTimeLocal(ev.at)}
+                onChange={(e) => {
+                  const next = fromDateTimeLocal(e.target.value, ev.at);
+                  props.onUpdateEvent(doorIdx, eventIdx, { at: next });
+                }}
+                style={inputStyle}
+              />
+              <input
+                type="text"
+                value={ev.note}
+                onChange={(e) => { props.onUpdateEvent(doorIdx, eventIdx, { note: e.target.value.slice(0, 200) }); }}
+                placeholder="Note (optional) — e.g. after VIP arrival"
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => { props.onRemoveEvent(doorIdx, eventIdx); }}
+                aria-label="Remove event"
+                style={iconBtnStyle}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          {door.events.length < 10 && (
+            <button
+              type="button"
+              onClick={() => { props.onAddEvent(doorIdx); }}
+              style={{ ...secondaryBtnStyle, marginTop: 4 }}
+            >
+              + Add open / lock event
+            </button>
+          )}
+        </div>
+      ))}
+
+      {props.value.entries.length < 12 && (
+        <button type="button" onClick={props.onAddDoor} style={secondaryBtnStyle}>
+          + Add door
+        </button>
+      )}
+
+      <button type="button" onClick={props.onClear} style={secondaryBtnStyle}>
+        Remove door schedule
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checkbox field — labeled checkbox used by the accessibility editor.
+// ---------------------------------------------------------------------------
+
+interface CheckboxFieldProps {
+  readonly label: string;
+  readonly checked: boolean;
+  readonly onChange: (next: boolean) => void;
+}
+
+function CheckboxField({ label, checked, onChange }: CheckboxFieldProps): React.ReactElement {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#eee", cursor: "pointer" }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => { onChange(e.target.checked); }}
+        style={{ accentColor: GOLD, cursor: "pointer" }}
+      />
+      {label}
+    </label>
+  );
 }

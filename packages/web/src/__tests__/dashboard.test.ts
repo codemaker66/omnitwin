@@ -18,8 +18,6 @@ vi.mock("../api/enquiries.js", () => ({
   getEnquiry: vi.fn(),
   transitionEnquiry: vi.fn(),
   getEnquiryHistory: vi.fn(),
-  getHallkeeperSheet: vi.fn(),
-  downloadHallkeeperPdf: vi.fn(),
 }));
 
 vi.mock("../api/loadouts.js", () => ({
@@ -407,26 +405,6 @@ describe("enquiries API", () => {
     expect(typeof mod.getEnquiry).toBe("function");
     expect(typeof mod.transitionEnquiry).toBe("function");
     expect(typeof mod.getEnquiryHistory).toBe("function");
-    expect(typeof mod.downloadHallkeeperPdf).toBe("function");
-  });
-
-  // Punch list #12: previously read `omnitwin_access_token` (legacy JWT
-  // key) from localStorage. After the Clerk migration this key is always
-  // null, silently 401-ing every download. This test reads the source
-  // and asserts the legacy key is gone.
-  it("downloadHallkeeperPdf does NOT use legacy localStorage token", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const src = await fs.readFile(
-      path.resolve("src/api/enquiries.ts"),
-      "utf-8",
-    );
-    // The dead code path is gone (a documentation comment can still
-    // mention the legacy key for context — what we want to forbid is the
-    // actual call site reading from localStorage).
-    expect(src).not.toMatch(/localStorage\.getItem\(["']omnitwin_access_token["']\)/);
-    // The replacement uses Clerk-aware token retrieval
-    expect(src).toMatch(/getAuthToken\(\)/);
   });
 });
 

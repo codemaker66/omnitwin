@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
+import { ReviewsView } from "../components/dashboard/ReviewsView.js";
 import { ClientSearchView } from "../components/dashboard/ClientSearchView.js";
 import { ClientProfile } from "../components/dashboard/ClientProfile.js";
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
@@ -89,6 +90,8 @@ export function DashboardPage(): React.ReactElement {
             onDetailClose={enquiryReturnContext !== null ? handleEnquiryDetailClose : undefined}
           />
         );
+      case "reviews":
+        return <ReviewsView />;
       case "search":
         return (
           <ClientSearchView

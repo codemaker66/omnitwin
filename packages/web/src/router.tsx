@@ -24,6 +24,12 @@ const RegisterPage = lazy(() =>
 const EditorPage = lazy(() =>
   import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage })),
 );
+const BlueprintPage = lazy(() =>
+  import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage })),
+);
+const LandingPage = lazy(() =>
+  import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage })),
+);
 const DashboardPage = lazy(() =>
   import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage })),
 );
@@ -54,6 +60,11 @@ function withSuspense(node: ReactElement): ReactElement {
 
 export const router = createBrowserRouter([
   {
+    // Public marketing homepage ported from the Claude Design handoff.
+    path: "/landing",
+    element: withSuspense(<LandingPage />),
+  },
+  {
     path: "/login",
     element: withSuspense(<LoginPage />),
   },
@@ -68,6 +79,18 @@ export const router = createBrowserRouter([
   {
     path: "/editor/:configId",
     element: withSuspense(<EditorPage />),
+  },
+  {
+    // 2D top-down blueprint editor. Mounted alongside the 3D editor rather
+    // than replacing it — both views share the same underlying scene data;
+    // the blueprint is the planner's flat-paper draft, the 3D editor is the
+    // photoreal walkthrough. Takes optional configId for deep-link.
+    path: "/blueprint",
+    element: withSuspense(<BlueprintPage />),
+  },
+  {
+    path: "/blueprint/:configId",
+    element: withSuspense(<BlueprintPage />),
   },
   {
     // Venue-scoped editor entry (B2). Opt-in multi-venue routing — when a

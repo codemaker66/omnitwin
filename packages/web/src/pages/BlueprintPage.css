@@ -1,0 +1,123 @@
+/* -----------------------------------------------------------------------------
+ * Blueprint page — responsive layout + touch-device affordances.
+ *
+ * The component body holds almost all per-element styling inline. This file
+ * covers exactly what inline styles can't: media queries, dynamic-viewport
+ * height, safe-area insets, pointer/hover detection.
+ * -----------------------------------------------------------------------------
+ */
+
+/* Dynamic viewport height so the canvas isn't clipped by a mobile
+ * browser's address bar / bottom nav. Falls back to 100vh. */
+.bp-root {
+  height: 100vh;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+
+/* ---------- breakpoints ----------
+ *   desktop  ≥ 900px  — three-column grid (original design)
+ *   tablet   ≥ 640px, < 900px — sidebar becomes a top strip
+ *   mobile   < 640px  — stack: canvas on top, controls below
+ */
+
+@media (max-width: 899px) {
+  .bp-body {
+    grid-template-columns: 1fr 220px !important;
+    grid-template-rows: auto 1fr;
+  }
+  .bp-left {
+    grid-column: 1 / -1;
+    flex-direction: row !important;
+    overflow-x: auto;
+    padding: 14px !important;
+    gap: 16px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--bp-rule, #d8cdb6);
+    max-height: 140px;
+  }
+  .bp-left > * {
+    min-width: 200px;
+  }
+}
+
+@media (max-width: 639px) {
+  .bp-body {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr auto;
+  }
+  .bp-right {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    max-height: 38vh;
+    overflow-y: auto;
+    border-left: none !important;
+    border-top: 1px solid var(--bp-rule, #d8cdb6);
+  }
+  .bp-canvas {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 45vh;
+  }
+  .bp-chrome-title {
+    font-size: 12px !important;
+  }
+  .bp-status-bar {
+    flex-wrap: wrap;
+    gap: 6px !important;
+    padding: 10px 12px !important;
+  }
+  .bp-status-bar .bp-cta {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Touch devices — bigger hit targets, tap-to-add cue on catalogue chips. */
+@media (hover: none) and (pointer: coarse) {
+  .bp-stepper-btn,
+  .bp-tool-btn,
+  .bp-pill,
+  .bp-chip-btn,
+  .bp-inspector-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .bp-chip-btn::after {
+    content: " +";
+    margin-left: 2px;
+    opacity: 0.6;
+  }
+  .bp-chip-btn,
+  .bp-pill,
+  .bp-furn {
+    -webkit-tap-highlight-color: rgba(140, 31, 31, 0.15);
+  }
+}
+
+/* Sidebars should still scroll vertically even though the canvas has
+ * touch-action: none. */
+.bp-left,
+.bp-right {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bp-chrome {
+  gap: 12px !important;
+}
+
+.bp-root,
+.bp-root * {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Override the app-shell's global golden cursor + hover/press animations. */
+.bp-root { cursor: auto; }
+.bp-root button,
+.bp-root [role="button"] {
+  transition: background .18s, border-color .18s, color .18s !important;
+}
+.bp-root button:hover:not(:disabled) { transform: none; filter: none; }
+.bp-root button:active:not(:disabled) { transform: none; filter: none; }

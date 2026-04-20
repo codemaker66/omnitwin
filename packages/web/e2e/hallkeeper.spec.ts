@@ -306,3 +306,61 @@ test.describe("Hallkeeper Page — authorized error states", () => {
     ).toBeVisible({ timeout: 8_000 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Approval stamp banner — Phase 4c audit trail
+//
+// When the config is in the `approved` review state, the API returns a
+// populated `approval` block on the /v2 payload. HallkeeperPage renders
+// an `ApprovalStampBanner` above the main header with version + approver
+// name + date. Unapproved sheets must NOT render the banner.
+// ---------------------------------------------------------------------------
+
+interface ApprovalFixture {
+  readonly version: number;
+  readonly approvedAt: string;
+  readonly approverName: string;
+}
+
+test.describe("Hallkeeper Page — approval stamp banner", () => {
+  test("renders the approval banner when approval is populated", async ({ page }) => {
+    const approval: ApprovalFixture = {
+      version: 3,
+      approvedAt: "2026-04-17T14:30:00.000Z",
+      approverName: "Catherine Tait",
+    };
+    await seedAuthenticatedPlanner(page);
+    // Include approval in the /v2 payload — the page reads `data.approval`.
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
+      void route.fulfill({ json: { data: { ...MOCK_SHEET, approval } } });
+    });
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
+      void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
+    });
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await page.waitForSelector("h1", { timeout: 10_000 });
+
+    // The banner has role="status" with an aria-label combining the
+    // three audit fields. Asserting on aria-label covers all three.
+    const banner = page.getByRole("status", {
+      name: /Approved version 3 by Catherine Tait/,
+    });
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("APPROVED");
+    await expect(banner).toContainText("v3");
+    await expect(banner).toContainText("Catherine Tait");
+    // Date rendered via toLocaleDateString("en-GB") — "17 Apr 2026".
+    await expect(banner).toContainText("17 Apr 2026");
+  });
+
+  test("does NOT render the approval banner when approval is null", async ({ page }) => {
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page); // MOCK_SHEET has no approval → null
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await page.waitForSelector("h1", { timeout: 10_000 });
+
+    // No status role element carrying "APPROVED" should exist.
+    const banner = page.getByRole("status", { name: /Approved version/ });
+    await expect(banner).toHaveCount(0);
+  });
+});

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Vector3 } from "three";
@@ -213,6 +213,13 @@ export interface CameraRigProps {
 export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
+
+  // Touch devices (iPad, iPhone) don't have a scroll wheel — the custom
+  // inertial-wheel zoom below is desktop-only. Enabling OrbitControls' own
+  // zoom on coarse-pointer devices wires pinch-to-zoom through the same
+  // control surface used by orbit/pan, so two-finger gestures work out of
+  // the box. Desktop wheel remains owned by the custom inertial handler.
+  const isTouchDevice = useIsTouchDevice();
 
   const limits = computeDistanceLimits(dimensions);
   const bounds = computePanBounds(dimensions);
@@ -441,7 +448,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
       makeDefault
       enableDamping
       dampingFactor={DAMPING_FACTOR}
-      enableZoom={false}
+      enableZoom={isTouchDevice}
       minPolarAngle={MIN_POLAR_ANGLE}
       maxPolarAngle={MAX_POLAR_ANGLE}
       minDistance={limits.minDistance}
@@ -457,4 +464,24 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
       onChange={onControlsChange}
     />
   );
+}
+
+/**
+ * Detect coarse-pointer (touch) devices at mount + on media-query change.
+ * Used to selectively enable OrbitControls' built-in pinch-zoom on iPad
+ * and iPhone without disturbing the desktop wheel-zoom handler.
+ */
+function useIsTouchDevice(): boolean {
+  const [isTouch, setIsTouch] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const handler = (e: MediaQueryListEvent): void => { setIsTouch(e.matches); };
+    mq.addEventListener("change", handler);
+    return () => { mq.removeEventListener("change", handler); };
+  }, []);
+  return isTouch;
 }

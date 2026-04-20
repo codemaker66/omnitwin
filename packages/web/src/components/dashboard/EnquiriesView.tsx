@@ -120,13 +120,6 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     }
   };
 
-  const handleDownloadPdf = async (id: string): Promise<void> => {
-    try {
-      await enquiriesApi.downloadHallkeeperPdf(id);
-      addToast("PDF downloaded", "success");
-    } catch { addToast("Failed to download PDF", "error"); }
-  };
-
   if (selected !== undefined) {
     const isGuest = selected.userId === null;
     return (
@@ -180,10 +173,9 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
                 View Layout
               </a>
             )}
-            <button type="button" onClick={() => { void handleDownloadPdf(selected.id); }}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#6b7280", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-              Download Sheet
-            </button>
+            {/* The legacy per-enquiry hallkeeper PDF was removed. The new flow
+                serves an approved-snapshot PDF at /hallkeeper/:configId/sheet
+                (see Phase 3 for the dashboard-embedded entry point). */}
           </div>
 
           {history.length > 0 && (

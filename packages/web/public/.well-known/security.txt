@@ -1,0 +1,17 @@
+# OMNITWIN Security Policy (RFC 9116)
+#
+# If you've found a security vulnerability, please report it to the
+# contact below. We aim to acknowledge reports within 24 hours and
+# resolve critical issues within 7 days.
+
+Contact: mailto:security@omnitwin.com
+Expires: 2027-04-19T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://omnitwin.com/.well-known/security.txt
+Policy: https://omnitwin.com/security-policy
+Hiring: https://omnitwin.com/careers
+
+# Notes for researchers:
+#   - Please do not access data belonging to other users.
+#   - Please do not perform denial-of-service testing against production.
+#   - We're happy to discuss scope on a staging environment — email us first.

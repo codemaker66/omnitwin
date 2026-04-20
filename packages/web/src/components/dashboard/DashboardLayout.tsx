@@ -8,7 +8,7 @@ import * as spacesApi from "../../api/spaces.js";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "search" | "loadouts" | "settings" | "admin";
+type DashboardView = "enquiries" | "reviews" | "search" | "loadouts" | "settings" | "admin";
 
 const sidebarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
@@ -43,6 +43,7 @@ interface DashboardLayoutProps {
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean }[] = [
   { view: "enquiries", label: "Enquiries" },
+  { view: "reviews", label: "Pending Reviews" },
   { view: "search", label: "Client Search" },
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
