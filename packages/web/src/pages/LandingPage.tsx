@@ -224,6 +224,34 @@ const PREVIEW_ITEMS: Record<string, PreviewItem> = {
   round: ROUND_ITEM,
 };
 
+// Room-to-container mapping. SVG viewBox is 840×470, room interior path
+// spans x=30..810, y=40..385 (780 × 345 units), labelled 21m × 10.5m.
+// So 1m horizontal = 780/21/840 × 100 ≈ 4.421%, 1m vertical = 345/10.5/470
+// × 100 ≈ 6.988%. Container CSS uses aspect-ratio 840/470, so container
+// percentages map linearly to viewBox units.
+const W_PER_M = (780 / 21 / 840) * 100;
+const H_PER_M = (345 / 10.5 / 470) * 100;
+const ROOM_LEFT_PCT = (30 / 840) * 100;
+const ROOM_TOP_PCT = (40 / 470) * 100;
+
+interface MetrePlacement {
+  /** Item's top-left x in metres, measured from the room's left wall. */
+  readonly x: number;
+  /** Item's top-left y in metres, measured from the room's back wall. */
+  readonly y: number;
+  readonly widthM: number;
+  readonly heightM: number;
+}
+
+function placeStyle(p: MetrePlacement): { left: string; top: string; width: string; height: string } {
+  return {
+    left: `${String(ROOM_LEFT_PCT + p.x * W_PER_M)}%`,
+    top: `${String(ROOM_TOP_PCT + p.y * H_PER_M)}%`,
+    width: `${String(p.widthM * W_PER_M)}%`,
+    height: `${String(p.heightM * H_PER_M)}%`,
+  };
+}
+
 function PlannerPreview(): ReactElement {
   const [selectedId, setSelectedId] = useState<string>("round-3");
   const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
@@ -332,7 +360,7 @@ function PlannerPreview(): ReactElement {
               opacity=".6"
             >
               <text x="420" y="32" textAnchor="middle" letterSpacing="0.8">21 m</text>
-              <text x="48" y="215" transform="rotate(-90 48 215)" letterSpacing="0.8">10.5 m</text>
+              <text x="18" y="215" transform="rotate(-90 18 215)" letterSpacing="0.8">10.5 m</text>
             </g>
           </svg>
 
@@ -346,9 +374,10 @@ function PlannerPreview(): ReactElement {
             <div className="coord">X 420 · Y 210 · 1:50</div>
           </div>
 
+          {/* Stage — back-left corner, 8 × 3 m */}
           <div
             className={furnClass("furn", "stage")}
-            style={{ left: "22%", top: "10%", width: "22%", height: "7%" }}
+            style={placeStyle({ x: 1.5, y: 0.5, widthM: 8, heightM: 3 })}
             onClick={() => { setSelectedId("stage"); }}
             role="button"
             tabIndex={0}
@@ -357,9 +386,10 @@ function PlannerPreview(): ReactElement {
             <span className="tag">STAGE · 8×3m</span>
             Stage
           </div>
+          {/* Bar — back wall right of stage, 6 × 0.9 m */}
           <div
             className={furnClass("furn dark", "bar")}
-            style={{ left: "56%", top: "10%", width: "20%", height: "6%" }}
+            style={placeStyle({ x: 13.5, y: 0.5, widthM: 6, heightM: 0.9 })}
             onClick={() => { setSelectedId("bar"); }}
             role="button"
             tabIndex={0}
@@ -368,9 +398,10 @@ function PlannerPreview(): ReactElement {
             <span className="tag dark">BAR · 6m</span>
             Bar
           </div>
+          {/* Dancefloor — right side below bar, 6 × 4 m */}
           <div
             className={furnClass("furn dark", "dancefloor")}
-            style={{ left: "66%", top: "24%", width: "24%", height: "18%" }}
+            style={placeStyle({ x: 13.5, y: 2.5, widthM: 6, heightM: 4 })}
             onClick={() => { setSelectedId("dancefloor"); }}
             role="button"
             tabIndex={0}
@@ -379,16 +410,20 @@ function PlannerPreview(): ReactElement {
             <span className="tag dark">DANCEFLOOR · 6×4m</span>
             Parquet
           </div>
+          {/* 10 round tables — 1.8 m / 6 ft diameter. Two rows × five.
+              Row centres at y=4.5 m and y=7.0 m; columns centre-spaced
+              2.4 m, first column centre at x=2.0 m. top-left = centre −
+              0.9 m (half the diameter). */}
           {([
-            ["5%", "32%"], ["17%", "32%"], ["29%", "32%"], ["41%", "32%"], ["53%", "32%"],
-            ["5%", "50%"], ["17%", "50%"], ["29%", "50%"], ["41%", "50%"], ["53%", "50%"],
-          ] as const).map(([left, top], i) => {
+            [2.0, 4.5], [4.4, 4.5], [6.8, 4.5], [9.2, 4.5], [11.6, 4.5],
+            [2.0, 7.0], [4.4, 7.0], [6.8, 7.0], [9.2, 7.0], [11.6, 7.0],
+          ] as const).map(([cx, cy], i) => {
             const id = `round-${String(i)}`;
             return (
               <div
                 key={id}
                 className={furnClass("furn round", id)}
-                style={{ left, top, width: "8.5%", aspectRatio: 1 }}
+                style={placeStyle({ x: cx - 0.9, y: cy - 0.9, widthM: 1.8, heightM: 1.8 })}
                 onClick={() => { setSelectedId(id); }}
                 role="button"
                 tabIndex={0}
@@ -398,9 +433,10 @@ function PlannerPreview(): ReactElement {
               </div>
             );
           })}
+          {/* Top table — centred front-of-room, 4.8 × 1 m */}
           <div
             className={furnClass("furn", "top-table")}
-            style={{ left: "36%", top: "74%", width: "24%", height: "6%" }}
+            style={placeStyle({ x: 8.1, y: 8.8, widthM: 4.8, heightM: 1 })}
             onClick={() => { setSelectedId("top-table"); }}
             role="button"
             tabIndex={0}
