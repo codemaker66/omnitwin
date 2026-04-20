@@ -187,7 +187,8 @@
 .th-landing .planner .body {
   display: grid;
   grid-template-columns: 280px 1fr 200px;
-  min-height: 460px;
+  /* Height is driven by the stage's aspect-ratio (below). The sidebar
+     and rightcol stretch to match via grid's default align-items: stretch. */
 }
 .th-landing .planner .rightcol {
   border-left: 1px solid var(--rule);
@@ -265,9 +266,14 @@
 }
 .th-landing .pill.on { background: var(--ink); color: var(--cream); border-color: var(--ink); }
 
-/* room stage */
+/* room stage — locked to the SVG's 840×470 viewBox aspect so the floor
+   plan doesn't stretch vertically when the right column makes the card
+   tall. Grid's align-items: stretch pulls the sidebar + rightcol to
+   match whatever height the stage computes. */
 .th-landing .stage {
   position: relative;
+  aspect-ratio: 840 / 470;
+  min-height: 320px;
   background:
     repeating-linear-gradient(0deg, color-mix(in oklab, var(--cream-3) 50%, transparent) 0 1px, transparent 1px 24px),
     repeating-linear-gradient(90deg, color-mix(in oklab, var(--cream-3) 50%, transparent) 0 1px, transparent 1px 24px),

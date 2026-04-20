@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import "./LandingPage.css";
 
@@ -163,7 +163,71 @@ function Hero(): ReactElement {
 // PLANNER PREVIEW — visual-only mock of the editor's Grand Hall banquet layout
 // -----------------------------------------------------------------------------
 
+interface PreviewItem {
+  readonly id: string;
+  readonly label: string;
+  readonly kv: readonly { readonly k: string; readonly v: string }[];
+  readonly placed: string;
+}
+
+const ROUND_ITEM: PreviewItem = {
+  id: "round",
+  label: "Round table · 10",
+  kv: [
+    { k: "Diameter", v: "1.8 m · 6 ft" }, { k: "Seats", v: "10" },
+    { k: "Linen", v: "Ivory" }, { k: "Centrepiece", v: "Low floral" },
+  ],
+  placed: "10 / 12 placed",
+};
+
+const PREVIEW_ITEMS: Record<string, PreviewItem> = {
+  stage: {
+    id: "stage",
+    label: "Stage · 8 × 3 m",
+    kv: [
+      { k: "Width", v: "8 m" }, { k: "Depth", v: "3 m" },
+      { k: "Height", v: "0.6 m" }, { k: "Power", v: "32A + 3× 13A" },
+    ],
+    placed: "1 / 1 placed",
+  },
+  bar: {
+    id: "bar",
+    label: "Bar · 6 m",
+    kv: [
+      { k: "Length", v: "6 m" }, { k: "Depth", v: "0.9 m" },
+      { k: "Stools", v: "8" }, { k: "Back bar", v: "Matte black" },
+    ],
+    placed: "1 / 1 placed",
+  },
+  dancefloor: {
+    id: "dancefloor",
+    label: "Dancefloor · 6 × 4 m",
+    kv: [
+      { k: "Finish", v: "Parquet" }, { k: "Width", v: "6 m" },
+      { k: "Length", v: "4 m" }, { k: "Capacity", v: "~80" },
+    ],
+    placed: "1 / 1 placed",
+  },
+  "top-table": {
+    id: "top-table",
+    label: "Top table · 14",
+    kv: [
+      { k: "Length", v: "4.8 m" }, { k: "Seats", v: "14" },
+      { k: "Linen", v: "Ivory" }, { k: "Style", v: "Long trestle" },
+    ],
+    placed: "1 / 1 placed",
+  },
+  round: ROUND_ITEM,
+};
+
 function PlannerPreview(): ReactElement {
+  const [selectedId, setSelectedId] = useState<string>("round-3");
+  const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
+  const info: PreviewItem = PREVIEW_ITEMS[selectedKind] ?? ROUND_ITEM;
+
+  const isSelected = (id: string): boolean => id === selectedId;
+  const furnClass = (base: string, id: string): string =>
+    isSelected(id) ? `${base} selected` : base;
   return (
     <div className="planner" aria-label="Planner preview (illustrative)">
       <div className="chrome">
@@ -202,11 +266,11 @@ function PlannerPreview(): ReactElement {
           </div>
         </aside>
 
-        <div className="stage" aria-hidden>
+        <div className="stage" aria-label="Floor plan preview — click furniture to inspect">
           <svg
             className="room-svg"
             viewBox="0 0 840 470"
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
           >
             <defs>
               <pattern
@@ -278,15 +342,36 @@ function PlannerPreview(): ReactElement {
             <div className="coord">X 420 · Y 210 · 1:50</div>
           </div>
 
-          <div className="furn" style={{ left: "22%", top: "10%", width: "22%", height: "7%" }}>
+          <div
+            className={furnClass("furn", "stage")}
+            style={{ left: "22%", top: "10%", width: "22%", height: "7%" }}
+            onClick={() => { setSelectedId("stage"); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("stage"); } }}
+          >
             <span className="tag">STAGE · 8×3m</span>
             Stage
           </div>
-          <div className="furn dark" style={{ left: "56%", top: "10%", width: "20%", height: "6%" }}>
+          <div
+            className={furnClass("furn dark", "bar")}
+            style={{ left: "56%", top: "10%", width: "20%", height: "6%" }}
+            onClick={() => { setSelectedId("bar"); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("bar"); } }}
+          >
             <span className="tag dark">BAR · 6m</span>
             Bar
           </div>
-          <div className="furn dark" style={{ left: "66%", top: "24%", width: "24%", height: "18%" }}>
+          <div
+            className={furnClass("furn dark", "dancefloor")}
+            style={{ left: "66%", top: "24%", width: "24%", height: "18%" }}
+            onClick={() => { setSelectedId("dancefloor"); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("dancefloor"); } }}
+          >
             <span className="tag dark">DANCEFLOOR · 6×4m</span>
             Parquet
           </div>
@@ -294,18 +379,29 @@ function PlannerPreview(): ReactElement {
             ["5%", "32%"], ["17%", "32%"], ["29%", "32%"], ["41%", "32%"], ["53%", "32%"],
             ["5%", "50%"], ["17%", "50%"], ["29%", "50%"], ["41%", "50%"], ["53%", "50%"],
           ] as const).map(([left, top], i) => {
-            const selected = i === 2;
+            const id = `round-${String(i)}`;
             return (
               <div
-                key={`round-${String(i)}`}
-                className={selected ? "furn round selected" : "furn round"}
+                key={id}
+                className={furnClass("furn round", id)}
                 style={{ left, top, width: "8.5%", aspectRatio: 1 }}
+                onClick={() => { setSelectedId(id); }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(id); } }}
               >
                 10
               </div>
             );
           })}
-          <div className="furn" style={{ left: "36%", top: "74%", width: "24%", height: "6%" }}>
+          <div
+            className={furnClass("furn", "top-table")}
+            style={{ left: "36%", top: "74%", width: "24%", height: "6%" }}
+            onClick={() => { setSelectedId("top-table"); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId("top-table"); } }}
+          >
             <span className="tag">TOP TABLE · 14</span>
             Top table
           </div>
@@ -322,13 +418,14 @@ function PlannerPreview(): ReactElement {
           </div>
         </div>
 
-        <aside className="rightcol" aria-hidden>
-          <h5>Round table · 10</h5>
-          <div className="kv"><span>Diameter</span><span>1.8 m · 6 ft</span></div>
-          <div className="kv"><span>Seats</span><span>10</span></div>
-          <div className="kv"><span>Linen</span><span>Ivory</span></div>
-          <div className="kv"><span>Centrepiece</span><span>Low floral</span></div>
-          <div className="footer-note">10 / 12 placed</div>
+        <aside className="rightcol" aria-live="polite">
+          <h5>{info.label}</h5>
+          {info.kv.map((row) => (
+            <div key={row.k} className="kv">
+              <span>{row.k}</span><span>{row.v}</span>
+            </div>
+          ))}
+          <div className="footer-note">{info.placed}</div>
           <div className="section">
             <h5>Fire &amp; safety</h5>
             <div className="kv"><span>Egress</span><span style={{ color: "oklch(0.55 0.15 145)" }}>✓ Clear</span></div>
