@@ -1,0 +1,81 @@
+# =============================================================================
+# OMNITWIN — Production deploy pipeline
+# =============================================================================
+# Runs only on push to master, AFTER the CI workflow has passed (gated
+# via workflow_run). Applies pending DB migrations against the
+# production DATABASE_URL, then Railway's native GitHub integration
+# rebuilds + redeploys the container image automatically.
+#
+# Railway deploy is deliberately NOT triggered from this workflow —
+# coupling deploy orchestration into our repo would mean a Railway-
+# token secret lives here indefinitely. Letting Railway's built-in
+# webhook handle deploys keeps the secret surface minimal.
+#
+# Required GitHub Secrets:
+#   DATABASE_URL — Neon production pooled connection string
+# =============================================================================
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [master]
+    types: [completed]
+
+# Only one deploy at a time; later ones cancel earlier queued runs to
+# avoid a stale commit racing ahead.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply DB migrations
+    # Only proceed if CI actually succeeded.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by api)
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Apply pending Drizzle migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -e
+          echo "Applying migrations via drizzle-kit..."
+          pnpm --filter @omnitwin/api db:migrate
+          echo "Migrations applied."
+
+  notify-railway:
+    name: Notify (Railway auto-deploys via git)
+    needs: migrate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print deploy context
+        run: |
+          echo "Migrations applied for commit ${{ github.event.workflow_run.head_sha }}."
+          echo "Railway's GitHub integration is triggering the container build + deploy."
+          echo "Monitor progress: https://railway.app/"

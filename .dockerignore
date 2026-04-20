@@ -1,0 +1,76 @@
+# -----------------------------------------------------------------------------
+# Docker build context excludes
+#
+# Everything here is irrelevant to the API runtime image. Keeping them
+# out shrinks context-send time on every build (faster CI) and prevents
+# dev secrets / test data / source maps / bundler caches from ever
+# ending up in the image layer.
+# -----------------------------------------------------------------------------
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Node
+**/node_modules
+**/npm-debug.log
+**/.npm
+**/.pnpm-store
+
+# Build outputs — the build stage produces fresh ones
+**/dist
+**/build
+**/.next
+**/.turbo
+**/.vite
+**/coverage
+
+# Tests — not needed in the runtime image
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/vitest.config.*
+**/playwright.config.*
+**/e2e
+**/test-results
+**/playwright-report
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment files — injected at runtime, never baked in
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Logs
+**/*.log
+logs
+
+# Docs — not needed in the runtime image
+docs
+*.md
+!README.md
+
+# Web package — Vercel builds and hosts this, not Railway
+packages/web/src
+packages/web/public
+packages/web/dist
+packages/web/*.html
+packages/web/vite.config.*
+packages/web/index.html
+packages/web/.vite
+
+# Misc
+.claude
+.cursor
+.github
+ACQUISITION_CLOSEOUT.md

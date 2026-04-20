@@ -9,3 +9,8 @@ dist/
 test-results/
 playwright-report/
 blob-report/
+
+# react-email dev preview / export artifacts (regenerated via `pnpm email:dev` / `email:export`)
+.react-email/
+emails-out/
+.email-export-test/

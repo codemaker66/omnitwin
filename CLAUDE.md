@@ -108,3 +108,52 @@ NEVER silently simplify requirements or skip parts of the task.
 ## When Blake Asks Something That Contradicts the Architecture
 Flag it: "You're asking for [X] but the spec says [Y]. Do you want to override?
 If yes, I'll implement your way. If no, I'll follow the spec."
+
+## Maintenance: Adding New Gotchas
+
+When you learn a new project trap, classify BEFORE writing:
+
+- **CORE** (append to this file): applies to every task, or silent
+  violation is catastrophic. Examples: new tech-stack invariant, new
+  handoff requirement, new quality-bar rule.
+- **SPECIFIC** (new file under `.claude/gotchas/`, or under
+  `.claude/conventions/` for package-specific conventions — create the
+  conventions directory if it doesn't exist yet): only relevant when
+  working in a particular area or with a particular library. Examples:
+  a library's hallucination-prone API, a package-specific convention, a
+  build-tool workaround.
+
+If SPECIFIC:
+1. Create the file with `**Read this when:** <trigger condition>` as
+   its first line so future sessions decide relevance without reading
+   the body.
+2. Add a one-line TOC entry below, written as a *trigger condition* —
+   not a topic label.
+3. Do not duplicate content between core and specific — each gotcha
+   lives in exactly one place.
+
+Do not append to core without this classification step.
+
+Related coupling constraint: CLAUDE.md and `.claude/AI_INTEGRITY_RULES.md`
+duplicate the Handoff Protocol and the Blake Clause deliberately. If you
+reword either rule on one side, update the other in the same commit.
+
+## Specific Gotchas & Conventions — Load When Triggered
+
+If what you're about to do doesn't match any trigger below, proceed with
+core rules only. Do not speculatively load specific docs. Each doc below
+lists a trigger condition at its top; load it only when its trigger
+matches what you're about to do.
+
+- `.claude/gotchas/windows-v8-heap.md`
+  Read this when: adding or modifying a `vitest.config.ts`, writing a
+  new `typecheck` script, or seeing `MemoryExhaustion` / OOM errors
+  during `tsc --noEmit`, `vitest run`, or `pnpm -r run …` on Windows.
+
+- `.claude/gotchas/zod-passthrough-inference.md`
+  Read this when: writing or modifying a Zod schema that combines
+  `.passthrough()` with `.default()` or `.nullable()` members, passing
+  a schema as the generic argument to a `ZodType<T>`-typed client
+  helper (e.g. `api.get<T>(path, schema)`), or debugging cascading
+  `objectInputType vs objectOutputType is not assignable` errors at
+  the api client boundary.
