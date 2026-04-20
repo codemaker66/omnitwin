@@ -364,6 +364,18 @@
   color: var(--cream);
 }
 
+/* Chair — small circular marker around a round table. Non-interactive
+   (pointer-events: none set inline on each instance). Matches the
+   planner's visual idiom: hollow ink ring on cream so a ring of chairs
+   reads clearly against the floor's hatch pattern. */
+.th-landing .chair {
+  position: absolute;
+  border: 1px solid var(--ink);
+  background: var(--panel);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
 /* summary chips along bottom of stage */
 .th-landing .summary {
   position: absolute; left: 14px; bottom: 14px; right: 14px;

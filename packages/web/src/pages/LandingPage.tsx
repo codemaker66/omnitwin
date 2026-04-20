@@ -264,22 +264,71 @@ interface PlannerItem {
   readonly body: string;
 }
 
-const INITIAL_ITEMS: readonly PlannerItem[] = [
-  { id: "stage",      x: 1.5,  y: 0.5, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
-  { id: "bar",        x: 13.5, y: 0.5, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
+type EventType = "wedding" | "gala" | "conference";
+
+// Door positions on the north wall (gaps in the room outline):
+//   door 1: x ≈ 1.48–3.36 m, door 2: x ≈ 9.83–11.44 m, door 3: x ≈ 17.91–19.80 m.
+// Each door has a ~1 m swing arc drawn into the room. Any furniture placed
+// against the back wall at y < 1.1 m will overlap those arcs, so every
+// layout starts its back-wall items at y = 1.1 m for clearance.
+
+const WEDDING_ITEMS: readonly PlannerItem[] = [
+  { id: "stage",      x: 1.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",       tag: "STAGE · 8×3m",       body: "Stage" },
+  // Bar tucked between door 2 (ends at x≈11.4) and door 3 (starts at x≈17.9).
+  { id: "bar",        x: 11.5, y: 1.1, widthM: 6,   heightM: 0.9, klass: "furn dark",  tag: "BAR · 6m",           tagDark: true, body: "Bar" },
   { id: "dancefloor", x: 13.5, y: 2.5, widthM: 6,   heightM: 4,   klass: "furn dark",  tag: "DANCEFLOOR · 6×4m",  tagDark: true, body: "Parquet" },
-  { id: "round-0",    x: 1.1,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-1",    x: 3.5,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-2",    x: 5.9,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-3",    x: 8.3,  y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-4",    x: 10.7, y: 3.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-5",    x: 1.1,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-6",    x: 3.5,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-7",    x: 5.9,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-8",    x: 8.3,  y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "round-9",    x: 10.7, y: 6.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
-  { id: "top-table",  x: 8.1,  y: 8.8, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
-] as const;
+  { id: "round-0",    x: 1.1,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-1",    x: 3.5,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-2",    x: 5.9,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-3",    x: 8.3,  y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-4",    x: 10.7, y: 4.6, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-5",    x: 1.1,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-6",    x: 3.5,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-7",    x: 5.9,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-8",    x: 8.3,  y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "round-9",    x: 10.7, y: 7.1, widthM: 1.8, heightM: 1.8, klass: "furn round", body: "10" },
+  { id: "top-table",  x: 8.1,  y: 9.3, widthM: 4.8, heightM: 1,   klass: "furn",       tag: "TOP TABLE · 14",     body: "Top table" },
+];
+
+// Gala: standing/mingling emphasis. Two linear bars, a larger central
+// dancefloor, a dozen poseur high-tops scattered around. No big rounds.
+const GALA_ITEMS: readonly PlannerItem[] = [
+  { id: "stage",       x: 6.5,  y: 1.1, widthM: 8,   heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",       body: "Stage" },
+  { id: "bar-left",    x: 1.5,  y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark", tag: "BAR · 4m",           tagDark: true, body: "Bar" },
+  { id: "bar-right",   x: 15.5, y: 5,   widthM: 4,   heightM: 0.9, klass: "furn dark", tag: "BAR · 4m",           tagDark: true, body: "Bar" },
+  { id: "dancefloor",  x: 6,    y: 5.5, widthM: 9,   heightM: 3,   klass: "furn dark", tag: "DANCEFLOOR · 9×3m",  tagDark: true, body: "Parquet" },
+  { id: "poseur-0",    x: 2.5,  y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-1",    x: 2.5,  y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-2",    x: 4.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-3",    x: 6.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-4",    x: 8.5,  y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-5",    x: 10.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-6",    x: 12.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-7",    x: 14.5, y: 9.4, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-8",    x: 17.5, y: 8.8, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+  { id: "poseur-9",    x: 17.5, y: 7.2, widthM: 0.7, heightM: 0.7, klass: "furn round", body: "4" },
+];
+
+// Conference: stage at the back + lectern + 6 rows of delegate tables
+// facing the stage (left + right columns with a central aisle).
+const CONFERENCE_ITEMS: readonly PlannerItem[] = [
+  { id: "stage",   x: 6.5, y: 1.1, widthM: 8,  heightM: 3,   klass: "furn",      tag: "STAGE · 8×3m",    body: "Stage" },
+  { id: "lectern", x: 9.8, y: 4.3, widthM: 1,  heightM: 0.7, klass: "furn dark", tag: "LECTERN",         tagDark: true, body: "Lectern" },
+  { id: "row-1-l", x: 1,   y: 5.6, widthM: 8,  heightM: 0.8, klass: "furn",      tag: "ROW · 16 seats",  body: "Row 1" },
+  { id: "row-1-r", x: 12,  y: 5.6, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 1" },
+  { id: "row-2-l", x: 1,   y: 6.9, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 2" },
+  { id: "row-2-r", x: 12,  y: 6.9, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 2" },
+  { id: "row-3-l", x: 1,   y: 8.2, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 3" },
+  { id: "row-3-r", x: 12,  y: 8.2, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 3" },
+  { id: "row-4-l", x: 1,   y: 9.5, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 4" },
+  { id: "row-4-r", x: 12,  y: 9.5, widthM: 8,  heightM: 0.8, klass: "furn",                              body: "Row 4" },
+];
+
+const LAYOUTS: Record<EventType, readonly PlannerItem[]> = {
+  wedding: WEDDING_ITEMS,
+  gala: GALA_ITEMS,
+  conference: CONFERENCE_ITEMS,
+};
 
 /** Drag-state tracked in a ref so pointermove doesn't trigger a re-render
  *  on every tick — we only setState on real position changes. */
@@ -296,11 +345,42 @@ interface DragState {
 const ROOM_W_M = 21;
 const ROOM_H_M = 10.5;
 
+/** Per-seat chair placement around a round table. Ring of N chairs at
+ *  an offset radius just past the table edge. Returns centre-of-chair
+ *  positions in the room's metre space. */
+function chairRingPositions(
+  cx: number,
+  cy: number,
+  tableDiameterM: number,
+  seats: number,
+): readonly { x: number; y: number }[] {
+  const chairR = 0.25;               // half of a 0.5 × 0.5 m chair footprint
+  const ringR = tableDiameterM / 2 + chairR + 0.05; // 5 cm pull-out gap
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < seats; i += 1) {
+    const theta = (i / seats) * Math.PI * 2 - Math.PI / 2;
+    out.push({
+      x: cx + Math.cos(theta) * ringR - chairR,
+      y: cy + Math.sin(theta) * ringR - chairR,
+    });
+  }
+  return out;
+}
+
 function PlannerPreview(): ReactElement {
+  const [eventType, setEventType] = useState<EventType>("wedding");
   const [selectedId, setSelectedId] = useState<string>("round-3");
-  const [items, setItems] = useState<readonly PlannerItem[]>(INITIAL_ITEMS);
+  const [items, setItems] = useState<readonly PlannerItem[]>(WEDDING_ITEMS);
   const dragRef = useRef<DragState | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+
+  const switchLayout = (next: EventType): void => {
+    setEventType(next);
+    setItems(LAYOUTS[next]);
+    // Reset selection to something that exists in the new layout.
+    const first = LAYOUTS[next][0];
+    setSelectedId(first?.id ?? "");
+  };
 
   const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
   const info: PreviewItem = PREVIEW_ITEMS[selectedKind] ?? ROUND_ITEM;
@@ -376,9 +456,27 @@ function PlannerPreview(): ReactElement {
           <div className="field">
             <label>Event type</label>
             <div className="pill-row">
-              <button type="button" className="pill on">Wedding</button>
-              <button type="button" className="pill">Gala</button>
-              <button type="button" className="pill">Conference</button>
+              <button
+                type="button"
+                className={eventType === "wedding" ? "pill on" : "pill"}
+                onClick={() => { switchLayout("wedding"); }}
+              >
+                Wedding
+              </button>
+              <button
+                type="button"
+                className={eventType === "gala" ? "pill on" : "pill"}
+                onClick={() => { switchLayout("gala"); }}
+              >
+                Gala
+              </button>
+              <button
+                type="button"
+                className={eventType === "conference" ? "pill on" : "pill"}
+                onClick={() => { switchLayout("conference"); }}
+              >
+                Conference
+              </button>
             </div>
           </div>
           <div className="field">
@@ -472,6 +570,25 @@ function PlannerPreview(): ReactElement {
             </div>
           </div>
 
+          {/* Chairs — rendered BEHIND the tables (earlier in z-order) so
+              tapping a table hits the table, not a chair. 10 chairs around
+              each round 1.8 m table; 4 around each 0.7 m poseur. */}
+          {items.filter((it) => it.klass === "furn round").flatMap((table) => {
+            const seats = Number(table.body) || (table.widthM > 1 ? 10 : 4);
+            const cx = table.x + table.widthM / 2;
+            const cy = table.y + table.heightM / 2;
+            return chairRingPositions(cx, cy, table.widthM, seats).map((pos, idx) => (
+              <div
+                key={`chair-${table.id}-${String(idx)}`}
+                className="chair"
+                style={{
+                  ...placeStyle({ x: pos.x, y: pos.y, widthM: 0.5, heightM: 0.5 }),
+                  pointerEvents: "none",
+                }}
+                aria-hidden
+              />
+            ));
+          })}
           {/* Every piece is draggable. Pointer-based so it works on
               mouse + touch + pen; setPointerCapture keeps the drag alive
               when the cursor leaves the element. onClick stays usable for
