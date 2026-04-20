@@ -38,9 +38,12 @@ COPY packages/web/package.json ./packages/web/
 
 # --ignore-scripts skips the root postinstall (types build), which we
 # rerun in the build stage with source files available.
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    PNPM_STORE_DIR=/pnpm/store \
-    pnpm install --frozen-lockfile --ignore-scripts
+# NOTE: No BuildKit --mount=type=cache here. Railway rejects cache mount
+# ids that aren't prefixed with its `s/<service>-…` key scheme, and that
+# prefix isn't known at Dockerfile-write time. The tradeoff is a slower
+# cold build; docker layer caching still kicks in when the lockfile
+# hasn't changed.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # -----------------------------------------------------------------------------
 # Stage 2 — build
