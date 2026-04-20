@@ -153,7 +153,7 @@ function Hero(): ReactElement {
               <span className="preview-caption-sub">Scaled 1:50 · Grand Hall banquet</span>
             </div>
             <Link to="/plan" className="btn primary big preview-cta">
-              Open the real planner
+              Open the real planner in 3D
               <span className="arrow" aria-hidden>→</span>
             </Link>
           </div>
@@ -470,7 +470,6 @@ function PlannerPreview(): ReactElement {
               <div className="tool" title="Rotate">↻</div>
               <div className="tool" title="Measure">⟷</div>
             </div>
-            <div className="coord">X 420 · Y 210 · 1:50</div>
           </div>
 
           {/* Every piece is draggable. Pointer-based so it works on
