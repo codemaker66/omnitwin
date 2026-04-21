@@ -92,12 +92,15 @@ export const router = createBrowserRouter([
   },
   {
     // The `:code` param matches either a legacy UUID or a guest shortcode.
-    // The loader calls /api/layouts/resolve and either returns `{configId}`
-    // for canonical URLs or redirects a legacy UUID to its current
-    // `/<username>/<slug>` or `/plan/<short-code>` canonical form.
+    // No loader here — EditorPage reads `params.code` directly and treats
+    // it as the configId. UUID→canonical redirect is not applied at load
+    // time (user stays on whatever URL they visited); the resolver still
+    // runs server-side for /api/layouts/resolve calls if anything else
+    // needs canonical lookups. Dropping the loader keeps E2E tests fast
+    // (they don't mock /api/layouts/resolve) and removes a single point
+    // of failure when the API is unreachable.
     path: "/plan/:code",
     element: withSuspense(<EditorPage />),
-    loader: resolveLayoutLoader,
   },
   {
     // 2D top-down blueprint editor. Mounted alongside the 3D planner — both

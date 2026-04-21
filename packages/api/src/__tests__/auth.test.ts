@@ -6,6 +6,13 @@ import type { FastifyInstance } from "fastify";
 // ---------------------------------------------------------------------------
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
+// Clerk secret is required by the auth middleware; without it every
+// authenticated request returns 500 "Clerk not configured" before reaching
+// the token verifier. A dummy value is sufficient for these tests because
+// the test tokens are deliberately invalid — verifyToken throws, the
+// middleware catches, and we land in the 401 branch the tests assert on.
+// On CI the secret isn't injected via .env, so we have to set it inline.
+process.env["CLERK_SECRET_KEY"] = process.env["CLERK_SECRET_KEY"] ?? "sk_test_dummy";
 
 const { buildServer } = await import("../index.js");
 
