@@ -16,6 +16,7 @@ import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { publicConfigRoutes } from "./routes/public-configs.js";
+import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
@@ -253,6 +254,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(referenceLoadoutRoutes, { db, prefix: "/venues/:venueId/spaces/:spaceId/loadouts" });
   await server.register(referencePhotoRoutes, { db, prefix: "/loadouts/:loadoutId/photos" });
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
+  await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(clientRoutes, { db, prefix: "/clients" });

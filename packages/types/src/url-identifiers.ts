@@ -162,3 +162,50 @@ export function slugifyLayoutName(name: string): string {
 export type Username = z.infer<typeof UsernameSchema>;
 export type LayoutSlug = z.infer<typeof LayoutSlugSchema>;
 export type ShortCode = z.infer<typeof ShortCodeSchema>;
+
+// ---------------------------------------------------------------------------
+// Resolver input + response — the request/response contract between the
+// `/api/layouts/resolve` endpoint and every client that needs to convert
+// an incoming URL into a config lookup. Kept in @omnitwin/types so the
+// React Router loader (Phase 3) and the Fastify route (Phase 2) share
+// one source of truth.
+// ---------------------------------------------------------------------------
+
+/** Result when the incoming URL is already the canonical form. */
+const CanonicalResolveSchema = z.object({
+  status: z.literal("canonical"),
+  configId: z.string().uuid(),
+});
+
+/**
+ * Result when the URL is valid but the canonical has moved. `toPath` is
+ * the full path starting with `/` that the client should redirect to.
+ */
+const RedirectResolveSchema = z.object({
+  status: z.literal("redirect"),
+  configId: z.string().uuid(),
+  toPath: z.string().min(1),
+});
+
+/** Result when no config exists at this URL (or the URL is malformed). */
+const NotFoundResolveSchema = z.object({
+  status: z.literal("not_found"),
+});
+
+export const LayoutResolveResponseSchema = z.discriminatedUnion("status", [
+  CanonicalResolveSchema,
+  RedirectResolveSchema,
+  NotFoundResolveSchema,
+]);
+
+export type LayoutResolveResponse = z.infer<typeof LayoutResolveResponseSchema>;
+
+/**
+ * Query-string shape for the resolver endpoint:
+ *   GET /api/layouts/resolve?path=<url-encoded-path>
+ */
+export const LayoutResolveQuerySchema = z.object({
+  path: z.string().min(1).max(400),
+});
+
+export type LayoutResolveQuery = z.infer<typeof LayoutResolveQuerySchema>;

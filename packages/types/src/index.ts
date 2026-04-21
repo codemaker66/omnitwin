@@ -345,8 +345,12 @@ export {
   SHORTCODE_LENGTH,
   buildLayoutPathKey,
   slugifyLayoutName,
+  LayoutResolveResponseSchema,
+  LayoutResolveQuerySchema,
   type Username,
   type LayoutSlug,
   type ShortCode,
   type LayoutAliasKind,
+  type LayoutResolveResponse,
+  type LayoutResolveQuery,
 } from "./url-identifiers.js";
