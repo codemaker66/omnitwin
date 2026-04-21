@@ -88,6 +88,13 @@ export const users = pgTable("users", {
   organizationName: text("organization_name"),
   role: varchar("role", { length: 20 }).notNull(),
   venueId: uuid("venue_id").references(() => venues.id),
+  // URL-safe handle for the `/<username>/<slug>` namespace URLs.
+  // Mirrored from Clerk's username field via the clerk-webhook. Nullable
+  // during backfill; the UsernameGate component prompts legacy users on
+  // next sign-in. Shape (3-30 chars, lowercase alphanumeric with
+  // single-hyphen) is enforced by the DB CHECK constraint
+  // `users_username_shape` — see migration 0017_layout_urls.sql.
+  username: varchar("username", { length: 30 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -201,6 +208,14 @@ export const configurations = pgTable("configurations", {
    * renderer falls through cleanly when unset.
    */
   metadata: jsonb("metadata"),
+  // URL-path identifier. Exactly one of `slug` or `shortCode` is set per
+  // live row: user-owned configs get a slug (unique per user), guest
+  // configs get a nanoid-6 shortCode (globally unique). Both nullable
+  // during the 0017 → 0018 backfill window. Uniqueness is enforced via
+  // the partial indexes `configurations_user_slug_unique` and
+  // `configurations_short_code_unique` defined in migration 0017.
+  slug: varchar("slug", { length: 60 }),
+  shortCode: varchar("short_code", { length: 12 }),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -482,4 +497,36 @@ export const emailSends = pgTable("email_sends", {
 }, (table) => [
   index("email_sends_status_idx").on(table.status),
   index("email_sends_created_at_idx").on(table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 14. layout_aliases — every URL a configuration has ever resolved under.
+//
+// The URL resolver (services/layout-resolver.ts, Phase 2) normalises any
+// incoming layout URL to a `path_key` and looks it up here. Rows with
+// `retired_at IS NULL` are the current canonical address; non-null rows
+// are redirect-only historical records that 301 to the canonical form.
+//
+// `kind` distinguishes the three URL families: legacy UUID paths
+// (`/plan/<uuid>`), guest short codes (`/plan/<short_code>`), and
+// authenticated user slugs (`/<username>/<slug>`). `path_key` encodes
+// the full identifier with a one-letter prefix so a single index
+// handles all three lookups: `uuid:<id>` / `sc:<code>` / `u:<username>/<slug>`.
+//
+// FK ON DELETE CASCADE: when a configuration is hard-deleted, all its
+// aliases go with it — no dangling redirects. Soft-deletes
+// (configurations.deletedAt) leave aliases untouched so the row can be
+// restored without rebuilding URL history.
+// ---------------------------------------------------------------------------
+
+export const layoutAliases = pgTable("layout_aliases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  pathKey: text("path_key").notNull(),
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("layout_aliases_path_unique").on(table.pathKey),
+  index("layout_aliases_config_idx").on(table.configurationId),
 ]);
