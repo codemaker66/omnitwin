@@ -25,27 +25,37 @@ import type { CatalogueItem } from "../../lib/catalogue.js";
 // Styles
 // ---------------------------------------------------------------------------
 
-const TOOLBAR_W = 52;
+const TOOLBAR_W = 68;
 const PANEL_W = 290;
-const BG = "#1a1a1a";
 const GOLD = "#c9a84c";
-const ICON_SIZE = 20;
+const ICON_SIZE = 22;
 
 const toolbarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: TOOLBAR_W,
-  background: BG, borderRight: "1px solid #333",
+  // Subtle gradient + gold-tinted right border reads as "premium tool
+  // rail" instead of a flat dark strip; the outer shadow and inset
+  // accent tick give depth without competing with the 3D canvas.
+  background: "linear-gradient(180deg, #151515 0%, #1a1a1a 50%, #141414 100%)",
+  borderRight: "1px solid rgba(201,168,76,0.15)",
+  boxShadow: "2px 0 20px rgba(0,0,0,0.35), inset -1px 0 0 rgba(201,168,76,0.03)",
   display: "flex", flexDirection: "column", alignItems: "center",
-  padding: "12px 0", gap: 4, zIndex: 50,
+  padding: "14px 0", gap: 6, zIndex: 50,
   fontFamily: "'Inter', sans-serif",
 };
 
 const btnStyle = (active: boolean, disabled = false): React.CSSProperties => ({
-  width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-  border: "none", borderRadius: 8, cursor: disabled ? "default" : "pointer",
-  background: active ? GOLD : "transparent",
-  color: active ? BG : disabled ? "#555" : "#aaa",
-  transition: "background 0.15s, color 0.15s",
+  width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center",
+  border: "1px solid transparent",
+  borderRadius: 10, cursor: disabled ? "default" : "pointer",
+  background: active
+    ? `linear-gradient(145deg, ${GOLD}, #b6962f)`
+    : "rgba(255,255,255,0.02)",
+  color: active ? "#0e0e0e" : disabled ? "#555" : "#d8d8d8",
+  transition: "background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s",
   opacity: disabled ? 0.4 : 1,
+  boxShadow: active
+    ? "0 4px 16px rgba(201,168,76,0.35), inset 0 1px 0 rgba(255,255,255,0.2)"
+    : "none",
 });
 
 const dividerStyle: React.CSSProperties = {
@@ -169,6 +179,31 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
   `;
   document.head.appendChild(ps);
 }
+
+// Onboarding arrow + callout animations. Added outside the tooltip sheet
+// so they stay mounted on first visit regardless of hover state.
+const ONBOARDING_ANIM_ID = "omni-onboarding-anims";
+if (typeof document !== "undefined" && document.getElementById(ONBOARDING_ANIM_ID) === null) {
+  const s = document.createElement("style");
+  s.id = ONBOARDING_ANIM_ID;
+  s.textContent = `
+    @keyframes omni-onboard-arrow {
+      0%, 100% { transform: translateX(0); }
+      50%     { transform: translateX(10px); }
+    }
+    @keyframes omni-onboard-card-in {
+      0%   { opacity: 0; transform: translateX(-12px) scale(0.94); }
+      100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    @keyframes omni-onboard-pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(201,168,76,0.55); }
+      100% { box-shadow: 0 0 0 14px rgba(201,168,76,0); }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+const ONBOARDING_KEY = "omni-onboarding-dismissed";
 
 const TOOLTIP_ANIM_ID = "omni-tooltip-anims-v2";
 if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) === null) {
@@ -342,6 +377,109 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
 }
 
 // ---------------------------------------------------------------------------
+// Onboarding hint — first-visit arrow + callout pointing at the Furniture
+// button. Dismissed permanently via localStorage["omni-onboarding-dismissed"].
+// Rendered only when: (a) user hasn't dismissed, (b) no furniture placed yet
+// (empty-scene heuristic — if they've already put something down, they've
+// clearly found the button).
+// ---------------------------------------------------------------------------
+
+interface OnboardingHintProps {
+  readonly top: number;     // vertical position (px from top) — lines up with Furniture btn
+  readonly onDismiss: () => void;
+}
+
+function OnboardingHint({ top, onDismiss }: OnboardingHintProps): React.ReactElement {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: TOOLBAR_W + 8,
+        top,
+        // translate up by half so the caller's `top` can be treated as the
+        // target button's vertical centre — keeps the arrow lined up with
+        // the Furniture icon regardless of card content height.
+        transform: "translateY(-50%)",
+        zIndex: 52,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        pointerEvents: "auto",
+        animation: "omni-onboard-card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+      }}
+    >
+      {/* Animated arrow — slides right-and-back forever until dismissed */}
+      <div
+        aria-hidden
+        style={{
+          display: "flex",
+          alignItems: "center",
+          color: GOLD,
+          filter: "drop-shadow(0 2px 6px rgba(201,168,76,0.4))",
+          animation: "omni-onboard-arrow 1.1s ease-in-out infinite",
+        }}
+      >
+        <svg width="42" height="24" viewBox="0 0 42 24" fill="none">
+          <path
+            d="M 1 12 L 34 12 M 26 4 L 34 12 L 26 20"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+
+      {/* Callout card */}
+      <div
+        role="dialog"
+        aria-label="Get started"
+        style={{
+          background: "linear-gradient(145deg, #1a1a1a 0%, #222 100%)",
+          border: "1px solid rgba(201,168,76,0.35)",
+          borderRadius: 14,
+          padding: "14px 18px 12px",
+          minWidth: 240,
+          maxWidth: 300,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.08), 0 0 32px rgba(201,168,76,0.12)",
+          color: "#f1f1f1",
+          fontFamily: "'Inter', system-ui, sans-serif",
+        }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: GOLD, textTransform: "uppercase" }}>
+          Start here
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 700, marginTop: 4, lineHeight: 1.25, fontFamily: "'Playfair Display', serif" }}>
+          Click to add furniture
+        </div>
+        <div style={{ fontSize: 13, color: "#aaa", marginTop: 6, lineHeight: 1.4 }}>
+          Round tables, stage platforms, bars, chairs — drag any piece into the room to begin your layout.
+        </div>
+        <label
+          style={{
+            marginTop: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 12,
+            color: "#888",
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+        >
+          <input
+            type="checkbox"
+            onChange={(e) => { if (e.target.checked) onDismiss(); }}
+            style={{ accentColor: GOLD, cursor: "pointer" }}
+          />
+          Don&rsquo;t show this tip again
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -356,6 +494,12 @@ export function VerticalToolbox(): React.ReactElement {
   const [saveFlash, setSaveFlash] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try { return window.localStorage.getItem(ONBOARDING_KEY) === "1"; }
+    catch { return false; }
+  });
+  const placedCount = usePlacementStore((s) => s.placedItems.length);
 
   const canUndo = usePlacementStore((s) => s.undoStack.length > 0);
   const canRedo = usePlacementStore((s) => s.redoStack.length > 0);
@@ -364,10 +508,20 @@ export function VerticalToolbox(): React.ReactElement {
   const isSaving = useEditorStore((s) => s.isSaving);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
+
+  const dismissOnboarding = useCallback(() => {
+    setOnboardingDismissed(true);
+    try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
+  }, []);
+
   const handleToolClick = useCallback((tool: ActiveTool) => {
     if (tool === "add") {
       setPanelOpen((p) => !p);
       setActiveTool((prev) => prev === "add" ? "select" : "add");
+      // Once the user opens the Furniture panel they've obviously found the
+      // button — hide the hint for good even if they never tick the checkbox.
+      setOnboardingDismissed(true);
+      try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
     } else {
       setPanelOpen(false);
       setActiveTool(tool);
@@ -474,8 +628,17 @@ export function VerticalToolbox(): React.ReactElement {
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [handleToolClick]);
 
+  // Furniture button is index 1 in the toolbar: top padding (14) + first
+  // button height (48) + gap (6) + half of second button (24) = 92px.
+  const FURNITURE_BTN_CENTER_Y = 92;
+  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen;
+
   return (
     <>
+      {showOnboarding && (
+        <OnboardingHint top={FURNITURE_BTN_CENTER_Y} onDismiss={dismissOnboarding} />
+      )}
+
       {/* === Toolbar strip === */}
       <div style={toolbarStyle}>
         <ToolBtn active={activeTool === "select"} label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
