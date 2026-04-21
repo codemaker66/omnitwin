@@ -21,6 +21,21 @@ interface ClerkUserEvent {
   readonly last_name: string | null;
   readonly phone_numbers: readonly { readonly phone_number: string }[];
   readonly public_metadata: Record<string, unknown>;
+  // Clerk mirrors the chosen username here when "Sign-up with username"
+  // is enabled in the Clerk dashboard. We normalise invalid/empty values
+  // to null so the DB CHECK constraint on users.username never rejects
+  // a sync; a user can always update their handle via Clerk afterwards.
+  readonly username: string | null;
+}
+
+// Mirror of @omnitwin/types UsernameSchema shape — duplicated inline so
+// this route doesn't pull in the full schema module for one regex test.
+const USERNAME_SHAPE = /^[a-z0-9]([a-z0-9-]{1,28}[a-z0-9])?$/;
+function normaliseUsername(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const lower = raw.trim().toLowerCase();
+  if (lower.length === 0) return null;
+  return USERNAME_SHAPE.test(lower) ? lower : null;
 }
 
 interface ClerkWebhookPayload {
@@ -109,13 +124,14 @@ export async function webhookRoutes(
         const rawVenueId = data.public_metadata?.["venueId"];
         const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
+        const username = normaliseUsername(data.username);
 
         const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
         if (existing !== undefined) {
-          await db.update(users).set({ clerkId: data.id, name, updatedAt: new Date() }).where(eq(users.id, existing.id));
+          await db.update(users).set({ clerkId: data.id, name, username, updatedAt: new Date() }).where(eq(users.id, existing.id));
         } else {
           await db.insert(users).values({
-            clerkId: data.id, email, name, displayName: name, phone, role, venueId,
+            clerkId: data.id, email, name, displayName: name, phone, role, venueId, username,
           });
         }
 
@@ -132,9 +148,10 @@ export async function webhookRoutes(
         const role = sanitizeRole(data.public_metadata?.["role"]);
         const rawVenueId = data.public_metadata?.["venueId"];
         const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
+        const username = normaliseUsername(data.username);
 
         await db.update(users).set({
-          email, name, displayName: name, phone, role, venueId, updatedAt: new Date(),
+          email, name, displayName: name, phone, role, venueId, username, updatedAt: new Date(),
         }).where(eq(users.clerkId, data.id));
 
         return reply.status(200).send({ received: true });
