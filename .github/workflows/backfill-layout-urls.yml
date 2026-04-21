@@ -1,0 +1,61 @@
+# =============================================================================
+# Manual backfill — populate layout URL identifiers on existing configurations
+# =============================================================================
+# Triggered on-demand via the "Run workflow" button on the Actions tab.
+# Runs `src/scripts/backfill-layout-urls.ts` against production Neon.
+#
+# Safe to run multiple times — the script is idempotent (skips rows that
+# already have slug/short_code set, and aliases use existence probes).
+#
+# Prerequisites:
+#   - Migration 0017_layout_urls must be applied (auto-runs via deploy.yml
+#     after CI on master)
+# =============================================================================
+
+name: Backfill layout URLs
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run" to confirm you want to backfill production'
+        required: true
+        default: ''
+
+jobs:
+  backfill:
+    name: Apply URL backfill
+    if: ${{ github.event.inputs.confirm == 'run' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by api)
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Run backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: |
+          set -e
+          echo "Running layout-urls backfill against production..."
+          pnpm --filter @omnitwin/api tsx src/scripts/backfill-layout-urls.ts
+          echo "Backfill complete."
