@@ -20,7 +20,7 @@ const EnvSchema = z.object({
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).default("OMNITWIN <notifications@omnitwin.com>"),
+  EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),
   // CORS — comma-separated allowed origins (defaults to localhost for dev)
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:5174"),
   // R2/S3 — optional (uploads disabled if not set)

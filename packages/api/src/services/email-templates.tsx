@@ -202,12 +202,12 @@ function Layout({ label, preview, children }: LayoutProps): ReactElement {
       <Body style={bodyStyle}>
         <Container style={cardStyle}>
           <Section style={headerBarStyle}>
-            <Text style={brandWordmarkStyle}>OMNITWIN</Text>
+            <Text style={brandWordmarkStyle}>VENVIEWER</Text>
             <Text style={brandCaptionStyle}>{label}</Text>
           </Section>
           <Section style={mainSectionStyle}>{children}</Section>
           <Section style={footerStyle}>
-            Sent by OMNITWIN — Venue Planning Platform
+            Sent by VenViewer — Venue Planning Platform
           </Section>
         </Container>
       </Body>

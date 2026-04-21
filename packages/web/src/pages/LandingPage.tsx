@@ -1194,7 +1194,7 @@ function SiteFooter(): ReactElement {
         <div className="wordmark">Trades <em>Hall.</em></div>
 
         <div className="baseline">
-          <span>© 2026 The Trades House of Glasgow · Planner by OmniTwin</span>
+          <span>© 2026 The Trades House of Glasgow · Planner by VenViewer</span>
           <span>Built in Glasgow</span>
         </div>
       </div>

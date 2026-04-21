@@ -198,7 +198,7 @@ export async function sendEmail(
   // status so a reviewer can distinguish "no provider" from "provider
   // succeeded".
   const client = getResendClient();
-  const emailFrom = process.env["EMAIL_FROM"] ?? "OMNITWIN <notifications@omnitwin.com>";
+  const emailFrom = process.env["EMAIL_FROM"] ?? "VenViewer <notifications@venviewer.com>";
   if (client === null) {
     logger.warn({
       event: "email.dev_mode_skip",

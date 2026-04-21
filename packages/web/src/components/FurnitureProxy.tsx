@@ -118,7 +118,7 @@ export class MeshErrorBoundary extends Component<MeshErrorBoundaryProps, MeshErr
 
   override componentDidCatch(error: Error): void {
     // eslint-disable-next-line no-console
-    console.warn(`OMNITWIN: GLB load failed for ${this.props.meshUrl}, falling back to procedural mesh.`, error);
+    console.warn(`VenViewer: GLB load failed for ${this.props.meshUrl}, falling back to procedural mesh.`, error);
   }
 
   override componentDidUpdate(prevProps: MeshErrorBoundaryProps): void {

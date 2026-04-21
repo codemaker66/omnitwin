@@ -46,7 +46,7 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // eslint-disable-next-line no-console
-    console.error("OMNITWIN uncaught error:", error, info.componentStack);
+    console.error("VenViewer uncaught error:", error, info.componentStack);
   }
 
   override render(): ReactNode {

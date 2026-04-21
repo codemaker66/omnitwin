@@ -4,6 +4,14 @@
   "buildCommand": "pnpm --filter @omnitwin/types build && pnpm --filter @omnitwin/web build",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "omnitwin-web.vercel.app" }],
+      "destination": "https://venviewer.com/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

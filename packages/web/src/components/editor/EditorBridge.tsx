@@ -147,7 +147,7 @@ export function EditorBridge(): null {
       // taking the user offline.
       // eslint-disable-next-line no-console
       console.error(
-        "OMNITWIN: EditorBridge mounted more than once (" + String(mountedInstances) + " instances). " +
+        "VenViewer: EditorBridge mounted more than once (" + String(mountedInstances) + " instances). " +
         "The bridge owns the editor↔placement sync ref; a second instance silently " +
         "loses cross-instance updates. Move EditorBridge to a single mount point " +
         "(typically EditorPage).",

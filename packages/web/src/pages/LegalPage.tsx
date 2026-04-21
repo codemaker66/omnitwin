@@ -15,8 +15,8 @@ const TITLES: Record<string, string> = {
 };
 
 const BODIES: Record<string, string> = {
-  privacy: "This privacy policy will be updated with full details before launch. OMNITWIN collects only the data necessary to provide the venue planning service.",
-  terms: "These terms of service will be updated with full details before launch. By using OMNITWIN you agree to use the platform for legitimate venue planning purposes.",
+  privacy: "This privacy policy will be updated with full details before launch. VenViewer collects only the data necessary to provide the venue planning service.",
+  terms: "These terms of service will be updated with full details before launch. By using VenViewer you agree to use the platform for legitimate venue planning purposes.",
 };
 
 export function LegalPage({ type }: LegalPageProps): React.ReactElement {

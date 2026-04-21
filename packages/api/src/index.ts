@@ -284,7 +284,7 @@ if (isDirectRun) {
 
   try {
     await server.listen({ port: env.PORT, host: "0.0.0.0" });
-    server.log.info(`OMNITWIN API listening on port ${String(env.PORT)}`);
+    server.log.info(`VenViewer API listening on port ${String(env.PORT)}`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

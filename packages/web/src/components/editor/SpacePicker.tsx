@@ -165,7 +165,7 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
           alignItems: "center", padding: "24px 32px",
         }}>
           <span style={{ fontFamily: SANS, fontWeight: 200, fontSize: 20, letterSpacing: 3, color: CREAM }}>
-            OMNITWIN
+            VENVIEWER
           </span>
         </div>
 
@@ -386,7 +386,7 @@ export function SpacePicker({ onSelectSpace }: SpacePickerProps): React.ReactEle
         padding: "40px 32px", background: DARK_BG, textAlign: "center",
         fontSize: 12, color: "rgba(255,255,255,0.3)",
       }}>
-        <p style={{ marginBottom: 8 }}>Powered by <span style={{ color: "rgba(255,255,255,0.5)" }}>OMNITWIN</span></p>
+        <p style={{ marginBottom: 8 }}>Powered by <span style={{ color: "rgba(255,255,255,0.5)" }}>VenViewer</span></p>
         <p style={{ marginBottom: 12 }}>Trades Hall Glasgow &middot; 85 Glassford Street &middot; Glasgow G1 1UH</p>
         <p>
           <a href="/privacy" style={{ color: "rgba(255,255,255,0.3)", textDecoration: "none", marginRight: 16 }}>Privacy</a>

@@ -84,7 +84,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
     <>
       <nav style={sidebarStyle}>
         <div style={{ padding: "20px 20px 24px", fontSize: 18, fontWeight: 700, letterSpacing: -0.5 }}>
-          OMNITWIN
+          VenViewer
         </div>
         {NAV_ITEMS.map((item) => {
           if (item.adminOnly === true && user?.role !== "admin") return null;
