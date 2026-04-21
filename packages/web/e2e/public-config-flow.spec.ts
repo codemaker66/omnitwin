@@ -120,7 +120,13 @@ async function mockSpacePickerApis(page: Page): Promise<void> {
 // Space picker — venue landing page
 // ---------------------------------------------------------------------------
 
-test.describe("Space picker", () => {
+// Skipped after the rebrand: `/editor` now renders the public LandingPage
+// (Trades Hall marketing site) rather than the SpacePicker splash. The
+// planner app moved to `/plan`, which auto-creates a Grand Hall config
+// and never surfaces SpacePicker on the happy path. SpacePicker itself
+// is still in the codebase as a fallback when auto-create fails —
+// covered by its unit tests in components/editor/__tests__/SpacePicker.test.ts.
+test.describe.skip("Space picker", () => {
   test.beforeEach(async ({ page }) => {
     await mockSpacePickerApis(page);
     await page.goto("/editor");
@@ -143,7 +149,9 @@ test.describe("Space picker", () => {
 // Config creation — clicking a space card
 // ---------------------------------------------------------------------------
 
-test.describe("Config creation from space picker", () => {
+// Also skipped — same reason as "Space picker" above. Clicking a space
+// card is the SpacePicker flow which is no longer reached on the happy path.
+test.describe.skip("Config creation from space picker", () => {
   test("clicking a space card creates a config and enters the 3D editor", async ({ page }) => {
     await mockSpacePickerApis(page);
     // Mock the POST that creates the config
@@ -158,7 +166,7 @@ test.describe("Config creation from space picker", () => {
     await page.getByTestId("space-card-grand-hall").click();
 
     // After config creation the router navigates to /editor/:configId
-    await page.waitForURL(`**/editor/${CONFIG_ID}`, { timeout: 10_000 });
+    await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
     await page.waitForSelector("canvas", { timeout: 15_000 });
     await expect(page.locator("canvas")).toBeVisible();
   });
@@ -171,7 +179,7 @@ test.describe("Config creation from space picker", () => {
 test.describe("Editor with empty config", () => {
   test.beforeEach(async ({ page }) => {
     await mockConfigLoad(page);
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
 
@@ -222,7 +230,7 @@ test.describe("Editor with empty config", () => {
 test.describe("Editor with placed objects", () => {
   test.beforeEach(async ({ page }) => {
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
 

@@ -87,7 +87,7 @@ test.describe("Planner submit for review", () => {
   test("draft config surfaces the 'Submit for Approval' button", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     await mockSubmitFlow(page, { initialStatus: "draft" });
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: 10_000 });
@@ -97,7 +97,7 @@ test.describe("Planner submit for review", () => {
   test("clicking Submit hits the /submit endpoint and flips UI to locked", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     const state = await mockSubmitFlow(page, { initialStatus: "draft" });
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: 10_000 });
@@ -114,7 +114,7 @@ test.describe("Planner submit for review", () => {
   test("changes_requested state also surfaces the submit button (re-submit path)", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     await mockSubmitFlow(page, { initialStatus: "changes_requested" });
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: 10_000 });

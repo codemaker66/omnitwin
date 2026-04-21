@@ -31,7 +31,7 @@ test.describe("Navigation", () => {
         },
       });
     });
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
     await expect(page.locator("canvas")).toBeVisible();
   });

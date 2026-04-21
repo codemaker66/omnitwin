@@ -33,7 +33,7 @@ test.describe("Editor Interactions", () => {
         },
       });
     });
-    await page.goto("/editor/e2e-config-001");
+    await page.goto("/plan/e2e-config-001");
     await page.waitForSelector("canvas", { timeout: 15_000 });
     // Ensure canvas has focus so keyboard events reach window listeners
     await page.locator("canvas").click();

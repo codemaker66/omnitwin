@@ -37,7 +37,7 @@ test.describe("Performance", () => {
   test("page loads within 10 seconds", async ({ page }) => {
     await mockEditorConfig(page);
     const start = Date.now();
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(10_000);
@@ -48,7 +48,7 @@ test.describe("Performance", () => {
     page.on("pageerror", (err) => { errors.push(err.message); });
 
     await mockEditorConfig(page);
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
     // Allow a brief settle period
     await page.waitForTimeout(1_000);
@@ -73,7 +73,7 @@ test.describe("Performance", () => {
     });
 
     await mockEditorConfig(page);
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
     await page.waitForTimeout(2_000);
 
@@ -93,7 +93,7 @@ test.describe("Performance", () => {
     });
 
     await mockEditorConfig(page);
-    await page.goto(`/editor/${CONFIG_ID}`);
+    await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
 
     // The hallkeeper chunk should NOT be loaded on the editor page

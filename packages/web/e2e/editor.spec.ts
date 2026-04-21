@@ -31,7 +31,7 @@ test.describe("Public Editor", () => {
         },
       });
     });
-    await page.goto("/editor/e2e-config-001");
+    await page.goto("/plan/e2e-config-001");
     // Wait for the R3F canvas to mount before every test
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
