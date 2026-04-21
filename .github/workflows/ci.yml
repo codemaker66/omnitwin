@@ -105,6 +105,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build @omnitwin/types (required by api and web test runtimes)
+        # api/web tests import from `@omnitwin/types` which resolves to
+        # `dist/index.js` per the package's `main` / `exports` fields.
+        # Without this step vite's import-analysis fails at test time with
+        # "Failed to resolve entry for package @omnitwin/types". Source
+        # lives in src/ but runtime consumers need the compiled bundle.
+        run: pnpm --filter @omnitwin/types build
+
       - name: Test (Vitest)
         run: pnpm -r test
 
@@ -129,6 +137,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by the Vite dev server Playwright boots)
+        run: pnpm --filter @omnitwin/types build
 
       - name: Install Playwright browsers
         # --with-deps installs OS-level Chromium system dependencies on Ubuntu
