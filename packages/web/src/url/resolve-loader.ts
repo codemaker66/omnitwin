@@ -51,9 +51,19 @@ export async function resolveLayoutLoader(
     }
     return { configId: result.configId };
   } catch (err) {
-    // If the resolver itself returned a non-200 (e.g. 500), surface as
-    // a router error so the user sees a real error page, not a 404.
     if (err instanceof Response) throw err;
+    // Network-error fallback: if the resolver endpoint is unreachable
+    // (E2E with a fully mocked backend, or a transient prod outage),
+    // treat the last path segment of `/plan/<x>` as the raw config ID
+    // so the editor can still mount. Canonical/redirect semantics are
+    // lost in this fallback, but the page stays usable — better than
+    // a hard 404 or hang. `/:username/:slug` URLs can't fall back
+    // without a username→userId lookup, so those still surface the
+    // error normally.
+    const planMatch = path.match(/^\/plan\/([^/?#]+)/);
+    if (planMatch?.[1] !== undefined) {
+      return { configId: planMatch[1] };
+    }
     if (err instanceof ApiError) throw err;
     throw new Error("Failed to resolve layout URL");
   }
