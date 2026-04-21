@@ -259,6 +259,23 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     maxCount: null, subtitle: "Drapes over any table", color: "#1a1a1a",
     equipmentTags: [],
   },
+
+  // --- Bar ---
+  // Physical bar counter — dark-wood finish, 1600 × 610 mm footprint,
+  // 1208 mm tall. Trades Hall's inventory is a service counter only;
+  // no stools travel with it. Categorised as "other" because the enum
+  // doesn't include a dedicated "bar" value. UUID v5 derived from the
+  // slug via the OMNITWIN namespace 43033bd6-17fd-599e-b305-0bd60dec57f0.
+  {
+    id: "e10816ab-5ae2-5925-914d-7ad60d33530f",
+    slug: "bar-counter",
+    name: "Bar",
+    category: "other",
+    widthM: 1.60, depthM: 0.61, heightM: 1.208,
+    seatCount: null, collisionType: "box", tableShape: null,
+    maxCount: null, subtitle: "1.6m \u00D7 0.61m \u00B7 dark wood", color: "#3a2418",
+    equipmentTags: [],
+  },
 ];
 
 // ---------------------------------------------------------------------------

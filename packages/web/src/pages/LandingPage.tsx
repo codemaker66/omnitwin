@@ -389,50 +389,6 @@ interface DragState {
 const ROOM_W_M = 21;
 const ROOM_H_M = 10.5;
 
-/** Row of bar stools along the service edge of a bar. Orientation is
- *  inferred: a bar whose height > width is vertical (e.g. service bar
- *  against a long wall), stools line the long edge facing into the
- *  room. Horizontal bars get stools along the south edge by default.
- *  Count scales with bar length: one stool per ~0.75 m. */
-function barStoolPositions(
-  bx: number,
-  by: number,
-  bw: number,
-  bh: number,
-): readonly { x: number; y: number }[] {
-  const stoolR = 0.22;
-  const gap = 0.15;
-  const isVertical = bh > bw;
-  const longEdge = isVertical ? bh : bw;
-  const count = Math.max(3, Math.round(longEdge / 0.75));
-  const spacing = longEdge / count;
-  const out: { x: number; y: number }[] = [];
-  if (isVertical) {
-    const cx = bx + bw / 2;
-    // If the bar sits on the east side of the room, its service edge
-    // faces west (stools to the left); otherwise stools to the right.
-    const frontX = cx > ROOM_W_M / 2
-      ? bx - 2 * stoolR - gap
-      : bx + bw + gap;
-    for (let i = 0; i < count; i += 1) {
-      const cy = by + spacing * (i + 0.5);
-      out.push({ x: frontX, y: cy - stoolR });
-    }
-  } else {
-    const cy = by + bh / 2;
-    // Bar on the north side of the room → stools south of it; bar on
-    // the south side → stools north of it.
-    const frontY = cy < ROOM_H_M / 2
-      ? by + bh + gap
-      : by - 2 * stoolR - gap;
-    for (let i = 0; i < count; i += 1) {
-      const cx = bx + spacing * (i + 0.5);
-      out.push({ x: cx - stoolR, y: frontY });
-    }
-  }
-  return out;
-}
-
 /** Convert a viewport mouse point to room-metre coordinates via the stage's
  *  bounding rect. Returns null when the event source is unusable. */
 function clientToMetres(
@@ -810,24 +766,8 @@ function PlannerPreview(): ReactElement {
             </div>
           </div>
 
-          {/* Bar stools — a row of small discs along the front edge of
-              each bar. For bars running vertically (heightM > widthM —
-              e.g. the Gala bar on the east wall), stools line the west
-              side; for horizontal bars they line the south side.
-              Kind-filtered, non-interactive. */}
-          {items.filter((it) => it.kind === "bar").flatMap((bar) =>
-            barStoolPositions(bar.x, bar.y, bar.widthM, bar.heightM).map((pos, idx) => (
-              <div
-                key={`stool-${bar.id}-${String(idx)}`}
-                className="stool"
-                style={{
-                  ...placeStyle({ x: pos.x, y: pos.y, widthM: 0.44, heightM: 0.44 }),
-                  pointerEvents: "none",
-                }}
-                aria-hidden
-              />
-            )),
-          )}
+          {/* No bar stools — Trades Hall's bar doesn't come with stools
+              so rendering any would misrepresent what's actually hired. */}
           {/* Every piece is draggable. Pointer-based so it works on
               mouse + touch + pen; setPointerCapture keeps the drag alive
               when the cursor leaves the element. onClick stays usable for
