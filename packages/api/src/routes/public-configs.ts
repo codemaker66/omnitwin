@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { configurations, placedObjects, spaces, assetDefinitions } from "../db/schema.js";
+import { buildLayoutPathKey } from "@omnitwin/types";
+import { configurations, layoutAliases, placedObjects, spaces, assetDefinitions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { generateUniqueShortCode } from "../services/shortcode.js";
 import {
   validatePlacementsInPolygon,
   loadSpacePolygon,
@@ -79,6 +81,19 @@ export async function publicConfigRoutes(
       return reply.status(404).send({ error: "Space not found", code: "NOT_FOUND" });
     }
 
+    // Generate a guest-URL shortcode up-front so the insert below can
+    // persist it atomically with the config row. Uniqueness is verified
+    // against the live `configurations.short_code` index via the
+    // existence probe.
+    const shortCode = await generateUniqueShortCode(async (candidate) => {
+      const [hit] = await db
+        .select({ id: configurations.id })
+        .from(configurations)
+        .where(and(eq(configurations.shortCode, candidate), isNull(configurations.deletedAt)))
+        .limit(1);
+      return hit !== undefined;
+    });
+
     const [config] = await db.insert(configurations).values({
       spaceId: parsed.data.spaceId,
       venueId: space.venueId,
@@ -87,7 +102,38 @@ export async function publicConfigRoutes(
       layoutStyle: "custom",
       isPublicPreview: true,
       visibility: "public",
+      shortCode,
     }).returning();
+
+    if (config === undefined) {
+      return reply.status(500).send({ error: "Insert returned no row", code: "INSERT_FAILED" });
+    }
+
+    // Seed layout_aliases so the resolver's fast path (Tier 1) hits
+    // immediately — both the UUID form and the canonical shortcode URL
+    // point at this row, neither retired. Alias insert errors are
+    // swallowed: the resolver's Tier 2 direct-column fallback still
+    // serves the URL correctly, so a transient alias-write failure
+    // doesn't block config creation.
+    try {
+      await db.insert(layoutAliases).values([
+        {
+          configurationId: config.id,
+          kind: "uuid",
+          pathKey: buildLayoutPathKey("uuid", { uuid: config.id }),
+          retiredAt: null,
+        },
+        {
+          configurationId: config.id,
+          kind: "shortcode",
+          pathKey: buildLayoutPathKey("shortcode", { shortCode }),
+          retiredAt: null,
+        },
+      ]);
+    } catch (err) {
+      // Operational signal — resolver's Tier 2 fallback still serves the URL.
+      console.warn("public-configs: layout_aliases seed failed (resolver Tier 2 still covers):", err);
+    }
 
     return reply.status(201).send({ data: config });
   });
