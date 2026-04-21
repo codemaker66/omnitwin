@@ -236,10 +236,10 @@ describe("Router", () => {
     expect(planRoute).toBeDefined();
   });
 
-  it("has /plan/:configId route", async () => {
+  it("has /plan/:code route (replaces legacy /plan/:configId)", async () => {
     const { router } = await import("../router.js");
     const routes = router as unknown as { path: string }[];
-    const configRoute = routes.find((r) => r.path === "/plan/:configId");
+    const configRoute = routes.find((r) => r.path === "/plan/:code");
     expect(configRoute).toBeDefined();
   });
 });

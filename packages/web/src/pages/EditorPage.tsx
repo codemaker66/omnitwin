@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLoaderData } from "react-router-dom";
+import type { ResolvedLayoutData } from "../url/resolve-loader.js";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -19,7 +20,13 @@ const DEFAULT_SPACE_SLUG = "grand-hall";
 // ---------------------------------------------------------------------------
 
 export function EditorPage(): React.ReactElement {
-  const { configId: urlConfigId } = useParams<{ configId?: string }>();
+  // Loader data is populated on /plan/:code and /:username/:slug — the
+  // resolver has already validated the URL and returned the canonical
+  // configId. Routes without a loader (/plan, /v/:venueSlug/plan) fall
+  // through to the useParams path below.
+  const loaderData = useLoaderData<ResolvedLayoutData | undefined>();
+  const params = useParams<{ configId?: string; code?: string }>();
+  const urlConfigId = loaderData?.configId ?? params.configId ?? params.code;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);
