@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText,
@@ -487,6 +488,30 @@ type ActiveTool = "select" | "add" | "rotate" | "delete";
 
 export function VerticalToolbox(): React.ReactElement {
   const navigate = useNavigate();
+  // Narrow-viewport flag: ≤640 CSS px. Drives the bottom-rail layout AND
+  // publishes CSS vars that App.tsx consumes to pad the Canvas correctly.
+  const isNarrow = useIsNarrowViewport();
+
+  // Publish toolbox dimensions as CSS vars on <html> so other fixed-
+  // position chrome can align with us without importing TOOLBAR_W.
+  // useLayoutEffect (not useEffect) so the Canvas wrapper reads correct
+  // values on the first paint — no one-frame jump as the layout settles.
+  useLayoutEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (isNarrow) {
+      root.style.setProperty("--toolbox-offset", "0px");
+      root.style.setProperty("--toolbox-bottom", "56px");
+    } else {
+      root.style.setProperty("--toolbox-offset", `${String(TOOLBAR_W)}px`);
+      root.style.setProperty("--toolbox-bottom", "0px");
+    }
+    return () => {
+      root.style.removeProperty("--toolbox-offset");
+      root.style.removeProperty("--toolbox-bottom");
+    };
+  }, [isNarrow]);
+
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [panelOpen, setPanelOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -640,7 +665,25 @@ export function VerticalToolbox(): React.ReactElement {
       )}
 
       {/* === Toolbar strip === */}
-      <div style={toolbarStyle}>
+      <div style={isNarrow ? {
+        // Bottom rail on phone portrait: fixed bottom, horizontal flex,
+        // horizontal scroll if the tool set doesn't fit. The same buttons
+        // as desktop — no progressive disclosure needed; we have ~8 primary
+        // tools and each is ~48px, fitting inside a 390px screen with a
+        // little scroll headroom.
+        position: "fixed" as const,
+        left: 0, right: 0, bottom: 0,
+        height: 56,
+        background: "linear-gradient(180deg, #141414 0%, #1a1a1a 50%, #151515 100%)",
+        borderTop: "1px solid rgba(201,168,76,0.15)",
+        boxShadow: "0 -2px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(201,168,76,0.03)",
+        display: "flex", flexDirection: "row" as const, alignItems: "center",
+        padding: "0 12px", gap: 4, zIndex: 50,
+        paddingBottom: "max(4px, env(safe-area-inset-bottom))",
+        overflowX: "auto" as const,
+        scrollbarWidth: "none" as const,
+        fontFamily: "'Inter', sans-serif",
+      } : toolbarStyle}>
         <ToolBtn active={activeTool === "select"} label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>

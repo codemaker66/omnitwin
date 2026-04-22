@@ -88,12 +88,25 @@ export function App(): React.ReactElement {
 
   return (
     <>
+      {/* Canvas sits inside a wrapper whose padding is driven by CSS vars that
+          VerticalToolbox sets on <html>. Desktop: --toolbox-offset = 68 (the
+          left rail width), --toolbox-bottom = 0. Mobile (≤640): --toolbox-offset
+          = 0 and --toolbox-bottom = 56 (the bottom rail height). The 3D canvas
+          always fills the non-toolbar area regardless of viewport — previously
+          a hardcoded marginLeft: 52 ate into narrow mobile viewports AND
+          didn't match the toolbar's real width of 68 on desktop. */}
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        paddingLeft: "var(--toolbox-offset, 68px)",
+        paddingBottom: "var(--toolbox-bottom, 0px)",
+      }}>
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
         camera={{ fov: 55, near: 0.1, far: 200 }}
-        style={{ marginLeft: 52 }}
+        style={{ width: "100%", height: "100%" }}
       >
         <color attach="background" args={["#f5f5f0"]} />
         <SceneProvider />
@@ -121,8 +134,9 @@ export function App(): React.ReactElement {
         <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>
+      </div>
 
-      {/* Vertical icon toolbox — left edge */}
+      {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <VerticalToolbox />
 
       {/* Right-side controls */}
