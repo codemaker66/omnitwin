@@ -43,6 +43,9 @@ const PrivacyPage = lazy(() =>
 const TermsPage = lazy(() =>
   import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "terms" }) })),
 );
+const PricingPage = lazy(() =>
+  import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -143,6 +146,13 @@ export const router = createBrowserRouter([
         {withSuspense(<DashboardPage />)}
       </ProtectedRoute>
     ),
+  },
+  {
+    // Public SaaS pricing page. Entry point for prospective venues;
+    // CTAs deep-link to /onboard?tier=... once the Stripe+onboarding
+    // phases ship. Linked from LandingPage TopNav.
+    path: "/pricing",
+    element: withSuspense(<PricingPage />),
   },
   {
     path: "/privacy",
