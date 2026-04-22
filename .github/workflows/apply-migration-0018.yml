@@ -1,0 +1,58 @@
+# =============================================================================
+# Manual apply — migration 0018 (subscriptions schema)
+# =============================================================================
+# Triggered on-demand via the "Run workflow" button on the Actions tab.
+# Runs `apply-migration-0018.ts` against production Neon.
+#
+# Needed when CI has been red and the usual deploy.yml auto-apply never
+# ran. Idempotent — the script uses IF NOT EXISTS / pg_constraint checks
+# so re-running is a no-op.
+# =============================================================================
+
+name: Apply migration 0018 (subscriptions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "run" to confirm you want to apply migration 0018 to production'
+        required: true
+        default: ''
+
+jobs:
+  migrate:
+    name: Apply 0018_subscriptions
+    if: ${{ github.event.inputs.confirm == 'run' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types (required by api)
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Run migration 0018
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: |
+          set -e
+          echo "Applying 0018_subscriptions to production..."
+          pnpm --filter @omnitwin/api tsx src/scripts/apply-migration-0018.ts
+          echo "Done."
