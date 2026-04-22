@@ -95,10 +95,12 @@ describe("computeDistanceLimits", () => {
     expect(limits.minDistance).toBe(1.5);
   });
 
-  it("maxDistance is about 25m for the Grand Hall", () => {
+  it("maxDistance is far enough to frame the Grand Hall from outside", () => {
+    // Multiplier was bumped 1.2 → 1.6 so the portrait "hero" pose (which
+    // sits beyond the room corner) isn't clamped. 21 m × 1.6 ≈ 33.6 m.
     const limits = computeDistanceLimits(grandHall);
     expect(limits.maxDistance).toBeGreaterThanOrEqual(20);
-    expect(limits.maxDistance).toBeLessThanOrEqual(30);
+    expect(limits.maxDistance).toBeLessThanOrEqual(40);
   });
 
   it("maxDistance is greater than minDistance", () => {

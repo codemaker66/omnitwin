@@ -22,18 +22,33 @@ import { sampleTransition } from "../lib/camera-animation.js";
  */
 export function computeDefaultCameraPosition(
   dimensions: SpaceDimensions,
+  aspect = 1.78,
 ): readonly [number, number, number] {
   const { width, length } = dimensions;
   const maxDim = Math.max(width, length);
   const minDim = Math.min(width, length);
+
+  // Portrait / narrow viewport (aspect < 1.2) — 3/4 elevated architectural
+  // hero shot. Pull back beyond the room corner so both long walls stay
+  // in frame, lift to ~55% of room height, angle across. This "dollhouse"
+  // framing is the premium mobile idiom; the desktop eye-level shot
+  // would collapse horizontally on a phone and cut the room off.
+  if (aspect < 1.2) {
+    const d = computeFramingDistance(dimensions, aspect, 55) * 1.05;
+    const lift = Math.max(dimensions.height * 0.55, 4);
+    if (width >= length) {
+      return [d * 0.78, lift, d * 0.45];
+    }
+    return [d * 0.45, lift, d * 0.78];
+  }
+
+  // Landscape / desktop — interior eye-level pose (unchanged).
   // Position ~38% of the longest axis from center — inside the room,
   // near one wall. This gives enough distance to frame the opposite end.
   const alongAxis = maxDim * 0.38;
-  // Slight lateral offset for a natural 3/4 view, not dead-center.
   const lateral = minDim * 0.08;
   const eyeLevel = 1.7;
 
-  // Place camera along the longest axis so you look across the full room.
   if (width >= length) {
     return [alongAxis, eyeLevel, lateral];
   }
@@ -41,21 +56,55 @@ export function computeDefaultCameraPosition(
 }
 
 /**
- * Computes the orbit target: center of the room at human eye level (1.5m).
- * This keeps the orbit feeling natural — you're looking around a space
- * from within it, not staring down at a tabletop model.
+ * Computes the orbit target.
+ * Landscape: center of room at 1.5 m (human eye level) — natural interior feel.
+ * Portrait: lower target (height * 0.35) so the elevated hero shot isn't
+ * pitched nearly straight down from above.
  */
 export function computeCameraTarget(
-  _dimensions: SpaceDimensions,
+  dimensions: SpaceDimensions,
+  aspect = 1.78,
 ): readonly [number, number, number] {
+  if (aspect < 1.2) return [0, dimensions.height * 0.35, 0];
   return [0, 1.5, 0];
 }
 
 /**
+ * Horizontal FOV (radians) derived from the given vertical FOV (degrees)
+ * and viewport aspect ratio. Used by computeFramingDistance to pick a
+ * camera-to-target distance that keeps the room bounding box in frame
+ * regardless of how narrow the viewport is.
+ */
+export function horizontalFovFromVertical(vFovDeg: number, aspect: number): number {
+  const v = (vFovDeg * Math.PI) / 180;
+  return 2 * Math.atan(Math.tan(v / 2) * aspect);
+}
+
+/**
+ * Minimum camera-to-target distance that frames the room's bounding box
+ * at the given aspect ratio and vertical FOV, with a small outer margin.
+ * Used exclusively by the portrait pose — desktop keeps its existing
+ * eye-level math.
+ */
+export function computeFramingDistance(
+  dimensions: SpaceDimensions,
+  aspect: number,
+  vFovDeg: number,
+  margin = 1.15,
+): number {
+  const v = (vFovDeg * Math.PI) / 180;
+  const h = horizontalFovFromVertical(vFovDeg, aspect);
+  const halfW = (Math.max(dimensions.width, dimensions.length) * margin) / 2;
+  const halfH = (dimensions.height * margin) / 2;
+  return Math.max(halfH / Math.tan(v / 2), halfW / Math.tan(h / 2));
+}
+
+/**
  * Computes min/max orbit distance constraints.
- * - Min ~1.5m: close enough to inspect individual chairs/cloths.
- * - Max ~25m: far enough to see the whole room, but never so far
- *   that it looks like a toy model.
+ * - Min ~1.5 m: close enough to inspect individual chairs/cloths.
+ * - Max: scales up to 1.6× the longest dim so the portrait hero pose
+ *   (which sits outside the room) isn't clamped at the ceiling and
+ *   end up hugging the room instead.
  */
 export function computeDistanceLimits(
   dimensions: SpaceDimensions,
@@ -63,7 +112,7 @@ export function computeDistanceLimits(
   const maxDim = Math.max(dimensions.width, dimensions.length, dimensions.height);
   return {
     minDistance: 1.5,
-    maxDistance: Math.max(15, maxDim * 1.2),
+    maxDistance: Math.max(15, maxDim * 1.6),
   };
 }
 
@@ -211,7 +260,7 @@ export interface CameraRigProps {
  * Camera target is clamped to room bounds with a small margin.
  */
 export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
-  const { camera, gl, invalidate } = useThree();
+  const { camera, gl, invalidate, size } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
 
   // Touch devices (iPad, iPhone) don't have a scroll wheel — the custom
@@ -224,14 +273,18 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   const limits = computeDistanceLimits(dimensions);
   const bounds = computePanBounds(dimensions);
 
-  // Set initial camera position on mount — eye level, inside the room
-  const target = useMemo(() => computeCameraTarget(dimensions), [dimensions]);
+  // Aspect-aware camera pose: portrait phones (aspect < 1.2) get a 3/4
+  // elevated "dollhouse" hero shot outside the room; landscape/desktop
+  // keep the existing interior eye-level pose. useThree().size re-renders
+  // on resize, so this effect re-fires when the user rotates their phone.
+  const aspect = size.width / Math.max(size.height, 1);
+  const target = useMemo(() => computeCameraTarget(dimensions, aspect), [dimensions, aspect]);
   useEffect(() => {
-    const [x, y, z] = computeDefaultCameraPosition(dimensions);
+    const [x, y, z] = computeDefaultCameraPosition(dimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
     invalidate();
-  }, [camera, dimensions, target, invalidate]);
+  }, [camera, dimensions, target, aspect, invalidate]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
   // Uses stable ref to invalidate so the effect runs only once (mount/unmount).

@@ -38,6 +38,8 @@ vi.mock("@react-three/fiber", () => ({
     },
     gl: { domElement: document.createElement("canvas") },
     invalidate: vi.fn(),
+    // CameraRig reads size for aspect-aware pose; stub desktop viewport.
+    size: { width: 1440, height: 900 },
   }),
   useFrame: vi.fn(),
 }));

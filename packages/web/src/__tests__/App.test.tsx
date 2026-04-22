@@ -18,6 +18,10 @@ vi.mock("@react-three/fiber", () => ({
     },
     gl: { domElement: document.createElement("canvas") },
     invalidate: vi.fn(),
+    // CameraRig now reads size to compute viewport aspect (Phase 2 of
+    // the mobile redesign). Stub a desktop-sized viewport so the test
+    // camera pose matches the historical landscape eye-level shot.
+    size: { width: 1440, height: 900 },
   }),
   useFrame: vi.fn(),
 }));
