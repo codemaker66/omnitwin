@@ -134,6 +134,13 @@
       "when": 1777420800000,
       "tag": "0017_layout_urls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777507200000,
+      "tag": "0018_subscriptions",
+      "breakpoints": true
     }
   ]
 }

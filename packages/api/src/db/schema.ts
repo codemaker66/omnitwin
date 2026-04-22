@@ -29,6 +29,15 @@ export const venues = pgTable("venues", {
   // audit-timestamp rendering (approval stamp, PDF footer) in the
   // venue's operational clock rather than the server's process locale.
   timezone: varchar("timezone", { length: 100 }).notNull().default("Europe/London"),
+  // Billing state — denormalised from the subscriptions table so the
+  // require-active-subscription middleware can gate writes with a single
+  // indexed lookup instead of joining on every authenticated request.
+  // The Stripe webhook keeps these two columns in sync whenever a
+  // `customer.subscription.updated` event arrives. Values:
+  // 'none' (never subscribed), 'incomplete', 'trialing', 'active',
+  // 'past_due', 'canceled', 'unpaid'.
+  subscriptionStatus: varchar("subscription_status", { length: 30 }).notNull().default("none"),
+  planTier: varchar("plan_tier", { length: 30 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -529,4 +538,51 @@ export const layoutAliases = pgTable("layout_aliases", {
 }, (table) => [
   unique("layout_aliases_path_unique").on(table.pathKey),
   index("layout_aliases_config_idx").on(table.configurationId),
+]);
+
+// ---------------------------------------------------------------------------
+// 15. subscriptions — one row per Stripe subscription.
+//
+// Created during Stripe Checkout (venue_id NULL until the onboarding
+// wizard attaches it). Populated by the Stripe webhook at
+// /webhooks/stripe as lifecycle events arrive. Reads on the hot path
+// are served from venues.subscription_status (denormalised above);
+// this table is the source-of-truth for billing history and
+// reconciliation with Stripe's dashboard.
+// ---------------------------------------------------------------------------
+
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").references(() => venues.id),
+  stripeCustomerId: text("stripe_customer_id").notNull(),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+  planTier: varchar("plan_tier", { length: 30 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull(),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("subscriptions_venue_idx").on(table.venueId),
+  index("subscriptions_status_idx").on(table.status),
+]);
+
+// ---------------------------------------------------------------------------
+// 16. stripe_events — idempotency log for Stripe webhooks.
+//
+// Mirror of the email_sends pattern: insert-first by unique event_id,
+// catch PG 23505, treat duplicates as already-processed. Stripe retries
+// webhooks on any non-2xx for up to 3 days, so every handler MUST be
+// idempotent — storing the event_id here is how we distinguish a genuine
+// retry from first delivery.
+// ---------------------------------------------------------------------------
+
+export const stripeEvents = pgTable("stripe_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull().unique(),
+  type: varchar("type", { length: 100 }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("stripe_events_type_idx").on(table.type),
 ]);
