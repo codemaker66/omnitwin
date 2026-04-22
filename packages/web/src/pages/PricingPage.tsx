@@ -63,6 +63,66 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
     .pricing-faq-item[open] summary {
       color: ${GOLD};
     }
+
+    /* ---- Mobile (<= 768px) ---- */
+    @media (max-width: 768px) {
+      .pricing-nav-container {
+        padding: 20px 20px !important;
+      }
+      .pricing-nav-links {
+        display: none !important;
+      }
+      .pricing-nav-sign-in {
+        display: inline-block !important;
+        padding: 8px 16px !important;
+        font-size: 12px !important;
+      }
+      .pricing-founder-card {
+        padding: 36px 24px !important;
+      }
+      .pricing-founder-grid {
+        grid-template-columns: 1fr !important;
+        gap: 28px !important;
+      }
+      .pricing-founder-cta {
+        width: 100% !important;
+        padding: 18px 24px !important;
+        font-size: 15px !important;
+      }
+      .pricing-hero {
+        padding: 48px 24px 40px !important;
+      }
+      .pricing-hero h1 {
+        font-size: 44px !important;
+        letter-spacing: -0.5px !important;
+      }
+      .pricing-hero p {
+        font-size: 16px !important;
+      }
+      .pricing-main-card {
+        padding: 36px 24px !important;
+      }
+      .pricing-main-card-divider {
+        margin-left: -24px !important;
+        margin-right: -24px !important;
+      }
+      .pricing-section {
+        padding: 48px 20px !important;
+      }
+      .pricing-section h2 {
+        font-size: 30px !important;
+      }
+      .pricing-comparison-row {
+        padding: 18px 20px !important;
+      }
+      .pricing-final-cta h2 {
+        font-size: 38px !important;
+      }
+      .pricing-footer-inner {
+        flex-direction: column !important;
+        gap: 12px !important;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -175,6 +235,7 @@ export function PricingPage(): React.ReactElement {
 
       {/* TopNav */}
       <nav
+        className="pricing-nav-container"
         style={{
           position: "relative",
           zIndex: 2,
@@ -189,7 +250,7 @@ export function PricingPage(): React.ReactElement {
         <Link to="/" style={{ textDecoration: "none", color: CREAM, fontFamily: SERIF, fontSize: 22, fontWeight: 500, letterSpacing: 2 }}>
           VENVIEWER
         </Link>
-        <div style={{ display: "flex", gap: 28, alignItems: "center", fontSize: 14 }}>
+        <div className="pricing-nav-links" style={{ display: "flex", gap: 28, alignItems: "center", fontSize: 14 }}>
           <Link to="/" style={{ color: CREAM_MUT, textDecoration: "none" }}>Home</Link>
           <a href="/#how-it-works" style={{ color: CREAM_MUT, textDecoration: "none" }}>How it works</a>
           <Link to="/pricing" style={{ color: CREAM, textDecoration: "none", fontWeight: 600 }}>Pricing</Link>
@@ -208,10 +269,28 @@ export function PricingPage(): React.ReactElement {
             Sign in
           </Link>
         </div>
+        {/* Mobile-only minimal sign-in button (.pricing-nav-links hides the full menu below 768px) */}
+        <Link
+          to="/login"
+          className="pricing-nav-sign-in"
+          style={{
+            display: "none",
+            color: CREAM,
+            textDecoration: "none",
+            padding: "10px 22px",
+            border: `1px solid ${CREAM_FAINT}`,
+            borderRadius: 999,
+            fontSize: 13,
+            letterSpacing: 0.5,
+          }}
+        >
+          Sign in
+        </Link>
       </nav>
 
       {/* === HERO === */}
       <section
+        className="pricing-hero"
         style={{
           position: "relative",
           zIndex: 2,
@@ -484,6 +563,7 @@ export function PricingPage(): React.ReactElement {
       {/* === Founder bundle === */}
       <section style={{ position: "relative", zIndex: 2, padding: "60px 48px", maxWidth: 1000, margin: "0 auto" }}>
         <div
+          className="pricing-founder-card"
           style={{
             background: `linear-gradient(135deg, ${OXBLOOD} 0%, #5a1820 100%)`,
             borderRadius: 24,
@@ -502,7 +582,7 @@ export function PricingPage(): React.ReactElement {
             }}
           />
 
-          <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: 40, alignItems: "center" }}>
+          <div className="pricing-founder-grid" style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: 40, alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 11, letterSpacing: 4, color: GOLD, textTransform: "uppercase", fontWeight: 600, marginBottom: 14 }}>
                 Founder bundle · Limited
@@ -519,7 +599,7 @@ export function PricingPage(): React.ReactElement {
             <button
               type="button"
               onClick={() => { window.location.href = "/onboard?bundle=founder"; }}
-              className="pricing-cta-primary"
+              className="pricing-cta-primary pricing-founder-cta"
               style={{
                 padding: "22px 36px",
                 background: CREAM,
@@ -703,7 +783,7 @@ export function PricingPage(): React.ReactElement {
 
       {/* Footer */}
       <footer style={{ position: "relative", zIndex: 2, padding: "40px 48px", borderTop: "1px solid rgba(255,255,255,0.05)", textAlign: "center", fontSize: 12, color: CREAM_FAINT }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="pricing-footer-inner" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>© 2026 VenViewer</div>
           <div style={{ display: "flex", gap: 24 }}>
             <Link to="/privacy" style={{ color: CREAM_FAINT, textDecoration: "none" }}>Privacy</Link>
