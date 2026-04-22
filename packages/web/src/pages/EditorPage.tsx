@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
-import { SpacePicker } from "../components/editor/SpacePicker.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
@@ -76,18 +75,34 @@ export function EditorPage(): React.ReactElement {
     })();
   }, [urlConfigId, storeConfigId, searchParams, navigate, autoCreateFailed]);
 
-  // Handle space selection → create config → navigate. Used by the
-  // SpacePicker fallback below when auto-open fails.
-  const handleSelectSpace = (spaceId: string, _venueId: string): void => {
-    void useEditorStore.getState().createPublicConfig(spaceId)
-      .then((newConfigId) => { void navigate(`/plan/${newConfigId}`, { replace: true }); })
-      .catch(() => { /* error surfaced via store.error */ });
-  };
-
-  // Auto-create failed → fall back to the SpacePicker so the visitor can
-  // still reach the editor by picking a room manually.
+  // Auto-create failed → show a minimal retry screen instead of the
+  // legacy SpacePicker splash. The SpacePicker was the old entry flow
+  // (pick a venue → pick a space); now /plan always drops users
+  // straight into a Grand Hall config, so the splash has no role on
+  // this route.
   if (autoCreateFailed && urlConfigId === undefined && storeConfigId === null) {
-    return <SpacePicker onSelectSpace={handleSelectSpace} />;
+    return (
+      <div style={{
+        minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", gap: 16, fontFamily: "'Inter', sans-serif",
+        color: "#333", background: "#f5f5f0", padding: 24, textAlign: "center",
+      }}>
+        <div style={{ fontSize: 20, fontWeight: 600 }}>Couldn&rsquo;t open the planner</div>
+        <div style={{ fontSize: 14, color: "#666", maxWidth: 360 }}>
+          The server didn&rsquo;t respond in time. This is usually temporary — try again in a few seconds.
+        </div>
+        <button
+          type="button"
+          onClick={() => { window.location.reload(); }}
+          style={{
+            marginTop: 8, padding: "10px 24px", background: "#7a1f2a", color: "#fff",
+            border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   // Auto-create in flight (or about to start) — show a neutral loading
