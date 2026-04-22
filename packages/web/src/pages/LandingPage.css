@@ -241,8 +241,67 @@
   .th-landing .planner .rightcol { display: none; }
 }
 @media (max-width: 640px) {
-  .th-landing .planner .body { grid-template-columns: 1fr; }
-  .th-landing .planner .sidebar { display: none; }
+  /* Phone portrait: stack sidebar above the stage instead of hiding it
+     entirely — the event-type pills and drag-drop chips are the core
+     interactivity of the preview and should stay visible. */
+  .th-landing .planner .body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .th-landing .planner .sidebar {
+    display: block;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    padding: 16px;
+  }
+  .th-landing .planner .sidebar .field {
+    margin-bottom: 12px;
+  }
+  .th-landing .planner .sidebar .pill-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .th-landing .planner .sidebar .pill {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+  /* Give the stage a mobile-friendly aspect (taller, not wider) so the
+     21×10.5m room displays without horizontal overflow. Drop min-height
+     so aspect-ratio controls sizing. */
+  .th-landing .stage {
+    aspect-ratio: 21 / 12;
+    min-height: 0;
+  }
+  /* Shrink the overlay toolbar so it doesn't crowd the canvas. */
+  .th-landing .stage .topbar {
+    inset: 8px 8px auto 8px;
+    gap: 6px;
+  }
+  .th-landing .tool-group .tool {
+    width: 28px;
+    height: 26px;
+    font-size: 11px;
+  }
+  .th-landing .coord {
+    font-size: 10px;
+    padding: 4px 6px;
+  }
+  /* Hide the decorative absolute-positioned metre labels on mobile —
+     they get clipped at the stage edges and clutter the already-small
+     canvas. The interactive furniture still shows its labels. */
+  .th-landing .stage .dim-label {
+    display: none;
+  }
+  /* Shrink the tag chips above furniture items so "TOP TABLE · 14"
+     etc. don't run off the edge of their parent. */
+  .th-landing .furn .tag {
+    font-size: 8px;
+    top: -14px;
+    padding: 1px 4px;
+  }
+  .th-landing .furn {
+    font-size: 9px;
+  }
 }
 
 .th-landing .planner .sidebar {
