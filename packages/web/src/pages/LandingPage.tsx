@@ -595,7 +595,7 @@ function PlannerPreview(): ReactElement {
 
       <div className="body">
         <aside className="sidebar" aria-hidden>
-          <div className="field">
+          <div className="field compact-hide">
             <label>Room</label>
             <div className="input">Grand Hall <span className="caret">▾</span></div>
           </div>
@@ -625,12 +625,12 @@ function PlannerPreview(): ReactElement {
               </button>
             </div>
           </div>
-          <div className="field">
+          <div className="field compact-hide">
             <label>Guests</label>
             <div className="input">180 <span className="caret">—</span></div>
           </div>
           <div>
-            <h4>Drag &amp; drop</h4>
+            <h4 className="compact-hide">Drag &amp; drop</h4>
             <div className="pill-row" style={{ marginTop: 10 }}>
               {CATALOGUE.map((entry) => (
                 <button

@@ -241,66 +241,164 @@
   .th-landing .planner .rightcol { display: none; }
 }
 @media (max-width: 640px) {
-  /* Phone portrait: stack sidebar above the stage instead of hiding it
-     entirely — the event-type pills and drag-drop chips are the core
-     interactivity of the preview and should stay visible. */
+  /* =========================================================================
+     iPhone-portrait layout for the planner preview.
+     Reading order top-to-bottom matches what a visitor actually does:
+       1. Floor plan   (hero, full-bleed, natural aspect-ratio)
+       2. Detail strip (what you tapped — seats/diameter/linen)
+       3. Controls rail (layout pills + catalogue chips, horizontal scroll)
+     This flips the desktop grid upside-down via CSS `order` — no JSX
+     component splits; pointer math and SVG viewBox stay unchanged.
+     ======================================================================= */
+
+  .th-landing .hero { padding: 40px 0 32px; }
+  .th-landing .hero h1 { font-size: clamp(40px, 9vw, 60px); }
+  .th-landing .preview-caption {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* Compact chrome so the header doesn't steal vertical space. */
+  .th-landing .planner .chrome {
+    padding: 8px 12px;
+  }
+  .th-landing .planner .chrome .title {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .th-landing .planner .chrome .right {
+    font-size: 10px;
+  }
+
+  /* Reorder the grid so stage is first, detail strip second, controls
+     rail third. DOM order (sidebar / stage / rightcol) stays stable
+     so tests and a11y readers aren't disturbed. */
   .th-landing .planner .body {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto auto;
   }
-  .th-landing .planner .sidebar {
-    display: block;
-    border-right: none;
-    border-bottom: 1px solid var(--rule);
-    padding: 16px;
-  }
-  .th-landing .planner .sidebar .field {
-    margin-bottom: 12px;
-  }
-  .th-landing .planner .sidebar .pill-row {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .th-landing .planner .sidebar .pill {
-    font-size: 12px;
-    padding: 6px 12px;
-  }
-  /* Give the stage a mobile-friendly aspect (taller, not wider) so the
-     21×10.5m room displays without horizontal overflow. Drop min-height
-     so aspect-ratio controls sizing. */
+  .th-landing .planner .stage    { order: 1; }
+  .th-landing .planner .rightcol { order: 2; display: block; }
+  .th-landing .planner .sidebar  { order: 3; }
+
+  /* Stage as hero: natural aspect, larger min-height, readable labels. */
   .th-landing .stage {
-    aspect-ratio: 21 / 12;
-    min-height: 0;
+    aspect-ratio: 840 / 470;
+    min-height: 240px;
+    border-bottom: 1px solid var(--rule);
   }
-  /* Shrink the overlay toolbar so it doesn't crowd the canvas. */
   .th-landing .stage .topbar {
-    inset: 8px 8px auto 8px;
+    inset: 10px 10px auto 10px;
     gap: 6px;
   }
   .th-landing .tool-group .tool {
-    width: 28px;
-    height: 26px;
-    font-size: 11px;
+    width: 30px;
+    height: 28px;
+    font-size: 12px;
   }
   .th-landing .coord {
     font-size: 10px;
-    padding: 4px 6px;
+    padding: 4px 7px;
   }
-  /* Hide the decorative absolute-positioned metre labels on mobile —
-     they get clipped at the stage edges and clutter the already-small
-     canvas. The interactive furniture still shows its labels. */
   .th-landing .stage .dim-label {
     display: none;
   }
-  /* Shrink the tag chips above furniture items so "TOP TABLE · 14"
-     etc. don't run off the edge of their parent. */
-  .th-landing .furn .tag {
-    font-size: 8px;
-    top: -14px;
-    padding: 1px 4px;
-  }
   .th-landing .furn {
+    font-size: 10.5px;
+  }
+  .th-landing .furn .tag {
     font-size: 9px;
+    padding: 2px 5px;
+    top: -16px;
+  }
+  /* Tighten the in-stage summary so it doesn't intrude on the last
+     row of furniture. Stays a single row for at-a-glance reading. */
+  .th-landing .summary {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 6px;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+  }
+  .th-landing .summary .chip {
+    padding: 3px 8px;
+    font-size: 9.5px;
+  }
+  .th-landing .chips {
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+  .th-landing .chips::-webkit-scrollbar { display: none; }
+
+  /* Detail strip (right-column) re-skinned into a horizontal info bar
+     below the stage. Resurrects the "tap a round table → see its
+     stats" beat that was hidden on desktop widths below 900px. */
+  .th-landing .planner .rightcol {
+    border-left: none;
+    border-top: 1px solid var(--rule);
+    padding: 14px 16px;
+    background: var(--cream-2);
+  }
+  .th-landing .planner .rightcol h5 {
+    font-size: 10px;
+    letter-spacing: 2px;
+    margin: 0 0 8px;
+  }
+  .th-landing .planner .rightcol .kv {
+    display: inline-flex;
+    border-top: none !important;
+    padding: 0;
+    margin-right: 14px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .th-landing .planner .rightcol .kv span:first-child {
+    color: var(--muted);
+  }
+  .th-landing .planner .rightcol .section,
+  .th-landing .planner .rightcol .footer-note {
+    display: none;
+  }
+
+  /* Controls rail at the bottom: single-row horizontal scroll. Layout
+     pills + catalogue chips feel native-app-y, not desktop-form-y. */
+  .th-landing .planner .sidebar {
+    display: flex;
+    flex-direction: column;
+    border-right: none;
+    border-top: 1px solid var(--rule);
+    padding: 12px 16px 14px;
+    gap: 10px;
+    background: var(--cream);
+  }
+  /* Placeholder controls (Room, Guests, drag-drop label) add clutter
+     on mobile — hide them; the pill rows speak for themselves. */
+  .th-landing .planner .sidebar .compact-hide {
+    display: none;
+  }
+  .th-landing .planner .sidebar .field {
+    margin-bottom: 0;
+  }
+  .th-landing .planner .sidebar .pill-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    gap: 8px;
+  }
+  .th-landing .planner .sidebar .pill-row::-webkit-scrollbar {
+    display: none;
+  }
+  .th-landing .planner .sidebar .pill {
+    flex-shrink: 0;
+    font-size: 13px;
+    padding: 8px 14px;
   }
 }
 
