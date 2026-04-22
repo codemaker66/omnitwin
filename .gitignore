@@ -15,3 +15,7 @@ blob-report/
 .react-email/
 emails-out/
 .email-export-test/
+
+# Real customer list for seed-customers.ts — contains PII (emails), never commit.
+# Template committed at packages/api/src/scripts/customers.example.json.
+packages/api/src/scripts/customers.json

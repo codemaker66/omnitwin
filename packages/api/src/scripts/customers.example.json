@@ -1,0 +1,26 @@
+{
+  "_comment": "Template for seed-customers.ts. Copy this file to `customers.json` (gitignored) and replace with real data. Each entry pre-provisions a user row so when the person signs up via Clerk for the first time, the clerk-webhook attaches their Clerk account to the existing row and they land in the app already set up with the right role and venue access.",
+  "customers": [
+    {
+      "email": "catherine@example.com",
+      "name": "Catherine Smith",
+      "role": "hallkeeper",
+      "username": "catherine",
+      "venueSlug": "trades-hall-glasgow"
+    },
+    {
+      "email": "mary@example.com",
+      "name": "Mary Jones",
+      "role": "planner",
+      "username": "mary-jones",
+      "venueSlug": "trades-hall-glasgow"
+    },
+    {
+      "email": "admin@example.com",
+      "name": "Trades Hall Admin",
+      "role": "admin",
+      "username": "th-admin",
+      "venueSlug": "trades-hall-glasgow"
+    }
+  ]
+}
