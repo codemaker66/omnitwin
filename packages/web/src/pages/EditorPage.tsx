@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, useSearchParams, useLoaderData } from "react-router-dom";
-import type { ResolvedLayoutData } from "../url/resolve-loader.js";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -20,13 +19,14 @@ const DEFAULT_SPACE_SLUG = "grand-hall";
 // ---------------------------------------------------------------------------
 
 export function EditorPage(): React.ReactElement {
-  // Loader data is populated on /plan/:code and /:username/:slug — the
-  // resolver has already validated the URL and returned the canonical
-  // configId. Routes without a loader (/plan, /v/:venueSlug/plan) fall
-  // through to the useParams path below.
-  const loaderData = useLoaderData<ResolvedLayoutData | undefined>();
+  // Config ID resolution via URL params only. Previously used useLoaderData
+  // for loader-backed routes, but React Router v7 surfaces "Internal Server
+  // Error" when useLoaderData is called from a component mounted on a route
+  // without a loader (e.g. /plan itself). The /:username/:slug route that
+  // needed the loader is future work — no accounts have named URLs yet so
+  // nothing real is lost.
   const params = useParams<{ configId?: string; code?: string }>();
-  const urlConfigId = loaderData?.configId ?? params.configId ?? params.code;
+  const urlConfigId = params.configId ?? params.code;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);

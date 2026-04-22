@@ -2,7 +2,6 @@ import { lazy, Suspense, type ReactElement } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
-import { resolveLayoutLoader } from "./url/resolve-loader.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -177,17 +176,6 @@ export const router = createBrowserRouter([
     // bypassed for unauthenticated visitors.
     path: "/app",
     element: <RoleAwareRedirect />,
-  },
-  {
-    // Namespace URL: `/<username>/<layout-slug>` — e.g. `/blake/wedding-rehearsal`.
-    // The loader checks reserved first-segments server-side and returns
-    // `not_found` for reserved names, so route ordering doesn't need a
-    // front-end deny list here. Literal-prefix routes above (/dashboard,
-    // /hallkeeper, /login, etc.) naturally take precedence per React
-    // Router's literal-over-dynamic rule.
-    path: "/:username/:slug",
-    element: withSuspense(<EditorPage />),
-    loader: resolveLayoutLoader,
   },
   {
     path: "*",
