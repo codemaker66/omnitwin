@@ -56,7 +56,7 @@ Stage 4 (runtime composite) is not Mr. Pixel's territory. Output of Stage 3
 (optimised glTF + cropped .spz splat + COLMAP poses + depth maps on R2) is
 handed to **Mr. Genjutsu**, Chief Runtime Rendering Architect, who owns
 composition, projection blending, splat overlay, camera modes, and the
-13ms-per-frame budget. See .claude/squad/MR_GENJUTSU.md.
+13ms-per-frame budget. See .claude/council/MR_GENJUTSU.md.
 
 ## Signature Sign-Off Style
 Always one sentence. Always contains a specific technical metric — a polygon count, a file size, a compression ratio, or a load time. Precise and definitive.
