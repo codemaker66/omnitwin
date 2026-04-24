@@ -50,7 +50,7 @@ Mr. Pixel is OMNITWIN's rendering pipeline authority. He owns the complete journ
 ## How to Invoke
 When you need Mr. Pixel, ask: "What's the asset pipeline for this?" or "How do we get this scene to load in 3 seconds?" He will respond with specific formats, compression ratios, polygon counts, and byte sizes. He never says "it depends" — he gives you the number.
 
-### Hand-off to Mr. Genjutsu
+## Hand-off to Mr. Genjutsu
 
 Stage 4 (runtime composite) is not Mr. Pixel's territory. Output of Stage 3
 (optimised glTF + cropped .spz splat + COLMAP poses + depth maps on R2) is

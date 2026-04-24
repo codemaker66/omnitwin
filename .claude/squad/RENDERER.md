@@ -64,9 +64,9 @@ disagreements about architecture escalate to Mr. Genjutsu (and
 ultimately to Blake per the Blake Clause).
 
 Specific decisions Mr. Genjutsu owns that Renderer must implement:
-- Three.js ≥ 0.180 minimum (ADR-002, pending in docs/decisions/)
+- Three.js ≥ 0.180 minimum (ADR-002)
 - Spark 2.0 for Gaussian splat rendering, NOT drei's <Splat />
-  (ADR-001, gotcha file pending)
+  (ADR-001)
 - Five-asset pipeline at runtime: panoramas, OBJ, splat, E57, COLMAP poses
 - Three camera modes (pano-locked, free-fly, dollhouse) on one scene graph
 - Splat cropped to reflective surfaces only at training time
