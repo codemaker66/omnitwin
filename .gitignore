@@ -19,3 +19,10 @@ emails-out/
 # Real customer list for seed-customers.ts — contains PII (emails), never commit.
 # Template committed at packages/api/src/scripts/customers.example.json.
 packages/api/src/scripts/customers.json
+
+# Claude Code runtime state (locks/sessions are local; settings.json is committed).
+.claude/*.lock
+.claude/settings.local.json
+
+# One-off `tree` scratchpads — regenerate locally as needed.
+web-structure.txt
