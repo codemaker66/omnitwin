@@ -114,6 +114,49 @@ claude-mem and the auto-memory system are both active. Write `project`,
 next session — prior incidents, validated judgment calls, where external
 context lives. Read existing memories before starting relevant work.
 
+## Architecture state and decision log
+
+Active architecture work lives in `/docs/architecture/adr/` as immutable
+`D-NNN.md` files. The current state of the architecture is:
+
+- ADR-001 through ADR-008 land the founding decisions (Spark, Three.js
+  ≥0.180 target, five-asset Genjutsu pipeline, projective texturing
+  base, cropped splat residual, gsplat MCMC + bilateral grid, three
+  camera modes, venue tenancy).
+- ADR-003a, 004a, 005a, 006a are reframings/softenings of the originals
+  based on synthesis of four deep research reviews. The originals stay
+  as superseded; the reframed versions are proposed.
+- ADR-009 through ADR-015 are seven new proposed decisions covering
+  typed spatial-layer graph (VSIR-0), pose-frame indirection, Spatial
+  Confidence Budget, provenance/truth-mode separation, format strategy,
+  Venue Artifact Factory, capture certification tiers.
+- ADR-070, 071, 072 cover workflow infrastructure: files-in-git as
+  source of truth, Mermaid as on-demand visualization, task-master-ai
+  deferred.
+
+When proposing or implementing architecture, read the relevant ADR
+first. Don't write production code that locks in any ADR with status:
+proposed.
+
+Operational state lives in `/state/` as JSONL/JSON: `training_runs.jsonl`
+records every RunPod splat training run, `asset_versions.json` tracks
+signed AssetVersion bundles, `capture_log.json` tracks venue captures.
+
+Visual structure (ADR graphs, task graphs, pipeline diagrams, scene
+graph) lives in `/docs/diagrams/` as Mermaid in markdown files. Use the
+OMNITWIN theme from `/docs/diagrams/_theme.md` — Aman/Four
+Seasons-adjacent palette, sentence case, rounded corners, max 12 nodes
+per diagram.
+
+Daily session logs go in `/docs/sessions/YYYY-MM-DD.md`.
+
+## Workflow state — RunPod for splat training
+
+Local Windows splat training has been deprecated as of 25 April 2026
+due to fragility (gsplat 1.5.3 only on Python 3.10, NumPy 2.x patches,
+fused-ssim CUDA mismatch). All Gaussian splat training now runs on
+RunPod A100 80GB. Local development continues for everything else.
+
 ## When A Task Is Too Large
 
 Say "This needs N more prompts. Here's the breakdown. Ask me to do [next chunk]."

@@ -1,44 +1,20 @@
-# Architectural Decision Records
+# Architectural decision records — moved
 
-Load-bearing decisions for Venviewer (codebase: OMNITWIN). Each ADR
-is a single file. Terse by design — if a decision needs a full essay,
-write it in `docs/architecture/` and link to it here.
+ADRs have moved to `docs/architecture/adr/`.
 
-## Format
+Each `ADR-NNN-name.md` in this directory has a corresponding `D-NNN.md` in the new location. The legacy files in this directory are kept for link stability and historical reference; the new location is the source of truth.
 
-Each ADR follows this shape:
-ADR-NNN — One-line decision title
-Status: Accepted | Superseded | Deprecated. Date: YYYY-MM-DD.
-[One paragraph: the decision, stated clearly.]
-Why:
+| Legacy filename | New filename |
+|---|---|
+| `ADR-001-spark-not-drei.md` | `docs/architecture/adr/D-001.md` |
+| `ADR-002-threejs-180-minimum.md` | `docs/architecture/adr/D-002.md` |
+| `ADR-003-five-asset-pipeline.md` | `docs/architecture/adr/D-003.md` (superseded by D-003a) |
+| `ADR-004-projective-texturing-base.md` | `docs/architecture/adr/D-004.md` (superseded by D-004a) |
+| `ADR-005-splat-cropped-to-reflective.md` | `docs/architecture/adr/D-005.md` (superseded by D-005a) |
+| `ADR-006-gsplat-mcmc-bilateral.md` | `docs/architecture/adr/D-006.md` (superseded by D-006a) |
+| `ADR-007-three-camera-modes.md` | `docs/architecture/adr/D-007.md` |
+| `ADR-008-venue-as-tenant.md` | `docs/architecture/adr/D-008.md` |
 
-[Reason 1]
-[Reason 2]
-[Reason 3]
+For the new ADR template, see `docs/architecture/adr/_templates/adr-template.md`.
 
-Consequences:
-
-[What this forces us to do]
-[What this prevents]
-
-Supersedes: ADR-NNN (or none).
-Superseded by: ADR-NNN (or none).
-
-## Index
-
-| ADR | Title | Status |
-|---|---|---|
-| [001](./ADR-001-spark-not-drei.md) | Spark not drei for Gaussian splats | Accepted |
-| [002](./ADR-002-threejs-180-minimum.md) | Three.js ≥ 0.180 required | Accepted |
-| [003](./ADR-003-five-asset-pipeline.md) | Five-asset Genjutsu pipeline | Accepted |
-| [004](./ADR-004-projective-texturing-base.md) | Projective texturing is the base renderer | Accepted |
-| [005](./ADR-005-splat-cropped-to-reflective.md) | Splat cropped to reflective surfaces only | Accepted |
-| [006](./ADR-006-gsplat-mcmc-bilateral.md) | gsplat with MCMC + bilateral grid for training | Accepted |
-| [007](./ADR-007-three-camera-modes.md) | Three camera modes, one scene graph | Accepted |
-| [008](./ADR-008-venue-as-tenant.md) | Venue is the tenant unit; no separate Tenant entity | Accepted |
-
-## Writing new ADRs
-
-When a new decision lands, create `ADR-NNN-kebab-title.md`, update this
-index, and commit. Decisions that are superseded stay in the folder
-(historical record); mark status and link to the replacement.
+For the index of all current decisions including new and reframed ones, see `docs/architecture/adr/README.md`.
