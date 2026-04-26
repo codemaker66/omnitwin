@@ -190,6 +190,7 @@ The bundle is **unsigned** at this point. Backend ingestion (T-053, deferred unt
 | 10 | Pod hung after `run complete` line | `RUNPOD_API_KEY` not set, or API request failed silently. | Self-termination is best-effort. Manually terminate from the RunPod console. To debug: `tail` the log file and look for the curl response. |
 | 11 | CUDA OOM mid-training | Gaussian count growth outpaced VRAM. | Drop `cap_max` (e.g. 5000000 → 3500000) or increase `data_factor` (2 → 4) and rerun. Don't enable training-side bf16 until validated separately. |
 | 12 | `fused_ssim` import failure during training | Wheel missing or ABI-incompatible. | The trainer transparently falls back to `venviewer_training.ssim_fallback`. Slower (~5–10×) but produces the same result. No action needed; verify the fallback was used in the log. |
+| 13 | `OverflowError: Python integer -1 out of bounds for uint64` at `import pycolmap` | NumPy 2.x. The rmbrualla fork at commit `cc7ea4b73` was written when `np.uint64(-1)` wrapped to `MAX_UINT64`; NumPy 2.x changed that behaviour and now raises `OverflowError`. Verified empirically on Windows during 2026-04-26 pre-flight verification. | Ensure `numpy<2.0` is pinned (the Dockerfile ships `numpy==1.26.4`). Never upgrade to NumPy 2.x without first patching the rmbrualla fork's `scene_manager.py` `uint64` handling, OR moving to a different pycolmap fork that's NumPy-2.x-compatible. If this fires on a pod the image is wrong — rebuild rather than trying to monkeypatch in place. |
 
 ---
 
