@@ -11,7 +11,13 @@
         "mcp__railway__get-logs",         
         "mcp__railway__set-variables",                                                                                                                  
         "mcp__railway__list-variables",                                                                                                                 
-        "mcp__railway__check-railway-status"                                                                                                            
-      ]                                                                                                                                                 
-    }                                                                                                                                                   
+        "mcp__railway__check-railway-status"
+      ]
+    },
+    "autoMode": {
+      "allow": [
+        "$defaults",
+        "Direct pushes to the default branch (master) are permitted in this repo (omnitwin2). This is Blake's personal solo-developer project where master IS the integration branch and Blake is the only reviewer; PR review is not the workflow here. `git push origin master` and `git push origin master --tags` should auto-allow without confirmation and without soft-denial — they are not destructive or shared-team-state in this context."
+      ]
+    }
   }
