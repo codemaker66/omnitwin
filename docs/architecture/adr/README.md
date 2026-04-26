@@ -33,8 +33,14 @@ This is the source of truth for architectural decisions. Each ADR is immutable o
 | [D-011](D-011.md) | Spatial confidence budget | Proposed |
 | [D-012](D-012.md) | Provenance and truth-mode separation | Proposed |
 | [D-013](D-013.md) | Format strategy and standards | Proposed |
-| [D-014](D-014.md) | Venue Artifact Factory | Proposed |
+| [D-014](D-014.md) | Venue Artifact Factory | Accepted |
 | [D-015](D-015.md) | Capture certification tiers | Proposed |
+
+## Operational decisions (accepted 2026-04-26)
+
+| ID | Title | Status |
+|---|---|---|
+| [D-016](D-016.md) | RunPod-canonical training environment | Accepted |
 
 ## Workflow infrastructure decisions (proposed 2026-04-25)
 

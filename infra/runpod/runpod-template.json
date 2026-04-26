@@ -1,0 +1,24 @@
+{
+  "name": "venviewer-trainer-a100-cu124",
+  "imageName": "omnitwin/trainer:1.5.3-cu124",
+  "containerDiskInGb": 80,
+  "volumeInGb": 0,
+  "volumeMountPath": null,
+  "ports": "22/tcp,8080/http",
+  "isServerless": false,
+  "isPublic": false,
+  "readme": "Venviewer trainer — gsplat 1.5.3 on PyTorch 2.4.1 + CUDA 12.4 for A100 80GB.\n\nOn boot:\n  1. /opt/bootstrap.sh runs (decoded from CMD): pulls the trainer code from OMNITWIN_GIT_REPO @ OMNITWIN_GIT_REF, snapshots the git SHA/branch/remote into /workspace/code/.git_*, writes rclone.conf for R2, then exec's bash.\n  2. Operator opens an SSH or web terminal into the pod.\n  3. Operator runs /opt/verify_build.sh and confirms the JSON output (gsplat 1.5.3, CUDA 12.4, A100 80GB visible).\n  4. Operator runs /opt/run_training.sh with the desired flags per infra/runpod/RUNBOOK.md.\n\nNo persistent volume — R2 is the storage layer. Container disk 80GB covers one venue's colmap_v2 + depth priors + bundle output.\n\nDo not enable spot/interruptible until run_training.sh checkpoint-resume has been validated end-to-end.",
+  "dockerArgs": "",
+  "startScript": "bash -lc '/opt/bootstrap.sh'",
+  "env": [
+    { "key": "OMNITWIN_GIT_REPO",     "value": "git@github.com:codemaker66/omnitwin2.git" },
+    { "key": "OMNITWIN_GIT_REF",      "value": "master" },
+    { "key": "OMNITWIN_WALLCLOCK_SEC", "value": "14400" },
+    { "key": "GIT_DEPLOY_KEY_B64",    "value": "{{ RUNPOD_SECRET_git_deploy_key_b64 }}" },
+    { "key": "POD_SSH_PUBKEY",        "value": "{{ RUNPOD_SECRET_pod_ssh_pubkey }}" },
+    { "key": "R2_ACCOUNT_ID",         "value": "{{ RUNPOD_SECRET_r2_account_id }}" },
+    { "key": "AWS_ACCESS_KEY_ID",     "value": "{{ RUNPOD_SECRET_r2_access_key_id }}" },
+    { "key": "AWS_SECRET_ACCESS_KEY", "value": "{{ RUNPOD_SECRET_r2_secret_access_key }}" },
+    { "key": "RUNPOD_API_KEY",        "value": "{{ RUNPOD_SECRET_runpod_api_key }}" }
+  ]
+}

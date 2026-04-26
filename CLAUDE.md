@@ -150,6 +150,8 @@ per diagram.
 
 Daily session logs go in `/docs/sessions/YYYY-MM-DD.md`.
 
+Task list shepherding: every session reads `docs/state/tasks.md` in full, updates statuses per the shepherd protocol at the bottom of that file.
+
 ## Workflow state — RunPod for splat training
 
 Local Windows splat training has been deprecated as of 25 April 2026

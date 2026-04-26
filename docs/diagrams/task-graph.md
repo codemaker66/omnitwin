@@ -1,6 +1,6 @@
 # Task dependency graph
 
-Tier 0 + Tier 1 only. Tiers 2–6 are tracked in `docs/state/tasks.md` but not visualized here (too dense). Consider `scripts/generate-diagrams.ts` after two weeks if diagrams are actually being consulted.
+Tier 0 + Tier 1 + the small set of Tier 2 tasks that have moved off `not-started`. Tasks in Tiers 2–6 with no status change live in `docs/state/tasks.md` only. Consider `scripts/generate-diagrams.ts` after two weeks if diagrams are actually being consulted.
 
 ```mermaid
 %%{init: {
@@ -45,10 +45,16 @@ flowchart TD
         T052(["T-052 — Three.js 0.170 → 0.180"])
     end
 
+    subgraph tier2_visible [tier 2 — surfaced by status change]
+        T019(["T-019 — E57 depth supervision"])
+        T053(["T-053 — backend ingestion"])
+    end
+
     T001 --> T002
     T001 --> T003
     T003 --> T005
     T016 --> T018
+    T018 -- "unblocks" --> T053
 
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
@@ -56,14 +62,19 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T006,T007,T008,T009,T011,T012,T013,T014,T015,T016,T017 done
-    class T001,T002,T003,T005,T010,T018,T052 notstarted
-    class T004 deferred
+    class T006,T007,T008,T009,T011,T012,T013,T014,T015,T016,T017,T002,T019 done
+    class T001 inprogress
+    class T003,T005,T010,T018,T052 notstarted
+    class T004,T053 deferred
 ```
 
 `T-004` is rendered with the deferred (charcoal) class for visual consistency, but the actual status in `docs/state/tasks.md` is **rejected** — there is no rejected colour class in the theme. The label text `(rejected)` carries the truth.
 
 `T-052` has no dependencies but is grouped with the Tier 1 pending subgraph because it is the Three.js 0.170 → 0.180 upgrade required for any Spark 2.0 production work — it lives logically in the next-2-weeks band even though it's an upgrade rather than a follow-on from another task.
+
+`T-019` (Tier 2) is shown here because its status moved to `done` on 2026-04-26 — the E57 depth supervision generator script lives at `venviewer_training/project_e57_depth.py`. End-to-end validation against Trades Hall depth priors is in T-021 (not visualized).
+
+`T-053` (Tier 2) is shown here because the backend-ingestion script template was specified in this prompt set and is queued for the moment T-018 lands. Edge `T-018 → T-053` carries the label "unblocks" because it expresses the activation trigger, not a code-level dependency.
 
 ## When to update
 

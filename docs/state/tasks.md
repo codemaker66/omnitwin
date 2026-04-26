@@ -8,11 +8,11 @@ Updated: 2026-04-25.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
-| T-001 | Migrate to RunPod-only training workflow. Stage `colmap_v2` to R2. Set up A100 80GB pod template with PyTorch 2.4.1+cu124, gsplat 1.5.3, Mip-Splatting, DN-Splatter, 3DGUT. | not-started | 5 | 2 | — | D-006a, D-014, Claude-DR §4 | Replaces deprecated local Windows training. |
-| T-002 | Document RunPod runbook (launch, rclone in `colmap_v2`, run training, push results to R2, kill pod). | not-started | 4 | 1 | T-001 | D-006a | Per-venue training cost target ~$5–10. |
-| T-003 | Run Config B training: Mip-Splatting + DN-Splatter + 3DGUT + bilateral grid + MCMC, cap-max 5M, 30K steps on A100. | not-started | 5 | 1 + 3 hr GPU | T-001 | D-006a, Claude-DR §4.1.6 | Compare to failed local Config A baseline. |
+| T-001 | Migrate to RunPod-only training workflow. Stage `colmap_v2` to R2. Set up A100 80GB pod template with PyTorch 2.4.1+cu124, gsplat 1.5.3, Mip-Splatting, DN-Splatter, 3DGUT. | in-progress | 5 | 2 | — | D-006a, D-014, D-016, Claude-DR §4 | Implementation landed 2026-04-26 (Dockerfile, run scripts, configs, runbook). Smoke test ($0.20 mip-NeRF garden) is step 1 of using it; T-001 closes when smoke gate passes. Blocked on RunPod template + secrets being configured in the RunPod console. |
+| T-002 | Document RunPod runbook (launch, rclone in `colmap_v2`, run training, push results to R2, kill pod). | done | 4 | 1 | T-001 | D-006a, D-016 | Runbook landed at `infra/runpod/RUNBOOK.md`; covers smoke + Config B procedures, failure modes, equirect trap, cost reference. |
+| T-003 | Run Config B training: Mip-Splatting + DN-Splatter + 3DGUT + bilateral grid + MCMC, cap-max 5M, 30K steps on A100. | not-started | 5 | 1 + 3 hr GPU | T-001 | D-006a, D-016, Claude-DR §4.1.6 | Recipe locked at `configs/training/config_b.yaml`. Blocked on T-001 (smoke gate must pass first). |
 | T-004 | Land §316 ADR creation prompt — superseded by Prompts 1+2 of workflow infrastructure prompt set. | rejected | — | — | — | — | superseded |
-| T-005 | Eval Config B against held-out views (PSNR / SSIM / LPIPS / FPS on M1 MBP, 4090, iPhone WebGL2). | not-started | 4 | 1 | T-003 | Claude-DR §6 | |
+| T-005 | Eval Config B against held-out views (PSNR / SSIM / LPIPS / FPS on M1 MBP, 4090, iPhone WebGL2). | not-started | 4 | 1 | T-003 | Claude-DR §6 | Blocked on T-003. WebGL FPS via `venviewer_training/webgl_fps.ts` on real client hardware (not headless). |
 
 ## Tier 1 — next 2 weeks (architectural foundation)
 
@@ -37,7 +37,7 @@ Updated: 2026-04-25.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
-| T-019 | Implement E57 depth supervision generator. Per-panorama depth maps from E57 cloud, input to gsplat `--depth_loss`. | not-started | 5 | 2 | T-001 | Claude-DR §F | Eliminates floaters, +1–2 dB. |
+| T-019 | Implement E57 depth supervision generator. Per-panorama depth maps from E57 cloud, input to gsplat `--depth_loss`. | done | 5 | 2 | T-001 | Claude-DR §F, D-016 | Implementation landed 2026-04-26 at `venviewer_training/project_e57_depth.py` (E57 → sparse UV+depth `.npz` per training image; ICP alignment via open3d; ProcessPoolExecutor parallel projection). End-to-end validation against Trades Hall depth priors happens in T-021. Eliminates floaters, +1–2 dB expected. |
 | T-020 | Implement automated tripod masking for COLMAP down-faces. | not-started | 3 | 1 | — | session history | 231/300 → ~270/300 expected. |
 | T-021 | Run Config C training: Config B + E57 depth supervision + tripod masking on A100. | not-started | 4 | 1 + 3 hr GPU | T-019, T-020 | multiple | |
 | T-022 | Build bake-off harness: candidates B (Genjutsu v1), A (pure full-scene splat), D (classical textured mesh) on Trades Hall. | not-started | 5 | 5 | T-001, T-018 | Claude-DR §6 | Same train/test split, same E57 ground truth, same eval contract. |
@@ -45,6 +45,7 @@ Updated: 2026-04-25.
 | T-024 | Implement automated residual extraction (replaces manual SuperSplat cropping). Render projective base, render full splat, compute persistent error mask. | not-started | 4 | 5 | T-022 | D-005a, Claude-DR §3.3 | |
 | T-025 | Build pose-frame indirection per D-010. `PoseFrame` interface, COLMAP default, MapAnything fallback. Test on hard-to-reach Trades Hall regions. | not-started | 4 | 3 | T-012 | D-010 | Accept if E57 alignment ≤ 5 mm. |
 | T-026 | Implement SPZ output format from training pipeline. | not-started | 3 | 1 | T-001 | D-013 | Hold off on glTF/KHR until Q2 ratification. |
+| T-053 | Backend ingestion: pull signed bundle from R2, validate SHA-256 against manifest, write `AssetVersion` row. | deferred | 4 | 3 | T-018 | D-014, D-016, RunPod research synthesis 2026-04-26 | Verifier protocol documented in `docs/specs/runpod-training-contract.md` §5. Cannot be implemented until T-018 schema lands. Reactivation trigger: T-018 status = `done`. Implementation lands at `scripts/admin/register_trained_bundle.ts`. Becomes immediate work the moment T-018 closes. |
 
 ## Tier 3 — weeks 7–12 (bake-off decision and production readiness)
 
@@ -108,3 +109,44 @@ Updated: 2026-04-25.
 - **CGT-DR** — ChatGPT deep research Parts 1+2.
 - **Claude-DR** — Claude deep research Parts 1+2.
 - **§NNN** — section number from architecture conversation history.
+
+## Shepherd protocol
+
+This task list is a living document. Every Claude Code session must follow this protocol.
+
+### Before starting work
+
+- Read this file in full.
+- Identify the T-NNN that the current request maps to. If no T-NNN matches, propose a new T-NNN in the appropriate tier and add it to the table before starting work.
+- Update the matched task's status to `in-progress`.
+
+### During work
+
+If the work becomes blocked:
+
+- Set status to `blocked`.
+- Add to Notes: what blocks the task and what would unblock it.
+- Surface the block in the session log at `docs/sessions/YYYY-MM-DD.md`.
+
+If the work reveals new tasks (subtasks, prerequisite work, follow-on work):
+
+- Add them to the appropriate tier with explicit `Depends` linkage.
+- Do not merge new work into the in-progress task scope without Blake's explicit confirmation.
+
+### After completing work
+
+- Set the task's status to `done`.
+- Update the Notes field with the actual delivered artifact paths (e.g. "Implementation at `infra/runpod/run_training.sh`, runbook at `infra/runpod/RUNBOOK.md`").
+- Update any tasks that were `Depends`-on-this-task to surface that they're now unblocked.
+- Regenerate `docs/diagrams/task-graph.md` to reflect the new state.
+- Add a session log entry to `docs/sessions/YYYY-MM-DD.md` noting the completed task and any newly-unblocked tasks.
+
+### Per-session surveillance
+
+Each session also checks:
+
+- Any task that's been `in-progress` for >7 days: probably stuck. Surface to Blake.
+- Any task whose `Depends` are now all `done`: should be flagged as ready to start.
+- Any task whose `Depends` include a task that's been `rejected`: may need re-thinking; surface to Blake.
+
+The shepherd protocol is non-negotiable. Skipping it produces the exact failure mode this protocol was designed to prevent: tasks that quietly stay open forever because nobody updated them after the work shipped.

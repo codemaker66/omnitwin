@@ -1,0 +1,58 @@
+# Config Smoke — $0.20 validation run on the mip-NeRF 360 garden subset.
+#
+# Validates that every extension actually loads and runs end-to-end on a
+# fresh A100 pod before we burn $5–15 on a real Config B run. Same shape
+# as config_b but vastly reduced step count + Gaussian cap, with all
+# extension flags ENABLED so we exercise the full code path.
+#
+# Pass criteria (per RUNBOOK.md):
+#   - PSNR ≥ 22 on the garden subset at step 1500
+#   - manifest.json parses and contains at least scene.ply +
+#     bilateral_grid.bin
+#   - scene.ply has ≥ 100k Gaussians
+#   - hardware.json shows A100 80GB
+#
+# Expected wallclock: ~10 minutes on A100 80GB.
+# Expected cost:      ~$0.20 at $1.19/hr Community Cloud.
+
+# ---- core training schedule ----
+max_steps: 1500
+save_steps: [1500]
+ply_steps:  [1500]
+eval_steps: [1500]
+
+# ---- model ----
+sh_degree: 3
+antialiased: true        # Mip-Splatting on so we exercise the path
+
+# ---- MCMC strategy (capped low for smoke) ----
+strategy:
+  type: MCMCStrategy
+  cap_max: 1000000
+  noise_lr: 500000.0
+  refine_start_iter: 200
+  refine_stop_iter: 1300
+  noise_injection_stop_iter: 1200
+  refine_every: 100
+  min_opacity: 0.005
+
+# ---- post-processing ----
+post_processing: bilateral_grid    # on so we verify the .bin lands in the bundle
+bilateral_grid_shape: [16, 16, 8]
+
+# ---- depth supervision ----
+depth_loss: true
+depth_lambda: 0.02
+
+# ---- 3DGUT ----
+with_ut: true
+with_eval3d: true
+
+# ---- not used ----
+pose_opt: false
+app_opt: false
+
+# ---- output ----
+save_ply: true
+disable_viewer: true
+data_factor: 8           # heavily downsampled for speed

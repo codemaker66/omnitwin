@@ -1,0 +1,61 @@
+# Config B — Venviewer production training recipe.
+#
+# Recipe: MCMC + Mip-Splatting (antialiased) + 3DGUT + bilateral grid +
+# DN-Splatter-style depth supervision. Cap 5M Gaussians, 30k steps,
+# A100 80GB on RunPod.
+#
+# Locked from research synthesis (2026-04-26). Do not change values
+# without an ADR amendment — these are the falsifiable target for the
+# bake-off (T-022 / T-027) and any silent change invalidates the
+# comparison.
+#
+# Invocation (via run_training.sh):
+#   /opt/run_training.sh \
+#     --venue-id trades-hall \
+#     --config /workspace/code/configs/training/config_b.yaml \
+#     --enable-mip-splatting \
+#     --enable-3dgut \
+#     --enable-dn-supervision \
+#     --enable-bilateral-grid
+
+# ---- core training schedule ----
+max_steps: 30000
+save_steps:  [1000, 2000, 3000, 4000, 5000, 7000, 10000, 15000, 20000, 25000, 30000]
+ply_steps:   [30000]
+eval_steps:  [7000, 15000, 30000]
+
+# ---- model ----
+sh_degree: 3
+antialiased: true        # Mip-Splatting
+
+# ---- MCMC strategy ----
+strategy:
+  type: MCMCStrategy
+  cap_max: 5000000
+  noise_lr: 500000.0
+  refine_start_iter: 500
+  refine_stop_iter: 25000
+  noise_injection_stop_iter: 24000
+  refine_every: 100
+  min_opacity: 0.005
+
+# ---- post-processing ----
+post_processing: bilateral_grid    # unfused
+bilateral_grid_shape: [16, 16, 8]
+
+# ---- depth supervision (DN-Splatter-style) ----
+depth_loss: true
+depth_lambda: 0.02
+
+# ---- 3DGUT (distorted-camera-aware rasterization) ----
+with_ut: true
+with_eval3d: true
+
+# ---- not used ----
+pose_opt: false
+app_opt: false
+
+# ---- output ----
+save_ply: true
+disable_viewer: true
+data_factor: 2           # downsample factor for input images during training
