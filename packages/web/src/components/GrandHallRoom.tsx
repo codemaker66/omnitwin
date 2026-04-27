@@ -30,11 +30,18 @@ import {
   shouldUseLightmap,
   LIGHTMAP_SIZE,
 } from "../lib/lighting.js";
+import {
+  createParquetFloorTexture,
+  createPlasterWallTexture,
+  createCeilingPlasterTexture,
+  createDomeInteriorTexture,
+} from "../lib/grand-hall-textures.js";
 import { sectionClipPlanes, noClipPlanes } from "./SectionPlane.js";
 import { useVisibilityStore } from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 import { BrickWall } from "./BrickWall.js";
+import { GrandHallOrnaments } from "./GrandHallOrnaments.js";
 
 // ---------------------------------------------------------------------------
 // Room surface geometry — pure data, fully testable without WebGL
@@ -275,6 +282,38 @@ export function GrandHallRoom(): React.ReactElement {
     return () => { lightmapTexture?.dispose(); };
   }, [lightmapTexture]);
 
+  // Procedural surface textures — generated once per mount. Disposed on
+  // unmount so navigating away from the editor doesn't leak GPU memory.
+  // happy-dom (test runner) returns null from canvas.getContext("2d"), so
+  // we tolerate the throw and fall back to colour-only materials. SSR
+  // (no `document`) hits the same fallback.
+  const surfaceTextures = useMemo(() => {
+    if (typeof document === "undefined") return null;
+    try {
+      return {
+        floor: createParquetFloorTexture(),
+        wall: createPlasterWallTexture(),
+        ceiling: createCeilingPlasterTexture(),
+        dome: createDomeInteriorTexture(),
+      };
+    } catch {
+      // Canvas 2D unavailable (happy-dom or restricted environment) —
+      // colour-only materials still render the room correctly.
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (surfaceTextures !== null) {
+        surfaceTextures.floor.dispose();
+        surfaceTextures.wall.dispose();
+        surfaceTextures.ceiling.dispose();
+        surfaceTextures.dome.dispose();
+      }
+    };
+  }, [surfaceTextures]);
+
   const { width, length, height } = GRAND_HALL_RENDER_DIMENSIONS;
 
   const gridGeometry = useMemo(
@@ -325,10 +364,28 @@ export function GrandHallRoom(): React.ReactElement {
 
   return (
     <group name="grand-hall-room" ref={groupRef}>
+      {/* Lighting — warm Georgian interior. Hemisphere supplies sky + ground
+          gradient; a soft directional from the long-wall window direction
+          gives the chandelier-lit room a hint of late-afternoon side-light.
+          No shadows (renderer rule); directional is here for ambient warmth
+          only. Ambient floor of 0.32 keeps the lower walls and skirting
+          legible without flattening the lit surfaces. */}
       <hemisphereLight
         args={[lightConfig.skyColor, lightConfig.groundColor, lightConfig.intensity]}
       />
-      <ambientLight intensity={0.3} />
+      <ambientLight intensity={0.32} color="#f4ead6" />
+      <directionalLight
+        position={[10, 6, 8]}
+        intensity={0.45}
+        color="#f6e9c7"
+        castShadow={false}
+      />
+      <directionalLight
+        position={[-10, 6, -8]}
+        intensity={0.18}
+        color="#dfe7f0"
+        castShadow={false}
+      />
       {/*
         Floor grid — 1m intervals, rectangular, fits the room exactly.
         Positioned just above the floor to avoid z-fighting.
@@ -338,9 +395,19 @@ export function GrandHallRoom(): React.ReactElement {
         <lineBasicMaterial color={GRID_COLOR} />
       </lineSegments>
       {/* Timber frame removed — didn't look good visually */}
-      {/* Non-wall surfaces: floor + ceiling as flat planes */}
+      {/* Non-wall surfaces: floor + ceiling as flat planes. Each gets the
+          appropriate procedural texture; floor uses lower roughness so the
+          parquet picks up a subtle sheen from the directional light. */}
       {GRAND_HALL_SURFACES.filter((s) => !s.name.startsWith("wall-")).map((surface) => {
         const clippable = isSurfaceClippable(surface.name);
+        const isFloor = surface.name === "floor";
+        const surfaceMap = surfaceTextures === null
+          ? null
+          : isFloor
+            ? surfaceTextures.floor
+            : surface.name === "ceiling"
+              ? surfaceTextures.ceiling
+              : null;
         return (
           <mesh
             key={surface.name}
@@ -351,9 +418,10 @@ export function GrandHallRoom(): React.ReactElement {
             <planeGeometry args={[surface.size[0], surface.size[1]]} />
             <meshStandardMaterial
               color={surface.color}
-              side={surface.name === "floor" ? DoubleSide : FrontSide}
-              roughness={0.95}
-              metalness={0}
+              map={surfaceMap}
+              side={isFloor ? DoubleSide : FrontSide}
+              roughness={isFloor ? 0.62 : 0.92}
+              metalness={isFloor ? 0.05 : 0}
               transparent={surface.name !== "floor"}
               lightMap={lightmapTexture}
               clippingPlanes={clippable ? sectionClipPlanes : noClipPlanes}
@@ -397,15 +465,20 @@ export function GrandHallRoom(): React.ReactElement {
         position={[0, height + 0.005, 0]}
         rotation={[0, 0, 0]}
       >
-        <sphereGeometry args={[DOME_RADIUS, 48, 24, 0, Math.PI * 2, 0, Math.PI * HALF]} />
+        <sphereGeometry args={[DOME_RADIUS, 64, 32, 0, Math.PI * 2, 0, Math.PI * HALF]} />
         <meshStandardMaterial
           color={DOME_COLOR}
+          map={surfaceTextures === null ? null : surfaceTextures.dome}
           side={BackSide}
-          roughness={0.9}
-          metalness={0}
+          roughness={0.85}
+          metalness={0.05}
           clippingPlanes={sectionClipPlanes}
         />
       </mesh>
+      {/* Decorative dressing — crown moulding, skirting, pilasters, arched
+          window facades, ceiling rosette ring, hanging chandelier. Kept as a
+          single sibling group so layout/visibility logic above stays simple. */}
+      <GrandHallOrnaments width={width} length={length} height={height} />
     </group>
   );
 }
