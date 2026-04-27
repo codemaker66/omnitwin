@@ -434,23 +434,25 @@ interface OnboardingHintProps {
 }
 
 function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement | null {
-  // Dynamically measure the Furniture button's vertical centre instead of
-  // computing it from layout constants. Earlier static math (top padding +
-  // button heights + gaps) drifted whenever button content changed — adding
-  // captions silently bumped the real height to ~72 CSS px while the
-  // constant said 58, so the arrow ended up pointing at Rotate. Reading the
-  // live `getBoundingClientRect()` keeps the arrow on target regardless of
-  // future styling tweaks.
+  // Dynamically measure the chair *icon* (not the button) so the arrow
+  // tip aligns with the visible glyph rather than the button's geometric
+  // centre. With a caption stacked beneath the icon, the button's centre
+  // falls in the gap between icon and label — visually "below" the chair.
+  // Reading the inner <svg>'s rect puts the arrow on the icon itself.
   const [topPx, setTopPx] = useState<number | null>(null);
 
   useLayoutEffect(() => {
     let raf = 0;
     function measure(): void {
       const btn = document.querySelector('[aria-label="Add Furniture"]');
-      if (btn instanceof HTMLElement) {
-        const rect = btn.getBoundingClientRect();
-        setTopPx(rect.top + rect.height / 2);
-      }
+      if (!(btn instanceof HTMLElement)) return;
+      // Prefer the chair-icon SVG; fall back to the button if for some
+      // reason no svg child exists (defensive — current Lucide always
+      // renders an svg).
+      const icon = btn.querySelector("svg");
+      const target = icon instanceof SVGElement ? icon : btn;
+      const rect = target.getBoundingClientRect();
+      setTopPx(rect.top + rect.height / 2);
     }
     // First read after layout commit; second after a frame so any
     // late-arriving font metrics (caption load) are already applied.
@@ -458,8 +460,8 @@ function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement 
     raf = window.requestAnimationFrame(measure);
 
     const obs = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    const target = document.querySelector('[aria-label="Add Furniture"]');
-    if (obs !== null && target !== null) obs.observe(target);
+    const targetEl = document.querySelector('[aria-label="Add Furniture"]');
+    if (obs !== null && targetEl !== null) obs.observe(targetEl);
     window.addEventListener("resize", measure);
     return () => {
       window.cancelAnimationFrame(raf);
