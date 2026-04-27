@@ -439,6 +439,200 @@
     margin-top: 8px;
   }
 
+  /* ─────────────────────────────────────────────────────────────
+     Motion layer
+     Restraint > effect. All animation is opt-in via prefers-
+     reduced-motion: no-preference, with reduced-motion users
+     seeing the final composed state immediately.
+     ───────────────────────────────────────────────────────────── */
+
+  /* Easing reference (used inline in keyframes/transitions):
+     --tail:  cubic-bezier(0.16, 1, 0.3, 1)   long-tail decel for reveals
+     --apple: cubic-bezier(0.32, 0.72, 0, 1)  hover/tap micro-response
+  */
+
+  /* Default state: everything visible (prefers-reduced-motion default + no-JS fallback) */
+  .spread .roman,
+  .spread .headline,
+  .spread .editorial-illo,
+  .spread .body,
+  .spread .footline {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    /* The .reveal class is added by JS once a spread enters viewport.
+       Until then, members of an .observe-reveal block sit in their
+       hidden state. */
+    .observe-reveal:not(.reveal) .anim-headline,
+    .observe-reveal:not(.reveal) .anim-illo,
+    .observe-reveal:not(.reveal) .anim-body,
+    .observe-reveal:not(.reveal) .anim-foot {
+      opacity: 0;
+    }
+    .observe-reveal:not(.reveal) .anim-headline { transform: translateY(14px); }
+    .observe-reveal:not(.reveal) .anim-illo     { transform: translateY(10px); }
+    .observe-reveal:not(.reveal) .anim-body     { transform: translateY(8px); }
+    .observe-reveal:not(.reveal) .anim-foot     { transform: translateY(6px); }
+
+    .observe-reveal .anim-headline,
+    .observe-reveal .anim-illo,
+    .observe-reveal .anim-body,
+    .observe-reveal .anim-foot {
+      transition:
+        opacity 800ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform 800ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .observe-reveal.reveal .anim-headline { transition-delay: 200ms; }
+    .observe-reveal.reveal .anim-illo     { transition-delay: 400ms; transition-duration: 900ms; }
+    .observe-reveal.reveal .anim-body     { transition-delay: 700ms; }
+    .observe-reveal.reveal .anim-foot     { transition-delay: 1100ms; transition-duration: 700ms; }
+
+    /* SVG drawing-in. We set --pl (path length) inline via JS so each
+       path's dasharray matches its own length exactly. */
+    .observe-reveal:not(.reveal) .draw-in {
+      stroke-dasharray: var(--pl);
+      stroke-dashoffset: var(--pl);
+    }
+    .observe-reveal .draw-in {
+      stroke-dasharray: var(--pl);
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1500ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition-delay: 500ms;
+    }
+    /* Filled regions inside an illustration: fade in after their outlines settle */
+    .observe-reveal:not(.reveal) .draw-fill { opacity: 0; }
+    .observe-reveal .draw-fill {
+      transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition-delay: 1400ms;
+    }
+
+    /* ── Continuous loops ─────────────────────────────────── */
+
+    /* Spread I — chandelier glow */
+    @keyframes chand-breathe {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1.0; }
+    }
+    .chand-glow {
+      animation: chand-breathe 4000ms ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    /* Spread II — composite arrow descending dot */
+    @keyframes composite-pulse {
+      0%   { opacity: 0; transform: translateY(-12px); }
+      15%  { opacity: 1; }
+      85%  { opacity: 1; }
+      100% { opacity: 0; transform: translateY(12px); }
+    }
+    .composite-pulse {
+      animation: composite-pulse 3000ms ease-in-out infinite;
+    }
+
+    /* Spread VI — scenario panel highlight cycle */
+    @keyframes scenario-frame {
+      0%, 100%   { stroke-opacity: 0.45; stroke-width: 0.6; }
+      8%, 22%    { stroke-opacity: 1.0;  stroke-width: 1.2; }
+    }
+    .scenario-frame {
+      stroke: var(--gold);
+      animation: scenario-frame 8000ms ease-in-out infinite;
+    }
+    .scenario-frame.s1 { animation-delay: 0ms; }
+    .scenario-frame.s2 { animation-delay: 2000ms; }
+    .scenario-frame.s3 { animation-delay: 4000ms; }
+    .scenario-frame.s4 { animation-delay: 6000ms; }
+
+    /* Spread X — Sentinel halo + node pulses (driven by JS for randomness) */
+    @keyframes sentinel-halo {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1.0; }
+    }
+    .sentinel-halo {
+      animation: sentinel-halo 4000ms ease-in-out infinite;
+    }
+    .orbit-node {
+      transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .orbit-node.pulse {
+      opacity: 1 !important;
+      transition: opacity 200ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .sentinel-attentive .orbit-pulse-driver { /* hook for pointer-attention */ }
+
+    /* ── Tap micro-interactions ──────────────────────────── */
+    .headline {
+      transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .headline:active {
+      transform: scale(1.01);
+    }
+
+    /* Partnership card list items: gold underline draws in on tap */
+    .card li {
+      position: relative;
+    }
+    .card li::after {
+      content: "";
+      position: absolute;
+      left: 8mm;
+      right: 0;
+      bottom: -0.5px;
+      height: 0.5px;
+      background: var(--gold);
+      transform-origin: left center;
+      transform: scaleX(0);
+      transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .card li:active::after,
+    .card li:hover::after {
+      transform: scaleX(1);
+    }
+
+    /* Tier seals (Spread VIII): tap ring + pointer magnetic hover */
+    .tier-seal {
+      transition: transform 500ms cubic-bezier(0.32, 0.72, 0, 1);
+      cursor: pointer;
+    }
+    @keyframes seal-ring {
+      0%   { stroke-opacity: 0.7; r: 28; }
+      100% { stroke-opacity: 0;   r: 56; }
+    }
+    .tier-seal-ring {
+      pointer-events: none;
+      fill: none;
+      stroke: var(--gold);
+      stroke-width: 0.5;
+      stroke-opacity: 0;
+    }
+    .tier-seal-ring.fire {
+      animation: seal-ring 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  }
+
+  /* Print: never animate */
+  @media print {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+    .observe-reveal .anim-headline,
+    .observe-reveal .anim-illo,
+    .observe-reveal .anim-body,
+    .observe-reveal .anim-foot {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .draw-in {
+      stroke-dasharray: none !important;
+      stroke-dashoffset: 0 !important;
+    }
+  }
+
   /* Print */
   @page {
     size: A4 landscape;
@@ -466,23 +660,22 @@
     <div class="left">
       <span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span>
     </div>
-    <div class="right">Section I of XII</div>
+    <div class="right">Section I of XI</div>
   </header>
 
   <div class="stage">
     <div class="hero">
       <div class="hero-left">
-        <div class="eyebrow">A founding venue partnership</div>
         <h1 class="hero-title">Trades&nbsp;Hall<span class="amp">&amp;</span><em>Venviewer</em></h1>
         <p class="thesis">A photoreal digital twin of the Grand Hall, paired with the planning instruments that change what a venue is, in the eyes of the people who book it.</p>
         <div class="bylines">
           <div class="byline">
             <div class="lbl-text">Prepared by</div>
-            <div class="who">Blake<small>Founder, Venviewer</small></div>
+            <div class="who">Blake</div>
           </div>
           <div class="byline">
             <div class="lbl-text">For</div>
-            <div class="who">Elaine<small>Trades Hall Glasgow</small></div>
+            <div class="who">Elaine</div>
           </div>
         </div>
       </div>
@@ -537,7 +730,7 @@
           </g>
 
           <!-- chandelier glow -->
-          <circle cx="350" cy="240" r="120" fill="url(#chand)"/>
+          <circle class="chand-glow" cx="350" cy="240" r="120" fill="url(#chand)"/>
           <!-- chandelier crystals -->
           <g>
             <circle cx="350" cy="240" r="22" fill="#E8C77A" stroke="#B8965A" stroke-width="0.6"/>
@@ -598,7 +791,7 @@
 <section class="spread" data-screen-label="02 Two halves">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section II of XII</div>
+    <div class="right">Section II of XI</div>
   </header>
 
   <div class="stage">
@@ -681,7 +874,7 @@
               <!-- floor reflection -->
               <path d="M 30 200 L 235 130 L 440 200 L 235 220 Z" fill="url(#floorshine)"/>
               <!-- chandelier -->
-              <circle cx="235" cy="115" r="80" fill="url(#chandII)"/>
+              <circle class="chand-glow" cx="235" cy="115" r="80" fill="url(#chandII)"/>
               <circle cx="235" cy="115" r="14" fill="#E8C77A" stroke="#B8965A" stroke-width="0.5"/>
               <circle cx="235" cy="115" r="6" fill="#F4ECCB"/>
               <!-- crystal points -->
@@ -708,6 +901,8 @@
             <!-- composite line and label -->
             <line x1="60" y1="310" x2="1040" y2="310" stroke="#B8965A" stroke-width="0.5"/>
             <text x="550" y="338" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="18" fill="#B8965A">composite</text>
+            <!-- subtle composite pulse dot, slowly descending onto the line -->
+            <circle class="composite-pulse" cx="550" cy="310" r="2" fill="#B8965A"/>
           </svg>
         </div>
 
@@ -730,7 +925,7 @@
 <section class="spread" data-screen-label="03 Viewpoint">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section III of XII</div>
+    <div class="right">Section III of XI</div>
   </header>
 
   <div class="stage">
@@ -840,7 +1035,7 @@
 <section class="spread" data-screen-label="04 Capacity">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section IV of XII</div>
+    <div class="right">Section IV of XI</div>
   </header>
 
   <div class="stage">
@@ -979,7 +1174,7 @@
 <section class="spread" data-screen-label="05 Drag drop">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section V of XII</div>
+    <div class="right">Section V of XI</div>
   </header>
 
   <div class="stage">
@@ -996,46 +1191,66 @@
 
         <div class="editorial-illo">
           <svg viewBox="0 0 700 480" preserveAspectRatio="xMidYMid meet">
-            <!-- isometric helpers: 30deg axes -->
+            <!--
+              Isometric construction notes:
+              floor diamond:  top (350,70)  right (650,225)  bottom (350,380)  left (50,225)
+              x-axis vector ≈ (300,155);  y-axis vector ≈ (-300,155).
+              Every flat element on the floor is a diamond using these proportions.
+            -->
             <!-- floor diamond -->
             <g>
-              <polygon points="350,60 660,225 350,390 40,225" fill="#1A2E3B" fill-opacity="0.025" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
-              <!-- inner border -->
-              <polygon points="350,80 640,232 350,375 60,232" fill="none" stroke="#1A2E3B" stroke-opacity="0.15" stroke-width="0.4"/>
+              <polygon points="350,70 650,225 350,380 50,225" fill="#1A2E3B" fill-opacity="0.03" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
+              <polygon points="350,90 632,236 350,365 68,236" fill="none" stroke="#1A2E3B" stroke-opacity="0.15" stroke-width="0.4"/>
               <!-- iso grid lines -->
               <g stroke="#1A2E3B" stroke-opacity="0.1" stroke-width="0.4">
-                <line x1="172" y1="136" x2="482" y2="301"/>
-                <line x1="262" y1="92" x2="572" y2="257"/>
-                <line x1="262" y1="358" x2="572" y2="193"/>
-                <line x1="172" y1="314" x2="482" y2="149"/>
+                <line x1="200" y1="148" x2="500" y2="303"/>
+                <line x1="275" y1="110" x2="575" y2="265"/>
+                <line x1="275" y1="340" x2="575" y2="185"/>
+                <line x1="200" y1="302" x2="500" y2="147"/>
               </g>
             </g>
 
-            <!-- back walls (low, like furniture) -->
-            <g stroke="#1A2E3B" stroke-width="0.6" fill="none" opacity="0.4">
-              <path d="M 350 60 L 660 225 L 660 195 L 350 30 Z" fill="#1A2E3B" fill-opacity="0.04"/>
-              <path d="M 350 60 L 40 225 L 40 195 L 350 30 Z" fill="#1A2E3B" fill-opacity="0.04"/>
-            </g>
-
-            <!-- bandstand (back left) -->
-            <g transform="translate(220 175)">
-              <polygon points="0,0 70,37 0,75 -70,37" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
-              <polygon points="0,-12 70,25 70,37 0,0 -70,37 -70,25" fill="#1A2E3B" fill-opacity="0.08" stroke="#1A2E3B" stroke-width="0.5"/>
-              <text x="0" y="42" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="11" fill="#1A2E3B" opacity="0.7">bandstand</text>
-            </g>
-
-            <!-- bar (back right) -->
-            <g transform="translate(490 175)">
-              <polygon points="0,0 90,48 0,96 -90,48" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
-              <polygon points="0,-10 90,38 90,48 0,0 -90,48 -90,38" fill="#1A2E3B" fill-opacity="0.08" stroke="#1A2E3B" stroke-width="0.5"/>
-              <text x="0" y="55" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="11" fill="#1A2E3B" opacity="0.7">bar</text>
-            </g>
-
-            <!-- ROUND TABLES (iso ellipses) -->
-            <!-- helper: ellipse table with 8 dots -->
+            <!-- bandstand: a low rectangular platform on the floor (back-left) -->
+            <!-- Its footprint diamond, with iso top surface raised by 10px to suggest height -->
             <g>
-              <!-- Static tables -->
-              <g transform="translate(220 280)">
+              <!-- footprint (at floor level) -->
+              <polygon points="230,170 320,217 230,265 140,217"
+                fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
+              <!-- left side -->
+              <polygon points="140,217 230,265 230,255 140,207"
+                fill="#1A2E3B" fill-opacity="0.10" stroke="#1A2E3B" stroke-width="0.5"/>
+              <!-- right side -->
+              <polygon points="230,265 320,217 320,207 230,255"
+                fill="#1A2E3B" fill-opacity="0.06" stroke="#1A2E3B" stroke-width="0.5"/>
+              <!-- top surface (raised 10px) -->
+              <polygon points="230,160 320,207 230,255 140,207"
+                fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
+              <text x="230" y="212" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="12" fill="#1A2E3B" opacity="0.7">bandstand</text>
+            </g>
+
+            <!-- bar: longer rectangular counter (back-right) -->
+            <g>
+              <polygon points="500,170 580,210 500,250 420,210"
+                fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
+              <polygon points="420,210 500,250 500,242 420,202"
+                fill="#1A2E3B" fill-opacity="0.10" stroke="#1A2E3B" stroke-width="0.5"/>
+              <polygon points="500,250 580,210 580,202 500,242"
+                fill="#1A2E3B" fill-opacity="0.06" stroke="#1A2E3B" stroke-width="0.5"/>
+              <polygon points="500,162 580,202 500,242 420,202"
+                fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/>
+              <text x="500" y="206" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="12" fill="#1A2E3B" opacity="0.7">bar</text>
+            </g>
+
+            <!-- dance floor diamond (sits on the floor, between bandstand and front) -->
+            <g>
+              <polygon points="350,260 470,322 350,384 230,322"
+                fill="none" stroke="#1A2E3B" stroke-width="0.5" stroke-dasharray="3 3" opacity="0.55"/>
+              <text x="350" y="328" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="12" fill="#1A2E3B" opacity="0.6">dance floor</text>
+            </g>
+
+            <!-- ROUND TABLES (iso ellipses, ry = rx/2 to match floor projection) -->
+            <g>
+              <g transform="translate(180 280)">
                 <ellipse rx="28" ry="14" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.5"/>
                 <g fill="#B8965A" fill-opacity="0.55">
                   <circle cx="0" cy="-19" r="3.2"/><circle cx="22" cy="-12" r="3.2"/>
@@ -1045,7 +1260,7 @@
                 </g>
               </g>
 
-              <g transform="translate(490 280)">
+              <g transform="translate(530 280)">
                 <ellipse rx="28" ry="14" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.5"/>
                 <g fill="#B8965A" fill-opacity="0.55">
                   <circle cx="0" cy="-19" r="3.2"/><circle cx="22" cy="-12" r="3.2"/>
@@ -1055,7 +1270,7 @@
                 </g>
               </g>
 
-              <g transform="translate(150 320)">
+              <g transform="translate(160 340)">
                 <ellipse rx="28" ry="14" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.5"/>
                 <g fill="#B8965A" fill-opacity="0.55">
                   <circle cx="0" cy="-19" r="3.2"/><circle cx="22" cy="-12" r="3.2"/>
@@ -1065,7 +1280,7 @@
                 </g>
               </g>
 
-              <g transform="translate(560 320)">
+              <g transform="translate(550 340)">
                 <ellipse rx="28" ry="14" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.5"/>
                 <g fill="#B8965A" fill-opacity="0.55">
                   <circle cx="0" cy="-19" r="3.2"/><circle cx="22" cy="-12" r="3.2"/>
@@ -1076,44 +1291,33 @@
               </g>
             </g>
 
-            <!-- dance floor diamond -->
-            <g transform="translate(355 320)">
-              <polygon points="0,-32 110,25 0,82 -110,25" fill="none" stroke="#1A2E3B" stroke-width="0.5" stroke-dasharray="3 3" opacity="0.5"/>
-              <text x="0" y="32" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="11" fill="#1A2E3B" opacity="0.6">dance floor</text>
-            </g>
-
-            <!-- LIFTED TABLE (active drag) -->
-            <g transform="translate(370 230)">
+            <!-- LIFTED TABLE (active drag) - on the open floor in the front-centre -->
+            <g transform="translate(355 295)">
               <!-- shadow ring on floor -->
-              <ellipse cx="0" cy="22" rx="42" ry="14" fill="none" stroke="#B8965A" stroke-width="0.7" stroke-dasharray="2 3" opacity="0.85"/>
+              <ellipse cx="0" cy="30" rx="34" ry="17" fill="none" stroke="#B8965A" stroke-width="0.7" stroke-dasharray="2 3" opacity="0.85"/>
               <!-- vertical lift line -->
-              <line x1="0" y1="22" x2="0" y2="-2" stroke="#B8965A" stroke-width="0.5" stroke-dasharray="2 2"/>
+              <line x1="0" y1="30" x2="0" y2="0" stroke="#B8965A" stroke-width="0.5" stroke-dasharray="2 2"/>
               <!-- table lifted -->
-              <ellipse cx="0" cy="-2" rx="32" ry="16" fill="#F4EDE0" stroke="#B8965A" stroke-width="1"/>
-              <ellipse cx="0" cy="-2" rx="32" ry="16" fill="none" stroke="#B8965A" stroke-width="1.5" opacity="0.8"/>
+              <ellipse cx="0" cy="0" rx="30" ry="15" fill="#F4EDE0" stroke="#B8965A" stroke-width="1.4"/>
               <g fill="#B8965A">
-                <circle cx="0" cy="-22" r="3.4"/><circle cx="25" cy="-14" r="3.4"/>
-                <circle cx="36" cy="-2" r="3.4"/><circle cx="25" cy="10" r="3.4"/>
-                <circle cx="0" cy="18" r="3.4"/><circle cx="-25" cy="10" r="3.4"/>
-                <circle cx="-36" cy="-2" r="3.4"/><circle cx="-25" cy="-14" r="3.4"/>
+                <circle cx="0" cy="-20" r="3.4"/><circle cx="23" cy="-13" r="3.4"/>
+                <circle cx="34" cy="0" r="3.4"/><circle cx="23" cy="13" r="3.4"/>
+                <circle cx="0" cy="20" r="3.4"/><circle cx="-23" cy="13" r="3.4"/>
+                <circle cx="-34" cy="0" r="3.4"/><circle cx="-23" cy="-13" r="3.4"/>
               </g>
             </g>
 
-            <!-- cursor -->
-            <g transform="translate(415 195)">
+            <!-- cursor (just above the lifted table) -->
+            <g transform="translate(390 270)">
               <path d="M 0 0 L 0 22 L 6 17 L 11 26 L 15 24 L 10 15 L 18 14 Z" fill="#1A2E3B" stroke="#F4EDE0" stroke-width="0.8"/>
             </g>
 
-            <!-- label for active element -->
-            <g class="lbl">
-              <line x1="412" y1="220" x2="450" y2="160" stroke="#B8965A" stroke-width="0.5"/>
-              <text x="455" y="158">Lifting · drag to relocate</text>
-            </g>
-
-            <!-- tools palette tiny chip top right -->
-            <g transform="translate(595 30)">
-              <rect x="0" y="0" width="60" height="14" fill="none" stroke="#1A2E3B" stroke-width="0.5" stroke-opacity="0.4"/>
-              <text x="30" y="10" text-anchor="middle" font-family="Inter" font-size="6.5" font-weight="500" letter-spacing="0.2em" fill="#1A2E3B" opacity="0.6">MOVE · ROTATE · DUPLICATE</text>
+            <!-- label for active element (placed in clear space upper-right) -->
+            <g>
+              <line x1="395" y1="265" x2="560" y2="110" stroke="#B8965A" stroke-width="0.5"/>
+              <circle cx="395" cy="265" r="1.6" fill="#B8965A"/>
+              <text x="560" y="100" font-family="Inter" font-size="8.5" font-weight="500" letter-spacing="0.22em" fill="#B8965A">LIFTING</text>
+              <text x="560" y="118" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">drag to relocate</text>
             </g>
           </svg>
         </div>
@@ -1133,7 +1337,7 @@
 <section class="spread" data-screen-label="06 Scenarios">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section VI of XII</div>
+    <div class="right">Section VI of XI</div>
   </header>
 
   <div class="stage">
@@ -1164,7 +1368,7 @@
             <!-- 4 frames -->
             <!-- Frame 1: Day September -->
             <g transform="translate(20 30)">
-              <rect x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
+              <rect class="scenario-frame s1" x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
               <!-- room interior simplified, daylight -->
               <rect x="0" y="0" width="245" height="240" fill="url(#dayLight)" opacity="0.6"/>
               <!-- floor -->
@@ -1194,7 +1398,7 @@
 
             <!-- Frame 2: Evening September -->
             <g transform="translate(297 30)">
-              <rect x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
+              <rect class="scenario-frame s2" x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
               <rect x="0" y="0" width="245" height="240" fill="url(#evening)" opacity="0.7"/>
               <path d="M 22 220 L 122 130 L 222 220 Z" fill="#1A2E3B" fill-opacity="0.06" stroke="#1A2E3B" stroke-opacity="0.4" stroke-width="0.5"/>
               <rect x="80" y="80" width="85" height="80" fill="none" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.5"/>
@@ -1202,7 +1406,7 @@
               <rect x="35" y="105" width="22" height="60" rx="8" ry="8" fill="#1A2E3B" fill-opacity="0.45" stroke="#1A2E3B" stroke-width="0.5"/>
               <rect x="190" y="105" width="22" height="60" rx="8" ry="8" fill="#1A2E3B" fill-opacity="0.45" stroke="#1A2E3B" stroke-width="0.5"/>
               <!-- glowing chandelier -->
-              <circle cx="122" cy="120" r="44" fill="url(#chandSm)"/>
+              <circle class="chand-glow" cx="122" cy="120" r="44" fill="url(#chandSm)"/>
               <circle cx="122" cy="120" r="6" fill="#E8C77A" stroke="#B8965A" stroke-width="0.5"/>
               <line x1="122" y1="80" x2="122" y2="116" stroke="#B8965A" stroke-width="0.5"/>
             </g>
@@ -1210,7 +1414,7 @@
 
             <!-- Frame 3: Rain plan -->
             <g transform="translate(574 30)">
-              <rect x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
+              <rect class="scenario-frame s3" x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
               <path d="M 22 220 L 122 130 L 222 220 Z" fill="#1A2E3B" fill-opacity="0.04" stroke="#1A2E3B" stroke-opacity="0.4" stroke-width="0.5"/>
               <rect x="80" y="80" width="85" height="80" fill="none" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.5"/>
               <rect x="35" y="105" width="22" height="60" rx="8" ry="8" fill="#7D9579" fill-opacity="0.18" stroke="#1A2E3B" stroke-width="0.5"/>
@@ -1234,7 +1438,7 @@
 
             <!-- Frame 4: 180 guests reduced -->
             <g transform="translate(851 30)">
-              <rect x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
+              <rect class="scenario-frame s4" x="0" y="0" width="245" height="240" fill="#F4EDE0" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.6"/>
               <path d="M 22 220 L 122 130 L 222 220 Z" fill="#1A2E3B" fill-opacity="0.04" stroke="#1A2E3B" stroke-opacity="0.4" stroke-width="0.5"/>
               <rect x="80" y="80" width="85" height="80" fill="none" stroke="#1A2E3B" stroke-opacity="0.45" stroke-width="0.5"/>
               <rect x="35" y="105" width="22" height="60" rx="8" ry="8" fill="url(#dayLight)" stroke="#B8965A" stroke-width="0.5"/>
@@ -1280,7 +1484,7 @@
 <section class="spread" data-screen-label="07 Cinematic">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section VII of XII</div>
+    <div class="right">Section VII of XI</div>
   </header>
 
   <div class="stage">
@@ -1345,7 +1549,7 @@
 <section class="spread" data-screen-label="08 Certification">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section VIII of XII</div>
+    <div class="right">Section VIII of XI</div>
   </header>
 
   <div class="stage">
@@ -1443,7 +1647,7 @@
 <section class="spread" data-screen-label="09 Index">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section IX of XII</div>
+    <div class="right">Section IX of XI</div>
   </header>
 
   <div class="stage">
@@ -1523,7 +1727,7 @@
 <section class="spread" data-screen-label="10 Sentinel">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section X of XII</div>
+    <div class="right">Section X of XI</div>
   </header>
 
   <div class="stage">
@@ -1548,7 +1752,7 @@
               </radialGradient>
             </defs>
 
-            <line x1="350" y1="240" x2="350.0" y2="65.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="473.7" y2="116.3" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="525.0" y2="240.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="473.7" y2="363.7" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="350.0" y2="415.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="226.3" y2="363.7" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="175.0" y2="240.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="226.3" y2="116.3" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><circle cx="350" cy="240" r="80" fill="url(#sentHalo)"/><circle cx="350" cy="240" r="36" fill="#1A2E3B" stroke="#B8965A" stroke-width="1"/><circle cx="350" cy="240" r="30" fill="none" stroke="#B8965A" stroke-width="0.4"/><text x="350" y="246" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="20" fill="#F4EDE0">Sentinel</text><circle cx="350.0" cy="65.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="350.0" cy="65.0" r="3" fill="#B8965A"/><text x="350.0" y="37.0" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">training jobs</text><circle cx="473.7" cy="116.3" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="473.7" cy="116.3" r="3" fill="#B8965A"/><text x="496.4" y="97.6" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">customer enquiries</text><circle cx="525.0" cy="240.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="525.0" cy="240.0" r="3" fill="#B8965A"/><text x="557.0" y="244.0" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">system health</text><circle cx="473.7" cy="363.7" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="473.7" cy="363.7" r="3" fill="#B8965A"/><text x="496.4" y="390.4" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">costs</text><circle cx="350.0" cy="415.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="350.0" cy="415.0" r="3" fill="#B8965A"/><text x="350.0" y="451.0" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">calendar</text><circle cx="226.3" cy="363.7" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="226.3" cy="363.7" r="3" fill="#B8965A"/><text x="203.6" y="390.4" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">team activity</text><circle cx="175.0" cy="240.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="175.0" cy="240.0" r="3" fill="#B8965A"/><text x="143.0" y="244.0" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">errors</text><circle cx="226.3" cy="116.3" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="226.3" cy="116.3" r="3" fill="#B8965A"/><text x="203.6" y="97.6" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">deployments</text>
+            <line x1="350" y1="240" x2="350.0" y2="65.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="473.7" y2="116.3" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="525.0" y2="240.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="473.7" y2="363.7" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="350.0" y2="415.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="226.3" y2="363.7" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="175.0" y2="240.0" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><line x1="350" y1="240" x2="226.3" y2="116.3" stroke="#B8965A" stroke-width="0.5" stroke-opacity="0.55"/><circle class="sentinel-halo" cx="350" cy="240" r="80" fill="url(#sentHalo)"/><circle cx="350" cy="240" r="36" fill="#1A2E3B" stroke="#B8965A" stroke-width="1"/><circle cx="350" cy="240" r="30" fill="none" stroke="#B8965A" stroke-width="0.4"/><text x="350" y="246" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="20" fill="#F4EDE0">Sentinel</text><circle cx="350.0" cy="65.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="350.0" cy="65.0" r="3" fill="#B8965A"/><text x="350.0" y="37.0" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">training jobs</text><circle cx="473.7" cy="116.3" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="473.7" cy="116.3" r="3" fill="#B8965A"/><text x="496.4" y="97.6" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">customer enquiries</text><circle cx="525.0" cy="240.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="525.0" cy="240.0" r="3" fill="#B8965A"/><text x="557.0" y="244.0" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">system health</text><circle cx="473.7" cy="363.7" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="473.7" cy="363.7" r="3" fill="#B8965A"/><text x="496.4" y="390.4" text-anchor="start" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">costs</text><circle cx="350.0" cy="415.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="350.0" cy="415.0" r="3" fill="#B8965A"/><text x="350.0" y="451.0" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">calendar</text><circle cx="226.3" cy="363.7" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="226.3" cy="363.7" r="3" fill="#B8965A"/><text x="203.6" y="390.4" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">team activity</text><circle cx="175.0" cy="240.0" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="175.0" cy="240.0" r="3" fill="#B8965A"/><text x="143.0" y="244.0" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">errors</text><circle cx="226.3" cy="116.3" r="18" fill="#F4EDE0" stroke="#1A2E3B" stroke-width="0.6"/><circle cx="226.3" cy="116.3" r="3" fill="#B8965A"/><text x="203.6" y="97.6" text-anchor="end" font-family="Cormorant Garamond" font-style="italic" font-size="13" fill="#1A2E3B">deployments</text>
 
             <text x="350" y="510" text-anchor="middle" font-family="Cormorant Garamond" font-style="italic" font-size="15" fill="#1A2E3B">→ surfaces only what matters, on the founder's phone</text>
           </svg>
@@ -1569,7 +1773,7 @@
 <section class="spread" data-screen-label="11 Collaboration">
   <header class="masthead">
     <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section XI of XII</div>
+    <div class="right">Section XI of XI</div>
   </header>
 
   <div class="stage">
@@ -1682,58 +1886,160 @@
   </footer>
 </section>
 
-<!-- ════════════════════════════════════════════════════════════════ -->
-<!-- SPREAD XII — THE FOUNDING PARTNERSHIP -->
-<!-- ════════════════════════════════════════════════════════════════ -->
-<section class="spread" data-screen-label="12 Partnership">
-  <header class="masthead">
-    <div class="left"><span class="mark">Venviewer <em>·</em> A founding venue brief for Trades Hall Glasgow</span></div>
-    <div class="right">Section XII of XII</div>
-  </header>
-
-  <div class="stage">
-    <div class="partnership">
-      <div>
-        <div class="roman" style="text-align:center; display:block;"><span class="num" style="margin-right:8px;">XII</span><span class="ital">The proposal</span></div>
-        <h2 class="headline" style="text-align:center; margin-top:6mm; font-size:36pt;">A founding venue, <em>not a customer</em>.</h2>
-      </div>
-
-      <p class="partnership-thesis">Trades Hall is not Venviewer's first customer. It is the venue that defines what we are — the proof, the visual identity, the architectural standard our entire product is built to meet.</p>
-
-      <div class="cards">
-        <div class="card dark">
-          <div class="eyebrow">Trades Hall receives</div>
-          <h3 class="card-title">Free, <em>for life</em></h3>
-          <ul>
-            <li><span>Use of every Venviewer feature, forever — including every feature yet to be built.</span></li>
-            <li><span>No subscription fee, no upgrade fee, no per-event charge.</span></li>
-            <li><span>Direct access to the founder for support and product input.</span></li>
-            <li><span>Annual on-site sessions to capture new spaces and refresh the model.</span></li>
-            <li><span>Optional Trades-Hall-branded planning portal for your own clients.</span></li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <div class="eyebrow">In return</div>
-          <h3 class="card-title">A <em>founding</em> credit</h3>
-          <ul>
-            <li><span>Trades Hall featured as Venviewer's hero case study — in marketing, on the website, in investor presentations.</span></li>
-            <li><span>A small handful of introductions per year to other venues in your network.</span></li>
-            <li><span>Permission to bring potential customers and investors to the venue for in-person demonstrations.</span></li>
-            <li><span>An annual refreshed case study and a video testimonial after six months of use.</span></li>
-            <li><span>Permission to use Grand Hall imagery in the visual identity of Venviewer.</span></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <footer class="footline">
-    <div class="built">Glasgow · MMXXVI · A founding venue partnership</div>
-    <div class="pageno">xii</div>
-  </footer>
-</section>
-
 </div>
+
+<script>
+(function(){
+  // Respect reduced-motion: do nothing. CSS already shows everything in final state.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  // ── 1. Tag spreads + their key elements for the staggered reveal cascade ──
+  document.querySelectorAll('.spread').forEach(function(spread){
+    spread.classList.add('observe-reveal');
+
+    var headline = spread.querySelector('.headline');
+    if (headline) headline.classList.add('anim-headline');
+
+    var illo = spread.querySelector('.editorial-illo, svg');
+    if (illo) illo.classList.add('anim-illo');
+
+    spread.querySelectorAll('.body, .partnership-thesis').forEach(function(el){
+      el.classList.add('anim-body');
+    });
+
+    var foot = spread.querySelector('.footline');
+    if (foot) foot.classList.add('anim-foot');
+  });
+
+  // ── 2. Drawing-in pattern: tag long architectural strokes per spread ──
+  // Spread I (hero): all the architectural <path>s in the cross-section
+  function tagDrawIn(svg, selector){
+    if (!svg) return;
+    svg.querySelectorAll(selector).forEach(function(el){
+      try {
+        var pl = el.getTotalLength ? el.getTotalLength() : 0;
+        if (pl > 8) {
+          el.classList.add('draw-in');
+          el.style.setProperty('--pl', pl);
+        }
+      } catch(e){}
+    });
+  }
+
+  // Spread I — cross-section paths
+  var spread1 = document.querySelector('[data-screen-label="01 Hero"] svg');
+  tagDrawIn(spread1, 'path[stroke], line[stroke]');
+
+  // Spread II — the two halves (architectural wireframe + light frame strokes)
+  var spread2 = document.querySelector('[data-screen-label="02 Two halves"] svg');
+  tagDrawIn(spread2, 'path[stroke]:not([fill]), line[stroke]');
+
+  // Spread VIII — medallion seals (cascade in sequence with extra delay each)
+  var spread8 = document.querySelector('[data-screen-label="08 Certification"] svg');
+  if (spread8) {
+    var seals = spread8.querySelectorAll('circle[r="22"], circle[r="20"], circle[r="18"]');
+    // Seals already get .draw-in via the medallion ring strokes; we mostly want sequence.
+    spread8.querySelectorAll('g[transform]').forEach(function(g, i){
+      g.style.setProperty('transition-delay', (200 + i*200) + 'ms');
+    });
+    // Tag tier seal circles for hover/tap
+    seals.forEach(function(c){ c.classList.add('tier-seal'); });
+  }
+
+  // Spread X — Sentinel constellation lines drawing in
+  var spread10 = document.querySelector('[data-screen-label="10 Sentinel"] svg');
+  tagDrawIn(spread10, 'line[stroke]');
+
+  // ── 3. Spread X — tag the eight orbit nodes ──
+  if (spread10) {
+    // Each orbit node is the outer cream-filled circle r=18 (paired with a small r=3 gold dot).
+    spread10.querySelectorAll('circle[r="18"]').forEach(function(c, i){
+      c.classList.add('orbit-node');
+      c.dataset.idx = i;
+    });
+  }
+
+  // ── 4. IntersectionObserver to fire the reveal cascade ──
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if (entry.isIntersecting && !entry.target.classList.contains('reveal')) {
+        entry.target.classList.add('reveal');
+        // once revealed, never re-animate
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.3 });
+
+  document.querySelectorAll('.observe-reveal').forEach(function(s){ io.observe(s); });
+
+  // ── 5. Sentinel orbit-node random pulse driver ──
+  if (spread10) {
+    var nodes = spread10.querySelectorAll('.orbit-node');
+    var attentive = false;
+
+    // Pointer attention: when cursor hovers the spread, slow the rate.
+    var spread10Section = spread10.closest('.spread');
+    if (spread10Section) {
+      spread10Section.addEventListener('pointerenter', function(){ attentive = true; });
+      spread10Section.addEventListener('pointerleave', function(){ attentive = false; });
+    }
+
+    var lastIdx = -1;
+    function pulseNext(){
+      // pick a random node, never the same one twice in a row
+      var idx;
+      do { idx = Math.floor(Math.random() * nodes.length); }
+      while (idx === lastIdx && nodes.length > 1);
+      lastIdx = idx;
+
+      var node = nodes[idx];
+      node.classList.add('pulse');
+      setTimeout(function(){ node.classList.remove('pulse'); }, 800);
+
+      // schedule next: 3000–4000ms; +1500ms when attentive
+      var delay = 3000 + Math.random() * 1000 + (attentive ? 1500 : 0);
+      setTimeout(pulseNext, delay);
+    }
+    // start after first reveal
+    setTimeout(pulseNext, 1800);
+  }
+
+  // ── 6. Tier seals: tap ring + magnetic hover ──
+  document.querySelectorAll('.tier-seal').forEach(function(seal){
+    var parent = seal.parentNode;
+
+    seal.addEventListener('click', function(){
+      var ring = seal.cloneNode();
+      ring.removeAttribute('class');
+      ring.removeAttribute('fill');
+      ring.removeAttribute('stroke');
+      ring.removeAttribute('stroke-width');
+      ring.setAttribute('class', 'tier-seal-ring fire');
+      parent.appendChild(ring);
+      setTimeout(function(){ ring.remove(); }, 700);
+    });
+
+    // Magnetic hover (pointer only)
+    seal.addEventListener('pointermove', function(e){
+      var rect = seal.getBoundingClientRect();
+      var cx = rect.left + rect.width/2;
+      var cy = rect.top + rect.height/2;
+      var dx = (e.clientX - cx) * 0.12;
+      var dy = (e.clientY - cy) * 0.12;
+      // cap at 6px
+      var mag = Math.min(6, Math.hypot(dx, dy));
+      var ang = Math.atan2(dy, dx);
+      seal.style.transform = 'translate(' + (Math.cos(ang)*mag) + 'px,' + (Math.sin(ang)*mag) + 'px)';
+    });
+    seal.addEventListener('pointerleave', function(){
+      seal.style.transform = '';
+    });
+  });
+
+  // ── 7. Speaker-notes / slide-index postMessage hook (so chrome stays in sync) ──
+  // Not used here; brief is a single scrolling document.
+})();
+</script>
+
 </body>
 </html>
