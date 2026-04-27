@@ -430,11 +430,46 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, subLa
 // ---------------------------------------------------------------------------
 
 interface OnboardingHintProps {
-  readonly top: number;     // vertical position (px from top) — lines up with Furniture btn
   readonly onDismiss: () => void;
 }
 
-function OnboardingHint({ top, onDismiss }: OnboardingHintProps): React.ReactElement {
+function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement | null {
+  // Dynamically measure the Furniture button's vertical centre instead of
+  // computing it from layout constants. Earlier static math (top padding +
+  // button heights + gaps) drifted whenever button content changed — adding
+  // captions silently bumped the real height to ~72 CSS px while the
+  // constant said 58, so the arrow ended up pointing at Rotate. Reading the
+  // live `getBoundingClientRect()` keeps the arrow on target regardless of
+  // future styling tweaks.
+  const [topPx, setTopPx] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    let raf = 0;
+    function measure(): void {
+      const btn = document.querySelector('[aria-label="Add Furniture"]');
+      if (btn instanceof HTMLElement) {
+        const rect = btn.getBoundingClientRect();
+        setTopPx(rect.top + rect.height / 2);
+      }
+    }
+    // First read after layout commit; second after a frame so any
+    // late-arriving font metrics (caption load) are already applied.
+    measure();
+    raf = window.requestAnimationFrame(measure);
+
+    const obs = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    const target = document.querySelector('[aria-label="Add Furniture"]');
+    if (obs !== null && target !== null) obs.observe(target);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      if (obs !== null) obs.disconnect();
+    };
+  }, []);
+
+  if (topPx === null) return null;
+
   return (
     <div
       style={{
@@ -443,10 +478,10 @@ function OnboardingHint({ top, onDismiss }: OnboardingHintProps): React.ReactEle
         // lands within a few px of the chair icon when the SVG is rendered
         // with its head at the SVG's left side.
         left: TOOLBAR_W,
-        top,
-        // translate up by half so the caller's `top` can be treated as the
-        // target button's vertical centre — keeps the arrow lined up with
-        // the Furniture icon regardless of card content height.
+        top: topPx,
+        // translate up by half so `topPx` is treated as the target button's
+        // vertical centre — keeps the arrow on the chair icon regardless
+        // of card content height.
         transform: "translateY(-50%)",
         zIndex: 52,
         display: "flex",
@@ -742,18 +777,14 @@ export function VerticalToolbox(): React.ReactElement {
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [handleToolClick]);
 
-  // Furniture button is index 1 in the toolbar. With the desktop button
-  // now standing 58px tall (icon + 9px caption + gaps), top padding (14)
-  // + first button (58) + gap (6) + half of second (29) = 107px.
-  // Narrow mode renders the bottom rail and OnboardingHint there is
-  // misaligned anyway — pre-existing scope, not chasing here.
-  const FURNITURE_BTN_CENTER_Y = 107;
+  // OnboardingHint measures the Furniture button position itself via the
+  // DOM — no static constant to keep in sync when button styling shifts.
   const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen && !isNarrow;
 
   return (
     <>
       {showOnboarding && (
-        <OnboardingHint top={FURNITURE_BTN_CENTER_Y} onDismiss={dismissOnboarding} />
+        <OnboardingHint onDismiss={dismissOnboarding} />
       )}
 
       {/* === Toolbar strip === */}
