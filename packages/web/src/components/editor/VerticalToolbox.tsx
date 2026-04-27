@@ -44,10 +44,21 @@ const toolbarStyle: React.CSSProperties = {
   fontFamily: "'Inter', sans-serif",
 };
 
-const btnStyle = (active: boolean, disabled = false): React.CSSProperties => ({
-  width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center",
+const btnStyle = (active: boolean, disabled = false, compact = false): React.CSSProperties => ({
+  // Compact mode (narrow viewport bottom rail) keeps the original 48x48
+  // square. Default desktop mode grows vertically to fit a 9px caption
+  // beneath the icon — taller button + tighter rail gap = same rough
+  // overall toolbar height even with 12 captions.
+  width: 48,
+  height: compact ? 48 : 58,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 3,
   border: "1px solid transparent",
-  borderRadius: 10, cursor: disabled ? "default" : "pointer",
+  borderRadius: 10,
+  cursor: disabled ? "default" : "pointer",
   background: active
     ? `linear-gradient(145deg, ${GOLD}, #b6962f)`
     : "rgba(255,255,255,0.02)",
@@ -57,6 +68,7 @@ const btnStyle = (active: boolean, disabled = false): React.CSSProperties => ({
   boxShadow: active
     ? "0 4px 16px rgba(201,168,76,0.35), inset 0 1px 0 rgba(255,255,255,0.2)"
     : "none",
+  padding: 0,
 });
 
 const dividerStyle: React.CSSProperties = {
@@ -189,16 +201,21 @@ if (typeof document !== "undefined" && document.getElementById(ONBOARDING_ANIM_I
   s.id = ONBOARDING_ANIM_ID;
   s.textContent = `
     @keyframes omni-onboard-arrow {
-      0%, 100% { transform: translateX(0); }
-      50%     { transform: translateX(10px); }
+      0%, 100% { transform: translateX(0) rotate(0deg) scale(1); }
+      45%      { transform: translateX(-14px) rotate(-3deg) scale(1.06); }
+      55%      { transform: translateX(-14px) rotate(-3deg) scale(1.06); }
     }
     @keyframes omni-onboard-card-in {
-      0%   { opacity: 0; transform: translateX(-12px) scale(0.94); }
+      0%   { opacity: 0; transform: translateX(12px) scale(0.94); }
       100% { opacity: 1; transform: translateX(0) scale(1); }
     }
     @keyframes omni-onboard-pulse-ring {
-      0%   { box-shadow: 0 0 0 0 rgba(201,168,76,0.55); }
-      100% { box-shadow: 0 0 0 14px rgba(201,168,76,0); }
+      0%   { transform: translateY(-50%) scale(0.6); opacity: 0.9; }
+      100% { transform: translateY(-50%) scale(2.2); opacity: 0; }
+    }
+    @keyframes omni-onboard-tip-flash {
+      0%, 100% { opacity: 0.4; }
+      50%      { opacity: 1; }
     }
   `;
   document.head.appendChild(s);
@@ -247,11 +264,15 @@ interface ToolBtnProps {
   readonly label: string;
   readonly description: string;
   readonly shortcut?: string;
+  /** Short caption shown under the icon (e.g. "Furniture", "Snap"). Hidden in compact mode. */
+  readonly subLabel?: string;
+  /** Compact mode (narrow viewport bottom rail): hide the caption, keep button square. */
+  readonly compact?: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
 }
 
-function ToolBtn({ active, disabled = false, label, description, shortcut, onClick, children }: ToolBtnProps): React.ReactElement {
+function ToolBtn({ active, disabled = false, label, description, shortcut, subLabel, compact = false, onClick, children }: ToolBtnProps): React.ReactElement {
   const [showTooltip, setShowTooltip] = useState(false);
   const [exiting, setExiting] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -279,11 +300,34 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, onCli
       <button
         type="button"
         aria-label={label}
-        style={btnStyle(active, disabled)}
+        style={btnStyle(active, disabled, compact)}
         onClick={handleClick}
         disabled={disabled}
       >
         {children}
+        {!compact && subLabel !== undefined && (
+          <span style={{
+            // Subtle, professional caption — uppercase Inter at 9px with
+            // generous tracking. Active button flips to dark text on the
+            // gold gradient; inactive uses a low-contrast neutral so the
+            // icon stays the dominant visual element.
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: 0.6,
+            lineHeight: 1,
+            color: active
+              ? "rgba(14,14,14,0.78)"
+              : disabled
+                ? "rgba(255,255,255,0.18)"
+                : "rgba(255,255,255,0.42)",
+            textTransform: "uppercase",
+            fontFamily: "'Inter', system-ui, sans-serif",
+            userSelect: "none",
+            pointerEvents: "none",
+          }}>
+            {subLabel}
+          </span>
+        )}
       </button>
       {showTooltip && !disabled && (
         <div style={{
@@ -395,7 +439,10 @@ function OnboardingHint({ top, onDismiss }: OnboardingHintProps): React.ReactEle
     <div
       style={{
         position: "fixed",
-        left: TOOLBAR_W + 8,
+        // sit flush against the toolbar's right edge — the arrow's tip
+        // lands within a few px of the chair icon when the SVG is rendered
+        // with its head at the SVG's left side.
+        left: TOOLBAR_W,
         top,
         // translate up by half so the caller's `top` can be treated as the
         // target button's vertical centre — keeps the arrow lined up with
@@ -404,29 +451,71 @@ function OnboardingHint({ top, onDismiss }: OnboardingHintProps): React.ReactEle
         zIndex: 52,
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: 14,
         pointerEvents: "auto",
         animation: "omni-onboard-card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       }}
     >
-      {/* Animated arrow — slides right-and-back forever until dismissed */}
+      {/* Animated arrow — points LEFT toward the Furniture icon, lunges
+          toward the toolbar with a soft scale + rotate kick, glowing pulse
+          radiates from the arrowhead at the tip. */}
       <div
         aria-hidden
         style={{
+          position: "relative",
+          width: 64,
+          height: 36,
           display: "flex",
           alignItems: "center",
           color: GOLD,
-          filter: "drop-shadow(0 2px 6px rgba(201,168,76,0.4))",
-          animation: "omni-onboard-arrow 1.1s ease-in-out infinite",
+          filter: "drop-shadow(0 2px 8px rgba(201,168,76,0.55))",
+          animation: "omni-onboard-arrow 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite",
         }}
       >
-        <svg width="42" height="24" viewBox="0 0 42 24" fill="none">
+        {/* Pulse ring — radiates from the arrowhead position (left side of SVG) */}
+        <div
+          style={{
+            position: "absolute",
+            left: 4,
+            top: "50%",
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: "radial-gradient(closest-side, rgba(201,168,76,0.7), rgba(201,168,76,0.1) 60%, transparent 80%)",
+            transformOrigin: "center",
+            animation: "omni-onboard-pulse-ring 1.4s ease-out infinite",
+            pointerEvents: "none",
+          }}
+        />
+        {/* Curved arrow — long bowed shaft from card-side to toolbar-side,
+            ending in a chunky chevron pointing left at the chair icon. */}
+        <svg width="64" height="36" viewBox="0 0 64 36" fill="none" style={{ position: "relative", zIndex: 1 }}>
+          <defs>
+            <linearGradient id="omni-onboard-grad" x1="100%" y1="0%" x2="0%" y2="0%">
+              <stop offset="0%" stopColor="#dfc06a" stopOpacity="0.55" />
+              <stop offset="55%" stopColor="#dfc06a" stopOpacity="1" />
+              <stop offset="100%" stopColor="#fff3c4" stopOpacity="1" />
+            </linearGradient>
+          </defs>
+          {/* Curved shaft: starts top-right, dips through the centre,
+              exits left at the icon row. The bow gives the arrow a sense
+              of motion without committing to a full hand-drawn squiggle. */}
           <path
-            d="M 1 12 L 34 12 M 26 4 L 34 12 L 26 20"
-            stroke="currentColor"
-            strokeWidth="3"
+            d="M 60 8 Q 40 28, 22 18 Q 18 16, 14 18"
+            stroke="url(#omni-onboard-grad)"
+            strokeWidth="3.5"
             strokeLinecap="round"
             strokeLinejoin="round"
+            fill="none"
+          />
+          {/* Chevron head — points left (toolbar side), thicker stroke for emphasis. */}
+          <path
+            d="M 22 10 L 12 18 L 22 26"
+            stroke="#fff3c4"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
           />
         </svg>
       </div>
@@ -653,10 +742,13 @@ export function VerticalToolbox(): React.ReactElement {
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [handleToolClick]);
 
-  // Furniture button is index 1 in the toolbar: top padding (14) + first
-  // button height (48) + gap (6) + half of second button (24) = 92px.
-  const FURNITURE_BTN_CENTER_Y = 92;
-  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen;
+  // Furniture button is index 1 in the toolbar. With the desktop button
+  // now standing 58px tall (icon + 9px caption + gaps), top padding (14)
+  // + first button (58) + gap (6) + half of second (29) = 107px.
+  // Narrow mode renders the bottom rail and OnboardingHint there is
+  // misaligned anyway — pre-existing scope, not chasing here.
+  const FURNITURE_BTN_CENTER_Y = 107;
+  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen && !isNarrow;
 
   return (
     <>
@@ -684,57 +776,57 @@ export function VerticalToolbox(): React.ReactElement {
         scrollbarWidth: "none" as const,
         fontFamily: "'Inter', sans-serif",
       } : toolbarStyle}>
-        <ToolBtn active={activeTool === "select"} label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
+        <ToolBtn active={activeTool === "select"} compact={isNarrow} subLabel="Select" label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." shortcut="F" onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} compact={isNarrow} subLabel="Furniture" label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." shortcut="F" onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "rotate"} label="Rotate" description="Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows." shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
+        <ToolBtn active={activeTool === "rotate"} compact={isNarrow} subLabel="Rotate" label="Rotate" description="Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows." shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "delete"} label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
+        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
           <Trash2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={false} disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" onClick={handleUndo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Undo" disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" onClick={handleUndo}>
           <Undo2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" onClick={handleRedo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Redo" disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" onClick={handleRedo}>
           <Redo2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={cameraOpen} label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
+        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={snapEnabled} label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" onClick={handleSnapToggle}>
+        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} label="Show All Walls" description="Pin every wall up so you can see the full room structure. Click individual walls to toggle them." onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description="Pin every wall up so you can see the full room structure. Click individual walls to toggle them." onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={saveFlash} disabled={isSaving} label={saveFlash ? (isAuthenticated ? "Saved!" : "Auto-saved!") : "Save Layout"} description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
+        <ToolBtn active={saveFlash} compact={isNarrow} subLabel={saveFlash ? "Saved" : "Save"} disabled={isSaving} label={saveFlash ? (isAuthenticated ? "Saved!" : "Auto-saved!") : "Save Layout"} description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
           <Save size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." onClick={handleGenerateSheet}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Sheet" label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." onClick={handleGenerateSheet}>
           <FileText size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
+        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>
