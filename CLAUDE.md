@@ -61,6 +61,26 @@ Your strategic council personas are in .claude/council/.
 This code will be evaluated by Jane Street engineers.
 No skeletons. No TODOs. No "good enough." Production-ready or it doesn't ship.
 
+## The S+ tier standard
+
+Everything Venviewer ships is calibrated against the highest-end work in the
+industry — Anthropic, Stripe, Linear, Apple, Hermès — never industry-typical.
+"Good enough for now" is not an acceptable disposition for any deliverable.
+Industry-standard practice is the floor, not the ceiling.
+
+When evaluating any output, the test is: would a multibillion-dollar company in
+the relevant category ship this as-is? If not, it is not done.
+
+When an off-the-shelf tool or pattern falls short of the bar, the response is
+not to settle. The response is to evaluate whether to build the better version
+ourselves, document the decision, and proceed with the deliberate choice.
+
+This principle takes precedence over speed-of-shipping arguments in any
+non-emergency context. Emergencies (live customer-facing outage, presentation
+in three hours, etc.) may justify temporary below-bar shipping, but those
+exceptions must be logged in the session log and added as remediation tasks to
+be closed within the same week.
+
 ## When You're Uncertain
 
 Say "I'm not certain about [X] — please verify before using this code."
