@@ -1,12 +1,21 @@
 # Task dependency graph
 
 Active backlog: Tier 0 work in flight, schema/ingestion gates, the
-audit-driven cluster (T-080–T-099), the Tier 3 Geass cluster, and
-ops/doc follow-on. Tier 1 done work, T-010, and lower-priority Tier
-2/4/5/6 tasks live in `docs/state/tasks.md` and are not visualised
-here. Regenerate after each `tasks.md` change. Consider
-`scripts/generate-diagrams.ts` after two weeks if diagrams are
-actually being consulted.
+audit-driven cluster (T-080–T-099), the Tier 3 Geass cluster, ops/doc
+follow-on, and the deferred Product Vision capabilities (T-100–T-110)
+per ADR D-018. Tier 1 done work, T-010, and lower-priority Tier 2/4/5/6
+tasks live in `docs/state/tasks.md` and are not visualised here.
+Regenerate after each `tasks.md` change.
+
+## Subgraph index
+
+- **A1** — this week, RunPod foundation
+- **A2** — this week, ops baseline + audit fixes
+- **B** — next 2 weeks, gap closing + ops follow-on
+- **C** — weeks 3–6, revenue + edge cases
+- **D** — Tier 3, Geass cluster
+- **E** — Tier 3, operational + doc follow-on
+- **F** — Product Vision (deferred), capabilities per D-018
 
 ```mermaid
 %%{init: {
@@ -83,6 +92,20 @@ flowchart TD
         T099(["T-099 — per-package READMEs"])
     end
 
+    subgraph F [f · product vision — deferred, capabilities per D-018]
+        T100(["T-100 — Verified Photoreal Twin"])
+        T101(["T-101 — Truth Heatmap"])
+        T102(["T-102 — Constraint Solver"])
+        T103(["T-103 — Prompt-To-Perfect Event"])
+        T104(["T-104 — Pricing Engine"])
+        T105(["T-105 — Live Planning Room"])
+        T106(["T-106 — Lookbook / Style"])
+        T107(["T-107 — Event Ops Compiler"])
+        T108(["T-108 — Cinematic Share"])
+        T109(["T-109 — Audit Trail"])
+        T110(["T-110 — Revenue Optimizer"])
+    end
+
     T001 --> T002
     T001 --> T003
     T001 --> T019
@@ -102,6 +125,33 @@ flowchart TD
     T085 --> T093
     T087 --> T098
 
+    T091 --> T100
+    T100 --> T101
+    T087 --> T101
+    T091 --> T102
+    T018 --> T102
+    T087 --> T102
+    T102 --> T103
+    T104 --> T103
+    T107 --> T103
+    T080 --> T103
+    T094 --> T104
+    T018 --> T104
+    T018 --> T105
+    T080 --> T105
+    T064 --> T105
+    T018 --> T106
+    T018 --> T107
+    T102 --> T107
+    T100 --> T108
+    T087 --> T108
+    T067 --> T108
+    T018 --> T109
+    T105 --> T109
+    T102 --> T110
+    T104 --> T110
+    T107 --> T110
+
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
     classDef deferred fill:#3a3a3a,color:#f4ede0
@@ -111,13 +161,13 @@ flowchart TD
     class T002,T019 done
     class T001 inprogress
     class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
-    class T053,T054,T070 deferred
+    class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110 deferred
 ```
 
-`T-053` (Tier 2) is shown because the backend-ingestion script template is
-queued for the moment T-018 lands. Edge `T-018 → T-053` carries the label
-"unblocks" because it expresses the activation trigger, not a code-level
-dependency.
+`T-053` (Tier 2) is shown because the backend-ingestion script template
+is queued for the moment T-018 lands. Edge `T-018 → T-053` carries the
+label "unblocks" because it expresses the activation trigger, not a
+code-level dependency.
 
 `T-054 → T-070` is a soft activation edge: T-070 also requires ≥ 14 days
 of operational history in the `sentinel.events` table before activation,
@@ -131,25 +181,28 @@ dependency.
 
 `T-001 → T-067` expresses that the CDN cache strategy needs real bundle
 output from RunPod training to define cache headers against.
-`T-001 → T-091` is the same pattern: T-091 (Trades Hall real evidence) is
-gated on the RunPod migration completing because the entire training
+`T-001 → T-091` is the same pattern: T-091 (Trades Hall real evidence)
+is gated on the RunPod migration completing because the entire training
 pipeline lives there.
 
-`T-062 → T-068` is a precondition edge: the disaster-recovery runbook is
-empty ceremony if backup restore has never been verified.
+`T-062 → T-068` is a precondition edge: the disaster-recovery runbook
+is empty ceremony if backup restore has never been verified.
 
 `T-063 → T-072` expresses that the email template system benefits from
 having the sender domain live first, so each template can be live-tested
 end-to-end.
 
-`T-080 → T-088`, `T-080 → T-094`, `T-080 → T-098` all reflect that the
-Clerk CVE upgrade blocks downstream work: the invitation flow and Stripe
-integration both depend on the auth surface being patched before they
-ship, and the dependency-reproducibility pass needs the upgraded Clerk
-versions to be the pinned set.
+`T-080 → T-088`, `T-080 → T-094`, `T-080 → T-098`, `T-080 → T-103`,
+`T-080 → T-105` all reflect that the Clerk CVE upgrade blocks
+downstream auth-touching work: invitation flow, Stripe integration,
+dependency pin, prompt-to-event (touches user identity), and the
+multiplayer planning room (per-room access control) all wait for the
+auth surface to be patched.
 
-`T-087 → T-098` reflects the same pattern for the Three.js / Spark
-upgrade — the pin must be against the upgraded versions.
+`T-087 → T-098`, `T-087 → T-101`, `T-087 → T-102`, `T-087 → T-108`
+reflect the same pattern for the Three.js/Spark upgrade — the modern
+runtime is required before any product-vision capability that touches
+the renderer can ship.
 
 `T-084 → T-086` is the E2E triage-then-fix sequence: triaging the 28
 failing tests must produce the categorised punch list before fix work
@@ -158,6 +211,12 @@ can be scoped or scheduled.
 `T-085 → T-093` is the "document the current state before fixing it"
 sequence: the deploy-flow gating work in T-093 needs the honest current
 documentation from T-085 as its baseline.
+
+Subgraph F (Product Vision) clusters T-103 + T-104 + T-107 — the
+Prompt-to-Layout / Pricing / Ops Compiler triple that ships as one
+effort per D-018 §"Activation gates". The T-104 → T-103 and T-107 →
+T-103 edges represent that T-103 cannot complete without the other two,
+even though the cluster activates them concurrently.
 
 T-064, T-065, T-066 in subgraph B have no incoming edges — independent
 ops infrastructure that activates when capacity allows inside the
@@ -168,16 +227,15 @@ audit-driven security/typesafety/observability work that doesn't
 sequence behind anything.
 
 `T-010` (Tier 1, not-started, impact 2, marked "reopen on first
-multi-property customer") is omitted as effectively dormant — it has no
-downstream dependencies in the visualised set and reactivates only on a
-future event.
+multi-property customer") is omitted as effectively dormant.
 
-Subgraph A2 contains 11 nodes and B contains 13 — both busy enough that
-another node would hurt readability. If T-100+ near-term work lands,
-split before adding more nodes. (`docs/diagrams/_theme.md` line 51 caps
-a single diagram at 12 nodes before splitting; subgraphs are the relief
-mechanism. The per-subgraph guidance here is readability advice, not the
-per-diagram cap.)
+Subgraphs A2 and B contain 11 and 13 nodes respectively — both busy
+enough that another node would hurt readability. F contains 11 nodes —
+also at the readability ceiling. If T-111+ work lands, split before
+adding more nodes. (`docs/diagrams/_theme.md` line 51 caps a single
+diagram at 12 nodes before splitting; subgraphs are the relief
+mechanism. The per-subgraph guidance here is readability advice, not
+the per-diagram cap.)
 
 ## When to update
 
