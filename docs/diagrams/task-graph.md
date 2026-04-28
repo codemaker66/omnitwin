@@ -122,9 +122,17 @@ T-064, T-065, T-066 in subgraph B have no incoming edges — they are
 independent ops infrastructure work that activates when capacity allows
 inside the next-sprint window.
 
-Subgraph A contains 11 nodes, just under the 12-per-diagram limit
-established by `docs/diagrams/_theme.md`. If T-073+ near-term work lands,
-split A further before adding nodes.
+`T-010` (Tier 1, not-started, impact 2, marked "reopen on first
+multi-property customer") is omitted as effectively dormant — it has no
+downstream dependencies in the visualised set and reactivates only on a
+future event.
+
+Subgraph A contains 11 nodes — busy enough that another node would hurt
+readability. If T-073+ near-term work lands, split A further before adding
+nodes. (`docs/diagrams/_theme.md` line 51 caps a single diagram at 12
+nodes before splitting; subgraphs are the relief mechanism. The 11-node
+guidance here is per-subgraph readability advice, not the per-diagram
+cap.)
 
 ## When to update
 

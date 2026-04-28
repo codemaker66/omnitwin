@@ -2,7 +2,7 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-04-25.
+Updated: 2026-04-28.
 
 ## Tier 0 — this week
 
