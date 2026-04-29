@@ -53,6 +53,7 @@ flowchart TD
         T083(["T-083 — soften photoreal claim"])
         T084(["T-084 — E2E triage"])
         T085(["T-085 — deploy flow doc"])
+        T113(["T-113 — 2D/3D grouped movement"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -158,9 +159,9 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019 done
+    class T002,T019,T081,T113 done
     class T001 inprogress
-    class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
+    class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T080,T082,T083,T084,T085,T086,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110 deferred
 ```
 
@@ -229,7 +230,7 @@ sequence behind anything.
 `T-010` (Tier 1, not-started, impact 2, marked "reopen on first
 multi-property customer") is omitted as effectively dormant.
 
-Subgraphs A2 and B contain 11 and 13 nodes respectively — both busy
+Subgraphs A2 and B contain 12 and 13 nodes respectively — both busy
 enough that another node would hurt readability. F contains 11 nodes —
 also at the readability ceiling. T-111 and T-112 are Tier 4 VSIR ADR
 follow-ups and remain in `docs/state/tasks.md`, not this visual graph.

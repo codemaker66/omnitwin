@@ -339,7 +339,7 @@ export function createWainscotOakTexture(): Texture {
   // grain — vertical
   for (let x = 0; x < SIZE; x += 1) {
     const a = 0.06 + hash(x, 0) * 0.06;
-    ctx.fillStyle = `rgba(40,25,10,${a})`;
+    ctx.fillStyle = `rgba(40,25,10,${a.toFixed(4)})`;
     ctx.fillRect(x, 0, 1, SIZE);
   }
 
