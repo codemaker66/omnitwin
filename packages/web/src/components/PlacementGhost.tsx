@@ -23,6 +23,29 @@ import { ClothPreview } from "./cloth/ClothPreview.js";
 // ---------------------------------------------------------------------------
 
 /**
+ * True if the selected catalogue item is the table cloth.
+ *
+ * Catalogue IDs are deterministic UUIDs (introduced in d163801); literal
+ * string-equals comparisons against the developer slug silently fail. This
+ * helper resolves the UUID to its CatalogueItem and inspects the slug, so
+ * cloth dispatch survives any future ID migration.
+ */
+export function isCloth(id: string | null): boolean {
+  if (id === null) return false;
+  return getCatalogueItem(id)?.slug === "black-table-cloth";
+}
+
+/**
+ * True if the selected catalogue item is one of the poseur tables.
+ * Poseur tables skip the chair-count dialog because they have no chairs.
+ * Same UUID-vs-slug rationale as `isCloth`.
+ */
+export function isPoseurTable(id: string | null): boolean {
+  if (id === null) return false;
+  return getCatalogueItem(id)?.slug.startsWith("poseur-table") ?? false;
+}
+
+/**
  * Handles drag-and-drop furniture placement from the shop bar:
  * 1. User drags item from shop bar (dragActive=true, selectedItemId set)
  * 2. Pointer moves over canvas → ghost follows via raycasting to floor
@@ -100,7 +123,7 @@ export function PlacementGhost(): React.ReactElement | null {
       if (placeState.ghostPosition === null) return;
 
       // Cloth: toggle on nearest table (skip ghostValid — cloth doesn't collide)
-      if (catState.selectedItemId === "black-table-cloth") {
+      if (isCloth(catState.selectedItemId)) {
         const nearest = findNearestTable(
           placeState.ghostPosition[0],
           placeState.ghostPosition[2],
@@ -120,7 +143,7 @@ export function PlacementGhost(): React.ReactElement | null {
       // Table: show chair count dialog instead of placing directly
       // (poseur tables skip the dialog — no chairs)
       const item = getCatalogueItem(catState.selectedItemId);
-      if (item !== undefined && item.tableShape !== null && !catState.selectedItemId.startsWith("poseur-table")) {
+      if (item !== undefined && item.tableShape !== null && !isPoseurTable(catState.selectedItemId)) {
         useChairDialogStore.getState().showDialog({
           catalogueItemId: catState.selectedItemId,
           x: placeState.ghostPosition[0],
@@ -218,7 +241,7 @@ export function PlacementGhost(): React.ReactElement | null {
   if (catalogueItem === undefined) return null;
 
   // --- Cloth ghost: show preview on nearest table or floating icon ---
-  if (selectedItemId === "black-table-cloth") {
+  if (isCloth(selectedItemId)) {
     const placedItems = usePlacementStore.getState().placedItems;
     const nearestTable = findNearestTable(
       ghostPosition[0],
