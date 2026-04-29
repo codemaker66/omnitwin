@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import {
   adaptEditorStateToBlueprintScene,
+  blueprintPointToEditorPosition,
   editorObjectToBlueprintItem,
+  editorPositionToBlueprintPoint,
 } from "../adapt.js";
 import type { EditorObject } from "../../../stores/editor-store.js";
 
@@ -16,7 +18,9 @@ import type { EditorObject } from "../../../stores/editor-store.js";
 //
 // The adapter now collects chair PlacedItems by groupId and attaches
 // their actual positions to the round-table item's `chairs` field, so
-// the renderer draws what the 3D scene actually contains.
+// the renderer draws what the 3D scene actually contains. Editor X/Z
+// positions are render-space units; blueprint X/Y positions are real
+// metres, so every coordinate must pass through the scale conversion.
 // ---------------------------------------------------------------------------
 
 const ROUND_TABLE = CANONICAL_ASSETS.find(
@@ -51,6 +55,17 @@ function makeObj(
 }
 
 describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
+  it("converts between editor render-space and blueprint metre-space", () => {
+    expect(editorPositionToBlueprintPoint(2, -4, { widthM: 10, lengthM: 8 })).toEqual({
+      x: 6,
+      y: 2,
+    });
+    expect(blueprintPointToEditorPosition({ x: 6, y: 2 }, { widthM: 10, lengthM: 8 })).toEqual({
+      positionX: 2,
+      positionZ: -4,
+    });
+  });
+
   it("attaches grouped chairs to their round table", () => {
     expect(ROUND_TABLE, "round table asset must exist").toBeDefined();
     expect(CHAIR, "chair asset must exist").toBeDefined();
@@ -58,9 +73,9 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
 
     const objects: readonly EditorObject[] = [
       makeObj("table-1", ROUND_TABLE.id, 0, 0, "g1"),
-      makeObj("chair-1", CHAIR.id, 1, 0, "g1"),
-      makeObj("chair-2", CHAIR.id, -1, 0, "g1"),
-      makeObj("chair-3", CHAIR.id, 0, 1, "g1"),
+      makeObj("chair-1", CHAIR.id, 2, 0, "g1"),
+      makeObj("chair-2", CHAIR.id, -2, 0, "g1"),
+      makeObj("chair-3", CHAIR.id, 0, 2, "g1"),
     ];
     const scene = adaptEditorStateToBlueprintScene({
       space: SPACE,
@@ -73,8 +88,8 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     if (table === undefined || table.shape !== "round") return;
     expect(table.chairs).toBeDefined();
     expect(table.chairs).toHaveLength(3);
-    // 3D centre-origin → blueprint corner-origin: x' = x + widthM/2, y' = z + lengthM/2
-    // Room is 10 × 10 → offset is (+5, +5).
+    // 3D render-space centre-origin → real-world blueprint corner-origin.
+    // Room is 10 × 10m → offset is (+5, +5); render-space is divided by 2.
     expect(table.chairs?.[0]).toEqual({ x: 6, y: 5 });
     expect(table.chairs?.[1]).toEqual({ x: 4, y: 5 });
     expect(table.chairs?.[2]).toEqual({ x: 5, y: 6 });
@@ -101,7 +116,7 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
 
     const objects: readonly EditorObject[] = [
       makeObj("table-1", ROUND_TABLE.id, 0, 0, "g1"),
-      makeObj("chair-1", CHAIR.id, 1, 0, "g1"),
+      makeObj("chair-1", CHAIR.id, 2, 0, "g1"),
       makeObj("chair-foreign", CHAIR.id, 5, 5, "g2"),
       makeObj("chair-loose", CHAIR.id, -2, -2, null),
     ];

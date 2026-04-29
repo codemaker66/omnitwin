@@ -36,7 +36,10 @@ import type {
 } from "../lib/blueprint/types.js";
 import { DEFAULT_CATALOGUE } from "../lib/blueprint/types.js";
 import { DEMO_SCENE, DEMO_SELECTED_ID } from "../lib/blueprint/demo-scene.js";
-import { adaptEditorStateToBlueprintScene } from "../lib/blueprint/adapt.js";
+import {
+  adaptEditorStateToBlueprintScene,
+  blueprintPointToEditorPosition,
+} from "../lib/blueprint/adapt.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import {
   NUDGE_STEP_BIG_M,
@@ -744,8 +747,8 @@ function BlueprintFromStore(): ReactElement {
     const s = useEditorStore.getState();
     const widthM = space !== null ? parseFloat(space.widthM) : 10;
     const lengthM = space !== null ? parseFloat(space.lengthM) : 10;
-    const newPositionX = center.x - widthM / 2;
-    const newPositionZ = center.y - lengthM / 2;
+    const { positionX: newPositionX, positionZ: newPositionZ } =
+      blueprintPointToEditorPosition(center, { widthM, lengthM });
 
     const moved = s.objects.find((o) => o.id === id);
     if (moved === undefined) return;

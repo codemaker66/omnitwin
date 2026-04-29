@@ -1,6 +1,7 @@
 import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import type { EditorObject } from "../../stores/editor-store.js";
 import type { Space } from "../../api/spaces.js";
+import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -18,9 +19,9 @@ import type {
 //
 // Assumptions (explicit so they're easy to revisit):
 //
-//   1. 3D origin is the ROOM CENTRE at floor level. Y is vertical (up);
-//      the blueprint only cares about the floor plane, so we project
-//      (x, z) → blueprint (x, y).
+//   1. 3D origin is the ROOM CENTRE at floor level. X/Z are stored in
+//      render-space units; the blueprint uses real-world metres. The
+//      bridge projects (render x, render z) → (metre x, metre y).
 //
 //   2. The catalogue's `CANONICAL_ASSETS` array is the source of truth
 //      for an asset's physical dimensions and shape. Placed-object
@@ -34,6 +35,37 @@ import type {
 const ASSET_BY_ID = new Map<string, CanonicalAsset>(
   CANONICAL_ASSETS.map((a) => [a.id, a]),
 );
+
+/**
+ * Convert an editor/3D XZ position into blueprint metre-space.
+ *
+ * Editor positions are centred render-space coordinates. Blueprint
+ * positions are top-left-origin real metres. Keeping this conversion in
+ * one helper prevents the 2D and 3D views from drifting by RENDER_SCALE.
+ */
+export function editorPositionToBlueprintPoint(
+  positionX: number,
+  positionZ: number,
+  room: { readonly widthM: number; readonly lengthM: number },
+): Point {
+  return {
+    x: toRealWorld(positionX) + room.widthM / 2,
+    y: toRealWorld(positionZ) + room.lengthM / 2,
+  };
+}
+
+/**
+ * Convert a blueprint metre-space point back into editor/3D render-space.
+ */
+export function blueprintPointToEditorPosition(
+  point: Point,
+  room: { readonly widthM: number; readonly lengthM: number },
+): { readonly positionX: number; readonly positionZ: number } {
+  return {
+    positionX: toRenderSpace(point.x - room.widthM / 2),
+    positionZ: toRenderSpace(point.y - room.lengthM / 2),
+  };
+}
 
 /** Resolve a placed object to its canonical catalogue definition. */
 export function assetForObject(o: EditorObject): CanonicalAsset | undefined {
@@ -79,9 +111,10 @@ export function editorObjectToBlueprintItem(
   const kind = itemKindForAsset(asset);
   if (kind === null) return null;
 
-  // Translate centre-origin → corner-origin (blueprint convention).
-  const cx = o.positionX + room.widthM / 2;
-  const cy = o.positionZ + room.lengthM / 2;
+  // Translate render-space centre-origin → metre-space corner-origin.
+  const center = editorPositionToBlueprintPoint(o.positionX, o.positionZ, room);
+  const cx = center.x;
+  const cy = center.y;
   const rotationDeg = radToDeg(o.rotationY);
 
   if (kind === "round-table") {
@@ -188,10 +221,7 @@ export function adaptEditorStateToBlueprintScene(input: AdaptInput): BlueprintSc
     if (asset === undefined) continue;
     if (asset.category !== "chair") continue;
     if (obj.groupId === null) continue;
-    const point: Point = {
-      x: obj.positionX + room.widthM / 2,
-      y: obj.positionZ + room.lengthM / 2,
-    };
+    const point = editorPositionToBlueprintPoint(obj.positionX, obj.positionZ, room);
     const list = chairsByGroupId.get(obj.groupId) ?? [];
     list.push(point);
     chairsByGroupId.set(obj.groupId, list);
