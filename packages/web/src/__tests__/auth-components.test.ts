@@ -14,7 +14,7 @@ vi.mock("react-router-dom", () => ({
 }));
 
 // Mock Clerk
-vi.mock("@clerk/clerk-react", () => ({
+vi.mock("@clerk/react", () => ({
   ClerkProvider: ({ children }: { children: unknown }) => children,
   SignIn: () => "SignIn",
   SignUp: () => "SignUp",

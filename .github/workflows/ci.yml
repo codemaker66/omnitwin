@@ -1,9 +1,10 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Four jobs run in parallel against every push to master and every pull
+# Five jobs run in parallel against every push to master and every pull
 # request targeting master:
 #
+#   audit      - pnpm audit at moderate severity and above
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
 #   test       — Vitest across all packages, all tests must pass
@@ -36,6 +37,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=moderate
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

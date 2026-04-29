@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ClerkProvider } from "@clerk/clerk-react";
+import { ClerkProvider } from "@clerk/react";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router.js";
 import { ClerkAuthBridge } from "./components/auth/ClerkAuthBridge.js";

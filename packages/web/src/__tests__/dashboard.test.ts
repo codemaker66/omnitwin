@@ -68,7 +68,7 @@ vi.mock("react-router-dom", () => ({
   RouterProvider: ({ router }: { router: unknown }) => `Router: ${String(router)}`,
 }));
 
-vi.mock("@clerk/clerk-react", () => ({
+vi.mock("@clerk/react", () => ({
   useClerk: () => ({ signOut: vi.fn() }),
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
   useAuth: () => ({ getToken: vi.fn(), isLoaded: true, isSignedIn: false }),

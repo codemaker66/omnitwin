@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { SignIn } from "@clerk/clerk-react";
+import { SignIn } from "@clerk/react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { claimConfig } from "../../api/configurations.js";

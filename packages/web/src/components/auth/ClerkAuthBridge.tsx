@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useUser, useAuth } from "@clerk/clerk-react";
+import { useUser, useAuth } from "@clerk/react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { setTokenGetter } from "../../api/auth-bridge.js";
 

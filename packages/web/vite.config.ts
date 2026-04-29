@@ -8,7 +8,7 @@ import react from "@vitejs/plugin-react";
 // out of every other route's initial download:
 //   - react-vendor: react/dom/router (every route needs it; cacheable)
 //   - three:        three.js + R3F + drei + stdlib (only the editor needs it)
-//   - clerk:        @clerk/clerk-react (login, register, dashboard need it;
+//   - clerk:        @clerk/react (login, register, dashboard need it;
 //                   anonymous /hallkeeper/:id and /editor guests do NOT)
 //
 // Page chunks (one per route) emit automatically because router.tsx wraps
@@ -25,7 +25,7 @@ export default defineConfig({
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
           "three": ["three", "@react-three/fiber", "@react-three/drei", "three-stdlib"],
-          "clerk": ["@clerk/clerk-react"],
+          "clerk": ["@clerk/react"],
         },
       },
     },

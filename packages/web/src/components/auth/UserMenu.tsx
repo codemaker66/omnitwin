@@ -1,4 +1,5 @@
-import { UserButton, SignInButton, SignedIn, SignedOut } from "@clerk/clerk-react";
+import { UserButton, SignInButton } from "@clerk/react";
+import { useAuthStore } from "../../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
 // UserMenu — Clerk's UserButton for signed-in users, SignInButton for guests
@@ -9,13 +10,16 @@ const containerStyle: React.CSSProperties = {
 };
 
 export function UserMenu(): React.ReactElement {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   return (
     <div style={containerStyle} data-testid="user-menu-trigger">
-      <SignedIn>
-        {/* `afterSignOutUrl` is configured globally on <ClerkProvider/> in main.tsx */}
-        <UserButton />
-      </SignedIn>
-      <SignedOut>
+      {isAuthenticated ? (
+        <>
+          {/* `afterSignOutUrl` is configured globally on <ClerkProvider/> in main.tsx */}
+          <UserButton />
+        </>
+      ) : (
         <SignInButton mode="modal">
           <button
             type="button"
@@ -28,7 +32,7 @@ export function UserMenu(): React.ReactElement {
             Sign In
           </button>
         </SignInButton>
-      </SignedOut>
+      )}
     </div>
   );
 }

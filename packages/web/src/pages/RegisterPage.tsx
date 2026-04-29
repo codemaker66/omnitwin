@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { SignUp } from "@clerk/clerk-react";
+import { SignUp } from "@clerk/react";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
 

@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useEffect } from "react";
-import { useClerk } from "@clerk/clerk-react";
+import { useClerk } from "@clerk/react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";

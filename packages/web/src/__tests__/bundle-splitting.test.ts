@@ -97,8 +97,8 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toMatch(/"three":\s*\[[^\]]*"three"[^\]]*"@react-three\/fiber"[^\]]*"@react-three\/drei"[^\]]*"three-stdlib"[^\]]*\]/);
   });
 
-  it("clerk chunk isolates @clerk/clerk-react", async () => {
+  it("clerk chunk isolates @clerk/react", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toMatch(/"clerk":\s*\[[^\]]*"@clerk\/clerk-react"[^\]]*\]/);
+    expect(codeOnly).toMatch(/"clerk":\s*\[[^\]]*"@clerk\/react"[^\]]*\]/);
   });
 });
