@@ -597,18 +597,47 @@ function Minimap(props: {
 }
 
 /**
- * Render small chair circles around every seat at a round table. The
- * chairs sit on a ring just outside the table edge, evenly spaced — no
- * interactivity (not selectable), purely visual so a planner can see how
- * each table's capacity sits in the room.
+ * Render small chair circles around every seat at a round table.
+ *
+ * When `item.chairs` is populated (BlueprintFromStore mode — chairs
+ * grouped to the table in the 3D scene), each circle is drawn at its
+ * actual metre-space position so the 2D view reflects the 3D auto-
+ * arrange's wall-clearance offsets exactly. When `item.chairs` is
+ * absent (BlueprintDemo mode, or a table without grouped chairs),
+ * we fall back to a uniform algorithmic ring derived from `seats`.
+ *
+ * Visual only — not selectable — purely so a planner can see how each
+ * table's capacity sits in the room.
  */
 function ChairRing({ item, pxPerM }: { item: BlueprintItem & { shape: "round" }; pxPerM: number }): ReactElement {
-  const cx = metresToPixels(item.center.x, pxPerM);
-  const cy = metresToPixels(item.center.y, pxPerM);
   const tableR = metresToPixels(item.diameterM / 2, pxPerM);
   const chairR = Math.max(4, tableR * 0.18);
-  const ringR = tableR + chairR + 2;
   const chairs: ReactElement[] = [];
+
+  if (item.chairs !== undefined && item.chairs.length > 0) {
+    item.chairs.forEach((p, i) => {
+      const x = metresToPixels(p.x, pxPerM);
+      const y = metresToPixels(p.y, pxPerM);
+      chairs.push(
+        <circle
+          key={`chair-${String(i)}`}
+          cx={x}
+          cy={y}
+          r={chairR}
+          fill={PAPER_DEEP}
+          stroke={INK_FAINT}
+          strokeWidth={0.6}
+          opacity={0.9}
+        />,
+      );
+    });
+    return <g pointerEvents="none">{chairs}</g>;
+  }
+
+  // Fallback: uniform ring derived from seat count.
+  const cx = metresToPixels(item.center.x, pxPerM);
+  const cy = metresToPixels(item.center.y, pxPerM);
+  const ringR = tableR + chairR + 2;
   const n = Math.max(0, item.seats);
   for (let i = 0; i < n; i += 1) {
     const theta = (Math.PI * 2 * i) / Math.max(1, n) - Math.PI / 2;
@@ -706,15 +735,33 @@ function BlueprintFromStore(): ReactElement {
   };
 
   // Dispatch drag-to-move to the editor store so the 3D view reflects
-  // the same change when you toggle back.
+  // the same change when you toggle back. When the moved item belongs
+  // to a group (e.g. a round table with auto-arranged chairs sharing
+  // its groupId), translate every group member by the same delta so
+  // chairs travel with the table — the 2D view must move grouped
+  // items as one body, matching 3D drag behaviour.
   const handleMoveTo = (id: string, center: { x: number; y: number }): void => {
     const s = useEditorStore.getState();
     const widthM = space !== null ? parseFloat(space.widthM) : 10;
     const lengthM = space !== null ? parseFloat(space.lengthM) : 10;
-    s.updateObject(id, {
-      positionX: center.x - widthM / 2,
-      positionZ: center.y - lengthM / 2,
-    });
+    const newPositionX = center.x - widthM / 2;
+    const newPositionZ = center.y - lengthM / 2;
+
+    const moved = s.objects.find((o) => o.id === id);
+    if (moved === undefined) return;
+
+    if (moved.groupId !== null) {
+      const dx = newPositionX - moved.positionX;
+      const dz = newPositionZ - moved.positionZ;
+      const groupIds = new Set<string>();
+      for (const o of s.objects) {
+        if (o.groupId === moved.groupId) groupIds.add(o.id);
+      }
+      s.moveObjectsByDelta(groupIds, dx, dz);
+      return;
+    }
+
+    s.updateObject(id, { positionX: newPositionX, positionZ: newPositionZ });
   };
 
   return (

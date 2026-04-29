@@ -283,3 +283,91 @@ describe("scene ref", () => {
     useEditorStore.setState({ scene: null });
   });
 });
+
+// ---------------------------------------------------------------------------
+// moveObjectsByDelta — group-aware translation primitive used by 2D drag.
+// Without this, dragging a table in 2D moved only the table; grouped
+// chairs stayed at their old positions when the user toggled back to 3D.
+// ---------------------------------------------------------------------------
+
+function fixtureObj(
+  id: string,
+  positionX: number,
+  positionZ: number,
+  groupId: string | null = null,
+): import("../stores/editor-store.js").EditorObject {
+  return {
+    id,
+    assetDefinitionId: "asset-x",
+    positionX,
+    positionY: 0,
+    positionZ,
+    rotationX: 0,
+    rotationY: 0,
+    rotationZ: 0,
+    scale: 1,
+    sortOrder: 0,
+    clothed: false,
+    groupId,
+    notes: "",
+  };
+}
+
+describe("moveObjectsByDelta", () => {
+  it("translates only objects in the set by (dx, dz)", () => {
+    useEditorStore.setState({
+      objects: [
+        fixtureObj("a", 1, 2, "g1"),
+        fixtureObj("b", 3, 4, "g1"),
+        fixtureObj("c", 5, 6, null),
+      ],
+      isDirty: false,
+    });
+
+    useEditorStore.getState().moveObjectsByDelta(new Set(["a", "b"]), 0.5, -0.25);
+
+    const objs = useEditorStore.getState().objects;
+    expect(objs.find((o) => o.id === "a")?.positionX).toBe(1.5);
+    expect(objs.find((o) => o.id === "a")?.positionZ).toBe(1.75);
+    expect(objs.find((o) => o.id === "b")?.positionX).toBe(3.5);
+    expect(objs.find((o) => o.id === "b")?.positionZ).toBe(3.75);
+    expect(objs.find((o) => o.id === "c")?.positionX).toBe(5);
+    expect(objs.find((o) => o.id === "c")?.positionZ).toBe(6);
+  });
+
+  it("does not touch positionY (vertical axis is not a 2D concern)", () => {
+    useEditorStore.setState({
+      objects: [{ ...fixtureObj("a", 0, 0), positionY: 1.2 }],
+      isDirty: false,
+    });
+    useEditorStore.getState().moveObjectsByDelta(new Set(["a"]), 1, 1);
+    expect(useEditorStore.getState().objects[0]?.positionY).toBe(1.2);
+  });
+
+  it("noop on empty set (does not flip isDirty)", () => {
+    useEditorStore.setState({
+      objects: [fixtureObj("a", 0, 0)],
+      isDirty: false,
+    });
+    useEditorStore.getState().moveObjectsByDelta(new Set(), 1, 1);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+  });
+
+  it("noop on zero delta (does not flip isDirty)", () => {
+    useEditorStore.setState({
+      objects: [fixtureObj("a", 0, 0)],
+      isDirty: false,
+    });
+    useEditorStore.getState().moveObjectsByDelta(new Set(["a"]), 0, 0);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+  });
+
+  it("sets isDirty=true after a real move", () => {
+    useEditorStore.setState({
+      objects: [fixtureObj("a", 0, 0)],
+      isDirty: false,
+    });
+    useEditorStore.getState().moveObjectsByDelta(new Set(["a"]), 1, 0);
+    expect(useEditorStore.getState().isDirty).toBe(true);
+  });
+});

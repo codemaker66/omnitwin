@@ -136,6 +136,13 @@ interface EditorActions {
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
   readonly updateObject: (objectId: string, transform: Partial<Pick<EditorObject, "positionX" | "positionY" | "positionZ" | "rotationX" | "rotationY" | "rotationZ" | "scale">>) => void;
   /**
+   * Translate every object whose id is in `ids` by `(dx, dz)` in metre-
+   * space. Used by group-aware moves (e.g. dragging a table in 2D moves
+   * its grouped chairs by the same delta). Mirrors
+   * `placement-store.moveItemsByDelta` so 2D and 3D moves behave the same.
+   */
+  readonly moveObjectsByDelta: (ids: ReadonlySet<string>, dx: number, dz: number) => void;
+  /**
    * Set the planner's note on a placed object. Empty string clears.
    * Marks the editor dirty so the auto-save / batch flow picks it up
    * and rounds it through metadata.notes.
@@ -286,6 +293,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
     }));
 
+  },
+
+  moveObjectsByDelta: (ids, dx, dz) => {
+    if (ids.size === 0) return;
+    if (dx === 0 && dz === 0) return;
+    set((s) => ({
+      objects: s.objects.map((o) =>
+        ids.has(o.id)
+          ? { ...o, positionX: o.positionX + dx, positionZ: o.positionZ + dz }
+          : o,
+      ),
+      isDirty: true,
+    }));
   },
 
   setObjectNotes: (objectId, notes) => {

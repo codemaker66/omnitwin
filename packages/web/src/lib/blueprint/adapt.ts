@@ -6,6 +6,7 @@ import type {
   BlueprintScene,
   EventType,
   ItemKind,
+  Point,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -61,10 +62,17 @@ export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
  * Convert a single editor object into a blueprint item, given the
  * room dimensions for centre-to-corner origin translation. Returns
  * `null` for assets that don't belong on the floor plan.
+ *
+ * `chairsByGroupId` is an optional pre-computed lookup of chair points
+ * indexed by their groupId. When supplied, round tables that share a
+ * groupId with chairs receive the actual chair positions on the
+ * `chairs` field — required so the 2D view reflects the 3D scene's
+ * wall-clearance offsets rather than drawing a uniform algorithmic ring.
  */
 export function editorObjectToBlueprintItem(
   o: EditorObject,
   room: { widthM: number; lengthM: number },
+  chairsByGroupId?: ReadonlyMap<string, readonly Point[]>,
 ): BlueprintItem | null {
   const asset = assetForObject(o);
   if (asset === undefined) return null;
@@ -78,6 +86,10 @@ export function editorObjectToBlueprintItem(
 
   if (kind === "round-table") {
     const diameterM = asset.widthM * o.scale;
+    const chairs =
+      chairsByGroupId !== undefined && o.groupId !== null
+        ? chairsByGroupId.get(o.groupId)
+        : undefined;
     return {
       id: o.id,
       kind: "round-table",
@@ -88,6 +100,7 @@ export function editorObjectToBlueprintItem(
       linen: o.clothed ? "Ivory" : undefined,
       centrepiece: undefined,
       rotationDeg,
+      chairs,
     };
   }
 
@@ -164,9 +177,29 @@ export function adaptEditorStateToBlueprintScene(input: AdaptInput): BlueprintSc
   const lengthM = input.space !== null ? parseM(input.space.lengthM) : 10;
   const room = { widthM, lengthM };
 
+  // Pre-pass: collect chair positions per groupId so each round table can
+  // receive its actual chairs on the `chairs` field. Chairs are otherwise
+  // filtered out of the blueprint (they have no first-class footprint),
+  // but the visual ring drawn around a round table needs the real
+  // positions to match what the 3D auto-arrange produced.
+  const chairsByGroupId = new Map<string, Point[]>();
+  for (const obj of input.objects) {
+    const asset = ASSET_BY_ID.get(obj.assetDefinitionId);
+    if (asset === undefined) continue;
+    if (asset.category !== "chair") continue;
+    if (obj.groupId === null) continue;
+    const point: Point = {
+      x: obj.positionX + room.widthM / 2,
+      y: obj.positionZ + room.lengthM / 2,
+    };
+    const list = chairsByGroupId.get(obj.groupId) ?? [];
+    list.push(point);
+    chairsByGroupId.set(obj.groupId, list);
+  }
+
   const items: BlueprintItem[] = [];
   for (const obj of input.objects) {
-    const item = editorObjectToBlueprintItem(obj, room);
+    const item = editorObjectToBlueprintItem(obj, room, chairsByGroupId);
     if (item !== null) items.push(item);
   }
 

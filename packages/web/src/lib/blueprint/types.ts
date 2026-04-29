@@ -77,6 +77,15 @@ export interface RoundTableItem extends BaseItem {
   readonly seats: number;
   readonly linen?: string;
   readonly centrepiece?: string;
+  /**
+   * Actual chair positions (in metre-space, blueprint convention with
+   * top-left origin) when the table is grouped with chairs in the 3D
+   * scene. When omitted, renderers fall back to a uniform algorithmic
+   * ring derived from `seats`. Real positions are required so the 2D
+   * view reflects what 3D shows — including wall-clearance offsets the
+   * 3D auto-arrange has applied.
+   */
+  readonly chairs?: readonly Point[];
 }
 
 export interface RectItem extends BaseItem {
