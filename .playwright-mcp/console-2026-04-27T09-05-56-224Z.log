@@ -1,0 +1,15 @@
+[     137ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5176/node_modules/.vite/deps/chunk-XI35OFE4.js?v=6c05b282:21608
+[     211ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5176/favicon.ico:0
+[     249ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://sterling-goldfish-6.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[    1734ms] [ERROR] Access to fetch at 'http://localhost:3001/venues' from origin 'http://localhost:5176' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:5176/plan:0
+[    1734ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:3001/venues:0
+[   11697ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5176/node_modules/.vite/deps/chunk-XI35OFE4.js?v=6c05b282:21608
+[   11801ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ https://sterling-goldfish-6.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js:18
+[   11975ms] [ERROR] Access to fetch at 'http://localhost:3001/venues' from origin 'http://localhost:5176' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:5176/plan:0
+[   11975ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:3001/venues:0
+[  106831ms] [ERROR] Access to fetch at 'http://localhost:3001/health' from origin 'http://localhost:5176' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:5176/plan:0
+[  106831ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:3001/health:0
+[14526525ms] A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+[14526527ms] A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+[14526527ms] A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+[14526527ms] A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
