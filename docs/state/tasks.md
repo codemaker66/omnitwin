@@ -2,7 +2,7 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-04-28.
+Updated: 2026-04-29.
 
 ## Tier 0 — this week
 
@@ -118,6 +118,8 @@ Updated: 2026-04-28.
 | T-036 | Tier-2 learned blending v2 prototype: Deep Blending-style learned source-view selector + blend-weight predictor. | not-started | 3 | 15 | T-027 | D-004a, CGT-DR §D | |
 | T-037 | Capture Certification Partner program design. Pilot with 5 BLK360 owners. | not-started | 4 | 20 | T-029 | D-015, Claude-DR §6.3 | |
 | T-038 | First non-luxury-hotel customer (stadium hospitality, boutique hotel ballroom, or corporate boardroom). | not-started | 5 | 10 + capture cost | T-031 | All sources | Validates pipeline isn't Trades-Hall-specific. |
+| T-111 | D-020 ADR: VSIR-0 QA jobs orchestration queue. | not-started | 3 | 1 | D-019 | D-019 | All four VSIR-0 deep research sources described validation passes as workers triggered by job rows but none defined the queue table. Without it, the validation passes are not actually runnable. ADR designs the small `vsir_qa_jobs` table (approximately 6-8 columns: id, pass_name, subject_id, subject_type, status, attempt_count, error, timestamps) and the worker dispatch protocol. Write before any validation pass implementation work begins. Activation: any time after D-019 lands. |
+| T-112 | D-021 ADR: VSIR-0 partition strategy for long-lived growth. | deferred | 2 | 0.5 | VSIR-0 implementation in production AND row count in `vsir_spatial_layer_versions` or `vsir_qa_certificates` exceeds approximately 100K rows | D-019 | All four VSIR-0 sources skipped partitioning. Acceptable for v0.1 (Trades Hall is one venue, growth is slow) but documents trigger conditions and recommended scheme: HASH or LIST partitioning by `venue_id` (group all rows per venue together), OR RANGE partitioning by `created_at` month/year (group by time window), depending on query patterns and row volume. Range partitioning directly on `venue_id` is NOT applicable — UUIDs don't have meaningful range ordering. Activate when row counts justify; until then, pure documentation. |
 
 ## Tier 5 — strategic / conditional on revenue
 
@@ -154,6 +156,8 @@ Updated: 2026-04-28.
 ## Source citation legend
 
 - **D-NNN** — references a Venviewer ADR at `docs/architecture/adr/`.
+- **D-019** — VSIR-0 Concrete Schema: Four-Source Synthesis.
+- **VSIR-DR-2026-04-29** — VSIR-0 schema deep researches archive at `docs/audits/2026-04-29-vsir-0-schema-deep-researches/`.
 - **CGT-1** — first ChatGPT review (whole product).
 - **CGT-2** — second ChatGPT review (Genjutsu architecture).
 - **CGT-DR** — ChatGPT deep research Parts 1+2.

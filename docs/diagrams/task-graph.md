@@ -231,7 +231,9 @@ multi-property customer") is omitted as effectively dormant.
 
 Subgraphs A2 and B contain 11 and 13 nodes respectively — both busy
 enough that another node would hurt readability. F contains 11 nodes —
-also at the readability ceiling. If T-111+ work lands, split before
+also at the readability ceiling. T-111 and T-112 are Tier 4 VSIR ADR
+follow-ups and remain in `docs/state/tasks.md`, not this visual graph.
+If more audit or product-vision nodes need visualization, split before
 adding more nodes. (`docs/diagrams/_theme.md` line 51 caps a single
 diagram at 12 nodes before splitting; subgraphs are the relief
 mechanism. The per-subgraph guidance here is readability advice, not
