@@ -1,3 +1,5 @@
+import type { TruthModeTokenCategory } from "./truth-mode.js";
+
 // ---------------------------------------------------------------------------
 // Design tokens — single source of truth for brand, severity, and sheet
 // typography + spacing values.
@@ -153,4 +155,116 @@ export const SHEET_SPACING = {
   lg: 14,
   xl: 22,
   xxl: 36,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Truth Mode visual tokens. These are semantic trust-state categories, not
+// component styles. Runtime surfaces choose how to render them, but every
+// token carries at least one non-color hook so Truth Mode never relies on
+// color alone.
+// ---------------------------------------------------------------------------
+
+export type TruthModeNonColorEncoding = "hatch" | "stipple" | "outline" | "badge" | "label";
+
+export interface TruthModeVisualToken {
+  readonly background: string;
+  readonly border: string;
+  readonly foreground: string;
+  readonly accent: string;
+  readonly nonColorEncodings: readonly TruthModeNonColorEncoding[];
+  readonly badge: string;
+  readonly label: string;
+}
+
+export const TRUTH_MODE_TOKENS: Readonly<Record<TruthModeTokenCategory, TruthModeVisualToken>> = {
+  observed: {
+    background: "#edf6ff",
+    border: "#2f80ed",
+    foreground: "#123a62",
+    accent: "#2f80ed",
+    nonColorEncodings: ["outline", "label"],
+    badge: "OBS",
+    label: "Observed",
+  },
+  fused: {
+    background: "#eaf8f6",
+    border: "#0f8b8d",
+    foreground: "#114548",
+    accent: "#0f8b8d",
+    nonColorEncodings: ["outline", "badge"],
+    badge: "FUS",
+    label: "Fused",
+  },
+  inferred: {
+    background: "#fff7e6",
+    border: "#d49a2a",
+    foreground: "#5f3f0e",
+    accent: "#d49a2a",
+    nonColorEncodings: ["stipple", "label"],
+    badge: "INF",
+    label: "Inferred",
+  },
+  "ai-generated": {
+    background: "#f2eefc",
+    border: "#7c5cc4",
+    foreground: "#3d2b63",
+    accent: "#7c5cc4",
+    nonColorEncodings: ["hatch", "badge"],
+    badge: "AI",
+    label: "AI generated",
+  },
+  "human-edited": {
+    background: "#fbf1e8",
+    border: "#b26b2f",
+    foreground: "#5a3114",
+    accent: "#b26b2f",
+    nonColorEncodings: ["outline", "badge"],
+    badge: "EDIT",
+    label: "Human edited",
+  },
+  "artist-proxy": {
+    background: "#fbeef1",
+    border: "#b65a6a",
+    foreground: "#5e2631",
+    accent: "#b65a6a",
+    nonColorEncodings: ["hatch", "label"],
+    badge: "PROXY",
+    label: "Artist proxy",
+  },
+  verified: {
+    background: "#eefaf2",
+    border: "#2f8f5b",
+    foreground: "#15502f",
+    accent: "#2f8f5b",
+    nonColorEncodings: ["outline", "badge"],
+    badge: "VER",
+    label: "Verified",
+  },
+  contested: {
+    background: "#fdf0f0",
+    border: "#b84a4a",
+    foreground: "#682323",
+    accent: "#b84a4a",
+    nonColorEncodings: ["stipple", "badge"],
+    badge: "!",
+    label: "Contested",
+  },
+  stale: {
+    background: "#f5f0e8",
+    border: "#7a6a58",
+    foreground: "#40362b",
+    accent: "#7a6a58",
+    nonColorEncodings: ["outline", "label"],
+    badge: "OLD",
+    label: "Stale",
+  },
+  "known-unknown": {
+    background: "#f0f2f5",
+    border: "#4f5661",
+    foreground: "#242a33",
+    accent: "#4f5661",
+    nonColorEncodings: ["hatch", "stipple", "label"],
+    badge: "?",
+    label: "Known unknown",
+  },
 } as const;

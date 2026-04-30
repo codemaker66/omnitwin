@@ -350,11 +350,39 @@ export {
   INK,
   DARK,
   SEVERITY_PALETTE,
+  TRUTH_MODE_TOKENS,
   SHEET_TYPE,
   SHEET_SPACING,
   type SeverityPaletteEntry,
+  type TruthModeNonColorEncoding,
+  type TruthModeVisualToken,
   type TypeStep,
 } from "./design-tokens.js";
+
+// --- ASPIRATIONAL: Truth Mode vocabulary for trust inspection surfaces ---
+export {
+  TRUTH_EVIDENCE_SOURCE_STATES,
+  TRUTH_VERIFICATION_STATES,
+  TRUTH_CONFIDENCE_TIERS,
+  TRUTH_STALENESS_STATES,
+  TRUTH_MODE_PERSONA_PRESETS,
+  TRUTH_MODE_DISCLOSURE_LEVELS,
+  TRUTH_MODE_TOKEN_CATEGORIES,
+  TruthEvidenceSourceStateSchema,
+  TruthVerificationStateSchema,
+  TruthConfidenceTierSchema,
+  TruthStalenessStateSchema,
+  TruthModePersonaPresetSchema,
+  TruthModeDisclosureLevelSchema,
+  TruthModeTokenCategorySchema,
+  type TruthEvidenceSourceState,
+  type TruthVerificationState,
+  type TruthConfidenceTier,
+  type TruthStalenessState,
+  type TruthModePersonaPreset,
+  type TruthModeDisclosureLevel,
+  type TruthModeTokenCategory,
+} from "./truth-mode.js";
 
 export {
   buildAccessibilityCallouts,

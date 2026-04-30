@@ -4,9 +4,11 @@ import {
   INK,
   DARK,
   SEVERITY_PALETTE,
+  TRUTH_MODE_TOKENS,
   SHEET_TYPE,
   SHEET_SPACING,
 } from "../design-tokens.js";
+import { TRUTH_MODE_TOKEN_CATEGORIES } from "../truth-mode.js";
 
 // ---------------------------------------------------------------------------
 // design-tokens — contract tests
@@ -96,6 +98,29 @@ describe("SEVERITY_PALETTE", () => {
     // approval success banner look identical to a hallkeeper glancing
     // across the sheet.
     expect(SEVERITY_PALETTE.critical.border).not.toBe(SEVERITY_PALETTE.success.border);
+  });
+});
+
+describe("TRUTH_MODE_TOKENS", () => {
+  it("covers every semantic Truth Mode token category", () => {
+    expect(Object.keys(TRUTH_MODE_TOKENS)).toEqual([...TRUTH_MODE_TOKEN_CATEGORIES]);
+  });
+
+  it("every token exposes a valid color triplet and accent", () => {
+    for (const [category, token] of Object.entries(TRUTH_MODE_TOKENS)) {
+      expect(token.background, `${category}.background`).toMatch(HEX);
+      expect(token.border, `${category}.border`).toMatch(HEX);
+      expect(token.foreground, `${category}.foreground`).toMatch(HEX);
+      expect(token.accent, `${category}.accent`).toMatch(HEX);
+    }
+  });
+
+  it("no truth category relies on color alone", () => {
+    for (const [category, token] of Object.entries(TRUTH_MODE_TOKENS)) {
+      expect(token.nonColorEncodings.length, `${category}.nonColorEncodings`).toBeGreaterThan(0);
+      expect(token.badge.length, `${category}.badge`).toBeGreaterThan(0);
+      expect(token.label.length, `${category}.label`).toBeGreaterThan(0);
+    }
   });
 });
 
