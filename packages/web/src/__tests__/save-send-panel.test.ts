@@ -185,9 +185,11 @@ describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
     expect(codeOnly).toMatch(/import[\s\S]*?updatePublicThumbnail[\s\S]*?from[\s\S]*?configurations/);
   });
 
-  it("imports toRenderSpace for coordinate conversion", async () => {
+  it("uses the active room-dimensions store for capture dimensions", async () => {
     const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
-    expect(codeOnly).toContain("toRenderSpace");
+    expect(codeOnly).toContain("useRoomDimensionsStore");
+    expect(codeOnly).toContain("roomWidthRender");
+    expect(codeOnly).toContain("roomLengthRender");
   });
 
   it("reads scene from editor-store", async () => {
