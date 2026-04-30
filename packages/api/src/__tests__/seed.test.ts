@@ -27,7 +27,7 @@ describe("seed venue passes CreateVenueSchema", () => {
 
 describe("seed spaces pass CreateSpaceSchema", () => {
   const spaces = [
-    { name: "Grand Hall", slug: "grand-hall", width: 21, length: 10, height: 7 },
+    { name: "Grand Hall", slug: "grand-hall", width: 21, length: 10.5, height: 7 },
     { name: "Saloon", slug: "saloon", width: 12, length: 7, height: 5.4 },
     { name: "Reception Room", slug: "reception-room", width: 13.4, length: 11.2, height: 3.2 },
     { name: "Robert Adam Room", slug: "robert-adam-room", width: 9.7, length: 5.6, height: 2.18 },

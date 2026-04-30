@@ -12,7 +12,7 @@ import type { BlueprintScene, RoundTableItem } from "./types.js";
 // ---------------------------------------------------------------------------
 
 const GH_WIDTH_M = 21;
-const GH_LENGTH_M = 10;
+const GH_LENGTH_M = 10.5;
 
 function roundAt(id: string, cx: number, cy: number): RoundTableItem {
   return {

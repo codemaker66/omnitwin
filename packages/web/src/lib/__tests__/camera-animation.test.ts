@@ -228,7 +228,7 @@ describe("generateBookmarkId", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeDefaultBookmarks", () => {
-  const grandHall = { width: 21, length: 10, height: 7 };
+  const grandHall = { width: 21, length: 10.5, height: 7 };
 
   it("produces exactly 3 default bookmarks", () => {
     const bookmarks = computeDefaultBookmarks(grandHall);

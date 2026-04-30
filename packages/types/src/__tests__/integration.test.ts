@@ -219,10 +219,10 @@ describe("cross-module ID consistency", () => {
       slug: "grand-hall",
       description: null,
       widthM: "21.00",
-      lengthM: "10.00",
+      lengthM: "10.50",
       heightM: "7.00",
       sortOrder: 0,
-      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10 }],
+      floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }],
       meshUrl: null,
       thumbnailUrl: null,
       createdAt: NOW,
@@ -371,14 +371,14 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     name: "Grand Hall",
     slug: "grand-hall",
     widthM: 21,
-    lengthM: 10,
+    lengthM: 10.5,
     heightM: 7,
     sortOrder: 0,
     floorPlanOutline: [
       { x: 0, y: 0 },
       { x: 21, y: 0 },
-      { x: 21, y: 10 },
-      { x: 0, y: 10 },
+      { x: 21, y: 10.5 },
+      { x: 0, y: 10.5 },
     ],
   };
 
@@ -486,7 +486,7 @@ describe("end-to-end workflow: venue setup lifecycle", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.widthM).toBe(21);
-      expect(result.data.lengthM).toBe(10);
+      expect(result.data.lengthM).toBe(10.5);
     }
   });
 

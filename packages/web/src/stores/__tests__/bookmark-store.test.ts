@@ -39,7 +39,7 @@ describe("BookmarkStore initial state", () => {
 // ---------------------------------------------------------------------------
 
 describe("initialize", () => {
-  const grandHall = { width: 21, length: 10, height: 7 };
+  const grandHall = { width: 21, length: 10.5, height: 7 };
 
   it("populates default bookmarks for a room", () => {
     useBookmarkStore.getState().initialize(grandHall);
@@ -99,7 +99,7 @@ describe("addBookmark", () => {
   });
 
   it("preserves existing bookmarks when adding", () => {
-    useBookmarkStore.getState().initialize({ width: 21, length: 10, height: 7 });
+    useBookmarkStore.getState().initialize({ width: 21, length: 10.5, height: 7 });
     useBookmarkStore.getState().addBookmark("Custom", [0, 0, 0], [0, 0, 0]);
     expect(useBookmarkStore.getState().bookmarks).toHaveLength(4);
   });
@@ -134,7 +134,7 @@ describe("removeBookmark", () => {
   });
 
   it("can remove default bookmarks", () => {
-    useBookmarkStore.getState().initialize({ width: 21, length: 10, height: 7 });
+    useBookmarkStore.getState().initialize({ width: 21, length: 10.5, height: 7 });
     useBookmarkStore.getState().removeBookmark("default-entrance");
     const names = useBookmarkStore.getState().bookmarks.map((b) => b.name);
     expect(names).not.toContain("Entrance View");

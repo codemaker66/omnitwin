@@ -7,7 +7,7 @@ import {
   type AccessoryRule,
 } from "../services/manifest-generator-v2.js";
 
-const ROOM = { widthM: 21, lengthM: 10 };
+const ROOM = { widthM: 21, lengthM: 10.5 };
 
 function obj(partial: Partial<ManifestObjectV2> & { id: string; assetName: string; assetCategory: string }): ManifestObjectV2 {
   return {

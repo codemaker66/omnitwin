@@ -30,7 +30,7 @@ const validPayload = {
   space: {
     name: "Grand Hall",
     widthM: 21,
-    lengthM: 10,
+    lengthM: 10.5,
     heightM: 7,
   },
   timing: null,

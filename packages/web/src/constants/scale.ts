@@ -46,7 +46,7 @@ export function scaleForRendering(dimensions: SpaceDimensions): SpaceDimensions 
 
 /**
  * Grand Hall dimensions scaled for comfortable 3D rendering.
- * Real: 21m × 10m × 7m → Rendered: 42m × 20m × 7m (height unchanged)
+ * Real: 21m × 10.5m × 7m → Rendered: 42m × 21m × 7m (height unchanged)
  */
 export const GRAND_HALL_RENDER_DIMENSIONS: SpaceDimensions =
   scaleForRendering(TRADES_HALL_GRAND_HALL_DIMENSIONS);

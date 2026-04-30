@@ -3,11 +3,11 @@
  *
  * Layered on top of the basic 6-surface room (`GrandHallRoom`):
  *   - Crown moulding, skirting, and raised dark-timber wainscot panels
- *   - Pilasters framing the five long-wall arched windows
+ *   - Pilasters framing the three arched windows on one long wall
  *   - Curtain-dressed arched-window facades with cool daylight panes
- *   - Gold trade frieze and portrait/honour-board wall dressing
- *   - Avodire coffer beams and fourteen-trade dome ring
- *   - Five chandeliers matching the Grand Hall venue copy
+ *   - Ochre mural frieze, portraits, honour boards, and cabinet wall dressing
+ *   - Avodire geometric coffer field and fourteen-trade dome ring
+ *   - Three chandeliers along the 21m hall axis, with the central chandelier under the dome
  *
  * All ornaments use `meshStandardMaterial` with the project's standard
  * roughness/metalness profile — no point lights, no runtime shadows,
@@ -35,8 +35,14 @@ const PANEL_DARK_OAK = "#4a2d16";
 const PANEL_SHADOW = "#2e1b0c";
 const MARBLE_WHITE = "#f2eee2";
 const PORTRAIT_DARK = "#2a2119";
-const CURTAIN_RED = "#6f1f24";
+const CURTAIN_CREAM = "#d6bea0";
+const CURTAIN_SHADOW = "#92785d";
 const WINDOW_FRAME_SHADOW = "#d9cba8";
+const MURAL_GOLD = "#b98532";
+const MURAL_SHADOW = "#705018";
+const UNDERLIGHT = "#f5d47a";
+const CHAIR_RED = "#7d2025";
+const CHAIR_TRIM = "#2c160c";
 
 // ---------------------------------------------------------------------------
 // Crown moulding — slim ivory strip at the top of every wall
@@ -133,47 +139,47 @@ const WAINSCOT_PANEL_INSET = 0.17;
 function WainscotRaisedPanels({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
-  const longPanels = 8;
+  const longPanels = 12;
   const shortPanels = 5;
-  const longSpacing = length / longPanels;
-  const shortSpacing = width / shortPanels;
+  const longSpacing = width / longPanels;
+  const shortSpacing = length / shortPanels;
 
-  const longZ = useMemo(
-    () => Array.from({ length: longPanels }, (_, i) => -halfL + longSpacing * (i + 0.5)),
-    [halfL, longSpacing],
+  const longX = useMemo(
+    () => Array.from({ length: longPanels }, (_, i) => -halfW + longSpacing * (i + 0.5)),
+    [halfW, longSpacing],
   );
-  const shortX = useMemo(
-    () => Array.from({ length: shortPanels }, (_, i) => -halfW + shortSpacing * (i + 0.5)),
-    [halfW, shortSpacing],
+  const shortZ = useMemo(
+    () => Array.from({ length: shortPanels }, (_, i) => -halfL + shortSpacing * (i + 0.5)),
+    [halfL, shortSpacing],
   );
 
   return (
     <group name="raised-wainscot-panels">
-      {[-halfW + WAINSCOT_PANEL_INSET, halfW - WAINSCOT_PANEL_INSET].map((x, sideIndex) => (
-        <group key={`wainscot-long-${String(sideIndex)}`}>
-          {longZ.map((z, i) => (
-            <mesh key={`wainscot-long-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
-              <boxGeometry args={[0.055, WAINSCOT_PANEL_HEIGHT, longSpacing * 0.72]} />
-              <meshStandardMaterial color={i % 2 === 0 ? PANEL_DARK_OAK : PANEL_SHADOW} roughness={0.74} metalness={0} />
-            </mesh>
-          ))}
-          <mesh position={[x, WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2 + 0.12, 0]}>
-            <boxGeometry args={[0.075, 0.1, length - 0.65]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
-          </mesh>
-        </group>
-      ))}
-
       {[-halfL + WAINSCOT_PANEL_INSET, halfL - WAINSCOT_PANEL_INSET].map((z, sideIndex) => (
-        <group key={`wainscot-short-${String(sideIndex)}`}>
-          {shortX.map((x, i) => (
-            <mesh key={`wainscot-short-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
-              <boxGeometry args={[shortSpacing * 0.72, WAINSCOT_PANEL_HEIGHT, 0.055]} />
+        <group key={`wainscot-long-${String(sideIndex)}`}>
+          {longX.map((x, i) => (
+            <mesh key={`wainscot-long-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
+              <boxGeometry args={[longSpacing * 0.72, WAINSCOT_PANEL_HEIGHT, 0.055]} />
               <meshStandardMaterial color={i % 2 === 0 ? PANEL_DARK_OAK : PANEL_SHADOW} roughness={0.74} metalness={0} />
             </mesh>
           ))}
           <mesh position={[0, WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2 + 0.12, z]}>
             <boxGeometry args={[width - 0.65, 0.1, 0.075]} />
+            <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
+          </mesh>
+        </group>
+      ))}
+
+      {[-halfW + WAINSCOT_PANEL_INSET, halfW - WAINSCOT_PANEL_INSET].map((x, sideIndex) => (
+        <group key={`wainscot-short-${String(sideIndex)}`}>
+          {shortZ.map((z, i) => (
+            <mesh key={`wainscot-short-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
+              <boxGeometry args={[0.055, WAINSCOT_PANEL_HEIGHT, shortSpacing * 0.72]} />
+              <meshStandardMaterial color={i % 2 === 0 ? PANEL_DARK_OAK : PANEL_SHADOW} roughness={0.74} metalness={0} />
+            </mesh>
+          ))}
+          <mesh position={[x, WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2 + 0.12, 0]}>
+            <boxGeometry args={[0.075, 0.1, length - 0.65]} />
             <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
           </mesh>
         </group>
@@ -195,39 +201,46 @@ interface TradeFriezeProps {
 function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
-  const y = height - 1.36;
-  const bandHeight = 0.42;
-  const plaques = 14;
-  const plaqueX = useMemo(
-    () => Array.from({ length: plaques }, (_, i) => -width / 2 + (width / plaques) * (i + 0.5)),
+  const y = height - 1.72;
+  const bandHeight = 0.68;
+  const longFigures = 26;
+  const shortFigures = 8;
+  const figureX = useMemo(
+    () => Array.from({ length: longFigures }, (_, i) => -width / 2 + (width / longFigures) * (i + 0.5)),
     [width],
   );
-  const plaqueZ = useMemo(
-    () => Array.from({ length: plaques }, (_, i) => -length / 2 + (length / plaques) * (i + 0.5)),
+  const figureZ = useMemo(
+    () => Array.from({ length: shortFigures }, (_, i) => -length / 2 + (length / shortFigures) * (i + 0.5)),
     [length],
   );
 
   return (
-    <group name="gold-trade-frieze">
+    <group name="ochre-mural-frieze">
       {[-halfL + 0.04, halfL - 0.04].map((z, sideIndex) => (
         <group key={`frieze-z-${String(sideIndex)}`}>
           <mesh position={[0, y, z]}>
             <boxGeometry args={[width, bandHeight, 0.035]} />
-            <meshStandardMaterial color={BURGUNDY} roughness={0.62} metalness={0.02} />
+            <meshStandardMaterial color={MURAL_GOLD} roughness={0.76} metalness={0.02} />
           </mesh>
-          <mesh position={[0, y + bandHeight / 2 + 0.04, z]}>
-            <boxGeometry args={[width, 0.055, 0.045]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.4} />
+          <mesh position={[0, y + bandHeight / 2 + 0.18, z]}>
+            <boxGeometry args={[width, 0.32, 0.055]} />
+            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.68} metalness={0.03} />
           </mesh>
-          <mesh position={[0, y - bandHeight / 2 - 0.04, z]}>
-            <boxGeometry args={[width, 0.055, 0.045]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.4} />
+          <mesh position={[0, y - bandHeight / 2 - 0.03, z + (sideIndex === 0 ? 0.018 : -0.018)]}>
+            <boxGeometry args={[width, 0.045, 0.035]} />
+            <meshStandardMaterial color={UNDERLIGHT} emissive={UNDERLIGHT} emissiveIntensity={0.34} roughness={0.36} metalness={0} />
           </mesh>
-          {plaqueX.map((x, i) => (
-            <mesh key={`frieze-plaque-z-${String(sideIndex)}-${String(i)}`} position={[x, y, z + (sideIndex === 0 ? 0.03 : -0.03)]}>
-              <boxGeometry args={[0.28, 0.28, 0.035]} />
-              <meshStandardMaterial color={i % 3 === 0 ? AVODIRE_HIGHLIGHT : BRASS_GOLD} roughness={0.42} metalness={0.45} />
-            </mesh>
+          {figureX.map((x, i) => (
+            <group key={`frieze-figure-z-${String(sideIndex)}-${String(i)}`} position={[x, y - 0.02, z + (sideIndex === 0 ? 0.032 : -0.032)]}>
+              <mesh position={[0, -0.03, 0]}>
+                <boxGeometry args={[0.08, 0.32 + (i % 3) * 0.035, 0.026]} />
+                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+              </mesh>
+              <mesh position={[0, 0.18, 0]}>
+                <sphereGeometry args={[0.055, 8, 8]} />
+                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+              </mesh>
+            </group>
           ))}
         </group>
       ))}
@@ -236,21 +249,27 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
         <group key={`frieze-x-${String(sideIndex)}`}>
           <mesh position={[x, y, 0]}>
             <boxGeometry args={[0.035, bandHeight, length]} />
-            <meshStandardMaterial color={BURGUNDY} roughness={0.62} metalness={0.02} />
+            <meshStandardMaterial color={MURAL_GOLD} roughness={0.76} metalness={0.02} />
           </mesh>
-          <mesh position={[x, y + bandHeight / 2 + 0.04, 0]}>
-            <boxGeometry args={[0.045, 0.055, length]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.4} />
+          <mesh position={[x, y + bandHeight / 2 + 0.18, 0]}>
+            <boxGeometry args={[0.055, 0.32, length]} />
+            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.68} metalness={0.03} />
           </mesh>
-          <mesh position={[x, y - bandHeight / 2 - 0.04, 0]}>
-            <boxGeometry args={[0.045, 0.055, length]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.4} />
+          <mesh position={[x + (sideIndex === 0 ? 0.018 : -0.018), y - bandHeight / 2 - 0.03, 0]}>
+            <boxGeometry args={[0.035, 0.045, length]} />
+            <meshStandardMaterial color={UNDERLIGHT} emissive={UNDERLIGHT} emissiveIntensity={0.34} roughness={0.36} metalness={0} />
           </mesh>
-          {plaqueZ.map((z, i) => (
-            <mesh key={`frieze-plaque-x-${String(sideIndex)}-${String(i)}`} position={[x + (sideIndex === 0 ? 0.03 : -0.03), y, z]}>
-              <boxGeometry args={[0.035, 0.28, 0.28]} />
-              <meshStandardMaterial color={i % 3 === 0 ? AVODIRE_HIGHLIGHT : BRASS_GOLD} roughness={0.42} metalness={0.45} />
-            </mesh>
+          {figureZ.map((z, i) => (
+            <group key={`frieze-figure-x-${String(sideIndex)}-${String(i)}`} position={[x + (sideIndex === 0 ? 0.032 : -0.032), y - 0.02, z]}>
+              <mesh position={[0, -0.03, 0]}>
+                <boxGeometry args={[0.026, 0.32 + (i % 3) * 0.035, 0.08]} />
+                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+              </mesh>
+              <mesh position={[0, 0.18, 0]}>
+                <sphereGeometry args={[0.055, 8, 8]} />
+                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+              </mesh>
+            </group>
           ))}
         </group>
       ))}
@@ -308,9 +327,9 @@ function Pilaster({ position, height, wallAxis }: PilasterProps): React.ReactEle
 // Arched window facade — visual cue, not a real window cutout
 // ---------------------------------------------------------------------------
 
-const WINDOW_HEIGHT = 4.2;
-const WINDOW_WIDTH = 2.0;
-const WINDOW_SILL_Y = 1.6;
+const WINDOW_HEIGHT = 4.55;
+const WINDOW_WIDTH = 2.45;
+const WINDOW_SILL_Y = 1.05;
 const WINDOW_INSET = 0.04;
 const WINDOW_FRAME_THICKNESS = 0.12;
 
@@ -327,15 +346,23 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
 
   return (
     <group position={[position[0], position[1], position[2]]} rotation={[0, rotationY, 0]}>
-      {/* Burgundy side drapes and brass pelmet: the real room reads as a formal
-          event hall, not a bare-window office. */}
+      {/* Pale gathered drapes and brass pelmet: the reference photos show
+          cream curtains inside the arched bays, not red side swags. */}
       <mesh position={[-WINDOW_WIDTH / 2 - 0.22, curtainY, WINDOW_INSET + 0.018]}>
-        <boxGeometry args={[0.28, curtainHeight, 0.035]} />
-        <meshStandardMaterial color={CURTAIN_RED} roughness={0.86} metalness={0} />
+        <boxGeometry args={[0.34, curtainHeight, 0.035]} />
+        <meshStandardMaterial color={CURTAIN_CREAM} roughness={0.88} metalness={0} />
       </mesh>
       <mesh position={[WINDOW_WIDTH / 2 + 0.22, curtainY, WINDOW_INSET + 0.018]}>
-        <boxGeometry args={[0.28, curtainHeight, 0.035]} />
-        <meshStandardMaterial color={CURTAIN_RED} roughness={0.86} metalness={0} />
+        <boxGeometry args={[0.34, curtainHeight, 0.035]} />
+        <meshStandardMaterial color={CURTAIN_CREAM} roughness={0.88} metalness={0} />
+      </mesh>
+      <mesh position={[-WINDOW_WIDTH / 2 - 0.04, curtainY, WINDOW_INSET + 0.021]}>
+        <boxGeometry args={[0.055, curtainHeight * 0.92, 0.038]} />
+        <meshStandardMaterial color={CURTAIN_SHADOW} roughness={0.9} metalness={0} />
+      </mesh>
+      <mesh position={[WINDOW_WIDTH / 2 + 0.04, curtainY, WINDOW_INSET + 0.021]}>
+        <boxGeometry args={[0.055, curtainHeight * 0.92, 0.038]} />
+        <meshStandardMaterial color={CURTAIN_SHADOW} roughness={0.9} metalness={0} />
       </mesh>
       <mesh position={[0, WINDOW_SILL_Y + rectHeight + 0.22, WINDOW_INSET + 0.02]}>
         <boxGeometry args={[WINDOW_WIDTH + 0.74, 0.16, 0.045]} />
@@ -426,6 +453,42 @@ interface CeilingBeamProps {
   readonly height: number;
 }
 
+function CeilingDiamondCoffer({
+  x,
+  z,
+  y,
+  size,
+}: {
+  readonly x: number;
+  readonly z: number;
+  readonly y: number;
+  readonly size: number;
+}): React.ReactElement {
+  const side = size * 0.74;
+  const offset = size * 0.26;
+  const strip = 0.045;
+
+  return (
+    <group position={[x, y, z]} name="diamond-ceiling-coffer">
+      {[
+        { px: -offset, pz: -offset, ry: Math.PI / 4 },
+        { px: offset, pz: -offset, ry: -Math.PI / 4 },
+        { px: offset, pz: offset, ry: Math.PI / 4 },
+        { px: -offset, pz: offset, ry: -Math.PI / 4 },
+      ].map((edge, i) => (
+        <mesh key={`diamond-edge-${String(i)}`} position={[edge.px, 0, edge.pz]} rotation={[0, edge.ry, 0]}>
+          <boxGeometry args={[side, 0.035, strip]} />
+          <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[size * 0.09, 8]} />
+        <meshStandardMaterial color={AVODIRE_HIGHLIGHT} roughness={0.46} metalness={0.22} side={DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
 function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
@@ -433,13 +496,17 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
   const opening = DOME_RADIUS + 0.72;
   const sidePanelWidth = Math.max(0.1, (width - opening * 2) / 2);
   const endPanelLength = Math.max(0.1, (length - opening * 2) / 2);
-  const lengthwiseXs = useMemo(
-    () => [-halfW * 0.62, -halfW * 0.31, 0, halfW * 0.31, halfW * 0.62],
-    [halfW],
-  );
-  const crossZs = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => -halfL + (length / 8) * (i + 1)),
-    [halfL, length],
+  const cofferCenters = useMemo(
+    () => {
+      const xs = Array.from({ length: 9 }, (_, i) => -halfW + (width / 10) * (i + 1));
+      const zs = [-halfL * 0.55, 0, halfL * 0.55];
+      return xs.flatMap((x) =>
+        zs
+          .filter((z) => Math.sqrt(x * x + z * z) > opening * 1.12)
+          .map((z) => ({ x, z })),
+      );
+    },
+    [halfW, halfL, width, opening],
   );
 
   return (
@@ -475,17 +542,20 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
         <circleGeometry args={[opening * 1.44, 72]} />
         <meshStandardMaterial color={DOME_COLOR} roughness={0.72} metalness={0.08} side={DoubleSide} />
       </mesh>
-      {lengthwiseXs.map((x, i) => (
-        <mesh key={`ceiling-beam-long-${String(i)}`} position={[x, y, 0]}>
+      {[-halfL * 0.78, halfL * 0.78].map((z, i) => (
+        <mesh key={`ceiling-beam-long-${String(i)}`} position={[0, y, z]}>
+          <boxGeometry args={[width - 0.8, 0.12, 0.18]} />
+          <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
+        </mesh>
+      ))}
+      {[-halfW * 0.74, -halfW * 0.5, -halfW * 0.26, halfW * 0.26, halfW * 0.5, halfW * 0.74].map((x, i) => (
+        <mesh key={`ceiling-beam-cross-${String(i)}`} position={[x, y - 0.004, 0]}>
           <boxGeometry args={[0.18, 0.12, length - 0.8]} />
           <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
         </mesh>
       ))}
-      {crossZs.map((z, i) => (
-        <mesh key={`ceiling-beam-cross-${String(i)}`} position={[0, y - 0.004, z]}>
-          <boxGeometry args={[width - 0.8, 0.12, 0.18]} />
-          <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
-        </mesh>
+      {cofferCenters.map((c, i) => (
+        <CeilingDiamondCoffer key={`ceiling-diamond-${String(i)}`} x={c.x} z={c.z} y={y - 0.028} size={Math.min(width / 10, length / 3.8)} />
       ))}
       <mesh position={[0, y - 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[DOME_RADIUS + 0.7, 0.075, 12, 80]} />
@@ -530,32 +600,46 @@ function WallPortrait({
 }
 
 function EndWallFocalPoint({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
-  const backZ = -length / 2 + 0.18;
-  const frontZ = length / 2 - 0.18;
-  const boardX = width * 0.14;
+  const fireplaceX = width / 2 - 0.18;
+  const entranceX = -width / 2 + 0.18;
+  const boardZ = length * 0.24;
 
   return (
     <group name="end-wall-focal-points">
-      {/* Back wall fireplace and central portrait. */}
-      <mesh position={[0, 0.54, backZ]}>
-        <boxGeometry args={[2.4, 1.08, 0.16]} />
+      {/* Short-end fireplace and central portrait/honour-board composition. */}
+      <mesh position={[fireplaceX, 0.54, 0]}>
+        <boxGeometry args={[0.16, 1.08, 2.4]} />
         <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
       </mesh>
-      <mesh position={[0, 0.38, backZ + 0.04]}>
-        <boxGeometry args={[1.35, 0.72, 0.08]} />
+      <mesh position={[fireplaceX - 0.04, 0.38, 0]}>
+        <boxGeometry args={[0.08, 0.72, 1.35]} />
         <meshStandardMaterial color="#1e1712" roughness={0.72} metalness={0} />
       </mesh>
-      <mesh position={[0, 1.14, backZ + 0.02]}>
-        <boxGeometry args={[2.7, 0.16, 0.22]} />
+      <mesh position={[fireplaceX - 0.02, 1.14, 0]}>
+        <boxGeometry args={[0.22, 0.16, 2.7]} />
         <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
       </mesh>
-      <WallPortrait position={[0, 3.15, backZ + 0.05]} axis="z" pictureColor="#3a2b20" />
-      <WallPortrait position={[-boardX, 2.55, backZ + 0.04]} axis="z" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
-      <WallPortrait position={[boardX, 2.55, backZ + 0.04]} axis="z" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+      <WallPortrait position={[fireplaceX - 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
+      <WallPortrait position={[fireplaceX - 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+      <WallPortrait position={[fireplaceX - 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
 
-      {/* Front wall paired honour boards, leaving the centre clear for events. */}
-      <WallPortrait position={[-boardX, 2.8, frontZ - 0.04]} axis="z" frameColor={PANEL_DARK_OAK} pictureColor="#24160d" />
-      <WallPortrait position={[boardX, 2.8, frontZ - 0.04]} axis="z" frameColor={PANEL_DARK_OAK} pictureColor="#24160d" />
+      {/* Opposite short end: paired dark entrance doors from the floorplan. */}
+      {[-1.35, 1.35].map((z, i) => (
+        <group key={`short-end-door-${String(i)}`} position={[entranceX + 0.02, 1.55, z]}>
+          <mesh>
+            <boxGeometry args={[0.09, 2.55, 1.15]} />
+            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.68} metalness={0.02} />
+          </mesh>
+          <mesh position={[-0.012, 0.1, 0]}>
+            <boxGeometry args={[0.105, 1.82, 0.74]} />
+            <meshStandardMaterial color={PANEL_SHADOW} roughness={0.74} metalness={0} />
+          </mesh>
+          <mesh position={[-0.024, 1.42, 0]}>
+            <boxGeometry args={[0.12, 0.16, 1.28]} />
+            <meshStandardMaterial color={BRASS_GOLD} roughness={0.42} metalness={0.36} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -563,35 +647,138 @@ function EndWallFocalPoint({ width, length }: { readonly width: number; readonly
 function PortraitGallery({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
-  const portraitZ = useMemo(
-    () => [-halfL * 0.72, -halfL * 0.42, -halfL * 0.12, halfL * 0.12, halfL * 0.42, halfL * 0.72],
-    [halfL],
+  const portraitX = useMemo(
+    () => [-halfW * 0.72, -halfW * 0.48, -halfW * 0.22, halfW * 0.22, halfW * 0.48, halfW * 0.72],
+    [halfW],
   );
 
   return (
     <group name="portrait-gallery">
-      {portraitZ.map((z, i) => (
+      {portraitX.map((x, i) => (
         <WallPortrait
-          key={`portrait-left-${String(i)}`}
-          position={[-halfW + 0.15, 3.05, z]}
-          axis="x"
+          key={`portrait-opposite-window-wall-${String(i)}`}
+          position={[x, 3.05, halfL - 0.15]}
+          axis="z"
           pictureColor={i % 2 === 0 ? "#31231a" : "#1f2421"}
         />
       ))}
-      {portraitZ.map((z, i) => (
-        <WallPortrait
-          key={`portrait-right-${String(i)}`}
-          position={[halfW - 0.15, 3.05, z]}
-          axis="x"
-          pictureColor={i % 2 === 0 ? "#2b2119" : "#20262b"}
-        />
+      {[-halfW * 0.34, halfW * 0.34].map((x, i) => (
+        <group key={`honour-cabinet-long-wall-${String(i)}`} position={[x, 2.35, halfL - 0.18]}>
+          <mesh>
+            <boxGeometry args={[2.1, 2.35, 0.16]} />
+            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.66} metalness={0.02} />
+          </mesh>
+          <mesh position={[0, -0.05, -0.035]}>
+            <boxGeometry args={[1.52, 1.65, 0.17]} />
+            <meshStandardMaterial color="#23150d" roughness={0.74} metalness={0} />
+          </mesh>
+          <mesh position={[0, 1.24, -0.05]}>
+            <cylinderGeometry args={[0.32, 0.32, 0.09, 24]} />
+            <meshStandardMaterial color={BRASS_GOLD} roughness={0.4} metalness={0.35} />
+          </mesh>
+        </group>
       ))}
     </group>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Ceiling rosette ring — gold + burgundy band around the dome base
+// Wall seating and floorplan balcony cue
+// ---------------------------------------------------------------------------
+
+interface WallChairProps {
+  readonly x: number;
+  readonly z: number;
+  readonly rotationY: number;
+}
+
+function WallChair({ x, z, rotationY }: WallChairProps): React.ReactElement {
+  return (
+    <group name="red-wall-chair" position={[x, 0, z]} rotation={[0, rotationY, 0]}>
+      <mesh position={[0, 0.45, 0.02]}>
+        <boxGeometry args={[0.52, 0.12, 0.44]} />
+        <meshStandardMaterial color={CHAIR_RED} roughness={0.82} metalness={0} />
+      </mesh>
+      <mesh position={[0, 0.88, -0.2]}>
+        <boxGeometry args={[0.56, 0.78, 0.08]} />
+        <meshStandardMaterial color={CHAIR_RED} roughness={0.82} metalness={0} />
+      </mesh>
+      <mesh position={[0, 0.5, -0.25]}>
+        <boxGeometry args={[0.62, 0.16, 0.09]} />
+        <meshStandardMaterial color={CHAIR_TRIM} roughness={0.72} metalness={0.02} />
+      </mesh>
+      {[-0.2, 0.2].map((legX) =>
+        [-0.15, 0.17].map((legZ) => (
+          <mesh key={`chair-leg-${String(legX)}-${String(legZ)}`} position={[legX, 0.22, legZ]}>
+            <boxGeometry args={[0.055, 0.42, 0.055]} />
+            <meshStandardMaterial color={CHAIR_TRIM} roughness={0.72} metalness={0.02} />
+          </mesh>
+        )),
+      )}
+    </group>
+  );
+}
+
+function WallChairRows({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
+  const halfW = width / 2;
+  const halfL = length / 2;
+  const longChairX = useMemo(
+    () => Array.from({ length: 16 }, (_, i) => -halfW + (width / 17) * (i + 1)),
+    [halfW, width],
+  );
+  const shortChairZ = useMemo(
+    () => [-length * 0.28, -length * 0.12, length * 0.12, length * 0.28],
+    [length],
+  );
+
+  return (
+    <group name="red-upholstered-wall-chair-rows">
+      {longChairX.map((x, i) => (
+        <WallChair key={`chair-window-wall-${String(i)}`} x={x} z={-halfL + 0.48} rotationY={0} />
+      ))}
+      {longChairX.map((x, i) => (
+        <WallChair key={`chair-portrait-wall-${String(i)}`} x={x} z={halfL - 0.48} rotationY={Math.PI} />
+      ))}
+      {shortChairZ.map((z, i) => (
+        <WallChair key={`chair-entrance-end-${String(i)}`} x={-halfW + 0.48} z={z} rotationY={Math.PI / 2} />
+      ))}
+      {shortChairZ.map((z, i) => (
+        <WallChair key={`chair-fireplace-end-${String(i)}`} x={halfW - 0.48} z={z} rotationY={-Math.PI / 2} />
+      ))}
+    </group>
+  );
+}
+
+function BalconyWallCue({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
+  const z = length / 2 - 0.52;
+  const platformWidth = width * 0.32;
+  const railWidth = platformWidth * 0.86;
+
+  return (
+    <group name="floorplan-balcony-wall-cue">
+      <mesh position={[0, 0.07, z]}>
+        <boxGeometry args={[platformWidth, 0.14, 0.82]} />
+        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.66} metalness={0.02} />
+      </mesh>
+      <mesh position={[0, 0.62, z - 0.36]}>
+        <boxGeometry args={[railWidth, 0.12, 0.08]} />
+        <meshStandardMaterial color={BRASS_GOLD} roughness={0.42} metalness={0.36} />
+      </mesh>
+      {Array.from({ length: 7 }).map((_, i) => {
+        const x = -railWidth / 2 + (railWidth / 6) * i;
+        return (
+          <mesh key={`balcony-post-${String(i)}`} position={[x, 0.36, z - 0.36]}>
+            <boxGeometry args={[0.08, 0.58, 0.08]} />
+            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.66} metalness={0.02} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ceiling rosette ring around the dome base
 // ---------------------------------------------------------------------------
 
 interface RosetteProps {
@@ -770,27 +957,22 @@ export function GrandHallOrnaments({
   length = GRAND_HALL_RENDER_DIMENSIONS.length,
   height = GRAND_HALL_RENDER_DIMENSIONS.height,
 }: GrandHallOrnamentsProps): React.ReactElement {
-  // Five window bays per long wall, evenly spaced; pilasters between them
-  // and at the ends, so each pair of pilasters frames one window.
-  const longWallX = width / 2;
-  const N_WINDOWS = 5;
-  const windowSpacing = length / (N_WINDOWS + 1);
-  const windowZ = useMemo(
-    () => Array.from({ length: N_WINDOWS }, (_, i) => -length / 2 + windowSpacing * (i + 1)),
-    [length, windowSpacing],
-  );
+  const halfL = length / 2;
+  const windowWallZ = -halfL + 0.025;
 
-  // Pilasters between window bays + at the ends
-  const pilasterZ = useMemo(() => {
-    const arr: number[] = [];
-    for (let i = 0; i <= N_WINDOWS; i++) {
-      arr.push(-length / 2 + windowSpacing * (i + 0.5));
-    }
-    return arr;
-  }, [length, windowSpacing]);
-  const chandelierZ = useMemo(
-    () => [-length * 0.38, -length * 0.19, 0, length * 0.19, length * 0.38],
-    [length],
+  // The floorplan's 21m side is the X axis. Three arched window bays sit on
+  // one long wall, spaced along X, not mirrored onto the opposite wall.
+  const windowX = useMemo(
+    () => [-width * 0.29, 0, width * 0.29],
+    [width],
+  );
+  const pilasterX = useMemo(
+    () => [-width * 0.42, -width * 0.15, width * 0.15, width * 0.42],
+    [width],
+  );
+  const chandelierX = useMemo(
+    () => [-width * 0.28, 0, width * 0.28],
+    [width],
   );
 
   return (
@@ -802,52 +984,39 @@ export function GrandHallOrnaments({
       <TradeFrieze width={width} length={length} height={height} />
       <EndWallFocalPoint width={width} length={length} />
       <PortraitGallery width={width} length={length} />
+      <BalconyWallCue width={width} length={length} />
+      <WallChairRows width={width} length={length} />
 
-      {/* Pilasters along each long wall */}
-      {pilasterZ.map((z, i) => (
+      {/* Pilasters and arched windows along the window wall only. */}
+      {pilasterX.map((x, i) => (
         <Pilaster
-          key={`pilaster-left-${String(i)}`}
-          position={[-longWallX + 0.12, 0, z]}
-          height={height}
-          wallAxis="z"
-        />
-      ))}
-      {pilasterZ.map((z, i) => (
-        <Pilaster
-          key={`pilaster-right-${String(i)}`}
-          position={[longWallX - 0.12, 0, z]}
+          key={`pilaster-window-wall-${String(i)}`}
+          position={[x, 0, -halfL + 0.12]}
           height={height}
           wallAxis="z"
         />
       ))}
 
-      {/* Arched windows on long walls — facing inward */}
-      {windowZ.map((z, i) => (
+      {/* Arched windows on the real window wall, facing inward. */}
+      {windowX.map((x, i) => (
         <ArchedWindow
-          key={`window-left-${String(i)}`}
-          position={[-longWallX + 0.025, 0, z]}
-          rotationY={Math.PI / 2}
-        />
-      ))}
-      {windowZ.map((z, i) => (
-        <ArchedWindow
-          key={`window-right-${String(i)}`}
-          position={[longWallX - 0.025, 0, z]}
-          rotationY={-Math.PI / 2}
+          key={`window-long-wall-${String(i)}`}
+          position={[x, 0, windowWallZ]}
+          rotationY={0}
         />
       ))}
 
       {/* Ceiling rosette ring around the dome base */}
       <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
 
-      {/* Five chandeliers along the hall centerline. */}
-      {chandelierZ.map((z, i) => (
+      {/* Three chandeliers along the 21m hall centerline. */}
+      {chandelierX.map((x, i) => (
         <Chandelier
           key={`chandelier-${String(i)}`}
           anchorY={height - 0.08}
-          dropLength={2.05}
-          z={z}
-          scale={i === 2 ? 1.08 : 0.92}
+          dropLength={i === 1 ? 2.18 : 1.78}
+          x={x}
+          scale={i === 1 ? 1.08 : 0.82}
         />
       ))}
     </group>

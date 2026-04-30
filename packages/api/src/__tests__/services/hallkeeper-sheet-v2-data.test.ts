@@ -28,7 +28,7 @@ const VALID_PAYLOAD: Record<string, unknown> = {
     layoutStyle: "dinner-rounds",
   },
   venue: { name: "Trades Hall Glasgow", address: "85 Glassford St", logoUrl: null, timezone: "Europe/London" },
-  space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
+  space: { name: "Grand Hall", widthM: 21, lengthM: 10.5, heightM: 7 },
   timing: null,
   instructions: null,
   phases: [],

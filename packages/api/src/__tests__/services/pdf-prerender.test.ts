@@ -31,7 +31,7 @@ const MINIMAL_PAYLOAD: HallkeeperSheetV2 = {
     logoUrl: null,
     timezone: "Europe/London",
   },
-  space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
+  space: { name: "Grand Hall", widthM: 21, lengthM: 10.5, heightM: 7 },
   timing: null,
   instructions: null,
   phases: [],

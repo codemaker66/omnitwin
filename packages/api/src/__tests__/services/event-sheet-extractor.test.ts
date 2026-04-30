@@ -17,7 +17,7 @@ import type {
 // Shared fixtures — Trades Hall Grand Hall dimensions + synthetic UUIDs
 // ---------------------------------------------------------------------------
 
-const ROOM: RoomDimensions = { widthM: 21, lengthM: 10 };
+const ROOM: RoomDimensions = { widthM: 21, lengthM: 10.5 };
 
 const EMPTY_ACCESSORIES: AccessoryMap = new Map();
 
@@ -257,7 +257,7 @@ describe("extractEventSheet — sourceHash sensitivity", () => {
 
   it("changes when room dimensions differ", () => {
     const small = baseInput({ room: { widthM: 10, lengthM: 10 } });
-    const big = baseInput({ room: { widthM: 21, lengthM: 10 } });
+    const big = baseInput({ room: { widthM: 21, lengthM: 10.5 } });
     expect(extractEventSheet(small).sourceHash).not.toBe(extractEventSheet(big).sourceHash);
   });
 });

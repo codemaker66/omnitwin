@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
-import { toRenderSpace } from "../../constants/scale.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { flushAutoSave } from "./EditorBridge.js";
 
@@ -52,8 +52,8 @@ export function SaveSendPanel(): React.ReactElement | null {
       try {
         const { scene, space, isPublicPreview } = useEditorStore.getState();
         if (scene !== null && space !== null && isPublicPreview) {
-          const roomWidthRender = toRenderSpace(parseFloat(space.widthM));
-          const roomLengthRender = toRenderSpace(parseFloat(space.lengthM));
+          const { width: roomWidthRender, length: roomLengthRender } =
+            useRoomDimensionsStore.getState().dimensions;
           const dataUrl = captureOrthographic(scene, roomWidthRender, roomLengthRender, {
             width: 800,
             height: 533,

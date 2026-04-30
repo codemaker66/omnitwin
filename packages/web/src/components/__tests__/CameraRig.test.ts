@@ -22,7 +22,7 @@ import type { SpaceDimensions } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 describe("computeDefaultCameraPosition", () => {
-  const grandHall: SpaceDimensions = { width: 21, length: 10, height: 7 };
+  const grandHall: SpaceDimensions = { width: 21, length: 10.5, height: 7 };
 
   it("returns a 3-element tuple", () => {
     const pos = computeDefaultCameraPosition(grandHall);
@@ -42,7 +42,7 @@ describe("computeDefaultCameraPosition", () => {
   });
 
   it("positions along the longest axis", () => {
-    // Width (21) > length (10), so primary offset is on X axis
+    // Width (21) > length (10.5), so primary offset is on X axis
     const pos = computeDefaultCameraPosition(grandHall);
     expect(Math.abs(pos[0])).toBeGreaterThan(Math.abs(pos[2]));
   });
@@ -83,7 +83,7 @@ describe("computeDefaultCameraPosition", () => {
 
 describe("computeCameraTarget", () => {
   it("returns room center at eye level (1.5m)", () => {
-    const target = computeCameraTarget({ width: 21, length: 10, height: 7 });
+    const target = computeCameraTarget({ width: 21, length: 10.5, height: 7 });
     expect(target).toEqual([0, 1.5, 0]);
   });
 
@@ -105,7 +105,7 @@ describe("computeCameraTarget", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeDistanceLimits", () => {
-  const grandHall: SpaceDimensions = { width: 21, length: 10, height: 7 };
+  const grandHall: SpaceDimensions = { width: 21, length: 10.5, height: 7 };
 
   it("minDistance is 1.5m (close enough to inspect furniture)", () => {
     const limits = computeDistanceLimits(grandHall);
@@ -143,7 +143,7 @@ describe("computeDistanceLimits", () => {
 // ---------------------------------------------------------------------------
 
 describe("computePanBounds", () => {
-  const grandHall: SpaceDimensions = { width: 21, length: 10, height: 7 };
+  const grandHall: SpaceDimensions = { width: 21, length: 10.5, height: 7 };
 
   it("bounds extend beyond room edges (20% margin)", () => {
     const bounds = computePanBounds(grandHall);

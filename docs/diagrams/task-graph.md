@@ -59,6 +59,7 @@ flowchart TD
 
     subgraph A3 [a3 · this week — viewer presentation polish]
         T114(["T-114 — Grand Hall visual fidelity"])
+        T115(["T-115 - Grand Hall reference correction"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -130,6 +131,7 @@ flowchart TD
     T084 --> T086
     T085 --> T093
     T087 --> T098
+    T114 --> T115
 
     T091 --> T100
     T100 --> T101
@@ -164,7 +166,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T080,T081,T084,T086,T113,T114 done
+    class T002,T019,T080,T081,T084,T086,T113,T114,T115 done
     class T001 inprogress
     class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110 deferred

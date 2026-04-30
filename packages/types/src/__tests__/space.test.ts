@@ -528,7 +528,7 @@ describe("Trades Hall room constants", () => {
   });
 
   it("Grand Hall has correct dimensions", () => {
-    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21, length: 10, height: 7 });
+    expect(TRADES_HALL_GRAND_HALL_DIMENSIONS).toEqual({ width: 21, length: 10.5, height: 7 });
   });
 
   it("Robert Adam Room dimensions validate", () => {
@@ -578,8 +578,8 @@ describe("Trades Hall room constants", () => {
     expect(room.floorPlanOutline).toEqual([
       { x: 0, y: 0 },
       { x: 21, y: 0 },
-      { x: 21, y: 10 },
-      { x: 0, y: 10 },
+      { x: 21, y: 10.5 },
+      { x: 0, y: 10.5 },
     ]);
   });
 
@@ -602,24 +602,24 @@ describe("polygonBoundingBox", () => {
     expect(bbox).toEqual({ widthM: 1, lengthM: 1 });
   });
 
-  it("computes bbox of the Grand Hall rectangle (21 x 10)", () => {
+  it("computes bbox of the Grand Hall rectangle (21 x 10.5)", () => {
     const bbox = polygonBoundingBox([
       { x: 0, y: 0 },
       { x: 21, y: 0 },
-      { x: 21, y: 10 },
-      { x: 0, y: 10 },
+      { x: 21, y: 10.5 },
+      { x: 0, y: 10.5 },
     ]);
-    expect(bbox).toEqual({ widthM: 21, lengthM: 10 });
+    expect(bbox).toEqual({ widthM: 21, lengthM: 10.5 });
   });
 
   it("handles rectangles centered on origin (negative coordinates)", () => {
     const bbox = polygonBoundingBox([
-      { x: -10.5, y: -5 },
-      { x: 10.5, y: -5 },
-      { x: 10.5, y: 5 },
-      { x: -10.5, y: 5 },
+      { x: -10.5, y: -5.25 },
+      { x: 10.5, y: -5.25 },
+      { x: 10.5, y: 5.25 },
+      { x: -10.5, y: 5.25 },
     ]);
-    expect(bbox).toEqual({ widthM: 21, lengthM: 10 });
+    expect(bbox).toEqual({ widthM: 21, lengthM: 10.5 });
   });
 
   it("handles non-rectangular convex polygons (L-shape via bbox)", () => {
@@ -643,7 +643,7 @@ describe("polygonBoundingBox", () => {
 
   it("produces the same bbox as the Trades Hall seed constants for every room", () => {
     const expected: Record<string, { w: number; l: number }> = {
-      "grand-hall": { w: 21, l: 10 },
+      "grand-hall": { w: 21, l: 10.5 },
       "robert-adam-room": { w: 9.7, l: 5.6 },
       "reception-room": { w: 13.4, l: 11.2 },
       "saloon": { w: 12, l: 7 },

@@ -2,6 +2,7 @@ import { CANONICAL_ASSETS, type CanonicalAsset } from "@omnitwin/types";
 import type { EditorObject } from "../../stores/editor-store.js";
 import type { Space } from "../../api/spaces.js";
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
+import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -187,6 +188,24 @@ function parseM(value: string): number {
   return Number.isFinite(n) && n > 0 ? n : 10;
 }
 
+function resolveBlueprintRoom(space: Pick<Space, "name" | "widthM" | "lengthM"> | null): {
+  readonly widthM: number;
+  readonly lengthM: number;
+} {
+  if (space === null) return { widthM: 10, lengthM: 10 };
+
+  const namedGeometry = roomGeometries[space.name];
+  if (namedGeometry !== undefined) {
+    const bounds = computeBoundingBox(namedGeometry.wallPolygon);
+    return { widthM: bounds.width, lengthM: bounds.depth };
+  }
+
+  return {
+    widthM: parseM(space.widthM),
+    lengthM: parseM(space.lengthM),
+  };
+}
+
 /**
  * Top-level: read everything the blueprint view needs from the editor
  * state snapshot. The adapter is pure — no subscriptions, no effects.
@@ -206,9 +225,7 @@ export interface AdaptInput {
 }
 
 export function adaptEditorStateToBlueprintScene(input: AdaptInput): BlueprintScene {
-  const widthM = input.space !== null ? parseM(input.space.widthM) : 10;
-  const lengthM = input.space !== null ? parseM(input.space.lengthM) : 10;
-  const room = { widthM, lengthM };
+  const room = resolveBlueprintRoom(input.space);
 
   // Pre-pass: collect chair positions per groupId so each round table can
   // receive its actual chairs on the `chairs` field. Chairs are otherwise

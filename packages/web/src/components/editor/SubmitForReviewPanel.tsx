@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
-import { toRenderSpace } from "../../constants/scale.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
 import { flushAutoSave } from "./EditorBridge.js";
 import {
@@ -191,8 +191,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
         try {
           const { scene, space, isPublicPreview } = useEditorStore.getState();
           if (scene !== null && space !== null && isPublicPreview) {
-            const w = toRenderSpace(parseFloat(space.widthM));
-            const l = toRenderSpace(parseFloat(space.lengthM));
+            const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
             const dataUrl = captureOrthographic(scene, w, l, { width: 800, height: 533 });
             if (dataUrl !== null) {
               await updatePublicThumbnail(configId, dataUrl);

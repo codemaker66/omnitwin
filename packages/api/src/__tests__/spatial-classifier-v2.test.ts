@@ -5,7 +5,7 @@ import { classifyZoneV2, zoneSortKey, type RoomDimensions } from "../services/sp
 // Grand Hall test dimensions — 21m wide × 10m long, origin at centre.
 // x ranges [-10.5, 10.5], z ranges [-5, 5].
 // ---------------------------------------------------------------------------
-const GRAND_HALL: RoomDimensions = { widthM: 21, lengthM: 10 };
+const GRAND_HALL: RoomDimensions = { widthM: 21, lengthM: 10.5 };
 
 describe("classifyZoneV2 — cardinal walls", () => {
   it("tags the top strip (low nz) as North wall", () => {
@@ -56,7 +56,7 @@ describe("classifyZoneV2 — Centre vs Perimeter", () => {
 
 describe("classifyZoneV2 — boundary handling", () => {
   it("never throws for points at the exact wall", () => {
-    expect(() => classifyZoneV2(10.5, 5, GRAND_HALL)).not.toThrow();
+    expect(() => classifyZoneV2(10.5, 5.25, GRAND_HALL)).not.toThrow();
   });
 
   it("handles zero-sized room defensively (division, not NaN zones)", () => {

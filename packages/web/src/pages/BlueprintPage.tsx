@@ -745,10 +745,8 @@ function BlueprintFromStore(): ReactElement {
   // items as one body, matching 3D drag behaviour.
   const handleMoveTo = (id: string, center: { x: number; y: number }): void => {
     const s = useEditorStore.getState();
-    const widthM = space !== null ? parseFloat(space.widthM) : 10;
-    const lengthM = space !== null ? parseFloat(space.lengthM) : 10;
     const { positionX: newPositionX, positionZ: newPositionZ } =
-      blueprintPointToEditorPosition(center, { widthM, lengthM });
+      blueprintPointToEditorPosition(center, scene.room);
 
     const moved = s.objects.find((o) => o.id === id);
     if (moved === undefined) return;

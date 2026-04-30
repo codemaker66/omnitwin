@@ -138,7 +138,7 @@ export type CreateSpace = z.infer<typeof CreateSpaceSchema>;
 // Trades Hall Room Constants (client-side convenience)
 // ---------------------------------------------------------------------------
 
-export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21, length: 10, height: 7 };
+export const TRADES_HALL_GRAND_HALL_DIMENSIONS: SpaceDimensions = { width: 21, length: 10.5, height: 7 };
 export const TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS: SpaceDimensions = { width: 9.7, length: 5.6, height: 2.18 };
 export const TRADES_HALL_RECEPTION_ROOM_DIMENSIONS: SpaceDimensions = { width: 13.4, length: 11.2, height: 3.2 };
 export const TRADES_HALL_SALOON_DIMENSIONS: SpaceDimensions = { width: 12, length: 7, height: 5.4 };
@@ -149,7 +149,7 @@ function rectangleOutline(width: number, length: number): readonly FloorPlanPoin
 }
 
 export const TRADES_HALL_ROOMS = [
-  { name: "Grand Hall", slug: "grand-hall", description: "The flagship hall, 21m x 10m with 7m dome.", dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS, sortOrder: 0, floorPlanOutline: rectangleOutline(21, 10) },
+  { name: "Grand Hall", slug: "grand-hall", description: "The flagship hall, 21m x 10.5m with 7m dome.", dimensions: TRADES_HALL_GRAND_HALL_DIMENSIONS, sortOrder: 0, floorPlanOutline: rectangleOutline(21, 10.5) },
   { name: "Robert Adam Room", slug: "robert-adam-room", description: "Elegant intimate room, 9.7m x 5.6m.", dimensions: TRADES_HALL_ROBERT_ADAM_ROOM_DIMENSIONS, sortOrder: 1, floorPlanOutline: rectangleOutline(9.7, 5.6) },
   { name: "Reception Room", slug: "reception-room", description: "Versatile event space, 13.4m x 11.2m.", dimensions: TRADES_HALL_RECEPTION_ROOM_DIMENSIONS, sortOrder: 2, floorPlanOutline: rectangleOutline(13.4, 11.2) },
   { name: "Saloon", slug: "saloon", description: "Grand entertaining room, 12m x 7m.", dimensions: TRADES_HALL_SALOON_DIMENSIONS, sortOrder: 3, floorPlanOutline: rectangleOutline(12, 7) },

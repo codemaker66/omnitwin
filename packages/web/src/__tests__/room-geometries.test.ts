@@ -83,6 +83,16 @@ describe("ceiling heights", () => {
 });
 
 describe("Grand Hall features", () => {
+  it("uses the 21m by 10.5m floorplan footprint", () => {
+    const geom = roomGeometries["Grand Hall"];
+    expect(geom).toBeDefined();
+    if (geom !== undefined) {
+      const box = computeBoundingBox(geom.wallPolygon);
+      expect(box.width).toBe(21);
+      expect(box.depth).toBe(10.5);
+    }
+  });
+
   it("has a dome", () => {
     const geom = roomGeometries["Grand Hall"];
     expect(geom?.hasDome).toBe(true);

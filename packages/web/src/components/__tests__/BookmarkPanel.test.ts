@@ -14,7 +14,7 @@ beforeEach(() => {
 });
 
 describe("BookmarkPanel store integration", () => {
-  const grandHall = { width: 21, length: 10, height: 7 };
+  const grandHall = { width: 21, length: 10.5, height: 7 };
 
   it("after initialize, store has 3 default bookmarks", () => {
     useBookmarkStore.getState().initialize(grandHall);
