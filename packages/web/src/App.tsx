@@ -32,7 +32,7 @@ import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
-import { useIsNarrowViewport } from "./hooks/use-media-query.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
 
 // Initialize stores with Grand Hall dimensions (default).
 // Runs once at module load. The useEffect in App() re-initializes when
@@ -73,6 +73,8 @@ export function App(): React.ReactElement {
   const chairRequest = useChairDialogStore((s) => s.pending);
   const space = useEditorStore((s) => s.space);
   const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
+  const mobileChrome = isNarrow || isTouch;
   const dimensions = useRoomDimensions();
 
   const { width: dimW, length: dimL, height: dimH } = dimensions;
@@ -143,18 +145,19 @@ export function App(): React.ReactElement {
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <VerticalToolbox />
 
-      {/* Right-side controls */}
-      <div style={{
-        position: "absolute",
-        right: isNarrow ? 12 : 20,
-        top: isNarrow ? "calc(env(safe-area-inset-top) + 74px)" : "50%",
-        transform: isNarrow ? "none" : "translateY(-50%)",
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-        zIndex: 10, pointerEvents: "auto",
-      }}>
-        <WallTogglePanel />
-        <SectionSlider />
-      </div>
+      {!mobileChrome && (
+        <div style={{
+          position: "absolute",
+          right: 20,
+          top: "50%",
+          transform: "translateY(-50%)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+          zIndex: 10, pointerEvents: "auto",
+        }}>
+          <WallTogglePanel />
+          <SectionSlider />
+        </div>
+      )}
 
       <MeasurementOverlay />
       <PlacementHint />

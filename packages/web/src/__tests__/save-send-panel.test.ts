@@ -123,16 +123,25 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     return { raw, codeOnly };
   }
 
-  it("SaveSendPanel imports flushAutoSave from EditorBridge", async () => {
+  it("SaveSendPanel uses the shared prepareLayoutForGuestEnquiry flow", async () => {
     const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    expect(codeOnly).toContain("prepareLayoutForGuestEnquiry");
+  });
+
+  it("the shared send flow imports flushAutoSave from EditorBridge", async () => {
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("flushAutoSave");
     expect(codeOnly).toMatch(/import[\s\S]*?flushAutoSave[\s\S]*?from[\s\S]*?EditorBridge/);
   });
 
-  it("SaveSendPanel calls flushAutoSave before opening the modal (not onClick={() => setShowEnquiry(true)))", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+  it("the shared send flow calls flushAutoSave before the modal can open", async () => {
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     // Positive: flushAutoSave is called somewhere in the click handler
-    expect(codeOnly).toContain("flushAutoSave()");
+    expect(codeOnly).toContain("await flushAutoSave()");
+  });
+
+  it("SaveSendPanel does not use the old direct-open click handler", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
     // Negative: the old direct-open pattern is gone (comments stripped)
     expect(codeOnly).not.toMatch(/onClick=\{\s*\(\)\s*=>\s*\{\s*setShowEnquiry\(true\)/);
   });
@@ -174,32 +183,32 @@ describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
   }
 
   it("imports captureOrthographic from ortho-capture", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("captureOrthographic");
     expect(codeOnly).toMatch(/import[\s\S]*?captureOrthographic[\s\S]*?from[\s\S]*?ortho-capture/);
   });
 
   it("imports updatePublicThumbnail from configurations API", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("updatePublicThumbnail");
     expect(codeOnly).toMatch(/import[\s\S]*?updatePublicThumbnail[\s\S]*?from[\s\S]*?configurations/);
   });
 
   it("uses the active room-dimensions store for capture dimensions", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("useRoomDimensionsStore");
     expect(codeOnly).toContain("roomWidthRender");
     expect(codeOnly).toContain("roomLengthRender");
   });
 
   it("reads scene from editor-store", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("useEditorStore.getState()");
     expect(codeOnly).toMatch(/\{\s*scene[\s\S]*?\}\s*=\s*useEditorStore\.getState\(\)/);
   });
 
   it("calls captureOrthographic with reduced resolution for data URL size", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     // The capture must use 800x533 (not 2400x1600) so the PNG data URL
     // fits within the 200 KB Postgres column budget.
     expect(codeOnly).toMatch(/captureOrthographic\([\s\S]*?width:\s*800/);
@@ -207,17 +216,17 @@ describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
   });
 
   it("calls updatePublicThumbnail with the captured data URL", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toMatch(/updatePublicThumbnail\([\s\S]*?dataUrl/);
   });
 
   it("only captures for public preview configs (not claimed)", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     expect(codeOnly).toContain("isPublicPreview");
   });
 
   it("capture + upload are wrapped in try/catch (best-effort)", async () => {
-    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     // The capture block must be inside a try/catch so failures don't
     // prevent the modal from opening.
     expect(codeOnly).toMatch(/try\s*\{[\s\S]*?captureOrthographic[\s\S]*?\}\s*catch/);

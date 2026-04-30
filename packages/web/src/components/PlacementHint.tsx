@@ -165,7 +165,7 @@ export function PlacementHint(): React.ReactElement | null {
 
   if (!mounted) return null;
 
-  const mobile = isTouch || isNarrow;
+  if (isTouch || isNarrow) return null;
 
   const handleDismiss = (): void => {
     try {
@@ -181,13 +181,6 @@ export function PlacementHint(): React.ReactElement | null {
       data-testid="placement-hint"
       style={{
         ...barStyle,
-        ...(mobile ? {
-          bottom: "calc(var(--toolbox-bottom, 64px) + 12px)",
-          width: "calc(100vw - 24px)",
-          maxWidth: 420,
-          boxSizing: "border-box" as const,
-          zIndex: 58,
-        } : {}),
         animation: exiting
           ? "omni-hint-out 0.25s ease forwards"
           : "omni-hint-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
@@ -199,12 +192,6 @@ export function PlacementHint(): React.ReactElement | null {
           key={shakeKeyRef.current}
           style={{
             ...reasonPillStyle,
-            ...(mobile ? {
-              maxWidth: "100%",
-              boxSizing: "border-box" as const,
-              whiteSpace: "normal" as const,
-              textAlign: "center" as const,
-            } : {}),
             animation: "omni-hint-shake 0.4s ease",
           }}
         >
@@ -217,59 +204,24 @@ export function PlacementHint(): React.ReactElement | null {
         <div style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: mobile ? "center" : "flex-start",
-          gap: mobile ? 8 : 0,
-          width: mobile ? "100%" : "auto",
+          justifyContent: "flex-start",
+          gap: 0,
+          width: "auto",
         }}>
           <div style={{
             ...hintPillStyle,
-            ...(mobile ? {
-              flex: "1 1 auto",
-              minWidth: 0,
-              justifyContent: "center",
-              flexWrap: "wrap" as const,
-              gap: "8px 10px",
-              padding: "10px 12px",
-              whiteSpace: "normal" as const,
-              textAlign: "center" as const,
-              fontSize: 12,
-            } : {}),
           }}>
-            {mobile ? (
-              <>
-                <span>Tap to place</span>
-                <span style={dotStyle}>&bull;</span>
-                <span>Drag to move</span>
-                <span style={dotStyle}>&bull;</span>
-                <span>Rotate</span>
-                <span style={dotStyle}>&bull;</span>
-                <span>Cancel</span>
-              </>
-            ) : (
-              <>
-                <span><span style={kbdStyle}>Click</span> Place</span>
-                <span style={dotStyle}>&bull;</span>
-                <span><span style={kbdStyle}>Q</span> <span style={kbdStyle}>E</span> Rotate</span>
-                <span style={dotStyle}>&bull;</span>
-                <span><span style={kbdStyle}>Esc</span> Cancel</span>
-              </>
-            )}
+            <span><span style={kbdStyle}>Click</span> Place</span>
+            <span style={dotStyle}>&bull;</span>
+            <span><span style={kbdStyle}>Q</span> <span style={kbdStyle}>E</span> Rotate</span>
+            <span style={dotStyle}>&bull;</span>
+            <span><span style={kbdStyle}>Esc</span> Cancel</span>
           </div>
 
           <button
             type="button"
-            aria-label={mobile ? "Hide placement tip" : "Don't show placement tip again"}
-            style={{
-              ...dismissBtnStyle,
-              ...(mobile ? {
-                marginLeft: 0,
-                flex: "0 0 auto",
-                minWidth: 52,
-                minHeight: 44,
-                padding: "8px 12px",
-                color: "rgba(255,255,255,0.68)",
-              } : {}),
-            }}
+            aria-label="Don't show placement tip again"
+            style={dismissBtnStyle}
             onClick={handleDismiss}
             onMouseEnter={(e) => {
               e.currentTarget.style.color = "rgba(255,255,255,0.6)";
@@ -282,7 +234,7 @@ export function PlacementHint(): React.ReactElement | null {
               e.currentTarget.style.background = "rgba(255,255,255,0.04)";
             }}
           >
-            {mobile ? "Hide" : "Don't show again"}
+            Don't show again
           </button>
         </div>
       )}

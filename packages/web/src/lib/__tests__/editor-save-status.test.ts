@@ -23,6 +23,16 @@ describe("editor save status", () => {
     })).toBe("failed");
   });
 
+  it("reports offline before failed or unsaved so the user sees the transport problem", () => {
+    expect(deriveEditorSaveStatus({
+      isDirty: true,
+      isSaving: false,
+      saveError: "Network failed",
+      lastSavedAt: new Date(),
+      isOnline: false,
+    })).toBe("offline");
+  });
+
   it("keeps unsaved distinct from idle", () => {
     expect(deriveEditorSaveStatus({
       isDirty: true,
@@ -41,5 +51,12 @@ describe("editor save status", () => {
 
   it("uses an honest post-save label", () => {
     expect(copyForEditorSaveStatus("saved").label).toBe("Saved just now");
+  });
+
+  it("does not claim offline changes are server-saved", () => {
+    const copy = copyForEditorSaveStatus("offline");
+    expect(copy.label).toBe("Offline - changes local");
+    expect(copy.description).toMatch(/browser session/i);
+    expect(copy.description).not.toMatch(/server/i);
   });
 });

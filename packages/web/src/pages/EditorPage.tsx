@@ -4,6 +4,7 @@ import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
+import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
@@ -89,7 +90,7 @@ export function EditorPage(): React.ReactElement {
   if (autoCreateFailed && urlConfigId === undefined && storeConfigId === null) {
     return (
       <div style={{
-        minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center",
+        minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center",
         justifyContent: "center", gap: 16, fontFamily: "'Inter', sans-serif",
         color: "#333", background: "#f5f5f0", padding: 24, textAlign: "center",
       }}>
@@ -116,7 +117,7 @@ export function EditorPage(): React.ReactElement {
   if (urlConfigId === undefined && storeConfigId === null) {
     return (
       <div style={{
-        minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "'Inter', sans-serif", color: "#999", background: "#f5f5f0",
       }}>
         Opening the planner…
@@ -128,7 +129,7 @@ export function EditorPage(): React.ReactElement {
   if (isLoading) {
     return (
       <div style={{
-        minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "'Inter', sans-serif", color: "#999", background: "#f5f5f0",
       }}>
         Loading layout...
@@ -140,7 +141,7 @@ export function EditorPage(): React.ReactElement {
   if (error !== null) {
     return (
       <div style={{
-        minHeight: "100vh", display: "flex", flexDirection: "column",
+        minHeight: "100dvh", display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center", gap: 12,
         fontFamily: "'Inter', sans-serif", color: "#333", background: "#f5f5f0",
       }}>
@@ -224,15 +225,18 @@ function PlannerCommsLayer(): React.ReactElement {
       >
         {viewMode === "3d" ? <Editor3D /> : <BlueprintPage source="editor-store" />}
       </div>
-      {/* 2D/3D view toggle — floats top-centre so it's always reachable */}
-      <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+      {mobile ? (
+        <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
+      ) : (
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+      )}
       {canEditEventDetails && viewMode === "3d" && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
           style={{
             position: "fixed",
-            top: mobile ? "calc(env(safe-area-inset-top) + 60px)" : 16,
+            top: mobile ? "calc(env(safe-area-inset-top) + 84px)" : 16,
             right: 16,
             zIndex: 30,
             padding: "8px 14px", borderRadius: 8,

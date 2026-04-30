@@ -80,6 +80,23 @@ function expectWithinViewport(box: Box | null, viewport: ViewportCase): void {
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+function expectOutsideSceneCenter(box: Box | null, viewport: ViewportCase): void {
+  expect(box).not.toBeNull();
+  if (box === null) return;
+  const center = {
+    x: viewport.width * 0.26,
+    y: viewport.height * 0.18,
+    width: viewport.width * 0.48,
+    height: viewport.height * 0.58,
+  };
+  const overlaps =
+    box.x < center.x + center.width
+    && box.x + box.width > center.x
+    && box.y < center.y + center.height
+    && box.y + box.height > center.y;
+  expect(overlaps).toBe(false);
+}
+
 async function mockPlannerApis(page: Page): Promise<void> {
   await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
     void route.fulfill({ json: { data: MOCK_CONFIG } });
@@ -130,24 +147,33 @@ test.describe("3D planner mobile shell", () => {
 
       const sendButton = page.getByRole("button", { name: "Send to Events Team" });
       await expect(sendButton).toBeVisible();
-      expectWithinViewport(await sendButton.boundingBox(), viewport);
+      const sendBox = await sendButton.boundingBox();
+      expectWithinViewport(sendBox, viewport);
+      expectOutsideSceneCenter(sendBox, viewport);
+
+      const topBar = page.getByTestId("mobile-planner-topbar");
+      await expect(topBar).toBeVisible();
+      expectWithinViewport(await topBar.boundingBox(), viewport);
 
       const toolbar = page.getByTestId("planner-toolbar");
       await expect(toolbar).toBeVisible();
       expectWithinViewport(await toolbar.boundingBox(), viewport);
 
-      await expect(page.getByRole("button", { name: /Save Layout|Saved just now|Unsaved changes|Saving|Save failed/ })).toBeVisible();
-      await expect(page.getByText("Place", { exact: true })).toBeVisible();
-      await expect(page.getByText("Rotate", { exact: true })).toBeVisible();
+      await expect(page.getByText(/Save Layout|Saved just now|Unsaved changes|Saving|Save failed|Offline/)).toBeVisible();
+      await expect(toolbar.getByRole("button", { name: "Add" })).toBeVisible();
+      await expect(toolbar.getByRole("button", { name: "View" })).toBeVisible();
+      await expect(toolbar.getByRole("button", { name: "More" })).toBeVisible();
 
-      await page.getByRole("button", { name: "Add Furniture" }).click();
+      await toolbar.getByRole("button", { name: "Add" }).click();
       await page.getByTestId("furniture-panel").getByText("6ft Round Table").click();
-      const hint = page.getByTestId("placement-hint");
-      await expect(hint).toBeVisible();
-      await expect(page.getByText("Tap to place")).toBeVisible();
-      await expect(page.getByText("Drag to move")).toBeVisible();
+      const placingSheet = page.getByTestId("mobile-planner-sheet");
+      await expect(placingSheet).toBeVisible();
+      await expect(page.getByText("Tap to place 6ft Round Table")).toBeVisible();
+      await expect(toolbar.getByRole("button", { name: "Rotate" })).toBeVisible();
+      await expect(toolbar.getByRole("button", { name: "Cancel" })).toBeVisible();
       await expect(page.getByText("Don't show again")).not.toBeVisible();
-      expectWithinViewport(await hint.boundingBox(), viewport);
+      await expect(page.getByTestId("placement-hint")).not.toBeVisible();
+      expectWithinViewport(await placingSheet.boundingBox(), viewport);
 
       expect(consoleErrors).toEqual([]);
     });
@@ -168,6 +194,7 @@ test.describe("3D planner mobile shell", () => {
       const sendButton = page.getByRole("button", { name: "Send to Events Team" });
       await expect(sendButton).toBeVisible();
       expectWithinViewport(await sendButton.boundingBox(), viewport);
+      await expect(page.getByTestId("mobile-planner-topbar")).not.toBeVisible();
 
       expect(consoleErrors).toEqual([]);
     });

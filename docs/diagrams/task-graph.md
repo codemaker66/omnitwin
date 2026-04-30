@@ -65,6 +65,7 @@ flowchart TD
         T124(["T-124 - Truth state tokens"])
         T127(["T-127 - Truth L1/L2 indicator"])
         T135(["T-135 - 3D planner mobile shell"])
+        T136(["T-136 - scene-first mobile planner shell"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -145,6 +146,7 @@ flowchart TD
     T114 --> T115
     T115 --> T122
     T122 --> T135
+    T135 --> T136
     T123 --> T124
     T123 --> T121
     T124 --> T121
@@ -195,7 +197,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135 done
+    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135,T136 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -248,6 +250,11 @@ readable.
 3D planner shell: T-122 fixed the Trades Hall landing/2D preview behavior,
 while T-135 applies the same phone/tablet/desktop discipline to the live 3D
 editor chrome, touch hints, CTA placement, and save-state surface.
+
+`T-135 -> T-136` separates the first mobile safety pass from the deeper
+interaction-shell redesign: T-136 replaces the remaining compressed desktop
+toolbar with a scene-first mobile top bar, stateful touch dock, and mobile
+placing/selection sheets while preserving desktop power-editor shortcuts.
 
 `T-062 → T-068` is a precondition edge: the disaster-recovery runbook
 is empty ceremony if backup restore has never been verified.

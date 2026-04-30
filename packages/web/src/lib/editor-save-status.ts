@@ -1,10 +1,11 @@
-export type EditorSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "failed";
+export type EditorSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "failed" | "offline";
 
 export interface EditorSaveStatusInput {
   readonly isDirty: boolean;
   readonly isSaving: boolean;
   readonly saveError: string | null;
   readonly lastSavedAt: Date | null;
+  readonly isOnline?: boolean;
 }
 
 export interface EditorSaveStatusCopy {
@@ -15,6 +16,7 @@ export interface EditorSaveStatusCopy {
 
 export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSaveStatus {
   if (input.isSaving) return "saving";
+  if (input.isOnline === false) return "offline";
   if (input.saveError !== null) return "failed";
   if (input.isDirty) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
@@ -34,6 +36,12 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
         label: "Save failed - retry",
         shortLabel: "Retry",
         description: "The last save did not reach the server. Retry before sending the layout.",
+      };
+    case "offline":
+      return {
+        label: "Offline - changes local",
+        shortLabel: "Offline",
+        description: "Network is unavailable. Changes are currently only in this browser session.",
       };
     case "unsaved":
       return {

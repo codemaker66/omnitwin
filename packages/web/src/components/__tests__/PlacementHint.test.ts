@@ -38,13 +38,12 @@ describe("PlacementHint", () => {
     expect(code).toContain("handleDismiss");
   });
 
-  it("keeps desktop keyboard shortcuts and touch-native placement copy", () => {
+  it("keeps desktop keyboard shortcuts; mobile uses the planner dock instead", () => {
     const code = readSource();
     expect(code).toContain("Click");
-    expect(code).toContain("Tap to place");
-    expect(code).toContain("Drag to move");
     expect(code).toContain("Rotate");
     expect(code).toContain("Esc");
+    expect(code).toContain("isTouch || isNarrow");
   });
 
   it("has enter/exit animations", () => {

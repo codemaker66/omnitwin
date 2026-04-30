@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
-  Camera, Grid3X3, Save, User, Eye, FileText,
+  Camera, Grid3X3, Save, User, Eye, FileText, Check, X, MoreHorizontal,
 } from "lucide-react";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -21,6 +21,7 @@ import {
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
+  getCatalogueItem,
   categoryLabel,
   catalogueIcon,
 } from "../../lib/catalogue.js";
@@ -634,10 +635,263 @@ function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement 
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Mobile interaction dock
 // ---------------------------------------------------------------------------
 
 type ActiveTool = "select" | "add" | "rotate" | "delete";
+
+type MobileShellMode = "idle" | "placing" | "selected";
+
+interface MobileDockAction {
+  readonly label: string;
+  readonly ariaLabel?: string;
+  readonly active?: boolean;
+  readonly disabled?: boolean;
+  readonly tone?: "default" | "primary" | "danger" | "quiet";
+  readonly onClick: () => void;
+  readonly icon: React.ReactNode;
+}
+
+interface MobilePlannerDockProps {
+  readonly mode: MobileShellMode;
+  readonly activeTool: ActiveTool;
+  readonly panelOpen: boolean;
+  readonly cameraOpen: boolean;
+  readonly moreOpen: boolean;
+  readonly snapEnabled: boolean;
+  readonly allWallsUp: boolean;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly isAuthenticated: boolean;
+  readonly selectedName: string | null;
+  readonly selectedDetail: string | null;
+  readonly placingName: string | null;
+  readonly onSelect: () => void;
+  readonly onAdd: () => void;
+  readonly onCamera: () => void;
+  readonly onMore: () => void;
+  readonly onSnap: () => void;
+  readonly onWalls: () => void;
+  readonly onUndo: () => void;
+  readonly onRedo: () => void;
+  readonly onGenerateSheet: () => void;
+  readonly onAuth: () => void;
+  readonly onRotatePlacement: () => void;
+  readonly onCancelPlacement: () => void;
+  readonly onDoneSelected: () => void;
+  readonly onRotateSelected: () => void;
+  readonly onDeleteSelected: () => void;
+}
+
+const mobileDockWrapperStyle: React.CSSProperties = {
+  position: "fixed",
+  left: "max(12px, env(safe-area-inset-left))",
+  right: "max(12px, env(safe-area-inset-right))",
+  bottom: "calc(env(safe-area-inset-bottom) + 10px)",
+  zIndex: 64,
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  pointerEvents: "none",
+  fontFamily: "'Inter', system-ui, sans-serif",
+};
+
+const mobileDockSurfaceStyle: React.CSSProperties = {
+  minHeight: 74,
+  display: "grid",
+  gridAutoFlow: "column",
+  gridAutoColumns: "minmax(0, 1fr)",
+  alignItems: "stretch",
+  gap: 6,
+  padding: 8,
+  borderRadius: 28,
+  background: "rgba(18, 17, 15, 0.92)",
+  border: "1px solid rgba(246, 232, 201, 0.1)",
+  boxShadow: "0 18px 48px rgba(0, 0, 0, 0.34)",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+  pointerEvents: "auto",
+};
+
+const mobileSheetStyle: React.CSSProperties = {
+  borderRadius: 24,
+  padding: 14,
+  background: "rgba(248, 242, 230, 0.95)",
+  border: "1px solid rgba(74,44,28,0.12)",
+  boxShadow: "0 18px 48px rgba(30, 20, 10, 0.2)",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+  pointerEvents: "auto",
+};
+
+const mobileSheetTitleStyle: React.CSSProperties = {
+  color: "#241913",
+  fontSize: 15,
+  fontWeight: 780,
+  lineHeight: 1.2,
+  marginBottom: 3,
+};
+
+const mobileSheetDetailStyle: React.CSSProperties = {
+  color: "rgba(36,25,19,0.62)",
+  fontSize: 12,
+  fontWeight: 570,
+  lineHeight: 1.35,
+};
+
+function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
+  const active = action.active === true;
+  const primary = action.tone === "primary";
+  const danger = action.tone === "danger";
+  const quiet = action.tone === "quiet";
+  return {
+    minWidth: 0,
+    minHeight: 56,
+    borderRadius: 22,
+    border: "1px solid transparent",
+    background: primary
+      ? "#c9a84c"
+      : danger
+        ? "rgba(145, 34, 45, 0.18)"
+        : active
+          ? "rgba(201,168,76,0.22)"
+          : quiet
+            ? "rgba(255,255,255,0.03)"
+            : "rgba(255,255,255,0.06)",
+    color: primary ? "#16120c" : danger ? "#ffc1c8" : "#f6ead0",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    fontSize: 11,
+    fontWeight: 720,
+    lineHeight: 1,
+    cursor: action.disabled === true ? "default" : "pointer",
+    opacity: action.disabled === true ? 0.36 : 1,
+    padding: 6,
+    transition: "background 160ms ease, transform 160ms ease, opacity 160ms ease",
+  };
+}
+
+function MobileDockButton(action: MobileDockAction): React.ReactElement {
+  return (
+    <button
+      type="button"
+      aria-label={action.ariaLabel ?? action.label}
+      aria-pressed={action.active === true ? true : undefined}
+      disabled={action.disabled}
+      onClick={action.onClick}
+      style={mobileActionStyle(action)}
+    >
+      {action.icon}
+      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+        {action.label}
+      </span>
+    </button>
+  );
+}
+
+function MobilePlannerDock({
+  mode,
+  activeTool,
+  panelOpen,
+  cameraOpen,
+  moreOpen,
+  snapEnabled,
+  allWallsUp,
+  canUndo,
+  canRedo,
+  isAuthenticated,
+  selectedName,
+  selectedDetail,
+  placingName,
+  onSelect,
+  onAdd,
+  onCamera,
+  onMore,
+  onSnap,
+  onWalls,
+  onUndo,
+  onRedo,
+  onGenerateSheet,
+  onAuth,
+  onRotatePlacement,
+  onCancelPlacement,
+  onDoneSelected,
+  onRotateSelected,
+  onDeleteSelected,
+}: MobilePlannerDockProps): React.ReactElement {
+  const idleActions: readonly MobileDockAction[] = [
+    { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
+    { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
+    { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
+    { label: "More", active: moreOpen, onClick: onMore, icon: <MoreHorizontal size={20} /> },
+  ];
+  const placingActions: readonly MobileDockAction[] = [
+    { label: "Rotate", tone: "primary", onClick: onRotatePlacement, icon: <RotateCw size={20} /> },
+    { label: "Cancel", tone: "quiet", onClick: onCancelPlacement, icon: <X size={20} /> },
+    { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
+  ];
+  const selectedActions: readonly MobileDockAction[] = [
+    { label: "Done", tone: "primary", onClick: onDoneSelected, icon: <Check size={20} /> },
+    { label: "Rotate", active: activeTool === "rotate", onClick: onRotateSelected, icon: <RotateCw size={20} /> },
+    { label: "Delete", tone: "danger", onClick: onDeleteSelected, icon: <Trash2 size={20} /> },
+    { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
+  ];
+  const actions =
+    mode === "placing" ? placingActions
+      : mode === "selected" ? selectedActions
+        : idleActions;
+
+  return (
+    <div data-testid="planner-toolbar" style={mobileDockWrapperStyle}>
+      {mode === "placing" ? (
+        <div data-testid="mobile-planner-sheet" style={mobileSheetStyle}>
+          <div style={mobileSheetTitleStyle}>Tap to place {placingName ?? "item"}</div>
+          <div style={mobileSheetDetailStyle}>
+            Tap a clear spot in the hall. Drag before lifting to refine the position.
+          </div>
+        </div>
+      ) : null}
+
+      {mode === "selected" ? (
+        <div data-testid="mobile-object-sheet" style={mobileSheetStyle}>
+          <div style={mobileSheetTitleStyle}>{selectedName ?? "Selected item"}</div>
+          <div style={mobileSheetDetailStyle}>{selectedDetail ?? "Drag in the scene to move. Use Done when placed."}</div>
+        </div>
+      ) : null}
+
+      {moreOpen ? (
+        <div data-testid="mobile-more-sheet" style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
+          <div style={mobileSheetTitleStyle}>Tools</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+            <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
+            <MobileDockButton label="Walls" active={allWallsUp} onClick={onWalls} icon={<Eye size={20} />} />
+            <MobileDockButton label="Undo" disabled={!canUndo} onClick={onUndo} icon={<Undo2 size={20} />} />
+            <MobileDockButton label="Redo" disabled={!canRedo} onClick={onRedo} icon={<Redo2 size={20} />} />
+            <MobileDockButton label="Sheet" onClick={onGenerateSheet} icon={<FileText size={20} />} />
+            <MobileDockButton label={isAuthenticated ? "Account" : "Sign In"} onClick={onAuth} icon={<User size={20} />} />
+          </div>
+        </div>
+      ) : null}
+
+      <div style={mobileDockSurfaceStyle}>
+        {actions.map((action) => (
+          <MobileDockButton key={action.label} {...action} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+function shouldRenderDesktopToolbar(mobileChrome: boolean): boolean {
+  return !mobileChrome;
+}
 
 export function VerticalToolbox(): React.ReactElement {
   const navigate = useNavigate();
@@ -645,6 +899,7 @@ export function VerticalToolbox(): React.ReactElement {
   // publishes CSS vars that App.tsx consumes to pad the Canvas correctly.
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
+  const mobileChrome = isNarrow || isTouch;
 
   // Publish toolbox dimensions as CSS vars on <html> so other fixed-
   // position chrome can align with us without importing TOOLBAR_W.
@@ -653,9 +908,9 @@ export function VerticalToolbox(): React.ReactElement {
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
-    if (isNarrow) {
+    if (mobileChrome) {
       root.style.setProperty("--toolbox-offset", "0px");
-      root.style.setProperty("--toolbox-bottom", "calc(64px + env(safe-area-inset-bottom))");
+      root.style.setProperty("--toolbox-bottom", "calc(104px + env(safe-area-inset-bottom))");
     } else {
       root.style.setProperty("--toolbox-offset", `${String(TOOLBAR_W)}px`);
       root.style.setProperty("--toolbox-bottom", "0px");
@@ -664,11 +919,12 @@ export function VerticalToolbox(): React.ReactElement {
       root.style.removeProperty("--toolbox-offset");
       root.style.removeProperty("--toolbox-bottom");
     };
-  }, [isNarrow]);
+  }, [mobileChrome]);
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [panelOpen, setPanelOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [saveFlash, setSaveFlash] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
@@ -694,6 +950,25 @@ export function VerticalToolbox(): React.ReactElement {
   const displayedSaveStatus: EditorSaveStatus =
     saveFlash && saveStatus !== "failed" && saveStatus !== "saving" ? "saved" : saveStatus;
   const saveCopy = copyForEditorSaveStatus(displayedSaveStatus);
+  const placedItems = usePlacementStore((s) => s.placedItems);
+  const selectedIds = useSelectionStore((s) => s.selectedIds);
+  const selectedIdList = Array.from(selectedIds);
+  const selectedItem = selectedIdList.length > 0
+    ? placedItems.find((item) => item.id === selectedIdList[0])
+    : undefined;
+  const selectedCatalogueItem = selectedItem !== undefined
+    ? getCatalogueItem(selectedItem.catalogueItemId)
+    : undefined;
+  const selectedName = selectedCatalogueItem?.name ?? null;
+  const selectedDetail = selectedCatalogueItem !== undefined
+    ? `${selectedCatalogueItem.subtitle} · ${selectedCatalogueItem.width.toFixed(1)}m × ${selectedCatalogueItem.depth.toFixed(1)}m`
+    : null;
+  const placingItemId = useCatalogueStore((s) => s.selectedItemId);
+  const placingCatalogueItem = placingItemId !== null ? getCatalogueItem(placingItemId) : undefined;
+  const mobileMode: MobileShellMode =
+    placingItemId !== null ? "placing"
+      : selectedItem !== undefined ? "selected"
+        : "idle";
 
   const dismissOnboarding = useCallback(() => {
     setOnboardingDismissed(true);
@@ -713,6 +988,7 @@ export function VerticalToolbox(): React.ReactElement {
       setActiveTool(tool);
     }
     setCameraOpen(false);
+    setMobileMoreOpen(false);
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -723,6 +999,18 @@ export function VerticalToolbox(): React.ReactElement {
   const handleRedo = useCallback(() => {
     usePlacementStore.getState().redo();
     useSelectionStore.getState().clearSelection();
+  }, []);
+
+  const handleCameraToggle = useCallback(() => {
+    setCameraOpen((p) => !p);
+    setPanelOpen(false);
+    setMobileMoreOpen(false);
+  }, []);
+
+  const handleMobileMoreToggle = useCallback(() => {
+    setMobileMoreOpen((p) => !p);
+    setPanelOpen(false);
+    setCameraOpen(false);
   }, []);
 
   const handleSnapToggle = useCallback(() => {
@@ -756,6 +1044,49 @@ export function VerticalToolbox(): React.ReactElement {
     window.open(`/hallkeeper/${configId}`, "_blank");
   }, []);
 
+  const handleAuth = useCallback(() => {
+    if (useAuthStore.getState().isAuthenticated) {
+      void navigate("/dashboard");
+    } else {
+      setShowAuth(true);
+    }
+  }, [navigate]);
+
+  const handleCancelPlacement = useCallback(() => {
+    useCatalogueStore.getState().clearSelection();
+    usePlacementStore.getState().clearGhost();
+    setActiveTool("select");
+    setPanelOpen(false);
+  }, []);
+
+  const handleRotatePlacement = useCallback(() => {
+    usePlacementStore.getState().rotateGhost(Math.PI / 12);
+  }, []);
+
+  const handleDoneSelected = useCallback(() => {
+    useSelectionStore.getState().clearSelection();
+    setActiveTool("select");
+  }, []);
+
+  const handleRotateSelected = useCallback(() => {
+    const ids = Array.from(useSelectionStore.getState().selectedIds);
+    const state = usePlacementStore.getState();
+    for (const id of ids) {
+      const item = state.placedItems.find((candidate) => candidate.id === id);
+      if (item !== undefined) {
+        state.rotateItem(id, item.rotationY + Math.PI / 12);
+      }
+    }
+    setActiveTool("rotate");
+  }, []);
+
+  const handleDeleteSelected = useCallback(() => {
+    const ids = useSelectionStore.getState().selectedIds;
+    usePlacementStore.getState().removeItems(ids);
+    useSelectionStore.getState().clearSelection();
+    setActiveTool("select");
+  }, []);
+
   const handleSave = useCallback(() => {
     // Punch list #10: previously called saveToServer(true) unconditionally,
     // forcing the authenticated endpoint even for guests. Guest sessions
@@ -776,6 +1107,7 @@ export function VerticalToolbox(): React.ReactElement {
     useCatalogueStore.getState().selectItem(item.id);
     setPanelOpen(false);
     setActiveTool("select");
+    setMobileMoreOpen(false);
   }, []);
 
   const toggleCategory = useCallback((cat: string) => {
@@ -793,6 +1125,7 @@ export function VerticalToolbox(): React.ReactElement {
       useBookmarkStore.setState({ pendingNavigationId: bookmark.id });
     }
     setCameraOpen(false);
+    setMobileMoreOpen(false);
   }, []);
 
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
@@ -830,13 +1163,48 @@ export function VerticalToolbox(): React.ReactElement {
     ? "Rotate the selected item with touch-friendly controls."
     : "Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows.";
 
+  const desktopToolbarVisible = shouldRenderDesktopToolbar(mobileChrome);
+
   return (
     <>
       {showOnboarding && (
         <OnboardingHint onDismiss={dismissOnboarding} />
       )}
 
-      {/* === Toolbar strip === */}
+      {mobileChrome ? (
+        <MobilePlannerDock
+          mode={mobileMode}
+          activeTool={activeTool}
+          panelOpen={panelOpen}
+          cameraOpen={cameraOpen}
+          moreOpen={mobileMoreOpen}
+          snapEnabled={snapEnabled}
+          allWallsUp={allWallsUp}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          isAuthenticated={isAuthenticated}
+          selectedName={selectedName}
+          selectedDetail={selectedDetail}
+          placingName={placingCatalogueItem?.name ?? null}
+          onSelect={() => { handleToolClick("select"); }}
+          onAdd={() => { handleToolClick("add"); }}
+          onCamera={handleCameraToggle}
+          onMore={handleMobileMoreToggle}
+          onSnap={handleSnapToggle}
+          onWalls={handleToggleAllWalls}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onGenerateSheet={handleGenerateSheet}
+          onAuth={handleAuth}
+          onRotatePlacement={handleRotatePlacement}
+          onCancelPlacement={handleCancelPlacement}
+          onDoneSelected={handleDoneSelected}
+          onRotateSelected={handleRotateSelected}
+          onDeleteSelected={handleDeleteSelected}
+        />
+      ) : null}
+
+      {desktopToolbarVisible && (
       <div data-testid="planner-toolbar" style={isNarrow ? {
         // Bottom rail on phone portrait: fixed bottom, horizontal flex,
         // horizontal scroll if the tool set doesn't fit. The same buttons
@@ -910,6 +1278,7 @@ export function VerticalToolbox(): React.ReactElement {
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>
+      )}
 
       {/* === Slide-out asset panel === */}
       {panelMounted && (
@@ -917,7 +1286,7 @@ export function VerticalToolbox(): React.ReactElement {
           data-testid="furniture-panel"
           style={{
             ...panelStyle,
-            ...(isNarrow ? {
+            ...(mobileChrome ? {
               left: 10,
               right: 10,
               top: "auto",
@@ -1033,7 +1402,7 @@ export function VerticalToolbox(): React.ReactElement {
       {cameraMounted && bookmarks.length > 0 && (
         <div style={{
           ...cameraDropdownStyle,
-          ...(isNarrow ? {
+          ...(mobileChrome ? {
             left: 12,
             right: 12,
             bottom: "calc(var(--toolbox-bottom, 64px) + 12px)",
