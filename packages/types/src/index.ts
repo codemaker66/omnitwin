@@ -142,6 +142,35 @@ export {
   type RuntimeVenueManifestV0,
 } from "./runtime-venue-manifest.js";
 
+// --- ASPIRATIONAL: coordinate-frame utilities for T-091 alignment work ---
+export {
+  COORDINATE_FRAMES,
+  TRANSFORM_MATRIX4D_LENGTH,
+  IDENTITY_TRANSFORM_MATRIX4D,
+  T_THREE_CAMERA_COLMAP_RDF,
+  transformName,
+  matrix4d,
+  matrix4dFromRowMajor,
+  translationMatrix4d,
+  scaleMatrix4d,
+  uniformScaleMatrix4d,
+  rotationXMatrix4d,
+  rotationZMatrix4d,
+  multiplyTransformMatrices,
+  transformPoint3,
+  distance3,
+  validateSimilarityTransformMatrix4d,
+  assertSimilarityTransformMatrix4d,
+  invertSimilarityTransformMatrix4d,
+  type CoordinateFrameName,
+  type TransformName,
+  type TransformPoint3,
+  type TransformMatrix4d,
+  type RowMajorMatrix4d,
+  type TransformValidationFailure,
+  type TransformValidationResult,
+} from "./coordinate-frame.js";
+
 export {
   UserIdSchema,
   USER_ROLES,
