@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -8,7 +8,12 @@ import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
+import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import { BlueprintPage } from "./BlueprintPage.js";
+import {
+  buildProceduralTruthSummary,
+  isTruthModeUiEnabled,
+} from "../lib/truth-mode-summary.js";
 import * as spacesApi from "../api/spaces.js";
 
 const DEFAULT_SPACE_SLUG = "grand-hall";
@@ -175,10 +180,21 @@ export function EditorPage(): React.ReactElement {
 function PlannerCommsLayer(): React.ReactElement {
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
+  const [searchParams] = useSearchParams();
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const saveError = useEditorStore((s) => s.saveError);
+  const placedObjectCount = useEditorStore((s) => s.objects.length);
   const authState = useAuthStore((s) => s.isAuthenticated);
+  const truthModeEnabled = isTruthModeUiEnabled(searchParams);
+  const truthSummary = useMemo(
+    () => buildProceduralTruthSummary({
+      surface: viewMode === "3d" ? "planner_3d" : "planner_2d",
+      placedObjectCount,
+      measuredRuntimeAssetsLoaded: false,
+    }),
+    [placedObjectCount, viewMode],
+  );
   // The Event Details panel writes to the auth-only PATCH endpoint. Showing
   // it on unclaimed public-preview configs would 401 on every save and
   // discard the planner's work with a generic "Failed to save". Hide until
@@ -215,6 +231,7 @@ function PlannerCommsLayer(): React.ReactElement {
       <ObjectNotePanel />
       <SaveSendPanel />
       <SubmitForReviewPanel />
+      {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} />
       ) : null}

@@ -14,7 +14,7 @@ test.describe("Spark fixture", () => {
     });
 
     await page.goto("/dev/splat-fixture");
-    await expect(page.getByText("Spark fixture")).toBeVisible();
+    await expect(page.getByText("Spark fixture", { exact: true })).toBeVisible();
     await expect(page.getByText("Three.js 0.180 + Spark 2.0 smoke route.")).toBeVisible();
 
     const canvas = page.locator("canvas");

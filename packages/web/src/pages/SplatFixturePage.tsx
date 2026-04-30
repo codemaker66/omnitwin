@@ -3,6 +3,12 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Color, FrontSide } from "three";
 import { textSplats } from "@sparkjsdev/spark";
+import { useSearchParams } from "react-router-dom";
+import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
+import {
+  buildProceduralTruthSummary,
+  isTruthModeUiEnabled,
+} from "../lib/truth-mode-summary.js";
 
 function SparkTextSplat(): React.ReactElement {
   const splat = useMemo(() => {
@@ -32,6 +38,17 @@ function SparkTextSplat(): React.ReactElement {
 }
 
 export function SplatFixturePage(): React.ReactElement {
+  const [searchParams] = useSearchParams();
+  const truthModeEnabled = isTruthModeUiEnabled(searchParams);
+  const truthSummary = useMemo(
+    () => buildProceduralTruthSummary({
+      surface: "spark_fixture",
+      placedObjectCount: 0,
+      measuredRuntimeAssetsLoaded: false,
+    }),
+    [],
+  );
+
   return (
     <main style={{
       position: "fixed",
@@ -73,6 +90,7 @@ export function SplatFixturePage(): React.ReactElement {
           Three.js 0.180 + Spark 2.0 smoke route.
         </div>
       </div>
+      {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
     </main>
   );
 }
