@@ -400,6 +400,8 @@ describe("Grand Hall ornaments source", () => {
     const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
     expect(source).not.toContain("WallChairRows");
     expect(source).not.toContain("red-upholstered-wall-chair-rows");
+    expect(source).not.toContain("BalconyWallCue");
+    expect(source).not.toContain("floorplan-balcony-wall-cue");
   });
 });
 

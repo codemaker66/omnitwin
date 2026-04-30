@@ -734,38 +734,6 @@ function PortraitGallery({ width, length }: { readonly width: number; readonly l
 }
 
 // ---------------------------------------------------------------------------
-// Floorplan balcony cue
-// ---------------------------------------------------------------------------
-
-function BalconyWallCue({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
-  const z = length / 2 - 0.52;
-  const platformWidth = width * 0.32;
-  const railWidth = platformWidth * 0.86;
-
-  return (
-    <group name="floorplan-balcony-wall-cue">
-      <mesh position={[0, 0.07, z]}>
-        <boxGeometry args={[platformWidth, 0.14, 0.82]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.66} metalness={0.02} />
-      </mesh>
-      <mesh position={[0, 0.62, z - 0.36]}>
-        <boxGeometry args={[railWidth, 0.12, 0.08]} />
-        <meshStandardMaterial color={BRASS_GOLD} roughness={0.42} metalness={0.36} />
-      </mesh>
-      {Array.from({ length: 7 }).map((_, i) => {
-        const x = -railWidth / 2 + (railWidth / 6) * i;
-        return (
-          <mesh key={`balcony-post-${String(i)}`} position={[x, 0.36, z - 0.36]}>
-            <boxGeometry args={[0.08, 0.58, 0.08]} />
-            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.66} metalness={0.02} />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Ceiling rosette ring around the dome base
 // ---------------------------------------------------------------------------
 
@@ -973,7 +941,6 @@ export function GrandHallOrnaments({
       <EndWallFocalPoint width={width} length={length} />
       <SurfaceVisibilityGroup surfaceKey="wall-front" name="front-wall-ornament-cluster">
         <PortraitGallery width={width} length={length} />
-        <BalconyWallCue width={width} length={length} />
       </SurfaceVisibilityGroup>
       {/* Pilasters and arched windows along the window wall only. */}
       <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
