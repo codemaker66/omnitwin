@@ -206,12 +206,19 @@ test.describe("Editor with empty config", () => {
     // editor user clicking "Events Sheet" opens a new tab at /hallkeeper/<id>
     // which immediately redirects to /login. The test verifies the button
     // triggers the navigation; the redirect itself proves route protection.
+    //
+    // Listen for the more-specific `popup` event on the originating page
+    // (window.open from a user gesture) instead of the broader context-level
+    // `page` event. The bumped 15s timeout absorbs cold-start variance when
+    // the suite runs at full parallelism — the underlying dev server can
+    // take noticeably longer to serve the new tab's bundle than 5s under
+    // load, even though window.open fires immediately.
     const [newPage] = await Promise.all([
-      page.context().waitForEvent("page", { timeout: 5_000 }),
+      page.waitForEvent("popup", { timeout: 15_000 }),
       page.getByRole("button", { name: "Events Sheet" }).click(),
     ]);
     // Initial URL targets hallkeeper; guard then redirects to /login.
-    await newPage.waitForURL(/\/(hallkeeper|login)/, { timeout: 5_000 });
+    await newPage.waitForURL(/\/(hallkeeper|login)/, { timeout: 10_000 });
     expect(newPage.url()).toMatch(/\/(hallkeeper|login)/);
     await newPage.close();
   });

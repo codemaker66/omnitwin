@@ -7,13 +7,15 @@ import { test, expect } from "@playwright/test";
 //   - Keyboard shortcuts: page.keyboard.press(...)
 //   - Category headers: getByTestId("category-header-<cat>")
 //   - Section slider: getByRole("slider", { name: "Section plane height" })
-//   - Auth modal: getByRole("dialog")
+//   - Auth modal: getByRole("dialog", { name: "Sign In to Save" })
 //   - Placement hint: getByTestId("placement-hint")
 //
 // These tests do not require authentication (anonymous editor path).
 // ---------------------------------------------------------------------------
 
 test.describe("Editor Interactions", () => {
+  test.describe.configure({ mode: "serial" });
+
   test.beforeEach(async ({ page }) => {
     // Navigate directly to /editor/:configId — SpacePicker requires a live
     // API for venue data and has no canvas. Mock the config load so the 3D
@@ -160,27 +162,30 @@ test.describe("Editor Interactions", () => {
 
   test("Sign In button opens the auth modal", async ({ page }) => {
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 3_000 });
-    await expect(page.getByRole("heading", { name: "Sign In to Save" })).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
+    await expect(dialog).toBeVisible({ timeout: 3_000 });
+    await expect(dialog.getByRole("heading", { name: "Sign In to Save" })).toBeVisible();
   });
 
   test("auth modal closes when Escape is pressed", async ({ page }) => {
     await page.getByRole("button", { name: "Sign In" }).click();
-    await page.getByRole("dialog").waitFor({ state: "visible" });
+    const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
+    await dialog.waitFor({ state: "visible" });
     // Click the modal heading to move focus from the Clerk SignIn iframe
     // (which would swallow keyboard events) back to the React tree.
-    await page.getByRole("heading", { name: "Sign In to Save" }).click();
+    await dialog.getByRole("heading", { name: "Sign In to Save" }).click();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 3_000 });
+    await expect(dialog).not.toBeVisible({ timeout: 3_000 });
   });
 
   test("auth modal closes when the backdrop is clicked", async ({ page }) => {
     await page.getByRole("button", { name: "Sign In" }).click();
-    await page.getByRole("dialog").waitFor({ state: "visible" });
+    const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
+    await dialog.waitFor({ state: "visible" });
     // Click the top-left of the viewport — outside the centered modal card,
     // but inside the overlay (zIndex 200, inset 0).
     await page.mouse.click(10, 10);
-    await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 3_000 });
+    await expect(dialog).not.toBeVisible({ timeout: 3_000 });
   });
 
   // ---------------------------------------------------------------------------

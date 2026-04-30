@@ -11,6 +11,7 @@ Regenerate after each `tasks.md` change.
 
 - **A1** — this week, RunPod foundation
 - **A2** — this week, ops baseline + audit fixes
+- **A3** — this week, viewer presentation polish
 - **B** — next 2 weeks, gap closing + ops follow-on
 - **C** — weeks 3–6, revenue + edge cases
 - **D** — Tier 3, Geass cluster
@@ -54,6 +55,10 @@ flowchart TD
         T084(["T-084 — E2E triage"])
         T085(["T-085 — deploy flow doc"])
         T113(["T-113 — 2D/3D grouped movement"])
+    end
+
+    subgraph A3 [a3 · this week — viewer presentation polish]
+        T114(["T-114 — Grand Hall visual fidelity"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -159,9 +164,9 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T080,T081,T113 done
+    class T002,T019,T080,T081,T084,T086,T113,T114 done
     class T001 inprogress
-    class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T084,T085,T086,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
+    class T003,T005,T018,T052,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T087,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110 deferred
 ```
 
@@ -205,9 +210,9 @@ reflect the same pattern for the Three.js/Spark upgrade — the modern
 runtime is required before any product-vision capability that touches
 the renderer can ship.
 
-`T-084 → T-086` is the E2E triage-then-fix sequence: triaging the 28
-failing tests must produce the categorised punch list before fix work
-can be scoped or scheduled.
+`T-084 → T-086` was the E2E triage-then-fix sequence: triage found the
+current 29-failure state from the older 28-failure audit note, then
+T-086 closed it with a full serial web E2E pass.
 
 `T-085 → T-093` is the "document the current state before fixing it"
 sequence: the deploy-flow gating work in T-093 needs the honest current

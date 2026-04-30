@@ -74,7 +74,24 @@ export function collectFloorPlanMarkers(phases: readonly Phase[], room: RoomDims
     for (const zone of phase.zones) {
       for (const row of zone.rows) {
         if (row.isAccessory) continue;
-        for (const pos of row.positions) {
+        const runtimeRow: {
+          readonly positions?: readonly {
+            readonly objectId?: unknown;
+            readonly x?: unknown;
+            readonly z?: unknown;
+            readonly rotationY?: unknown;
+          }[];
+        } = row;
+        const positions = runtimeRow.positions ?? [];
+        for (const pos of positions) {
+          if (
+            typeof pos.objectId !== "string"
+            || typeof pos.x !== "number"
+            || typeof pos.z !== "number"
+            || typeof pos.rotationY !== "number"
+          ) {
+            continue;
+          }
           const { nx, nz } = roomToNormalised(pos.x, pos.z, room);
           markers.push({
             rowKey: row.key,

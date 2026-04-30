@@ -41,10 +41,11 @@ interface MockV2Row {
 }
 
 interface MockSheetDataV2 {
-  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: null };
+  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: null; readonly timezone: string };
   readonly space: { readonly name: string; readonly widthM: number; readonly lengthM: number; readonly heightM: number };
   readonly config: { readonly id: string; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
   readonly timing: null | { readonly eventStart: string; readonly setupBy: string; readonly bufferMinutes: number };
+  readonly instructions: null;
   readonly phases: readonly {
     readonly phase: string;
     readonly zones: readonly { readonly zone: string; readonly rows: readonly MockV2Row[] }[];
@@ -57,6 +58,7 @@ interface MockSheetDataV2 {
   readonly diagramUrl: null;
   readonly webViewUrl: string;
   readonly generatedAt: string;
+  readonly approval: null | ApprovalFixture;
 }
 
 const MOCK_SHEET: MockSheetDataV2 = {
@@ -64,10 +66,12 @@ const MOCK_SHEET: MockSheetDataV2 = {
     name: "Trades Hall Glasgow",
     address: "85 Glassford Street, Glasgow G1 1UH",
     logoUrl: null,
+    timezone: "Europe/London",
   },
   space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
   config: { id: CONFIG_ID, name: "Annual Gala", layoutStyle: "dinner-banquet", guestCount: 120 },
   timing: null,
+  instructions: null,
   phases: [
     {
       phase: "structure",
@@ -108,6 +112,7 @@ const MOCK_SHEET: MockSheetDataV2 = {
   diagramUrl: null,
   webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
   generatedAt: "2026-04-13T10:00:00.000Z",
+  approval: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -250,11 +255,11 @@ test.describe("Hallkeeper Page", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Diagram placeholder (diagramUrl: null in mock)
+  // Interactive floor plan (diagramUrl: null in mock)
   // -------------------------------------------------------------------------
 
-  test("floor plan placeholder is shown when diagramUrl is null", async ({ page }) => {
-    await expect(page.getByText("Floor plan diagram")).toBeVisible();
+  test("interactive floor plan is shown when diagramUrl is null", async ({ page }) => {
+    await expect(page.getByRole("img", { name: "Interactive floor plan" })).toBeVisible();
   });
 });
 
@@ -346,7 +351,7 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
       name: /Approved version 3 by Catherine Tait/,
     });
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText("APPROVED");
+    await expect(banner).toContainText(/Approved/i);
     await expect(banner).toContainText("v3");
     await expect(banner).toContainText("Catherine Tait");
     // Date rendered via toLocaleDateString("en-GB") — "17 Apr 2026".

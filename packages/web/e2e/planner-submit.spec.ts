@@ -21,6 +21,68 @@ import { test, expect, type Page } from "@playwright/test";
 
 const API = "http://localhost:3001";
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
+const SPACE_ID = "22222222-2222-4222-8222-222222222222";
+const VENUE_ID = "33333333-3333-4333-8333-333333333333";
+
+const MOCK_OBJECT = {
+  id: "e2e-submit-object-001",
+  configurationId: CONFIG_ID,
+  assetDefinitionId: "round-table-6ft",
+  positionX: "0",
+  positionY: "0",
+  positionZ: "0",
+  rotationX: "0",
+  rotationY: "0",
+  rotationZ: "0",
+  scale: "1",
+  sortOrder: 0,
+  metadata: null,
+};
+
+const MOCK_REVIEW_SNAPSHOT = {
+  id: "44444444-4444-4444-8444-444444444444",
+  configurationId: CONFIG_ID,
+  version: 1,
+  payload: {
+    config: {
+      id: CONFIG_ID,
+      name: "Submit Review Layout",
+      layoutStyle: "dinner-rounds",
+      guestCount: 80,
+    },
+    venue: {
+      name: "Trades Hall Glasgow",
+      address: "85 Glassford Street",
+      logoUrl: null,
+      timezone: "Europe/London",
+    },
+    space: {
+      name: "Grand Hall",
+      widthM: 21,
+      lengthM: 10,
+      heightM: 7,
+    },
+    timing: null,
+    instructions: null,
+    phases: [],
+    totals: {
+      entries: [],
+      totalRows: 0,
+      totalItems: 0,
+    },
+    diagramUrl: null,
+    webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
+    generatedAt: "2026-04-17T09:00:00.000Z",
+    approval: null,
+  },
+  diagramUrl: null,
+  pdfUrl: null,
+  sourceHash: "0".repeat(64),
+  createdAt: "2026-04-17T09:00:00.000Z",
+  createdBy: null,
+  approvedAt: null,
+  approvedBy: null,
+};
 
 async function seedAuthenticatedPlanner(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -49,7 +111,55 @@ async function mockSubmitFlow(
 ): Promise<{ submitCalls: number }> {
   const state = { submitCalls: 0, currentStatus: opts.initialStatus as string };
 
-  await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions`, (route) => {
+  await page.route(`${API}/configurations/${CONFIG_ID}`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          id: CONFIG_ID,
+          spaceId: SPACE_ID,
+          venueId: VENUE_ID,
+          userId: "e2e-planner-submit",
+          name: "Submit Review Layout",
+          isPublicPreview: false,
+          objects: [MOCK_OBJECT],
+        },
+      },
+    });
+  });
+
+  await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          id: CONFIG_ID,
+          spaceId: SPACE_ID,
+          venueId: VENUE_ID,
+          userId: "e2e-planner-submit",
+          name: "Submit Review Layout",
+          isPublicPreview: false,
+          objects: [MOCK_OBJECT],
+        },
+      },
+    });
+  });
+
+  await page.route(`${API}/venues/${VENUE_ID}/spaces/${SPACE_ID}`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          id: SPACE_ID,
+          venueId: VENUE_ID,
+          name: "Grand Hall",
+          slug: "grand-hall",
+          widthM: "21",
+          lengthM: "10",
+          heightM: "7",
+        },
+      },
+    });
+  });
+
+  await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions*`, (route) => {
     void route.fulfill({
       json: {
         data: {
@@ -68,7 +178,7 @@ async function mockSubmitFlow(
       json: {
         data: {
           created: true,
-          snapshot: { id: "snap-e2e", version: 1, configurationId: CONFIG_ID },
+          snapshot: MOCK_REVIEW_SNAPSHOT,
           reviewStatus: "submitted",
         },
       },
@@ -83,6 +193,16 @@ async function mockSubmitFlow(
   return state;
 }
 
+// Editor cold-start under 8-worker parallelism can comfortably take longer
+// than the original 10s budget — the dev server has to serve the R3F + drei
+// + Three.js bundle to every worker concurrently. The error contexts from
+// previous failures consistently show the panel mounting just *after* the
+// 10s timeout fires (the page snapshot at failure time shows the button
+// rendered). Bumping to 20s removes the flake without changing what the
+// test asserts; in serial / lightly-loaded runs the assertion still
+// resolves in well under 10s.
+const PANEL_VISIBLE_TIMEOUT = 20_000;
+
 test.describe("Planner submit for review", () => {
   test("draft config surfaces the 'Submit for Approval' button", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
@@ -90,7 +210,7 @@ test.describe("Planner submit for review", () => {
     await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
-    await expect(button).toBeVisible({ timeout: 10_000 });
+    await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
     await expect(button).toHaveText(/Submit for Approval/i);
   });
 
@@ -100,7 +220,7 @@ test.describe("Planner submit for review", () => {
     await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
-    await expect(button).toBeVisible({ timeout: 10_000 });
+    await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
     await button.click();
 
     // The submit endpoint was called.
@@ -117,6 +237,6 @@ test.describe("Planner submit for review", () => {
     await page.goto(`/plan/${CONFIG_ID}`);
 
     const button = page.getByTestId("submit-for-review-button");
-    await expect(button).toBeVisible({ timeout: 10_000 });
+    await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
   });
 });

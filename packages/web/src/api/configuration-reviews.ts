@@ -73,27 +73,24 @@ export function safeParseSnapshot(
 
 const ReviewStatusSchema = z.enum(CONFIGURATION_REVIEW_STATUSES);
 
-const ApiEnvelope = <T extends z.ZodTypeAny>(dataSchema: T): z.ZodObject<{ data: T }> =>
-  z.object({ data: dataSchema });
-
 // ---------------------------------------------------------------------------
 // Transition response shapes (mirrored from the route-side returns)
 // ---------------------------------------------------------------------------
 
-const SubmitResponseSchema = ApiEnvelope(z.object({
+const SubmitResponseSchema = z.object({
   created: z.boolean(),
   snapshot: SnapshotEnvelopeSchema,
   reviewStatus: ReviewStatusSchema,
-}));
+});
 
-const ApproveResponseSchema = ApiEnvelope(z.object({
+const ApproveResponseSchema = z.object({
   reviewStatus: z.literal("approved"),
   snapshot: SnapshotEnvelopeSchema,
-}));
+});
 
-const GenericStatusResponseSchema = ApiEnvelope(z.object({
+const GenericStatusResponseSchema = z.object({
   reviewStatus: ReviewStatusSchema,
-}));
+});
 
 const ReviewHistoryEntrySchema = z.object({
   id: z.string().uuid(),
@@ -109,18 +106,18 @@ const ReviewHistoryEntrySchema = z.object({
 
 export type ReviewHistoryEntry = z.infer<typeof ReviewHistoryEntrySchema>;
 
-const ReviewHistoryResponseSchema = ApiEnvelope(z.object({
+const ReviewHistoryResponseSchema = z.object({
   configurationId: z.string().uuid(),
   entries: z.array(ReviewHistoryEntrySchema),
-}));
+});
 
-const AvailableTransitionsResponseSchema = ApiEnvelope(z.object({
+const AvailableTransitionsResponseSchema = z.object({
   configurationId: z.string().uuid(),
   currentStatus: ReviewStatusSchema,
   availableTransitions: z.array(ReviewStatusSchema),
-}));
+});
 
-const SnapshotResponseSchema = ApiEnvelope(SnapshotEnvelopeSchema);
+const SnapshotResponseSchema = SnapshotEnvelopeSchema;
 
 // ---------------------------------------------------------------------------
 // Review presence — polling-based "who is viewing" tracking
@@ -134,14 +131,14 @@ const ActiveReviewerSchema = z.object({
 
 export type ActiveReviewer = z.infer<typeof ActiveReviewerSchema>;
 
-const ReviewViewersResponseSchema = ApiEnvelope(z.object({
+const ReviewViewersResponseSchema = z.object({
   configurationId: z.string().uuid(),
   viewers: z.array(ActiveReviewerSchema),
-}));
+});
 
-const HeartbeatResponseSchema = ApiEnvelope(z.object({
+const HeartbeatResponseSchema = z.object({
   ok: z.literal(true),
-}));
+});
 
 // ---------------------------------------------------------------------------
 // Transition endpoints
@@ -167,7 +164,7 @@ export async function submitForReview(
     undefined,
     SubmitResponseSchema,
   );
-  return res.data;
+  return res;
 }
 
 export async function startReview(configId: string): Promise<ConfigurationReviewStatus> {
@@ -177,7 +174,7 @@ export async function startReview(configId: string): Promise<ConfigurationReview
     undefined,
     GenericStatusResponseSchema,
   );
-  return res.data.reviewStatus;
+  return res.reviewStatus;
 }
 
 export async function approveLayout(
@@ -191,7 +188,7 @@ export async function approveLayout(
     undefined,
     ApproveResponseSchema,
   );
-  return res.data;
+  return res;
 }
 
 export async function rejectLayout(
@@ -208,7 +205,7 @@ export async function rejectLayout(
     undefined,
     GenericStatusResponseSchema,
   );
-  return res.data.reviewStatus;
+  return res.reviewStatus;
 }
 
 export async function requestChanges(
@@ -225,7 +222,7 @@ export async function requestChanges(
     undefined,
     GenericStatusResponseSchema,
   );
-  return res.data.reviewStatus;
+  return res.reviewStatus;
 }
 
 export async function withdrawReview(
@@ -239,7 +236,7 @@ export async function withdrawReview(
     undefined,
     GenericStatusResponseSchema,
   );
-  return res.data.reviewStatus;
+  return res.reviewStatus;
 }
 
 export async function archiveReview(configId: string): Promise<ConfigurationReviewStatus> {
@@ -249,7 +246,7 @@ export async function archiveReview(configId: string): Promise<ConfigurationRevi
     undefined,
     GenericStatusResponseSchema,
   );
-  return res.data.reviewStatus;
+  return res.reviewStatus;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +260,7 @@ export async function getReviewHistory(
     `/configurations/${configId}/review/history`,
     ReviewHistoryResponseSchema,
   );
-  return res.data.entries;
+  return res.entries;
 }
 
 export async function getAvailableTransitions(
@@ -277,8 +274,8 @@ export async function getAvailableTransitions(
     AvailableTransitionsResponseSchema,
   );
   return {
-    currentStatus: res.data.currentStatus,
-    availableTransitions: res.data.availableTransitions,
+    currentStatus: res.currentStatus,
+    availableTransitions: res.availableTransitions,
   };
 }
 
@@ -287,7 +284,7 @@ export async function getLatestSnapshot(configId: string): Promise<SnapshotEnvel
     `/configurations/${configId}/snapshot/latest`,
     SnapshotResponseSchema,
   );
-  return res.data;
+  return res;
 }
 
 export async function getSnapshotByVersion(
@@ -298,7 +295,7 @@ export async function getSnapshotByVersion(
     `/configurations/${configId}/snapshot/${String(version)}`,
     SnapshotResponseSchema,
   );
-  return res.data;
+  return res;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +325,7 @@ export async function listReviewViewers(configId: string): Promise<readonly Acti
     `/configurations/${configId}/review/viewers`,
     ReviewViewersResponseSchema,
   );
-  return res.data.viewers;
+  return res.viewers;
 }
 
 /**
@@ -376,14 +373,14 @@ const PendingReviewEntrySchema = z.object({
   guestCount: z.number().int().nonnegative(),
 });
 
-const PendingReviewsResponseSchema = ApiEnvelope(z.object({
+const PendingReviewsResponseSchema = z.object({
   entries: z.array(PendingReviewEntrySchema),
-}));
+});
 
 export async function listPendingReviews(): Promise<readonly PendingReviewEntry[]> {
   const res = await api.get(
     `/configurations/reviews/pending`,
     PendingReviewsResponseSchema,
   );
-  return res.data.entries;
+  return res.entries;
 }

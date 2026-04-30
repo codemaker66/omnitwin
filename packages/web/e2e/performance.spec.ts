@@ -96,8 +96,14 @@ test.describe("Performance", () => {
     await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("canvas", { timeout: 15_000 });
 
-    // The hallkeeper chunk should NOT be loaded on the editor page
-    const hallkeeperChunks = loadedScripts.filter((s) => s.includes("hallkeeper") || s.includes("Dashboard"));
-    expect(hallkeeperChunks).toHaveLength(0);
+    // The route chunks should NOT be loaded on the editor page. Shared
+    // domain modules in @omnitwin/types include "hallkeeper" in their file
+    // names, so match only actual page/chunk entry points.
+    const routeChunks = loadedScripts.filter((s) =>
+      s.includes("/src/pages/HallkeeperPage")
+      || s.includes("/src/pages/DashboardPage")
+      || /assets\/(?:HallkeeperPage|DashboardPage)-/.test(s),
+    );
+    expect(routeChunks).toHaveLength(0);
   });
 });

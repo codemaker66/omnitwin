@@ -14,6 +14,7 @@ import type {
 } from "@omnitwin/types";
 import {
   BRAND,
+  EventInstructionsSchema,
   PHASE_METADATA,
   SEVERITY_PALETTE,
   buildAccessibilityCallouts,
@@ -126,10 +127,7 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-        const [sheetRes, progressRes] = await Promise.all([
-          fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers }),
-          fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers }),
-        ]);
+        const sheetRes = await fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers });
 
         // Stale-request guard
         if (thisFetch !== fetchCountRef.current) return;
@@ -141,13 +139,19 @@ export function HallkeeperPage(): React.ReactElement {
         const sheetJson = (await sheetRes.json()) as { data: HallkeeperSheetV2 };
         setData(sheetJson.data);
 
-        if (progressRes.ok) {
-          const progressJson = (await progressRes.json()) as { data: { checked: Record<string, string> } };
-          const loaded: Record<string, boolean> = {};
-          for (const key of Object.keys(progressJson.data.checked)) {
-            loaded[key] = true;
+        try {
+          const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
+          if (progressRes.ok) {
+            const progressJson = (await progressRes.json()) as { data: { checked: Record<string, string> } };
+            const loaded: Record<string, boolean> = {};
+            for (const key of Object.keys(progressJson.data.checked)) {
+              loaded[key] = true;
+            }
+            setChecks(loaded);
           }
-          setChecks(loaded);
+        } catch {
+          // Progress is an enhancement over the sheet payload. A failed
+          // progress fetch must not mask a valid sheet or its 403/404 status.
         }
       } catch (err: unknown) {
         if (thisFetch !== fetchCountRef.current) return;
@@ -399,6 +403,14 @@ export function HallkeeperPage(): React.ReactElement {
   // =====================================================================
   // MAIN RENDER
   // =====================================================================
+  const payload = data as HallkeeperSheetV2 & {
+    readonly instructions?: HallkeeperSheetV2["instructions"];
+    readonly approval?: SheetApproval | null;
+  };
+  const parsedInstructions = EventInstructionsSchema.nullable().safeParse(payload.instructions ?? null);
+  const instructions = parsedInstructions.success ? parsedInstructions.data : null;
+  const approval = payload.approval ?? null;
+
   return (
     <main
       className="hk-page"
@@ -442,8 +454,8 @@ export function HallkeeperPage(): React.ReactElement {
       {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
 
       {/* === APPROVAL STAMP — only renders on approved sheets === */}
-      {data.approval !== null && (
-        <ApprovalStampBanner approval={data.approval} timezone={data.venue.timezone} />
+      {approval !== null && (
+        <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />
       )}
 
       {/* === HEADER === */}
@@ -478,26 +490,26 @@ export function HallkeeperPage(): React.ReactElement {
       </header>
 
       {/* === INSTRUCTIONS BANNER === */}
-      {data.instructions !== null && (
-        <InstructionsBanner instructions={data.instructions} />
+      {instructions !== null && (
+        <InstructionsBanner instructions={instructions} />
       )}
 
       {/* === ACCESSIBILITY CALLOUTS === */}
-      {data.instructions !== null && (
+      {instructions !== null && (
         <AccessibilityCallouts
-          callouts={buildAccessibilityCallouts(data.instructions.accessibility)}
+          callouts={buildAccessibilityCallouts(instructions.accessibility)}
         />
       )}
 
       {/* === DIETARY SUMMARY === */}
-      {data.instructions !== null && data.instructions.dietary !== null
-        && hasDietaryContent(data.instructions.dietary) && (
-        <DietarySummaryBlock dietary={data.instructions.dietary} />
+      {instructions !== null && instructions.dietary !== null
+        && hasDietaryContent(instructions.dietary) && (
+        <DietarySummaryBlock dietary={instructions.dietary} />
       )}
 
       {/* === DOOR SCHEDULE === */}
-      {data.instructions !== null && (() => {
-        const summary = buildDoorScheduleSummary(data.instructions.doorSchedule);
+      {instructions !== null && (() => {
+        const summary = buildDoorScheduleSummary(instructions.doorSchedule);
         if (summary === null) return null;
         return <DoorScheduleBlock summary={summary} />;
       })()}
@@ -666,7 +678,13 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
               {rows.map((row, i) => {
                 const done = checks[row.key] === true;
                 const highlighted = highlightedRowKey === row.key;
-                const locatable = row.positions.length > 0;
+                const runtimeRow: {
+                  readonly positions?: readonly unknown[];
+                  readonly notes?: unknown;
+                } = row;
+                const positions = runtimeRow.positions ?? [];
+                const notes = typeof runtimeRow.notes === "string" ? runtimeRow.notes : "";
+                const locatable = positions.length > 0;
                 return (
                   <div
                     key={row.key}
@@ -723,7 +741,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                             }}>after</span>
                           )}
                         </div>
-                        {row.notes.length > 0 && (
+                        {notes.length > 0 && (
                           <div
                             className="hk-row-note"
                             style={{
@@ -732,7 +750,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                               marginTop: 1, lineHeight: 1.3,
                             }}
                           >
-                            ▸ {row.notes}
+                            ▸ {notes}
                           </div>
                         )}
                       </div>
@@ -751,7 +769,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontFamily: "inherit",
                         }}
-                        title={highlighted ? "Hide on floor plan" : `Locate ×${String(row.positions.length)} on floor plan`}
+                        title={highlighted ? "Hide on floor plan" : `Locate ×${String(positions.length)} on floor plan`}
                       >
                         ◎
                       </button>

@@ -42,6 +42,9 @@ const toolbarStyle: React.CSSProperties = {
   display: "flex", flexDirection: "column", alignItems: "center",
   padding: "14px 0", gap: 6, zIndex: 50,
   fontFamily: "'Inter', sans-serif",
+  overflowY: "auto",
+  overflowX: "hidden",
+  scrollbarWidth: "none",
 };
 
 const btnStyle = (active: boolean, disabled = false, compact = false): React.CSSProperties => ({
