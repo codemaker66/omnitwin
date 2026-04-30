@@ -371,8 +371,9 @@ describe("dome constants", () => {
     expect(DOME_RADIUS).toBe(3.5);
   });
 
-  it("DOME_RECESS_DEPTH equals the radius (hemisphere)", () => {
-    expect(DOME_RECESS_DEPTH).toBe(DOME_RADIUS);
+  it("DOME_RECESS_DEPTH is a shallow cap, not a full hemisphere", () => {
+    expect(DOME_RECESS_DEPTH).toBeGreaterThan(1);
+    expect(DOME_RECESS_DEPTH).toBeLessThan(DOME_RADIUS);
   });
 
   it("dome fits within the room width", () => {
@@ -389,6 +390,16 @@ describe("dome constants", () => {
 
   it("DOME_COLOR is distinct from CEILING_COLOR", () => {
     expect(DOME_COLOR).not.toBe(CEILING_COLOR);
+  });
+});
+
+describe("Grand Hall ornaments source", () => {
+  it("does not bake fixed wall-chair rows into the empty hall", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+    expect(source).not.toContain("WallChairRows");
+    expect(source).not.toContain("red-upholstered-wall-chair-rows");
   });
 });
 

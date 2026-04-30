@@ -12,6 +12,10 @@ import {
   type WallKey,
 } from "../visibility-store.js";
 import type { SpaceDimensions } from "@omnitwin/types";
+import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
+
+const grandHallHalfWidth = GRAND_HALL_RENDER_DIMENSIONS.width / 2;
+const grandHallHalfLength = GRAND_HALL_RENDER_DIMENSIONS.length / 2;
 
 // ---------------------------------------------------------------------------
 // smoothstep — pure function
@@ -52,7 +56,7 @@ describe("smoothstep", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeWallTargetOpacities", () => {
-  // Room half-dims: W=21 (X axis), L=10 (Z axis). Fade zone = 3 units from wall.
+  // Room half-dims are derived from the canonical Grand Hall dimensions.
 
   it("camera at center — all walls fully visible", () => {
     const o = computeWallTargetOpacities(0, 0, 3);
@@ -71,8 +75,8 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("camera near right wall — right wall fades, others stay", () => {
-    // At x=20.5, dist from right wall (21) = 0.5 → inside fade zone (FADE_START=1)
-    const o = computeWallTargetOpacities(20.5, 0, 3);
+    // Camera sits 0.5 render units inside the right wall fade zone.
+    const o = computeWallTargetOpacities(grandHallHalfWidth - 0.5, 0, 3);
     expect(o["wall-right"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
     expect(o["wall-front"]).toBe(1);
@@ -80,20 +84,20 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("camera well past right wall — right wall fully hidden", () => {
-    // Must go 6 units PAST the wall (FADE_END=-6) → x=27+
-    const o = computeWallTargetOpacities(28, 0, 3);
+    // Camera sits beyond the fully hidden side of the right wall fade zone.
+    const o = computeWallTargetOpacities(grandHallHalfWidth + 7, 0, 3);
     expect(o["wall-right"]).toBe(0);
   });
 
   it("camera near front wall — front wall fades", () => {
-    // At z=9.5, dist from front wall (10) = 0.5 → inside fade zone
-    const o = computeWallTargetOpacities(0, 9.5, 3);
+    // Camera sits 0.5 render units inside the front wall fade zone.
+    const o = computeWallTargetOpacities(0, grandHallHalfLength - 0.5, 3);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera in corner — two walls fade", () => {
-    const o = computeWallTargetOpacities(20.5, 9.5, 3);
+    const o = computeWallTargetOpacities(grandHallHalfWidth - 0.5, grandHallHalfLength - 0.5, 3);
     expect(o["wall-right"]).toBeLessThan(1);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-left"]).toBe(1);
@@ -463,15 +467,15 @@ describe("delta clamping", () => {
 
 describe("proximity wall behavior", () => {
   it("camera well past front wall — front wall hidden", () => {
-    // FADE_END=-6, so must be 6+ units past the wall (z=10) → z=17+
-    const o = computeWallTargetOpacities(0, 17, 3);
+    // Camera sits beyond the fully hidden side of the front wall fade zone.
+    const o = computeWallTargetOpacities(0, grandHallHalfLength + 7, 3);
     expect(o["wall-front"]).toBe(0);
     expect(o["wall-back"]).toBe(1);
   });
 
   it("camera inside room near front wall — front wall fading", () => {
-    // At z=9.5, distance to front wall (10) = 0.5, inside FADE_START=1 zone
-    const o = computeWallTargetOpacities(0, 9.5, 3);
+    // Camera sits 0.5 render units inside the front wall fade zone.
+    const o = computeWallTargetOpacities(0, grandHallHalfLength - 0.5, 3);
     expect(o["wall-front"]).toBeLessThan(1);
     expect(o["wall-front"]).toBeGreaterThan(0);
   });

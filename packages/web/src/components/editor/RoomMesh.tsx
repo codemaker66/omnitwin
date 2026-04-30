@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Shape, DoubleSide, BackSide, BufferGeometry, Float32BufferAttribute } from "three";
+import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute } from "three";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
 import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
@@ -8,6 +8,7 @@ import { sectionClipPlanes, noClipPlanes } from "../SectionPlane.js";
 import { useVisibilityStore, type WallKey } from "../../stores/visibility-store.js";
 import { BrickWall } from "../BrickWall.js";
 import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
+import { GrandHallDome } from "../GrandHallDome.js";
 import {
   createDomeInteriorTexture,
   createParquetFloorTexture,
@@ -275,17 +276,13 @@ export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): Reac
 
       {/* Dome */}
       {geometry.hasDome && geometry.domeRadius > 0 && (
-        <mesh name="dome" position={[0, ceilingHeight + 0.005, 0]}>
-          <sphereGeometry args={[geometry.domeRadius, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial
-            color={DOME_COLOR}
-            map={surfaceTextures?.dome ?? null}
-            side={BackSide}
-            roughness={0.9}
-            metalness={isGrandHall ? 0.05 : 0}
-            clippingPlanes={sectionClipPlanes}
-          />
-        </mesh>
+        <GrandHallDome
+          radius={geometry.domeRadius}
+          ceilingHeight={ceilingHeight}
+          color={DOME_COLOR}
+          texture={surfaceTextures?.dome ?? null}
+          clippingPlanes={sectionClipPlanes}
+        />
       )}
 
       {isGrandHall && (

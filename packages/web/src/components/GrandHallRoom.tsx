@@ -3,7 +3,6 @@ import { useFrame } from "@react-three/fiber";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import {
-  BackSide,
   BufferGeometry,
   DataTexture,
   DoubleSide,
@@ -42,6 +41,7 @@ import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 import { BrickWall } from "./BrickWall.js";
 import { GrandHallOrnaments } from "./GrandHallOrnaments.js";
+import { GrandHallDome, domeRiseForRadius } from "./GrandHallDome.js";
 
 // ---------------------------------------------------------------------------
 // Room surface geometry — pure data, fully testable without WebGL
@@ -198,7 +198,7 @@ export const GRAND_HALL_WAINSCOTING: readonly RoomSurface[] = computeWainscoting
 );
 
 // ---------------------------------------------------------------------------
-// Dome — 7m hemisphere recessed into the ceiling at room centre
+// Dome — 7m shallow recessed cap at the ceiling centre
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -245,7 +245,7 @@ export function createRectangularGridGeometry(
 export const DOME_RADIUS = 3.5;
 
 /** How far above the ceiling plane the dome apex reaches. */
-export const DOME_RECESS_DEPTH = DOME_RADIUS;
+export const DOME_RECESS_DEPTH = domeRiseForRadius(DOME_RADIUS);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -454,27 +454,14 @@ export function GrandHallRoom(): React.ReactElement {
           roughness={0.85}
         />
       ))}
-      {/*
-        Dome — 7m diameter hemisphere at the center of the ceiling.
-        Rendered with BackSide so the interior surface is visible from below.
-        Positioned at ceiling height; the hemisphere extends upward from there.
-        Clipped by section plane.
-      */}
-      <mesh
-        name="dome"
-        position={[0, height + 0.005, 0]}
-        rotation={[0, 0, 0]}
-      >
-        <sphereGeometry args={[DOME_RADIUS, 64, 32, 0, Math.PI * 2, 0, Math.PI * HALF]} />
-        <meshStandardMaterial
-          color={DOME_COLOR}
-          map={surfaceTextures === null ? null : surfaceTextures.dome}
-          side={BackSide}
-          roughness={0.85}
-          metalness={0.05}
-          clippingPlanes={sectionClipPlanes}
-        />
-      </mesh>
+      {/* Dome — shallow 7m cap with rings and ribs, clipped by section plane. */}
+      <GrandHallDome
+        radius={DOME_RADIUS}
+        ceilingHeight={height}
+        color={DOME_COLOR}
+        texture={surfaceTextures === null ? null : surfaceTextures.dome}
+        clippingPlanes={sectionClipPlanes}
+      />
       {/* Decorative dressing — crown moulding, skirting, pilasters, arched
           window facades, ceiling rosette ring, hanging chandelier. Kept as a
           single sibling group so layout/visibility logic above stays simple. */}

@@ -28,6 +28,7 @@ import {
   DOME_COLOR,
 } from "../constants/colors.js";
 import { DOME_RADIUS } from "./GrandHallRoom.js";
+import { SurfaceVisibilityGroup } from "./SurfaceVisibilityGroup.js";
 
 const AVODIRE_BEAM = "#714018";
 const AVODIRE_HIGHLIGHT = "#d49a55";
@@ -41,8 +42,6 @@ const WINDOW_FRAME_SHADOW = "#d9cba8";
 const MURAL_GOLD = "#b98532";
 const MURAL_SHADOW = "#705018";
 const UNDERLIGHT = "#f5d47a";
-const CHAIR_RED = "#7d2025";
-const CHAIR_TRIM = "#2c160c";
 
 // ---------------------------------------------------------------------------
 // Crown moulding — slim ivory strip at the top of every wall
@@ -69,7 +68,12 @@ function CrownMoulding({ width, length, wallHeight }: MouldingProps): React.Reac
     <group name="crown-moulding">
       {/* Front + back walls (along Z) — long bar runs the room width */}
       {[-halfL, halfL].map((z, i) => (
-        <group key={`crown-z-${String(i)}`} position={[0, yCentre, z]}>
+        <SurfaceVisibilityGroup
+          key={`crown-z-${String(i)}`}
+          name={`crown-${i === 0 ? "back" : "front"}`}
+          surfaceKey={i === 0 ? "wall-back" : "wall-front"}
+        >
+        <group position={[0, yCentre, z]}>
           <mesh>
             <boxGeometry args={[width, CROWN_HEIGHT, CROWN_DEPTH]} />
             <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
@@ -80,10 +84,16 @@ function CrownMoulding({ width, length, wallHeight }: MouldingProps): React.Reac
             <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.3} />
           </mesh>
         </group>
+        </SurfaceVisibilityGroup>
       ))}
       {/* Left + right walls (along X) — long bar runs the room length */}
       {[-halfW, halfW].map((x, i) => (
-        <group key={`crown-x-${String(i)}`} position={[x, yCentre, 0]}>
+        <SurfaceVisibilityGroup
+          key={`crown-x-${String(i)}`}
+          name={`crown-${i === 0 ? "left" : "right"}`}
+          surfaceKey={i === 0 ? "wall-left" : "wall-right"}
+        >
+        <group position={[x, yCentre, 0]}>
           <mesh>
             <boxGeometry args={[CROWN_DEPTH, CROWN_HEIGHT, length]} />
             <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
@@ -93,6 +103,7 @@ function CrownMoulding({ width, length, wallHeight }: MouldingProps): React.Reac
             <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.3} />
           </mesh>
         </group>
+        </SurfaceVisibilityGroup>
       ))}
     </group>
   );
@@ -113,16 +124,28 @@ function Skirting({ width, length }: { readonly width: number; readonly length: 
   return (
     <group name="skirting">
       {[-halfL, halfL].map((z, i) => (
-        <mesh key={`skirt-z-${String(i)}`} position={[0, yCentre, z]}>
+        <SurfaceVisibilityGroup
+          key={`skirt-z-${String(i)}`}
+          name={`skirt-${i === 0 ? "back" : "front"}`}
+          surfaceKey={i === 0 ? "wall-back" : "wall-front"}
+        >
+        <mesh position={[0, yCentre, z]}>
           <boxGeometry args={[width, SKIRT_HEIGHT, SKIRT_DEPTH]} />
           <meshStandardMaterial color="#3e2a14" roughness={0.7} metalness={0} />
         </mesh>
+        </SurfaceVisibilityGroup>
       ))}
       {[-halfW, halfW].map((x, i) => (
-        <mesh key={`skirt-x-${String(i)}`} position={[x, yCentre, 0]}>
+        <SurfaceVisibilityGroup
+          key={`skirt-x-${String(i)}`}
+          name={`skirt-${i === 0 ? "left" : "right"}`}
+          surfaceKey={i === 0 ? "wall-left" : "wall-right"}
+        >
+        <mesh position={[x, yCentre, 0]}>
           <boxGeometry args={[SKIRT_DEPTH, SKIRT_HEIGHT, length]} />
           <meshStandardMaterial color="#3e2a14" roughness={0.7} metalness={0} />
         </mesh>
+        </SurfaceVisibilityGroup>
       ))}
     </group>
   );
@@ -156,7 +179,12 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
   return (
     <group name="raised-wainscot-panels">
       {[-halfL + WAINSCOT_PANEL_INSET, halfL - WAINSCOT_PANEL_INSET].map((z, sideIndex) => (
-        <group key={`wainscot-long-${String(sideIndex)}`}>
+        <SurfaceVisibilityGroup
+          key={`wainscot-long-${String(sideIndex)}`}
+          name={`raised-wainscot-${sideIndex === 0 ? "back" : "front"}`}
+          surfaceKey={sideIndex === 0 ? "wall-back" : "wall-front"}
+        >
+        <group>
           {longX.map((x, i) => (
             <mesh key={`wainscot-long-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
               <boxGeometry args={[longSpacing * 0.72, WAINSCOT_PANEL_HEIGHT, 0.055]} />
@@ -168,10 +196,16 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
             <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
           </mesh>
         </group>
+        </SurfaceVisibilityGroup>
       ))}
 
       {[-halfW + WAINSCOT_PANEL_INSET, halfW - WAINSCOT_PANEL_INSET].map((x, sideIndex) => (
-        <group key={`wainscot-short-${String(sideIndex)}`}>
+        <SurfaceVisibilityGroup
+          key={`wainscot-short-${String(sideIndex)}`}
+          name={`raised-wainscot-${sideIndex === 0 ? "left" : "right"}`}
+          surfaceKey={sideIndex === 0 ? "wall-left" : "wall-right"}
+        >
+        <group>
           {shortZ.map((z, i) => (
             <mesh key={`wainscot-short-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
               <boxGeometry args={[0.055, WAINSCOT_PANEL_HEIGHT, shortSpacing * 0.72]} />
@@ -183,6 +217,7 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
             <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
           </mesh>
         </group>
+        </SurfaceVisibilityGroup>
       ))}
     </group>
   );
@@ -217,7 +252,12 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
   return (
     <group name="ochre-mural-frieze">
       {[-halfL + 0.04, halfL - 0.04].map((z, sideIndex) => (
-        <group key={`frieze-z-${String(sideIndex)}`}>
+        <SurfaceVisibilityGroup
+          key={`frieze-z-${String(sideIndex)}`}
+          name={`frieze-${sideIndex === 0 ? "back" : "front"}`}
+          surfaceKey={sideIndex === 0 ? "wall-back" : "wall-front"}
+        >
+        <group>
           <mesh position={[0, y, z]}>
             <boxGeometry args={[width, bandHeight, 0.035]} />
             <meshStandardMaterial color={MURAL_GOLD} roughness={0.76} metalness={0.02} />
@@ -243,10 +283,16 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
             </group>
           ))}
         </group>
+        </SurfaceVisibilityGroup>
       ))}
 
       {[-halfW + 0.04, halfW - 0.04].map((x, sideIndex) => (
-        <group key={`frieze-x-${String(sideIndex)}`}>
+        <SurfaceVisibilityGroup
+          key={`frieze-x-${String(sideIndex)}`}
+          name={`frieze-${sideIndex === 0 ? "left" : "right"}`}
+          surfaceKey={sideIndex === 0 ? "wall-left" : "wall-right"}
+        >
+        <group>
           <mesh position={[x, y, 0]}>
             <boxGeometry args={[0.035, bandHeight, length]} />
             <meshStandardMaterial color={MURAL_GOLD} roughness={0.76} metalness={0.02} />
@@ -272,6 +318,7 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
             </group>
           ))}
         </group>
+        </SurfaceVisibilityGroup>
       ))}
     </group>
   );
@@ -539,7 +586,7 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
         </mesh>
       ))}
       <mesh position={[0, height + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[opening * 1.44, 72]} />
+        <ringGeometry args={[DOME_RADIUS + 0.34, opening * 1.44, 72]} />
         <meshStandardMaterial color={DOME_COLOR} roughness={0.72} metalness={0.08} side={DoubleSide} />
       </mesh>
       {[-halfL * 0.78, halfL * 0.78].map((z, i) => (
@@ -607,39 +654,43 @@ function EndWallFocalPoint({ width, length }: { readonly width: number; readonly
   return (
     <group name="end-wall-focal-points">
       {/* Short-end fireplace and central portrait/honour-board composition. */}
-      <mesh position={[fireplaceX, 0.54, 0]}>
-        <boxGeometry args={[0.16, 1.08, 2.4]} />
-        <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
-      </mesh>
-      <mesh position={[fireplaceX - 0.04, 0.38, 0]}>
-        <boxGeometry args={[0.08, 0.72, 1.35]} />
-        <meshStandardMaterial color="#1e1712" roughness={0.72} metalness={0} />
-      </mesh>
-      <mesh position={[fireplaceX - 0.02, 1.14, 0]}>
-        <boxGeometry args={[0.22, 0.16, 2.7]} />
-        <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
-      </mesh>
-      <WallPortrait position={[fireplaceX - 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
-      <WallPortrait position={[fireplaceX - 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
-      <WallPortrait position={[fireplaceX - 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+      <SurfaceVisibilityGroup surfaceKey="wall-right" name="right-end-wall-focal-point">
+        <mesh position={[fireplaceX, 0.54, 0]}>
+          <boxGeometry args={[0.16, 1.08, 2.4]} />
+          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
+        </mesh>
+        <mesh position={[fireplaceX - 0.04, 0.38, 0]}>
+          <boxGeometry args={[0.08, 0.72, 1.35]} />
+          <meshStandardMaterial color="#1e1712" roughness={0.72} metalness={0} />
+        </mesh>
+        <mesh position={[fireplaceX - 0.02, 1.14, 0]}>
+          <boxGeometry args={[0.22, 0.16, 2.7]} />
+          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
+        </mesh>
+        <WallPortrait position={[fireplaceX - 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
+        <WallPortrait position={[fireplaceX - 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+        <WallPortrait position={[fireplaceX - 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+      </SurfaceVisibilityGroup>
 
       {/* Opposite short end: paired dark entrance doors from the floorplan. */}
-      {[-1.35, 1.35].map((z, i) => (
-        <group key={`short-end-door-${String(i)}`} position={[entranceX + 0.02, 1.55, z]}>
-          <mesh>
-            <boxGeometry args={[0.09, 2.55, 1.15]} />
-            <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.68} metalness={0.02} />
-          </mesh>
-          <mesh position={[-0.012, 0.1, 0]}>
-            <boxGeometry args={[0.105, 1.82, 0.74]} />
-            <meshStandardMaterial color={PANEL_SHADOW} roughness={0.74} metalness={0} />
-          </mesh>
-          <mesh position={[-0.024, 1.42, 0]}>
-            <boxGeometry args={[0.12, 0.16, 1.28]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.42} metalness={0.36} />
-          </mesh>
-        </group>
-      ))}
+      <SurfaceVisibilityGroup surfaceKey="wall-left" name="left-end-wall-doors">
+        {[-1.35, 1.35].map((z, i) => (
+          <group key={`short-end-door-${String(i)}`} position={[entranceX + 0.02, 1.55, z]}>
+            <mesh>
+              <boxGeometry args={[0.09, 2.55, 1.15]} />
+              <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.68} metalness={0.02} />
+            </mesh>
+            <mesh position={[-0.012, 0.1, 0]}>
+              <boxGeometry args={[0.105, 1.82, 0.74]} />
+              <meshStandardMaterial color={PANEL_SHADOW} roughness={0.74} metalness={0} />
+            </mesh>
+            <mesh position={[-0.024, 1.42, 0]}>
+              <boxGeometry args={[0.12, 0.16, 1.28]} />
+              <meshStandardMaterial color={BRASS_GOLD} roughness={0.42} metalness={0.36} />
+            </mesh>
+          </group>
+        ))}
+      </SurfaceVisibilityGroup>
     </group>
   );
 }
@@ -683,71 +734,8 @@ function PortraitGallery({ width, length }: { readonly width: number; readonly l
 }
 
 // ---------------------------------------------------------------------------
-// Wall seating and floorplan balcony cue
+// Floorplan balcony cue
 // ---------------------------------------------------------------------------
-
-interface WallChairProps {
-  readonly x: number;
-  readonly z: number;
-  readonly rotationY: number;
-}
-
-function WallChair({ x, z, rotationY }: WallChairProps): React.ReactElement {
-  return (
-    <group name="red-wall-chair" position={[x, 0, z]} rotation={[0, rotationY, 0]}>
-      <mesh position={[0, 0.45, 0.02]}>
-        <boxGeometry args={[0.52, 0.12, 0.44]} />
-        <meshStandardMaterial color={CHAIR_RED} roughness={0.82} metalness={0} />
-      </mesh>
-      <mesh position={[0, 0.88, -0.2]}>
-        <boxGeometry args={[0.56, 0.78, 0.08]} />
-        <meshStandardMaterial color={CHAIR_RED} roughness={0.82} metalness={0} />
-      </mesh>
-      <mesh position={[0, 0.5, -0.25]}>
-        <boxGeometry args={[0.62, 0.16, 0.09]} />
-        <meshStandardMaterial color={CHAIR_TRIM} roughness={0.72} metalness={0.02} />
-      </mesh>
-      {[-0.2, 0.2].map((legX) =>
-        [-0.15, 0.17].map((legZ) => (
-          <mesh key={`chair-leg-${String(legX)}-${String(legZ)}`} position={[legX, 0.22, legZ]}>
-            <boxGeometry args={[0.055, 0.42, 0.055]} />
-            <meshStandardMaterial color={CHAIR_TRIM} roughness={0.72} metalness={0.02} />
-          </mesh>
-        )),
-      )}
-    </group>
-  );
-}
-
-function WallChairRows({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
-  const halfW = width / 2;
-  const halfL = length / 2;
-  const longChairX = useMemo(
-    () => Array.from({ length: 16 }, (_, i) => -halfW + (width / 17) * (i + 1)),
-    [halfW, width],
-  );
-  const shortChairZ = useMemo(
-    () => [-length * 0.28, -length * 0.12, length * 0.12, length * 0.28],
-    [length],
-  );
-
-  return (
-    <group name="red-upholstered-wall-chair-rows">
-      {longChairX.map((x, i) => (
-        <WallChair key={`chair-window-wall-${String(i)}`} x={x} z={-halfL + 0.48} rotationY={0} />
-      ))}
-      {longChairX.map((x, i) => (
-        <WallChair key={`chair-portrait-wall-${String(i)}`} x={x} z={halfL - 0.48} rotationY={Math.PI} />
-      ))}
-      {shortChairZ.map((z, i) => (
-        <WallChair key={`chair-entrance-end-${String(i)}`} x={-halfW + 0.48} z={z} rotationY={Math.PI / 2} />
-      ))}
-      {shortChairZ.map((z, i) => (
-        <WallChair key={`chair-fireplace-end-${String(i)}`} x={halfW - 0.48} z={z} rotationY={-Math.PI / 2} />
-      ))}
-    </group>
-  );
-}
 
 function BalconyWallCue({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const z = length / 2 - 0.52;
@@ -983,28 +971,30 @@ export function GrandHallOrnaments({
       <WainscotRaisedPanels width={width} length={length} />
       <TradeFrieze width={width} length={length} height={height} />
       <EndWallFocalPoint width={width} length={length} />
-      <PortraitGallery width={width} length={length} />
-      <BalconyWallCue width={width} length={length} />
-      <WallChairRows width={width} length={length} />
-
+      <SurfaceVisibilityGroup surfaceKey="wall-front" name="front-wall-ornament-cluster">
+        <PortraitGallery width={width} length={length} />
+        <BalconyWallCue width={width} length={length} />
+      </SurfaceVisibilityGroup>
       {/* Pilasters and arched windows along the window wall only. */}
-      {pilasterX.map((x, i) => (
-        <Pilaster
-          key={`pilaster-window-wall-${String(i)}`}
-          position={[x, 0, -halfL + 0.12]}
-          height={height}
-          wallAxis="z"
-        />
-      ))}
+      <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
+        {pilasterX.map((x, i) => (
+          <Pilaster
+            key={`pilaster-window-wall-${String(i)}`}
+            position={[x, 0, -halfL + 0.12]}
+            height={height}
+            wallAxis="z"
+          />
+        ))}
 
-      {/* Arched windows on the real window wall, facing inward. */}
-      {windowX.map((x, i) => (
-        <ArchedWindow
-          key={`window-long-wall-${String(i)}`}
-          position={[x, 0, windowWallZ]}
-          rotationY={0}
-        />
-      ))}
+        {/* Arched windows on the real window wall, facing inward. */}
+        {windowX.map((x, i) => (
+          <ArchedWindow
+            key={`window-long-wall-${String(i)}`}
+            position={[x, 0, windowWallZ]}
+            rotationY={0}
+          />
+        ))}
+      </SurfaceVisibilityGroup>
 
       {/* Ceiling rosette ring around the dome base */}
       <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />

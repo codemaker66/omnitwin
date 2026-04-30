@@ -165,7 +165,7 @@ describe("computeGuideline", () => {
     // Z-axis guideline should show real room length
     const zHit: WallHit = { axis: "z", position: 0, wallCoord: 0 };
     const zG = computeGuideline(zHit, 2);
-    expect(zG.realDistance).toBeCloseTo(10); // 10m real length
+    expect(zG.realDistance).toBeCloseTo(length / RENDER_SCALE);
   });
 });
 
