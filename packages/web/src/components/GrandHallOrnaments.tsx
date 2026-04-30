@@ -650,22 +650,35 @@ function EndWallFocalPoint({ width, length }: { readonly width: number; readonly
   const fireplaceX = width / 2 - 0.18;
   const entranceX = -width / 2 + 0.18;
   const boardZ = length * 0.24;
+  const fireboxBackX = fireplaceX + 0.035;
 
   return (
     <group name="end-wall-focal-points">
       {/* Short-end fireplace and central portrait/honour-board composition. */}
       <SurfaceVisibilityGroup surfaceKey="wall-right" name="right-end-wall-focal-point">
-        <mesh position={[fireplaceX, 0.54, 0]}>
-          <boxGeometry args={[0.16, 1.08, 2.4]} />
+        <mesh name="right-fireplace-left-jamb" position={[fireplaceX, 0.58, -0.78]}>
+          <boxGeometry args={[0.16, 0.92, 0.26]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
         </mesh>
-        <mesh position={[fireplaceX - 0.04, 0.38, 0]}>
-          <boxGeometry args={[0.08, 0.72, 1.35]} />
-          <meshStandardMaterial color="#1e1712" roughness={0.72} metalness={0} />
+        <mesh name="right-fireplace-right-jamb" position={[fireplaceX, 0.58, 0.78]}>
+          <boxGeometry args={[0.16, 0.92, 0.26]} />
+          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
         </mesh>
-        <mesh position={[fireplaceX - 0.02, 1.14, 0]}>
-          <boxGeometry args={[0.22, 0.16, 2.7]} />
+        <mesh name="right-fireplace-header" position={[fireplaceX, 0.98, 0]}>
+          <boxGeometry args={[0.16, 0.28, 1.62]} />
+          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
+        </mesh>
+        <mesh name="right-fireplace-hearth" position={[fireplaceX - 0.025, 0.14, 0]}>
+          <boxGeometry args={[0.22, 0.18, 1.78]} />
+          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.44} metalness={0} />
+        </mesh>
+        <mesh name="right-fireplace-mantel" position={[fireplaceX - 0.02, 1.2, 0]}>
+          <boxGeometry args={[0.24, 0.15, 2.15]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
+        </mesh>
+        <mesh name="right-firebox-back-panel" position={[fireboxBackX, 0.52, 0]}>
+          <boxGeometry args={[0.03, 0.58, 1.04]} />
+          <meshStandardMaterial color="#1e1712" roughness={0.82} metalness={0} />
         </mesh>
         <WallPortrait position={[fireplaceX - 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
         <WallPortrait position={[fireplaceX - 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />

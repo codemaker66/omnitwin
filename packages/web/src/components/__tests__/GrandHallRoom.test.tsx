@@ -403,6 +403,17 @@ describe("Grand Hall ornaments source", () => {
     expect(source).not.toContain("BalconyWallCue");
     expect(source).not.toContain("floorplan-balcony-wall-cue");
   });
+
+  it("builds the fireplace as separate surround pieces instead of overlapping solid blocks", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+    expect(source).toContain("right-firebox-back-panel");
+    expect(source).toContain("right-fireplace-left-jamb");
+    expect(source).toContain("right-fireplace-right-jamb");
+    expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
+    expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
+  });
 });
 
 // ---------------------------------------------------------------------------
