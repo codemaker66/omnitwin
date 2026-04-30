@@ -11,7 +11,7 @@ Regenerate after each `tasks.md` change.
 
 - **A1** — this week, RunPod foundation
 - **A2** — this week, ops baseline + audit fixes
-- **A3** — this week, viewer presentation polish
+- **A3** — this week, viewer presentation polish + trust doctrine
 - **B** — next 2 weeks, gap closing + ops follow-on
 - **C** — weeks 3–6, reconstruction + edge cases
 - **D** — Tier 3, Geass cluster
@@ -57,10 +57,11 @@ flowchart TD
         T113(["T-113 — 2D/3D grouped movement"])
     end
 
-    subgraph A3 [a3 · this week — viewer presentation polish]
+    subgraph A3 [a3 · this week — viewer presentation polish + trust doctrine]
         T114(["T-114 — Grand Hall visual fidelity"])
         T115(["T-115 - Grand Hall reference correction"])
         T122(["T-122 - Device-class UX doctrine"])
+        T123(["T-123 - Truth Mode doctrine"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -140,6 +141,7 @@ flowchart TD
     T087 --> T098
     T114 --> T115
     T115 --> T122
+    T123 --> T121
     T001 --> T118
     T116 --> T091
     T116 --> T117
@@ -186,7 +188,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122 done
+    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -225,6 +227,12 @@ authority display before the signed runtime package can claim production
 readiness. `T-118 → T-119` keeps RealityScan/PGSR/2DGS/neural surface
 reconstruction as comparison work after the deterministic baseline, not
 as the default production path.
+
+`T-123 → T-121` captures the Truth Mode doctrine dependency: the first
+runtime overlay must follow the multi-axis trust model rather than
+collapsing uncertainty into a single debug heatmap. Follow-up Truth Mode
+tasks T-124 through T-134 remain in `docs/state/tasks.md`; they are not
+visualised here to keep the graph readable.
 
 `T-062 → T-068` is a precondition edge: the disaster-recovery runbook
 is empty ceremony if backup restore has never been verified.
