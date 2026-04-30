@@ -152,7 +152,7 @@ interface EditorActions {
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
   /** Save to server. Uses public endpoint for preview configs, authenticated for claimed. */
-  readonly saveToServer: (isAuthenticated?: boolean) => Promise<void>;
+  readonly saveToServer: (isAuthenticated?: boolean) => Promise<boolean>;
   /** Dismiss the current save-error toast. */
   readonly clearSaveError: () => void;
   readonly reset: () => void;
@@ -329,7 +329,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   saveToServer: async (isAuthenticated) => {
     const { configId, objects, isSaving, isPublicPreview } = get();
-    if (configId === null || isSaving) return;
+    if (configId === null || isSaving) return false;
 
     // Determine save path: use authenticated endpoint if config is claimed
     // (isPublicPreview=false) OR if caller explicitly says authenticated.
@@ -348,6 +348,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // Update local IDs with server IDs
       const serverObjects = saved.map(placedObjectToEditor);
       set({ objects: serverObjects, isDirty: false, isSaving: false, lastSavedAt: new Date() });
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Save failed";
       // Log the failing payload so we can see which field the server rejects.
@@ -358,6 +359,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // main render path alive, so the Canvas stays mounted and the user
       // doesn't lose their in-progress layout.
       set({ isSaving: false, saveError: message });
+      return false;
     }
   },
 

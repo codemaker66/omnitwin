@@ -5,6 +5,7 @@ import { updatePublicThumbnail } from "../../api/configurations.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { flushAutoSave } from "./EditorBridge.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 
 // ---------------------------------------------------------------------------
 // SaveSendPanel — floating "Send to Events Team" CTA at top-right
@@ -27,6 +28,8 @@ const sendBtn: React.CSSProperties = {
 export function SaveSendPanel(): React.ReactElement | null {
   const objects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
+  const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
 
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [flushing, setFlushing] = useState(false);
@@ -70,17 +73,42 @@ export function SaveSendPanel(): React.ReactElement | null {
       setShowEnquiry(true);
     });
   };
+  const mobile = isNarrow || isTouch;
 
   return (
     <>
-      <div style={panelStyle} data-testid="save-send-panel">
+      <div
+        style={{
+          ...panelStyle,
+          ...(mobile ? {
+            top: "calc(env(safe-area-inset-top) + 10px)",
+            right: 10,
+            left: "auto",
+            zIndex: 62,
+          } : {}),
+        }}
+        data-testid="save-send-panel"
+      >
         <button
           type="button"
-          style={{ ...sendBtn, opacity: flushing ? 0.6 : 1 }}
+          aria-label="Send to Events Team"
+          style={{
+            ...sendBtn,
+            opacity: flushing ? 0.6 : 1,
+            ...(mobile ? {
+              minHeight: 44,
+              padding: "9px 13px",
+              maxWidth: 132,
+              whiteSpace: "nowrap" as const,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              fontSize: 12,
+            } : {}),
+          }}
           onClick={handleSend}
           disabled={flushing}
         >
-          Send to Events Team
+          {mobile ? "Send" : "Send to Events Team"}
         </button>
       </div>
 

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useMeasurementStore } from "../stores/measurement-store.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -58,6 +59,8 @@ export function MeasurementOverlay(): React.ReactElement | null {
   const active = useMeasurementStore((s) => s.active);
   const pendingPoint = useMeasurementStore((s) => s.pendingPoint);
   const measurementCount = useMeasurementStore((s) => s.measurements.length);
+  const isTouch = useIsCoarsePointer();
+  const isNarrow = useIsNarrowViewport();
 
   // Set crosshair cursor on the canvas when active
   useEffect(() => {
@@ -73,12 +76,27 @@ export function MeasurementOverlay(): React.ReactElement | null {
 
   if (!active) return null;
 
+  const touchMode = isTouch || isNarrow;
   const hint = pendingPoint !== null
-    ? "Click second point to complete measurement"
-    : "Click a surface to place first point";
+    ? touchMode ? "Tap second point to complete measurement" : "Click second point to complete measurement"
+    : touchMode ? "Tap a surface to place first point" : "Click a surface to place first point";
 
   return (
-    <div style={barStyle} role="status" aria-live="polite" aria-label="Measurement tool status">
+    <div
+      style={{
+        ...barStyle,
+        ...(touchMode ? {
+          top: "calc(env(safe-area-inset-top) + 58px)",
+          maxWidth: "calc(100vw - 24px)",
+          boxSizing: "border-box" as const,
+          whiteSpace: "normal" as const,
+          textAlign: "center" as const,
+        } : {}),
+      }}
+      role="status"
+      aria-live="polite"
+      aria-label="Measurement tool status"
+    >
       <span style={dotIndicator} aria-hidden="true" />
       <span>Measure</span>
       <span style={{ opacity: 0.6 }}>—</span>
@@ -86,11 +104,13 @@ export function MeasurementOverlay(): React.ReactElement | null {
       {measurementCount > 0 && (
         <span style={{ opacity: 0.5 }}>({String(measurementCount)})</span>
       )}
-      <span style={{ opacity: 0.4 }}>
-        <span style={kbdStyle}>Esc</span> cancel
-        <span style={{ margin: "0 4px" }}>/</span>
-        <span style={kbdStyle}>M</span> close
-      </span>
+      {!touchMode && (
+        <span style={{ opacity: 0.4 }}>
+          <span style={kbdStyle}>Esc</span> cancel
+          <span style={{ margin: "0 4px" }}>/</span>
+          <span style={kbdStyle}>M</span> close
+        </span>
+      )}
     </div>
   );
 }

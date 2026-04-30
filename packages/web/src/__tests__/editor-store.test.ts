@@ -201,9 +201,10 @@ describe("saveToServer", () => {
     useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
     useEditorStore.getState().addObject("a1", 0, 0, 0);
 
-    await useEditorStore.getState().saveToServer(false);
+    const saved = await useEditorStore.getState().saveToServer(false);
 
     expect(configMock.publicBatchSave).toHaveBeenCalled();
+    expect(saved).toBe(true);
     expect(useEditorStore.getState().isDirty).toBe(false);
     expect(useEditorStore.getState().lastSavedAt).not.toBeNull();
   });
@@ -219,8 +220,23 @@ describe("saveToServer", () => {
   });
 
   it("does nothing when configId is null", async () => {
-    await useEditorStore.getState().saveToServer(false);
+    const saved = await useEditorStore.getState().saveToServer(false);
+    expect(saved).toBe(false);
     expect(configMock.publicBatchSave).not.toHaveBeenCalled();
+  });
+
+  it("returns false and keeps dirty state when the save request fails", async () => {
+    configMock.publicBatchSave.mockRejectedValue(new Error("Network failed"));
+
+    useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
+    useEditorStore.getState().addObject("a1", 0, 0, 0);
+
+    const saved = await useEditorStore.getState().saveToServer(false);
+
+    expect(saved).toBe(false);
+    expect(useEditorStore.getState().isDirty).toBe(true);
+    expect(useEditorStore.getState().saveError).toBe("Network failed");
+    expect(useEditorStore.getState().lastSavedAt).toBeNull();
   });
 });
 

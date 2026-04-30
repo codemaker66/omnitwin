@@ -187,7 +187,7 @@ test.describe("Editor with empty config", () => {
     await expect(page.getByRole("button", { name: "Save Layout" })).toBeVisible();
   });
 
-  test("Save Layout button aria-label changes to 'Auto-saved!' after a successful save", async ({ page }) => {
+  test("Save Layout button aria-label changes to 'Saved just now' after a successful save", async ({ page }) => {
     // Guest (unauthenticated) save path → publicBatchSave
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
@@ -197,7 +197,7 @@ test.describe("Editor with empty config", () => {
     // setSaveFlash(true) fires in the .then() callback after the save resolves.
     // The label reverts after 2 s, so the 5 s timeout is safe.
     await expect(
-      page.getByRole("button", { name: "Auto-saved!" }),
+      page.getByRole("button", { name: "Saved just now" }),
     ).toBeVisible({ timeout: 5_000 });
   });
 

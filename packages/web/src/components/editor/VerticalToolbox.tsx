@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useIsNarrowViewport } from "../../hooks/use-media-query.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText,
@@ -13,6 +13,11 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
 import { AuthModal } from "./AuthModal.js";
+import {
+  copyForEditorSaveStatus,
+  deriveEditorSaveStatus,
+  type EditorSaveStatus,
+} from "../../lib/editor-save-status.js";
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
@@ -41,6 +46,7 @@ const toolbarStyle: React.CSSProperties = {
   boxShadow: "2px 0 20px rgba(0,0,0,0.35), inset -1px 0 0 rgba(201,168,76,0.03)",
   display: "flex", flexDirection: "column", alignItems: "center",
   padding: "14px 0", gap: 6, zIndex: 50,
+  boxSizing: "border-box",
   fontFamily: "'Inter', sans-serif",
   overflowY: "auto",
   overflowX: "hidden",
@@ -52,13 +58,13 @@ const btnStyle = (active: boolean, disabled = false, compact = false): React.CSS
   // square. Default desktop mode grows vertically to fit a 9px caption
   // beneath the icon — taller button + tighter rail gap = same rough
   // overall toolbar height even with 12 captions.
-  width: 48,
-  height: compact ? 48 : 58,
+  width: compact ? 56 : 48,
+  height: compact ? 52 : 58,
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
-  gap: 3,
+  gap: compact ? 2 : 3,
   border: "1px solid transparent",
   borderRadius: 10,
   cursor: disabled ? "default" : "pointer",
@@ -271,11 +277,25 @@ interface ToolBtnProps {
   readonly subLabel?: string;
   /** Compact mode (narrow viewport bottom rail): hide the caption, keep button square. */
   readonly compact?: boolean;
+  readonly showShortcut?: boolean;
+  readonly tooltipEnabled?: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
 }
 
-function ToolBtn({ active, disabled = false, label, description, shortcut, subLabel, compact = false, onClick, children }: ToolBtnProps): React.ReactElement {
+function ToolBtn({
+  active,
+  disabled = false,
+  label,
+  description,
+  shortcut,
+  subLabel,
+  compact = false,
+  showShortcut = true,
+  tooltipEnabled = true,
+  onClick,
+  children,
+}: ToolBtnProps): React.ReactElement {
   const [showTooltip, setShowTooltip] = useState(false);
   const [exiting, setExiting] = useState(false);
   const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -299,7 +319,11 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, subLa
   };
 
   return (
-    <div style={{ position: "relative" }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div
+      style={{ position: "relative", flex: "0 0 auto" }}
+      onMouseEnter={tooltipEnabled ? onEnter : undefined}
+      onMouseLeave={tooltipEnabled ? onLeave : undefined}
+    >
       <button
         type="button"
         aria-label={label}
@@ -308,15 +332,15 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, subLa
         disabled={disabled}
       >
         {children}
-        {!compact && subLabel !== undefined && (
+        {subLabel !== undefined && (
           <span style={{
             // Subtle, professional caption — uppercase Inter at 9px with
             // generous tracking. Active button flips to dark text on the
             // gold gradient; inactive uses a low-contrast neutral so the
             // icon stays the dominant visual element.
-            fontSize: 9,
+            fontSize: compact ? 8 : 9,
             fontWeight: 600,
-            letterSpacing: 0.6,
+            letterSpacing: compact ? 0.2 : 0.6,
             lineHeight: 1,
             color: active
               ? "rgba(14,14,14,0.78)"
@@ -332,7 +356,7 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, subLa
           </span>
         )}
       </button>
-      {showTooltip && !disabled && (
+      {showTooltip && !disabled && tooltipEnabled && (
         <div style={{
           position: "absolute",
           left: 58,
@@ -396,7 +420,7 @@ function ToolBtn({ active, disabled = false, label, description, shortcut, subLa
               {description}
             </div>
             {/* Shortcut badge */}
-            {shortcut !== undefined && (
+            {shortcut !== undefined && showShortcut && (
               <div style={{
                 marginTop: 12,
                 display: "inline-flex",
@@ -620,6 +644,7 @@ export function VerticalToolbox(): React.ReactElement {
   // Narrow-viewport flag: ≤640 CSS px. Drives the bottom-rail layout AND
   // publishes CSS vars that App.tsx consumes to pad the Canvas correctly.
   const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
 
   // Publish toolbox dimensions as CSS vars on <html> so other fixed-
   // position chrome can align with us without importing TOOLBAR_W.
@@ -630,7 +655,7 @@ export function VerticalToolbox(): React.ReactElement {
     const root = document.documentElement;
     if (isNarrow) {
       root.style.setProperty("--toolbox-offset", "0px");
-      root.style.setProperty("--toolbox-bottom", "56px");
+      root.style.setProperty("--toolbox-bottom", "calc(64px + env(safe-area-inset-bottom))");
     } else {
       root.style.setProperty("--toolbox-offset", `${String(TOOLBAR_W)}px`);
       root.style.setProperty("--toolbox-bottom", "0px");
@@ -660,8 +685,15 @@ export function VerticalToolbox(): React.ReactElement {
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isSaving = useEditorStore((s) => s.isSaving);
+  const isDirty = useEditorStore((s) => s.isDirty);
+  const saveError = useEditorStore((s) => s.saveError);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
+  const saveStatus = deriveEditorSaveStatus({ isDirty, isSaving, saveError, lastSavedAt });
+  const displayedSaveStatus: EditorSaveStatus =
+    saveFlash && saveStatus !== "failed" && saveStatus !== "saving" ? "saved" : saveStatus;
+  const saveCopy = copyForEditorSaveStatus(displayedSaveStatus);
 
   const dismissOnboarding = useCallback(() => {
     setOnboardingDismissed(true);
@@ -733,9 +765,10 @@ export function VerticalToolbox(): React.ReactElement {
     // still applies — if a config is already claimed, the auth path is used
     // regardless of the flag.
     const authed = useAuthStore.getState().isAuthenticated;
-    void useEditorStore.getState().saveToServer(authed).then(() => {
+    void useEditorStore.getState().saveToServer(authed).then((saved) => {
+      if (!saved) return;
       setSaveFlash(true);
-      setTimeout(() => { setSaveFlash(false); }, 2000);
+      window.setTimeout(() => { setSaveFlash(false); }, 2000);
     });
   }, []);
 
@@ -784,7 +817,18 @@ export function VerticalToolbox(): React.ReactElement {
 
   // OnboardingHint measures the Furniture button position itself via the
   // DOM — no static constant to keep in sync when button styling shifts.
-  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen && !isNarrow;
+  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen && !isNarrow && !isTouch;
+
+  const showDesktopHints = !isTouch && !isNarrow;
+  const selectDescription = isTouch
+    ? "Tap furniture to select it, then drag to move it across the room."
+    : "Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple.";
+  const addDescription = isTouch
+    ? "Open the furniture catalogue, then tap an item and place it in the room."
+    : "Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more.";
+  const rotateDescription = isTouch
+    ? "Rotate the selected item with touch-friendly controls."
+    : "Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows.";
 
   return (
     <>
@@ -793,7 +837,7 @@ export function VerticalToolbox(): React.ReactElement {
       )}
 
       {/* === Toolbar strip === */}
-      <div style={isNarrow ? {
+      <div data-testid="planner-toolbar" style={isNarrow ? {
         // Bottom rail on phone portrait: fixed bottom, horizontal flex,
         // horizontal scroll if the tool set doesn't fit. The same buttons
         // as desktop — no progressive disclosure needed; we have ~8 primary
@@ -801,68 +845,68 @@ export function VerticalToolbox(): React.ReactElement {
         // little scroll headroom.
         position: "fixed" as const,
         left: 0, right: 0, bottom: 0,
-        height: 56,
+        height: "calc(64px + env(safe-area-inset-bottom))",
+        boxSizing: "border-box" as const,
         background: "linear-gradient(180deg, #141414 0%, #1a1a1a 50%, #151515 100%)",
         borderTop: "1px solid rgba(201,168,76,0.15)",
         boxShadow: "0 -2px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(201,168,76,0.03)",
         display: "flex", flexDirection: "row" as const, alignItems: "center",
-        padding: "0 12px", gap: 4, zIndex: 50,
-        paddingBottom: "max(4px, env(safe-area-inset-bottom))",
+        padding: "6px 10px calc(6px + env(safe-area-inset-bottom))", gap: 6, zIndex: 50,
         overflowX: "auto" as const,
         scrollbarWidth: "none" as const,
         fontFamily: "'Inter', sans-serif",
       } : toolbarStyle}>
-        <ToolBtn active={activeTool === "select"} compact={isNarrow} subLabel="Select" label="Select & Move" description="Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple." shortcut="V" onClick={() => { handleToolClick("select"); }}>
+        <ToolBtn active={activeTool === "select"} compact={isNarrow} subLabel="Select" label="Select & Move" description={selectDescription} shortcut="V" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} compact={isNarrow} subLabel="Furniture" label="Add Furniture" description="Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more." shortcut="F" onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} compact={isNarrow} subLabel={isNarrow ? "Place" : "Furniture"} label="Add Furniture" description={addDescription} shortcut="F" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "rotate"} compact={isNarrow} subLabel="Rotate" label="Rotate" description="Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows." shortcut="Q / E" onClick={() => { handleToolClick("rotate"); }}>
+        <ToolBtn active={activeTool === "rotate"} compact={isNarrow} subLabel="Rotate" label="Rotate" description={rotateDescription} shortcut="Q / E" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("rotate"); }}>
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" onClick={() => { handleToolClick("delete"); }}>
+        <ToolBtn active={displayedSaveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} tooltipEnabled={showDesktopHints} onClick={handleSave}>
+          <Save size={ICON_SIZE} />
+        </ToolBtn>
+
+        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("delete"); }}>
           <Trash2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={false} compact={isNarrow} subLabel="Undo" disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" onClick={handleUndo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Undo" disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleUndo}>
           <Undo2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} compact={isNarrow} subLabel="Redo" disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" onClick={handleRedo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Redo" disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleRedo}>
           <Redo2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
+        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." tooltipEnabled={showDesktopHints} onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" onClick={handleSnapToggle}>
+        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description="Pin every wall up so you can see the full room structure. Click individual walls to toggle them." onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle the room walls for a clearer touch planning view." : "Pin every wall up so you can see the full room structure. Click individual walls to toggle them."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={saveFlash} compact={isNarrow} subLabel={saveFlash ? "Saved" : "Save"} disabled={isSaving} label={saveFlash ? (isAuthenticated ? "Saved!" : "Auto-saved!") : "Save Layout"} description="Your layout is saved to the cloud instantly. Come back anytime to pick up where you left off." onClick={handleSave}>
-          <Save size={ICON_SIZE} />
-        </ToolBtn>
-
-        <ToolBtn active={false} compact={isNarrow} subLabel="Sheet" label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." onClick={handleGenerateSheet}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Sheet" label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." tooltipEnabled={showDesktopHints} onClick={handleGenerateSheet}>
           <FileText size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
+        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} tooltipEnabled={showDesktopHints} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
       </div>
@@ -873,6 +917,17 @@ export function VerticalToolbox(): React.ReactElement {
           data-testid="furniture-panel"
           style={{
             ...panelStyle,
+            ...(isNarrow ? {
+              left: 10,
+              right: 10,
+              top: "auto",
+              bottom: "calc(var(--toolbox-bottom, 64px) + 10px)",
+              width: "auto",
+              maxHeight: "min(58dvh, 430px)",
+              borderRadius: 18,
+              boxSizing: "border-box" as const,
+              boxShadow: "0 -18px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(201,168,76,0.12)",
+            } : {}),
             animation: panelOpen
               ? "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards"
               : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
@@ -978,7 +1033,16 @@ export function VerticalToolbox(): React.ReactElement {
       {cameraMounted && bookmarks.length > 0 && (
         <div style={{
           ...cameraDropdownStyle,
-          top: 280,
+          ...(isNarrow ? {
+            left: 12,
+            right: 12,
+            bottom: "calc(var(--toolbox-bottom, 64px) + 12px)",
+            top: "auto",
+            minWidth: 0,
+            boxSizing: "border-box" as const,
+          } : {
+            top: 280,
+          }),
           animation: cameraOpen
             ? "omni-dropdown-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards"
             : "omni-dropdown-pop-out 0.25s cubic-bezier(0.55, 0, 1, 0.45) forwards",

@@ -14,6 +14,7 @@ import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
+import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import * as spacesApi from "../api/spaces.js";
 
 const DEFAULT_SPACE_SLUG = "grand-hall";
@@ -181,6 +182,8 @@ function PlannerCommsLayer(): React.ReactElement {
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();
+  const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const saveError = useEditorStore((s) => s.saveError);
@@ -201,10 +204,24 @@ function PlannerCommsLayer(): React.ReactElement {
   // the config is claimed; the panel itself renders a sign-in hint if it
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
+  const mobile = isNarrow || isTouch;
   return (
     <>
       <EditorBridge />
-      <div style={{ height: "100vh", boxSizing: "border-box" }}>
+      <div
+        data-testid="planner-3d-shell"
+        style={{
+          height: "100dvh",
+          minHeight: "100dvh",
+          width: "100vw",
+          maxWidth: "100vw",
+          overflow: "hidden",
+          boxSizing: "border-box",
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          position: "relative",
+        }}
+      >
         {viewMode === "3d" ? <Editor3D /> : <BlueprintPage source="editor-store" />}
       </div>
       {/* 2D/3D view toggle — floats top-centre so it's always reachable */}
@@ -214,7 +231,10 @@ function PlannerCommsLayer(): React.ReactElement {
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
           style={{
-            position: "fixed", top: 16, right: 16, zIndex: 30,
+            position: "fixed",
+            top: mobile ? "calc(env(safe-area-inset-top) + 60px)" : 16,
+            right: 16,
+            zIndex: 30,
             padding: "8px 14px", borderRadius: 8,
             background: "rgba(20,19,17,0.85)",
             backdropFilter: "blur(8px)",
@@ -255,7 +275,8 @@ function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthe
       role="status"
       aria-live="polite"
       style={{
-        position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+        position: "fixed", left: "50%", transform: "translateX(-50%)",
+        bottom: "calc(var(--toolbox-bottom, 0px) + 16px)",
         zIndex: 40,
         background: "rgba(20,19,17,0.95)",
         border: "1px solid rgba(201,168,76,0.5)",
@@ -298,6 +319,9 @@ function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthe
 }
 
 function ViewModeToggle({ mode, onChange }: { mode: "3d" | "2d"; onChange: (m: "3d" | "2d") => void }): React.ReactElement {
+  const isNarrow = useIsNarrowViewport();
+  const isTouch = useIsCoarsePointer();
+  const mobile = isNarrow || isTouch;
   const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
     const active = mode === value;
     return (
@@ -325,9 +349,9 @@ function ViewModeToggle({ mode, onChange }: { mode: "3d" | "2d"; onChange: (m: "
     <div
       style={{
         position: "fixed",
-        top: 16,
-        left: "50%",
-        transform: "translateX(-50%)",
+        top: mobile ? "calc(env(safe-area-inset-top) + 10px)" : 16,
+        left: mobile ? 10 : "50%",
+        transform: mobile ? "none" : "translateX(-50%)",
         zIndex: 31,
         display: "inline-flex",
         gap: 2,

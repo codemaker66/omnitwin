@@ -38,9 +38,11 @@ describe("PlacementHint", () => {
     expect(code).toContain("handleDismiss");
   });
 
-  it("shows keyboard shortcuts for placement (Click, Q/E rotate, Esc)", () => {
+  it("keeps desktop keyboard shortcuts and touch-native placement copy", () => {
     const code = readSource();
     expect(code).toContain("Click");
+    expect(code).toContain("Tap to place");
+    expect(code).toContain("Drag to move");
     expect(code).toContain("Rotate");
     expect(code).toContain("Esc");
   });
