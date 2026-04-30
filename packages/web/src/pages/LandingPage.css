@@ -240,7 +240,7 @@
   .th-landing .planner .body { grid-template-columns: 240px 1fr; }
   .th-landing .planner .rightcol { display: none; }
 }
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   /* =========================================================================
      iPhone-portrait layout for the planner preview.
      Reading order top-to-bottom matches what a visitor actually does:
@@ -626,7 +626,12 @@
   display: none;
 }
 
-@media (max-width: 640px) {
+/* Device-class planner standards:
+   phone < 640px: fitted preview plus full-screen planner;
+   tablet portrait 640-899px: plan-first surface with controls and inspector;
+   tablet landscape 900-1199px: compact three-column planning surface;
+   desktop >= 1200px: full power-editor preview chrome. */
+@media (max-width: 639px) {
   .th-landing {
     max-width: 100%;
   }
@@ -947,6 +952,116 @@
     min-height: 38px;
     padding: 8px 13px;
     font-size: 13px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .th-landing[data-layout="stacked"] .hero-right {
+    max-width: 860px;
+  }
+
+  .th-landing .planner.planner-embedded .body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .th-landing .planner.planner-embedded .stage {
+    order: 1;
+    min-height: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .th-landing .planner.planner-embedded .rightcol {
+    order: 2;
+    display: block;
+    border-left: none;
+    border-top: 1px solid var(--rule);
+    padding: 14px 18px;
+    background: var(--cream-2);
+  }
+
+  .th-landing .planner.planner-embedded .rightcol h5 {
+    margin-bottom: 8px;
+  }
+
+  .th-landing .planner.planner-embedded .rightcol .kv {
+    display: inline-flex;
+    gap: 5px;
+    margin-right: 16px;
+    border-top: none;
+    padding: 0 0 4px;
+  }
+
+  .th-landing .planner.planner-embedded .rightcol .section {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+
+  .th-landing .planner.planner-embedded .rightcol .footer-note {
+    margin-top: 6px;
+    padding-top: 8px;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar {
+    order: 3;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    border-right: none;
+    border-top: 1px solid var(--rule);
+    padding: 14px 18px 16px;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar .field {
+    margin-bottom: 0;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar .input {
+    min-height: 40px;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar .pill-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar .pill-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar .pill {
+    flex: 0 0 auto;
+    min-height: 34px;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .th-landing[data-layout="stacked"] .hero-right {
+    max-width: 1040px;
+  }
+
+  .th-landing .planner.planner-embedded .body {
+    grid-template-columns: 220px minmax(0, 1fr) 180px;
+  }
+
+  .th-landing .planner.planner-embedded .sidebar {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .th-landing .planner.planner-embedded .rightcol {
+    padding: 12px;
+  }
+
+  .th-landing .planner.planner-embedded .pill {
+    padding: 6px 8px;
+    font-size: 11.5px;
   }
 }
 

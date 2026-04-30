@@ -34,10 +34,10 @@ function upsertMeta(attr: "name" | "property", key: string, content: string): vo
 const META_TITLE = "Plan your event — Trades Hall Glasgow";
 const META_DESC =
   "Plan your event at Trades Hall Glasgow live, to scale. Pick a room, drop in tables, stage, bar and dancefloor, and get a costed quote in under 24 hours.";
-const MOBILE_PLANNER_QUERY = "(max-width: 640px)";
+const PHONE_PLANNER_QUERY = "(max-width: 639px)";
 
-function isMobilePlannerViewport(): boolean {
-  return typeof window !== "undefined" && window.matchMedia(MOBILE_PLANNER_QUERY).matches;
+function isPhonePlannerViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(PHONE_PLANNER_QUERY).matches;
 }
 
 export function LandingPage(): ReactElement {
@@ -150,7 +150,7 @@ function Hero(): ReactElement {
   };
 
   const onPreviewCtaClick = (e: ReactMouseEvent<HTMLAnchorElement>): void => {
-    if (!isMobilePlannerViewport()) return;
+    if (!isPhonePlannerViewport()) return;
     e.preventDefault();
     openMobilePlanner();
   };
@@ -500,7 +500,7 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
   const isFullscreen = mode === "fullscreen";
 
   const requestFullscreenIfMobile = (): boolean => {
-    if (isFullscreen || onRequestFullscreen === undefined || !isMobilePlannerViewport()) return false;
+    if (isFullscreen || onRequestFullscreen === undefined || !isPhonePlannerViewport()) return false;
     onRequestFullscreen();
     return true;
   };

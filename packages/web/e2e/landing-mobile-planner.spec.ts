@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-interface MobileViewport {
+interface ViewportSpec {
   readonly label: string;
   readonly width: number;
   readonly height: number;
@@ -13,12 +13,25 @@ interface Box {
   readonly height: number;
 }
 
-const MOBILE_VIEWPORTS: readonly MobileViewport[] = [
-  { label: "320x568", width: 320, height: 568 },
-  { label: "375x812", width: 375, height: 812 },
-  { label: "390x844", width: 390, height: 844 },
-  { label: "430x932", width: 430, height: 932 },
+const PHONE_VIEWPORTS: readonly ViewportSpec[] = [
+  { label: "320x568 phone", width: 320, height: 568 },
+  { label: "375x812 phone", width: 375, height: 812 },
+  { label: "390x844 phone", width: 390, height: 844 },
+  { label: "430x932 phone", width: 430, height: 932 },
 ];
+
+const TABLET_VIEWPORTS: readonly ViewportSpec[] = [
+  { label: "768x1024 tablet portrait", width: 768, height: 1024 },
+  { label: "1024x768 tablet landscape", width: 1024, height: 768 },
+];
+
+const DESKTOP_VIEWPORT: ViewportSpec = {
+  label: "1280x800 desktop",
+  width: 1280,
+  height: 800,
+};
+
+const EXPECTED_NO_RUNTIME_ERRORS: readonly string[] = [];
 
 function collectRuntimeErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -65,7 +78,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test.describe("Trades Hall landing planner mobile", () => {
-  for (const viewport of MOBILE_VIEWPORTS) {
+  for (const viewport of PHONE_VIEWPORTS) {
     test(`fits the embedded preview and opens full-screen at ${viewport.label}`, async ({ page }) => {
       const runtimeErrors = collectRuntimeErrors(page);
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
@@ -101,7 +114,7 @@ test.describe("Trades Hall landing planner mobile", () => {
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expectNoHorizontalOverflow(page);
 
-      expect(runtimeErrors).toEqual([]);
+      expect(runtimeErrors).toEqual(EXPECTED_NO_RUNTIME_ERRORS);
     });
   }
 
@@ -114,7 +127,7 @@ test.describe("Trades Hall landing planner mobile", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("dialog", { name: /Grand Hall mobile planner/i })).toBeVisible();
-    expect(runtimeErrors).toEqual([]);
+    expect(runtimeErrors).toEqual(EXPECTED_NO_RUNTIME_ERRORS);
   });
 
   test("full-screen planner supports selecting and dragging a table", async ({ page }) => {
@@ -139,6 +152,53 @@ test.describe("Trades Hall landing planner mobile", () => {
 
     await expect.poll(async () => table.getAttribute("style")).not.toBe(beforeStyle);
     await expect(table).toHaveClass(/selected/);
-    expect(runtimeErrors).toEqual([]);
+    expect(runtimeErrors).toEqual(EXPECTED_NO_RUNTIME_ERRORS);
+  });
+});
+
+test.describe("Trades Hall landing planner tablet and desktop", () => {
+  for (const viewport of TABLET_VIEWPORTS) {
+    test(`uses a first-class tablet layout at ${viewport.label}`, async ({ page }) => {
+      const runtimeErrors = collectRuntimeErrors(page);
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto("/");
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+      await expectNoHorizontalOverflow(page);
+
+      const preview = page.locator(".planner-embedded").first();
+      const previewStage = preview.locator(".stage");
+      await expect(preview).toBeVisible();
+      await expect(previewStage).toBeVisible();
+      await expectWithinViewport(preview, viewport.width);
+      await expectWithinViewport(page.locator(".preview-cta"), viewport.width);
+      await expect(preview.locator(".mobile-preview-open")).toBeHidden();
+      await expect(preview.locator(".sidebar")).toBeVisible();
+      await expect(preview.locator(".rightcol")).toBeVisible();
+
+      await previewStage.click();
+      await expect(page.getByRole("dialog", { name: /Grand Hall mobile planner/i })).toHaveCount(0);
+      await expectNoHorizontalOverflow(page);
+      expect(runtimeErrors).toEqual(EXPECTED_NO_RUNTIME_ERRORS);
+    });
+  }
+
+  test(`keeps the desktop baseline intact at ${DESKTOP_VIEWPORT.label}`, async ({ page }) => {
+    const runtimeErrors = collectRuntimeErrors(page);
+    await page.setViewportSize({ width: DESKTOP_VIEWPORT.width, height: DESKTOP_VIEWPORT.height });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    await expectNoHorizontalOverflow(page);
+
+    const preview = page.locator(".planner-embedded").first();
+    await expect(preview).toBeVisible();
+    await expect(preview.locator(".stage")).toBeVisible();
+    await expectWithinViewport(preview, DESKTOP_VIEWPORT.width);
+    await expectWithinViewport(page.locator(".preview-cta"), DESKTOP_VIEWPORT.width);
+    await expect(preview.locator(".mobile-preview-open")).toBeHidden();
+    await expect(preview.locator(".sidebar")).toBeVisible();
+    await expect(preview.locator(".rightcol")).toBeVisible();
+    expect(runtimeErrors).toEqual(EXPECTED_NO_RUNTIME_ERRORS);
   });
 });
