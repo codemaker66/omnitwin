@@ -199,3 +199,11 @@ This document adds research direction only. It does not implement runtime code, 
 - T-144: Neural texture / deferred shader research branch.
 - T-145: Limited lighting-state residual experiment.
 - T-146: Stained-glass/chandelier special-class residual policy.
+- T-147: RRL-001 data readiness and zone selection.
+- T-148: RRL-001 mesh-only and full-splat baselines.
+- T-149: RRL-001 surface-bound residual prototype.
+- T-150: RRL-001 UV/neural texture residual prototype.
+- T-151: RRL-001 PBR lightmap/probe fallback.
+- T-152: RRL-001 object insertion and edit-consistency evaluation.
+- T-153: RRL-001 metrics report and Truth Mode explanation mock.
+- T-154: RRL-001 promote, revise, defer, or reject decision.
