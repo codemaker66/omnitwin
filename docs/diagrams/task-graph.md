@@ -13,7 +13,7 @@ Regenerate after each `tasks.md` change.
 - **A2** — this week, ops baseline + audit fixes
 - **A3** — this week, viewer presentation polish
 - **B** — next 2 weeks, gap closing + ops follow-on
-- **C** — weeks 3–6, revenue + edge cases
+- **C** — weeks 3–6, reconstruction + edge cases
 - **D** — Tier 3, Geass cluster
 - **E** — Tier 3, operational + doc follow-on
 - **F** — Product Vision (deferred), capabilities per D-018
@@ -78,12 +78,18 @@ flowchart TD
         T093(["T-093 — gated deploy"])
     end
 
-    subgraph C [c · weeks 3–6 — revenue + edge cases]
+    subgraph C [c · weeks 3–6 — reconstruction + edge cases]
         T094(["T-094 — Stripe integration"])
         T095(["T-095 — multi-venue routing"])
         T096(["T-096 — editor concurrency"])
         T097(["T-097 — brief privacy"])
         T098(["T-098 — dep reproducibility"])
+        T116(["T-116 — TransformArtifactV0"])
+        T117(["T-117 — Hero Region spike"])
+        T118(["T-118 — E57 deterministic meshing"])
+        T119(["T-119 — RealityScan/PGSR/2DGS/neural compare"])
+        T120(["T-120 — Chandelier/stained-glass proxy workflow"])
+        T121(["T-121 — Truth Mode authority display"])
     end
 
     subgraph D [d · tier 3 — geass cluster]
@@ -132,6 +138,18 @@ flowchart TD
     T085 --> T093
     T087 --> T098
     T114 --> T115
+    T001 --> T118
+    T116 --> T091
+    T116 --> T117
+    T116 --> T120
+    T116 --> T121
+    T118 --> T091
+    T118 --> T117
+    T118 --> T119
+    T117 --> T091
+    T117 --> T120
+    T120 --> T091
+    T121 --> T091
 
     T091 --> T100
     T100 --> T101
@@ -168,8 +186,8 @@ flowchart TD
 
     class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115 done
     class T001 inprogress
-    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099 notstarted
-    class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110 deferred
+    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
+    class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
 `T-053` (Tier 2) is shown because the backend-ingestion script template
@@ -192,6 +210,19 @@ output from RunPod training to define cache headers against.
 `T-001 → T-091` is the same pattern: T-091 (Trades Hall real evidence)
 is gated on the RunPod migration completing because the entire training
 pipeline lives there.
+`T-001 → T-118` reflects that deterministic E57 meshing needs the capture
+and training artifact flow available before it can be compared against the
+real Trades Hall data.
+
+`T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
+and `T-121 → T-091` capture the new D-024 planning split: real venue
+loading needs persisted transforms, a deterministic room-shell mesh
+baseline, explicit hero-region handling, a proxy workflow for chandelier
+and stained-glass regions, and an honest raw/enhanced/proxy/splat
+authority display before the signed runtime package can claim production
+readiness. `T-118 → T-119` keeps RealityScan/PGSR/2DGS/neural surface
+reconstruction as comparison work after the deterministic baseline, not
+as the default production path.
 
 `T-062 → T-068` is a precondition edge: the disaster-recovery runbook
 is empty ceremony if backup restore has never been verified.
