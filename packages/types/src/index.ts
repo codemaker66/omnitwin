@@ -384,6 +384,40 @@ export {
   type TruthModeTokenCategory,
 } from "./truth-mode.js";
 
+// --- ASPIRATIONAL: Residual Radiance Layer metadata for research planning ---
+export {
+  RESIDUAL_LAYER_ROLES,
+  RESIDUAL_EXPERIMENT_SURFACES,
+  RESIDUAL_BINDING_STRATEGIES,
+  RESIDUAL_COMPOSITION_MODES,
+  DEFAULT_RESIDUAL_COMPOSITION_MODE,
+  RESIDUAL_ALPHA_OVER_APPROVED_SEMANTIC_CLASSES,
+  RESIDUAL_METRIC_NAMES,
+  RESIDUAL_FAILURE_GATE_NAMES,
+  RESIDUAL_RESEARCH_TRACK_STATUSES,
+  ResidualLayerRoleSchema,
+  ResidualExperimentSurfaceSchema,
+  ResidualBindingStrategySchema,
+  ResidualCompositionModeSchema,
+  ResidualAlphaOverSemanticClassSchema,
+  ResidualMetricNameSchema,
+  ResidualFailureGateNameSchema,
+  ResidualResearchTrackStatusSchema,
+  ResidualCompositionPolicySchema,
+  isResidualAlphaOverSemanticClass,
+  isResidualCompositionPolicyAllowed,
+  type ResidualLayerRole,
+  type ResidualExperimentSurface,
+  type ResidualBindingStrategy,
+  type ResidualCompositionMode,
+  type ResidualAlphaOverSemanticClass,
+  type ResidualMetricName,
+  type ResidualFailureGateName,
+  type ResidualResearchTrackStatus,
+  type ResidualCompositionPolicyInput,
+  type ResidualCompositionPolicy,
+} from "./residual-radiance.js";
+
 export {
   buildAccessibilityCallouts,
   buildDoorScheduleSummary,

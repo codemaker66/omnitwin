@@ -4,7 +4,7 @@ Status: research experiment plan
 Date: 2026-04-30
 Source: RRL-001
 Depends on: T-091, T-116, T-118, T-137, D-009, D-011, D-012, D-014, D-019, D-024
-Related tasks: T-138, T-139, T-140, T-141, T-142, T-143, T-144, T-145, T-146, T-147, T-148, T-149, T-150, T-151, T-152, T-153, T-154
+Related tasks: T-138, T-139, T-140, T-141, T-142, T-143, T-144, T-145, T-146, T-147, T-148, T-149, T-150, T-151, T-152, T-153, T-154, T-155
 
 ## Goal
 
@@ -316,6 +316,7 @@ Supporting broad research tasks:
 - T-144: Neural texture / deferred shader research branch.
 - T-145: Limited lighting-state residual experiment.
 - T-146: Stained-glass/chandelier special-class residual policy.
+- T-155: Residual Radiance metadata vocabulary in shared types.
 
 ## Decision Rules
 

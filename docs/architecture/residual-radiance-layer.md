@@ -207,3 +207,4 @@ This document adds research direction only. It does not implement runtime code, 
 - T-152: RRL-001 object insertion and edit-consistency evaluation.
 - T-153: RRL-001 metrics report and Truth Mode explanation mock.
 - T-154: RRL-001 promote, revise, defer, or reject decision.
+- T-155: Residual Radiance metadata vocabulary in shared types.

@@ -262,7 +262,7 @@ placing/selection sheets while preserving desktop power-editor shortcuts.
 Truth Mode doctrine. A residual over a semantic/PBR mesh is allowed only as an
 explainable appearance layer; the mesh remains authoritative for geometry,
 semantics, collision, editing, measurement, and exports. Follow-up RRL research
-and prototype-phase tasks T-138 through T-154 remain in Tier 6 and are not
+and prototype-phase tasks T-138 through T-155 remain in Tier 6 and are not
 visualised here.
 
 `T-062 → T-068` is a precondition edge: the disaster-recovery runbook
