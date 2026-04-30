@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from "react";
 import { Link } from "react-router-dom";
 import "./LandingPage.css";
 
@@ -27,6 +34,11 @@ function upsertMeta(attr: "name" | "property", key: string, content: string): vo
 const META_TITLE = "Plan your event — Trades Hall Glasgow";
 const META_DESC =
   "Plan your event at Trades Hall Glasgow live, to scale. Pick a room, drop in tables, stage, bar and dancefloor, and get a costed quote in under 24 hours.";
+const MOBILE_PLANNER_QUERY = "(max-width: 640px)";
+
+function isMobilePlannerViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(MOBILE_PLANNER_QUERY).matches;
+}
 
 export function LandingPage(): ReactElement {
   useEffect(() => {
@@ -119,6 +131,30 @@ function TopNav(): ReactElement {
 // -----------------------------------------------------------------------------
 
 function Hero(): ReactElement {
+  const [mobilePlannerOpen, setMobilePlannerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!mobilePlannerOpen) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [mobilePlannerOpen]);
+
+  const openMobilePlanner = (): void => {
+    setMobilePlannerOpen(true);
+  };
+
+  const onPreviewCtaClick = (e: ReactMouseEvent<HTMLAnchorElement>): void => {
+    if (!isMobilePlannerViewport()) return;
+    e.preventDefault();
+    openMobilePlanner();
+  };
+
   return (
     <header className="hero">
       <div className="wrap">
@@ -147,24 +183,58 @@ function Hero(): ReactElement {
           </div>
 
           <div className="hero-right rise" style={{ transitionDelay: ".12s" }}>
-            <PlannerPreview />
+            <PlannerPreview mode="embedded" onRequestFullscreen={openMobilePlanner} />
             <div className="preview-caption">
               <span>↑ Drag anything — this is a taste of the real thing</span>
               <span className="preview-caption-sub">Scaled 1:50 · Grand Hall banquet</span>
             </div>
-            <Link to="/plan" className="btn primary big preview-cta">
-              Open the real planner in 3D
+            <Link to="/plan" className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
+              <span className="preview-cta-desktop">Open the real planner in 3D</span>
+              <span className="preview-cta-mobile">Open the full planner</span>
               <span className="arrow" aria-hidden>→</span>
             </Link>
           </div>
         </div>
       </div>
+      {mobilePlannerOpen ? (
+        <MobilePlannerOverlay onClose={() => { setMobilePlannerOpen(false); }} />
+      ) : null}
     </header>
   );
 }
 
+interface MobilePlannerOverlayProps {
+  readonly onClose: () => void;
+}
+
+function MobilePlannerOverlay({ onClose }: MobilePlannerOverlayProps): ReactElement {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); };
+  }, [onClose]);
+
+  return (
+    <div className="mobile-planner-shell" role="dialog" aria-modal="true" aria-label="Grand Hall mobile planner">
+      <div className="mobile-planner-topbar">
+        <button type="button" className="mobile-planner-back" onClick={onClose} aria-label="Close planner">
+          Back
+        </button>
+        <div className="mobile-planner-title">
+          <strong>Grand Hall</strong>
+          <span>Draft saved locally</span>
+        </div>
+        <Link to="/plan" className="mobile-planner-3d">3D</Link>
+      </div>
+      <PlannerPreview mode="fullscreen" />
+    </div>
+  );
+}
+
 // -----------------------------------------------------------------------------
-// PLANNER PREVIEW — visual-only mock of the editor's Grand Hall banquet layout
+// PLANNER PREVIEW — interactive Grand Hall layout for embedded and mobile use
 // -----------------------------------------------------------------------------
 
 interface PreviewItem {
@@ -406,7 +476,12 @@ function clientToMetres(
   return { xM, yM };
 }
 
-function PlannerPreview(): ReactElement {
+interface PlannerPreviewProps {
+  readonly mode: "embedded" | "fullscreen";
+  readonly onRequestFullscreen?: () => void;
+}
+
+function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): ReactElement {
   const [eventType, setEventType] = useState<EventType>("wedding");
   const [selectedId, setSelectedId] = useState<string>("round-3");
   const [items, setItems] = useState<readonly PlannerItem[]>(WEDDING_ITEMS);
@@ -422,6 +497,17 @@ function PlannerPreview(): ReactElement {
   /** Incremented for each new item dropped from the catalogue so IDs stay
    *  unique across mounts without pulling in a uuid dep. */
   const newItemCounter = useRef<number>(0);
+  const isFullscreen = mode === "fullscreen";
+
+  const requestFullscreenIfMobile = (): boolean => {
+    if (isFullscreen || onRequestFullscreen === undefined || !isMobilePlannerViewport()) return false;
+    onRequestFullscreen();
+    return true;
+  };
+
+  const onMobilePreviewOpen = (): void => {
+    if (onRequestFullscreen !== undefined) onRequestFullscreen();
+  };
 
   const switchLayout = (next: EventType): void => {
     setEventType(next);
@@ -499,6 +585,10 @@ function PlannerPreview(): ReactElement {
     });
   };
 
+  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (requestFullscreenIfMobile()) e.preventDefault();
+  };
+
   const onStagePointerLeave = (): void => { setCursor(null); };
 
   /** DragOver on the stage — keeps the drop target valid during a
@@ -537,6 +627,10 @@ function PlannerPreview(): ReactElement {
 
   const onItemPointerDown = (item: PlannerItem) => (e: ReactPointerEvent<HTMLDivElement>): void => {
     e.stopPropagation();
+    if (requestFullscreenIfMobile()) {
+      e.preventDefault();
+      return;
+    }
     (e.currentTarget).setPointerCapture(e.pointerId);
     dragRef.current = {
       id: item.id,
@@ -586,7 +680,7 @@ function PlannerPreview(): ReactElement {
     try { (e.currentTarget).releasePointerCapture(e.pointerId); } catch { /* already released */ }
   };
   return (
-    <div className="planner" aria-label="Planner preview (illustrative)">
+    <div className={`planner planner-${mode}`} aria-label={isFullscreen ? "Planner editor" : "Planner preview"}>
       <div className="chrome">
         <div className="dots"><i /><i /><i /></div>
         <div className="title"><b>Grand Hall</b> · Banquet layout · Draft</div>
@@ -605,21 +699,27 @@ function PlannerPreview(): ReactElement {
               <button
                 type="button"
                 className={eventType === "wedding" ? "pill on" : "pill"}
-                onClick={() => { switchLayout("wedding"); }}
+                onClick={() => {
+                  if (!requestFullscreenIfMobile()) switchLayout("wedding");
+                }}
               >
                 Wedding
               </button>
               <button
                 type="button"
                 className={eventType === "gala" ? "pill on" : "pill"}
-                onClick={() => { switchLayout("gala"); }}
+                onClick={() => {
+                  if (!requestFullscreenIfMobile()) switchLayout("gala");
+                }}
               >
                 Gala
               </button>
               <button
                 type="button"
                 className={eventType === "conference" ? "pill on" : "pill"}
-                onClick={() => { switchLayout("conference"); }}
+                onClick={() => {
+                  if (!requestFullscreenIfMobile()) switchLayout("conference");
+                }}
               >
                 Conference
               </button>
@@ -643,6 +743,7 @@ function PlannerPreview(): ReactElement {
                     e.dataTransfer.effectAllowed = "copy";
                   }}
                   onClick={() => {
+                    if (requestFullscreenIfMobile()) return;
                     // Keyboard / non-drag fallback — drop a fresh item
                     // into the centre of the room.
                     dropCatalogueItem(entry, ROOM_W_M / 2, ROOM_H_M / 2);
@@ -661,6 +762,7 @@ function PlannerPreview(): ReactElement {
           aria-label="Floor plan preview — drag furniture to move, tap to inspect, Del to remove"
           ref={stageRef}
           tabIndex={0}
+          onPointerDown={onStagePointerDown}
           onPointerMove={onStagePointerMove}
           onPointerLeave={onStagePointerLeave}
           onDragOver={onStageDragOver}
@@ -815,6 +917,11 @@ function PlannerPreview(): ReactElement {
                 : `X ${cursor.xM.toFixed(1)} m · Y ${cursor.yM.toFixed(1)} m · 1:50`}
             </div>
           </div>
+          {!isFullscreen ? (
+            <button type="button" className="mobile-preview-open" onClick={onMobilePreviewOpen}>
+              Open the full planner
+            </button>
+          ) : null}
         </div>
 
         <aside className="rightcol" aria-live="polite">
