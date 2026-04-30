@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Shape, DoubleSide, BackSide, BufferGeometry, Float32BufferAttribute } from "three";
 import { toRenderSpace } from "../../constants/scale.js";
@@ -7,6 +7,11 @@ import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants
 import { sectionClipPlanes, noClipPlanes } from "../SectionPlane.js";
 import { useVisibilityStore, type WallKey } from "../../stores/visibility-store.js";
 import { BrickWall } from "../BrickWall.js";
+import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
+import {
+  createDomeInteriorTexture,
+  createParquetFloorTexture,
+} from "../../lib/grand-hall-textures.js";
 
 // ---------------------------------------------------------------------------
 // RoomMesh — renders accurate room geometry from polygon data
@@ -83,6 +88,30 @@ function computeWallSegments(polygon: readonly (readonly [number, number])[]): r
   return segments;
 }
 
+interface RenderBounds {
+  readonly width: number;
+  readonly length: number;
+}
+
+function computeRenderBounds(polygon: readonly (readonly [number, number])[]): RenderBounds {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const [x, z] of polygon) {
+    const rx = toRenderSpace(x);
+    const rz = toRenderSpace(z);
+    minX = Math.min(minX, rx);
+    maxX = Math.max(maxX, rx);
+    minZ = Math.min(minZ, rz);
+    maxZ = Math.max(maxZ, rz);
+  }
+  return {
+    width: Math.max(0, maxX - minX),
+    length: Math.max(0, maxZ - minZ),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // CameraWallDriver — updates visibility store from camera position
 // ---------------------------------------------------------------------------
@@ -156,7 +185,7 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
 
   return (
     <lineSegments geometry={gridGeom} position={[0, GRID_Y, 0]}>
-      <lineBasicMaterial color={GRID_COLOR} />
+      <lineBasicMaterial color={GRID_COLOR} transparent opacity={0.22} />
     </lineSegments>
   );
 }
@@ -167,12 +196,34 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
 
 interface RoomMeshProps {
   readonly geometry: RoomGeometry;
+  readonly variant?: "grand-hall" | "generic";
 }
 
-export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
+export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): React.ReactElement {
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
   const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
+  const bounds = useMemo(() => computeRenderBounds(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
+  const isGrandHall = variant === "grand-hall";
+
+  const surfaceTextures = useMemo(() => {
+    if (!isGrandHall || typeof document === "undefined") return null;
+    try {
+      return {
+        floor: createParquetFloorTexture(),
+        dome: createDomeInteriorTexture(),
+      };
+    } catch {
+      return null;
+    }
+  }, [isGrandHall]);
+
+  useEffect(() => {
+    return () => {
+      surfaceTextures?.floor.dispose();
+      surfaceTextures?.dome.dispose();
+    };
+  }, [surfaceTextures]);
 
   return (
     <group name="room-mesh">
@@ -188,9 +239,10 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
         <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial
           color={FLOOR_COLOR}
+          map={surfaceTextures?.floor ?? null}
           side={DoubleSide}
-          roughness={0.95}
-          metalness={0}
+          roughness={isGrandHall ? 0.62 : 0.95}
+          metalness={isGrandHall ? 0.05 : 0}
           polygonOffset
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}
@@ -227,12 +279,17 @@ export function RoomMesh({ geometry }: RoomMeshProps): React.ReactElement {
           <sphereGeometry args={[geometry.domeRadius, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
           <meshStandardMaterial
             color={DOME_COLOR}
+            map={surfaceTextures?.dome ?? null}
             side={BackSide}
             roughness={0.9}
-            metalness={0}
+            metalness={isGrandHall ? 0.05 : 0}
             clippingPlanes={sectionClipPlanes}
           />
         </mesh>
+      )}
+
+      {isGrandHall && (
+        <GrandHallOrnaments width={bounds.width} length={bounds.length} height={ceilingHeight} />
       )}
     </group>
   );

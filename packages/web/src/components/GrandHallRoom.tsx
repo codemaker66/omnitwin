@@ -373,17 +373,17 @@ export function GrandHallRoom(): React.ReactElement {
       <hemisphereLight
         args={[lightConfig.skyColor, lightConfig.groundColor, lightConfig.intensity]}
       />
-      <ambientLight intensity={0.32} color="#f4ead6" />
+      <ambientLight intensity={0.38} color="#f7ead0" />
       <directionalLight
-        position={[10, 6, 8]}
-        intensity={0.45}
-        color="#f6e9c7"
+        position={[12, 5.5, 9]}
+        intensity={0.52}
+        color="#f7dfae"
         castShadow={false}
       />
       <directionalLight
         position={[-10, 6, -8]}
-        intensity={0.18}
-        color="#dfe7f0"
+        intensity={0.16}
+        color="#e5edf4"
         castShadow={false}
       />
       {/*
@@ -392,7 +392,7 @@ export function GrandHallRoom(): React.ReactElement {
         NOT clipped by section plane — always visible for planning.
       */}
       <lineSegments geometry={gridGeometry} position={[0, 0.002, 0]}>
-        <lineBasicMaterial color={GRID_COLOR} />
+        <lineBasicMaterial color={GRID_COLOR} transparent opacity={0.22} />
       </lineSegments>
       {/* Timber frame removed — didn't look good visually */}
       {/* Non-wall surfaces: floor + ceiling as flat planes. Each gets the

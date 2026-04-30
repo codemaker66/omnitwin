@@ -65,6 +65,16 @@ describe("computeDefaultCameraPosition", () => {
     const b = computeDefaultCameraPosition(grandHall);
     expect(a).toEqual(b);
   });
+
+  it("keeps portrait mobile camera inside the room while raising the view", () => {
+    const renderedGrandHall: SpaceDimensions = { width: 42, length: 20, height: 7 };
+    const pos = computeDefaultCameraPosition(renderedGrandHall, 390 / 844);
+    const maxHalf = Math.max(renderedGrandHall.width, renderedGrandHall.length) / 2;
+    const horizontalDist = Math.sqrt(pos[0] ** 2 + pos[2] ** 2);
+
+    expect(horizontalDist).toBeLessThan(maxHalf);
+    expect(pos[1]).toBeGreaterThan(1.7);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -80,6 +90,13 @@ describe("computeCameraTarget", () => {
   it("returns same target regardless of dimensions", () => {
     const target = computeCameraTarget({ width: 100, length: 50, height: 20 });
     expect(target).toEqual([0, 1.5, 0]);
+  });
+
+  it("raises the portrait mobile target enough to include ceiling detail", () => {
+    const target = computeCameraTarget({ width: 42, length: 20, height: 7 }, 390 / 844);
+    expect(target[0]).toBe(0);
+    expect(target[1]).toBeCloseTo(2.24);
+    expect(target[2]).toBe(0);
   });
 });
 

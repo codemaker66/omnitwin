@@ -28,18 +28,19 @@ export function computeDefaultCameraPosition(
   const maxDim = Math.max(width, length);
   const minDim = Math.min(width, length);
 
-  // Portrait / narrow viewport (aspect < 1.2) — 3/4 elevated architectural
-  // hero shot. Pull back beyond the room corner so both long walls stay
-  // in frame, lift to ~55% of room height, angle across. This "dollhouse"
-  // framing is the premium mobile idiom; the desktop eye-level shot
-  // would collapse horizontally on a phone and cut the room off.
+  // Portrait / narrow viewport (aspect < 1.2) — elevated interior 3/4 view.
+  // The earlier exterior "dollhouse" pose framed the room footprint but left
+  // phone users staring at the outside of the wall. For the planner, the hall
+  // interior is the product; keep the camera inside the room and lift enough
+  // to read the ceiling, chandeliers, and long-wall rhythm.
   if (aspect < 1.2) {
-    const d = computeFramingDistance(dimensions, aspect, 55) * 1.05;
-    const lift = Math.max(dimensions.height * 0.55, 4);
+    const alongAxis = maxDim * 0.31;
+    const lateral = minDim * 0.18;
+    const lift = Math.max(dimensions.height * 0.34, 2.2);
     if (width >= length) {
-      return [d * 0.78, lift, d * 0.45];
+      return [alongAxis, lift, lateral];
     }
-    return [d * 0.45, lift, d * 0.78];
+    return [lateral, lift, alongAxis];
   }
 
   // Landscape / desktop — interior eye-level pose (unchanged).
@@ -58,14 +59,14 @@ export function computeDefaultCameraPosition(
 /**
  * Computes the orbit target.
  * Landscape: center of room at 1.5 m (human eye level) — natural interior feel.
- * Portrait: lower target (height * 0.35) so the elevated hero shot isn't
- * pitched nearly straight down from above.
+ * Portrait: slightly higher target so the elevated interior pose reads the
+ * ceiling and chandeliers without aiming above the room.
  */
 export function computeCameraTarget(
   dimensions: SpaceDimensions,
   aspect = 1.78,
 ): readonly [number, number, number] {
-  if (aspect < 1.2) return [0, dimensions.height * 0.35, 0];
+  if (aspect < 1.2) return [0, dimensions.height * 0.32, 0];
   return [0, 1.5, 0];
 }
 

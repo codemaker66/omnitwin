@@ -85,6 +85,7 @@ export function App(): React.ReactElement {
   // second-venue space); fall through to the GrandHallRoom stand-in when
   // no space is loaded at all.
   const roomGeometry = space !== null ? resolveRoomGeometry(space) : null;
+  const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
   return (
     <>
@@ -114,7 +115,7 @@ export function App(): React.ReactElement {
         <InvalidateOnToggle />
         {roomGeometry !== null ? (
           /* RoomMesh has its own CameraWallDriver — no AutoWallSelector needed */
-          <RoomMesh geometry={roomGeometry} />
+          <RoomMesh geometry={roomGeometry} variant={roomVariant} />
         ) : (
           /* GrandHallRoom needs the standalone wall driver */
           <>

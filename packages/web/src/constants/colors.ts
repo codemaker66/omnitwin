@@ -5,9 +5,9 @@
  *   - Honey-oak parquet floor
  *   - Warm cream plaster walls with white trim
  *   - Dark oak wainscot panelling
- *   - Pale cream-blue painted plaster ceiling
+ *   - West African avodire timber ceiling and seven-metre dome
  *   - Brass / gold accents (chandelier, mouldings highlights)
- *   - Burgundy coved frieze
+ *   - Burgundy and gold trade frieze
  *
  * The palette stays muted enough that placed furniture stays the visual
  * focus, while every surface reads as a real material instead of "grey
@@ -24,8 +24,8 @@ export const FLOOR_COLOR = "#a07a4d";
 /** Warm cream plaster — the dominant interior tone. */
 export const WALL_COLOR = "#efe2c5";
 
-/** Pale cream-blue painted plaster — tints toward white, hints of Adam blue. */
-export const CEILING_COLOR = "#e8e3d6";
+/** West African avodire timber — warm golden-brown coffered ceiling. */
+export const CEILING_COLOR = "#b9783d";
 
 /** Dark oak wainscot — anchors the lower walls, frames the cream above. */
 export const WAINSCOT_COLOR = "#7a5832";
@@ -39,8 +39,8 @@ export const GRID_COLOR = "#8a6a45";
 /** Floor grid secondary line colour — even more subtle. */
 export const GRID_COLOR_CENTER = "#6e5235";
 
-/** Dome interior — cream with a whisper of Wedgwood blue, classic Adam ceiling. */
-export const DOME_COLOR = "#dbe1e8";
+/** Dome interior — avodire timber warmed by gold leaf and chandelier light. */
+export const DOME_COLOR = "#c08a42";
 
 // ---------------------------------------------------------------------------
 // Ornament accents

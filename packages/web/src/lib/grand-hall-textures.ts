@@ -4,8 +4,10 @@
  * Every texture is generated at module-instantiation time from a 2D Canvas
  * — no images shipped, no network IO. The trade-off versus an authored PBR
  * set: smaller bundle, instant load, deterministic look. The cost: textures
- * are stylised rather than photoreal. That fits the venue planner aesthetic
- * (Sims-build-mode-meets-Adam) and keeps the bundle lean.
+ * are still procedural rather than photoreal. This file leans into the real
+ * Grand Hall material cues — honey parquet, warm plaster, dark timber
+ * wainscot, avodire ceiling, gold frieze, and the dome's trade motifs — while
+ * the splat runtime remains future work.
  *
  * All canvases use additive noise for material variation, deterministic
  * hashing in lieu of a seeded PRNG (so SSR + client render identically),
@@ -193,47 +195,72 @@ export function createPlasterWallTexture(): Texture {
 }
 
 // ---------------------------------------------------------------------------
-// Ceiling — Adam-style coffer rosette grid
+// Ceiling — avodire timber coffer grid
 // ---------------------------------------------------------------------------
 
 /**
- * Cream painted plaster ceiling with a faint Adam-style coffered rosette
- * grid. Designed to read as decorated, not flat.
+ * West African avodire timber ceiling with a coffered panel grid. The real
+ * Grand Hall ceiling is a warm wood field rather than pale plaster; this
+ * texture supplies the base timber grain while `GrandHallOrnaments` adds
+ * raised coffer beams in geometry.
  */
 export function createCeilingPlasterTexture(): Texture {
   const SIZE = 512;
   const { canvas, ctx } = makeCanvas(SIZE);
 
-  ctx.fillStyle = "#ece7d8";
+  const woodGrad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+  woodGrad.addColorStop(0, "#c68a45");
+  woodGrad.addColorStop(0.48, "#aa6a31");
+  woodGrad.addColorStop(1, "#7d4924");
+  ctx.fillStyle = woodGrad;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // grid of recessed panels
-  const PANEL = 128;
-  ctx.strokeStyle = "rgba(95,80,50,0.18)";
-  ctx.lineWidth = 2;
-  for (let x = 0; x <= SIZE; x += PANEL) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, SIZE);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= SIZE; y += PANEL) {
+  // Long avodire grain lines, slightly meandering so the surface does not
+  // read as a flat orange slab.
+  for (let y = 0; y < SIZE; y += 12) {
+    const alpha = 0.025 + hash(y, 2, 41) * 0.035;
+    ctx.strokeStyle = `rgba(55,30,12,${alpha.toFixed(4)})`;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, y);
-    ctx.lineTo(SIZE, y);
+    for (let x = 0; x <= SIZE; x += 64) {
+      const wave = Math.sin((x + y * 0.37) * 0.025) * 3;
+      ctx.lineTo(x, y + wave);
+    }
     ctx.stroke();
   }
 
-  // central rosette per panel
+  // Grid of recessed timber panels with darker bevels and gold-warmed high
+  // edges. Geometry beams sit over this texture; the painted grid makes the
+  // panel fields still read from glancing angles.
+  const PANEL = 128;
+  for (let x = 0; x < SIZE; x += PANEL) {
+    for (let y = 0; y < SIZE; y += PANEL) {
+      const panelGrad = ctx.createLinearGradient(x, y, x + PANEL, y + PANEL);
+      panelGrad.addColorStop(0, "rgba(240,180,92,0.16)");
+      panelGrad.addColorStop(0.5, "rgba(100,52,20,0.06)");
+      panelGrad.addColorStop(1, "rgba(30,14,4,0.18)");
+      ctx.fillStyle = panelGrad;
+      ctx.fillRect(x + 10, y + 10, PANEL - 20, PANEL - 20);
+
+      ctx.strokeStyle = "rgba(52,27,10,0.5)";
+      ctx.lineWidth = 5;
+      ctx.strokeRect(x + 8, y + 8, PANEL - 16, PANEL - 16);
+      ctx.strokeStyle = "rgba(211,164,87,0.28)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 15, y + 15, PANEL - 30, PANEL - 30);
+    }
+  }
+
+  // Small gold rosette per coffer.
   for (let cx = PANEL / 2; cx < SIZE; cx += PANEL) {
     for (let cy = PANEL / 2; cy < SIZE; cy += PANEL) {
-      ctx.fillStyle = "rgba(184,150,90,0.22)";
+      ctx.fillStyle = "rgba(220,176,92,0.35)";
       ctx.beginPath();
       ctx.arc(cx, cy, 14, 0, Math.PI * 2);
       ctx.fill();
 
-      // 4 petals
-      ctx.fillStyle = "rgba(184,150,90,0.14)";
+      ctx.fillStyle = "rgba(255,220,140,0.18)";
       for (let p = 0; p < 4; p++) {
         const a = (p / 4) * Math.PI * 2;
         ctx.beginPath();
@@ -243,20 +270,20 @@ export function createCeilingPlasterTexture(): Texture {
     }
   }
 
-  applyNoise(ctx, 0, 0, SIZE, SIZE, 0.04);
+  applyNoise(ctx, 0, 0, SIZE, SIZE, 0.018);
 
-  return finalize(canvas, 3, 2);
+  return finalize(canvas, 1, 1);
 }
 
 // ---------------------------------------------------------------------------
-// Dome interior — Wedgwood blue with gold rosette and ribbed segmentation
+// Dome interior — avodire timber with gold trade motifs
 // ---------------------------------------------------------------------------
 
 /**
  * Dome interior texture. Wraps the hemisphere so the U axis goes around
- * the dome and V goes from base to apex. Drawn as a polar arrangement:
- * radial gold ribs converging at the apex, gold rosette ring near the base,
- * burgundy frieze band at the very base.
+ * the dome and V goes from base to apex. The real Grand Hall dome is framed
+ * by gold-leaf trade iconography, so this is drawn as timber ribs with fourteen
+ * shield-like motifs around the base.
  */
 export function createDomeInteriorTexture(): Texture {
   const SIZE = 1024;
@@ -267,46 +294,79 @@ export function createDomeInteriorTexture(): Texture {
   const ctx = canvas.getContext("2d");
   if (ctx === null) throw new Error("2D canvas context unavailable");
 
-  // base — pale Wedgwood
+  // base — warm timber, darker at the base where the frieze sits
   const baseGrad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  baseGrad.addColorStop(0, "#cfd8e1");   // base/edge of dome (V=0)
-  baseGrad.addColorStop(1, "#e3e8ee");   // apex
+  baseGrad.addColorStop(0, "#8a4f22");
+  baseGrad.addColorStop(0.48, "#b97633");
+  baseGrad.addColorStop(1, "#d9aa60");
   ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, SIZE, HEIGHT);
 
-  // burgundy frieze band at very base
-  ctx.fillStyle = "rgba(107,42,42,0.45)";
-  ctx.fillRect(0, 0, SIZE, 24);
-  // brass band above + below the frieze
-  ctx.fillStyle = "rgba(184,150,90,0.7)";
-  ctx.fillRect(0, 24, SIZE, 6);
-  ctx.fillRect(0, 0, SIZE, 4);
-
-  // gold rosette ring near the base — 24 rosettes around the dome
-  const RING_Y = HEIGHT * 0.22;
-  const N = 24;
-  ctx.fillStyle = "rgba(184,150,90,0.55)";
-  for (let i = 0; i < N; i++) {
-    const cx = (i + 0.5) * (SIZE / N);
+  // Fine vertical grain that follows the dome's UV wrap.
+  for (let x = 0; x < SIZE; x += 3) {
+    const alpha = 0.045 + hash(x, 7, 53) * 0.075;
+    ctx.strokeStyle = `rgba(50,24,8,${alpha.toFixed(4)})`;
     ctx.beginPath();
-    ctx.arc(cx, RING_Y, 12, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(x, 28);
+    ctx.lineTo(x + Math.sin(x * 0.03) * 5, HEIGHT);
+    ctx.stroke();
   }
 
-  // radial ribs — vertical lines spaced every (SIZE/24)
-  ctx.strokeStyle = "rgba(184,150,90,0.22)";
+  // Burgundy frieze band at the base with brass borders.
+  ctx.fillStyle = "rgba(88,31,25,0.74)";
+  ctx.fillRect(0, 0, SIZE, 34);
+  ctx.fillStyle = "rgba(216,174,93,0.78)";
+  ctx.fillRect(0, 31, SIZE, 7);
+  ctx.fillRect(0, 0, SIZE, 5);
+
+  const TRADE_COUNT = 14;
+  const segmentW = SIZE / TRADE_COUNT;
+
+  // Gold ribs dividing the dome into fourteen trade panels.
+  ctx.strokeStyle = "rgba(221,176,91,0.42)";
   ctx.lineWidth = 2;
-  for (let i = 0; i < N; i++) {
-    const x = i * (SIZE / N);
+  for (let i = 0; i < TRADE_COUNT; i++) {
+    const x = i * segmentW;
     ctx.beginPath();
-    ctx.moveTo(x, 36);
+    ctx.moveTo(x, 38);
     ctx.lineTo(x, HEIGHT);
     ctx.stroke();
   }
 
+  // Fourteen simplified shields in the frieze: abstract heraldic marks, not
+  // copyrighted or literal trade crests.
+  const shieldTones = ["#ead29a", "#c9a45a", "#f0dcc0", "#9f342f"];
+  for (let i = 0; i < TRADE_COUNT; i++) {
+    const cx = i * segmentW + segmentW / 2;
+    const top = 7;
+    const w = 28;
+    const h = 20;
+    ctx.fillStyle = shieldTones[i % shieldTones.length] ?? "#ead29a";
+    ctx.beginPath();
+    ctx.moveTo(cx - w / 2, top);
+    ctx.lineTo(cx + w / 2, top);
+    ctx.lineTo(cx + w * 0.38, top + h * 0.6);
+    ctx.lineTo(cx, top + h);
+    ctx.lineTo(cx - w * 0.38, top + h * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(50,24,8,0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,240,170,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(cx, top + 3);
+    ctx.lineTo(cx, top + h - 4);
+    ctx.moveTo(cx - w * 0.28, top + h * 0.45);
+    ctx.lineTo(cx + w * 0.28, top + h * 0.45);
+    ctx.stroke();
+  }
+
   // central oculus highlight — glow ring near apex
-  const apexGrad = ctx.createRadialGradient(SIZE / 2, HEIGHT, 0, SIZE / 2, HEIGHT, HEIGHT * 0.4);
-  apexGrad.addColorStop(0, "rgba(255,250,220,0.35)");
+  const apexGrad = ctx.createRadialGradient(SIZE / 2, HEIGHT, 0, SIZE / 2, HEIGHT, HEIGHT * 0.46);
+  apexGrad.addColorStop(0, "rgba(255,238,180,0.45)");
   apexGrad.addColorStop(1, "rgba(255,250,220,0)");
   ctx.fillStyle = apexGrad;
   ctx.fillRect(0, 0, SIZE, HEIGHT);
