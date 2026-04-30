@@ -22,7 +22,7 @@ Mr. Genjutsu owns the moment the five assets become one coherent view. Mr. Pixel
 
 6. **Spark is the splat renderer. drei's `<Splat />` is banned.** See .claude/gotchas/spark-vs-drei-splat.md. Spark integrates natively via `SplatMesh extends THREE.Object3D`; drei's Splat breaks the moment splat-and-mesh hybrid rendering is attempted.
 
-7. **Three.js ≥ 0.180 is a hard prerequisite.** Spark depends on it. The current codebase is on 0.170; upgrade is pre-Genjutsu work.
+7. **Three.js ≥ 0.180 is a hard prerequisite.** Spark depends on it. The web renderer stack was upgraded to the 0.180 compatibility line in T-087; future splat work must preserve that floor.
 
 8. **The projection blender is a learned blender waiting to happen.** The v1 heuristic (distance + angular alignment + surface normal weighting) is the shippable baseline. Direction 3 R&D replaces it with a neural blender once the dataset exists. The shader contract is stable; the internals are swappable. Design v1 so v2 can drop in without touching anything else.
 

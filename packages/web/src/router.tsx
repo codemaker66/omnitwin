@@ -45,6 +45,9 @@ const TermsPage = lazy(() =>
 const PricingPage = lazy(() =>
   import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage })),
 );
+const SplatFixturePage = lazy(() =>
+  import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -152,6 +155,12 @@ export const router = createBrowserRouter([
     // phases ship. Linked from LandingPage TopNav.
     path: "/pricing",
     element: withSuspense(<PricingPage />),
+  },
+  {
+    // Dev smoke route for T-087: proves the production renderer stack imports
+    // Spark 2.0 with Three.js 0.180 without reaching for drei's <Splat />.
+    path: "/dev/splat-fixture",
+    element: withSuspense(<SplatFixturePage />),
   },
   {
     path: "/privacy",

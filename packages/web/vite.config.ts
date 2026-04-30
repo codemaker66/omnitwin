@@ -7,7 +7,8 @@ import react from "@vitejs/plugin-react";
 // Three explicit vendor chunks let the editor's heavy 3D dependencies stay
 // out of every other route's initial download:
 //   - react-vendor: react/dom/router (every route needs it; cacheable)
-//   - three:        three.js + R3F + drei + stdlib (only the editor needs it)
+//   - three:        three.js + R3F + drei + stdlib (3D routes only)
+//   - spark:        Spark 2.0 splat renderer (splat routes only)
 //   - clerk:        @clerk/react (login, register, dashboard need it;
 //                   anonymous /hallkeeper/:id and /editor guests do NOT)
 //
@@ -25,6 +26,7 @@ export default defineConfig({
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
           "three": ["three", "@react-three/fiber", "@react-three/drei", "three-stdlib"],
+          "spark": ["@sparkjsdev/spark"],
           "clerk": ["@clerk/react"],
         },
       },

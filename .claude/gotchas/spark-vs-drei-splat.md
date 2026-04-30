@@ -38,8 +38,8 @@ function VenueSplat({ url }: { url: string }) {
 }
 ```
 
-Spark requires Three.js ≥ 0.180.0 (Venviewer is currently on 0.170 —
-upgrade pending before any splat work).
+Spark requires Three.js ≥ 0.180.0; Venviewer upgraded the web renderer stack
+to the 0.180 compatibility line in T-087.
 
 See also: `.claude/council/MR_GENJUTSU.md` for the strategic
 architectural reasoning behind hybrid splat-and-mesh composition.

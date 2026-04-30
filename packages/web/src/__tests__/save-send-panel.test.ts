@@ -242,4 +242,11 @@ describe("Router", () => {
     const configRoute = routes.find((r) => r.path === "/plan/:code");
     expect(configRoute).toBeDefined();
   });
+
+  it("has /dev/splat-fixture route for the Spark smoke fixture", async () => {
+    const { router } = await import("../router.js");
+    const routes = router as unknown as { path: string }[];
+    const fixtureRoute = routes.find((r) => r.path === "/dev/splat-fixture");
+    expect(fixtureRoute).toBeDefined();
+  });
 });

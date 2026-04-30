@@ -11,7 +11,8 @@
 //
 // 2. vite.config.ts uses manualChunks to split three vendor groups out of
 //    the route chunks: react-vendor (cacheable across deploys), three
-//    (only loaded for the editor route), and clerk (only loaded for auth
+//    (only loaded for 3D routes), spark (only loaded for splat routes),
+//    and clerk (only loaded for auth
 //    routes). Page chunks emit automatically from the lazy() calls.
 //
 // These tests pin both halves of the fix at the source-grep level. If
@@ -82,6 +83,7 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`"react-vendor"`);
     expect(codeOnly).toContain(`"three"`);
     expect(codeOnly).toContain(`"clerk"`);
+    expect(codeOnly).toContain(`"spark"`);
   });
 
   it("react-vendor chunk includes react, react-dom, and react-router-dom", async () => {
@@ -91,10 +93,15 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
 
   it("three chunk groups three.js with R3F, drei, and stdlib", async () => {
     const { codeOnly } = await readSource(SRC);
-    // All four three.js-related packages must be in the same chunk so the
-    // editor downloads them as one cacheable unit and other routes don't
+    // The shared 3D stack must be in the same chunk so 3D routes
+    // download them as one cacheable unit and other routes don't
     // accidentally pull a fragment of the stack.
     expect(codeOnly).toMatch(/"three":\s*\[[^\]]*"three"[^\]]*"@react-three\/fiber"[^\]]*"@react-three\/drei"[^\]]*"three-stdlib"[^\]]*\]/);
+  });
+
+  it("spark chunk isolates the Spark renderer from normal editor loads", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toMatch(/"spark":\s*\[[^\]]*"@sparkjsdev\/spark"[^\]]*\]/);
   });
 
   it("clerk chunk isolates @clerk/react", async () => {
