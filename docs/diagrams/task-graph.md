@@ -66,6 +66,7 @@ flowchart TD
         T127(["T-127 - Truth L1/L2 indicator"])
         T135(["T-135 - 3D planner mobile shell"])
         T136(["T-136 - scene-first mobile planner shell"])
+        T137(["T-137 - Residual Radiance doctrine"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -149,6 +150,7 @@ flowchart TD
     T135 --> T136
     T123 --> T124
     T123 --> T121
+    T123 --> T137
     T124 --> T121
     T124 --> T127
     T001 --> T118
@@ -197,7 +199,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135,T136 done
+    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -255,6 +257,12 @@ editor chrome, touch hints, CTA placement, and save-state surface.
 interaction-shell redesign: T-136 replaces the remaining compressed desktop
 toolbar with a scene-first mobile top bar, stateful touch dock, and mobile
 placing/selection sheets while preserving desktop power-editor shortcuts.
+
+`T-123 -> T-137` keeps the Residual Radiance Layer research track tied to
+Truth Mode doctrine. A residual over a semantic/PBR mesh is allowed only as an
+explainable appearance layer; the mesh remains authoritative for geometry,
+semantics, collision, editing, measurement, and exports. Follow-up RRL research
+tasks T-138 through T-146 remain in Tier 6 and are not visualised here.
 
 `T-062 → T-068` is a precondition edge: the disaster-recovery runbook
 is empty ceremony if backup restore has never been verified.
