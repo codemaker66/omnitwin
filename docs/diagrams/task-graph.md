@@ -66,6 +66,7 @@ flowchart TD
         T127(["T-127 - Truth L1/L2 indicator"])
         T135(["T-135 - 3D planner mobile shell"])
         T136(["T-136 - scene-first mobile planner shell"])
+        T156(["T-156 - Grand Hall landing redesign"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -147,6 +148,7 @@ flowchart TD
     T114 --> T115
     T115 --> T122
     T122 --> T135
+    T122 --> T156
     T135 --> T136
     T123 --> T124
     T123 --> T121
@@ -199,9 +201,9 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137 done
+    class T002,T019,T052,T080,T081,T082,T084,T086,T087,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156 done
     class T001 inprogress
-    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T082,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
+    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T083,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T097,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -257,6 +259,11 @@ editor chrome, touch hints, CTA placement, and save-state surface.
 interaction-shell redesign: T-136 replaces the remaining compressed desktop
 toolbar with a scene-first mobile top bar, stateful touch dock, and mobile
 placing/selection sheets while preserving desktop power-editor shortcuts.
+
+`T-122 -> T-156` extends the device-class doctrine from responsive planner
+behavior into the public Trades Hall module: the page is now Grand Hall-first,
+with venue-oriented copy, real hall media, interactive preview, preset paths,
+and phone/tablet/desktop viewport coverage.
 
 `T-123 -> T-137` keeps the Residual Radiance Layer research track tied to
 Truth Mode doctrine. A residual over a semantic/PBR mesh is allowed only as an

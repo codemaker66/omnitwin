@@ -31,9 +31,9 @@ function upsertMeta(attr: "name" | "property", key: string, content: string): vo
   tag.setAttribute("content", content);
 }
 
-const META_TITLE = "Plan your event — Trades Hall Glasgow";
+const META_TITLE = "Design your Grand Hall event — Trades Hall Glasgow";
 const META_DESC =
-  "Plan your event at Trades Hall Glasgow live, to scale. Pick a room, drop in tables, stage, bar and dancefloor, and get a costed quote in under 24 hours.";
+  "Design your event inside the real Trades Hall Grand Hall. Try wedding, gala, or conference layouts to scale, then send a draft to the events team.";
 const PHONE_PLANNER_QUERY = "(max-width: 639px)";
 
 function isPhonePlannerViewport(): boolean {
@@ -81,18 +81,14 @@ export function LandingPage(): ReactElement {
     <div
       className="th-landing"
       data-mode="light"
-      data-layout="stacked"
+      data-layout="grand-hall"
       data-accent="oxblood"
       data-display="newsreader"
       ref={rootRef}
     >
       <TopNav />
       <Hero />
-      <Marquee />
-      <HowItWorks />
-      <Rooms />
-      <Features />
-      <Quote />
+      <PlanriseLite />
       <FinalCTA />
       <SiteFooter />
     </div>
@@ -117,8 +113,8 @@ function TopNav(): ReactElement {
         <ul />
         <div className="actions">
           <Link className="btn ghost" to="/login">Sign in</Link>
-          <Link className="btn primary" to="/plan">
-            Open planner <span aria-hidden>→</span>
+          <Link className="btn primary" to="/plan?space=grand-hall">
+            Open Grand Hall <span aria-hidden>→</span>
           </Link>
         </div>
       </div>
@@ -160,37 +156,56 @@ function Hero(): ReactElement {
       <div className="wrap">
         <div className="hero-grid">
           <div className="hero-left rise">
-            <div className="eyebrow">Plan your event — live, to scale</div>
+            <div className="eyebrow">Trades Hall Glasgow · Grand Hall planner</div>
             <h1>
-              See your event <em>in the room</em> before you book it.
+              Design your event inside the real Grand Hall.
             </h1>
             <p className="lede">
-              Pick a room at Trades Hall Glasgow, drop in your tables, stage and bar, and
-              send us a plan we can quote against. No guesswork, no surprises on the day.
+              Try a wedding, gala, or conference layout to scale — then send it directly
+              to the Trades Hall events team.
             </p>
             <div className="ctas">
-              <a href="#rooms" className="btn primary big">
-                Choose a room
+              <Link
+                to="/plan?space=grand-hall"
+                className="btn primary big"
+                onClick={onPreviewCtaClick}
+              >
+                Open the Grand Hall planner
                 <span className="arrow" aria-hidden>→</span>
-              </a>
-              <a href="#how" className="btn big">How it works</a>
+              </Link>
+              <Link to="/plan?space=grand-hall" className="btn big">View in 3D</Link>
             </div>
             <div className="proof-row">
-              <span>✓ Free to plan</span>
-              <span>✓ 4 rooms, 1–400 guests</span>
-              <span>✓ Quote in 24h</span>
+              <span>To scale</span>
+              <span>Grand Hall</span>
+              <span>Draft layout</span>
+              <span>Sent to Events Team</span>
             </div>
+            <div className="powered-by">Powered by Venviewer</div>
           </div>
 
-          <div className="hero-right rise" style={{ transitionDelay: ".12s" }}>
-            <PlannerPreview mode="embedded" onRequestFullscreen={openMobilePlanner} />
-            <div className="preview-caption">
-              <span>↑ Drag anything — this is a taste of the real thing</span>
-              <span className="preview-caption-sub">Scaled 1:50 · Grand Hall banquet</span>
+          <div className="hero-right hero-media rise" style={{ transitionDelay: ".12s" }}>
+            <div className="hero-media-photo" aria-label="Trades Hall Grand Hall">
+              <img
+                src="/rooms/Grand-Hall-scaled-opt.jpg"
+                alt="Trades Hall Grand Hall dressed for an event"
+                loading="eager"
+              />
+              <div className="hero-media-photo-copy">
+                <span>Real Grand Hall</span>
+                <strong>Heritage room, planning draft</strong>
+              </div>
             </div>
-            <Link to="/plan" className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
-              <span className="preview-cta-desktop">Open the real planner in 3D</span>
-              <span className="preview-cta-mobile">Open the full planner</span>
+            <div className="hero-media-planner">
+              <PlannerPreview mode="embedded" onRequestFullscreen={openMobilePlanner} />
+            </div>
+            <div className="preview-caption">
+              <span>Tap a layout. Move a table. Send a draft.</span>
+              <span className="preview-caption-sub">Grand Hall · To-scale planning preview</span>
+            </div>
+            <Link to="/plan?space=grand-hall" className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
+              <span className="preview-cta-desktop">Open the Grand Hall planner</span>
+              <span className="preview-cta-mobile">Open the Grand Hall planner</span>
               <span className="arrow" aria-hidden>→</span>
             </Link>
           </div>
@@ -224,9 +239,9 @@ function MobilePlannerOverlay({ onClose }: MobilePlannerOverlayProps): ReactElem
         </button>
         <div className="mobile-planner-title">
           <strong>Grand Hall</strong>
-          <span>Draft saved locally</span>
+          <span>To-scale draft preview</span>
         </div>
-        <Link to="/plan" className="mobile-planner-3d">3D</Link>
+        <Link to="/plan?space=grand-hall" className="mobile-planner-3d">3D</Link>
       </div>
       <PlannerPreview mode="fullscreen" />
     </div>
@@ -444,6 +459,16 @@ const LAYOUTS: Record<EventType, readonly PlannerItem[]> = {
   conference: CONFERENCE_ITEMS,
 };
 
+const LAYOUT_SUMMARIES: Readonly<Record<EventType, {
+  readonly seats: string;
+  readonly focus: string;
+  readonly status: string;
+}>> = {
+  wedding: { seats: "114", focus: "10 rounds", status: "Draft" },
+  gala: { seats: "Standing", focus: "Bar + dancefloor", status: "Draft" },
+  conference: { seats: "50", focus: "Rows + stage", status: "Draft" },
+};
+
 /** Drag-state tracked in a ref so pointermove doesn't trigger a re-render
  *  on every tick — we only setState on real position changes. */
 interface DragState {
@@ -620,6 +645,7 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
 
   const selectedKind = selectedId.startsWith("round-") ? "round" : selectedId;
   const info: PreviewItem = PREVIEW_ITEMS[selectedKind] ?? ROUND_ITEM;
+  const summary = LAYOUT_SUMMARIES[eventType];
 
   const isSelected = (id: string): boolean => id === selectedId;
   const furnClass = (base: string, id: string): string =>
@@ -683,8 +709,8 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
     <div className={`planner planner-${mode}`} aria-label={isFullscreen ? "Planner editor" : "Planner preview"}>
       <div className="chrome">
         <div className="dots"><i /><i /><i /></div>
-        <div className="title"><b>Grand Hall</b> · Banquet layout · Draft</div>
-        <div className="right">SAVED 2m ago</div>
+        <div className="title"><b>Grand Hall</b> · {eventType} layout · Draft</div>
+        <div className="right">Preview</div>
       </div>
 
       <div className="body">
@@ -907,9 +933,9 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
 
           <div className="summary">
             <div className="chips">
-              <div className="chip">Seats <b>114</b></div>
-              <div className="chip">Rounds <b>10</b></div>
-              <div className="chip">Egress <b style={{ color: "oklch(0.55 0.15 145)" }}>✓</b></div>
+              <div className="chip">Seats <b>{summary.seats}</b></div>
+              <div className="chip">Focus <b>{summary.focus}</b></div>
+              <div className="chip">Venue check <b>{summary.status}</b></div>
             </div>
             <div className="coord">
               {cursor === null
@@ -919,7 +945,7 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
           </div>
           {!isFullscreen ? (
             <button type="button" className="mobile-preview-open" onClick={onMobilePreviewOpen}>
-              Open the full planner
+              Open planner
             </button>
           ) : null}
         </div>
@@ -933,10 +959,10 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
           ))}
           <div className="footer-note">{info.placed}</div>
           <div className="section">
-            <h5>Fire &amp; safety</h5>
-            <div className="kv"><span>Egress</span><span style={{ color: "oklch(0.55 0.15 145)" }}>✓ Clear</span></div>
-            <div className="kv"><span>Capacity</span><span>180 max</span></div>
-            <div className="kv"><span>Aisles</span><span>1.2 m</span></div>
+            <h5>Venue review</h5>
+            <div className="kv"><span>Flow</span><span>Draft check</span></div>
+            <div className="kv"><span>Capacity</span><span>Team review</span></div>
+            <div className="kv"><span>Aisles</span><span>1.2 m target</span></div>
           </div>
         </aside>
       </div>
@@ -945,278 +971,104 @@ function PlannerPreview({ mode, onRequestFullscreen }: PlannerPreviewProps): Rea
 }
 
 // -----------------------------------------------------------------------------
-// MARQUEE
+// PLANRISE LITE
 // -----------------------------------------------------------------------------
 
-const MARQUEE_ITEMS = [
-  "Weddings",
-  "Galas & balls",
-  "Corporate conferences",
-  "Product launches",
-  "Film & TV locations",
-  "Private dining",
-  "Charity fundraisers",
-  "Civic ceremonies",
-] as const;
-
-function Marquee(): ReactElement {
-  const strip = (ariaHidden: boolean): ReactElement => (
-    <span aria-hidden={ariaHidden || undefined}>
-      {MARQUEE_ITEMS.map((item, i) => (
-        <span key={`${item}-${String(i)}`}>
-          <span>{item}</span>
-          <span className="dot" aria-hidden>✦</span>
-        </span>
-      ))}
-    </span>
-  );
-  return (
-    <div className="marquee" aria-label="Event types hosted at Trades Hall">
-      <div className="track">
-        {strip(false)}
-        {strip(true)}
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// HOW IT WORKS
-// -----------------------------------------------------------------------------
-
-const STEPS = [
+const PLANRISE_BEATS = [
   {
-    num: "01 / Pick",
-    title: "Choose your room",
-    body: "Browse our four rooms by capacity, style and layout. Each one loads with an accurate, to-scale floor plan of the real space.",
+    num: "01",
+    title: "Choose the mood",
+    body: "Wedding, gala, or conference drafts reshape the same measured Grand Hall plan.",
+    stat: "3 venue-ready starts",
   },
   {
-    num: "02 / Plan",
-    title: "Design the layout",
-    body: "Drag tables, stages, bars and dancefloors into place. Switch between ceremony, banquet and cabaret in one click.",
+    num: "02",
+    title: "Watch the room answer",
+    body: "Tables, bar, dancefloor, and stage move together while seats and review notes update.",
+    stat: "Layout responds live",
   },
   {
-    num: "03 / Check",
-    title: "Validate & adjust",
-    body: "We check spacing, capacity and fire egress as you go, and flag anything our events team would normally catch.",
+    num: "03",
+    title: "Step from plan into space",
+    body: "The flat draft and 3D planner are the same layout, not two separate sketches.",
+    stat: "2D and 3D linked",
   },
   {
-    num: "04 / Send",
-    title: "Get a quote",
-    body: "Send the plan to our team. You'll have a costed proposal with hire items and staffing within 24 hours.",
+    num: "04",
+    title: "Send a proper draft",
+    body: "The Trades Hall events team receives the plan as a starting point for venue review.",
+    stat: "Ready for review",
   },
 ] as const;
 
-function HowItWorks(): ReactElement {
+function PlanriseLite(): ReactElement {
   return (
-    <section className="blk" id="how">
+    <section className="planrise" id="experience" aria-labelledby="planrise-title">
       <div className="wrap">
-        <div className="sec-head">
-          <div className="kicker">How it works</div>
-          <h2>
-            Four steps from <em>first look</em> to signed contract.
+        <div className="planrise-head rise">
+          <div className="kicker">Planrise preview</div>
+          <h2 id="planrise-title">
+            Watch the Grand Hall respond as your event takes <em>shape</em>.
           </h2>
+          <p>
+            Choose a starting point, see the room rearrange, move from plan to 3D,
+            and send a draft when it feels right.
+          </p>
         </div>
-        <div className="steps">
-          {STEPS.map((s) => (
-            <div key={s.num} className="step">
-              <div className="num">{s.num}</div>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// ROOMS
-// -----------------------------------------------------------------------------
-
-interface RoomCardData {
-  readonly slug: string;
-  readonly size: "lg" | "md";
-  readonly image: string;
-  readonly alt: string;
-  readonly title: string;
-  readonly sub: string;
-  readonly standing: number;
-  readonly banquet: number;
-  readonly tag?: string;
-}
-
-const ROOMS: readonly RoomCardData[] = [
-  {
-    slug: "grand-hall",
-    size: "lg",
-    image: "/rooms/Grand-Hall-scaled-opt.jpg",
-    alt: "The Grand Hall set for a banquet with chandeliers and domed ceiling",
-    title: "The Grand Hall",
-    sub: "1st floor · Double-height · Domed ceiling & gallery",
-    standing: 400,
-    banquet: 240,
-    tag: "Most booked",
-  },
-  {
-    slug: "saloon",
-    size: "md",
-    image: "/rooms/saloon_TH_use.png",
-    alt: "The Saloon with panelled walls and stained-glass windows set for a ceremony",
-    title: "The Saloon",
-    sub: "Ground floor · Stained glass · Panelled",
-    standing: 150,
-    banquet: 90,
-  },
-  {
-    slug: "robert-adam-room",
-    size: "md",
-    image: "/rooms/robert-adam-wedding-opt.jpg",
-    alt: "The Robert Adam Room with neoclassical plasterwork ceiling set for a ceremony",
-    title: "Robert Adam Room",
-    sub: "1st floor · Neoclassical · Plaster ceiling",
-    standing: 120,
-    banquet: 80,
-  },
-  {
-    slug: "reception-room",
-    size: "md",
-    image: "/rooms/reception-wedding-opt.jpg",
-    alt: "Reception Room dressed for a wedding ceremony with floral arch",
-    title: "Reception Room",
-    sub: "Ground floor · Intimate · Ceremony ready",
-    standing: 80,
-    banquet: 50,
-  },
-] as const;
-
-function Rooms(): ReactElement {
-  return (
-    <section
-      className="blk tight"
-      id="rooms"
-      style={{ borderTop: "1px solid var(--rule)", background: "var(--cream-2)" }}
-    >
-      <div className="wrap">
-        <div className="sec-head">
-          <div className="kicker">The rooms</div>
-          <h2>
-            Four rooms, one Robert Adam building. Start with whichever <em>fits the feeling</em>.
-          </h2>
-        </div>
-
-        <div className="rooms-grid">
-          {ROOMS.map((room) => (
-            <Link
-              key={room.slug}
-              className={`room-card size-${room.size}`}
-              to={`/plan?space=${room.slug}`}
-              aria-label={`Open ${room.title} in the planner`}
-            >
-              <div className="image">
-                <img src={room.image} alt={room.alt} loading="lazy" />
-                {room.tag !== undefined ? <div className="tag">{room.tag}</div> : null}
+        <div className="planrise-stage rise" style={{ transitionDelay: ".12s" }}>
+            <div className="planrise-visual" aria-label="Animated Grand Hall planning sequence">
+              <div className="planrise-photo" aria-hidden>
+                <span>Wedding selected</span>
+                <strong>114 seats</strong>
+                <em>Round tables + dancefloor</em>
               </div>
-              <div className="meta">
+            <div className="planrise-plan" aria-hidden>
+              <div className="planrise-room">
+                <span className="planrise-stage-block">Stage</span>
+                <span className="planrise-bar-block">Bar</span>
+                <span className="planrise-dance-block">Dancefloor</span>
+                {Array.from({ length: 10 }, (_, index) => (
+                  <i key={index} className={`planrise-table planrise-table-${String(index + 1)}`} />
+                ))}
+                <span className="planrise-camera-line" />
+              </div>
+            </div>
+            <div className="planrise-3d-card" aria-hidden>
+              <img
+                src="/rooms/Grand-Hall-scaled-opt.jpg"
+                alt="Trades Hall Grand Hall 3D preview"
+                loading="lazy"
+              />
+              <span>3D view</span>
+            </div>
+            <div className="planrise-send-card" aria-hidden>
+              <span>Draft ready</span>
+              <strong>Send to Events Team</strong>
+            </div>
+            <div className="planrise-timeline" aria-hidden>
+              <span className="on">Plan</span>
+              <span>Preset</span>
+              <span>3D</span>
+              <span>Send</span>
+            </div>
+          </div>
+
+          <div className="planrise-copy">
+            {PLANRISE_BEATS.map((beat) => (
+              <article key={beat.num} className="planrise-beat">
+                <div className="beat-num">{beat.num}</div>
                 <div>
-                  <h3>{room.title}</h3>
-                  <div className="sub">{room.sub}</div>
+                  <div className="beat-stat">{beat.stat}</div>
+                  <h3>{beat.title}</h3>
+                  <p>{beat.body}</p>
                 </div>
-                <div className="capacity">
-                  <b>{String(room.standing)}</b>standing<br />
-                  {String(room.banquet)} banquet
-                </div>
-              </div>
+              </article>
+            ))}
+            <Link to="/plan?space=grand-hall" className="btn primary big planrise-cta">
+              Open the Grand Hall planner <span className="arrow" aria-hidden>&rarr;</span>
             </Link>
-          ))}
+          </div>
         </div>
-
-        <div style={{ marginTop: 44, display: "flex", justifyContent: "center" }}>
-          <Link to="/plan" className="btn primary big">
-            Open the planner with an empty room <span aria-hidden>→</span>
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// FEATURES
-// -----------------------------------------------------------------------------
-
-const FEATURES = [
-  {
-    ico: "⌗",
-    title: "To-scale floor plans",
-    body: "Every room is surveyed and loaded at 1:50. Columns, windows, fire exits, power points — all exactly where they are in real life.",
-  },
-  {
-    ico: "↔",
-    title: "Instant layout swaps",
-    body: "Toggle between ceremony, banquet, cabaret, theatre and standing receptions with one click. Counts update live.",
-  },
-  {
-    ico: "✓",
-    title: "Capacity & safety checks",
-    body: "Spacing between rounds, aisle widths and fire egress are validated as you place. We flag anything that wouldn't pass.",
-  },
-  {
-    ico: "£",
-    title: "Transparent costing",
-    body: "Furniture, staffing and AV line up against your plan so you can see the cost impact of every choice before you commit.",
-  },
-  {
-    ico: "↻",
-    title: "Save & share drafts",
-    body: "Save as many versions as you like, share a read-only link with clients or colleagues, and come back to edit later.",
-  },
-  {
-    ico: "☎",
-    title: "Hand off to our team",
-    body: "Send your plan and we handle the rest — a named coordinator, a costed proposal, and a walk-through of the room in person.",
-  },
-] as const;
-
-function Features(): ReactElement {
-  return (
-    <section className="blk" id="planner">
-      <div className="wrap">
-        <div className="sec-head">
-          <div className="kicker">What you can do</div>
-          <h2>
-            Every question our events team normally asks, answered <em>before you phone us</em>.
-          </h2>
-        </div>
-        <div className="feat-grid">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="f">
-              <div className="ico" aria-hidden>{f.ico}</div>
-              <h4>{f.title}</h4>
-              <p>{f.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// QUOTE
-// -----------------------------------------------------------------------------
-
-function Quote(): ReactElement {
-  return (
-    <section className="quote" id="about">
-      <div className="inner">
-        <span className="mark" aria-hidden>“</span>
-        <blockquote>
-          We used to send six PDFs back and forth before anyone saw the actual room.
-          Now couples plan their day themselves, to the centimetre, and we just make it happen.
-        </blockquote>
-        <div className="attribution">Fiona R. — Events Manager, Trades Hall Glasgow</div>
       </div>
     </section>
   );
@@ -1231,16 +1083,17 @@ function FinalCTA(): ReactElement {
     <section className="final-cta">
       <div className="wrap">
         <h2>
-          Your event, <em>to scale</em>.<br />In about ten minutes.
+          Ready to try your <em>Grand Hall</em> layout?
         </h2>
         <p>
-          Pick a room and start placing furniture. No account required to try —
-          save your draft when you're ready to share it with our team.
+          Open a draft, arrange the room, and send the plan to the Trades Hall events
+          team when you are ready for venue review.
         </p>
         <div className="ctas">
-          <Link to="/plan" className="btn primary big">Open the planner</Link>
-          <a href="#contact" className="btn big">Book a site visit instead</a>
+          <Link to="/plan?space=grand-hall" className="btn primary big">Open the Grand Hall planner</Link>
+          <Link to="/plan?space=grand-hall" className="btn big">View in 3D</Link>
         </div>
+        <div className="powered-by final-powered">Powered by Venviewer</div>
       </div>
     </section>
   );
@@ -1265,17 +1118,17 @@ function SiteFooter(): ReactElement {
             </div>
             <div className="address-block">
               85 Glassford Street, Glasgow, G1 1UH<br />
-              Event enquiries: +44 141 000 0000<br />
-              events@tradeshall.example
+              Event enquiries through the Trades Hall events team.<br />
+              Use the planner draft as the conversation starter.
             </div>
           </div>
           <div>
             <h5>Plan</h5>
             <ul>
-              <li><Link to="/plan">Open planner</Link></li>
-              <li><a href="#rooms">Choose a room</a></li>
-              <li><a href="#how">Example layouts</a></li>
-              <li><a href="#planner">Pricing guide</a></li>
+              <li><Link to="/plan?space=grand-hall">Open Grand Hall planner</Link></li>
+              <li><a href="#presets">Wedding draft</a></li>
+              <li><a href="#presets">Gala draft</a></li>
+              <li><a href="#presets">Conference draft</a></li>
             </ul>
           </div>
           <div>
@@ -1301,7 +1154,7 @@ function SiteFooter(): ReactElement {
         <div className="wordmark">Trades <em>Hall.</em></div>
 
         <div className="baseline">
-          <span>© 2026 The Trades House of Glasgow · Planner by VenViewer</span>
+          <span>© 2026 The Trades House of Glasgow · Powered by Venviewer</span>
           <span>Built in Glasgow</span>
         </div>
       </div>
