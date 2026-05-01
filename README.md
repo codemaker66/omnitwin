@@ -2,10 +2,11 @@
 
 [![CI](https://github.com/codemaker66/omnitwin/actions/workflows/ci.yml/badge.svg)](https://github.com/codemaker66/omnitwin/actions/workflows/ci.yml)
 
-Browser-based photorealistic venue planning platform for Trades Hall Glasgow —
-a "Sims build mode" for real-world event spaces. Plan a wedding or banquet by
-dragging tables, chairs, and staging into a photoreal 3D model of the room,
-then export a hallkeeper sheet for the venue ops team.
+Browser-based venue planning platform for Trades Hall Glasgow — a planning
+workspace for real-world event spaces. Plan a wedding or banquet by dragging
+tables, chairs, and staging into a to-scale 2D/3D model of the room, then
+export a hallkeeper sheet for the venue ops team. Venviewer is building toward
+verified venue twins; public claims stay tied to implemented evidence.
 
 This is a single-tenant production app, not a library.
 

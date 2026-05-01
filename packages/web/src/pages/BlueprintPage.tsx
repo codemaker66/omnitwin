@@ -2218,8 +2218,8 @@ function StatusBar({ metrics, onSendForQuote, onExportPng }: { metrics: ReturnTy
       <StatusChip label="Rounds" value={String(metrics.roundCount)} />
       <StatusChip label="Floor used" value={`${String(metrics.floorUsedPercent)}%`} />
       <StatusChip
-        label="Fire egress"
-        value={metrics.fireEgressClear ? "✓ Clear" : "⚠ Blocked"}
+        label="Egress draft"
+        value={metrics.fireEgressClear ? "Looks clear" : "Needs review"}
         highlight={metrics.fireEgressClear ? "ok" : "warn"}
       />
       <div style={{ flex: 1 }} />

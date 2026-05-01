@@ -110,7 +110,7 @@ export const router = createBrowserRouter([
   {
     // 2D top-down blueprint editor. Mounted alongside the 3D planner — both
     // views share the same underlying scene data; the blueprint is the
-    // planner's flat-paper draft, the 3D view is the photoreal walkthrough.
+    // planner's flat-paper draft, the 3D view is the spatial walkthrough.
     // Takes optional configId for deep-link.
     path: "/blueprint",
     element: withSuspense(<BlueprintPage />),

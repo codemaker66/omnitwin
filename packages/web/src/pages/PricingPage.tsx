@@ -402,7 +402,7 @@ export function PricingPage(): React.ReactElement {
               "Unlimited client planning sessions",
               "Embed on your own website (one-line widget)",
               "Custom brand colour & logo",
-              "Photorealistic 3D walkthroughs included",
+              "Interactive 3D planning walkthroughs included",
               "Priority email support",
               "All future features, no add-on fees",
             ].map((feature) => (
