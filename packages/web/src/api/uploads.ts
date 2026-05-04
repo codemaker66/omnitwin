@@ -7,8 +7,10 @@ import { api, ApiError } from "./client.js";
 export interface PresignedUrlResponse {
   readonly uploadUrl: string;
   readonly fileKey: string;
-  readonly publicUrl: string;
+  readonly publicUrl: string | null;
+  readonly readUrl: string | null;
   readonly fileId: string;
+  readonly visibility: "private" | "public";
 }
 
 export interface UploadProgress {
@@ -24,11 +26,12 @@ export interface UploadProgress {
 export async function getPresignedUrl(
   filename: string,
   contentType: string,
+  contentLengthBytes: number,
   context: string,
   contextId: string,
 ): Promise<PresignedUrlResponse> {
   return api.post<PresignedUrlResponse>("/uploads/presigned", {
-    filename, contentType, context, contextId,
+    filename, contentType, contentLengthBytes, context, contextId,
   });
 }
 
@@ -73,15 +76,15 @@ export async function uploadToR2(
 }
 
 /**
- * Full upload flow: get presigned URL → upload to R2 → return fileId.
+ * Full upload flow: get presigned URL -> upload to R2 -> return fileId.
  */
 export async function uploadFile(
   file: File,
   context: string,
   contextId: string,
   onProgress?: (progress: UploadProgress) => void,
-): Promise<{ fileId: string; publicUrl: string }> {
-  const presigned = await getPresignedUrl(file.name, file.type, context, contextId);
+): Promise<{ fileId: string; publicUrl: string | null }> {
+  const presigned = await getPresignedUrl(file.name, file.type, file.size, context, contextId);
   await uploadToR2(presigned.uploadUrl, file, onProgress);
   return { fileId: presigned.fileId, publicUrl: presigned.publicUrl };
 }

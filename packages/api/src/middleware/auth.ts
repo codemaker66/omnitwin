@@ -1,8 +1,8 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { users } from "../db/schema.js";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { userInvitations, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +29,15 @@ const MockTokenSchema = z.object({
   venueId: z.string().nullable(),
 });
 
+const AuthEmailSchema = z.string().trim().toLowerCase().email();
+const ALLOWED_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
+type AuthRole = typeof ALLOWED_ROLES[number];
+const allowedRoleSet = new Set<string>(ALLOWED_ROLES);
+
+export type VerifiedEmailResolution =
+  | { readonly ok: true; readonly email: string }
+  | { readonly ok: false; readonly code: "EMAIL_REQUIRED" | "EMAIL_UNVERIFIED"; readonly message: string };
+
 // Augment FastifyRequest to include user
 declare module "fastify" {
   interface FastifyRequest {
@@ -48,12 +57,152 @@ export function setAuthDb(db: Database): void {
 }
 
 // ---------------------------------------------------------------------------
-// getUserByClerkId — find or create local user from Clerk identity.
+// Clerk email + access policy helpers
+// ---------------------------------------------------------------------------
+
+export function normalizeAuthEmail(raw: unknown): string | null {
+  const result = AuthEmailSchema.safeParse(raw);
+  return result.success ? result.data : null;
+}
+
+function isExplicitlyVerified(value: unknown): boolean {
+  return value === true || value === "true" || value === "verified";
+}
+
+/**
+ * Clerk JWT templates can name the verification claim differently depending
+ * on configuration. Venviewer fails closed: a token needs an explicit verified
+ * signal, not just an email string.
+ */
+export function resolveVerifiedClerkEmail(payload: Record<string, unknown>): VerifiedEmailResolution {
+  const email = normalizeAuthEmail(payload["email"]);
+  if (email === null) {
+    return {
+      ok: false,
+      code: "EMAIL_REQUIRED",
+      message: "A verified email address is required",
+    };
+  }
+
+  const verified =
+    isExplicitlyVerified(payload["email_verified"]) ||
+    isExplicitlyVerified(payload["emailVerified"]) ||
+    isExplicitlyVerified(payload["email_verification_status"]) ||
+    isExplicitlyVerified(payload["emailVerificationStatus"]) ||
+    isExplicitlyVerified(payload["primary_email_verified"]) ||
+    isExplicitlyVerified(payload["primaryEmailVerified"]) ||
+    isExplicitlyVerified(payload["primary_email_verification_status"]) ||
+    isExplicitlyVerified(payload["primaryEmailVerificationStatus"]);
+
+  if (!verified) {
+    return {
+      ok: false,
+      code: "EMAIL_UNVERIFIED",
+      message: "Email address must be verified before access is granted",
+    };
+  }
+
+  return { ok: true, email };
+}
+
+function sanitizeRole(raw: string): AuthRole {
+  return allowedRoleSet.has(raw) ? raw as AuthRole : "planner";
+}
+
+function getEmailDomain(email: string): string | null {
+  const at = email.lastIndexOf("@");
+  if (at < 0 || at === email.length - 1) return null;
+  return email.slice(at + 1).toLowerCase();
+}
+
+function defaultNameFromEmail(email: string): string {
+  const at = email.indexOf("@");
+  const local = at > 0 ? email.slice(0, at) : "";
+  return local.length > 0 ? local : "User";
+}
+
+function parseDomainList(raw: string | undefined): readonly string[] {
+  if (raw === undefined) return [];
+  return raw
+    .split(",")
+    .map((item) => item.trim().toLowerCase().replace(/^@/, ""))
+    .filter((item) => item.length > 0);
+}
+
+interface AccessGrant {
+  readonly role: AuthRole;
+  readonly venueId: string | null;
+}
+
+export function getApprovedDomainGrant(
+  email: string,
+  env: NodeJS.ProcessEnv = process.env,
+): AccessGrant | null {
+  const domain = getEmailDomain(email);
+  if (domain === null) return null;
+
+  const approvedDomains = parseDomainList(env["VENVIEWER_APPROVED_AUTH_DOMAINS"]);
+  if (!approvedDomains.includes(domain)) return null;
+
+  return {
+    role: sanitizeRole(env["VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE"] ?? "planner"),
+    venueId: env["VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID"] ?? null,
+  };
+}
+
+type InvitationRow = typeof userInvitations.$inferSelect;
+
+function invitationIsActive(invitation: InvitationRow, now: Date): boolean {
+  return invitation.status === "pending" &&
+    (invitation.expiresAt === null || invitation.expiresAt > now) &&
+    invitation.acceptedAt === null;
+}
+
+async function findPendingInvitation(db: Database, email: string, now: Date): Promise<InvitationRow | null> {
+  const [emailInvitation] = await db
+    .select()
+    .from(userInvitations)
+    .where(and(
+      eq(userInvitations.status, "pending"),
+      eq(userInvitations.email, email),
+      or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
+    ))
+    .limit(1);
+
+  if (emailInvitation !== undefined && invitationIsActive(emailInvitation, now)) {
+    return emailInvitation;
+  }
+
+  const domain = getEmailDomain(email);
+  if (domain === null) return null;
+
+  const [domainInvitation] = await db
+    .select()
+    .from(userInvitations)
+    .where(and(
+      eq(userInvitations.status, "pending"),
+      eq(userInvitations.domain, domain),
+      or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
+    ))
+    .limit(1);
+
+  if (domainInvitation !== undefined && invitationIsActive(domainInvitation, now)) {
+    return domainInvitation;
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// getUserByClerkId — find or authorize local user from Clerk identity.
 //
 // This is the authoritative bridge from Clerk's opaque `sub` (the JWT
 // `payload.sub` claim) to our local `users.id` UUID. Both HTTP and
 // WebSocket auth paths MUST go through this so ownership checks against
 // `configurations.userId` compare apples to apples.
+//
+// New local users require a pending invitation or an explicit approved-domain
+// policy. A Clerk identity alone is not enough to become a planner.
 // ---------------------------------------------------------------------------
 
 export async function getUserByClerkId(
@@ -61,6 +210,9 @@ export async function getUserByClerkId(
   clerkId: string,
   email: string,
 ): Promise<JwtUser | null> {
+  const normalizedEmail = normalizeAuthEmail(email);
+  if (normalizedEmail === null) return null;
+
   // Look up existing user by clerkId
   const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1);
   if (existing !== undefined) {
@@ -73,8 +225,11 @@ export async function getUserByClerkId(
   }
 
   // Also check by email (for users created before Clerk migration, or seed users)
-  const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const [byEmail] = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
   if (byEmail !== undefined) {
+    if (byEmail.clerkId !== null && byEmail.clerkId !== clerkId) {
+      return null;
+    }
     // Link Clerk ID to existing user
     await db.update(users).set({ clerkId, updatedAt: new Date() }).where(eq(users.id, byEmail.id));
     return {
@@ -85,15 +240,32 @@ export async function getUserByClerkId(
     };
   }
 
-  // On-the-fly user creation (webhook hasn't fired yet)
+  const now = new Date();
+  const invitation = await findPendingInvitation(db, normalizedEmail, now);
+  const grant: AccessGrant | null = invitation === null
+    ? getApprovedDomainGrant(normalizedEmail)
+    : { role: sanitizeRole(invitation.role), venueId: invitation.venueId };
+
+  if (grant === null) return null;
+
   const [created] = await db.insert(users).values({
     clerkId,
-    email,
-    name: email.split("@")[0] ?? "User",
-    role: "planner",
+    email: normalizedEmail,
+    name: defaultNameFromEmail(normalizedEmail),
+    role: grant.role,
+    venueId: grant.venueId,
   }).returning();
 
   if (created === undefined) return null;
+
+  if (invitation !== null) {
+    await db.update(userInvitations).set({
+      status: "accepted",
+      acceptedAt: now,
+      acceptedBy: created.id,
+      updatedAt: now,
+    }).where(eq(userInvitations.id, invitation.id));
+  }
 
   return {
     id: created.id,
@@ -141,35 +313,44 @@ export async function authenticate(
     }
   }
 
-  try {
-    const secretKey = process.env["CLERK_SECRET_KEY"];
-    if (secretKey === undefined || secretKey === "") {
-      await reply.status(500).send({ error: "Clerk not configured", code: "SERVER_ERROR" });
-      return;
-    }
+  const secretKey = process.env["CLERK_SECRET_KEY"];
+  if (secretKey === undefined || secretKey === "") {
+    await reply.status(500).send({ error: "Clerk not configured", code: "SERVER_ERROR" });
+    return;
+  }
 
-    const payload = await verifyToken(token, {
+  let payload: Awaited<ReturnType<typeof verifyToken>>;
+  try {
+    payload = await verifyToken(token, {
       secretKey,
     });
+  } catch {
+    await reply.status(401).send({ error: "Invalid or expired token", code: "UNAUTHORIZED" });
+    return;
+  }
 
-    const clerkId = payload.sub;
-    const rawEmail = (payload as Record<string, unknown>)["email"];
-    const email = typeof rawEmail === "string" ? rawEmail : undefined;
+  const clerkId = payload.sub;
+  const emailResolution = resolveVerifiedClerkEmail(payload as Record<string, unknown>);
+  if (!emailResolution.ok) {
+    await reply.status(403).send({ error: emailResolution.message, code: emailResolution.code });
+    return;
+  }
 
-    if (_db === null) {
-      await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });
-      return;
-    }
+  if (_db === null) {
+    await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });
+    return;
+  }
 
-    const user = await getUserByClerkId(_db, clerkId, email ?? `${clerkId}@clerk.user`);
+  try {
+    const user = await getUserByClerkId(_db, clerkId, emailResolution.email);
     if (user === null) {
-      await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
+      await reply.status(403).send({ error: "Invitation required", code: "INVITATION_REQUIRED" });
       return;
     }
 
     request.user = user;
   } catch {
-    await reply.status(401).send({ error: "Invalid or expired token", code: "UNAUTHORIZED" });
+    await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
   }
 }
 

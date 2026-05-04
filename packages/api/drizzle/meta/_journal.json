@@ -141,6 +141,20 @@
       "when": 1777507200000,
       "tag": "0018_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0022_user_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0023_upload_scoping",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, and, isNull, inArray } from "drizzle-orm";
 import { configurations, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { getUserByClerkId } from "../middleware/auth.js";
+import { getUserByClerkId, resolveVerifiedClerkEmail } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // WebSocket auto-save — debounced placed object sync
@@ -75,8 +75,8 @@ export interface WsUser {
  *   - Test mode (`NODE_ENV=test` or `VITEST` set) + token starts with `{`:
  *     the token is a JSON-encoded `{ id, role, venueId }` where `id` is
  *     already a DB UUID. Used by the existing integration tests.
- *   - Production: verify the Clerk JWT, then look up (or create) the local
- *     user via `getUserByClerkId`, and use that user's DB id.
+ *   - Production: verify the Clerk JWT, require a verified email, then look
+ *     up the local user via `getUserByClerkId`, and use that user's DB id.
  *
  * Returns `null` on any failure — verification, missing fields, or user
  * resolution. The caller must treat null as "close the socket".
@@ -102,10 +102,10 @@ export async function resolveWsUser(
     const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
     const payload = await verifyToken(token, { secretKey });
     const clerkId = payload.sub;
-    const email = ((payload as Record<string, unknown>)["email"] as string | undefined)
-      ?? `${clerkId}@clerk.user`;
+    const emailResolution = resolveVerifiedClerkEmail(payload as Record<string, unknown>);
+    if (!emailResolution.ok) return null;
 
-    const dbUser = await getUserByClerkId(db, clerkId, email);
+    const dbUser = await getUserByClerkId(db, clerkId, emailResolution.email);
     if (dbUser === null) return null;
 
     return {

@@ -18,6 +18,11 @@ const EnvSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Optional auth domain policy. Empty by default: invitation/pre-provisioned
+  // users remain the primary access path.
+  VENVIEWER_APPROVED_AUTH_DOMAINS: z.string().min(1).optional(),
+  VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE: z.enum(["client", "planner", "staff", "hallkeeper", "admin"]).default("planner"),
+  VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),

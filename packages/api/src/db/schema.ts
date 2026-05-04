@@ -109,6 +109,35 @@ export const users = pgTable("users", {
 });
 
 // ---------------------------------------------------------------------------
+// 3b. user_invitations
+//
+// Clerk authentication is not authorization. A new Clerk identity can only
+// become a local Venviewer user when it matches a pending invitation record
+// (email or approved domain) or an explicitly configured approved-domain
+// policy in the auth middleware. The accepted* columns are the audit marker
+// that closes the invitation loop.
+// ---------------------------------------------------------------------------
+
+export const userInvitations = pgTable("user_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 255 }),
+  domain: varchar("domain", { length: 255 }),
+  role: varchar("role", { length: 20 }).notNull().default("planner"),
+  venueId: uuid("venue_id").references(() => venues.id),
+  tokenHash: text("token_hash").unique(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedBy: uuid("accepted_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("user_invitations_email_status_idx").on(table.email, table.status),
+  index("user_invitations_domain_status_idx").on(table.domain, table.status),
+  index("user_invitations_venue_status_idx").on(table.venueId, table.status),
+]);
+
+// ---------------------------------------------------------------------------
 // 4. asset_definitions (global furniture catalogue — no venue_id)
 // ---------------------------------------------------------------------------
 
@@ -420,12 +449,16 @@ export const files = pgTable("files", {
   fileKey: text("file_key").notNull().unique(),
   filename: varchar("filename", { length: 500 }).notNull(),
   contentType: varchar("content_type", { length: 100 }).notNull(),
+  contentLengthBytes: integer("content_length_bytes"),
+  sha256: varchar("sha256", { length: 64 }),
   context: varchar("context", { length: 50 }).notNull(),
   contextId: uuid("context_id").notNull(),
+  visibility: varchar("visibility", { length: 20 }).notNull().default("private"),
   uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("files_context_idx").on(table.context, table.contextId),
+  index("files_visibility_idx").on(table.visibility),
 ]);
 
 // ---------------------------------------------------------------------------

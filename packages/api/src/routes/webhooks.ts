@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Clerk webhook events — sync user data to local DB
@@ -11,6 +12,9 @@ import type { Database } from "../db/client.js";
 interface ClerkEmailAddress {
   readonly email_address: string;
   readonly id: string;
+  readonly verification?: {
+    readonly status?: string;
+  } | null;
 }
 
 interface ClerkUserEvent {
@@ -43,9 +47,15 @@ interface ClerkWebhookPayload {
   readonly data: ClerkUserEvent;
 }
 
-function getPrimaryEmail(data: ClerkUserEvent): string {
+function emailIsVerified(email: ClerkEmailAddress): boolean {
+  return email.verification?.status === "verified";
+}
+
+function getVerifiedPrimaryEmail(data: ClerkUserEvent): string | null {
   const primary = data.email_addresses.find((e) => e.id === data.primary_email_address_id);
-  return primary?.email_address ?? data.email_addresses[0]?.email_address ?? "";
+  const candidate = primary ?? data.email_addresses[0] ?? null;
+  if (candidate === null || !emailIsVerified(candidate)) return null;
+  return normalizeAuthEmail(candidate.email_address);
 }
 
 function getFullName(data: ClerkUserEvent): string {
@@ -108,50 +118,55 @@ export async function webhookRoutes(
     const payload = request.body as ClerkWebhookPayload;
     const { type, data } = payload;
 
-    // Allowed roles — prevents privilege escalation via Clerk public_metadata.
-    // If an unknown role arrives, default to "planner" (lowest privilege).
-    const ALLOWED_ROLES = new Set(["client", "planner", "staff", "hallkeeper", "admin"]);
-    const sanitizeRole = (raw: unknown): string => {
-      if (typeof raw === "string" && ALLOWED_ROLES.has(raw)) return raw;
-      return "planner";
-    };
-
+    // Clerk metadata is profile data only. Role and venue scope come from
+    // seed rows, invitation records, or explicit approved-domain policy.
     try {
       if (type === "user.created") {
-        const email = getPrimaryEmail(data);
+        const email = getVerifiedPrimaryEmail(data);
+        if (email === null) {
+          server.log.warn({ clerkId: data.id }, "Clerk user.created ignored: verified email required");
+          return reply.status(200).send({ received: true });
+        }
+
         const name = getFullName(data);
-        const role = sanitizeRole(data.public_metadata?.["role"]);
-        const rawVenueId = data.public_metadata?.["venueId"];
-        const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
         const username = normaliseUsername(data.username);
+        const localUser = await getUserByClerkId(db, data.id, email);
 
-        const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-        if (existing !== undefined) {
-          await db.update(users).set({ clerkId: data.id, name, username, updatedAt: new Date() }).where(eq(users.id, existing.id));
-        } else {
-          await db.insert(users).values({
-            clerkId: data.id, email, name, displayName: name, phone, role, venueId, username,
-          });
+        if (localUser === null) {
+          server.log.warn({ clerkId: data.id, email }, "Clerk user.created ignored: invitation required");
+          return reply.status(200).send({ received: true });
         }
+
+        await db.update(users).set({
+          name,
+          displayName: name,
+          phone,
+          username,
+          updatedAt: new Date(),
+        }).where(eq(users.id, localUser.id));
 
         return reply.status(200).send({ received: true });
       }
 
       if (type === "user.updated") {
-        const email = getPrimaryEmail(data);
+        const email = getVerifiedPrimaryEmail(data);
+        if (email === null) {
+          server.log.warn({ clerkId: data.id }, "Clerk user.updated ignored: verified email required");
+          return reply.status(200).send({ received: true });
+        }
+
         const name = getFullName(data);
         const phone = data.phone_numbers[0]?.phone_number ?? null;
-
-        // Always sync role and venueId from metadata. If the key was removed
-        // from Clerk, fall back to defaults so stale values don't persist.
-        const role = sanitizeRole(data.public_metadata?.["role"]);
-        const rawVenueId = data.public_metadata?.["venueId"];
-        const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
         const username = normaliseUsername(data.username);
 
         await db.update(users).set({
-          email, name, displayName: name, phone, role, venueId, username, updatedAt: new Date(),
+          email,
+          name,
+          displayName: name,
+          phone,
+          username,
+          updatedAt: new Date(),
         }).where(eq(users.clerkId, data.id));
 
         return reply.status(200).send({ received: true });
