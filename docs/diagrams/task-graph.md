@@ -67,6 +67,7 @@ flowchart TD
         T135(["T-135 - 3D planner mobile shell"])
         T136(["T-136 - scene-first mobile planner shell"])
         T156(["T-156 - Grand Hall landing redesign"])
+        T354(["T-354 - landing planner fit + room picker"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -133,6 +134,7 @@ flowchart TD
     T001 --> T019
     T001 --> T067
     T001 --> T091
+    T156 --> T354
     T003 --> T005
     T003 --> T054
     T018 -- "unblocks" --> T053

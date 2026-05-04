@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { LandingPage } from "../pages/LandingPage.js";
 
@@ -13,6 +13,12 @@ function mount(): void {
       <LandingPage />
     </MemoryRouter>,
   );
+}
+
+function getHeroImage(): HTMLImageElement {
+  const image = document.querySelector<HTMLImageElement>(".hero-media-photo img");
+  expect(image).not.toBeNull();
+  return image as HTMLImageElement;
 }
 
 describe("LandingPage — Grand Hall module", () => {
@@ -56,8 +62,38 @@ describe("LandingPage — Grand Hall module", () => {
   it("keeps the interactive planner preview and real Grand Hall media", () => {
     mount();
     expect(screen.getByLabelText(/Planner preview/i)).toBeTruthy();
-    const img = screen.getByAltText(/Trades Hall Grand Hall dressed for an event/i);
+    const img = getHeroImage();
+    expect(img.getAttribute("alt")).toMatch(/Grand Hall set for a banquet/i);
     expect(img.getAttribute("src")).toBe("/rooms/Grand-Hall-scaled-opt.jpg");
+  });
+
+  it("restores the Trades Hall room picker with real room photography", () => {
+    mount();
+    const rooms = screen.getByRole("heading", { level: 2, name: /Four rooms/i });
+    expect(rooms).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Open The Grand Hall in the planner/i }).getAttribute("href")).toBe("/plan?space=grand-hall");
+    expect(screen.getByRole("link", { name: /Open The Saloon in the planner/i }).getAttribute("href")).toBe("/plan?space=saloon");
+    expect(screen.getByRole("link", { name: /Open Robert Adam Room in the planner/i }).getAttribute("href")).toBe("/plan?space=robert-adam-room");
+    expect(screen.getByRole("link", { name: /Open Reception Room in the planner/i }).getAttribute("href")).toBe("/plan?space=reception-room");
+    expect(screen.getByAltText(/Saloon with panelled walls/i).getAttribute("src")).toBe("/rooms/saloon_TH_use.png");
+    expect(screen.getByAltText(/Robert Adam Room with neoclassical/i).getAttribute("src")).toBe("/rooms/robert-adam-wedding-opt.jpg");
+    expect(screen.getByAltText(/Reception Room dressed/i).getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+  });
+
+  it("wires the embedded 2D room selector to the same room slug as the 3D planner", () => {
+    mount();
+    const selector = screen.getByLabelText("Choose room");
+    fireEvent.change(selector, { target: { value: "reception-room" } });
+    const receptionPlannerLinks = screen.getAllByRole("link", { name: /Open the Reception Room planner/i });
+    expect(receptionPlannerLinks.length).toBeGreaterThanOrEqual(2);
+    for (const link of receptionPlannerLinks) {
+      expect(link.getAttribute("href")).toBe("/plan?space=reception-room");
+    }
+    const img = getHeroImage();
+    expect(img.getAttribute("alt")).toMatch(/Reception Room dressed/i);
+    expect(img.getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+    const plannerTitle = document.querySelector(".planner-embedded .chrome .title");
+    expect(plannerTitle?.textContent).toMatch(/Reception Room\s*·\s*wedding layout\s*·\s*Draft/i);
   });
 });
 

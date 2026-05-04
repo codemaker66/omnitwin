@@ -144,11 +144,11 @@
 .th-landing .hero h1 {
   font-family: var(--display);
   font-weight: 400;
-  font-size: clamp(46px, 6.4vw, 94px);
+  font-size: clamp(46px, 5.8vw, 88px);
   line-height: 0.96;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 20px 0 24px;
-  max-width: 11ch;
+  max-width: 12.5ch;
 }
 .th-landing .hero h1 em {
   font-style: italic;
@@ -332,7 +332,9 @@
 
 .th-landing .planner .body {
   display: grid;
-  grid-template-columns: 280px 1fr 200px;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1fr) minmax(156px, 0.54fr);
+  min-width: 0;
+  overflow: hidden;
   /* Height is driven by the stage's aspect-ratio (below). The sidebar
      and rightcol stretch to match via grid's default align-items: stretch. */
 }
@@ -559,6 +561,16 @@
 }
 .th-landing .field .input:hover { border-color: var(--ink-2); }
 .th-landing .field .input .caret { color: var(--muted); font-size: 11px; }
+.th-landing .field select.input {
+  width: 100%;
+  min-width: 0;
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%) calc(100% - 15px) 50% / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 10px) 50% / 5px 5px no-repeat,
+    var(--panel);
+  padding-right: 30px;
+}
 .th-landing .pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .th-landing .pill {
   font-family: var(--ui); font-size: 12px;
@@ -576,7 +588,8 @@
 .th-landing .stage {
   position: relative;
   aspect-ratio: 840 / 470;
-  min-height: 320px;
+  min-height: 0;
+  min-width: 0;
   background:
     repeating-linear-gradient(0deg, color-mix(in oklab, var(--cream-3) 50%, transparent) 0 1px, transparent 1px 24px),
     repeating-linear-gradient(90deg, color-mix(in oklab, var(--cream-3) 50%, transparent) 0 1px, transparent 1px 24px),
@@ -1267,6 +1280,189 @@
   }
 }
 
+/* —————————————— ROOMS —————————————— */
+.th-landing .rooms-section {
+  position: relative;
+  padding: clamp(64px, 8vw, 108px) 0;
+  border-top: 1px solid var(--rule);
+  background:
+    linear-gradient(180deg, var(--cream-2), var(--bg) 70%),
+    repeating-linear-gradient(90deg, transparent 0 88px, color-mix(in oklab, var(--rule) 34%, transparent) 88px 89px);
+}
+
+.th-landing .rooms-head {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.4fr) minmax(0, 1fr);
+  gap: clamp(22px, 4vw, 56px);
+  align-items: end;
+  margin-bottom: clamp(28px, 4vw, 46px);
+}
+
+.th-landing .rooms-head .kicker {
+  width: fit-content;
+  padding-top: 9px;
+  border-top: 1px solid var(--fg);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.th-landing .rooms-head h2 {
+  max-width: 18ch;
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(40px, 5.2vw, 76px);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 0.96;
+}
+
+.th-landing .rooms-head h2 em {
+  color: var(--accent);
+  font-style: italic;
+}
+
+.th-landing .rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 20px;
+}
+
+.th-landing .room-card {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--panel);
+  color: inherit;
+  text-decoration: none;
+  transition: transform .25s, box-shadow .25s, border-color .25s;
+}
+
+.th-landing .room-card:hover {
+  border-color: color-mix(in oklab, var(--accent) 46%, var(--rule));
+  transform: translateY(-3px);
+  box-shadow: 0 20px 40px -24px rgba(40,20,10,0.25);
+}
+
+.th-landing .room-card .image {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: var(--cream-3);
+}
+
+.th-landing .room-card .image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .6s cubic-bezier(.2,.7,.2,1);
+}
+
+.th-landing .room-card:hover .image img { transform: scale(1.03); }
+
+.th-landing .room-card .tag {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--panel) 92%, transparent);
+  backdrop-filter: blur(4px);
+  padding: 5px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+.th-landing .room-card .meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 18px 20px 22px;
+}
+
+.th-landing .room-card h3 {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.th-landing .room-card .sub {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.th-landing .room-card .capacity {
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.th-landing .room-card .capacity b {
+  display: block;
+  color: var(--fg);
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.th-landing .room-card.size-lg { grid-column: span 12; }
+.th-landing .room-card.size-md { grid-column: span 4; }
+.th-landing .room-card.size-lg .image { aspect-ratio: 21 / 9; }
+
+.th-landing .rooms-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 36px;
+}
+
+@media (max-width: 960px) {
+  .th-landing .room-card.size-md { grid-column: span 6; }
+}
+
+@media (max-width: 720px) {
+  .th-landing .rooms-head {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+@media (max-width: 600px) {
+  .th-landing .room-card.size-lg,
+  .th-landing .room-card.size-md {
+    grid-column: span 12;
+  }
+
+  .th-landing .room-card.size-lg .image {
+    aspect-ratio: 4 / 3;
+  }
+
+  .th-landing .room-card .meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .th-landing .room-card .capacity {
+    text-align: left;
+  }
+}
+
 /* —————————————— PLANRISE LITE —————————————— */
 .th-landing .planrise {
   position: relative;
@@ -1303,7 +1499,7 @@
   font-family: var(--display);
   font-size: clamp(40px, 5.4vw, 82px);
   font-weight: 400;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   line-height: 0.96;
 }
 
@@ -1769,7 +1965,7 @@
 .th-landing .final-cta h2 {
   font-family: var(--display); font-weight: 400;
   font-size: clamp(48px, 6vw, 96px); line-height: 0.95;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 0 auto 28px; max-width: 14ch;
 }
 .th-landing .final-cta h2 em { font-style: italic; color: var(--accent); }
@@ -1826,7 +2022,7 @@
 }
 .th-landing footer .wordmark {
   font-family: var(--display); font-size: clamp(80px, 14vw, 220px);
-  line-height: 0.85; letter-spacing: -0.04em;
+  line-height: 0.85; letter-spacing: 0;
   color: var(--fg);
   margin: 80px 0 40px;
   font-weight: 300;

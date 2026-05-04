@@ -76,6 +76,35 @@ async function expectPlannerSurfaceDoesNotTextSelect(locator: Locator): Promise<
   expect(selectionStyles.webkitUserSelect).toBe("none");
 }
 
+async function expectEmbeddedPlannerIsNotClipped(preview: Locator): Promise<void> {
+  const geometry = await preview.locator(".body").evaluate((body) => {
+    const stage = body.querySelector<HTMLElement>(".stage");
+    const sidebar = body.querySelector<HTMLElement>(".sidebar");
+    const rightcol = body.querySelector<HTMLElement>(".rightcol");
+    if (stage === null || sidebar === null || rightcol === null) {
+      throw new Error("Planner body missing expected columns");
+    }
+    const bodyBox = body.getBoundingClientRect();
+    const stageBox = stage.getBoundingClientRect();
+    const sidebarBox = sidebar.getBoundingClientRect();
+    const rightBox = rightcol.getBoundingClientRect();
+    return {
+      clientWidth: body.clientWidth,
+      scrollWidth: body.scrollWidth,
+      bodyRight: bodyBox.right,
+      stageRight: stageBox.right,
+      sidebarLeft: sidebarBox.left,
+      bodyLeft: bodyBox.left,
+      rightRight: rightBox.right,
+    };
+  });
+
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.bodyLeft - 1);
+  expect(geometry.stageRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
+  expect(geometry.rightRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
+}
+
 async function expectCoreLanding(page: Page, viewport: ViewportSpec): Promise<void> {
   await expectNoHorizontalOverflow(page);
   await expect(page.getByRole("heading", { level: 1, name: /Design your event inside the real Grand Hall/i })).toBeVisible();
@@ -154,6 +183,14 @@ test.describe("Trades Hall landing page redesign", () => {
 
       await expectCoreLanding(page, viewport);
       await expect(page.locator(".planrise-stage")).toBeVisible();
+      await expectEmbeddedPlannerIsNotClipped(page.locator(".planner-embedded").first());
+      await expect(page.getByRole("link", { name: /Open The Saloon in the planner/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Open Reception Room in the planner/i })).toBeVisible();
+      await page.getByLabel("Choose room").selectOption("robert-adam-room");
+      await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/rooms/robert-adam-wedding-opt.jpg");
+      await expect(page.locator(".planner-embedded .chrome .title")).toContainText("Robert Adam Room");
+      await expect(page.locator(".hero-left").getByRole("link", { name: /Open the Robert Adam Room planner/i })).toHaveAttribute("href", "/plan?space=robert-adam-room");
       await expect(page.getByText("Planrise preview")).toBeVisible();
       await expect(page.getByText("Choose the mood")).toBeVisible();
       await expect(page.getByText("Step from plan into space")).toBeVisible();
