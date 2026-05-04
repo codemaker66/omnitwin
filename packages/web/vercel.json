@@ -10,11 +10,19 @@
       "has": [{ "type": "host", "value": "omnitwin-web.vercel.app" }],
       "destination": "https://venviewer.com/:path*",
       "permanent": true
+    },
+    {
+      "source": "/private/brief/trades-hall-2026-04-27",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/private/brief/trades-hall-2026-04-27/",
+      "destination": "/",
+      "permanent": false
     }
   ],
   "rewrites": [
-    { "source": "/private/brief/trades-hall-2026-04-27", "destination": "/private/brief/trades-hall-2026-04-27/index.html" },
-    { "source": "/private/brief/trades-hall-2026-04-27/", "destination": "/private/brief/trades-hall-2026-04-27/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

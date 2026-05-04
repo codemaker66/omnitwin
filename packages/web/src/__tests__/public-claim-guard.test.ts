@@ -7,6 +7,8 @@ const DEPLOYED_PRIVATE_BRIEF = path.resolve(
   "public/private/brief/trades-hall-2026-04-27/index.html",
 );
 
+const VERCEL_CONFIG = path.resolve("vercel.json");
+
 const PUBLIC_STATIC_ROOT = path.resolve("public");
 
 const PUBLIC_SOURCE_FILES: readonly string[] = [
@@ -62,6 +64,18 @@ async function readPublicSurfaceFiles(): Promise<readonly { readonly file: strin
 describe("public claim guard", () => {
   it("keeps the 2026 Trades Hall private brief out of deployed public assets", () => {
     expect(existsSync(DEPLOYED_PRIVATE_BRIEF)).toBe(false);
+  });
+
+  it("does not rewrite the private brief route to a deployable static artifact", async () => {
+    const config = await readFile(VERCEL_CONFIG, "utf-8");
+
+    expect(config).toMatch(
+      /"source"\s*:\s*"\/private\/brief\/trades-hall-2026-04-27\/?"\s*,\s*"destination"\s*:\s*"\/"/u,
+    );
+    expect(config).not.toMatch(
+      /"rewrites"\s*:\s*\[[\s\S]*"source"\s*:\s*"\/private\/brief\/trades-hall-2026-04-27\/?"/u,
+    );
+    expect(config).not.toContain("/private/brief/trades-hall-2026-04-27/index.html");
   });
 
   it("does not ship unsupported private-brief claim phrases on public surfaces", async () => {
