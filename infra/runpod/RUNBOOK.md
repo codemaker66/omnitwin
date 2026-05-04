@@ -36,7 +36,7 @@ Configure these in the RunPod console under **Settings → Secrets**. The pod te
 | `r2_account_id`         | Cloudflare R2 account id (the subdomain in the endpoint URL). |
 | `r2_access_key_id`      | R2 S3-compatible access key, scoped to the two buckets above. |
 | `r2_secret_access_key`  | R2 S3-compatible secret. |
-| `git_deploy_key_b64`    | Base64-encoded ed25519 private key for `git@github.com:codemaker66/omnitwin2.git` (read-only deploy key). |
+| `git_deploy_key_b64`    | Base64-encoded ed25519 private key for `git@github.com:codemaker66/omnitwin.git` (read-only deploy key). |
 | `pod_ssh_pubkey`        | Your SSH public key, added to `~/.ssh/authorized_keys` on pod boot for inbound debug access. |
 | `runpod_api_key`        | Optional. If set, `run_training.sh` self-terminates the pod on success. |
 

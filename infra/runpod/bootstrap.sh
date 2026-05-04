@@ -12,7 +12,7 @@
 #
 # Required env (provided as RunPod secrets via the pod template):
 #   GIT_DEPLOY_KEY_B64   base64-encoded ed25519 private key
-#   OMNITWIN_GIT_REPO    e.g. git@github.com:codemaker66/omnitwin2.git
+#   OMNITWIN_GIT_REPO    e.g. git@github.com:codemaker66/omnitwin.git
 #   OMNITWIN_GIT_REF     branch or commit SHA, default "master"
 #   R2_ACCOUNT_ID        Cloudflare R2 account id
 #   AWS_ACCESS_KEY_ID    R2 S3-compat access key

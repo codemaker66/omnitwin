@@ -166,7 +166,7 @@ Captured at run-time from the bootstrap-snapshotted `.git_sha` / `.git_branch` /
 {
   "sha":    "6cfd06042a0424c81232821bb15ff03a1b43c379",
   "branch": "master",
-  "remote": "git@github.com:codemaker66/omnitwin2.git",
+  "remote": "git@github.com:codemaker66/omnitwin.git",
   "dirty":  false
 }
 ```
