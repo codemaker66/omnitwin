@@ -13,6 +13,7 @@ import {
   SCATTER_DISTANCE,
   MAX_SCATTER_ROTATION,
   BRICK_JITTER,
+  shouldUpdateBrickWallMatrices,
 } from "../BrickWall.js";
 
 // ---------------------------------------------------------------------------
@@ -308,5 +309,19 @@ describe("BrickWall constants", () => {
     // With jitter, not all bricks in row 0 should have identical stagger
     const staggers = new Set(row0.map((b) => b.stagger.toFixed(4)));
     expect(staggers.size).toBeGreaterThan(1);
+  });
+});
+
+describe("shouldUpdateBrickWallMatrices", () => {
+  it("refreshes once when a snapped auto-hide target changes", () => {
+    expect(shouldUpdateBrickWallMatrices(0, 0, false, true)).toBe(true);
+  });
+
+  it("does not refresh when settled and no target changed", () => {
+    expect(shouldUpdateBrickWallMatrices(1, 1, false, false)).toBe(false);
+  });
+
+  it("refreshes while an animation is still moving toward the target", () => {
+    expect(shouldUpdateBrickWallMatrices(0.5, 1, false, false)).toBe(true);
   });
 });

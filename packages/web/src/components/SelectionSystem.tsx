@@ -293,6 +293,11 @@ export function SelectionSystem(): null {
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
+        } else if (wallClickKey.current !== null) {
+          // Preserve wall click-to-disassemble when the pointer jitters a few
+          // pixels over the wall plane; don't convert that interaction into a
+          // marquee drag.
+          return;
         } else {
           // Empty space — start marquee
           isMarquee.current = true;

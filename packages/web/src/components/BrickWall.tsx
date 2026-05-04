@@ -204,6 +204,22 @@ export function computeBrickProgress(globalProgress: number, stagger: number): n
   return Math.max(0, Math.min(1, raw));
 }
 
+/**
+ * Returns whether the instanced wall mesh must refresh its matrices this frame.
+ *
+ * A snapped target change (camera auto-hide) is not "animating", but still
+ * needs one matrix/visibility update. Without this guard, camera-side walls
+ * can keep their old visible matrices after the store has already hidden them.
+ */
+export function shouldUpdateBrickWallMatrices(
+  progress: number,
+  target: number,
+  needsMatrixUpdate: boolean,
+  targetChanged: boolean,
+): boolean {
+  return targetChanged || needsMatrixUpdate || Math.abs(progress - target) > 0.001;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -311,11 +327,14 @@ export function BrickWall({
       : name as WallKey;
     const isLocked = wallLocks[wallKey];
 
+    let targetChanged = false;
     if (newTarget !== animTarget.current) {
+      targetChanged = true;
       if (!isLocked) {
         animProgress.current = newTarget; // camera: snap
       }
       animTarget.current = newTarget;
+      needsMatrixUpdate.current = true;
     }
 
     // Advance animation toward target (only moves when locked / click-driven)
@@ -339,7 +358,7 @@ export function BrickWall({
     const isAnimating = Math.abs(progress - animTarget.current) > 0.001;
 
     // Early exit: nothing to update when animation is settled
-    if (!isAnimating && !needsMatrixUpdate.current) {
+    if (!shouldUpdateBrickWallMatrices(progress, animTarget.current, needsMatrixUpdate.current, targetChanged)) {
       return;
     }
     needsMatrixUpdate.current = isAnimating;

@@ -946,7 +946,9 @@ export function GrandHallOrnaments({
 
   return (
     <group name="grand-hall-ornaments">
-      <CofferedAvodireCeiling width={width} length={length} height={height} />
+      <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-ornaments">
+        <CofferedAvodireCeiling width={width} length={length} height={height} />
+      </SurfaceVisibilityGroup>
       <CrownMoulding width={width} length={length} wallHeight={height} />
       <Skirting width={width} length={length} />
       <WainscotRaisedPanels width={width} length={length} />
@@ -977,7 +979,9 @@ export function GrandHallOrnaments({
       </SurfaceVisibilityGroup>
 
       {/* Ceiling rosette ring around the dome base */}
-      <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
+      <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-rosette">
+        <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
+      </SurfaceVisibilityGroup>
 
       {/* Three chandeliers along the 21m hall centerline. */}
       {chandelierX.map((x, i) => (
