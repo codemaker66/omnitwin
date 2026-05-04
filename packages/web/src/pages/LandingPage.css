@@ -187,9 +187,6 @@
   gap: clamp(28px, 5vw, 72px);
   align-items: center;
 }
-@media (max-width: 1199px) {
-  .th-landing .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-}
 
 .th-landing .hero-media {
   min-width: 0;
@@ -247,6 +244,22 @@
   font-size: clamp(24px, 2.8vw, 36px);
   font-weight: 400;
   line-height: 1;
+}
+
+.th-landing .hero-planner-panel {
+  max-width: 1220px;
+  margin: clamp(28px, 4vw, 52px) auto 0;
+}
+
+.th-landing .hero-planner-panel .planner .body {
+  grid-template-columns: 250px minmax(0, 1fr) 230px;
+}
+
+@media (max-width: 899px) {
+  .th-landing .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
 }
 
 /* Stacked hero layout (the design handoff's default): headline on top,
@@ -813,6 +826,10 @@
     font-size: 9.5px;
   }
 
+  .th-landing .hero-planner-panel {
+    margin-top: 22px;
+  }
+
   .th-landing .powered-by {
     margin-top: 14px;
     font-size: 10px;
@@ -1257,11 +1274,21 @@
 }
 
 @media (min-width: 900px) and (max-width: 1199px) {
-  .th-landing[data-layout="stacked"] .hero-right {
-    max-width: 1040px;
+  .th-landing .hero-grid {
+    grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(24px, 4vw, 44px);
   }
 
-  .th-landing .planner.planner-embedded .body {
+  .th-landing .hero h1 {
+    max-width: 12ch;
+    font-size: clamp(58px, 7.2vw, 82px);
+  }
+
+  .th-landing .hero-media-photo {
+    min-height: clamp(230px, 26vw, 320px);
+  }
+
+  .th-landing .hero-planner-panel .planner.planner-embedded .body {
     grid-template-columns: 220px minmax(0, 1fr) 180px;
   }
 

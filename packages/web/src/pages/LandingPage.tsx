@@ -305,24 +305,26 @@ function Hero(): ReactElement {
                 <strong>Heritage room, planning draft</strong>
               </div>
             </div>
-            <div className="hero-media-planner">
-              <PlannerPreview
-                mode="embedded"
-                room={selectedRoom}
-                onRoomChange={setSelectedRoomSlug}
-                onRequestFullscreen={openMobilePlanner}
-              />
-            </div>
-            <div className="preview-caption">
-              <span>Tap a layout. Move a table. Send a draft.</span>
-              <span className="preview-caption-sub">Grand Hall · To-scale planning preview</span>
-            </div>
-            <Link to={selectedPlannerPath} className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
-              <span className="preview-cta-desktop">Open the {selectedRoom.shortTitle} planner</span>
-              <span className="preview-cta-mobile">Open the {selectedRoom.shortTitle} planner</span>
-              <span className="arrow" aria-hidden>→</span>
-            </Link>
           </div>
+        </div>
+        <div className="hero-planner-panel rise" style={{ transitionDelay: ".18s" }}>
+          <div className="hero-media-planner">
+            <PlannerPreview
+              mode="embedded"
+              room={selectedRoom}
+              onRoomChange={setSelectedRoomSlug}
+              onRequestFullscreen={openMobilePlanner}
+            />
+          </div>
+          <div className="preview-caption">
+            <span>Tap a layout. Move a table. Send a draft.</span>
+            <span className="preview-caption-sub">{selectedRoom.shortTitle} · To-scale planning preview</span>
+          </div>
+          <Link to={selectedPlannerPath} className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
+            <span className="preview-cta-desktop">Open the {selectedRoom.shortTitle} planner</span>
+            <span className="preview-cta-mobile">Open the {selectedRoom.shortTitle} planner</span>
+            <span className="arrow" aria-hidden>→</span>
+          </Link>
         </div>
       </div>
       {mobilePlannerOpen ? (

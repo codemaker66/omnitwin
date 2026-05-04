@@ -26,6 +26,7 @@ const TABLET_VIEWPORTS: readonly ViewportSpec[] = [
 ];
 
 const DESKTOP_VIEWPORTS: readonly ViewportSpec[] = [
+  { label: "1228x1216 desktop", width: 1228, height: 1216 },
   { label: "1280x800 desktop", width: 1280, height: 800 },
   { label: "1440x1000 desktop", width: 1440, height: 1000 },
 ];
@@ -96,6 +97,9 @@ async function expectEmbeddedPlannerIsNotClipped(preview: Locator): Promise<void
       sidebarLeft: sidebarBox.left,
       bodyLeft: bodyBox.left,
       rightRight: rightBox.right,
+      bodyHeight: bodyBox.height,
+      stageWidth: stageBox.width,
+      stageHeight: stageBox.height,
     };
   });
 
@@ -103,6 +107,8 @@ async function expectEmbeddedPlannerIsNotClipped(preview: Locator): Promise<void
   expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.bodyLeft - 1);
   expect(geometry.stageRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
   expect(geometry.rightRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
+  expect(geometry.stageWidth).toBeGreaterThanOrEqual(450);
+  expect(geometry.stageHeight).toBeGreaterThanOrEqual(geometry.bodyHeight - 40);
 }
 
 async function expectCoreLanding(page: Page, viewport: ViewportSpec): Promise<void> {
