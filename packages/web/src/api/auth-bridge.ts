@@ -4,8 +4,8 @@
 //
 // Punch list #9: previously this was a window-global mutation
 // (`window.__clerk_getToken = getToken`) with three layers of
-// `as unknown as Record<string, unknown>` casting on both sides. That
-// pattern has race conditions if multiple bridges mount, is type-unsafe,
+// unsafe double-casting on both sides. That pattern has race conditions
+// if multiple bridges mount, is type-unsafe,
 // and is the kind of thing diligence reviewers grep for.
 //
 // Now: a module-level setter/getter pair, fully typed, single instance.

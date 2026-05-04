@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { assertRequiredProductionEnv } from "./src/lib/production-env";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -17,19 +18,23 @@ import react from "@vitejs/plugin-react";
 // dynamic-import boundary.
 // ---------------------------------------------------------------------------
 
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    target: "es2022",
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          "three": ["three", "@react-three/fiber", "@react-three/drei", "three-stdlib"],
-          "spark": ["@sparkjsdev/spark"],
-          "clerk": ["@clerk/react"],
+export default defineConfig(({ mode }) => {
+  assertRequiredProductionEnv(mode);
+
+  return {
+    plugins: [react()],
+    build: {
+      target: "es2022",
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "react-vendor": ["react", "react-dom", "react-router-dom"],
+            "three": ["three", "@react-three/fiber", "@react-three/drei", "three-stdlib"],
+            "spark": ["@sparkjsdev/spark"],
+            "clerk": ["@clerk/react"],
+          },
         },
       },
     },
-  },
+  };
 });

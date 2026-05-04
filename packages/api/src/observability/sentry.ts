@@ -72,9 +72,7 @@ export async function buildSentryCapture(
       scope.setTag("route.method", request.method);
       // routeOptions.url is the path TEMPLATE (e.g. "/configurations/:id")
       // — much better for Sentry grouping than the raw URL.
-      const routeUrl: string =
-        (request as unknown as { routeOptions?: { url?: string } }).routeOptions?.url
-        ?? request.url;
+      const routeUrl: string = request.routeOptions.url ?? request.url;
       scope.setTag("route.url", routeUrl);
       scope.setContext("request", {
         id: request.id,

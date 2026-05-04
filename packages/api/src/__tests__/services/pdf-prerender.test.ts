@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import {
   pdfObjectKey,
@@ -43,12 +44,7 @@ const MINIMAL_PAYLOAD: HallkeeperSheetV2 = {
 };
 
 function silentLogger(): FastifyBaseLogger {
-  const noop = (): void => undefined;
-  return {
-    info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop,
-    child: () => silentLogger(),
-    level: "info",
-  } as unknown as FastifyBaseLogger;
+  return Fastify({ logger: false }).log;
 }
 
 describe("pdfObjectKey", () => {
@@ -77,14 +73,14 @@ describe("pdfObjectKey", () => {
 });
 
 describe("prerenderSnapshotPdf — dev skip path (R2 unconfigured)", () => {
-  const fakeDb: Database = {} as unknown as Database;
+  const fakeDb: Database = {} as Database;
 
   it("returns { status: 'skipped-no-r2' } when R2_BUCKET_NAME is missing", async () => {
     const env = {
       R2_BUCKET_NAME: undefined,
       R2_PUBLIC_URL: "https://cdn.example.com",
       R2_ACCOUNT_ID: "abc",
-    } as unknown as Env;
+    } as Env;
 
     const result = await prerenderSnapshotPdf(fakeDb, env, silentLogger(), {
       snapshotId: "s1",
@@ -103,7 +99,7 @@ describe("prerenderSnapshotPdf — dev skip path (R2 unconfigured)", () => {
       R2_BUCKET_NAME: "bucket",
       R2_PUBLIC_URL: undefined,
       R2_ACCOUNT_ID: "abc",
-    } as unknown as Env;
+    } as Env;
 
     const result = await prerenderSnapshotPdf(fakeDb, env, silentLogger(), {
       snapshotId: "s1",
@@ -121,7 +117,7 @@ describe("prerenderSnapshotPdf — dev skip path (R2 unconfigured)", () => {
       R2_BUCKET_NAME: "bucket",
       R2_PUBLIC_URL: "https://cdn.example.com",
       R2_ACCOUNT_ID: undefined,
-    } as unknown as Env;
+    } as Env;
 
     const result = await prerenderSnapshotPdf(fakeDb, env, silentLogger(), {
       snapshotId: "s1",
@@ -139,9 +135,9 @@ describe("prerenderSnapshotPdf — dev skip path (R2 unconfigured)", () => {
     const logger = {
       ...silentLogger(),
       info: infoSpy,
-    } as unknown as FastifyBaseLogger;
+    } as FastifyBaseLogger;
 
-    await prerenderSnapshotPdf(fakeDb, { R2_BUCKET_NAME: undefined } as unknown as Env, logger, {
+    await prerenderSnapshotPdf(fakeDb, { R2_BUCKET_NAME: undefined } as Env, logger, {
       snapshotId: "s1",
       configId: "c1",
       version: 1,

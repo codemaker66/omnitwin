@@ -88,7 +88,7 @@ export async function webhookRoutes(
         // Use the actual raw bytes captured by fastify-raw-body.
         // JSON.stringify(request.body) can differ from the original payload
         // (key ordering, whitespace) which breaks HMAC signature verification.
-        const body = (request as unknown as { rawBody?: Buffer }).rawBody;
+        const body = request.rawBody;
         if (body === undefined) {
           return reply.status(500).send({ error: "Raw body not available", code: "INTERNAL_ERROR" });
         }

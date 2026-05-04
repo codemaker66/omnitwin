@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { readFile } from "node:fs/promises";
 
 // ---------------------------------------------------------------------------
 // WebSocket auto-save tests
@@ -20,10 +21,6 @@ let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
-  return JSON.stringify(payload);
-}
-
 const CONFIG_ID = "00000000-0000-0000-0000-000000000001";
 
 describe("WebSocket auto-save registration", () => {
@@ -33,14 +30,20 @@ describe("WebSocket auto-save registration", () => {
   });
 
   it("WS route responds to HTTP GET with 400 (not a WS upgrade)", async () => {
-    const token = signToken({ id: "u1", email: "a@b.com", role: "admin", venueId: null });
     const res = await server.inject({
       method: "GET",
-      url: `/ws/configurations/${CONFIG_ID}?token=${token}`,
+      url: `/ws/configurations/${CONFIG_ID}`,
     });
     // Fastify returns 400 for non-websocket GET to a WS route
     // (no Upgrade header present in inject)
     expect([400, 404]).toContain(res.statusCode);
+  });
+
+  it("does not accept auth tokens through URL query strings", async () => {
+    const source = await readFile(new URL("../ws/auto-save.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain('searchParams.get("token")');
+    expect(source).toContain('type: z.literal("auth")');
   });
 });
 
@@ -128,7 +131,7 @@ describe("auto-save message schemas", () => {
 describe("resolveWsUser — test-mode mock token path", () => {
   it("returns the mock id verbatim (simulating a DB UUID)", async () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({
       id: "00000000-0000-0000-0000-00000000dead",
       email: "alice@example.com",
@@ -146,7 +149,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
 
   it("preserves venueId from mock token for hallkeeper role", async () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({
       id: "user-db-uuid-1",
       email: "bob@venue.com",
@@ -162,7 +165,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
 
   it("returns null for malformed mock token (missing id)", async () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({ role: "admin" });
 
     const result = await resolveWsUser(mockDb, token, true);
@@ -172,7 +175,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
 
   it("returns null for malformed mock token (id is not a string)", async () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({ id: 42, role: "admin" });
 
     const result = await resolveWsUser(mockDb, token, true);
@@ -182,7 +185,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
 
   it("returns null for invalid JSON in test mode", async () => {
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
 
     const result = await resolveWsUser(mockDb, "{not-json", true);
 
@@ -194,7 +197,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
     // verification (which will fail here because there's no real Clerk
     // backend configured in this unit test, so we expect null).
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     const token = JSON.stringify({ id: "x", role: "admin" });
 
     const result = await resolveWsUser(mockDb, token, false);
@@ -210,7 +213,7 @@ describe("resolveWsUser — diligence regression marker", () => {
     // `users.id` column. If a future refactor re-introduces
     // `payload.sub` here, this test is the sentinel that catches it.
     const { resolveWsUser } = await import("../ws/auto-save.js");
-    const mockDb = {} as unknown as Parameters<typeof resolveWsUser>[0];
+    const mockDb = {} as Parameters<typeof resolveWsUser>[0];
     // Simulate what a test runner passes: the DB row's `id` column
     const dbUserId = "550e8400-e29b-41d4-a716-446655440000";
     const token = JSON.stringify({

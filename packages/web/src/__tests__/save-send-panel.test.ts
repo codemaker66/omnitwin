@@ -148,6 +148,13 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     expect(codeOnly).not.toContain(".finally(");
     expect(codeOnly).toContain("readyToSend");
     expect(codeOnly).toContain("mountedRef");
+    expect(codeOnly).toContain("mountedRef.current = true");
+  });
+
+  it("MobilePlannerTopBar also resets mountedRef in the effect setup for React StrictMode", async () => {
+    const { codeOnly } = await readSource("src/components/editor/MobilePlannerTopBar.tsx");
+    expect(codeOnly).toContain("mountedRef.current = true");
+    expect(codeOnly).not.toContain(".finally(");
   });
 
   it("EditorBridge exports flushAutoSave", async () => {
@@ -272,6 +279,19 @@ describe("SaveSendPanel ortho capture wiring (#24) — source-grep", () => {
 });
 
 describe("Router", () => {
+  interface TestRoute {
+    readonly path?: string;
+  }
+
+  function routeEntries(value: unknown): readonly TestRoute[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object") return [];
+      const pathValue = (entry as { path?: unknown }).path;
+      return [{ path: typeof pathValue === "string" ? pathValue : undefined }];
+    });
+  }
+
   it("exports router config", async () => {
     const { router } = await import("../router.js");
     expect(router).toBeDefined();
@@ -280,21 +300,21 @@ describe("Router", () => {
   it("has /plan route without ProtectedRoute", async () => {
     const { router } = await import("../router.js");
     // Router is an array of route configs (since createBrowserRouter is mocked)
-    const routes = router as unknown as { path: string }[];
+    const routes = routeEntries(router);
     const planRoute = routes.find((r) => r.path === "/plan");
     expect(planRoute).toBeDefined();
   });
 
   it("has /plan/:code route (replaces legacy /plan/:configId)", async () => {
     const { router } = await import("../router.js");
-    const routes = router as unknown as { path: string }[];
+    const routes = routeEntries(router);
     const configRoute = routes.find((r) => r.path === "/plan/:code");
     expect(configRoute).toBeDefined();
   });
 
   it("has /dev/splat-fixture route for the Spark smoke fixture", async () => {
     const { router } = await import("../router.js");
-    const routes = router as unknown as { path: string }[];
+    const routes = routeEntries(router);
     const fixtureRoute = routes.find((r) => r.path === "/dev/splat-fixture");
     expect(fixtureRoute).toBeDefined();
   });

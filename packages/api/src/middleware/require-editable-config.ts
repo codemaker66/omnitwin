@@ -154,6 +154,22 @@ export type EditableConfigGate =
       readonly reviewStatus?: ConfigurationReviewStatus;
     };
 
+interface ReviewStatusLimitQuery {
+  readonly limit: (limit: number) => Promise<readonly { readonly reviewStatus: string }[]>;
+}
+
+interface ReviewStatusWhereQuery {
+  readonly where: (condition: unknown) => ReviewStatusLimitQuery;
+}
+
+interface ReviewStatusFromQuery {
+  readonly from: (table: typeof configurations) => ReviewStatusWhereQuery;
+}
+
+export interface ConfigReviewStatusReader {
+  readonly select: (fields: { readonly reviewStatus: typeof configurations.reviewStatus }) => ReviewStatusFromQuery;
+}
+
 /**
  * Verify a configuration is in a planner-editable state (or the
  * acting user is admin). Returns a discriminated result instead of
@@ -167,7 +183,7 @@ export type EditableConfigGate =
  * run Zod validation.
  */
 export async function checkConfigEditable(
-  db: Database,
+  db: ConfigReviewStatusReader,
   configId: string,
   userRole: string,
 ): Promise<EditableConfigGate> {

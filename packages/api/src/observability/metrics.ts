@@ -141,17 +141,15 @@ export function renderMetrics(): string {
  */
 export function registerMetrics(server: FastifyInstance, metricsToken: string | undefined): void {
   server.addHook("onRequest", (request, _reply, done) => {
-    (request as unknown as { __startHrTime?: bigint }).__startHrTime = process.hrtime.bigint();
+    request.__startHrTime = process.hrtime.bigint();
     done();
   });
 
   server.addHook("onResponse", (request, reply, done) => {
-    const start = (request as unknown as { __startHrTime?: bigint }).__startHrTime;
+    const start = request.__startHrTime;
     if (start !== undefined) {
       const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
-      const routeTemplate: string =
-        (request as unknown as { routeOptions?: { url?: string } }).routeOptions?.url
-        ?? request.url;
+      const routeTemplate: string = request.routeOptions.url ?? request.url;
       const labels = {
         method: request.method,
         route: routeTemplate,

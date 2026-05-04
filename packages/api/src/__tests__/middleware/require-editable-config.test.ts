@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { checkConfigEditable } from "../../middleware/require-editable-config.js";
-import type { Database } from "../../db/client.js";
+import {
+  checkConfigEditable,
+  type ConfigReviewStatusReader,
+} from "../../middleware/require-editable-config.js";
 
 // ---------------------------------------------------------------------------
 // `checkConfigEditable` — the fail-closed post-validation helper
@@ -22,7 +24,7 @@ import type { Database } from "../../db/client.js";
  * an array. The shape is cast via `unknown` — we don't teach
  * TypeScript the full Drizzle query builder for a test stub.
  */
-function fakeDb(behavior: "error" | "not-found" | { reviewStatus: string }): Database {
+function fakeDb(behavior: "error" | "not-found" | { reviewStatus: string }): ConfigReviewStatusReader {
   // eslint-disable-next-line @typescript-eslint/require-await -- thenable shape required by Drizzle query chain
   const limit = async (): Promise<{ reviewStatus: string }[]> => {
     if (behavior === "error") throw new Error("simulated DB outage");
@@ -32,7 +34,7 @@ function fakeDb(behavior: "error" | "not-found" | { reviewStatus: string }): Dat
   const where = (): { limit: typeof limit } => ({ limit });
   const from = (): { where: typeof where } => ({ where });
   const select = (): { from: typeof from } => ({ from });
-  return { select } as unknown as Database;
+  return { select };
 }
 
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";

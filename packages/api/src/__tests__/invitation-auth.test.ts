@@ -142,7 +142,7 @@ function makeMockDb(options: {
     transaction: async <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(db),
   };
 
-  return { db: db as unknown as Database, state };
+  return { db: db as never as Database, state };
 }
 
 function setEnv(name: string, value: string | undefined): void {

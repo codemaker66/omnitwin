@@ -96,6 +96,18 @@ const FONT_MONO = "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace";
 
 const CATALOGUE_MIME = "application/x-omnitwin-catalogue-kind";
 
+function setPointerCaptureSafely(target: Element, pointerId: number): void {
+  try {
+    target.setPointerCapture(pointerId);
+  } catch { /* ignore */ }
+}
+
+function releasePointerCaptureSafely(target: Element, pointerId: number): void {
+  try {
+    target.releasePointerCapture(pointerId);
+  } catch { /* ignore */ }
+}
+
 export interface BlueprintPageProps {
   readonly source?: "demo" | "editor-store";
 }
@@ -1210,7 +1222,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
       offsetY: w.y - itemCenter.y,
       preScene,
     });
-    try { (e.currentTarget as unknown as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    setPointerCaptureSafely(e.currentTarget, e.pointerId);
 
     // Start long-press timer. If the pointer moves more than LONG_PRESS_SLOP_PX
     // or lifts before LONG_PRESS_MS, we cancel it. Otherwise the menu opens.
@@ -1255,7 +1267,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
       onDragEnd(dragState.preScene);
     }
     setDragState(null);
-    try { (e.currentTarget as unknown as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    releasePointerCaptureSafely(e.currentTarget, e.pointerId);
   }, [cancelLongPress, dragState, onDragEnd]);
 
   // -------- corner-resize handlers (rect items only) --------
@@ -1263,14 +1275,14 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
     e.stopPropagation();
     const preScene = onDragStart !== undefined ? onDragStart() : null;
     setResizeState({ id, mode: "corner", handle, preScene });
-    try { (e.currentTarget as unknown as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    setPointerCaptureSafely(e.currentTarget, e.pointerId);
   }, [onDragStart]);
 
   const handleRadiusStart = useCallback((id: string, e: ReactPointerEvent<SVGRectElement>) => {
     e.stopPropagation();
     const preScene = onDragStart !== undefined ? onDragStart() : null;
     setResizeState({ id, mode: "radius", preScene });
-    try { (e.currentTarget as unknown as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    setPointerCaptureSafely(e.currentTarget, e.pointerId);
   }, [onDragStart]);
 
   const handleResizePointerMove = useCallback((e: ReactPointerEvent<SVGRectElement>) => {
@@ -1298,7 +1310,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
       onDragEnd(resizeState.preScene);
     }
     setResizeState(null);
-    try { (e.currentTarget as unknown as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    releasePointerCaptureSafely(e.currentTarget, e.pointerId);
   }, [onDragEnd, resizeState]);
 
   const onStageBackgroundClick = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1308,13 +1320,13 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
     // still deselects via the pointer-up handler.
     if (zoom > 1) {
       panRef.current = { startPan: pan, startClient: { x: e.clientX, y: e.clientY } };
-      try { (e.currentTarget as unknown as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      setPointerCaptureSafely(e.currentTarget, e.pointerId);
       return;
     }
     const w = clientToWorld(e.clientX, e.clientY);
     if (w === null) { onSelect(null); return; }
     setRubberBand({ start: w, end: w, additive: e.shiftKey });
-    try { (e.currentTarget as unknown as Element).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    setPointerCaptureSafely(e.currentTarget, e.pointerId);
   }, [clientToWorld, onSelect, pan, zoom]);
 
   const onStagePointerUpPan = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1323,7 +1335,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
       const dx = Math.abs(rubberBand.end.x - rubberBand.start.x);
       const dy = Math.abs(rubberBand.end.y - rubberBand.start.y);
       setRubberBand(null);
-      try { (e.currentTarget as unknown as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      releasePointerCaptureSafely(e.currentTarget, e.pointerId);
       if (dx < 0.05 && dy < 0.05) {
         // Treat as a plain click — deselect.
         if (!rubberBand.additive) onSelect(null);
@@ -1360,7 +1372,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
     const dy = Math.abs(e.clientY - panRef.current.startClient.y);
     const wasClickNotDrag = dx < 4 && dy < 4;
     panRef.current = null;
-    try { (e.currentTarget as unknown as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    releasePointerCaptureSafely(e.currentTarget, e.pointerId);
     if (wasClickNotDrag) onSelect(null);
   }, [onSelect, rubberBand, scene.items, selectedIds]);
 

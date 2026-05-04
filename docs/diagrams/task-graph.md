@@ -84,6 +84,7 @@ flowchart TD
         T091(["T-091 — Trades Hall real evidence"])
         T092(["T-092 — frontend Sentry"])
         T093(["T-093 — gated deploy"])
+        T353(["T-353 — post-ultrareview hardening"])
     end
 
     subgraph C [c · weeks 3–6 — reconstruction + edge cases]
@@ -144,6 +145,9 @@ flowchart TD
     T080 --> T098
     T084 --> T086
     T085 --> T093
+    T088 --> T353
+    T089 --> T353
+    T090 --> T353
     T087 --> T098
     T114 --> T115
     T115 --> T122
@@ -201,9 +205,9 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353 done
     class T001 inprogress
-    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T088,T089,T090,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121 notstarted
+    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -309,14 +313,13 @@ T-064, T-065, T-066 in subgraph B have no incoming edges — independent
 ops infrastructure that activates when capacity allows inside the
 next-sprint window.
 
-T-089, T-090, T-092 in subgraph B have no incoming edges either —
-audit-driven security/typesafety/observability work that doesn't
-sequence behind anything.
+T-092 in subgraph B has no incoming edge — frontend observability work
+that doesn't sequence behind anything.
 
 `T-010` (Tier 1, not-started, impact 2, marked "reopen on first
 multi-property customer") is omitted as effectively dormant.
 
-Subgraphs A2 and B contain 12 and 13 nodes respectively — both busy
+Subgraphs A2 and B contain 12 and 14 nodes respectively — both busy
 enough that another node would hurt readability. F contains 11 nodes —
 also at the readability ceiling. T-111 and T-112 are Tier 4 VSIR ADR
 follow-ups and remain in `docs/state/tasks.md`, not this visual graph.

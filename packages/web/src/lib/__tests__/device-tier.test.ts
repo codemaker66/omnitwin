@@ -158,18 +158,19 @@ describe("getGpuRenderer", () => {
   it("returns null when WEBGL_debug_renderer_info is unavailable", () => {
     const gl = {
       getExtension: () => null,
-    } as unknown as WebGLRenderingContext;
+      getParameter: () => null,
+    };
     expect(getGpuRenderer(gl)).toBeNull();
   });
 
   it("returns renderer string when extension is available", () => {
     const gl = {
-      getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 0x9246 }),
+      getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 0x9246, UNMASKED_VENDOR_WEBGL: 0x9245 } as const),
       getParameter: (param: number) => {
         if (param === 0x9246) return "NVIDIA GeForce RTX 4090";
         return null;
       },
-    } as unknown as WebGLRenderingContext;
+    };
     expect(getGpuRenderer(gl)).toBe("NVIDIA GeForce RTX 4090");
   });
 });

@@ -48,7 +48,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // registers. No-op when SENTRY_DSN is unset.
   await initSentry(env);
 
-  const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
+  const isTest = process.env["NODE_ENV"] === "test";
   const isDev = process.env["NODE_ENV"] !== "production" && !isTest;
 
   // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     max: 100,
     timeWindow: "1 minute",
     keyGenerator: (request) => {
-      const authed = (request as unknown as { user?: { id?: string } }).user;
+      const authed = request.user;
       if (authed !== undefined && typeof authed.id === "string" && authed.id.length > 0) {
         return `user:${authed.id}`;
       }
@@ -266,6 +266,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- WebSocket ---
   await server.register(websocket);
+  server.websocketServer.setMaxListeners(50);
   await registerAutoSave(server, db);
 
   // Register default event-bus subscribers (structured-logging /

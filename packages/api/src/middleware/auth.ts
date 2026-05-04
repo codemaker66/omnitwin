@@ -330,7 +330,7 @@ export async function authenticate(
   // Punch list #7: the parsed JSON is validated via Zod so malformed mock
   // tokens (missing fields, wrong types) are rejected with 401 instead of
   // silently producing a broken request.user.
-  const isTest = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined;
+  const isTest = process.env["NODE_ENV"] === "test";
   if (isTest && token.startsWith("{")) {
     try {
       const parsed: unknown = JSON.parse(token);

@@ -37,6 +37,11 @@ const DeleteObjectMessage = z.object({
   objectId: z.string().uuid(),
 });
 
+const AuthMessage = z.object({
+  type: z.literal("auth"),
+  token: z.string().min(1),
+});
+
 const PingMessage = z.object({
   type: z.literal("ping"),
 });
@@ -48,6 +53,7 @@ const IncomingMessage = z.discriminatedUnion("type", [
 ]);
 
 export type IncomingMessageType = z.infer<typeof IncomingMessage>;
+export type AuthMessageType = z.infer<typeof AuthMessage>;
 
 // ---------------------------------------------------------------------------
 // WS user resolution
@@ -69,10 +75,10 @@ export interface WsUser {
 }
 
 /**
- * Resolve a WebSocket query-param token to a DB user.
+ * Resolve a WebSocket auth token to a DB user.
  *
  * Two paths:
- *   - Test mode (`NODE_ENV=test` or `VITEST` set) + token starts with `{`:
+ *   - Test mode (`NODE_ENV=test`) + token starts with `{`:
  *     the token is a JSON-encoded `{ id, role, venueId }` where `id` is
  *     already a DB UUID. Used by the existing integration tests.
  *   - Production: verify the Clerk JWT, require a verified email, then look
@@ -84,7 +90,7 @@ export interface WsUser {
 export async function resolveWsUser(
   db: Database,
   token: string,
-  isTestMode: boolean = process.env["NODE_ENV"] === "test" || process.env["VITEST"] !== undefined,
+  isTestMode: boolean = process.env["NODE_ENV"] === "test",
 ): Promise<WsUser | null> {
   if (isTestMode && token.startsWith("{")) {
     try {
@@ -127,24 +133,6 @@ export async function registerAutoSave(
   db: Database,
 ): Promise<void> {
   server.get("/ws/configurations/:configId", { websocket: true }, async (socket, request) => {
-    // --- Authenticate via query param token ---
-    const url = new URL(request.url, `http://${request.hostname}`);
-    const token = url.searchParams.get("token");
-
-    if (token === null) {
-      socket.send(JSON.stringify({ type: "error", message: "Missing token" }));
-      socket.close();
-      return;
-    }
-
-    const resolved = await resolveWsUser(db, token);
-    if (resolved === null) {
-      socket.send(JSON.stringify({ type: "error", message: "Invalid token" }));
-      socket.close();
-      return;
-    }
-    const { userId, userRole, userVenueId } = resolved;
-
     const rawConfigId = (request.params as { configId?: string }).configId;
     if (rawConfigId === undefined) {
       socket.send(JSON.stringify({ type: "error", message: "Missing configId" }));
@@ -157,13 +145,21 @@ export async function registerAutoSave(
     let buffer: z.infer<typeof ObjectDataSchema>[] = [];
     let deleteBuffer: string[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let authenticatedUser: WsUser | null = null;
+    let authenticationInFlight = false;
 
     async function flush(): Promise<void> {
+      if (authenticatedUser === null) {
+        socket.send(JSON.stringify({ type: "error", message: "Authentication required" }));
+        return;
+      }
+
       const updates = [...buffer];
       const deletes = [...deleteBuffer];
       buffer = [];
       deleteBuffer = [];
       flushTimer = null;
+      const { userId, userRole, userVenueId } = authenticatedUser;
 
       try {
         // Verify config ownership (on each flush in case permissions change)
@@ -278,6 +274,37 @@ export async function registerAutoSave(
         return;
       }
 
+      if (authenticatedUser === null) {
+        if (authenticationInFlight) {
+          socket.send(JSON.stringify({ type: "error", message: "Authentication in progress" }));
+          return;
+        }
+
+        const parsedAuth = AuthMessage.safeParse(data);
+        if (!parsedAuth.success) {
+          socket.send(JSON.stringify({ type: "error", message: "Authentication required" }));
+          socket.close();
+          return;
+        }
+
+        authenticationInFlight = true;
+        void resolveWsUser(db, parsedAuth.data.token).then((resolved) => {
+          authenticationInFlight = false;
+          if (resolved === null) {
+            socket.send(JSON.stringify({ type: "error", message: "Invalid token" }));
+            socket.close();
+            return;
+          }
+          authenticatedUser = resolved;
+          socket.send(JSON.stringify({ type: "authenticated" }));
+        }).catch(() => {
+          authenticationInFlight = false;
+          socket.send(JSON.stringify({ type: "error", message: "Invalid token" }));
+          socket.close();
+        });
+        return;
+      }
+
       const parsed = IncomingMessage.safeParse(data);
       if (!parsed.success) {
         socket.send(JSON.stringify({
@@ -307,7 +334,7 @@ export async function registerAutoSave(
     // --- Flush on disconnect ---
     socket.on("close", () => {
       if (flushTimer !== null) clearTimeout(flushTimer);
-      if (buffer.length > 0 || deleteBuffer.length > 0) {
+      if (authenticatedUser !== null && (buffer.length > 0 || deleteBuffer.length > 0)) {
         void flush();
       }
     });

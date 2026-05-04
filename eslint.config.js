@@ -23,6 +23,13 @@ export default tseslint.config(
       "@typescript-eslint/require-await": "error",
       "@typescript-eslint/no-unnecessary-condition": "error",
       "@typescript-eslint/prefer-readonly": "error",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression[expression.type='TSAsExpression'][expression.typeAnnotation.type='TSUnknownKeyword']",
+          message: "Do not use `as unknown as`; replace it with a typed helper, schema, or module augmentation.",
+        },
+      ],
       "no-console": "error",
       "no-debugger": "error",
       eqeqeq: ["error", "always"],

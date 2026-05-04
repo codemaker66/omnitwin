@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import {
   emit,
@@ -20,12 +21,7 @@ import {
 // ---------------------------------------------------------------------------
 
 function silentLogger(): FastifyBaseLogger {
-  const noop = (): void => undefined;
-  return {
-    info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop,
-    child: () => silentLogger(),
-    level: "info",
-  } as unknown as FastifyBaseLogger;
+  return Fastify({ logger: false }).log;
 }
 
 const snapshotPayload = {
@@ -85,7 +81,7 @@ describe("event-bus", () => {
 
   it("logs at ERROR when a subscriber throws", async () => {
     const errorSpy = vi.fn();
-    const logger = { ...silentLogger(), error: errorSpy } as unknown as FastifyBaseLogger;
+    const logger = { ...silentLogger(), error: errorSpy } as FastifyBaseLogger;
 
     subscribe("snapshot.created", {
       name: "crasher",

@@ -31,7 +31,7 @@ export function registerRequestId(server: FastifyInstance): void {
     // Attach to the request so every log line Fastify emits carries it.
     // `request.id` is the Fastify built-in; assigning here replaces the
     // default numeric counter with our UUID.
-    (request as unknown as { id: string }).id = candidate;
+    request.id = candidate;
 
     reply.header("X-Request-Id", candidate);
     done();

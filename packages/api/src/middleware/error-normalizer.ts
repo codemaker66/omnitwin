@@ -77,6 +77,11 @@ function isEnvelopeShaped(value: unknown): value is ApiErrorBody {
   return typeof v.error === "string" && typeof v.code === "string" && isKnownCode(v.code);
 }
 
+function objectProperty(value: unknown, key: string): unknown {
+  if (value === null || typeof value !== "object") return undefined;
+  return (value as Record<string, unknown>)[key];
+}
+
 /**
  * Determine the HTTP status a thrown error will ultimately produce.
  *
@@ -90,12 +95,12 @@ function isEnvelopeShaped(value: unknown): value is ApiErrorBody {
  * thrown object lacked a `statusCode`.
  */
 function effectiveStatus(err: unknown): number {
-  const rawStatus: unknown = (err as { statusCode?: unknown }).statusCode;
+  const rawStatus = objectProperty(err, "statusCode");
   if (typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600) {
     return rawStatus;
   }
   if (err instanceof ZodError) return 400;
-  if (Array.isArray((err as { validation?: unknown }).validation)) return 400;
+  if (Array.isArray(objectProperty(err, "validation"))) return 400;
   return 500;
 }
 
@@ -146,7 +151,7 @@ export function registerErrorNormalizer(
     // directly would cause Fastify's built-in error serializer to
     // re-shape it as `{ statusCode, error, message }`, undoing our work.
     if (isEnvelopeShaped(err)) {
-      const v = err as unknown as ApiErrorBody & { details?: unknown };
+      const v = err as ApiErrorBody & { details?: unknown };
       const passThrough: ApiErrorBody = v.details === undefined
         ? { error: v.error, code: v.code }
         : { error: v.error, code: v.code, details: v.details };
@@ -159,7 +164,7 @@ export function registerErrorNormalizer(
       return;
     }
 
-    const validation = (err as unknown as { validation?: unknown }).validation;
+    const validation = objectProperty(err, "validation");
     if (Array.isArray(validation)) {
       void reply.status(400).send(apiError("VALIDATION_ERROR", err.message, validation));
       return;
@@ -171,7 +176,7 @@ export function registerErrorNormalizer(
     }
 
     // Generic path — status + code + message, no stack leak in prod.
-    const hint = (err as unknown as { code?: unknown }).code;
+    const hint = objectProperty(err, "code");
     const code = codeForStatus(status, typeof hint === "string" ? hint : undefined);
     const safeMessage = status >= 500
       ? "Internal server error."

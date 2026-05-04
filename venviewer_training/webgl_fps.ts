@@ -38,6 +38,12 @@
 import { test, expect } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 
+declare global {
+  // Set by the viewer once the splat/runtime has completed its first frame.
+  // `var` is required for a globalThis property declaration.
+  var __VENVIEWER_READY__: boolean | undefined;
+}
+
 const VIEWER_URL  = process.env.VIEWER_URL  ?? "";
 const TARGET_NAME = process.env.TARGET_NAME ?? "unknown";
 const OUT_PATH    = process.env.OUT_PATH    ?? "./fps.json";
@@ -54,8 +60,7 @@ test("measure WebGL FPS", async ({ page, browserName }) => {
   // The viewer must set `window.__VENVIEWER_READY__ = true` once initial
   // splat decode + first frame have completed.
   await page.waitForFunction(
-    () => (globalThis as unknown as { __VENVIEWER_READY__?: boolean })
-      .__VENVIEWER_READY__ === true,
+    () => globalThis.__VENVIEWER_READY__ === true,
     null,
     { timeout: 60_000 },
   );

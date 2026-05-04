@@ -688,8 +688,13 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
     expect(res.statusCode).toBe(403);
 
     const { cleanupPreviewConfigurations } = await import("../services/cleanup.js");
-    const deleted = await cleanupPreviewConfigurations(db);
-    expect(deleted).toBe(0);
+    await cleanupPreviewConfigurations(db);
+
+    const [remaining] = await db.select({ id: configurations.id })
+      .from(configurations)
+      .where(eq(configurations.id, publicConfigId))
+      .limit(1);
+    expect(remaining).toBeDefined();
   }, 15000);
 
   // =========================================================================

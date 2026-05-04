@@ -37,9 +37,7 @@ vi.mock("../api/spaces.js", () => ({
   getSpace: vi.fn(),
 }));
 
-const configMock = (await import("../api/configurations.js")) as unknown as {
-  createPublicConfig: ReturnType<typeof vi.fn>;
-};
+const configMock = vi.mocked(await import("../api/configurations.js"));
 
 const { useEditorStore } = await import("../stores/editor-store.js");
 
@@ -81,7 +79,7 @@ describe("createPublicConfig localStorage cap (#18) — behavioural", () => {
   it("evicts oldest entry when adding a config at the cap boundary", async () => {
     seedEntries(MAX);
     configMock.createPublicConfig.mockResolvedValue({
-      id: "new-cfg", spaceId: "s-1", venueId: "v-1", isPublicPreview: true,
+      id: "new-cfg", spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
     });
 
     await useEditorStore.getState().createPublicConfig("s-1");
@@ -103,7 +101,7 @@ describe("createPublicConfig localStorage cap (#18) — behavioural", () => {
     // Add three more configs in sequence
     for (let i = 0; i < 3; i++) {
       configMock.createPublicConfig.mockResolvedValue({
-        id: `over-${String(i)}`, spaceId: "s-1", venueId: "v-1", isPublicPreview: true,
+        id: `over-${String(i)}`, spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
       });
       await useEditorStore.getState().createPublicConfig("s-1");
     }
@@ -125,7 +123,7 @@ describe("createPublicConfig localStorage cap (#18) — behavioural", () => {
   it("does NOT evict when below the cap", async () => {
     seedEntries(10);
     configMock.createPublicConfig.mockResolvedValue({
-      id: "new-cfg", spaceId: "s-1", venueId: "v-1", isPublicPreview: true,
+      id: "new-cfg", spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
     });
 
     await useEditorStore.getState().createPublicConfig("s-1");

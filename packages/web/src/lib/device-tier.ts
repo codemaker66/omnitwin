@@ -156,12 +156,18 @@ export function getQualitySettings(tier: DeviceTier): QualitySettings {
   return TIER_SETTINGS[tier];
 }
 
+export interface GpuRendererContext {
+  readonly getExtension: (name: "WEBGL_debug_renderer_info") => WEBGL_debug_renderer_info | null;
+  readonly getParameter: (parameter: number) => unknown;
+}
+
 /**
  * Attempts to read the GPU renderer string from a WebGL context.
  * Returns null if the WEBGL_debug_renderer_info extension is unavailable.
  */
-export function getGpuRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext): string | null {
+export function getGpuRenderer(gl: GpuRendererContext): string | null {
   const ext = gl.getExtension("WEBGL_debug_renderer_info");
   if (ext === null) return null;
-  return gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string;
+  const renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+  return typeof renderer === "string" ? renderer : null;
 }

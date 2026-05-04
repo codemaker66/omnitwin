@@ -20,13 +20,7 @@ vi.mock("../api/spaces.js", () => ({
   getSpace: vi.fn(),
 }));
 
-const configMock = (await import("../api/configurations.js")) as unknown as {
-  getPublicConfig: ReturnType<typeof vi.fn>;
-  getConfig: ReturnType<typeof vi.fn>;
-  createPublicConfig: ReturnType<typeof vi.fn>;
-  publicBatchSave: ReturnType<typeof vi.fn>;
-  authBatchSave: ReturnType<typeof vi.fn>;
-};
+const configMock = vi.mocked(await import("../api/configurations.js"));
 
 const { useEditorStore } = await import("../stores/editor-store.js");
 
@@ -243,7 +237,7 @@ describe("saveToServer", () => {
 describe("createPublicConfig", () => {
   it("creates config and stores in localStorage", async () => {
     configMock.createPublicConfig.mockResolvedValue({
-      id: "new-cfg", spaceId: "s-1", venueId: "v-1", isPublicPreview: true,
+      id: "new-cfg", spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
     });
 
     const id = await useEditorStore.getState().createPublicConfig("s-1");
@@ -279,7 +273,7 @@ describe("scene ref", () => {
   });
 
   it("can be set via setState (SceneProvider writes it)", () => {
-    const fakeScene = { type: "Scene" } as unknown as import("three").Scene;
+    const fakeScene = { type: "Scene" } as import("three").Scene;
     useEditorStore.setState({ scene: fakeScene });
     expect(useEditorStore.getState().scene).toBe(fakeScene);
     // Cleanup
@@ -287,7 +281,7 @@ describe("scene ref", () => {
   });
 
   it("reset() preserves the scene ref (Canvas is still alive)", () => {
-    const fakeScene = { type: "Scene" } as unknown as import("three").Scene;
+    const fakeScene = { type: "Scene" } as import("three").Scene;
     useEditorStore.setState({ scene: fakeScene, configId: "cfg-1" });
 
     useEditorStore.getState().reset();

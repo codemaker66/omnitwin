@@ -47,9 +47,7 @@ function isValidIanaTimezone(tz: string): boolean {
   // runtime's ICU timezone list. Fall back to constructing a
   // formatter (older runtimes) which throws for unknown zones.
   try {
-    const supportedValuesOf = (
-      Intl as unknown as { supportedValuesOf?: (key: string) => readonly string[] }
-    ).supportedValuesOf;
+    const supportedValuesOf = Intl.supportedValuesOf;
     if (typeof supportedValuesOf === "function") {
       return supportedValuesOf("timeZone").includes(tz);
     }

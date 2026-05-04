@@ -87,6 +87,20 @@ function listFor<K extends EventName>(event: K): Subscriber<K>[] {
   return registry[event] ?? [];
 }
 
+function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void {
+  switch (event) {
+    case "approval.recorded":
+      registry["approval.recorded"] = list as Subscriber<"approval.recorded">[];
+      return;
+    case "approval.revoked":
+      registry["approval.revoked"] = list as Subscriber<"approval.revoked">[];
+      return;
+    case "snapshot.created":
+      registry["snapshot.created"] = list as Subscriber<"snapshot.created">[];
+      return;
+  }
+}
+
 /**
  * Attach a subscriber to an event. Subscribers run in registration
  * order when the event fires. Returns an unsubscribe function for
@@ -98,7 +112,7 @@ export function subscribe<K extends EventName>(
 ): () => void {
   const list = listFor(event);
   list.push(subscriber);
-  registry[event] = list as unknown as Registry[K];
+  setListFor(event, list);
   return () => {
     const current = listFor(event);
     const idx = current.indexOf(subscriber);
@@ -147,6 +161,6 @@ export function emit<K extends EventName>(
  */
 export function __resetRegistryForTests(): void {
   for (const key of Object.keys(registry) as EventName[]) {
-    (registry as Record<string, unknown>)[key] = undefined;
+    registry[key] = undefined;
   }
 }

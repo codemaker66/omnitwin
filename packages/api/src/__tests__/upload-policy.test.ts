@@ -13,7 +13,7 @@ import {
 const CTX_ID = "00000000-0000-0000-0000-000000000001";
 const OTHER_CTX_ID = "00000000-0000-0000-0000-000000000002";
 
-const noopDb = {} as unknown as Database;
+const noopDb = {} as Database;
 
 const admin: JwtUser = {
   id: "admin-user",
@@ -48,7 +48,7 @@ describe("upload authorization policy helpers", () => {
   });
 
   it("only returns permanent public URLs for explicitly public visibility", () => {
-    const env = { R2_PUBLIC_URL: "https://assets.example.com/" } as unknown as Env;
+    const env = { R2_PUBLIC_URL: "https://assets.example.com/" } as Env;
     expect(publicUrlForVisibility(env, "private/venues/v1/file.jpg", "private")).toBeNull();
     expect(publicUrlForVisibility(env, "public/marketing/campaign/file.jpg", "public"))
       .toBe("https://assets.example.com/public/marketing/campaign/file.jpg");
