@@ -384,6 +384,52 @@ export {
   type TruthModeTokenCategory,
 } from "./truth-mode.js";
 
+// --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
+export {
+  LAYOUT_PROOF_CLAIM_FAMILIES,
+  LAYOUT_PROOF_CLAIM_STATUSES,
+  LAYOUT_PROOF_EVIDENCE_ASSURANCE_LEVELS,
+  LAYOUT_PROOF_STALE_REASONS,
+  LAYOUT_PROOF_SCENARIO_ASSUMPTION_CATEGORIES,
+  LAYOUT_PROOF_LIFECYCLE_STATES,
+  LayoutProofClaimFamilySchema,
+  LayoutProofClaimStatusSchema,
+  LayoutProofEvidenceAssuranceLevelSchema,
+  LayoutProofStaleReasonSchema,
+  LayoutProofScenarioAssumptionCategorySchema,
+  LayoutProofLifecycleStateSchema,
+  type LayoutProofClaimFamily,
+  type LayoutProofClaimStatus,
+  type LayoutProofEvidenceAssuranceLevel,
+  type LayoutProofStaleReason,
+  type LayoutProofScenarioAssumptionCategory,
+  type LayoutProofLifecycleState,
+} from "./layout-proof-object.js";
+
+// --- ASPIRATIONAL: Crowd Simulation Replay Bundle metadata for flow evidence ---
+export {
+  CROWD_FLOW_SCENARIO_TYPES,
+  CROWD_AGENT_PROFILE_TYPES,
+  CROWD_REPLAY_BUNDLE_LIFECYCLE_STATES,
+  CROWD_FLOW_METRIC_NAMES,
+  CROWD_SIMULATION_EVIDENCE_STATUSES,
+  CROWD_SIMULATOR_SOURCE_NAMES,
+  CROWD_OPEN_SOURCE_SIMULATOR_SOURCE_NAMES,
+  CROWD_BENCHMARK_SIMULATOR_SOURCE_NAMES,
+  CrowdFlowScenarioTypeSchema,
+  CrowdAgentProfileTypeSchema,
+  CrowdReplayBundleLifecycleStateSchema,
+  CrowdFlowMetricNameSchema,
+  CrowdSimulationEvidenceStatusSchema,
+  CrowdSimulatorSourceNameSchema,
+  type CrowdFlowScenarioType,
+  type CrowdAgentProfileType,
+  type CrowdReplayBundleLifecycleState,
+  type CrowdFlowMetricName,
+  type CrowdSimulationEvidenceStatus,
+  type CrowdSimulatorSourceName,
+} from "./crowd-simulation-replay.js";
+
 // --- ASPIRATIONAL: Residual Radiance Layer metadata for research planning ---
 export {
   RESIDUAL_LAYER_ROLES,
