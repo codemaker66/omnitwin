@@ -321,10 +321,83 @@ enough that another node would hurt readability. F contains 11 nodes —
 also at the readability ceiling. T-111 and T-112 are Tier 4 VSIR ADR
 follow-ups and remain in `docs/state/tasks.md`, not this visual graph.
 If more audit or product-vision nodes need visualization, split before
-adding more nodes. (`docs/diagrams/_theme.md` line 51 caps a single
-diagram at 12 nodes before splitting; subgraphs are the relief
-mechanism. The per-subgraph guidance here is readability advice, not
-the per-diagram cap.)
+adding more nodes. T-157 through T-171 are the Layout Proof Object /
+Layout Evidence Pack doctrine and follow-up research/implementation
+tasks; T-172 through T-186 are the Crowd Simulation Replay Bundle /
+Guest Flow Replay doctrine and follow-up research/implementation tasks;
+T-187 through T-191 are the Assumption Ledger doctrine and follow-up
+evidence/simulation assumption tasks; T-192 through T-197 are the Venue
+Claim Lifecycle Engine doctrine and follow-up claim-state tasks; T-198
+through T-202 are the Claim-Aware Copy Guard doctrine and follow-up
+public-copy evidence tasks; T-203 through T-208 are the Capture Control
+Network doctrine and follow-up pose/control tasks; T-209 through T-213 are
+the Exposure Tier doctrine and follow-up artifact-governance tasks; T-214
+through T-217 are the Calibrated Reliance Principle doctrine and follow-up
+copy/UX/user-study checklist tasks; T-218 through T-222 are the Purpose-Fit
+Evidence doctrine and follow-up purpose-vocabulary/Truth Mode/Evidence Pack
+claim-guard tasks; T-223 through T-226 are the Layout Evidence Pack validator
+message-key/template-rendering follow-up tasks; T-227 through T-230 are the
+Scotland Policy Bundle route-validation boundary and route-discovery research
+follow-up tasks; T-231 through T-236 are the Lighting Context Package / Probe
+Leakage Guard doctrine and follow-up lighting-volume/probe/cubemap tasks;
+T-237 through T-241 are the Guest Flow Replay scenario-template/instance
+follow-up tasks; T-242 through T-248 are the `.venreplay.zip` Venviewer
+Replay Artifact doctrine and follow-up schema/hash/loader/validator tasks;
+T-249 through T-254 are the Photometric Chain-of-Custody doctrine and
+fixed-light residual capture accountability follow-up tasks; T-255 through
+T-259 are the Review Gate Engine doctrine and follow-up review-vocabulary/
+witness/Truth Mode/events-team tasks; T-260 through T-264 are the Venue
+Data Request Pack doctrine and follow-up onboarding/intake/documented-claim
+mapping/review-workflow tasks; T-265 through T-268 are the Residual Disable
+Test doctrine and follow-up fixture/render-comparison/authority-QA tasks.
+T-269 through T-282 are the reports 20-25 hidden-lightbulb corrections:
+Data Sufficiency Contract, Research Ingestion Guard, renderer-agnostic
+lighting context, 2.5D flow connectors, multi-seed summaries, Appearance
+Capture QA Pack, PLY-first/SPZ-second residual tests, Authoritative Zone Box,
+and external-mesh Frosting background-disabled checks. T-283 through T-289
+are the Venviewer Artifact Registry doctrine and follow-up artifact-type/
+manifest/freshness/exposure/claim-mapping/audit-report tasks. T-290 through
+T-295 are the License & IP Compliance Ledger doctrine and follow-up
+JuPedSim, MILo/Frosting, Spark/SPZ, commercial-simulator, and
+generated-artifact provenance license-review tasks. T-296 through T-301
+are the Operational Geometry Compiler doctrine and follow-up GeoJSON schema,
+walkable-area compiler, geometry-hash, polygon-validity, and data-sufficiency
+tasks. T-302 through T-306 are the Flow Zone Authoring Layer doctrine and
+follow-up zone-vocabulary, editor-spike, validation-test, and Trades Hall bar
+queue authoring tasks. T-307 through T-311 are the Planning Evidence
+Disclosure doctrine and follow-up wording-registry, PDF watermark, replay
+viewer disclosure, and Truth Mode disclaimer tasks. T-312 through T-315 are
+the internal engine naming note and package-boundary reviews for `venkernel`,
+`venreplay`, and `venlight`. T-316 through T-320 are the Geometry
+Approximation Policy doctrine and follow-up approximation-vocabulary,
+proof-footprint-generator, Truth Mode display, and round/rotated-object test
+tasks. T-321 through T-325 are the Simulation Job Boundary doctrine and
+follow-up queue-selection, JuPedSim-worker, replay-status-API, and
+timeout/retry-policy tasks. T-326 through T-352 are the Proof-Carrying
+Venue Reality Stack master consolidation and follow-up missing-concept
+tasks: Venue Claim Graph/HVET v0, documented venue intelligence,
+provenance/OpenUSD truth layering, Event Phase Graph, human-review overlay,
+frozen evaluation context, rule dependency graph, witness/telemetry split,
+Venue Local CRS, 2.5D event-object semantics, regulatory trigger tags,
+utility/cable routing, rule-owned wording, Guest Flow scenario data contract,
+PET metric naming, lighting state machine, inserted-object lighting
+provenance, residual bridge risk, splat coordinate precision, verified tool
+capability, bridge verification, authoring constraints, severity split,
+causal repair hints, seeded Truth Mode fixture, and measured-empty operational
+policy. The done doctrine/spec tasks and remaining deferred evidence/simulation/
+claim-lifecycle/capture-control/exposure-governance/calibrated-reliance/
+purpose-fit/proof-message-rendering/route-validation/probe-leakage/
+scenario-template/replay-artifact/photometric-capture/review-gates/
+venue-onboarding/residual-disable/research-ingestion/data-sufficiency/
+artifact-registry/license-compliance/operational-geometry/flow-zone/planning-
+evidence-disclosure/internal-engine-naming/geometry-approximation/simulation-
+job-boundary/proof-stack-consolidation work stay in Tier 6 of
+`docs/state/tasks.md` and are not
+visualised here until they move into the active T-091, Constraint Solver,
+Truth Mode, or Event Ops Compiler path.
+(`docs/diagrams/_theme.md` line 51 caps a single diagram at 12 nodes
+before splitting; subgraphs are the relief mechanism. The per-subgraph
+guidance here is readability advice, not the per-diagram cap.)
 
 ## When to update
 

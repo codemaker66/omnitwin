@@ -34,6 +34,10 @@ Current repository state at plan creation:
 
 RRL-001 must therefore treat all cost/time estimates as placeholders and all asset references as future inputs. The plan is executable once T-091 publishes the first real evidence and T-116/T-118 establish transform and room-shell inputs.
 
+Existing Matterport data is acceptable for bootstrap experiments, ingestion checks, and early visual comparisons. Serious fixed-light residual evaluation requires a Photometric Chain-of-Custody record as defined in `docs/architecture/photometric-chain-of-custody.md`.
+
+Residual runtime experiments should be PLY-first and SPZ-second. The first Spark residual test should prefer inspectable PLY or equivalent source output so fixed-camera coordinate alignment can be verified before compression. SPZ packaging is a second step after camera, mesh, residual, and transform agreement are proven.
+
 ## Scope
 
 In scope:
@@ -46,6 +50,8 @@ In scope:
 - One object insertion demo.
 - A metrics report and Truth Mode explanation mock.
 - Research artifacts only.
+
+The selected zone must include an Authoritative Zone Box defining where residual appearance may contribute and what mesh/semantic regions remain authoritative.
 
 Out of scope:
 
@@ -98,6 +104,8 @@ Reject a zone if:
 | UVs/material slots | Reviewed UVs or material slots for wall, floor, trim, fixture, and insertion surfaces. | T-140 |
 | Camera poses | Extrinsics and intrinsics in a declared coordinate frame. | T-091 / D-014 |
 | Images/panoramas/keyframes | Fixed-light capture images with enough overlap for train/holdout split. | T-091 |
+| Photometric Chain-of-Custody | Capture session ID, zone ID, lighting state, camera/lens/exposure/white-balance/focus settings, grey card, ColorChecker, flicker test, calibration frames, raw file hashes, train/holdout/challenge split, operator, exclusions, and known issues. | PCC-001 / T-249 |
+| Authoritative Zone Box | CVF bounds, semantic region references, allowed binding/composition, exclusions, transform references, and Truth Mode label. | Mandatory for residual acceptance. |
 | Optional E57 depth | Depth or point cloud evidence for alignment and occlusion sanity checks. | T-118 |
 | Baseline PBR maps/materials | Mesh-only material set: albedo/base color, roughness, metalness/specular, normal where available. | T-140 |
 | Residual training data | Residual target computed against mesh-only renders or directly learned from image supervision, depending on track. | T-149/T-150 |
@@ -154,7 +162,7 @@ Hypothesis: a simpler PBR baseline with lightmaps, local probes, and better mate
 Experiment shape:
 
 - Build a high-quality PBR fallback for the same zone.
-- Use lightmaps/probes where allowed.
+- Use lightmaps/probes where allowed, following the Lighting Context Package / Probe Leakage Guard doctrine.
 - Compare asset size, FPS, editability, and object insertion realism against Tracks A and B.
 - Treat this as the fallback if learned residuals fail editability or explainability gates.
 
@@ -177,7 +185,7 @@ The object must:
 - Have an ARF -> CVF transform.
 - Be editable: move, hide, and delete.
 - Use the mesh as shadow/occlusion proxy.
-- Use local reflection/light probes if available.
+- Use local reflection/light probes if available, selected by zone/influence rather than global scene average.
 - Render in each baseline: mesh-only PBR, full splat comparison, mesh + residual, and optional Frosting-only.
 
 Evaluate:
@@ -222,6 +230,8 @@ RRL-001 succeeds only if all are true:
 - Mesh + residual visibly improves over mesh-only PBR on held-out views.
 - Standard metrics improve over mesh-only on the chosen zone without hiding major local failures.
 - Residual remains sparse or localized enough that the mesh/PBR baseline still carries the scene.
+- Residual Disable Test passes: mesh-only remains operationally usable after residual disablement, and no critical region/object exists only in the residual.
+- Residual Energy Ratio and Semantic Leakage pass their acceptance thresholds for the declared zone.
 - Inserted object looks plausibly grounded/lit.
 - Disabling residual still leaves a usable venue planning scene.
 - Moving, hiding, or deleting the inserted object does not leave major visual ghosts.
@@ -234,8 +244,11 @@ RRL-001 succeeds only if all are true:
 RRL-001 fails if any are true:
 
 - Residual carries most of the image.
+- Residual carries essential geometry or hides missing mesh authority.
+- Residual Energy Ratio or Semantic Leakage fails the declared threshold.
 - Residual leaks across semantic regions without authorization.
 - Residual breaks editability or leaves obvious ghosts after edits.
+- Residual Disable Test fails.
 - Object insertion looks worse than mesh-only PBR.
 - Runtime size/performance is unacceptable for an optional layer.
 - The result requires arbitrary relighting to appear valid.
@@ -255,11 +268,15 @@ Compute estimates are placeholders and must be verified before spend:
 
 Budget guardrail: no broad parameter sweep until the zone, input pack, baselines, and holdout cameras are frozen. Spend should buy specific answers, not research drift.
 
+Holdouts must never be trained on. If a holdout image enters training, previous metrics using that image are invalidated or must be explicitly superseded.
+
 ## Output Artifacts
 
 RRL-001 produces a research artifact bundle, not a production runtime bundle:
 
 - Input manifest: zone, source captures, camera poses, mesh, transforms, and semantic labels.
+- Photometric Chain-of-Custody record.
+- Train/holdout/challenge split report.
 - Training logs.
 - Mesh-only renders.
 - Full splat baseline renders.
@@ -297,7 +314,7 @@ This can be a static markdown/image mock for RRL-001. It is not a runtime UI imp
 | Phase | Task | Output |
 |---|---|---|
 | Plan | T-138 | This document: prototype scope, criteria, baselines, metrics, and phases. |
-| Phase 0: data readiness and zone selection | T-147 | Frozen zone/input manifest with selected cameras, mesh, transforms, and holdout split. |
+| Phase 0: data readiness and zone selection | T-147 | Frozen zone/input manifest with selected cameras, mesh, transforms, Photometric Chain-of-Custody, and holdout split. |
 | Phase 1: baselines | T-148 | Mesh-only PBR and full Gaussian splat baseline render pack. |
 | Phase 2A: surface-bound residual | T-149 | Track A Gaussian Frosting / surface-bound splat prototype results. |
 | Phase 2B: UV/neural residual | T-150 | Track B UV/neural texture residual prototype results. |
@@ -317,6 +334,12 @@ Supporting broad research tasks:
 - T-145: Limited lighting-state residual experiment.
 - T-146: Stained-glass/chandelier special-class residual policy.
 - T-155: Residual Radiance metadata vocabulary in shared types.
+- T-249: Photometric Chain-of-Custody doctrine.
+- T-250: Residual capture session manifest.
+- T-265: Residual Disable Test doctrine.
+- T-266: Residual disable fixture.
+- T-267: Mesh-only vs residual render comparison.
+- T-268: Residual authority QA checklist.
 
 ## Decision Rules
 

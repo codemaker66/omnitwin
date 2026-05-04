@@ -61,6 +61,7 @@ Every Truth Mode region or object must be able to answer these axes:
 - **Scene Authority Map references:** which layer/asset owns geometry, appearance, lighting, physics, semantic, interaction, and export authority.
 - **Provenance references:** capture source, processing lineage, manual edits, signer, reviewer, and transform artifacts.
 - **Known-unknown / observed-empty distinction:** "we observed this region and it is empty" is not the same as "we have no evidence."
+- **Data sufficiency outcome:** whether a check, replay, lighting context, or evidence request had enough inputs to run.
 
 ## Evidence / Source Vocabulary
 
@@ -79,6 +80,20 @@ Minimum source vocabulary:
 - `measured_empty`: observed region confirmed empty at capture or review time.
 
 `known_unknown` and `measured_empty` must remain distinct. This is load-bearing for event setup, egress clearance, back-of-house checks, and heritage fixtures.
+
+## Data Sufficiency Disclosure
+
+Truth Mode must disclose when evidence is unsupported, not checked, degraded, or requires review because required data is missing.
+
+Supported compact labels include:
+
+- "Not checked"
+- "Needs venue data"
+- "Draft evidence"
+- "Needs review"
+- "Unsupported in this version"
+
+These states must not be collapsed into confidence color alone. A high-quality render with missing exit-width data is still missing exit-width evidence.
 
 ## Verification Vocabulary
 

@@ -46,6 +46,24 @@ Scene Authority Map entries must keep the boundary explicit:
 
 A residual may be declared as `appearance_authority` or partial `lighting_authority` for a region, but it must not silently become `geometry_authority`, `semantic_authority`, `interaction_authority`, or `export_authority`.
 
+## Authoritative Zone Box
+
+Every residual experiment must define an Authoritative Zone Box before training or evaluation.
+
+The Authoritative Zone Box is the bounded region where the residual is allowed to contribute appearance. It should declare:
+
+- zone ID
+- CVF bounds
+- mesh or semantic region references
+- allowed residual binding strategies
+- allowed composition modes
+- excluded objects or surfaces
+- expected mesh authority
+- transform artifact references
+- Truth Mode disclosure label
+
+Residual contribution outside the Authoritative Zone Box is leakage unless explicitly declared by Scene Authority Map policy. The box prevents a residual from becoming an unbounded background renderer that quietly carries the room.
+
 ## Binding Strategies
 
 Residuals should bind to explicit mesh semantics first. Allowed binding strategies:
@@ -76,19 +94,48 @@ Alpha-over residual is allowed only for special semantic classes:
 
 Residuals must not silently carry the whole scene. A valid residual should leave a useful venue planning experience when disabled. If disabling the residual collapses walls, floors, furniture meaning, or operational readability, the residual is doing more than residual appearance work and the experiment fails.
 
+## Residual Disable Test
+
+The Residual Disable Test is a mandatory gate for every Residual Radiance Layer prototype before it can be promoted beyond research.
+
+The test proves that residual subordination is operationally true, not just a philosophical claim. The residual may improve appearance, atmosphere, view-dependent lighting, stained-glass glow, chandelier sparkle, and high-frequency visual detail. It must not be the only place where essential geometry, semantics, collisions, layout affordances, or region identity exist.
+
+The test sequence is:
+
+1. Render the semantic/PBR mesh-only baseline from the frozen evaluation cameras.
+2. Render mesh plus residual from the same cameras.
+3. Disable the residual without changing mesh, layout, camera, lighting, or semantic inputs.
+4. Verify geometry, semantics, collisions, and layout planning remain usable in the mesh-only state.
+5. Verify no critical object or region exists only in the residual.
+6. Verify Truth Mode can explain what the residual contributed and what remains mesh-authoritative.
+
+A prototype fails the Residual Disable Test if:
+
+- the residual carries essential geometry
+- the residual hides missing mesh authority
+- the residual leaves visual ghosts after a mesh edit
+- the residual cannot be disabled without breaking planning
+
+The test should be applied alongside object insertion and edit-consistency evaluation. It is acceptable for the mesh-only state to look less photoreal. It is not acceptable for the mesh-only state to become operationally unusable.
+
 ## First Prototype Scope
 
 The first prototype should be deliberately narrow:
 
 - One venue zone, not the full Trades Hall.
 - Fixed lighting.
+- Photometric Chain-of-Custody record for any serious fixed-light residual evaluation.
 - Explicit semantic/PBR mesh.
 - Mesh-only baseline.
 - Mesh plus residual comparison.
 - One object insertion demo.
 - Optional limited discrete lighting states only after the fixed-light comparison is understood.
 
+Existing Matterport data may bootstrap pipeline work, but serious residual evaluation requires controlled fixed-light capture with recorded lighting state, camera settings, calibration frames, raw file hashes, and train/holdout split. Holdouts must never be trained on.
+
 The object insertion demo is load-bearing. It tests whether the residual behaves as an appearance layer over a mutable planning scene rather than as a hidden full-scene renderer that leaves ghosts when an object moves or disappears.
+
+For external-mesh Frosting-style experiments, background Gaussians or background spheres are disabled by default. They can be enabled only as an explicit comparison condition, because otherwise the background layer can carry hidden geometry or appearance authority outside the semantic mesh.
 
 ## Research Candidates
 
@@ -106,9 +153,13 @@ The research track may evaluate:
 
 These are candidates, not commitments. The implementation route must be chosen by measured prototype results, browser feasibility, and Truth Mode explainability.
 
+Object-insertion lighting must follow the Lighting Context Package / Probe Leakage Guard doctrine. Probe-grid, local HDR probe, lightmap, or cubemap approaches must be room/zone-aware and must not interpolate through solid walls or across unrelated lighting zones.
+
 ## Browser and Runtime Position
 
 - Spark/SPZ remains the production runtime path.
+- Residual research should start with a PLY-first Spark residual test where possible, because it is easier to inspect coordinates and source data before compression or packaging.
+- SPZ should come second for residual experiments, after a fixed-camera coordinate test proves that mesh, residual, camera, and transforms agree.
 - Residual runtime experiments may use Spark custom shaders, WebGPU, or offline baked textures.
 - Do not assume custom Spark shader support until it is verified against the real Spark 2 API and browser constraints.
 - The structural mesh must always remain available as a fallback.
@@ -125,8 +176,8 @@ Standard visual metrics:
 
 Residual-specific metrics:
 
-- Residual energy ratio: how much of the scene's visible appearance is carried by the residual rather than the mesh/PBR baseline.
-- Semantic leakage: whether residual samples cross region or object boundaries without authorization.
+- Residual energy ratio: how much of the scene's visible appearance is carried by the residual rather than the mesh/PBR baseline. This is an acceptance metric, not an optional diagnostic.
+- Semantic leakage: whether residual samples cross region or object boundaries without authorization. This is an acceptance metric, not an optional diagnostic.
 - Edit consistency: whether moved, hidden, or deleted objects leave visual ghosts.
 - Object insertion realism: whether an inserted object sits plausibly in the lighting/radiance context.
 - Runtime FPS on target desktop, tablet, and phone classes.
@@ -139,9 +190,13 @@ Residual-specific metrics:
 An experiment fails if:
 
 - The residual carries most of the scene.
+- The residual carries essential geometry or hides missing mesh authority.
+- Residual energy ratio is high enough that the mesh/PBR baseline no longer carries the planning scene.
+- Semantic leakage crosses the Authoritative Zone Box or approved semantic boundaries.
 - Moving or deleting a mesh object leaves obvious visual ghosts.
 - The residual crosses semantic boundaries without authorization.
 - The residual cannot be disabled while retaining a useful venue planning experience.
+- The Residual Disable Test fails.
 - Browser performance collapses on target devices.
 - Truth Mode cannot explain what the residual is doing.
 
@@ -153,7 +208,7 @@ Plan A: surface-bound residual / Gaussian Frosting-style layer.
 
 Plan B: pure Frosting / appearance splat layer with mesh for structure.
 
-Plan C: PBR-only mesh with lightmaps and probes.
+Plan C: PBR-only mesh with lightmaps and Lighting Context Package probes.
 
 Plan D: VFX-style hybrid where splats provide hero visualization and mesh/PBR handles interaction, constraints, collision, measurement, and exports.
 
@@ -184,6 +239,7 @@ Normal users should not see raw residual diagnostics by default. Planner and cli
 - D-019 defines the VSIR-0 concrete schema posture and header-in-DB/body-in-file payload split.
 - D-024 defines Scene Authority Map routing and TransformArtifactV0 references.
 - Truth Mode doctrine defines how users inspect source, verification, confidence, staleness, provenance, and authority.
+- Photometric Chain-of-Custody doctrine defines accountable fixed-light appearance capture for residual evaluation.
 
 This document adds research direction only. It does not implement runtime code, database schema, Spark shaders, WebGPU code, C2PA, package renames, or public marketing copy.
 
@@ -208,3 +264,8 @@ This document adds research direction only. It does not implement runtime code, 
 - T-153: RRL-001 metrics report and Truth Mode explanation mock.
 - T-154: RRL-001 promote, revise, defer, or reject decision.
 - T-155: Residual Radiance metadata vocabulary in shared types.
+- T-249: Photometric Chain-of-Custody doctrine.
+- T-265: Residual Disable Test doctrine.
+- T-266: Residual disable fixture.
+- T-267: Mesh-only vs residual render comparison.
+- T-268: Residual authority QA checklist.
