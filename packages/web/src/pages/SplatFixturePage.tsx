@@ -39,7 +39,7 @@ function SparkTextSplat(): React.ReactElement {
 
 export function SplatFixturePage(): React.ReactElement {
   const [searchParams] = useSearchParams();
-  const truthModeEnabled = isTruthModeUiEnabled(searchParams);
+  const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
       surface: "spark_fixture",

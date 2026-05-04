@@ -253,16 +253,17 @@ function scheduleAutoSave(isAuthenticated: boolean): void {
  * opening the enquiry modal so the venue receives the latest layout, not a
  * 3-second-stale one.
  *
- * Returns a promise that resolves when the save completes (or immediately
- * if nothing is dirty).
+ * Returns true when the pending save is either unnecessary or reaches the
+ * server. Returns false when saveToServer records a save failure.
  */
-export async function flushAutoSave(): Promise<void> {
+export async function flushAutoSave(): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
     clearTimeout(bridgeSaveTimer);
     bridgeSaveTimer = null;
   }
   const state = useEditorStore.getState();
   if (state.isDirty && !state.isSaving && state.configId !== null) {
-    await state.saveToServer(useAuthStore.getState().isAuthenticated);
+    return await state.saveToServer(useAuthStore.getState().isAuthenticated);
   }
+  return true;
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
@@ -36,16 +36,32 @@ export function SaveSendPanel(): React.ReactElement | null {
   const isTouch = useIsCoarsePointer();
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [flushing, setFlushing] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   if (objects.length === 0 || configId === null) return null;
   if (isNarrow || isTouch) return null;
 
   const handleSend = (): void => {
     setFlushing(true);
-    void prepareLayoutForGuestEnquiry(configId).finally(() => {
-      setFlushing(false);
-      setShowEnquiry(true);
-    });
+    void prepareLayoutForGuestEnquiry(configId)
+      .then((readyToSend) => {
+        if (!mountedRef.current) return;
+        setFlushing(false);
+        if (readyToSend) {
+          setShowEnquiry(true);
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current) {
+          setFlushing(false);
+        }
+      });
   };
 
   return (

@@ -5,8 +5,8 @@ import type { FastifyInstance } from "fastify";
 // Webhook route tests — punch list #30 (missing route tests)
 //
 // The /webhooks/clerk endpoint verifies Svix signatures on Clerk webhook
-// events and syncs user data to the local DB. In dev/test, signature
-// verification is skipped when CLERK_WEBHOOK_SECRET is unset.
+// events and syncs user data to the local DB. If CLERK_WEBHOOK_SECRET is
+// unset, the route fails closed instead of accepting unsigned payloads.
 //
 // Note on test isolation: when the full suite runs in a single fork
 // (vitest.config.ts: singleFork=true), the webhook endpoint may return
@@ -100,13 +100,11 @@ describe("webhooks.ts security contract — source-grep", () => {
     expect(codeOnly).toContain(`"svix-signature"`);
   });
 
-  it("refuses unsigned events in production (belt-and-suspenders)", async () => {
+  it("refuses unsigned events when webhook verification is not configured", async () => {
     const { codeOnly } = await readSource(SRC);
-    // The belt-and-suspenders check: even if startup validation was
-    // bypassed, the webhook handler refuses to skip verification in
-    // NODE_ENV=production.
-    expect(codeOnly).toMatch(/NODE_ENV.*production/);
+    expect(codeOnly).toContain("CLERK_WEBHOOK_SECRET unset");
     expect(codeOnly).toContain("Webhook verification not configured");
+    expect(codeOnly).not.toContain("skipping webhook signature verification");
   });
 
   it("handles all three Clerk event types", async () => {

@@ -234,6 +234,62 @@ describe("RuntimeVenueManifestV0Schema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts mesh layers that point at geometry assets", () => {
+    const parsed = RuntimeVenueManifestV0Schema.parse(
+      validManifest({
+        assets: [
+          {
+            id: "grand-hall-shell",
+            role: "geometry",
+            format: "glb",
+            uri: "./assets/grand-hall-shell.glb",
+            sha256: VALID_SHA256,
+          },
+        ],
+        layers: [
+          {
+            id: "grand-hall-shell-layer",
+            kind: "mesh",
+            assetId: "grand-hall-shell",
+            format: "glb",
+            coordinateSystem: "rhs_y_up_meters",
+          },
+        ],
+        defaultLayerId: "grand-hall-shell-layer",
+      }),
+    );
+
+    expect(parsed.layers[0]?.kind).toBe("mesh");
+  });
+
+  it("rejects mesh layers that point at radiance assets", () => {
+    const result = RuntimeVenueManifestV0Schema.safeParse(
+      validManifest({
+        assets: [
+          {
+            id: "grand-hall-radiance-mesh",
+            role: "radiance",
+            format: "glb",
+            uri: "./assets/grand-hall-radiance.glb",
+            sha256: VALID_SHA256,
+          },
+        ],
+        layers: [
+          {
+            id: "grand-hall-shell-layer",
+            kind: "mesh",
+            assetId: "grand-hall-radiance-mesh",
+            format: "glb",
+            coordinateSystem: "rhs_y_up_meters",
+          },
+        ],
+        defaultLayerId: "grand-hall-shell-layer",
+      }),
+    );
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects defaultLayerId when it does not reference a declared layer", () => {
     const result = RuntimeVenueManifestV0Schema.safeParse(
       validManifest({

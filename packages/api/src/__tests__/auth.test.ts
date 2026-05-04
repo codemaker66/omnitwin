@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { Webhook } from "svix";
 
 // ---------------------------------------------------------------------------
 // Auth middleware tests (Clerk-based)
@@ -13,16 +14,39 @@ process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 // middleware catches, and we land in the 401 branch the tests assert on.
 // On CI the secret isn't injected via .env, so we have to set it inline.
 process.env["CLERK_SECRET_KEY"] = process.env["CLERK_SECRET_KEY"] ?? "sk_test_dummy";
+process.env["CLERK_WEBHOOK_SECRET"] = process.env["CLERK_WEBHOOK_SECRET"] ?? "whsec_testSecretForUnitTests123456";
 
 const { buildServer } = await import("../index.js");
 
 let server: FastifyInstance;
+let webhookMessageCounter = 0;
 
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
 function mockToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
   return JSON.stringify(payload);
+}
+
+function signedWebhookPayload(payload: Record<string, unknown>): {
+  readonly payload: string;
+  readonly headers: Record<string, string>;
+} {
+  const body = JSON.stringify(payload);
+  const timestamp = new Date();
+  webhookMessageCounter += 1;
+  const messageId = `msg_test_${String(webhookMessageCounter)}`;
+  const secret = process.env["CLERK_WEBHOOK_SECRET"] ?? "";
+  const signature = new Webhook(secret).sign(messageId, timestamp, body);
+  return {
+    payload: body,
+    headers: {
+      "content-type": "application/json",
+      "svix-id": messageId,
+      "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
+      "svix-signature": signature,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,66 +328,74 @@ describe("public endpoints require no auth", () => {
 
 describe("POST /webhooks/clerk", () => {
   it("responds 200 to user.created event", async () => {
+    const signed = signedWebhookPayload({
+      type: "user.created",
+      data: {
+        id: "clerk_test_123",
+        email_addresses: [{ id: "ea_1", email_address: "newuser@test.com" }],
+        primary_email_address_id: "ea_1",
+        first_name: "Test",
+        last_name: "User",
+        phone_numbers: [],
+        public_metadata: { role: "planner" },
+      },
+    });
     const res = await server.inject({
       method: "POST", url: "/webhooks/clerk",
-      payload: {
-        type: "user.created",
-        data: {
-          id: "clerk_test_123",
-          email_addresses: [{ id: "ea_1", email_address: "newuser@test.com" }],
-          primary_email_address_id: "ea_1",
-          first_name: "Test",
-          last_name: "User",
-          phone_numbers: [],
-          public_metadata: { role: "planner" },
-        },
-      },
+      headers: signed.headers,
+      payload: signed.payload,
     });
     expect(res.statusCode).toBe(200);
   });
 
   it("responds 200 to user.updated event", async () => {
+    const signed = signedWebhookPayload({
+      type: "user.updated",
+      data: {
+        id: "clerk_test_123",
+        email_addresses: [{ id: "ea_1", email_address: "updated@test.com" }],
+        primary_email_address_id: "ea_1",
+        first_name: "Updated",
+        last_name: "Name",
+        phone_numbers: [{ phone_number: "+441234567890" }],
+        public_metadata: {},
+      },
+    });
     const res = await server.inject({
       method: "POST", url: "/webhooks/clerk",
-      payload: {
-        type: "user.updated",
-        data: {
-          id: "clerk_test_123",
-          email_addresses: [{ id: "ea_1", email_address: "updated@test.com" }],
-          primary_email_address_id: "ea_1",
-          first_name: "Updated",
-          last_name: "Name",
-          phone_numbers: [{ phone_number: "+441234567890" }],
-          public_metadata: {},
-        },
-      },
+      headers: signed.headers,
+      payload: signed.payload,
     });
     expect(res.statusCode).toBe(200);
   });
 
   it("responds 200 to user.deleted event", async () => {
+    const signed = signedWebhookPayload({
+      type: "user.deleted",
+      data: {
+        id: "clerk_test_123",
+        email_addresses: [],
+        primary_email_address_id: "",
+        first_name: null,
+        last_name: null,
+        phone_numbers: [],
+        public_metadata: {},
+      },
+    });
     const res = await server.inject({
       method: "POST", url: "/webhooks/clerk",
-      payload: {
-        type: "user.deleted",
-        data: {
-          id: "clerk_test_123",
-          email_addresses: [],
-          primary_email_address_id: "",
-          first_name: null,
-          last_name: null,
-          phone_numbers: [],
-          public_metadata: {},
-        },
-      },
+      headers: signed.headers,
+      payload: signed.payload,
     });
     expect(res.statusCode).toBe(200);
   });
 
   it("responds 200 to unknown event type", async () => {
+    const signed = signedWebhookPayload({ type: "organization.created", data: {} });
     const res = await server.inject({
       method: "POST", url: "/webhooks/clerk",
-      payload: { type: "organization.created", data: {} },
+      headers: signed.headers,
+      payload: signed.payload,
     });
     expect(res.statusCode).toBe(200);
   });
@@ -374,13 +406,25 @@ describe("POST /webhooks/clerk", () => {
 // ---------------------------------------------------------------------------
 
 describe("webhook signature verification", () => {
-  it("processes event without secret in dev mode (existing tests cover this)", async () => {
-    // CLERK_WEBHOOK_SECRET is not set in test env — dev mode skips verification
-    const res = await server.inject({
+  it("refuses events without a configured webhook secret", async () => {
+    const original = process.env["CLERK_WEBHOOK_SECRET"];
+    delete process.env["CLERK_WEBHOOK_SECRET"];
+    const freshServer = await buildServer();
+
+    const res = await freshServer.inject({
       method: "POST", url: "/webhooks/clerk",
       payload: { type: "unknown.event", data: {} },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(500);
+    const body = JSON.parse(res.payload) as Record<string, unknown>;
+    expect(body["code"]).toBe("INTERNAL_ERROR");
+
+    await freshServer.close();
+    if (original === undefined) {
+      delete process.env["CLERK_WEBHOOK_SECRET"];
+    } else {
+      process.env["CLERK_WEBHOOK_SECRET"] = original;
+    }
   });
 
   it("returns 401 when secret is set but signature headers are missing", async () => {

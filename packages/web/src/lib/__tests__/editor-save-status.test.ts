@@ -23,11 +23,21 @@ describe("editor save status", () => {
     })).toBe("failed");
   });
 
-  it("reports offline before failed or unsaved so the user sees the transport problem", () => {
+  it("reports failed before offline so a known failed save stays visible", () => {
     expect(deriveEditorSaveStatus({
       isDirty: true,
       isSaving: false,
       saveError: "Network failed",
+      lastSavedAt: new Date(),
+      isOnline: false,
+    })).toBe("failed");
+  });
+
+  it("reports offline when transport is down and no save failure is known", () => {
+    expect(deriveEditorSaveStatus({
+      isDirty: true,
+      isSaving: false,
+      saveError: null,
       lastSavedAt: new Date(),
       isOnline: false,
     })).toBe("offline");
@@ -39,6 +49,15 @@ describe("editor save status", () => {
       isSaving: false,
       saveError: null,
       lastSavedAt: null,
+    })).toBe("unsaved");
+  });
+
+  it("reports unsaved when a previously saved layout has new dirty changes", () => {
+    expect(deriveEditorSaveStatus({
+      isDirty: true,
+      isSaving: false,
+      saveError: null,
+      lastSavedAt: new Date(),
     })).toBe("unsaved");
   });
 

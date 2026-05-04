@@ -19,6 +19,12 @@ const PUBLIC_SOURCE_FILES: readonly string[] = [
 
 const TEXT_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md", ".svg", ".txt"]);
 
+// This targeted deployment guard intentionally covers the highest-risk phrases
+// that have already escaped or nearly escaped into public assets. The canonical
+// forbidden/evidence-required taxonomy lives in:
+// - docs/architecture/claim-aware-copy-guard.md
+// - docs/architecture/layout-proof-object.md
+// T-200 tracks turning that doctrine into a broader production scanner.
 const BANNED_PUBLIC_CLAIMS: readonly RegExp[] = [
   /\bBlack Label\b/i,
   /\bsurveyor-grade\b/i,

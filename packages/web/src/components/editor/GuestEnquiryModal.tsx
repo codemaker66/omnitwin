@@ -180,7 +180,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           animation: "omni-enq-overlay 0.3s ease forwards",
         }}
         onClick={onClose}
-        onKeyDown={handleKeyDown}
         role="dialog"
         aria-modal="true"
         aria-labelledby="enquiry-success-title"
@@ -197,6 +196,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             textAlign: "center",
           }}
           onClick={(e) => { e.stopPropagation(); }}
+          onKeyDown={handleKeyDown}
         >
           {/* Animated check circle */}
           <div style={{ marginBottom: 20 }}>
@@ -299,7 +299,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         animation: "omni-enq-overlay 0.3s ease forwards",
       }}
       onClick={onClose}
-      onKeyDown={handleKeyDown}
       role="dialog"
       aria-modal="true"
       aria-labelledby="enquiry-form-title"
@@ -316,6 +315,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards, omni-enq-glow 4s ease-in-out 1s infinite",
         }}
         onClick={(e) => { e.stopPropagation(); }}
+        onKeyDown={handleKeyDown}
       >
         {/* Gold accent bar */}
         <div style={{

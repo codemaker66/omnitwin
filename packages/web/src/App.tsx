@@ -106,6 +106,7 @@ export function App(): React.ReactElement {
         paddingLeft: "var(--toolbox-offset, 68px)",
         paddingBottom: "var(--toolbox-bottom, 0px)",
         boxSizing: "border-box",
+        touchAction: "none",
       }}>
       <Canvas
         frameloop="demand"

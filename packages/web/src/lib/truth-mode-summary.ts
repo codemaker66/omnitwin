@@ -42,7 +42,11 @@ const SURFACE_LABELS: Readonly<Record<TruthModeSurface, string>> = {
   spark_fixture: "Spark fixture",
 };
 
-export function isTruthModeUiEnabled(searchParams: URLSearchParams, isDev: boolean = import.meta.env.DEV): boolean {
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Truth Mode value: ${String(value)}`);
+}
+
+export function isTruthModeUiEnabled(searchParams: URLSearchParams, isDev: boolean): boolean {
   if (isDev) return true;
   const truth = searchParams.get("truth");
   const truthMode = searchParams.get("truthMode");
@@ -111,6 +115,7 @@ export function formatEvidenceState(state: TruthEvidenceSourceState): string {
     case "procedural_runtime": return "Procedural runtime";
     case "known_unknown": return "Known unknown";
     case "measured_empty": return "Measured empty";
+    default: return assertNever(state);
   }
 }
 
@@ -122,6 +127,7 @@ export function formatConfidenceTier(tier: TruthConfidenceTier | null): string {
     case "layout_grade": return "Layout grade";
     case "appearance_only": return "Appearance only";
     case "unknown": return "Unknown";
+    default: return assertNever(tier);
   }
 }
 
@@ -132,5 +138,6 @@ export function formatStalenessState(state: TruthStalenessState | null): string 
     case "review_due": return "Review due";
     case "stale": return "Stale";
     case "unknown": return "Unknown";
+    default: return assertNever(state);
   }
 }

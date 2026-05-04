@@ -5,6 +5,18 @@ import { validateEnv, EnvSchema } from "../env.js";
 // env.ts — Zod environment validation tests
 // ---------------------------------------------------------------------------
 
+function withoutVitest<T>(fn: () => T): T {
+  const original = process.env["VITEST"];
+  delete process.env["VITEST"];
+  try {
+    return fn();
+  } finally {
+    if (original !== undefined) {
+      process.env["VITEST"] = original;
+    }
+  }
+}
+
 describe("validateEnv", () => {
   it("accepts valid environment", () => {
     const env = validateEnv({
@@ -84,8 +96,10 @@ describe("production environment validation", () => {
   };
 
   it("accepts a fully-configured production environment", () => {
-    expect(() => validateEnv(validProdBase)).not.toThrow();
-    const env = validateEnv(validProdBase);
+    expect(() => {
+      withoutVitest(() => validateEnv(validProdBase));
+    }).not.toThrow();
+    const env = withoutVitest(() => validateEnv(validProdBase));
     expect(env.NODE_ENV).toBe("production");
   });
 
@@ -118,6 +132,20 @@ describe("production environment validation", () => {
     expect(() => validateEnv(withoutFrontend)).toThrow("FRONTEND_URL");
   });
 
+  it("REJECTS production when VITEST is set", () => {
+    const original = process.env["VITEST"];
+    process.env["VITEST"] = "1";
+    try {
+      expect(() => validateEnv(validProdBase)).toThrow("VITEST");
+    } finally {
+      if (original === undefined) {
+        delete process.env["VITEST"];
+      } else {
+        process.env["VITEST"] = original;
+      }
+    }
+  });
+
   it("REJECTS incomplete R2 config (some but not all fields)", () => {
     expect(() => validateEnv({
       ...validProdBase,
@@ -128,14 +156,16 @@ describe("production environment validation", () => {
   });
 
   it("accepts R2 fully configured", () => {
-    expect(() => validateEnv({
-      ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
-      R2_ACCESS_KEY_ID: "key",
-      R2_SECRET_ACCESS_KEY: "secret",
-      R2_BUCKET_NAME: "bucket",
-      R2_PUBLIC_URL: "https://cdn.example.com",
-    })).not.toThrow();
+    expect(() => {
+      withoutVitest(() => validateEnv({
+        ...validProdBase,
+        R2_ACCOUNT_ID: "acct",
+        R2_ACCESS_KEY_ID: "key",
+        R2_SECRET_ACCESS_KEY: "secret",
+        R2_BUCKET_NAME: "bucket",
+        R2_PUBLIC_URL: "https://cdn.example.com",
+      }));
+    }).not.toThrow();
   });
 
   // F29: R2_PUBLIC_URL must be included in the cohesion check — previously

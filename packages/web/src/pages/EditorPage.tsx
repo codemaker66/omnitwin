@@ -190,7 +190,7 @@ function PlannerCommsLayer(): React.ReactElement {
   const saveError = useEditorStore((s) => s.saveError);
   const placedObjectCount = useEditorStore((s) => s.objects.length);
   const authState = useAuthStore((s) => s.isAuthenticated);
-  const truthModeEnabled = isTruthModeUiEnabled(searchParams);
+  const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
       surface: viewMode === "3d" ? "planner_3d" : "planner_2d",
@@ -228,7 +228,7 @@ function PlannerCommsLayer(): React.ReactElement {
       {mobile ? (
         <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
       ) : (
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
       )}
       {canEditEventDetails && viewMode === "3d" && (
         <button
@@ -322,10 +322,15 @@ function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthe
   );
 }
 
-function ViewModeToggle({ mode, onChange }: { mode: "3d" | "2d"; onChange: (m: "3d" | "2d") => void }): React.ReactElement {
-  const isNarrow = useIsNarrowViewport();
-  const isTouch = useIsCoarsePointer();
-  const mobile = isNarrow || isTouch;
+function ViewModeToggle({
+  mode,
+  onChange,
+  isMobile,
+}: {
+  mode: "3d" | "2d";
+  onChange: (m: "3d" | "2d") => void;
+  isMobile: boolean;
+}): React.ReactElement {
   const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
     const active = mode === value;
     return (
@@ -353,9 +358,9 @@ function ViewModeToggle({ mode, onChange }: { mode: "3d" | "2d"; onChange: (m: "
     <div
       style={{
         position: "fixed",
-        top: mobile ? "calc(env(safe-area-inset-top) + 10px)" : 16,
-        left: mobile ? 10 : "50%",
-        transform: mobile ? "none" : "translateX(-50%)",
+        top: isMobile ? "calc(env(safe-area-inset-top) + 10px)" : 16,
+        left: isMobile ? 10 : "50%",
+        transform: isMobile ? "none" : "translateX(-50%)",
         zIndex: 31,
         display: "inline-flex",
         gap: 2,

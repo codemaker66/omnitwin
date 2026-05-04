@@ -136,9 +136,15 @@ export function PlacementHint(): React.ReactElement | null {
 
   const isActive = selectedItemId !== null;
   const showHints = isActive && !dismissed;
+  const suppressedForViewport = isTouch || isNarrow;
 
   // Show reason when it appears, auto-clear after 2s
   useEffect(() => {
+    if (suppressedForViewport) {
+      if (reasonTimerRef.current !== null) clearTimeout(reasonTimerRef.current);
+      setShownReason(null);
+      return undefined;
+    }
     if (ghostInvalidReason !== null && isActive) {
       setShownReason(ghostInvalidReason);
       shakeKeyRef.current += 1;
@@ -148,10 +154,15 @@ export function PlacementHint(): React.ReactElement | null {
       setShownReason(null);
     }
     return () => { if (reasonTimerRef.current !== null) clearTimeout(reasonTimerRef.current); };
-  }, [ghostInvalidReason, isActive]);
+  }, [ghostInvalidReason, isActive, suppressedForViewport]);
 
   // Mount / unmount with exit animation
   useEffect(() => {
+    if (suppressedForViewport) {
+      setExiting(false);
+      setMounted(false);
+      return undefined;
+    }
     if (isActive) {
       setExiting(false);
       setMounted(true);
@@ -161,11 +172,11 @@ export function PlacementHint(): React.ReactElement | null {
       return () => { clearTimeout(timer); };
     }
     return undefined;
-  }, [isActive, mounted]);
+  }, [isActive, mounted, suppressedForViewport]);
 
   if (!mounted) return null;
 
-  if (isTouch || isNarrow) return null;
+  if (suppressedForViewport) return null;
 
   const handleDismiss = (): void => {
     try {

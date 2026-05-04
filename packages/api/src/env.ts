@@ -49,11 +49,16 @@ const EnvSchema = z.object({
   METRICS_TOKEN: z.string().min(16).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
-  // the webhook route can verify signatures. Without it, the route
-  // currently logs a warning and silently accepts unsigned events —
-  // any attacker can POST fake user.created events to the webhook
-  // endpoint. We refuse to boot a production server in that state.
+  // the webhook route can verify signatures. The route itself also fails
+  // closed without the secret, but production should catch that at startup.
   if (env.NODE_ENV === "production") {
+    if (process.env["VITEST"] !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["NODE_ENV"],
+        message: "VITEST must not be set in production (test auth bypasses must stay disabled)",
+      });
+    }
     if (env.CLERK_WEBHOOK_SECRET === undefined || env.CLERK_WEBHOOK_SECRET === "") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

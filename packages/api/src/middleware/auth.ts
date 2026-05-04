@@ -248,6 +248,49 @@ export async function getUserByClerkId(
 
   if (grant === null) return null;
 
+  if (invitation !== null) {
+    const created = await db.transaction(async (tx) => {
+      const [claimedInvitation] = await tx.update(userInvitations).set({
+        status: "accepted",
+        acceptedAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(userInvitations.id, invitation.id),
+        eq(userInvitations.status, "pending"),
+        isNull(userInvitations.acceptedAt),
+        or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
+      )).returning({ id: userInvitations.id });
+
+      if (claimedInvitation === undefined) return null;
+
+      const [inserted] = await tx.insert(users).values({
+        clerkId,
+        email: normalizedEmail,
+        name: defaultNameFromEmail(normalizedEmail),
+        role: grant.role,
+        venueId: grant.venueId,
+      }).returning();
+
+      if (inserted === undefined) return null;
+
+      await tx.update(userInvitations).set({
+        acceptedBy: inserted.id,
+        updatedAt: now,
+      }).where(eq(userInvitations.id, invitation.id));
+
+      return inserted;
+    });
+
+    if (created === null) return null;
+
+    return {
+      id: created.id,
+      email: created.email,
+      role: created.role,
+      venueId: created.venueId,
+    };
+  }
+
   const [created] = await db.insert(users).values({
     clerkId,
     email: normalizedEmail,
@@ -257,15 +300,6 @@ export async function getUserByClerkId(
   }).returning();
 
   if (created === undefined) return null;
-
-  if (invitation !== null) {
-    await db.update(userInvitations).set({
-      status: "accepted",
-      acceptedAt: now,
-      acceptedBy: created.id,
-      updatedAt: now,
-    }).where(eq(userInvitations.id, invitation.id));
-  }
 
   return {
     id: created.id,

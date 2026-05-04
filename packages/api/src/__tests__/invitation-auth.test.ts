@@ -75,10 +75,12 @@ function makeMockDb(options: {
   readonly emailInvitation?: InvitationRow;
   readonly domainInvitation?: InvitationRow;
   readonly createdUser?: UserRow;
+  readonly invitationClaimSucceeds?: boolean;
 } = {}): { readonly db: Database; readonly state: MockDbState } {
   const state: MockDbState = { inserted: [], updated: [] };
   let userSelectCount = 0;
   let invitationSelectCount = 0;
+  const invitationClaimSucceeds = options.invitationClaimSucceeds ?? true;
 
   const db = {
     select: () => ({
@@ -108,9 +110,17 @@ function makeMockDb(options: {
     }),
     update: (table: unknown) => ({
       set: (values: unknown) => ({
-        where: (_condition: unknown): Promise<readonly unknown[]> => {
+        where: (_condition: unknown) => {
           state.updated.push({ table, values });
-          return Promise.resolve([]);
+          const result = Promise.resolve([]);
+          return Object.assign(result, {
+            returning: (): Promise<readonly unknown[]> => {
+              if (table === userInvitations && asRecord(values)["status"] === "accepted") {
+                return Promise.resolve(invitationClaimSucceeds ? [{ id: "33333333-3333-4333-8333-333333333333" }] : []);
+              }
+              return Promise.resolve([]);
+            },
+          });
         },
       }),
     }),
@@ -129,6 +139,7 @@ function makeMockDb(options: {
         },
       }),
     }),
+    transaction: async <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(db),
   };
 
   return { db: db as unknown as Database, state };
@@ -211,11 +222,31 @@ describe("Clerk invitation access policy", () => {
       role: "staff",
       venueId: VENUE_ID,
     });
+    expect(state.updated).toHaveLength(2);
+    expect(state.updated[0]?.table).toBe(userInvitations);
+    expect(state.updated[0]?.values).toMatchObject({
+      status: "accepted",
+    });
+    expect(state.updated[1]?.table).toBe(userInvitations);
+    expect(state.updated[1]?.values).toMatchObject({
+      acceptedBy: createdUser.id,
+    });
+  });
+
+  it("does not create a user when a concurrent login already claimed the invitation", async () => {
+    const { db, state } = makeMockDb({
+      emailInvitation: invitationRow(),
+      invitationClaimSucceeds: false,
+    });
+
+    const user = await getUserByClerkId(db, "clerk_race", "Invited@Example.com");
+
+    expect(user).toBeNull();
+    expect(state.inserted).toHaveLength(0);
     expect(state.updated).toHaveLength(1);
     expect(state.updated[0]?.table).toBe(userInvitations);
     expect(state.updated[0]?.values).toMatchObject({
       status: "accepted",
-      acceptedBy: createdUser.id,
     });
   });
 

@@ -16,8 +16,8 @@ export interface EditorSaveStatusCopy {
 
 export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSaveStatus {
   if (input.isSaving) return "saving";
-  if (input.isOnline === false) return "offline";
   if (input.saveError !== null) return "failed";
+  if (input.isOnline === false) return "offline";
   if (input.isDirty) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
   return "idle";
@@ -27,7 +27,7 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
   switch (status) {
     case "saving":
       return {
-        label: "Saving...",
+        label: "Saving…",
         shortLabel: "Saving",
         description: "Saving your latest layout changes.",
       };

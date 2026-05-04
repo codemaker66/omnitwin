@@ -183,7 +183,10 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     setError(null);
     void (async () => {
       try {
-        await flushAutoSave();
+        const saved = await flushAutoSave();
+        if (!saved) {
+          throw new Error("Save failed. Retry before submitting the layout.");
+        }
 
         // Best-effort floor-plan capture. Same pattern as SaveSendPanel —
         // if the capture fails the submit still proceeds (sheet renders

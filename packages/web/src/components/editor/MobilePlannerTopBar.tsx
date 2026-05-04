@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import {
@@ -24,7 +24,6 @@ function useOnlineStatus(): boolean {
     const onOffline = (): void => { setOnline(false); };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    setOnline(navigator.onLine);
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
@@ -131,8 +130,8 @@ const sendStyle: React.CSSProperties = {
 
 function segmentButtonStyle(active: boolean): React.CSSProperties {
   return {
-    minHeight: 38,
-    minWidth: 38,
+    minHeight: 44,
+    minWidth: 44,
     padding: "0 10px",
     borderRadius: 999,
     border: "none",
@@ -160,6 +159,13 @@ export function MobilePlannerTopBar({
   const online = useOnlineStatus();
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [sending, setSending] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const status = deriveEditorSaveStatus({
     isDirty,
@@ -178,10 +184,19 @@ export function MobilePlannerTopBar({
   const sendLayout = (): void => {
     if (configId === null) return;
     setSending(true);
-    void prepareLayoutForGuestEnquiry(configId).finally(() => {
-      setSending(false);
-      setShowEnquiry(true);
-    });
+    void prepareLayoutForGuestEnquiry(configId)
+      .then((readyToSend) => {
+        if (!mountedRef.current) return;
+        setSending(false);
+        if (readyToSend) {
+          setShowEnquiry(true);
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current) {
+          setSending(false);
+        }
+      });
   };
 
   return (

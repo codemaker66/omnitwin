@@ -138,12 +138,16 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     // Positive: flushAutoSave is called somewhere in the click handler
     expect(codeOnly).toContain("await flushAutoSave()");
+    expect(codeOnly).toContain("if (!saved) return false");
   });
 
   it("SaveSendPanel does not use the old direct-open click handler", async () => {
     const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
     // Negative: the old direct-open pattern is gone (comments stripped)
     expect(codeOnly).not.toMatch(/onClick=\{\s*\(\)\s*=>\s*\{\s*setShowEnquiry\(true\)/);
+    expect(codeOnly).not.toContain(".finally(");
+    expect(codeOnly).toContain("readyToSend");
+    expect(codeOnly).toContain("mountedRef");
   });
 
   it("EditorBridge exports flushAutoSave", async () => {
@@ -156,6 +160,40 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     // The function must cancel the pending timer to prevent a redundant
     // save after the flush. Pin the clearTimeout call inside flushAutoSave.
     expect(codeOnly).toMatch(/flushAutoSave[\s\S]{0,300}?clearTimeout\(bridgeSaveTimer\)/);
+  });
+});
+
+describe("prepareLayoutForGuestEnquiry save gate", () => {
+  it("returns false when the forced save fails", async () => {
+    const { prepareLayoutForGuestEnquiry } = await import("../components/editor/send-layout-flow.js");
+    const originalSaveToServer = useEditorStore.getState().saveToServer;
+    useEditorStore.setState({
+      configId: "11111111-1111-4111-8111-111111111111",
+      isDirty: true,
+      isSaving: false,
+      saveToServer: () => Promise.resolve(false),
+    });
+
+    try {
+      const ready = await prepareLayoutForGuestEnquiry("11111111-1111-4111-8111-111111111111");
+      expect(ready).toBe(false);
+    } finally {
+      useEditorStore.setState({ saveToServer: originalSaveToServer });
+    }
+  });
+
+  it("returns true when no save is needed", async () => {
+    const { prepareLayoutForGuestEnquiry } = await import("../components/editor/send-layout-flow.js");
+    useEditorStore.setState({
+      configId: "11111111-1111-4111-8111-111111111111",
+      isDirty: false,
+      isSaving: false,
+      scene: null,
+    });
+
+    const ready = await prepareLayoutForGuestEnquiry("11111111-1111-4111-8111-111111111111");
+
+    expect(ready).toBe(true);
   });
 });
 
