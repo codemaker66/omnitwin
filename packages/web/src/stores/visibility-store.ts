@@ -88,8 +88,10 @@ export const AUTO_3_EDGES: readonly [number, number] = [-0.15, 0.15];
  *  A wall only starts fading when the camera is within this distance of it. */
 const FADE_START = 1.0;
 /** Distance past the wall plane where the wall is fully hidden.
- *  Negative = must go well PAST the wall before it fully disappears. */
-const FADE_END = -6.0;
+ *  At 0, the wall is fully hidden as soon as the camera crosses behind it.
+ *  This keeps phone orbit gestures from getting stuck staring at the outside
+ *  face of a wall. */
+const FADE_END = 0.0;
 
 /**
  * Computes target opacity (0–1) for each wall based on camera position.

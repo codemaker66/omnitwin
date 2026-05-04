@@ -279,7 +279,38 @@
     0 20px 50px -20px rgba(40,20,10,0.18),
     0 60px 120px -40px rgba(40,20,10,0.12);
   position: relative;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+.th-landing .planner *,
+.th-landing .mobile-planner-shell,
+.th-landing .mobile-planner-shell * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.th-landing .planner input,
+.th-landing .planner textarea,
+.th-landing .mobile-planner-shell input,
+.th-landing .mobile-planner-shell textarea {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.th-landing .planner button,
+.th-landing .planner [role="button"],
+.th-landing .planner a,
+.th-landing .mobile-planner-shell button,
+.th-landing .mobile-planner-shell [role="button"],
+.th-landing .mobile-planner-shell a {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .th-landing .planner .chrome {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--rule);
@@ -932,6 +963,28 @@
     text-decoration: none;
   }
 
+  .th-landing .mobile-planner-3d {
+    min-width: 112px;
+    min-height: 48px;
+    gap: 8px;
+    padding: 0 16px;
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 16px 34px -18px color-mix(in oklab, var(--accent) 68%, #000);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+  }
+
+  .th-landing .mobile-planner-3d span {
+    display: inline-block;
+    font-size: 16px;
+    line-height: 1;
+    transform: translateY(-1px);
+  }
+
   .th-landing .mobile-planner-title {
     min-width: 0;
     display: grid;
@@ -960,6 +1013,23 @@
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+
+  @media (max-width: 360px) {
+    .th-landing .mobile-planner-topbar {
+      gap: 8px;
+      padding-inline: 10px;
+    }
+
+    .th-landing .mobile-planner-back {
+      padding: 0 10px;
+    }
+
+    .th-landing .mobile-planner-3d {
+      min-width: 98px;
+      padding-inline: 12px;
+      font-size: 11px;
+    }
   }
 
   .th-landing .mobile-planner-shell .planner-fullscreen {

@@ -63,6 +63,19 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow.bodyScrollWidth).toBeLessThanOrEqual(overflow.innerWidth + 1);
 }
 
+async function expectPlannerSurfaceDoesNotTextSelect(locator: Locator): Promise<void> {
+  const selectionStyles = await locator.evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return {
+      userSelect: styles.userSelect,
+      webkitUserSelect: styles.getPropertyValue("-webkit-user-select"),
+    };
+  });
+
+  expect(selectionStyles.userSelect).toBe("none");
+  expect(selectionStyles.webkitUserSelect).toBe("none");
+}
+
 async function expectCoreLanding(page: Page, viewport: ViewportSpec): Promise<void> {
   await expectNoHorizontalOverflow(page);
   await expect(page.getByRole("heading", { level: 1, name: /Design your event inside the real Grand Hall/i })).toBeVisible();
@@ -100,6 +113,15 @@ test.describe("Trades Hall landing page redesign", () => {
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText("To-scale draft preview")).toBeVisible();
       await expect(dialog.locator(".stage")).toBeVisible();
+      const viewIn3d = dialog.getByRole("link", { name: /View in 3D/i });
+      await expect(viewIn3d).toBeVisible();
+      await expectWithinViewport(viewIn3d, viewport.width);
+      const viewIn3dBox = await boxFor(viewIn3d);
+      expect(viewIn3dBox.height).toBeGreaterThanOrEqual(44);
+      expect(viewIn3dBox.width).toBeGreaterThanOrEqual(96);
+      await expectPlannerSurfaceDoesNotTextSelect(dialog.locator(".planner-fullscreen"));
+      await expectPlannerSurfaceDoesNotTextSelect(dialog.locator(".stage"));
+      await expectPlannerSurfaceDoesNotTextSelect(dialog.locator(".furn").first());
       await expectNoHorizontalOverflow(page);
 
       await dialog.getByRole("button", { name: /Close planner/i }).click();

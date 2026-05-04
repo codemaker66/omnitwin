@@ -241,7 +241,9 @@ function MobilePlannerOverlay({ onClose }: MobilePlannerOverlayProps): ReactElem
           <strong>Grand Hall</strong>
           <span>To-scale draft preview</span>
         </div>
-        <Link to="/plan?space=grand-hall" className="mobile-planner-3d">3D</Link>
+        <Link to="/plan?space=grand-hall" className="mobile-planner-3d">
+          View in 3D <span aria-hidden>→</span>
+        </Link>
       </div>
       <PlannerPreview mode="fullscreen" />
     </div>

@@ -89,6 +89,13 @@ describe("computeWallTargetOpacities", () => {
     expect(o["wall-right"]).toBe(0);
   });
 
+  it("camera just behind right wall — right wall fully hidden", () => {
+    // Mobile orbit can put the camera just outside the wall plane while the
+    // wall fills the screen. Crossing the plane must hide the wall immediately.
+    const o = computeWallTargetOpacities(grandHallHalfWidth + 0.05, 0, 3);
+    expect(o["wall-right"]).toBe(0);
+  });
+
   it("camera near front wall — front wall fades", () => {
     // Camera sits 0.5 render units inside the front wall fade zone.
     const o = computeWallTargetOpacities(0, grandHallHalfLength - 0.5, 3);
@@ -132,7 +139,7 @@ describe("computeWallTargetOpacities", () => {
   });
 
   it("custom room dims — Grand Hall x=20.5 is outside small room (opacity=0, not fading)", () => {
-    // In small room (halfW=5), x=20.5 is far outside → dist=-15.5, well below FADE_END=-6 → opacity=0
+    // In small room (halfW=5), x=20.5 is outside the wall plane → opacity=0.
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
     const o = computeWallTargetOpacities(20.5, 0, 3, smallRoom);
     expect(o["wall-right"]).toBe(0);
@@ -469,6 +476,14 @@ describe("proximity wall behavior", () => {
   it("camera well past front wall — front wall hidden", () => {
     // Camera sits beyond the fully hidden side of the front wall fade zone.
     const o = computeWallTargetOpacities(0, grandHallHalfLength + 7, 3);
+    expect(o["wall-front"]).toBe(0);
+    expect(o["wall-back"]).toBe(1);
+  });
+
+  it("camera just behind front wall — front wall hidden", () => {
+    // Regression for phone orbit views where the camera is behind the wall but
+    // only slightly outside the room bounds.
+    const o = computeWallTargetOpacities(0, grandHallHalfLength + 0.05, 3);
     expect(o["wall-front"]).toBe(0);
     expect(o["wall-back"]).toBe(1);
   });
