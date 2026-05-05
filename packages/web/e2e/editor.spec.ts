@@ -125,6 +125,21 @@ test.describe("Public Editor", () => {
     await expect(composer).toBeVisible({ timeout: 5_000 });
     await expect(composer.getByText("Eye height")).toBeVisible();
     await expect(composer.getByRole("button", { name: "Standing" })).toBeVisible();
+    const composerBoxBefore = await composer.boundingBox();
+    expect(composerBoxBefore).not.toBeNull();
+    if (composerBoxBefore === null) return;
+    const dragHandle = composer.getByTestId("camera-reference-drag-handle");
+    await page.mouse.move(composerBoxBefore.x + 88, composerBoxBefore.y + 22);
+    await page.mouse.down();
+    await page.mouse.move(composerBoxBefore.x + 248, composerBoxBefore.y - 98, { steps: 6 });
+    await page.mouse.up();
+    const composerBoxAfter = await composer.boundingBox();
+    expect(composerBoxAfter).not.toBeNull();
+    if (composerBoxAfter === null) return;
+    expect(composerBoxAfter.x).toBeGreaterThan(composerBoxBefore.x + 120);
+    expect(composerBoxAfter.y).toBeLessThan(composerBoxBefore.y - 80);
+    await expect(dragHandle).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
     await composer.getByRole("button", { name: "Add + view" }).click();
 
     await expect(page.getByLabel("POV height")).toBeVisible({ timeout: 5_000 });

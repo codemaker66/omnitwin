@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { Camera, Check, X } from "lucide-react";
 import {
   DEFAULT_CUSTOM_EYE_HEIGHT_M,
@@ -12,6 +12,71 @@ import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 
 const GOLD = "#c9a84c";
+const DIALOG_MARGIN_PX = 16;
+const PANEL_WIDTH_PX = 340;
+const PANEL_FALLBACK_HEIGHT_PX = 324;
+
+export interface CameraReferenceDialogPosition {
+  readonly left: number;
+  readonly top: number;
+}
+
+interface CameraReferenceDialogSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface CameraReferenceViewportSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface DragState {
+  readonly pointerId: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly panelSize: CameraReferenceDialogSize;
+}
+
+function getViewportSize(): CameraReferenceViewportSize {
+  if (typeof window === "undefined") return { width: 1024, height: 768 };
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+}
+
+function getDefaultPanelSize(viewportWidth: number): CameraReferenceDialogSize {
+  return {
+    width: Math.min(PANEL_WIDTH_PX, Math.max(0, viewportWidth - DIALOG_MARGIN_PX * 2)),
+    height: PANEL_FALLBACK_HEIGHT_PX,
+  };
+}
+
+export function clampCameraReferenceDialogPosition(
+  position: CameraReferenceDialogPosition,
+  viewport: CameraReferenceViewportSize,
+  panelSize: CameraReferenceDialogSize = getDefaultPanelSize(viewport.width),
+): CameraReferenceDialogPosition {
+  const maxLeft = Math.max(DIALOG_MARGIN_PX, viewport.width - panelSize.width - DIALOG_MARGIN_PX);
+  const maxTop = Math.max(DIALOG_MARGIN_PX, viewport.height - panelSize.height - DIALOG_MARGIN_PX);
+  return {
+    left: Math.min(Math.max(position.left, DIALOG_MARGIN_PX), maxLeft),
+    top: Math.min(Math.max(position.top, DIALOG_MARGIN_PX), maxTop),
+  };
+}
+
+export function getInitialCameraReferenceDialogPosition(
+  screenX: number,
+  screenY: number,
+  viewport: CameraReferenceViewportSize = getViewportSize(),
+): CameraReferenceDialogPosition {
+  return clampCameraReferenceDialogPosition(
+    { left: screenX + 12, top: screenY + 12 },
+    viewport,
+    getDefaultPanelSize(viewport.width),
+  );
+}
 
 const panelStyle: CSSProperties = {
   position: "fixed",
@@ -28,6 +93,8 @@ const panelStyle: CSSProperties = {
   WebkitBackdropFilter: "blur(18px)",
   zIndex: 80,
   pointerEvents: "auto",
+  userSelect: "none",
+  WebkitUserSelect: "none",
 };
 
 const heightGridStyle: CSSProperties = {
@@ -68,19 +135,45 @@ export function CameraReferenceComposer(): React.ReactElement | null {
   const [name, setName] = useState("");
   const [heightMode, setHeightMode] = useState<CameraEyeHeightMode>("sitting");
   const [customHeightM, setCustomHeightM] = useState(DEFAULT_CUSTOM_EYE_HEIGHT_M);
+  const [dialogPosition, setDialogPosition] = useState<CameraReferenceDialogPosition | null>(null);
+  const [isDraggingDialog, setIsDraggingDialog] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLFormElement>(null);
+  const dragStateRef = useRef<DragState | null>(null);
 
   useEffect(() => {
-    if (draft === null) return;
+    if (draft === null) {
+      setDialogPosition(null);
+      return;
+    }
     setName(draft.suggestedName);
     setHeightMode(draft.source === "furniture" ? "sitting" : "standing");
     setCustomHeightM(DEFAULT_CUSTOM_EYE_HEIGHT_M);
+    setDialogPosition(getInitialCameraReferenceDialogPosition(draft.screenX, draft.screenY));
     const focusTimer = window.setTimeout(() => {
       nameInputRef.current?.focus();
       nameInputRef.current?.select();
     }, 0);
     return () => {
       window.clearTimeout(focusTimer);
+    };
+  }, [draft]);
+
+  useEffect(() => {
+    if (draft === null) return;
+    function onResize(): void {
+      setDialogPosition((current) => {
+        if (current === null) return current;
+        const rect = panelRef.current?.getBoundingClientRect();
+        const panelSize = rect === undefined
+          ? getDefaultPanelSize(getViewportSize().width)
+          : { width: rect.width, height: rect.height };
+        return clampCameraReferenceDialogPosition(current, getViewportSize(), panelSize);
+      });
+    }
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
     };
   }, [draft]);
 
@@ -97,15 +190,8 @@ export function CameraReferenceComposer(): React.ReactElement | null {
 
   const panelPosition = useMemo<CSSProperties>(() => {
     if (draft === null) return {};
-    const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
-    const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
-    const left = Math.min(Math.max(draft.screenX + 12, 16), Math.max(16, viewportWidth - 356));
-    const top = Math.min(Math.max(draft.screenY + 12, 16), Math.max(16, viewportHeight - 340));
-    return {
-      left,
-      top,
-    };
-  }, [draft]);
+    return dialogPosition ?? getInitialCameraReferenceDialogPosition(draft.screenX, draft.screenY);
+  }, [dialogPosition, draft]);
 
   if (draft === null) return null;
 
@@ -128,9 +214,60 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     closeDraft();
   }
 
+  function beginDialogDrag(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    const currentPosition = dialogPosition ?? getInitialCameraReferenceDialogPosition(activeDraft.screenX, activeDraft.screenY);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (rect?.left ?? currentPosition.left),
+      offsetY: event.clientY - (rect?.top ?? currentPosition.top),
+      panelSize: rect === undefined
+        ? getDefaultPanelSize(getViewportSize().width)
+        : { width: rect.width, height: rect.height },
+    };
+    setIsDraggingDialog(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    window.getSelection()?.removeAllRanges();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveDialog(event: ReactPointerEvent<HTMLDivElement>): void {
+    const dragState = dragStateRef.current;
+    if (dragState === null || dragState.pointerId !== event.pointerId) return;
+    setDialogPosition(clampCameraReferenceDialogPosition(
+      {
+        left: event.clientX - dragState.offsetX,
+        top: event.clientY - dragState.offsetY,
+      },
+      getViewportSize(),
+      dragState.panelSize,
+    ));
+    window.getSelection()?.removeAllRanges();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endDialogDrag(event: ReactPointerEvent<HTMLDivElement>): void {
+    const dragState = dragStateRef.current;
+    if (dragState === null || dragState.pointerId !== event.pointerId) return;
+    dragStateRef.current = null;
+    setIsDraggingDialog(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    window.getSelection()?.removeAllRanges();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   return (
     <form
+      ref={panelRef}
       aria-label="Add camera POV"
+      data-testid="camera-reference-composer"
+      data-camera-keyboard-lock="true"
       role="dialog"
       style={{ ...panelStyle, ...panelPosition }}
       onSubmit={(event) => {
@@ -140,30 +277,52 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div
-          aria-hidden="true"
+          data-testid="camera-reference-drag-handle"
+          aria-label="Move camera POV dialog"
+          onPointerDown={beginDialogDrag}
+          onPointerMove={moveDialog}
+          onPointerUp={endDialogDrag}
+          onPointerCancel={endDialogDrag}
+          onLostPointerCapture={() => {
+            dragStateRef.current = null;
+            setIsDraggingDialog(false);
+          }}
           style={{
-            width: 38,
-            height: 38,
-            borderRadius: 12,
-            background: "rgba(201,168,76,0.14)",
-            border: "1px solid rgba(201,168,76,0.25)",
-            display: "grid",
-            placeItems: "center",
-            color: GOLD,
-            flex: "0 0 auto",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            minWidth: 0,
+            flex: 1,
+            cursor: isDraggingDialog ? "grabbing" : "grab",
+            touchAction: "none",
           }}
         >
-          <Camera size={18} />
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase" }}>
-            Camera point of reference
+          <div
+            aria-hidden="true"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              background: "rgba(201,168,76,0.14)",
+              border: "1px solid rgba(201,168,76,0.25)",
+              display: "grid",
+              placeItems: "center",
+              color: GOLD,
+              flex: "0 0 auto",
+            }}
+          >
+            <Camera size={18} />
           </div>
-          <div style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3 }}>
-            Add POV
-          </div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 5 }}>
-            {sourceCopy(draft.sourceLabel, draft.source)}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase" }}>
+              Camera point of reference
+            </div>
+            <div style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3 }}>
+              Add POV
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 5 }}>
+              {sourceCopy(draft.sourceLabel, draft.source)}
+            </div>
           </div>
         </div>
         <button
@@ -207,6 +366,8 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             padding: "0 12px",
             fontSize: 14,
             outline: "none",
+            userSelect: "text",
+            WebkitUserSelect: "text",
           }}
         />
       </label>
@@ -257,6 +418,8 @@ export function CameraReferenceComposer(): React.ReactElement | null {
               padding: "0 12px",
               fontSize: 14,
               outline: "none",
+              userSelect: "text",
+              WebkitUserSelect: "text",
             }}
           />
         )}
