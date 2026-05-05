@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { usePlacementStore } from "../placement-store.js";
 import { resetPlacedIdCounter, GRID_SPACING_RENDER, createPlacedItem } from "../../lib/placement.js";
+import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 
 const tableId = "round-table-6ft";
-const chairId = "banquet-chair";
+const chairId = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 const platformId = "platform";
 
 function resetStore(): void {

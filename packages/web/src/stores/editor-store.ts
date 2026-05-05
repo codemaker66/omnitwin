@@ -4,6 +4,7 @@ import type { Space } from "../api/spaces.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
 import * as spacesApi from "../api/spaces.js";
+import { getCatalogueItem } from "../lib/catalogue.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -65,9 +66,10 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
  * so it round-trips through the database without needing dedicated columns.
  */
 export function editorToBatch(o: EditorObject): BatchObjectInput {
+  const catalogueItem = getCatalogueItem(o.assetDefinitionId);
   return {
     id: o.id.startsWith("local-") ? undefined : o.id,
-    assetDefinitionId: o.assetDefinitionId,
+    assetDefinitionId: catalogueItem?.id ?? o.assetDefinitionId,
     positionX: o.positionX,
     positionY: o.positionY,
     positionZ: o.positionZ,

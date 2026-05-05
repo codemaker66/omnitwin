@@ -1,6 +1,6 @@
 import { toRenderSpace } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
-import { getCatalogueItem } from "./catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
 import { createPlacedItem, generatePlacedId } from "./placement.js";
 import type { PlacedItem } from "./placement.js";
 
@@ -11,8 +11,8 @@ import type { PlacedItem } from "./placement.js";
 /** Gap between table edge and chair center (real-world metres). */
 const CHAIR_GAP_M = 0.05;
 
-/** The chair catalogue item ID. */
-const CHAIR_ID = "banquet-chair";
+/** Stable developer slug for the banquet chair; saved objects use the UUID catalogue ID. */
+const CHAIR_SLUG = "banquet-chair";
 
 /** Maximum chairs for a round table (limited by physical space). */
 export const MAX_CHAIRS_ROUND = 12;
@@ -52,7 +52,7 @@ export function computeChairPositions(
 ): readonly ChairPlacement[] {
   if (chairCount <= 0) return [];
 
-  const chairItem = getCatalogueItem(CHAIR_ID);
+  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
   if (chairItem === undefined) return [];
 
   if (tableItem.tableShape === "round") {
@@ -159,6 +159,8 @@ export function createTableGroup(
 ): readonly PlacedItem[] {
   const tableItem = getCatalogueItem(catalogueItemId);
   if (tableItem === undefined || tableItem.tableShape === null) return [];
+  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
+  if (chairItem === undefined) return [];
 
   const groupId = generatePlacedId(); // Reuse ID generator for group IDs
 
@@ -166,7 +168,7 @@ export function createTableGroup(
 
   const chairPositions = computeChairPositions(tableX, tableZ, tableItem, tableRotationY, chairCount);
   const chairs = chairPositions.map((pos) =>
-    createPlacedItem(CHAIR_ID, pos.x, pos.z, pos.rotationY, groupId, y),
+    createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, y),
   );
 
   return [table, ...chairs];
@@ -188,6 +190,8 @@ export function rearrangeTableGroup(
 
   const tableItem = getCatalogueItem(table.catalogueItemId);
   if (tableItem === undefined || tableItem.tableShape === null) return [...placedItems];
+  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
+  if (chairItem === undefined) return [...placedItems];
 
   const groupId = table.groupId;
   const others = placedItems.filter((p) => p.groupId !== groupId);
@@ -202,7 +206,7 @@ export function rearrangeTableGroup(
 
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
     id: existingChairs[i]?.id ?? generatePlacedId(),
-    catalogueItemId: CHAIR_ID,
+    catalogueItemId: chairItem.id,
     x: pos.x,
     y: table.y,
     z: pos.z,

@@ -22,7 +22,11 @@ vi.mock("../api/spaces.js", () => ({
 
 const configMock = vi.mocked(await import("../api/configurations.js"));
 
-const { useEditorStore } = await import("../stores/editor-store.js");
+const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
+const { getCatalogueItemBySlug } = await import("../lib/catalogue.js");
+
+const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const ROUND_TABLE_ID = getCatalogueItemBySlug("round-table-6ft")?.id ?? "missing-round-table-id";
 
 const mockConfig = {
   id: "cfg-1",
@@ -120,6 +124,72 @@ describe("addObject", () => {
   it("assigns local ID prefix", () => {
     useEditorStore.getState().addObject("asset-1", 0, 0, 0);
     expect(useEditorStore.getState().objects[0]?.id).toMatch(/^local-/);
+  });
+});
+
+describe("editorToBatch", () => {
+  it("omits local scene IDs so new objects insert on save", () => {
+    const batch = editorToBatch({
+      id: "local-550e8400-e29b-41d4-a716-446655440000",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 1,
+      positionY: 0,
+      positionZ: 2,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: false,
+      groupId: null,
+      notes: "",
+    });
+
+    expect(batch.id).toBeUndefined();
+    expect(batch.assetDefinitionId).toBe(CHAIR_ID);
+  });
+
+  it("canonicalizes legacy catalogue slugs before sending the save payload", () => {
+    const batch = editorToBatch({
+      id: "local-550e8400-e29b-41d4-a716-446655440001",
+      assetDefinitionId: "banquet-chair",
+      positionX: 1,
+      positionY: 0,
+      positionZ: 2,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: false,
+      groupId: null,
+      notes: "",
+    });
+
+    expect(batch.id).toBeUndefined();
+    expect(batch.assetDefinitionId).toBe(CHAIR_ID);
+  });
+
+  it("preserves persisted IDs for existing rows", () => {
+    const persistedId = "550e8400-e29b-41d4-a716-446655440002";
+    const batch = editorToBatch({
+      id: persistedId,
+      assetDefinitionId: ROUND_TABLE_ID,
+      positionX: 1,
+      positionY: 0,
+      positionZ: 2,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: true,
+      groupId: "group-1",
+      notes: "",
+    });
+
+    expect(batch.id).toBe(persistedId);
+    expect(batch.assetDefinitionId).toBe(ROUND_TABLE_ID);
   });
 });
 

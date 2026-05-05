@@ -348,11 +348,12 @@ export function checkCollision(
 
 /**
  * Generates a UUID for a placed object.
- * Matches the API's z.string().uuid() validation so objects can be
- * persisted without ID translation.
+ * New scene objects are client-local until the batch save returns database
+ * row IDs. The `local-` prefix lets editorToBatch omit the ID so the API
+ * inserts instead of treating the object as an update to a non-existent row.
  */
 export function generatePlacedId(): string {
-  return crypto.randomUUID();
+  return `local-${crypto.randomUUID()}`;
 }
 
 /** No-op — UUIDs are globally unique, no counter to reset. Kept for test compat. */

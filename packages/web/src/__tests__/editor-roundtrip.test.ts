@@ -8,8 +8,12 @@ import {
   editorToPlacedItem,
   placedItemToEditor,
 } from "../components/editor/EditorBridge.js";
+import { getCatalogueItemBySlug } from "../lib/catalogue.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import type { PlacedItem } from "../lib/placement.js";
+
+const ROUND_TABLE_ID = getCatalogueItemBySlug("round-table-6ft")?.id ?? "missing-round-table-id";
+const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 
 // ---------------------------------------------------------------------------
 // Data integrity round-trip tests — punch list #31
@@ -70,7 +74,7 @@ describe("EditorObject <-> wire format round-trip", () => {
   it("preserves every field for a grouped, clothed round table", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440000",
-      assetDefinitionId: "round-table-6ft",
+      assetDefinitionId: ROUND_TABLE_ID,
       positionX: 3.25,
       positionY: 0,
       positionZ: -1.75,
@@ -94,7 +98,7 @@ describe("EditorObject <-> wire format round-trip", () => {
   it("preserves an ungrouped chair with default scene state", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440001",
-      assetDefinitionId: "banquet-chair",
+      assetDefinitionId: CHAIR_ID,
       positionX: -2.5,
       positionY: 0,
       positionZ: 4.0,
@@ -136,7 +140,7 @@ describe("EditorObject <-> wire format round-trip", () => {
   it("planner notes round-trip through the wire when set", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440004",
-      assetDefinitionId: "round-table-6ft",
+      assetDefinitionId: ROUND_TABLE_ID,
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
@@ -156,7 +160,7 @@ describe("EditorObject <-> wire format round-trip", () => {
   it("empty notes field is omitted from the metadata blob to keep records lean", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440005",
-      assetDefinitionId: "banquet-chair",
+      assetDefinitionId: CHAIR_ID,
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
@@ -169,7 +173,7 @@ describe("EditorObject <-> wire format round-trip", () => {
   it("wire format carries clothed/groupId inside metadata blob", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440003",
-      assetDefinitionId: "round-table-6ft",
+      assetDefinitionId: ROUND_TABLE_ID,
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
@@ -184,7 +188,7 @@ describe("EditorObject <-> wire format round-trip", () => {
     const legacy: PlacedObject = {
       id: "legacy-1",
       configurationId: "config-1",
-      assetDefinitionId: "banquet-chair",
+      assetDefinitionId: CHAIR_ID,
       positionX: "0", positionY: "0", positionZ: "0",
       rotationX: "0", rotationY: "0", rotationZ: "0",
       scale: "1", sortOrder: 3,
@@ -201,7 +205,7 @@ describe("EditorObject <-> wire format round-trip", () => {
     const legacy: PlacedObject = {
       id: "legacy-2",
       configurationId: "config-1",
-      assetDefinitionId: "round-table-6ft",
+      assetDefinitionId: ROUND_TABLE_ID,
       positionX: "0", positionY: "0", positionZ: "0",
       rotationX: "0", rotationY: "0", rotationZ: "0",
       scale: "1", sortOrder: 0,
@@ -220,14 +224,14 @@ describe("EditorObject <-> wire format round-trip", () => {
     const groupId = "group-table-1";
     const group: EditorObject[] = [
       {
-        id: "t1", assetDefinitionId: "round-table-6ft",
+        id: "t1", assetDefinitionId: ROUND_TABLE_ID,
         positionX: 0, positionY: 0, positionZ: 0,
         rotationX: 0, rotationY: 0, rotationZ: 0,
         scale: 1, sortOrder: 0,
         clothed: true, groupId, notes: "",
       },
       ...Array.from({ length: 8 }, (_, i): EditorObject => ({
-        id: `c${String(i)}`, assetDefinitionId: "banquet-chair",
+        id: `c${String(i)}`, assetDefinitionId: CHAIR_ID,
         positionX: Math.cos(i), positionY: 0, positionZ: Math.sin(i),
         rotationX: 0, rotationY: (i / 8) * 2 * Math.PI, rotationZ: 0,
         scale: 1, sortOrder: i + 1,
@@ -256,7 +260,7 @@ describe("EditorObject <-> wire format round-trip", () => {
 describe("EditorObject <-> PlacedItem bridge round-trip", () => {
   it("editorToPlacedItem carries clothed and groupId into the scene", () => {
     const editor: EditorObject = {
-      id: "o1", assetDefinitionId: "round-table-6ft",
+      id: "o1", assetDefinitionId: ROUND_TABLE_ID,
       positionX: 1, positionY: 0, positionZ: 2,
       rotationX: 0, rotationY: 0.5, rotationZ: 0,
       scale: 1, sortOrder: 3,
@@ -266,7 +270,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     const placed = editorToPlacedItem(editor);
 
     expect(placed.id).toBe("o1");
-    expect(placed.catalogueItemId).toBe("round-table-6ft");
+    expect(placed.catalogueItemId).toBe(ROUND_TABLE_ID);
     expect(placed.x).toBe(1);
     expect(placed.y).toBe(0);
     expect(placed.z).toBe(2);
@@ -280,14 +284,14 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     // from the existing EditorObject. This test pins the fix for the
     // "reload normalizes everything to zero" bug.
     const existing: EditorObject = {
-      id: "o1", assetDefinitionId: "round-table-6ft",
+      id: "o1", assetDefinitionId: ROUND_TABLE_ID,
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0.15, rotationY: 0, rotationZ: -0.25,
       scale: 1.1, sortOrder: 5,
       clothed: false, groupId: null, notes: "",
     };
     const item: PlacedItem = {
-      id: "o1", catalogueItemId: "round-table-6ft",
+      id: "o1", catalogueItemId: ROUND_TABLE_ID,
       x: 3, y: 0, z: 4, rotationY: Math.PI,
       clothed: true, groupId: "g-2",
     };
@@ -311,7 +315,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     // New items (freshly placed from the catalogue) have no editor-store
     // record yet. They must get safe defaults, not throw.
     const item: PlacedItem = {
-      id: "new-1", catalogueItemId: "banquet-chair",
+      id: "new-1", catalogueItemId: CHAIR_ID,
       x: 0, y: 0, z: 0, rotationY: 0,
       clothed: false, groupId: null,
     };
@@ -328,7 +332,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     // The end-to-end flow that mattered for the bug: load from API,
     // convert to scene items, read them back. Nothing should change.
     const original: EditorObject = {
-      id: "o1", assetDefinitionId: "round-table-6ft",
+      id: "o1", assetDefinitionId: ROUND_TABLE_ID,
       positionX: 2.5, positionY: 0, positionZ: -1.25,
       rotationX: 0.1, rotationY: 0.7, rotationZ: -0.05,
       scale: 1.02, sortOrder: 4,
@@ -353,7 +357,7 @@ describe("End-to-end round-trip: API <-> store <-> scene", () => {
     // catches it before a real user does.
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440099",
-      assetDefinitionId: "round-table-6ft",
+      assetDefinitionId: ROUND_TABLE_ID,
       positionX: 1.23, positionY: 0, positionZ: -4.56,
       rotationX: 0.05, rotationY: 2.1, rotationZ: -0.05,
       scale: 1.03, sortOrder: 11,

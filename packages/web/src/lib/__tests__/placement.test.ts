@@ -219,14 +219,14 @@ describe("snapToWallEdge with custom room dims", () => {
 // generatePlacedId / createPlacedItem
 // ---------------------------------------------------------------------------
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const LOCAL_ID_RE = /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe("generatePlacedId", () => {
-  it("generates valid UUIDs", () => {
+  it("generates local IDs with UUID entropy", () => {
     const id1 = generatePlacedId();
     const id2 = generatePlacedId();
-    expect(id1).toMatch(UUID_RE);
-    expect(id2).toMatch(UUID_RE);
+    expect(id1).toMatch(LOCAL_ID_RE);
+    expect(id2).toMatch(LOCAL_ID_RE);
     expect(id1).not.toBe(id2);
   });
 });
@@ -234,7 +234,7 @@ describe("generatePlacedId", () => {
 describe("createPlacedItem", () => {
   it("creates a placed item with correct fields", () => {
     const item = createPlacedItem("round-table-6ft", 5, -3, Math.PI / 4);
-    expect(item.id).toMatch(UUID_RE);
+    expect(item.id).toMatch(LOCAL_ID_RE);
     expect(item.catalogueItemId).toBe("round-table-6ft");
     expect(item.x).toBe(5);
     expect(item.z).toBe(-3);

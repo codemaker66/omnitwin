@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { computeChairPositions, createTableGroup, rearrangeTableGroup } from "../table-group.js";
-import { getCatalogueItem } from "../catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { resetPlacedIdCounter } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
 
@@ -14,7 +14,8 @@ beforeEach(() => {
 
 const ROUND_TABLE_ID = "round-table-6ft";
 const TRESTLE_TABLE_ID = "trestle-6ft";
-const CHAIR_ID = "banquet-chair";
+const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function getItem(id: string) {
   const item = getCatalogueItem(id);
@@ -125,8 +126,14 @@ describe("createTableGroup", () => {
       expect(item).toBeDefined();
       if (item !== undefined) {
         expect(item.catalogueItemId).toBe(CHAIR_ID);
+        expect(item.catalogueItemId).toMatch(UUID_RE);
       }
     }
+  });
+
+  it("does not emit legacy chair slugs into saveable placed items", () => {
+    const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 6);
+    expect(group.slice(1).map((item) => item.catalogueItemId)).not.toContain("banquet-chair");
   });
 
   it("creates 0 chairs if requested", () => {
