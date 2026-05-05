@@ -86,6 +86,7 @@ flowchart TD
         T370(["T-370 - anonymous refresh-safe planner drafts"])
         T371(["T-371 - remove incorrect placeholder doors"])
         T372(["T-372 - draggable POV dialog"])
+        T373(["T-373 - POV header selection hardening"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -170,6 +171,7 @@ flowchart TD
     T357 --> T366
     T357 --> T372
     T366 --> T372
+    T372 --> T373
     T115 --> T367
     T358 --> T367
     T115 --> T368
@@ -253,7 +255,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred

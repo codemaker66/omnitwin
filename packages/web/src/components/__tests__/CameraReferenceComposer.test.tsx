@@ -82,11 +82,28 @@ describe("CameraReferenceComposer dialog placement", () => {
 
   it("renders non-editable dialog chrome as non-selectable while keeping inputs editable", () => {
     const panel = openComposer();
+    const dragHandle = screen.getByTestId("camera-reference-drag-handle");
+    const eyebrow = screen.getByTestId("camera-reference-eyebrow");
+    const title = screen.getByTestId("camera-reference-title");
+    const source = screen.getByTestId("camera-reference-source");
     const nameInput = screen.getByLabelText("Name");
 
     expect(panel.dataset.cameraKeyboardLock).toBe("true");
     expect(panel.style.userSelect).toBe("none");
+    expect(dragHandle.style.userSelect).toBe("none");
+    expect(eyebrow.style.userSelect).toBe("none");
+    expect(title.style.userSelect).toBe("none");
+    expect(source.style.userSelect).toBe("none");
     expect(nameInput.style.userSelect).toBe("text");
+
+    const mouseDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 260,
+      clientY: 190,
+    });
+    expect(dragHandle.dispatchEvent(mouseDown)).toBe(false);
+    expect(mouseDown.defaultPrevented).toBe(true);
   });
 
   it("moves by dragging the header without selecting dialog text", () => {

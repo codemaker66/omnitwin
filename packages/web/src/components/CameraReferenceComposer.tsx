@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { Camera, Check, X } from "lucide-react";
 import {
   DEFAULT_CUSTOM_EYE_HEIGHT_M,
@@ -15,6 +19,11 @@ const GOLD = "#c9a84c";
 const DIALOG_MARGIN_PX = 16;
 const PANEL_WIDTH_PX = 340;
 const PANEL_FALLBACK_HEIGHT_PX = 324;
+
+const nonSelectableChromeStyle: CSSProperties = {
+  userSelect: "none",
+  WebkitUserSelect: "none",
+};
 
 export interface CameraReferenceDialogPosition {
   readonly left: number;
@@ -93,8 +102,7 @@ const panelStyle: CSSProperties = {
   WebkitBackdropFilter: "blur(18px)",
   zIndex: 80,
   pointerEvents: "auto",
-  userSelect: "none",
-  WebkitUserSelect: "none",
+  ...nonSelectableChromeStyle,
 };
 
 const heightGridStyle: CSSProperties = {
@@ -116,6 +124,7 @@ function heightButtonStyle(active: boolean): CSSProperties {
     fontWeight: 750,
     cursor: "pointer",
     transition: "background 0.16s, border-color 0.16s, color 0.16s",
+    ...nonSelectableChromeStyle,
   };
 }
 
@@ -262,6 +271,10 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     event.stopPropagation();
   }
 
+  function preventChromeTextSelection(event: ReactMouseEvent<HTMLElement>): void {
+    event.preventDefault();
+  }
+
   return (
     <form
       ref={panelRef}
@@ -280,6 +293,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           data-testid="camera-reference-drag-handle"
           aria-label="Move camera POV dialog"
           onPointerDown={beginDialogDrag}
+          onMouseDown={preventChromeTextSelection}
           onPointerMove={moveDialog}
           onPointerUp={endDialogDrag}
           onPointerCancel={endDialogDrag}
@@ -295,6 +309,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             flex: 1,
             cursor: isDraggingDialog ? "grabbing" : "grab",
             touchAction: "none",
+            ...nonSelectableChromeStyle,
           }}
         >
           <div
@@ -309,18 +324,28 @@ export function CameraReferenceComposer(): React.ReactElement | null {
               placeItems: "center",
               color: GOLD,
               flex: "0 0 auto",
+              ...nonSelectableChromeStyle,
             }}
           >
             <Camera size={18} />
           </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase" }}>
+          <div style={{ minWidth: 0, flex: 1, ...nonSelectableChromeStyle }}>
+            <div
+              data-testid="camera-reference-eyebrow"
+              style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
+            >
               Camera point of reference
             </div>
-            <div style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3 }}>
+            <div
+              data-testid="camera-reference-title"
+              style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3, ...nonSelectableChromeStyle }}
+            >
               Add POV
             </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 5 }}>
+            <div
+              data-testid="camera-reference-source"
+              style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 5, ...nonSelectableChromeStyle }}
+            >
               {sourceCopy(draft.sourceLabel, draft.source)}
             </div>
           </div>
@@ -339,6 +364,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             cursor: "pointer",
             display: "grid",
             placeItems: "center",
+            ...nonSelectableChromeStyle,
           }}
         >
           <X size={16} />
@@ -346,7 +372,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       </div>
 
       <label style={{ display: "block", marginTop: 14 }}>
-        <span style={{ display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7 }}>
+        <span style={{ display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7, ...nonSelectableChromeStyle }}>
           Name
         </span>
         <input
@@ -374,10 +400,10 @@ export function CameraReferenceComposer(): React.ReactElement | null {
 
       <div style={{ marginTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
             Eye height
           </span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)" }}>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", ...nonSelectableChromeStyle }}>
             {formatHeight(resolvedHeight)}
           </span>
         </div>
@@ -443,6 +469,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           justifyContent: "center",
           gap: 8,
           boxShadow: "0 10px 26px rgba(201,168,76,0.22)",
+          ...nonSelectableChromeStyle,
         }}
       >
         <Check size={16} />
@@ -487,13 +514,14 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
         boxShadow: "0 16px 48px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
+        ...nonSelectableChromeStyle,
       }}
     >
       <div style={{ padding: "0 6px", minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 850, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 10, fontWeight: 850, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase", ...nonSelectableChromeStyle }}>
           POV height
         </div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...nonSelectableChromeStyle }}>
           {bookmark.name}
         </div>
       </div>
@@ -514,6 +542,7 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
             fontSize: 12,
             fontWeight: 800,
             cursor: "pointer",
+            ...nonSelectableChromeStyle,
           }}
         >
           {mode === "sitting" ? "Sitting" : "Standing"}
