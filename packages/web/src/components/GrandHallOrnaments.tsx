@@ -187,15 +187,14 @@ export function computeVisibleLongWainscotPanelCenters(
 }
 
 export function computeVisibleShortWainscotPanelCenters(
-  length: number,
-  side: "left" | "right",
+  _length: number,
+  _side: "left" | "right",
 ): readonly number[] {
-  if (side === "left") return [];
-
-  const shortPanels = 5;
-  const halfL = length / 2;
-  const spacing = length / shortPanels;
-  return Array.from({ length: shortPanels }, (_, i) => -halfL + spacing * (i + 0.5));
+  // The short ends carry distinct architectural cues: fireplace/portrait at
+  // one end and three doors at the other. Dark repeated plaques on either end
+  // read as the wrong feature from the planning camera, so keep the lower wall
+  // treatment to the continuous timber rails and dedicated focal elements.
+  return [];
 }
 
 function WainscotRaisedPanels({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
@@ -667,7 +666,7 @@ interface WallMountProps {
   readonly pictureColor?: string;
 }
 
-export function computeLeftWallDoorCenters(length: number): readonly number[] {
+export function computeRightWallDoorCenters(length: number): readonly number[] {
   return [-length * 0.31, 0, length * 0.31] as const;
 }
 
@@ -761,57 +760,57 @@ function ShortEndDoor({
 }
 
 function EndWallFocalPoint({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
-  const fireplaceX = width / 2 - 0.18;
-  const leftDoorX = -width / 2 + 0.24;
+  const fireplaceX = -width / 2 + 0.18;
+  const rightDoorX = width / 2 - 0.24;
   const boardZ = length * 0.24;
-  const fireboxBackX = fireplaceX + 0.035;
-  const leftDoorCenters = useMemo(
-    () => computeLeftWallDoorCenters(length),
+  const fireboxBackX = fireplaceX - 0.035;
+  const rightDoorCenters = useMemo(
+    () => computeRightWallDoorCenters(length),
     [length],
   );
 
   return (
     <group name="end-wall-focal-points">
-      {/* Short-end fireplace and portrait/honour-board composition. */}
-      <SurfaceVisibilityGroup surfaceKey="wall-right" name="right-end-wall-focal-point">
-        <mesh name="right-fireplace-left-jamb" position={[fireplaceX, 0.58, -0.78]}>
+      {/* Far short-end fireplace and portrait/honour-board composition. */}
+      <SurfaceVisibilityGroup surfaceKey="wall-left" name="left-end-wall-focal-point">
+        <mesh name="left-fireplace-left-jamb" position={[fireplaceX, 0.58, -0.78]}>
           <boxGeometry args={[0.16, 0.92, 0.26]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
         </mesh>
-        <mesh name="right-fireplace-right-jamb" position={[fireplaceX, 0.58, 0.78]}>
+        <mesh name="left-fireplace-right-jamb" position={[fireplaceX, 0.58, 0.78]}>
           <boxGeometry args={[0.16, 0.92, 0.26]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
         </mesh>
-        <mesh name="right-fireplace-header" position={[fireplaceX, 0.98, 0]}>
+        <mesh name="left-fireplace-header" position={[fireplaceX, 0.98, 0]}>
           <boxGeometry args={[0.16, 0.28, 1.62]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
         </mesh>
-        <mesh name="right-fireplace-hearth" position={[fireplaceX - 0.025, 0.14, 0]}>
+        <mesh name="left-fireplace-hearth" position={[fireplaceX + 0.025, 0.14, 0]}>
           <boxGeometry args={[0.22, 0.18, 1.78]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.44} metalness={0} />
         </mesh>
-        <mesh name="right-fireplace-mantel" position={[fireplaceX - 0.02, 1.2, 0]}>
+        <mesh name="left-fireplace-mantel" position={[fireplaceX + 0.02, 1.2, 0]}>
           <boxGeometry args={[0.24, 0.15, 2.15]} />
           <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
         </mesh>
-        <mesh name="right-firebox-back-panel" position={[fireboxBackX, 0.52, 0]}>
+        <mesh name="left-firebox-back-panel" position={[fireboxBackX, 0.52, 0]}>
           <boxGeometry args={[0.03, 0.58, 1.04]} />
           <meshStandardMaterial color="#1e1712" roughness={0.82} metalness={0} />
         </mesh>
-        <WallPortrait position={[fireplaceX - 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
-        <WallPortrait position={[fireplaceX - 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
-        <WallPortrait position={[fireplaceX - 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+        <WallPortrait position={[fireplaceX + 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
+        <WallPortrait position={[fireplaceX + 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
+        <WallPortrait position={[fireplaceX + 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
       </SurfaceVisibilityGroup>
 
-      {/* Camera-facing short end: three door assemblies, not square blocks. */}
-      <SurfaceVisibilityGroup surfaceKey="wall-left" name="left-end-wall-doors">
-        {leftDoorCenters.map((z, i) => (
+      {/* Opposite short end: three door assemblies, not square blocks. */}
+      <SurfaceVisibilityGroup surfaceKey="wall-right" name="right-end-wall-doors">
+        {rightDoorCenters.map((z, i) => (
           <ShortEndDoor
-            key={`left-wall-door-${String(i)}`}
-            x={leftDoorX}
+            key={`right-wall-door-${String(i)}`}
+            x={rightDoorX}
             z={z}
             index={i}
-            wallSide="left"
+            wallSide="right"
           />
         ))}
       </SurfaceVisibilityGroup>
