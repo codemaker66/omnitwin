@@ -42,6 +42,11 @@ const WINDOW_FRAME_SHADOW = "#d9cba8";
 const MURAL_GOLD = "#b98532";
 const MURAL_SHADOW = "#705018";
 const UNDERLIGHT = "#f5d47a";
+const GLASS_BLUE = "#b7d1df";
+const GLASS_HIGHLIGHT = "#f4fbff";
+const FIREBOX_DARK = "#120d09";
+const EMBER_ORANGE = "#d86924";
+const SOOT_SHADOW = "#24160f";
 
 // ---------------------------------------------------------------------------
 // Crown moulding — slim ivory strip at the top of every wall
@@ -455,8 +460,8 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
         <boxGeometry args={[WINDOW_WIDTH + 0.74, 0.16, 0.045]} />
         <meshStandardMaterial color={BRASS_GOLD} roughness={0.4} metalness={0.35} />
       </mesh>
-      {/* Glow pane — emissive panel suggesting daylight outside */}
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET]}>
+      {/* Daylight backing behind the actual translucent glass. */}
+      <mesh name="arched-window-daylight-pane-rect" position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET]}>
         <planeGeometry args={[WINDOW_WIDTH - 0.08, rectHeight]} />
         <meshStandardMaterial
           color={WINDOW_GLOW}
@@ -466,8 +471,23 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           metalness={0}
         />
       </mesh>
-      {/* Half-circle arch top — emissive */}
+      <mesh name="arched-window-glass-pane-rect" position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.025]}>
+        <planeGeometry args={[WINDOW_WIDTH - 0.22, rectHeight - 0.12]} />
+        <meshStandardMaterial
+          color={GLASS_BLUE}
+          emissive={WINDOW_GLOW}
+          emissiveIntensity={0.12}
+          roughness={0.08}
+          metalness={0.04}
+          transparent
+          opacity={0.42}
+          depthWrite={false}
+          side={DoubleSide}
+        />
+      </mesh>
+      {/* Half-circle arch top with translucent glass layered over glow. */}
       <mesh
+        name="arched-window-daylight-pane-arch"
         position={[0, WINDOW_SILL_Y + rectHeight, WINDOW_INSET]}
         rotation={[0, 0, 0]}
       >
@@ -480,6 +500,44 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           metalness={0}
         />
       </mesh>
+      <mesh
+        name="arched-window-glass-pane-arch"
+        position={[0, WINDOW_SILL_Y + rectHeight, WINDOW_INSET + 0.026]}
+        rotation={[0, 0, 0]}
+      >
+        <circleGeometry args={[archRadius - 0.14, 32, 0, Math.PI]} />
+        <meshStandardMaterial
+          color={GLASS_BLUE}
+          emissive={WINDOW_GLOW}
+          emissiveIntensity={0.1}
+          roughness={0.08}
+          metalness={0.04}
+          transparent
+          opacity={0.38}
+          depthWrite={false}
+          side={DoubleSide}
+        />
+      </mesh>
+      {[-0.28, 0.26].map((x, i) => (
+        <mesh
+          key={`arched-window-glass-highlight-${String(i)}`}
+          name="arched-window-glass-highlight"
+          position={[x, WINDOW_SILL_Y + rectHeight * (i === 0 ? 0.7 : 0.36), WINDOW_INSET + 0.034]}
+          rotation={[0, 0, -0.28]}
+        >
+          <boxGeometry args={[0.035, rectHeight * 0.42, 0.012]} />
+          <meshStandardMaterial
+            color={GLASS_HIGHLIGHT}
+            emissive={GLASS_HIGHLIGHT}
+            emissiveIntensity={0.18}
+            roughness={0.05}
+            metalness={0}
+            transparent
+            opacity={0.34}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
       {/* Frame — left vertical */}
       <mesh position={[-WINDOW_WIDTH / 2 + WINDOW_FRAME_THICKNESS / 2, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.01]}>
         <boxGeometry args={[WINDOW_FRAME_THICKNESS, rectHeight, 0.02]} />
@@ -690,35 +748,92 @@ function EndWallFocalPoint({ width, length }: { readonly width: number; readonly
   const fireplaceX = -width / 2 + 0.18;
   const boardZ = length * 0.24;
   const fireboxBackX = fireplaceX - 0.035;
+  const fireplaceFaceX = fireplaceX + 0.035;
 
   return (
     <group name="end-wall-focal-points">
       {/* Far short-end fireplace and portrait/honour-board composition. */}
       <SurfaceVisibilityGroup surfaceKey="wall-left" name="left-end-wall-focal-point">
-        <mesh name="left-fireplace-left-jamb" position={[fireplaceX, 0.58, -0.78]}>
-          <boxGeometry args={[0.16, 0.92, 0.26]} />
-          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
-        </mesh>
-        <mesh name="left-fireplace-right-jamb" position={[fireplaceX, 0.58, 0.78]}>
-          <boxGeometry args={[0.16, 0.92, 0.26]} />
-          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
-        </mesh>
-        <mesh name="left-fireplace-header" position={[fireplaceX, 0.98, 0]}>
-          <boxGeometry args={[0.16, 0.28, 1.62]} />
-          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.42} metalness={0} />
-        </mesh>
-        <mesh name="left-fireplace-hearth" position={[fireplaceX + 0.025, 0.14, 0]}>
-          <boxGeometry args={[0.22, 0.18, 1.78]} />
-          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.44} metalness={0} />
-        </mesh>
-        <mesh name="left-fireplace-mantel" position={[fireplaceX + 0.02, 1.2, 0]}>
-          <boxGeometry args={[0.24, 0.15, 2.15]} />
-          <meshStandardMaterial color={MARBLE_WHITE} roughness={0.38} metalness={0} />
-        </mesh>
-        <mesh name="left-firebox-back-panel" position={[fireboxBackX, 0.52, 0]}>
-          <boxGeometry args={[0.03, 0.58, 1.04]} />
-          <meshStandardMaterial color="#1e1712" roughness={0.82} metalness={0} />
-        </mesh>
+        <group name="left-fireplace-realistic-surround">
+          <mesh name="left-fireplace-back-marble-slab" position={[fireplaceX - 0.012, 0.72, 0]}>
+            <boxGeometry args={[0.055, 1.28, 2.12]} />
+            <meshStandardMaterial color="#ece5d5" roughness={0.34} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-left-jamb" position={[fireplaceFaceX, 0.64, -0.82]}>
+            <boxGeometry args={[0.2, 1.08, 0.28]} />
+            <meshStandardMaterial color={MARBLE_WHITE} roughness={0.36} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-right-jamb" position={[fireplaceFaceX, 0.64, 0.82]}>
+            <boxGeometry args={[0.2, 1.08, 0.28]} />
+            <meshStandardMaterial color={MARBLE_WHITE} roughness={0.36} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-inner-left-return" position={[fireboxBackX + 0.01, 0.54, -0.51]}>
+            <boxGeometry args={[0.08, 0.72, 0.055]} />
+            <meshStandardMaterial color={SOOT_SHADOW} roughness={0.86} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-inner-right-return" position={[fireboxBackX + 0.01, 0.54, 0.51]}>
+            <boxGeometry args={[0.08, 0.72, 0.055]} />
+            <meshStandardMaterial color={SOOT_SHADOW} roughness={0.86} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-header" position={[fireplaceFaceX, 1.08, 0]}>
+            <boxGeometry args={[0.2, 0.26, 1.78]} />
+            <meshStandardMaterial color={MARBLE_WHITE} roughness={0.34} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-firebox-arch" position={[fireplaceFaceX + 0.011, 0.75, 0]} rotation={[0, Math.PI / 2, 0]}>
+            <ringGeometry args={[0.43, 0.52, 36, 2, 0, Math.PI]} />
+            <meshStandardMaterial color="#efe8d9" roughness={0.32} metalness={0} side={DoubleSide} />
+          </mesh>
+          <mesh name="left-fireplace-hearth" position={[fireplaceX + 0.12, 0.08, 0]}>
+            <boxGeometry args={[0.42, 0.13, 2.28]} />
+            <meshStandardMaterial color="#e7dfcf" roughness={0.38} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-hearth-front-lip" position={[fireplaceX + 0.31, 0.17, 0]}>
+            <boxGeometry args={[0.08, 0.08, 2.36]} />
+            <meshStandardMaterial color="#d8cfbd" roughness={0.35} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-mantel" position={[fireplaceX + 0.08, 1.27, 0]}>
+            <boxGeometry args={[0.34, 0.16, 2.34]} />
+            <meshStandardMaterial color={MARBLE_WHITE} roughness={0.3} metalness={0} />
+          </mesh>
+          <mesh name="left-fireplace-mantel-shadow-line" position={[fireplaceX + 0.23, 1.17, 0]}>
+            <boxGeometry args={[0.035, 0.055, 2.12]} />
+            <meshStandardMaterial color="#cbbfa9" roughness={0.5} metalness={0} />
+          </mesh>
+          <mesh name="left-firebox-back-panel" position={[fireboxBackX, 0.5, 0]}>
+            <boxGeometry args={[0.04, 0.62, 1.02]} />
+            <meshStandardMaterial color={FIREBOX_DARK} roughness={0.88} metalness={0} />
+          </mesh>
+          {[-0.32, -0.1, 0.12, 0.34].map((z, i) => (
+            <mesh key={`left-fireplace-grate-bar-${String(i)}`} name="left-fireplace-brass-grate-bar" position={[fireplaceX + 0.18, 0.31, z]}>
+              <boxGeometry args={[0.04, 0.34, 0.025]} />
+              <meshStandardMaterial color={BRONZE_DARK} roughness={0.34} metalness={0.46} />
+            </mesh>
+          ))}
+          <mesh name="left-fireplace-front-grate-rail" position={[fireplaceX + 0.2, 0.24, 0]}>
+            <boxGeometry args={[0.045, 0.035, 0.94]} />
+            <meshStandardMaterial color={BRONZE_DARK} roughness={0.34} metalness={0.46} />
+          </mesh>
+          {[-0.18, 0.18].map((z, i) => (
+            <mesh key={`left-fireplace-log-${String(i)}`} name="left-fireplace-charred-log" position={[fireplaceX + 0.13, 0.26, z]} rotation={[Math.PI / 2, 0, i === 0 ? 0.16 : -0.16]}>
+              <cylinderGeometry args={[0.045, 0.055, 0.55, 10]} />
+              <meshStandardMaterial color="#2f1b0f" roughness={0.82} metalness={0} />
+            </mesh>
+          ))}
+          <mesh name="left-fireplace-ember-glow" position={[fireplaceX + 0.145, 0.22, 0]}>
+            <boxGeometry args={[0.035, 0.045, 0.52]} />
+            <meshStandardMaterial color={EMBER_ORANGE} emissive={EMBER_ORANGE} emissiveIntensity={0.45} roughness={0.55} metalness={0} />
+          </mesh>
+          {[
+            { y: 0.86, z: -0.72, rz: -0.2, w: 0.52 },
+            { y: 1.19, z: 0.54, rz: 0.16, w: 0.68 },
+            { y: 0.38, z: 0.73, rz: -0.12, w: 0.38 },
+          ].map((vein, i) => (
+            <mesh key={`left-fireplace-marble-vein-${String(i)}`} name="left-fireplace-marble-vein" position={[fireplaceX + 0.205, vein.y, vein.z]} rotation={[0, 0, vein.rz]}>
+              <boxGeometry args={[0.012, 0.018, vein.w]} />
+              <meshStandardMaterial color="#b9afa1" roughness={0.5} metalness={0} />
+            </mesh>
+          ))}
+        </group>
         <WallPortrait position={[fireplaceX + 0.05, 3.15, 0]} axis="x" pictureColor="#3a2b20" />
         <WallPortrait position={[fireplaceX + 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
         <WallPortrait position={[fireplaceX + 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />

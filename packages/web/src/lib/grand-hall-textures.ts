@@ -76,88 +76,84 @@ function finalize(canvas: HTMLCanvasElement, repeatX: number, repeatY: number): 
 }
 
 // ---------------------------------------------------------------------------
-// Floor — herringbone parquet
+// Floor - beige timber panels
 // ---------------------------------------------------------------------------
 
 /**
- * Honey-oak herringbone parquet. Repeats on the floor. Uses several plank
- * tones shuffled deterministically per row so the pattern doesn't read as
- * a mathematical grid.
+ * Beige timber panel floor. Repeats on the floor as long staggered boards
+ * with soft seams, bevels, grain, and wear. The goal is a warm event-floor
+ * read instead of the previous dark tile/grid impression.
  */
 export function createParquetFloorTexture(): Texture {
   const SIZE = 512;
   const { canvas, ctx } = makeCanvas(SIZE);
 
-  // base — slight undertone so gaps between planks read as recessed
-  ctx.fillStyle = "#6e4f2a";
+  ctx.fillStyle = "#bda275";
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  const tones = ["#a87f4f", "#9a7344", "#b78a59", "#956e3f", "#a47a48"];
-  const PLANK_W = 64;
-  const PLANK_L = 256;
+  const tones = ["#d6c193", "#cdb47e", "#c2a46d", "#dec999", "#b99562", "#d1b985"];
+  const BOARD_W = 56;
+  const BOARD_L = 256;
+  const rows = Math.ceil(SIZE / BOARD_W) + 1;
+  const columns = Math.ceil(SIZE / BOARD_L) + 2;
 
-  // herringbone: alternating "horizontal" and "vertical" plank pairs
-  const cols = Math.ceil(SIZE / PLANK_W) + 2;
-  const rows = Math.ceil(SIZE / PLANK_L) + 2;
+  for (let row = 0; row < rows; row++) {
+    const y = row * BOARD_W;
+    const rowOffset = row % 2 === 0 ? 0 : -BOARD_L / 2;
+    for (let col = -1; col < columns; col++) {
+      const x = col * BOARD_L + rowOffset;
+      const tone = tones[Math.floor(hash(row, col) * tones.length)] ?? "#cdb47e";
+      const boardGrad = ctx.createLinearGradient(x, y, x, y + BOARD_W);
+      boardGrad.addColorStop(0, tone);
+      boardGrad.addColorStop(0.48, tone);
+      boardGrad.addColorStop(1, "#b99d6b");
+      ctx.fillStyle = boardGrad;
+      ctx.fillRect(x, y, BOARD_L, BOARD_W);
 
-  for (let row = -1; row < rows; row++) {
-    for (let col = -1; col < cols; col++) {
-      const isVertical = (row + col) % 2 === 0;
-      const tone = tones[Math.floor(hash(col, row) * tones.length)] ?? "#9a7344";
+      // recessed seams and subtle bevels around every board
+      ctx.fillStyle = "rgba(76,51,23,0.28)";
+      ctx.fillRect(x, y, BOARD_L, 1);
+      ctx.fillRect(x, y + BOARD_W - 1, BOARD_L, 1);
+      ctx.fillRect(x, y, 1, BOARD_W);
+      ctx.fillStyle = "rgba(255,245,210,0.18)";
+      ctx.fillRect(x + 2, y + 2, BOARD_L - 4, 1);
 
-      ctx.save();
-      const cx = col * PLANK_W;
-      const cy = row * PLANK_L * 0.5;
-      ctx.translate(cx, cy);
-
-      if (isVertical) {
-        ctx.fillStyle = tone;
-        ctx.fillRect(0, 0, PLANK_W, PLANK_L);
-
-        // grain — vertical streaks
-        ctx.globalAlpha = 0.08;
-        for (let g = 4; g < PLANK_W; g += 6 + Math.floor(hash(col, row, g) * 4)) {
-          ctx.fillStyle = "#3a2611";
-          ctx.fillRect(g, 2, 1, PLANK_L - 4);
-        }
-        // a few brighter highlights
-        ctx.globalAlpha = 0.12;
-        for (let g = 8; g < PLANK_W; g += 12 + Math.floor(hash(col, row, g + 9) * 6)) {
-          ctx.fillStyle = "#d8b478";
-          ctx.fillRect(g, 6, 1, PLANK_L - 12);
-        }
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.fillStyle = tone;
-        ctx.fillRect(0, 0, PLANK_L, PLANK_W);
-
-        ctx.globalAlpha = 0.08;
-        for (let g = 4; g < PLANK_W; g += 6 + Math.floor(hash(col, row, g) * 4)) {
-          ctx.fillStyle = "#3a2611";
-          ctx.fillRect(2, g, PLANK_L - 4, 1);
-        }
-        ctx.globalAlpha = 0.12;
-        for (let g = 8; g < PLANK_W; g += 12 + Math.floor(hash(col, row, g + 9) * 6)) {
-          ctx.fillStyle = "#d8b478";
-          ctx.fillRect(6, g, PLANK_L - 12, 1);
-        }
-        ctx.globalAlpha = 1;
+      // lengthwise grain, knots, and faint sanding streaks
+      for (let g = 8; g < BOARD_W - 4; g += 8 + Math.floor(hash(row, col, g) * 6)) {
+        ctx.fillStyle = `rgba(88,59,24,${(0.055 + hash(col, row, g + 17) * 0.055).toFixed(3)})`;
+        ctx.fillRect(x + 6, y + g, BOARD_L - 12, 1);
       }
-      ctx.restore();
+      if (hash(row, col, 91) > 0.58) {
+        const knotX = x + 42 + hash(row, col, 23) * (BOARD_L - 84);
+        const knotY = y + 13 + hash(row, col, 47) * (BOARD_W - 26);
+        ctx.beginPath();
+        ctx.ellipse(knotX, knotY, 10, 3.5, hash(row, col, 3) * Math.PI, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(100,66,28,0.16)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(245,225,180,0.12)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
   }
 
-  // Scuff + age noise for realism — keeps it from looking too clean
-  applyNoise(ctx, 0, 0, SIZE, SIZE, 0.04);
+  // amber polish wash and softened walking wear
+  const polish = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+  polish.addColorStop(0, "rgba(255,239,195,0.16)");
+  polish.addColorStop(0.5, "rgba(255,255,255,0.04)");
+  polish.addColorStop(1, "rgba(107,72,31,0.12)");
+  ctx.fillStyle = polish;
+  ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // Soft vignette at edges so seams blend at high tile counts
+  applyNoise(ctx, 0, 0, SIZE, SIZE, 0.025);
+
   const grad = ctx.createRadialGradient(SIZE / 2, SIZE / 2, SIZE * 0.3, SIZE / 2, SIZE / 2, SIZE * 0.7);
   grad.addColorStop(0, "rgba(0,0,0,0)");
-  grad.addColorStop(1, "rgba(40,28,12,0.18)");
+  grad.addColorStop(1, "rgba(96,67,28,0.12)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  return finalize(canvas, 5, 5);
+  return finalize(canvas, 3.2, 6);
 }
 
 // ---------------------------------------------------------------------------

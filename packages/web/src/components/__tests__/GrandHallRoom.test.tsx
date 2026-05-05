@@ -116,6 +116,10 @@ describe("computeRoomSurfaces", () => {
     expect(floor.color).toBe(FLOOR_COLOR);
   });
 
+  it("uses the beige timber-panel floor colour", () => {
+    expect(FLOOR_COLOR).toBe("#c7ad79");
+  });
+
   // --- Ceiling ---
 
   it("positions the ceiling at y=height", () => {
@@ -421,6 +425,30 @@ describe("Grand Hall ornaments source", () => {
     expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
   });
 
+  it("gives the arched windows translucent glass over daylight backing", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(source).toContain("arched-window-daylight-pane-rect");
+    expect(source).toContain("arched-window-glass-pane-rect");
+    expect(source).toContain("arched-window-glass-pane-arch");
+    expect(source).toContain("arched-window-glass-highlight");
+    expect(source).toContain("opacity={0.42}");
+    expect(source).toContain("depthWrite={false}");
+  });
+
+  it("uses a beige staggered board texture for the floor", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/lib/grand-hall-textures.ts"), "utf-8");
+
+    expect(source).toContain("Beige timber panel floor");
+    expect(source).toContain("BOARD_W");
+    expect(source).toContain("rowOffset");
+    expect(source).toContain("return finalize(canvas, 3.2, 6)");
+  });
+
   it("keeps the opposite long wall clear of procedural door assemblies", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -455,6 +483,19 @@ describe("Grand Hall ornaments source", () => {
     expect(source).not.toContain("right-firebox-back-panel");
     expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
     expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
+  });
+
+  it("upgrades the fireplace beyond a flat box surround", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(source).toContain("left-fireplace-realistic-surround");
+    expect(source).toContain("left-fireplace-firebox-arch");
+    expect(source).toContain("left-fireplace-brass-grate-bar");
+    expect(source).toContain("left-fireplace-charred-log");
+    expect(source).toContain("left-fireplace-ember-glow");
+    expect(source).toContain("left-fireplace-marble-vein");
   });
 
   it("does not bake fixed wall-chair rows into the empty hall", async () => {
