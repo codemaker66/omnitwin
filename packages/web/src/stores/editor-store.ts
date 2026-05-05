@@ -4,6 +4,10 @@ import type { Space } from "../api/spaces.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import * as configApi from "../api/configurations.js";
 import * as spacesApi from "../api/spaces.js";
+import {
+  persistAnonymousPlannerDraft,
+  readAnonymousPlannerDraft,
+} from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 
 // ---------------------------------------------------------------------------
@@ -203,14 +207,22 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const config = isAuthenticated === true
         ? await configApi.getConfig(configId)
         : await configApi.getPublicConfig(configId);
-      const objects = (config.objects ?? []).map(placedObjectToEditor);
+      const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
+      const localDraft = config.isPublicPreview
+        ? readAnonymousPlannerDraft(config.id, {
+          spaceId: config.spaceId,
+          venueId: config.venueId,
+        })
+        : null;
+      const objects = localDraft?.objects ?? serverObjects;
+      const restoredAnonymousDraft = localDraft !== null;
       set({
         configId: config.id,
         spaceId: config.spaceId,
         venueId: config.venueId,
         isPublicPreview: config.isPublicPreview,
         objects,
-        isDirty: false,
+        isDirty: restoredAnonymousDraft,
         isLoading: false,
       });
       // Load space data (name, dimensions) for room geometry rendering.
@@ -373,3 +385,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ ...INITIAL_STATE, scene: get().scene });
   },
 }));
+
+useEditorStore.subscribe((state, previous) => {
+  if (
+    state.configId === previous.configId
+    && state.spaceId === previous.spaceId
+    && state.venueId === previous.venueId
+    && state.isPublicPreview === previous.isPublicPreview
+    && state.objects === previous.objects
+    && state.isDirty === previous.isDirty
+  ) {
+    return;
+  }
+
+  persistAnonymousPlannerDraft({
+    configId: state.configId,
+    spaceId: state.spaceId,
+    venueId: state.venueId,
+    isPublicPreview: state.isPublicPreview,
+    objects: state.objects,
+    isDirty: state.isDirty,
+  });
+});

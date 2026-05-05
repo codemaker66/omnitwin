@@ -24,6 +24,7 @@ const configMock = vi.mocked(await import("../api/configurations.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
 const { getCatalogueItemBySlug } = await import("../lib/catalogue.js");
+const { anonymousPlannerDraftKey } = await import("../lib/anonymous-planner-draft.js");
 
 const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 const ROUND_TABLE_ID = getCatalogueItemBySlug("round-table-6ft")?.id ?? "missing-round-table-id";
@@ -65,6 +66,40 @@ describe("loadConfiguration", () => {
     expect(s.objects[0]?.positionX).toBe(1.0);
     expect(s.isDirty).toBe(false);
     expect(s.isLoading).toBe(false);
+  });
+
+  it("restores unsaved anonymous public-preview draft over stale server objects", async () => {
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    const localDraftObject = {
+      id: "local-draft-1",
+      assetDefinitionId: ROUND_TABLE_ID,
+      positionX: 7,
+      positionY: 0,
+      positionZ: -2,
+      rotationX: 0,
+      rotationY: 0.5,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: true,
+      groupId: "group-draft",
+      notes: "Head table",
+    };
+    localStorage.setItem(anonymousPlannerDraftKey("cfg-1"), JSON.stringify({
+      version: 1,
+      configId: "cfg-1",
+      spaceId: "s-1",
+      venueId: "v-1",
+      updatedAtMs: Date.now(),
+      hasUnsavedLocalChanges: true,
+      objects: [localDraftObject],
+    }));
+
+    await useEditorStore.getState().loadConfiguration("cfg-1");
+
+    const s = useEditorStore.getState();
+    expect(s.objects).toEqual([localDraftObject]);
+    expect(s.isDirty).toBe(true);
   });
 
   it("sets error on failure", async () => {
@@ -301,6 +336,30 @@ describe("saveToServer", () => {
     expect(useEditorStore.getState().isDirty).toBe(true);
     expect(useEditorStore.getState().saveError).toBe("Network failed");
     expect(useEditorStore.getState().lastSavedAt).toBeNull();
+  });
+
+  it("clears the anonymous draft after a successful public save", async () => {
+    configMock.publicBatchSave.mockResolvedValue([
+      { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: ROUND_TABLE_ID,
+        positionX: "0", positionY: "0", positionZ: "0",
+        rotationX: "0", rotationY: "0", rotationZ: "0",
+        scale: "1", sortOrder: 0, metadata: null },
+    ]);
+
+    useEditorStore.setState({
+      configId: "cfg-1",
+      spaceId: "s-1",
+      venueId: "v-1",
+      isDirty: false,
+      isPublicPreview: true,
+    });
+    useEditorStore.getState().addObject(ROUND_TABLE_ID, 0, 0, 0);
+    expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).not.toBeNull();
+
+    const saved = await useEditorStore.getState().saveToServer(false);
+
+    expect(saved).toBe(true);
+    expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
   });
 });
 
