@@ -172,6 +172,20 @@ const PAN_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowLeft"
 /** Shared keyboard state — tracks which pan keys are currently held. */
 const keyboardKeys = new Set<string>();
 
+export function isCameraKeyboardInputLocked(target: EventTarget | null): boolean {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
+
+  if (
+    target.closest(
+      "input, textarea, select, [role='textbox'], [contenteditable]:not([contenteditable='false'])",
+    ) !== null
+  ) {
+    return true;
+  }
+
+  return target.closest("[role='dialog'], [data-camera-keyboard-lock='true']") !== null;
+}
+
 function onKeyUp(event: KeyboardEvent): void {
   keyboardKeys.delete(event.code);
 }
@@ -306,6 +320,10 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (PAN_KEYS.has(event.code)) {
+        if (isCameraKeyboardInputLocked(event.target)) {
+          keyboardKeys.delete(event.code);
+          return;
+        }
         keyboardKeys.add(event.code);
         invalidateRef.current();
       }
@@ -428,6 +446,11 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
 
     // Skip normal camera controls while a bookmark transition is active
     if (!controls.enabled) return;
+
+    if (typeof document !== "undefined" && isCameraKeyboardInputLocked(document.activeElement)) {
+      if (keyboardKeys.size > 0) keyboardKeys.clear();
+      return;
+    }
 
     // Keep rendering while damping settles after orbit/pan
     if (dampingFrames.current > 0) {

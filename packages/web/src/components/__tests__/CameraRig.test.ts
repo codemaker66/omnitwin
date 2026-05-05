@@ -6,6 +6,7 @@ import {
   computePanBounds,
   computeKeyboardPanDirection,
   computeEdgeScrollDirection,
+  isCameraKeyboardInputLocked,
   MIN_POLAR_ANGLE,
   MAX_POLAR_ANGLE,
   DAMPING_FACTOR,
@@ -169,6 +170,50 @@ describe("computePanBounds", () => {
   it("maxX = halfWidth + 20% margin for Grand Hall", () => {
     const bounds = computePanBounds(grandHall);
     expect(bounds.maxX).toBeCloseTo(21 / 2 + 21 * 0.2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isCameraKeyboardInputLocked
+// ---------------------------------------------------------------------------
+
+describe("isCameraKeyboardInputLocked", () => {
+  it("locks camera keyboard pan while text fields own the event", () => {
+    const input = document.createElement("input");
+    const textarea = document.createElement("textarea");
+    const select = document.createElement("select");
+
+    expect(isCameraKeyboardInputLocked(input)).toBe(true);
+    expect(isCameraKeyboardInputLocked(textarea)).toBe(true);
+    expect(isCameraKeyboardInputLocked(select)).toBe(true);
+  });
+
+  it("locks camera keyboard pan inside modal/dialog UI", () => {
+    const dialog = document.createElement("form");
+    dialog.setAttribute("role", "dialog");
+    const button = document.createElement("button");
+    dialog.append(button);
+
+    expect(isCameraKeyboardInputLocked(button)).toBe(true);
+  });
+
+  it("locks camera keyboard pan for content-editable regions", () => {
+    const editable = document.createElement("div");
+    editable.setAttribute("contenteditable", "true");
+    const child = document.createElement("span");
+    editable.append(child);
+
+    expect(isCameraKeyboardInputLocked(child)).toBe(true);
+  });
+
+  it("does not lock camera keyboard pan for ordinary scene targets", () => {
+    const scene = document.createElement("div");
+    const inertEditable = document.createElement("div");
+    inertEditable.setAttribute("contenteditable", "false");
+
+    expect(isCameraKeyboardInputLocked(scene)).toBe(false);
+    expect(isCameraKeyboardInputLocked(inertEditable)).toBe(false);
+    expect(isCameraKeyboardInputLocked(null)).toBe(false);
   });
 });
 

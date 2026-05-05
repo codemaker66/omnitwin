@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Camera, Check, X } from "lucide-react";
 import {
@@ -68,12 +68,20 @@ export function CameraReferenceComposer(): React.ReactElement | null {
   const [name, setName] = useState("");
   const [heightMode, setHeightMode] = useState<CameraEyeHeightMode>("sitting");
   const [customHeightM, setCustomHeightM] = useState(DEFAULT_CUSTOM_EYE_HEIGHT_M);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (draft === null) return;
     setName(draft.suggestedName);
     setHeightMode(draft.source === "furniture" ? "sitting" : "standing");
     setCustomHeightM(DEFAULT_CUSTOM_EYE_HEIGHT_M);
+    const focusTimer = window.setTimeout(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    }, 0);
+    return () => {
+      window.clearTimeout(focusTimer);
+    };
   }, [draft]);
 
   useEffect(() => {
@@ -183,6 +191,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           Name
         </span>
         <input
+          ref={nameInputRef}
           value={name}
           onChange={(event) => {
             setName(event.target.value);
