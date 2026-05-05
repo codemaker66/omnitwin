@@ -157,19 +157,48 @@ function Skirting({ width, length }: { readonly width: number; readonly length: 
 
 const WAINSCOT_PANEL_HEIGHT = 1.55;
 const WAINSCOT_PANEL_Y = 1.25;
+export const WAINSCOT_PANEL_TOP_Y = WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2;
 const WAINSCOT_PANEL_INSET = 0.17;
+export const WINDOW_WALL_RESERVED_BAY_HALF_WIDTH = 2.15;
+
+export function computeWindowWallCenters(width: number): readonly number[] {
+  return [-width * 0.29, 0, width * 0.29] as const;
+}
+
+export function isInWindowWallOpeningBay(x: number, width: number): boolean {
+  return computeWindowWallCenters(width).some(
+    (center) => Math.abs(x - center) <= WINDOW_WALL_RESERVED_BAY_HALF_WIDTH,
+  );
+}
+
+export function computeVisibleLongWainscotPanelCenters(
+  width: number,
+  side: "back" | "front",
+): readonly number[] {
+  const longPanels = 12;
+  const longSpacing = width / longPanels;
+  const centers = Array.from({ length: longPanels }, (_, i) => -width / 2 + longSpacing * (i + 0.5));
+  if (side === "front") return centers;
+  // The arched-window wall already carries tall window frames, curtains,
+  // pilasters, and daylight panes. Dark raised panels on this wall read as
+  // black blocker squares in the placeholder renderer, so keep them off the
+  // window wall and reserve the heavy timber panels for the portrait wall.
+  return [];
+}
 
 function WainscotRaisedPanels({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
-  const longPanels = 12;
   const shortPanels = 5;
-  const longSpacing = width / longPanels;
   const shortSpacing = length / shortPanels;
 
-  const longX = useMemo(
-    () => Array.from({ length: longPanels }, (_, i) => -halfW + longSpacing * (i + 0.5)),
-    [halfW, longSpacing],
+  const backLongX = useMemo(
+    () => computeVisibleLongWainscotPanelCenters(width, "back"),
+    [width],
+  );
+  const frontLongX = useMemo(
+    () => computeVisibleLongWainscotPanelCenters(width, "front"),
+    [width],
   );
   const shortZ = useMemo(
     () => Array.from({ length: shortPanels }, (_, i) => -halfL + shortSpacing * (i + 0.5)),
@@ -185,9 +214,9 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
           surfaceKey={sideIndex === 0 ? "wall-back" : "wall-front"}
         >
         <group>
-          {longX.map((x, i) => (
+          {(sideIndex === 0 ? backLongX : frontLongX).map((x, i) => (
             <mesh key={`wainscot-long-panel-${String(sideIndex)}-${String(i)}`} position={[x, WAINSCOT_PANEL_Y, z]}>
-              <boxGeometry args={[longSpacing * 0.72, WAINSCOT_PANEL_HEIGHT, 0.055]} />
+              <boxGeometry args={[(width / 12) * 0.72, WAINSCOT_PANEL_HEIGHT, 0.055]} />
               <meshStandardMaterial color={i % 2 === 0 ? PANEL_DARK_OAK : PANEL_SHADOW} roughness={0.74} metalness={0} />
             </mesh>
           ))}
@@ -376,7 +405,7 @@ function Pilaster({ position, height, wallAxis }: PilasterProps): React.ReactEle
 
 const WINDOW_HEIGHT = 4.55;
 const WINDOW_WIDTH = 2.45;
-const WINDOW_SILL_Y = 1.05;
+export const WINDOW_SILL_Y = 2.15;
 const WINDOW_INSET = 0.04;
 const WINDOW_FRAME_THICKNESS = 0.12;
 
@@ -932,7 +961,7 @@ export function GrandHallOrnaments({
   // The floorplan's 21m side is the X axis. Three arched window bays sit on
   // one long wall, spaced along X, not mirrored onto the opposite wall.
   const windowX = useMemo(
-    () => [-width * 0.29, 0, width * 0.29],
+    () => computeWindowWallCenters(width),
     [width],
   );
   const pilasterX = useMemo(

@@ -17,6 +17,13 @@ import {
   DOME_COLOR,
 } from "../../constants/colors.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
+import {
+  computeVisibleLongWainscotPanelCenters,
+  computeWindowWallCenters,
+  isInWindowWallOpeningBay,
+  WAINSCOT_PANEL_TOP_Y,
+  WINDOW_SILL_Y,
+} from "../GrandHallOrnaments.js";
 
 // ---------------------------------------------------------------------------
 // Mock R3F — happy-dom has no WebGL context
@@ -394,6 +401,21 @@ describe("dome constants", () => {
 });
 
 describe("Grand Hall ornaments source", () => {
+  it("keeps dark raised panels out of the arched window bays", () => {
+    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
+    const backWallPanels = computeVisibleLongWainscotPanelCenters(width, "back");
+    const frontWallPanels = computeVisibleLongWainscotPanelCenters(width, "front");
+
+    expect(computeWindowWallCenters(width)).toHaveLength(3);
+    expect(frontWallPanels).toHaveLength(12);
+    expect(backWallPanels).toHaveLength(0);
+    expect(backWallPanels.every((x) => !isInWindowWallOpeningBay(x, width))).toBe(true);
+  });
+
+  it("places arched window sills above the dark lower-wall panelling", () => {
+    expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
+  });
+
   it("does not bake fixed wall-chair rows into the empty hall", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
