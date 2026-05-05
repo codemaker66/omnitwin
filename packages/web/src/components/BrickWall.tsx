@@ -14,7 +14,13 @@ import {
   Vector3,
 } from "three";
 import { sectionClipPlanes } from "./SectionPlane.js";
-import { useVisibilityStore, getSurfaceOpacity, type WallKey } from "../stores/visibility-store.js";
+import {
+  useVisibilityStore,
+  getSurfaceOpacity,
+  WALL_BUILD_THRESHOLD,
+  WALL_CLICK_ANIMATION_DURATION_SECONDS,
+  type WallKey,
+} from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 
@@ -51,13 +57,6 @@ export const IMPACT_POINT = 0.6;
 
 /** How far past rest position the brick overshoots on impact (fraction of SCATTER_DISTANCE). */
 export const BOUNCE_OVERSHOOT = 0.04;
-
-/** Wall opacity threshold — below this means "should be unbuilt". */
-const BUILD_THRESHOLD = 0.5;
-
-/** Full build/unbuild animation duration in seconds.
- *  5s gives a slow, deliberate, row-by-row bricklaying feel. */
-const BUILD_DURATION = 5.0;
 
 // ---------------------------------------------------------------------------
 // Pure layout helpers — fully testable
@@ -317,7 +316,7 @@ export function BrickWall({
     const surfaceOpacity = applyXrayOpacity(name, baseOpacity, xrayOpacity);
 
     // Determine target from threshold — binary decision
-    const shouldBeBuilt = surfaceOpacity >= BUILD_THRESHOLD;
+    const shouldBeBuilt = surfaceOpacity >= WALL_BUILD_THRESHOLD;
     const newTarget = shouldBeBuilt ? 1 : 0;
 
     // Locked = user clicked this wall → animate bricks over BUILD_DURATION.
@@ -338,7 +337,7 @@ export function BrickWall({
     }
 
     // Advance animation toward target (only moves when locked / click-driven)
-    const speed = 1 / BUILD_DURATION;
+    const speed = 1 / WALL_CLICK_ANIMATION_DURATION_SECONDS;
     const clampedDelta = Math.min(delta, 0.1);
     const step = speed * clampedDelta;
 

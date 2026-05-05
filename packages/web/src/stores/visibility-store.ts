@@ -23,6 +23,12 @@ export const WALL_KEYS: readonly WallKey[] = [
   "wall-right",
 ];
 
+/** Opacity threshold where a wall is considered assembled for click animation. */
+export const WALL_BUILD_THRESHOLD = 0.5;
+
+/** Duration for click-driven wall disassembly/rebuild animation in seconds. */
+export const WALL_CLICK_ANIMATION_DURATION_SECONDS = 5.0;
+
 export interface VisibilityState {
   /** Current wall display mode. */
   readonly mode: WallMode;
