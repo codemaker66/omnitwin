@@ -5,7 +5,7 @@
  *   - Crown moulding, skirting, and raised dark-timber wainscot panels
  *   - Pilasters framing the three arched windows on one long wall
  *   - Curtain-dressed arched-window facades with cool daylight panes
- *   - Ochre mural frieze, long-wall doors, and three short-end doors
+ *   - Ochre mural frieze, short-end focal wall cues, and window-wall rhythm
  *   - Avodire geometric coffer field and fourteen-trade dome ring
  *   - Three chandeliers along the 21m hall axis, with the central chandelier under the dome
  *
@@ -42,8 +42,6 @@ const WINDOW_FRAME_SHADOW = "#d9cba8";
 const MURAL_GOLD = "#b98532";
 const MURAL_SHADOW = "#705018";
 const UNDERLIGHT = "#f5d47a";
-export const PORTRAIT_WALL_DOOR_COUNT = 3;
-export const SHORT_END_DOOR_COUNT = 3;
 
 // ---------------------------------------------------------------------------
 // Crown moulding — slim ivory strip at the top of every wall
@@ -180,8 +178,8 @@ export function computeVisibleLongWainscotPanelCenters(
   // The arched-window wall already carries tall window frames, curtains,
   // pilasters, and daylight panes. Dark raised panels on this wall read as
   // black blocker squares in the placeholder renderer, so keep them off the
-  // window wall. The opposite long wall carries three door assemblies, so
-  // avoid repeating the same square blocks there too.
+  // window wall. Keep the opposite long wall to rails/frieze only until the
+  // real captured asset can carry exact door/portrait placement.
   if (side === "front") return [];
   return [];
 }
@@ -190,10 +188,9 @@ export function computeVisibleShortWainscotPanelCenters(
   _length: number,
   _side: "left" | "right",
 ): readonly number[] {
-  // The short ends carry distinct architectural cues: fireplace/portrait at
-  // one end and three doors at the other. Dark repeated plaques on either end
-  // read as the wrong feature from the planning camera, so keep the lower wall
-  // treatment to the continuous timber rails and dedicated focal elements.
+  // The short ends carry distinct architectural cues rather than repeated
+  // lower-wall plaques. Keep their treatment to continuous rails and explicit
+  // focal elements so the placeholder does not imply extra doors or blockers.
   return [];
 }
 
@@ -656,7 +653,7 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
 }
 
 // ---------------------------------------------------------------------------
-// Wall art, fireplace, and end-wall doors
+// Wall art and fireplace
 // ---------------------------------------------------------------------------
 
 interface WallMountProps {
@@ -664,10 +661,6 @@ interface WallMountProps {
   readonly axis: "x" | "z";
   readonly frameColor?: string;
   readonly pictureColor?: string;
-}
-
-export function computeRightWallDoorCenters(length: number): readonly number[] {
-  return [-length * 0.31, 0, length * 0.31] as const;
 }
 
 function WallPortrait({
@@ -693,81 +686,10 @@ function WallPortrait({
   );
 }
 
-function ShortEndDoor({
-  x,
-  z,
-  index,
-  wallSide,
-}: {
-  readonly x: number;
-  readonly z: number;
-  readonly index: number;
-  readonly wallSide: "left" | "right";
-}): React.ReactElement {
-  const doorWidth = index === 1 ? 1.42 : 1.24;
-  const doorHeight = 2.7;
-  const doorY = doorHeight / 2;
-  const frameWidth = doorWidth + 0.28;
-  const frameHeight = doorHeight + 0.32;
-  const leafWidth = doorWidth / 2 - 0.035;
-  const handleZ = doorWidth * 0.16;
-  const faceSign = wallSide === "left" ? 1 : -1;
-  const shallowOffset = faceSign * 0.055;
-  const faceOffset = faceSign * 0.23;
-  const railOffset = faceSign * 0.15;
-  const panelOffset = faceSign * 0.18;
-
-  return (
-    <group name={`grand-hall-${wallSide}-wall-door`} position={[x, 0, z]}>
-      <mesh name={`${wallSide}-wall-door-outer-frame`} position={[0, doorY + 0.04, 0]}>
-        <boxGeometry args={[0.18, frameHeight, frameWidth]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.62} metalness={0.03} />
-      </mesh>
-      <mesh name={`${wallSide}-wall-door-leaf-left`} position={[shallowOffset, doorY - 0.02, -doorWidth / 4]}>
-        <boxGeometry args={[0.19, doorHeight, leafWidth]} />
-        <meshStandardMaterial color="#3b2413" roughness={0.68} metalness={0.02} />
-      </mesh>
-      <mesh name={`${wallSide}-wall-door-leaf-right`} position={[shallowOffset, doorY - 0.02, doorWidth / 4]}>
-        <boxGeometry args={[0.19, doorHeight, leafWidth]} />
-        <meshStandardMaterial color="#332012" roughness={0.7} metalness={0.02} />
-      </mesh>
-      <mesh name={`${wallSide}-wall-door-center-mullion`} position={[faceSign * 0.16, doorY - 0.02, 0]}>
-        <boxGeometry args={[0.08, doorHeight - 0.18, 0.06]} />
-        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.68} metalness={0} />
-      </mesh>
-      <mesh name={`${wallSide}-wall-door-top-rail`} position={[railOffset, doorHeight + 0.1, 0]}>
-        <boxGeometry args={[0.1, 0.16, frameWidth + 0.2]} />
-        <meshStandardMaterial color={BRASS_GOLD} roughness={0.44} metalness={0.34} />
-      </mesh>
-      {[-1, 1].map((side) => (
-        <group key={`${wallSide}-wall-door-leaf-panels-${String(side)}`} position={[panelOffset, doorY - 0.02, side * doorWidth / 4]}>
-          {[-0.56, 0.42].map((panelY, panelIndex) => (
-            <mesh key={`${wallSide}-wall-door-raised-panel-${String(side)}-${String(panelIndex)}`} position={[0, panelY, 0]}>
-              <boxGeometry args={[0.05, panelIndex === 0 ? 0.72 : 0.62, leafWidth * 0.66]} />
-              <meshStandardMaterial color={panelIndex === 0 ? "#28180e" : "#4a2d16"} roughness={0.7} metalness={0} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-      {[-handleZ, handleZ].map((handle, handleIndex) => (
-        <mesh key={`${wallSide}-wall-door-handle-${String(handleIndex)}`} name={`${wallSide}-wall-door-brass-handle`} position={[faceOffset, 1.16, handle]}>
-          <sphereGeometry args={[0.055, 12, 12]} />
-          <meshStandardMaterial color={BRASS_GOLD} roughness={0.32} metalness={0.58} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 function EndWallFocalPoint({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const fireplaceX = -width / 2 + 0.18;
-  const rightDoorX = width / 2 - 0.24;
   const boardZ = length * 0.24;
   const fireboxBackX = fireplaceX - 0.035;
-  const rightDoorCenters = useMemo(
-    () => computeRightWallDoorCenters(length),
-    [length],
-  );
 
   return (
     <group name="end-wall-focal-points">
@@ -801,103 +723,6 @@ function EndWallFocalPoint({ width, length }: { readonly width: number; readonly
         <WallPortrait position={[fireplaceX + 0.04, 2.55, -boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
         <WallPortrait position={[fireplaceX + 0.04, 2.55, boardZ]} axis="x" frameColor={PANEL_DARK_OAK} pictureColor="#20140c" />
       </SurfaceVisibilityGroup>
-
-      {/* Opposite short end: three door assemblies, not square blocks. */}
-      <SurfaceVisibilityGroup surfaceKey="wall-right" name="right-end-wall-doors">
-        {rightDoorCenters.map((z, i) => (
-          <ShortEndDoor
-            key={`right-wall-door-${String(i)}`}
-            x={rightDoorX}
-            z={z}
-            index={i}
-            wallSide="right"
-          />
-        ))}
-      </SurfaceVisibilityGroup>
-    </group>
-  );
-}
-
-export function computePortraitWallDoorCenters(width: number): readonly number[] {
-  return [-width * 0.32, 0, width * 0.32] as const;
-}
-
-function LongWallDoor({
-  x,
-  z,
-  index,
-}: {
-  readonly x: number;
-  readonly z: number;
-  readonly index: number;
-}): React.ReactElement {
-  const doorWidth = index === 1 ? 1.52 : 1.32;
-  const doorHeight = 2.72;
-  const doorY = doorHeight / 2;
-  const frameWidth = doorWidth + 0.28;
-  const frameHeight = doorHeight + 0.28;
-  const leafWidth = doorWidth / 2 - 0.035;
-  const handleX = doorWidth * 0.16;
-
-  return (
-    <group name="grand-hall-front-wall-door" position={[x, 0, z]}>
-      <mesh name="front-wall-door-outer-frame" position={[0, doorY + 0.03, 0]}>
-        <boxGeometry args={[frameWidth, frameHeight, 0.16]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.62} metalness={0.03} />
-      </mesh>
-      <mesh name="front-wall-door-leaf-left" position={[-doorWidth / 4, doorY - 0.02, -0.055]}>
-        <boxGeometry args={[leafWidth, doorHeight, 0.18]} />
-        <meshStandardMaterial color="#3b2413" roughness={0.68} metalness={0.02} />
-      </mesh>
-      <mesh name="front-wall-door-leaf-right" position={[doorWidth / 4, doorY - 0.02, -0.055]}>
-        <boxGeometry args={[leafWidth, doorHeight, 0.18]} />
-        <meshStandardMaterial color="#332012" roughness={0.7} metalness={0.02} />
-      </mesh>
-      <mesh name="front-wall-door-center-mullion" position={[0, doorY - 0.02, -0.16]}>
-        <boxGeometry args={[0.06, doorHeight - 0.18, 0.08]} />
-        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.68} metalness={0} />
-      </mesh>
-      <mesh name="front-wall-door-top-rail" position={[0, doorHeight + 0.1, -0.15]}>
-        <boxGeometry args={[frameWidth + 0.2, 0.16, 0.1]} />
-        <meshStandardMaterial color={BRASS_GOLD} roughness={0.44} metalness={0.34} />
-      </mesh>
-      {[-1, 1].map((side) => (
-        <group key={`door-leaf-panels-${String(side)}`} position={[side * doorWidth / 4, doorY - 0.02, -0.17]}>
-          {[-0.56, 0.42].map((panelY, panelIndex) => (
-            <mesh key={`front-wall-door-raised-panel-${String(side)}-${String(panelIndex)}`} position={[0, panelY, 0]}>
-              <boxGeometry args={[leafWidth * 0.66, panelIndex === 0 ? 0.72 : 0.62, 0.045]} />
-              <meshStandardMaterial color={panelIndex === 0 ? "#28180e" : "#4a2d16"} roughness={0.7} metalness={0} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-      {[-handleX, handleX].map((handle, handleIndex) => (
-        <mesh key={`front-wall-door-handle-${String(handleIndex)}`} name="front-wall-door-brass-handle" position={[handle, 1.16, -0.22]}>
-          <sphereGeometry args={[0.055, 12, 12]} />
-          <meshStandardMaterial color={BRASS_GOLD} roughness={0.32} metalness={0.58} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function LongWallDoorSet({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
-  const halfL = length / 2;
-  const doorCenters = useMemo(
-    () => computePortraitWallDoorCenters(width),
-    [width],
-  );
-
-  return (
-    <group name="front-long-wall-door-set">
-      {doorCenters.map((x, i) => (
-        <LongWallDoor
-          key={`front-long-wall-door-${String(i)}`}
-          x={x}
-          z={halfL - 0.24}
-          index={i}
-        />
-      ))}
     </group>
   );
 }
@@ -1110,9 +935,6 @@ export function GrandHallOrnaments({
       <WainscotRaisedPanels width={width} length={length} />
       <TradeFrieze width={width} length={length} height={height} />
       <EndWallFocalPoint width={width} length={length} />
-      <SurfaceVisibilityGroup surfaceKey="wall-front" name="front-wall-ornament-cluster">
-        <LongWallDoorSet width={width} length={length} />
-      </SurfaceVisibilityGroup>
       {/* Pilasters and arched windows along the window wall only. */}
       <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
         {pilasterX.map((x, i) => (

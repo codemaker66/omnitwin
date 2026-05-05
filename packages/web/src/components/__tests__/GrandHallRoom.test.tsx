@@ -20,12 +20,8 @@ import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import {
   computeVisibleLongWainscotPanelCenters,
   computeVisibleShortWainscotPanelCenters,
-  computeRightWallDoorCenters,
-  computePortraitWallDoorCenters,
   computeWindowWallCenters,
   isInWindowWallOpeningBay,
-  PORTRAIT_WALL_DOOR_COUNT,
-  SHORT_END_DOOR_COUNT,
   WAINSCOT_PANEL_TOP_Y,
   WINDOW_SILL_Y,
 } from "../GrandHallOrnaments.js";
@@ -425,33 +421,26 @@ describe("Grand Hall ornaments source", () => {
     expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
   });
 
-  it("represents the opposite long wall as three doors, not honour-board squares", async () => {
-    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
-    const doorCenters = computePortraitWallDoorCenters(width);
+  it("keeps the opposite long wall clear of procedural door assemblies", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
 
-    expect(doorCenters).toHaveLength(PORTRAIT_WALL_DOOR_COUNT);
-    expect(new Set(doorCenters).size).toBe(PORTRAIT_WALL_DOOR_COUNT);
-    expect(source).toContain("grand-hall-front-wall-door");
-    expect(source).toContain("front-wall-door-brass-handle");
+    expect(source).not.toContain("front-long-wall-door-set");
+    expect(source).not.toContain("grand-hall-front-wall-door");
+    expect(source).not.toContain("front-wall-door-brass-handle");
     expect(source).not.toContain("honour-cabinet-long-wall");
   });
 
-  it("represents the opposite short end wall as three doors instead of square plaques", async () => {
-    const { length } = GRAND_HALL_RENDER_DIMENSIONS;
-    const rightDoorCenters = computeRightWallDoorCenters(length);
+  it("keeps the opposite short end wall clear of door assemblies", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
 
-    expect(rightDoorCenters).toHaveLength(SHORT_END_DOOR_COUNT);
-    expect(new Set(rightDoorCenters).size).toBe(SHORT_END_DOOR_COUNT);
-    expect(source).toContain("wallSide=\"right\"");
-    expect(source).toContain("surfaceKey=\"wall-right\" name=\"right-end-wall-doors\"");
-    expect(source).toContain("grand-hall-${wallSide}-wall-door");
-    expect(source).toContain("${wallSide}-wall-door-brass-handle");
+    expect(source).not.toContain("right-end-wall-doors");
+    expect(source).not.toContain("grand-hall-right-wall-door");
+    expect(source).not.toContain("right-wall-door-brass-handle");
+    expect(source).not.toContain("wallSide=\"right\"");
     expect(source).not.toContain("short-end-door");
   });
 
