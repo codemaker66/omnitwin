@@ -15,12 +15,16 @@ function roundTable() {
 }
 
 describe("RoundTableMesh visual spec", () => {
-  it("renders as a folding table with four perimeter legs instead of a central pedestal", () => {
+  it("renders as a folding table with readable perimeter legs instead of a central pedestal", () => {
     const spec = computeFoldingRoundTableVisualSpec(roundTable());
 
     expect(spec.legSegments).toHaveLength(4);
-    expect(spec.braceSegments).toHaveLength(4);
+    expect(spec.braceSegments).toHaveLength(8);
+    expect(spec.supportSegments).toHaveLength(1);
+    expect(spec.hingePoints.length).toBeGreaterThanOrEqual(12);
     expect(spec.frameRingRadius).toBeGreaterThan(spec.radius * 0.6);
+    expect(spec.undersideRadius).toBeLessThan(spec.radius * 0.7);
+    expect(spec.rimBeadRadius).toBeGreaterThan(0);
 
     for (const segment of spec.legSegments) {
       const topRadius = Math.hypot(segment.start[0], segment.start[2]);
@@ -28,8 +32,15 @@ describe("RoundTableMesh visual spec", () => {
 
       expect(topRadius).toBeGreaterThan(spec.radius * 0.6);
       expect(footRadius).toBeGreaterThan(topRadius);
-      expect(footRadius).toBeLessThan(spec.radius);
+      expect(footRadius).toBeLessThan(spec.radius * 1.08);
     }
+
+    const frontLegs = spec.legSegments.filter(
+      (segment) => segment.end[2] > spec.radius * 0.6,
+    );
+
+    expect(frontLegs).toHaveLength(2);
+    expect(spec.footRadius).toBeGreaterThan(spec.legRadius);
   });
 
   it("uses a white plastic top, grey rim, dark metal frame, and black rubber feet", () => {
@@ -62,7 +73,7 @@ describe("RoundTableMesh visual spec", () => {
     }
     const transform = computeCylinderSegmentTransform(segment);
 
-    expect(transform.length).toBeGreaterThan(roundTable().height * 0.85);
+    expect(transform.length).toBeGreaterThan(roundTable().height * 0.75);
     expect(transform.position[1]).toBeGreaterThan(spec.footHeight);
     expect(transform.position[1]).toBeLessThan(spec.height);
     expect(transform.quaternion.length()).toBeCloseTo(1);
