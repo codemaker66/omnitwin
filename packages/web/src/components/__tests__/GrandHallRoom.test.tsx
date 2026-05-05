@@ -19,8 +19,13 @@ import {
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import {
   computeVisibleLongWainscotPanelCenters,
+  computeVisibleShortWainscotPanelCenters,
+  computeLeftWallDoorCenters,
+  computePortraitWallDoorCenters,
   computeWindowWallCenters,
   isInWindowWallOpeningBay,
+  PORTRAIT_WALL_DOOR_COUNT,
+  SHORT_END_DOOR_COUNT,
   WAINSCOT_PANEL_TOP_Y,
   WINDOW_SILL_Y,
 } from "../GrandHallOrnaments.js";
@@ -401,19 +406,61 @@ describe("dome constants", () => {
 });
 
 describe("Grand Hall ornaments source", () => {
-  it("keeps dark raised panels out of the arched window bays", () => {
-    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
+  it("keeps dark raised panels out of the arched-window and door walls", () => {
+    const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
     const backWallPanels = computeVisibleLongWainscotPanelCenters(width, "back");
     const frontWallPanels = computeVisibleLongWainscotPanelCenters(width, "front");
+    const leftWallPanels = computeVisibleShortWainscotPanelCenters(length, "left");
 
     expect(computeWindowWallCenters(width)).toHaveLength(3);
-    expect(frontWallPanels).toHaveLength(12);
+    expect(frontWallPanels).toHaveLength(0);
     expect(backWallPanels).toHaveLength(0);
+    expect(leftWallPanels).toHaveLength(0);
     expect(backWallPanels.every((x) => !isInWindowWallOpeningBay(x, width))).toBe(true);
   });
 
   it("places arched window sills above the dark lower-wall panelling", () => {
     expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
+  });
+
+  it("represents the opposite long wall as three doors, not honour-board squares", async () => {
+    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
+    const doorCenters = computePortraitWallDoorCenters(width);
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(doorCenters).toHaveLength(PORTRAIT_WALL_DOOR_COUNT);
+    expect(new Set(doorCenters).size).toBe(PORTRAIT_WALL_DOOR_COUNT);
+    expect(source).toContain("grand-hall-front-wall-door");
+    expect(source).toContain("front-wall-door-brass-handle");
+    expect(source).not.toContain("honour-cabinet-long-wall");
+  });
+
+  it("represents the camera-facing short end wall as three doors instead of square plaques", async () => {
+    const { length } = GRAND_HALL_RENDER_DIMENSIONS;
+    const leftDoorCenters = computeLeftWallDoorCenters(length);
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(leftDoorCenters).toHaveLength(SHORT_END_DOOR_COUNT);
+    expect(new Set(leftDoorCenters).size).toBe(SHORT_END_DOOR_COUNT);
+    expect(source).toContain("wallSide=\"left\"");
+    expect(source).toContain("grand-hall-${wallSide}-wall-door");
+    expect(source).toContain("${wallSide}-wall-door-brass-handle");
+    expect(source).not.toContain("short-end-door");
+  });
+
+  it("keeps the opposite short-end fireplace as separate surround pieces", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+    expect(source).toContain("right-firebox-back-panel");
+    expect(source).toContain("right-fireplace-left-jamb");
+    expect(source).toContain("right-fireplace-right-jamb");
+    expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
+    expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
   });
 
   it("does not bake fixed wall-chair rows into the empty hall", async () => {
@@ -426,16 +473,6 @@ describe("Grand Hall ornaments source", () => {
     expect(source).not.toContain("floorplan-balcony-wall-cue");
   });
 
-  it("builds the fireplace as separate surround pieces instead of overlapping solid blocks", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-    expect(source).toContain("right-firebox-back-panel");
-    expect(source).toContain("right-fireplace-left-jamb");
-    expect(source).toContain("right-fireplace-right-jamb");
-    expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
-    expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
-  });
 });
 
 // ---------------------------------------------------------------------------
