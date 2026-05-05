@@ -1423,7 +1423,7 @@ function PlanriseLite(): ReactElement {
         </div>
         <div className="planrise-stage rise" style={{ transitionDelay: ".12s" }}>
             <div className="planrise-visual" aria-label="Animated Grand Hall planning sequence">
-              <div className="planrise-photo" aria-hidden>
+              <div className="planrise-status-card" aria-hidden>
                 <span>Wedding selected</span>
                 <strong>114 seats</strong>
                 <em>Round tables + dancefloor</em>
@@ -1439,13 +1439,17 @@ function PlanriseLite(): ReactElement {
                 <span className="planrise-camera-line" />
               </div>
             </div>
-            <div className="planrise-3d-card" aria-hidden>
-              <img
-                src="/rooms/Grand-Hall-scaled-opt.jpg"
-                alt="Trades Hall Grand Hall 3D preview"
-                loading="lazy"
-              />
-              <span>3D view</span>
+            <div className="planrise-mode-card" aria-hidden>
+              <span>3D mode</span>
+              <div className="planrise-room-model">
+                <i className="planrise-model-floor" />
+                <i className="planrise-model-wall planrise-model-wall-left" />
+                <i className="planrise-model-wall planrise-model-wall-back" />
+                <i className="planrise-model-table planrise-model-table-1" />
+                <i className="planrise-model-table planrise-model-table-2" />
+                <i className="planrise-model-stage" />
+              </div>
+              <strong>Same draft, spatial view</strong>
             </div>
             <div className="planrise-send-card" aria-hidden>
               <span>Draft ready</span>

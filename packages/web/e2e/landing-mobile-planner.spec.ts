@@ -189,6 +189,8 @@ test.describe("Trades Hall landing page redesign", () => {
 
       await expectCoreLanding(page, viewport);
       await expect(page.locator(".planrise-stage")).toBeVisible();
+      await expect(page.locator(".planrise img")).toHaveCount(0);
+      await expect(page.locator(".planrise-mode-card")).toBeVisible();
       await expectEmbeddedPlannerIsNotClipped(page.locator(".planner-embedded").first());
       await expect(page.getByRole("link", { name: /Open The Saloon in the planner/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();

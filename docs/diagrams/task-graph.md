@@ -72,6 +72,7 @@ flowchart TD
         T356(["T-356 - 3D planner wall + ceiling fix"])
         T357(["T-357 - camera POV references"])
         T358(["T-358 - 3D planner autosave validation"])
+        T359(["T-359 - landing Planrise visual cleanup"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -140,6 +141,8 @@ flowchart TD
     T001 --> T091
     T156 --> T354
     T354 --> T355
+    T354 --> T359
+    T355 --> T359
     T115 --> T356
     T135 --> T356
     T135 --> T357
@@ -217,7 +220,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred

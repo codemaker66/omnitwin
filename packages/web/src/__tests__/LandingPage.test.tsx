@@ -50,6 +50,12 @@ describe("LandingPage — Grand Hall module", () => {
     expect(screen.queryByText("Transparent costing")).toBeNull();
   });
 
+  it("does not repeat the Grand Hall hero photo inside the Planrise workflow visual", () => {
+    mount();
+    expect(document.querySelector(".planrise img")).toBeNull();
+    expect(document.querySelector(".planrise-mode-card")).not.toBeNull();
+  });
+
   it("renders venue-specific preset and handoff signals without generic cards", () => {
     mount();
     expect(screen.getByText("3 venue-ready starts")).toBeTruthy();
