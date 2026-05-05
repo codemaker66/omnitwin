@@ -116,7 +116,7 @@ const cameraDropdownStyle: React.CSSProperties = {
 };
 
 const cameraItemStyle: React.CSSProperties = {
-  display: "block", width: "100%", padding: "10px 14px", fontSize: 14,
+  display: "flex", flexDirection: "column", gap: 3, width: "100%", padding: "10px 14px", fontSize: 14,
   background: "none", border: "none", color: "#ccc", cursor: "pointer",
   textAlign: "left", borderRadius: 8, fontFamily: "'Inter', sans-serif",
 };
@@ -1122,7 +1122,7 @@ export function VerticalToolbox(): React.ReactElement {
     const bookmarks = useBookmarkStore.getState().bookmarks;
     const bookmark = bookmarks[presetIndex];
     if (bookmark !== undefined) {
-      useBookmarkStore.setState({ pendingNavigationId: bookmark.id });
+      useBookmarkStore.getState().requestNavigation(bookmark.id);
     }
     setCameraOpen(false);
     setMobileMoreOpen(false);
@@ -1427,7 +1427,14 @@ export function VerticalToolbox(): React.ReactElement {
               }}
               onClick={() => { handleCameraPreset(i); }}
             >
-              {bm.name}
+              <span style={{ color: "#f2f2f2", fontWeight: 750, lineHeight: 1.2 }}>
+                {bm.name}
+              </span>
+              <span style={{ color: "rgba(255,255,255,0.44)", fontSize: 11, lineHeight: 1.2 }}>
+                {bm.kind === "reference" && bm.reference !== undefined
+                  ? `${bm.reference.heightMode === "custom" ? "Custom" : bm.reference.heightMode === "sitting" ? "Sitting" : "Standing"} POV - ${bm.reference.sourceLabel}`
+                  : "Preset view"}
+              </span>
             </button>
           ))}
         </div>

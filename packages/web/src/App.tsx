@@ -23,6 +23,7 @@ import { MarqueeSelect } from "./components/MarqueeSelect.js";
 import { SnapGuides } from "./components/SnapGuides.js";
 import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
+import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
@@ -162,6 +163,8 @@ export function App(): React.ReactElement {
 
       <MeasurementOverlay />
       <PlacementHint />
+      <CameraReferenceComposer />
+      <CameraReferenceHeightSwitch />
 
       <ChairCountDialog
         request={chairRequest}

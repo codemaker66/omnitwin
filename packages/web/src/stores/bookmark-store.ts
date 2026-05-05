@@ -3,8 +3,12 @@ import type { SpaceDimensions } from "@omnitwin/types";
 import {
   computeDefaultBookmarks,
   computeTransitionDuration,
+  createCameraReferenceBookmark,
   generateBookmarkId,
+  updateCameraReferenceHeight,
   type CameraBookmark,
+  type CameraEyeHeightMode,
+  type CameraReferenceBookmarkInput,
   type CameraTransition,
 } from "../lib/camera-animation.js";
 
@@ -21,6 +25,8 @@ export interface BookmarkState {
   readonly nextId: number;
   /** Bookmark ID pending navigation — set by UI, consumed by R3F component that has camera access. */
   readonly pendingNavigationId: string | null;
+  /** Reference bookmark currently being viewed, if any. */
+  readonly activeReferenceId: string | null;
   /** Initialize bookmarks with defaults for a room. */
   readonly initialize: (dimensions: SpaceDimensions) => void;
   /** Add a user bookmark from the current camera state. */
@@ -28,6 +34,16 @@ export interface BookmarkState {
     name: string,
     position: readonly [number, number, number],
     target: readonly [number, number, number],
+  ) => void;
+  /** Add a camera point-of-view reference from a floor or furniture right-click. */
+  readonly addReferenceBookmark: (
+    input: Omit<CameraReferenceBookmarkInput, "id">,
+  ) => string;
+  /** Change the active eye-height preset for a saved camera reference. */
+  readonly updateReferenceHeight: (
+    bookmarkId: string,
+    heightMode: CameraEyeHeightMode,
+    customEyeHeightM?: number,
   ) => void;
   /** Remove a bookmark by ID. */
   readonly removeBookmark: (id: string) => void;
@@ -54,6 +70,7 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
   transition: null,
   nextId: 1,
   pendingNavigationId: null,
+  activeReferenceId: null,
 
   initialize: (dimensions: SpaceDimensions) => {
     const defaults = computeDefaultBookmarks(dimensions);
@@ -67,10 +84,39 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
   ) => {
     const state = get();
     const id = generateBookmarkId(state.nextId);
-    const bookmark: CameraBookmark = { id, name, position, target };
+    const bookmark: CameraBookmark = { id, name, kind: "custom", position, target };
     set({
       bookmarks: [...state.bookmarks, bookmark],
       nextId: state.nextId + 1,
+    });
+  },
+
+  addReferenceBookmark: (input: Omit<CameraReferenceBookmarkInput, "id">): string => {
+    const state = get();
+    const id = generateBookmarkId(state.nextId);
+    const bookmark = createCameraReferenceBookmark({ ...input, id });
+    set({
+      bookmarks: [...state.bookmarks, bookmark],
+      nextId: state.nextId + 1,
+    });
+    return id;
+  },
+
+  updateReferenceHeight: (
+    bookmarkId: string,
+    heightMode: CameraEyeHeightMode,
+    customEyeHeightM?: number,
+  ) => {
+    const state = get();
+    set({
+      bookmarks: state.bookmarks.map((bookmark) =>
+        bookmark.id === bookmarkId
+          ? updateCameraReferenceHeight(bookmark, heightMode, customEyeHeightM)
+          : bookmark,
+      ),
+      pendingNavigationId: state.activeReferenceId === bookmarkId
+        ? bookmarkId
+        : state.pendingNavigationId,
     });
   },
 
@@ -78,6 +124,7 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
     const state = get();
     set({
       bookmarks: state.bookmarks.filter((b) => b.id !== id),
+      activeReferenceId: state.activeReferenceId === id ? null : state.activeReferenceId,
     });
   },
 
@@ -104,7 +151,10 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
       duration,
       elapsed: 0,
     };
-    set({ transition });
+    set({
+      transition,
+      activeReferenceId: bookmark.kind === "reference" ? bookmark.id : null,
+    });
   },
 
   updateTransition: (delta: number): boolean => {

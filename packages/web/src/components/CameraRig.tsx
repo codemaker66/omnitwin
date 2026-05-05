@@ -293,6 +293,17 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   invalidateRef.current = invalidate;
 
   useEffect(() => {
+    return useBookmarkStore.subscribe((state, previousState) => {
+      if (
+        state.pendingNavigationId !== null &&
+        state.pendingNavigationId !== previousState.pendingNavigationId
+      ) {
+        invalidateRef.current();
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (PAN_KEYS.has(event.code)) {
         keyboardKeys.add(event.code);

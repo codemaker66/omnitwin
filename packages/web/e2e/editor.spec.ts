@@ -106,4 +106,48 @@ test.describe("Public Editor", () => {
     // Canvas must remain visible after interactions
     await expect(canvas).toBeVisible();
   });
+
+  test("right-clicking the planner creates a camera POV reference", async ({ page }) => {
+    const canvas = page.locator("canvas");
+    await page.getByRole("button", { name: "Camera Views" }).waitFor({ state: "visible" });
+    await page.waitForTimeout(250);
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    if (box === null) return;
+
+    const clickX = box.x + Math.floor(box.width * 0.56);
+    const clickY = box.y + Math.floor(box.height * 0.58);
+    await page.mouse.move(clickX, clickY);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.up({ button: "right" });
+
+    const composer = page.getByRole("dialog", { name: "Add camera POV" });
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await expect(composer.getByText("Eye height")).toBeVisible();
+    await expect(composer.getByRole("button", { name: "Standing" })).toBeVisible();
+    await composer.getByRole("button", { name: "Add + view" }).click();
+
+    await expect(page.getByLabel("POV height")).toBeVisible({ timeout: 5_000 });
+    await page.getByRole("button", { name: "Camera Views" }).click();
+    await expect(page.getByRole("button", { name: /Floor POV Standing POV - Floor grid/ })).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("right-drag orbit does not open the camera POV composer", async ({ page }) => {
+    const canvas = page.locator("canvas");
+    await page.getByRole("button", { name: "Camera Views" }).waitFor({ state: "visible" });
+    await page.waitForTimeout(250);
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    if (box === null) return;
+
+    const startX = box.x + Math.floor(box.width * 0.48);
+    const startY = box.y + Math.floor(box.height * 0.58);
+    await page.mouse.move(startX, startY);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(startX + 96, startY + 24, { steps: 6 });
+    await page.mouse.up({ button: "right" });
+
+    await expect(page.getByRole("dialog", { name: "Add camera POV" })).toHaveCount(0);
+    await expect(canvas).toBeVisible();
+  });
 });

@@ -10,6 +10,7 @@ import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
@@ -98,6 +99,17 @@ function findWallKey(obj: Object3D): WallKey | null {
   return null;
 }
 
+function findFurnitureItemId(obj: Object3D): string | null {
+  let current: Object3D | null = obj;
+  while (current !== null) {
+    if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
+      return current.name.replace("furniture-", "");
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 export function SelectionSystem(): null {
   const { scene, camera, raycaster, invalidate, gl } = useThree();
   const isDragging = useRef(false);
@@ -105,6 +117,8 @@ export function SelectionSystem(): null {
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
   const wallClickKey = useRef<WallKey | null>(null);
+  const rightClickStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressNextContextMenu = useRef(false);
   const marqueeRafId = useRef<number>(0);
   // floorCache removed — drag uses math plane intersection
 
@@ -218,6 +232,10 @@ export function SelectionSystem(): null {
     let cachedRect = canvasEl.getBoundingClientRect();
 
     function onPointerDown(event: PointerEvent): void {
+      if (event.button === 2) {
+        rightClickStart.current = { x: event.clientX, y: event.clientY };
+        return;
+      }
       // Only handle left-click
       if (event.button !== 0) return;
       // Don't interfere with placement mode
@@ -247,14 +265,7 @@ export function SelectionSystem(): null {
       for (const inter of allIntersects) {
         // Check furniture first (higher priority)
         if (found.itemId === null) {
-          let current: Object3D | null = inter.object;
-          while (current !== null) {
-            if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
-              found.itemId = current.name.replace("furniture-", "");
-              break;
-            }
-            current = current.parent;
-          }
+          found.itemId = findFurnitureItemId(inter.object);
           if (found.itemId !== null) break; // furniture found, stop
         }
         // Check wall (only if no furniture found yet)
@@ -268,6 +279,80 @@ export function SelectionSystem(): null {
       }
       dragItemId.current = found.itemId;
       wallClickKey.current = found.wallKey;
+    }
+
+    function onMouseDown(event: MouseEvent): void {
+      if (event.button === 2) {
+        rightClickStart.current = { x: event.clientX, y: event.clientY };
+      }
+    }
+
+    function openCameraReferenceDraft(clientX: number, clientY: number): void {
+      if (useCatalogueStore.getState().selectedItemId !== null) return;
+      if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
+
+      cachedRect = canvasEl.getBoundingClientRect();
+      const floorPos = screenToFloor(clientX, clientY, cachedRect, camera, raycaster);
+      if (floorPos === null) return;
+
+      const ndcX = ((clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+      const ndcY = -((clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
+      const intersects = raycaster.intersectObjects(findFurnitureGroups(scene), true);
+      let placedId: string | null = null;
+      for (const inter of intersects) {
+        placedId = findFurnitureItemId(inter.object);
+        if (placedId !== null) break;
+      }
+
+      if (placedId !== null) {
+        const item = usePlacementStore.getState().placedItems.find((placed) => placed.id === placedId);
+        if (item !== undefined) {
+          const catalogueItem = getCatalogueItem(item.catalogueItemId);
+          const label = catalogueItem?.name ?? "Furniture";
+          useCameraReferenceStore.getState().openDraft({
+            screenX: clientX,
+            screenY: clientY,
+            source: "furniture",
+            sourceLabel: label,
+            point: [item.x, item.z],
+            baseY: item.y,
+            yaw: item.rotationY,
+            suggestedName: `${label} POV`,
+          });
+          return;
+        }
+      }
+
+      useCameraReferenceStore.getState().openDraft({
+        screenX: clientX,
+        screenY: clientY,
+        source: "floor",
+        sourceLabel: "Floor grid",
+        point: [floorPos.x, floorPos.z],
+        baseY: 0,
+        yaw: null,
+        suggestedName: "Floor POV",
+      });
+    }
+
+    function onContextMenu(event: MouseEvent): void {
+      event.preventDefault();
+      if (suppressNextContextMenu.current) {
+        suppressNextContextMenu.current = false;
+        return;
+      }
+
+      const start = rightClickStart.current;
+      rightClickStart.current = null;
+      if (
+        start !== null &&
+        screenDistance(start.x, start.y, event.clientX, event.clientY) > DRAG_THRESHOLD_PX
+      ) {
+        return;
+      }
+
+      openCameraReferenceDraft(event.clientX, event.clientY);
     }
 
     function onPointerMove(event: PointerEvent): void {
@@ -444,7 +529,27 @@ export function SelectionSystem(): null {
       }
     }
 
+    function handleRightButtonRelease(event: PointerEvent | MouseEvent): boolean {
+      if (event.button === 2) {
+        const start = rightClickStart.current;
+        rightClickStart.current = null;
+        if (
+          start !== null &&
+          screenDistance(start.x, start.y, event.clientX, event.clientY) <= DRAG_THRESHOLD_PX
+        ) {
+          event.preventDefault();
+          suppressNextContextMenu.current = true;
+          openCameraReferenceDraft(event.clientX, event.clientY);
+        } else if (start !== null) {
+          suppressNextContextMenu.current = true;
+        }
+        return true;
+      }
+      return false;
+    }
+
     function onPointerUp(event: PointerEvent): void {
+      if (handleRightButtonRelease(event)) return;
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       // Don't interfere with measurement or guideline tools
@@ -485,6 +590,10 @@ export function SelectionSystem(): null {
       dragItemId.current = null;
     }
 
+    function onMouseUp(event: MouseEvent): void {
+      handleRightButtonRelease(event);
+    }
+
     function onDblClick(event: MouseEvent): void {
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
@@ -503,15 +612,7 @@ export function SelectionSystem(): null {
       const hitObj = intersects[0]?.object;
       if (hitObj === undefined) return;
 
-      let current: Object3D | null = hitObj;
-      let placedId: string | null = null;
-      while (current !== null) {
-        if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
-          placedId = current.name.replace("furniture-", "");
-          break;
-        }
-        current = current.parent;
-      }
+      const placedId = findFurnitureItemId(hitObj);
       if (placedId === null) return;
 
       const placedItems = usePlacementStore.getState().placedItems;
@@ -539,15 +640,21 @@ export function SelectionSystem(): null {
     }
 
     canvasEl.addEventListener("pointerdown", onPointerDown);
+    canvasEl.addEventListener("mousedown", onMouseDown);
     canvasEl.addEventListener("pointermove", onPointerMove);
     canvasEl.addEventListener("pointerup", onPointerUp);
+    canvasEl.addEventListener("mouseup", onMouseUp);
+    canvasEl.addEventListener("contextmenu", onContextMenu);
     canvasEl.addEventListener("dblclick", onDblClick);
 
     return () => {
       cancelAnimationFrame(marqueeRafId.current);
       canvasEl.removeEventListener("pointerdown", onPointerDown);
+      canvasEl.removeEventListener("mousedown", onMouseDown);
       canvasEl.removeEventListener("pointermove", onPointerMove);
       canvasEl.removeEventListener("pointerup", onPointerUp);
+      canvasEl.removeEventListener("mouseup", onMouseUp);
+      canvasEl.removeEventListener("contextmenu", onContextMenu);
       canvasEl.removeEventListener("dblclick", onDblClick);
     };
   }, [scene, camera, raycaster, gl]);

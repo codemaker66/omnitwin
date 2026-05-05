@@ -6,8 +6,15 @@ import {
   computeTransitionDuration,
   generateBookmarkId,
   computeDefaultBookmarks,
+  createCameraReferenceBookmark,
+  resolveCameraEyeHeight,
+  updateCameraReferenceHeight,
   advanceTransition,
   sampleTransition,
+  SITTING_EYE_HEIGHT_M,
+  STANDING_EYE_HEIGHT_M,
+  MIN_CUSTOM_EYE_HEIGHT_M,
+  MAX_CUSTOM_EYE_HEIGHT_M,
   MIN_TRANSITION_DURATION,
   MAX_TRANSITION_DURATION,
   REFERENCE_DISTANCE,
@@ -411,6 +418,73 @@ describe("sampleTransition", () => {
     expect(result.target[0]).toBeCloseTo(0.5);
     expect(result.target[1]).toBeCloseTo(1);
     expect(result.target[2]).toBeCloseTo(1.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Camera reference POV bookmarks
+// ---------------------------------------------------------------------------
+
+describe("camera reference bookmarks", () => {
+  it("resolves sitting and standing eye heights", () => {
+    expect(resolveCameraEyeHeight("sitting")).toBe(SITTING_EYE_HEIGHT_M);
+    expect(resolveCameraEyeHeight("standing")).toBe(STANDING_EYE_HEIGHT_M);
+  });
+
+  it("clamps custom eye height into the supported human range", () => {
+    expect(resolveCameraEyeHeight("custom", 0.1)).toBe(MIN_CUSTOM_EYE_HEIGHT_M);
+    expect(resolveCameraEyeHeight("custom", 5)).toBe(MAX_CUSTOM_EYE_HEIGHT_M);
+    expect(resolveCameraEyeHeight("custom", 1.42)).toBe(1.42);
+  });
+
+  it("creates a furniture POV at the clicked object position and eye height", () => {
+    const bookmark = createCameraReferenceBookmark({
+      id: "pov-1",
+      name: "Bride chair",
+      source: "furniture",
+      sourceLabel: "Banquet Chair",
+      point: [3, -4],
+      baseY: 0.4,
+      yaw: Math.PI,
+      heightMode: "sitting",
+    });
+
+    expect(bookmark.kind).toBe("reference");
+    expect(bookmark.position).toEqual([3, 0.4 + SITTING_EYE_HEIGHT_M, -4]);
+    expect(bookmark.reference?.sourceLabel).toBe("Banquet Chair");
+    expect(bookmark.target[2]).toBeGreaterThan(bookmark.position[2]);
+  });
+
+  it("faces a floor-grid POV toward the room centre", () => {
+    const bookmark = createCameraReferenceBookmark({
+      id: "pov-floor",
+      name: "Floor POV",
+      source: "floor",
+      sourceLabel: "Floor grid",
+      point: [4, 0],
+      yaw: null,
+      heightMode: "standing",
+    });
+
+    expect(bookmark.position).toEqual([4, STANDING_EYE_HEIGHT_M, 0]);
+    expect(bookmark.target[0]).toBeLessThan(bookmark.position[0]);
+  });
+
+  it("updates only the reference height and preserves source metadata", () => {
+    const sitting = createCameraReferenceBookmark({
+      id: "pov-1",
+      name: "Bride chair",
+      source: "furniture",
+      sourceLabel: "Banquet Chair",
+      point: [3, -4],
+      yaw: 0,
+      heightMode: "sitting",
+    });
+    const standing = updateCameraReferenceHeight(sitting, "standing");
+
+    expect(standing.position[1]).toBe(STANDING_EYE_HEIGHT_M);
+    expect(standing.reference?.source).toBe("furniture");
+    expect(standing.reference?.sourceLabel).toBe("Banquet Chair");
   });
 });
 

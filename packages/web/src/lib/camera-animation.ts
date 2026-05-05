@@ -9,6 +9,8 @@ export interface CameraBookmark {
   readonly name: string;
   readonly position: readonly [number, number, number];
   readonly target: readonly [number, number, number];
+  readonly kind?: CameraBookmarkKind;
+  readonly reference?: CameraReferenceMetadata;
 }
 
 export interface CameraTransition {
@@ -19,6 +21,37 @@ export interface CameraTransition {
   readonly duration: number;
   /** Elapsed time in seconds. */
   readonly elapsed: number;
+}
+
+export type CameraBookmarkKind = "default" | "custom" | "reference";
+
+export type CameraReferenceSource = "floor" | "furniture";
+
+export type CameraEyeHeightMode = "sitting" | "standing" | "custom";
+
+export interface CameraReferenceMetadata {
+  readonly source: CameraReferenceSource;
+  readonly sourceLabel: string;
+  /** Render-space X/Z point for the camera reference. */
+  readonly point: readonly [number, number];
+  /** Floor or platform Y coordinate. Heights are real metres and not render-scaled. */
+  readonly baseY: number;
+  /** Item yaw in radians. Null means face the room centre from the chosen point. */
+  readonly yaw: number | null;
+  readonly eyeHeightM: number;
+  readonly heightMode: CameraEyeHeightMode;
+}
+
+export interface CameraReferenceBookmarkInput {
+  readonly id: string;
+  readonly name: string;
+  readonly source: CameraReferenceSource;
+  readonly sourceLabel: string;
+  readonly point: readonly [number, number];
+  readonly baseY?: number;
+  readonly yaw: number | null;
+  readonly heightMode: CameraEyeHeightMode;
+  readonly customEyeHeightM?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -36,6 +69,20 @@ export const MAX_TRANSITION_DURATION = 1.5;
  * Movements longer than this still cap at MAX_TRANSITION_DURATION.
  */
 export const REFERENCE_DISTANCE = 30;
+
+export const SITTING_EYE_HEIGHT_M = 1.18;
+
+export const STANDING_EYE_HEIGHT_M = 1.65;
+
+export const DEFAULT_CUSTOM_EYE_HEIGHT_M = 1.5;
+
+export const MIN_CUSTOM_EYE_HEIGHT_M = 0.7;
+
+export const MAX_CUSTOM_EYE_HEIGHT_M = 2.2;
+
+const REFERENCE_TARGET_DISTANCE = 6;
+
+const ROOM_CENTRE_EPSILON = 0.25;
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -116,6 +163,98 @@ export function generateBookmarkId(counter: number): string {
   return `bookmark-${String(counter)}`;
 }
 
+export function resolveCameraEyeHeight(
+  mode: CameraEyeHeightMode,
+  customEyeHeightM: number = DEFAULT_CUSTOM_EYE_HEIGHT_M,
+): number {
+  switch (mode) {
+    case "sitting":
+      return SITTING_EYE_HEIGHT_M;
+    case "standing":
+      return STANDING_EYE_HEIGHT_M;
+    case "custom":
+      return Math.min(
+        MAX_CUSTOM_EYE_HEIGHT_M,
+        Math.max(MIN_CUSTOM_EYE_HEIGHT_M, customEyeHeightM),
+      );
+  }
+  const exhaustive: never = mode;
+  return exhaustive;
+}
+
+function computeReferenceTarget(
+  point: readonly [number, number],
+  baseY: number,
+  eyeHeightM: number,
+  yaw: number | null,
+): readonly [number, number, number] {
+  const y = baseY + eyeHeightM;
+  if (yaw !== null) {
+    return [
+      point[0] - Math.sin(yaw) * REFERENCE_TARGET_DISTANCE,
+      y,
+      point[1] - Math.cos(yaw) * REFERENCE_TARGET_DISTANCE,
+    ];
+  }
+
+  const centreDx = -point[0];
+  const centreDz = -point[1];
+  const dist = Math.sqrt(centreDx * centreDx + centreDz * centreDz);
+  if (dist < ROOM_CENTRE_EPSILON) {
+    return [point[0], y, point[1] - REFERENCE_TARGET_DISTANCE];
+  }
+
+  return [
+    point[0] + (centreDx / dist) * REFERENCE_TARGET_DISTANCE,
+    y,
+    point[1] + (centreDz / dist) * REFERENCE_TARGET_DISTANCE,
+  ];
+}
+
+export function createCameraReferenceBookmark(
+  input: CameraReferenceBookmarkInput,
+): CameraBookmark {
+  const baseY = input.baseY ?? 0;
+  const eyeHeightM = resolveCameraEyeHeight(input.heightMode, input.customEyeHeightM);
+  const metadata: CameraReferenceMetadata = {
+    source: input.source,
+    sourceLabel: input.sourceLabel,
+    point: input.point,
+    baseY,
+    yaw: input.yaw,
+    eyeHeightM,
+    heightMode: input.heightMode,
+  };
+
+  return {
+    id: input.id,
+    name: input.name,
+    kind: "reference",
+    reference: metadata,
+    position: [input.point[0], baseY + eyeHeightM, input.point[1]],
+    target: computeReferenceTarget(input.point, baseY, eyeHeightM, input.yaw),
+  };
+}
+
+export function updateCameraReferenceHeight(
+  bookmark: CameraBookmark,
+  heightMode: CameraEyeHeightMode,
+  customEyeHeightM?: number,
+): CameraBookmark {
+  if (bookmark.kind !== "reference" || bookmark.reference === undefined) return bookmark;
+  return createCameraReferenceBookmark({
+    id: bookmark.id,
+    name: bookmark.name,
+    source: bookmark.reference.source,
+    sourceLabel: bookmark.reference.sourceLabel,
+    point: bookmark.reference.point,
+    baseY: bookmark.reference.baseY,
+    yaw: bookmark.reference.yaw,
+    heightMode,
+    customEyeHeightM: customEyeHeightM ?? bookmark.reference.eyeHeightM,
+  });
+}
+
 /**
  * Computes the three default camera bookmarks for a room:
  *
@@ -161,18 +300,21 @@ export function computeDefaultBookmarks(
     {
       id: "default-entrance",
       name: "Entrance View",
+      kind: "default",
       position: entrancePosition,
       target: entranceTarget,
     },
     {
       id: "default-overhead",
       name: "Overhead View",
+      kind: "default",
       position: overheadPosition,
       target: overheadTarget,
     },
     {
       id: "default-stage",
       name: "Stage View",
+      kind: "default",
       position: stagePosition,
       target: stageTarget,
     },

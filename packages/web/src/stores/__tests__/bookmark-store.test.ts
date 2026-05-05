@@ -32,6 +32,10 @@ describe("BookmarkStore initial state", () => {
   it("starts with no pending navigation", () => {
     expect(useBookmarkStore.getState().pendingNavigationId).toBeNull();
   });
+
+  it("starts with no active camera reference", () => {
+    expect(useBookmarkStore.getState().activeReferenceId).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -102,6 +106,51 @@ describe("addBookmark", () => {
     useBookmarkStore.getState().initialize({ width: 21, length: 10.5, height: 7 });
     useBookmarkStore.getState().addBookmark("Custom", [0, 0, 0], [0, 0, 0]);
     expect(useBookmarkStore.getState().bookmarks).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addReferenceBookmark
+// ---------------------------------------------------------------------------
+
+describe("addReferenceBookmark", () => {
+  it("adds a named camera reference and returns its ID", () => {
+    const id = useBookmarkStore.getState().addReferenceBookmark({
+      name: "Bride chair",
+      source: "furniture",
+      sourceLabel: "Banquet Chair",
+      point: [2, -3],
+      baseY: 0,
+      yaw: Math.PI,
+      heightMode: "sitting",
+    });
+
+    const bookmark = useBookmarkStore.getState().bookmarks.find((b) => b.id === id);
+    expect(bookmark?.kind).toBe("reference");
+    expect(bookmark?.name).toBe("Bride chair");
+    expect(bookmark?.reference?.heightMode).toBe("sitting");
+  });
+
+  it("updates a viewed reference height and queues a fresh camera navigation", () => {
+    const id = useBookmarkStore.getState().addReferenceBookmark({
+      name: "Bride chair",
+      source: "furniture",
+      sourceLabel: "Banquet Chair",
+      point: [2, -3],
+      baseY: 0,
+      yaw: Math.PI,
+      heightMode: "sitting",
+    });
+    const bookmark = useBookmarkStore.getState().bookmarks.find((b) => b.id === id);
+    expect(bookmark).toBeDefined();
+    if (bookmark === undefined) return;
+
+    useBookmarkStore.getState().startTransition(bookmark, [0, 0, 0], [0, 0, 0]);
+    useBookmarkStore.getState().updateReferenceHeight(id, "standing");
+    const updated = useBookmarkStore.getState().bookmarks.find((b) => b.id === id);
+
+    expect(updated?.reference?.heightMode).toBe("standing");
+    expect(useBookmarkStore.getState().pendingNavigationId).toBe(id);
   });
 });
 
