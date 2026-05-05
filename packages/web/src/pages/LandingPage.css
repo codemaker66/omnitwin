@@ -435,7 +435,7 @@
 
 .th-landing .planner-tool-rail {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 1px;
   border-bottom: 1px solid var(--rule);
   background: var(--rule);
@@ -462,8 +462,23 @@
   color: var(--cream);
 }
 
+.th-landing .preview-tool.danger {
+  color: color-mix(in oklab, var(--accent) 76%, var(--ink));
+}
+
+.th-landing .preview-tool.danger.on {
+  background: color-mix(in oklab, var(--accent) 86%, var(--ink));
+  color: var(--cream);
+}
+
 .th-landing .preview-tool.enabled:not(.on) {
   box-shadow: inset 0 -3px 0 color-mix(in oklab, var(--accent) 62%, var(--ink));
+}
+
+.th-landing .preview-tool:disabled {
+  cursor: not-allowed;
+  color: color-mix(in oklab, var(--muted) 70%, var(--rule));
+  opacity: 0.5;
 }
 
 .th-landing .tool-status {
@@ -524,7 +539,7 @@
 .th-landing .planner.planner-embedded .rightcol {
   order: 2;
   display: grid;
-  grid-template-columns: minmax(120px, 0.7fr) repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(112px, 0.7fr) repeat(4, minmax(0, 1fr)) minmax(94px, auto);
   gap: 8px 12px;
   align-items: center;
   border-left: none;
@@ -562,6 +577,10 @@
   display: none;
 }
 
+.th-landing .planner.planner-embedded .selected-actions {
+  justify-self: end;
+}
+
 .th-landing .planner .rightcol {
   border-left: 1px solid var(--rule);
   background: var(--cream-2);
@@ -587,6 +606,39 @@
 .th-landing .planner .rightcol .footer-note {
   margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule);
   font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+
+.th-landing .selected-actions {
+  margin-top: 12px;
+}
+
+.th-landing .danger-action {
+  min-height: 34px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid color-mix(in oklab, var(--accent) 72%, var(--rule));
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--panel) 92%, var(--accent));
+  color: color-mix(in oklab, var(--accent) 76%, var(--ink));
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.th-landing .danger-action:hover,
+.th-landing .danger-action:focus-visible {
+  background: color-mix(in oklab, var(--accent) 88%, var(--ink));
+  color: var(--cream);
+}
+
+.th-landing .danger-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 @media (max-width: 900px) {
@@ -844,6 +896,18 @@
 }
 .th-landing .tool-group .tool:last-child { border-right: none; }
 .th-landing .tool-group .tool.on { background: var(--ink); color: var(--cream); }
+.th-landing .tool-group .tool.danger {
+  color: color-mix(in oklab, var(--accent) 78%, var(--ink));
+}
+.th-landing .tool-group .tool.danger:hover,
+.th-landing .tool-group .tool.danger:focus-visible {
+  background: color-mix(in oklab, var(--accent) 12%, var(--panel));
+}
+.th-landing .tool-group .tool:disabled {
+  cursor: not-allowed;
+  color: color-mix(in oklab, var(--muted) 70%, var(--rule));
+  opacity: 0.5;
+}
 .th-landing .coord {
   font-family: var(--mono); font-size: 11px;
   color: var(--muted); background: var(--panel);
@@ -1519,7 +1583,7 @@
   }
 
   .th-landing .planner-tool-rail {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 
@@ -1551,7 +1615,7 @@
   }
 
   .th-landing .planner-tool-rail {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .th-landing .preview-tool {

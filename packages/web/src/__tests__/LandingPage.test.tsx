@@ -71,6 +71,7 @@ describe("LandingPage — Grand Hall module", () => {
     const tools = screen.getByRole("toolbar", { name: /2D planner tools/i });
     expect(within(tools).getByRole("button", { name: /Select/i })).toBeTruthy();
     expect(within(tools).getByRole("button", { name: /Add/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Delete/i })).toBeTruthy();
     expect(within(tools).getByRole("button", { name: /Measure/i })).toBeTruthy();
     expect(within(tools).getByRole("button", { name: /Camera/i })).toBeTruthy();
     expect(within(tools).getByRole("button", { name: /Snap/i })).toBeTruthy();
@@ -78,6 +79,21 @@ describe("LandingPage — Grand Hall module", () => {
     const img = getHeroImage();
     expect(img.getAttribute("alt")).toMatch(/Grand Hall set for a banquet/i);
     expect(img.getAttribute("src")).toBe("/rooms/Grand-Hall-scaled-opt.jpg");
+  });
+
+  it("exposes a visible trash action for selected 2D furniture", () => {
+    mount();
+    const planner = document.querySelector(".planner-embedded");
+    expect(planner).not.toBeNull();
+    const initialFurniture = planner?.querySelectorAll(".furn").length ?? 0;
+    expect(initialFurniture).toBeGreaterThan(0);
+
+    const tools = screen.getByRole("toolbar", { name: /2D planner tools/i });
+    fireEvent.click(within(tools).getByRole("button", { name: /Delete/i }));
+
+    const nextFurniture = planner?.querySelectorAll(".furn").length ?? 0;
+    expect(nextFurniture).toBe(initialFurniture - 1);
+    expect(screen.getAllByRole("button", { name: /Delete item/i }).length).toBeGreaterThanOrEqual(1);
   });
 
   it("restores the Trades Hall room picker with real room photography", () => {

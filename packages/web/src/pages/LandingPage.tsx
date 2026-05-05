@@ -17,6 +17,7 @@ import {
   MousePointer2,
   RotateCw,
   Ruler,
+  Trash2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -541,7 +542,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
 const CATALOGUE_MIME = "application/x-th-catalogue-kind";
 
 type EventType = "wedding" | "gala" | "conference";
-type PreviewTool = "select" | "add" | "rotate" | "measure" | "camera" | "snap" | "walls" | "review";
+type PreviewTool = "select" | "add" | "rotate" | "delete" | "measure" | "camera" | "snap" | "walls" | "review";
 
 interface PreviewToolDefinition {
   readonly id: PreviewTool;
@@ -570,6 +571,12 @@ const PREVIEW_TOOLS: readonly PreviewToolDefinition[] = [
     label: "Rotate selected",
     shortLabel: "Rotate",
     description: "Turn the selected object 90 degrees and keep it inside the room.",
+  },
+  {
+    id: "delete",
+    label: "Delete selected",
+    shortLabel: "Delete",
+    description: "Remove the selected furniture from the draft.",
   },
   {
     id: "measure",
@@ -844,6 +851,8 @@ function PreviewToolIcon({ tool }: { readonly tool: PreviewTool }): ReactElement
       return <Armchair {...iconProps} />;
     case "rotate":
       return <RotateCw {...iconProps} />;
+    case "delete":
+      return <Trash2 {...iconProps} />;
     case "measure":
       return <Ruler {...iconProps} />;
     case "camera":
@@ -974,13 +983,27 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
     setSelectedId(id);
   };
 
-  /** Delete the selected item (Del/Backspace keyboard). */
+  /** Delete a selected item while keeping the preview in a useful state:
+   *  selection moves to the next nearby object instead of leaving the
+   *  inspector stranded on an empty record. */
+  const deleteItem = (itemId: string): void => {
+    if (itemId === "") return;
+    const selectedIndex = items.findIndex((item) => item.id === itemId);
+    if (selectedIndex === -1) {
+      setSelectedId("");
+      return;
+    }
+    const nextItems = items.filter((item) => item.id !== itemId);
+    const nextSelected = nextItems[Math.min(selectedIndex, nextItems.length - 1)]?.id ?? "";
+    setItems(nextItems);
+    setSelectedId(nextSelected);
+    setActiveTool("select");
+  };
+
+  /** Delete the selected item (toolbar button, inspector button,
+   *  Del/Backspace keyboard). */
   const deleteSelected = (): void => {
-    setItems((prev) => {
-      const filtered = prev.filter((i) => i.id !== selectedId);
-      return filtered.length === prev.length ? prev : filtered;
-    });
-    setSelectedId("");
+    deleteItem(selectedId);
   };
 
   /** Rotate the selected item 90° around its own centre, swapping
@@ -1010,6 +1033,10 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
     if (tool === "rotate") {
       rotateSelected();
       setActiveTool("rotate");
+      return;
+    }
+    if (tool === "delete") {
+      deleteSelected();
       return;
     }
     if (tool === "snap") {
@@ -1073,6 +1100,7 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
   };
 
   const selectedItem = items.find((item) => item.id === selectedId);
+  const canDeleteSelection = selectedItem !== undefined;
   const selectedKind = selectedItem?.kind ?? "round";
   const info: PreviewItem = PREVIEW_ITEMS[selectedKind] ?? ROUND_ITEM;
   const summary = layoutSummaryForRoom(eventType, room);
@@ -1197,6 +1225,7 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
       <div className="planner-tool-rail" role="toolbar" aria-label="2D planner tools">
         {PREVIEW_TOOLS.map((tool) => {
           const active = activeTool === tool.id;
+          const disabled = tool.id === "delete" && !canDeleteSelection;
           const enabled = tool.id === "snap"
             ? snapEnabled
             : tool.id === "walls"
@@ -1208,10 +1237,12 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
               type="button"
               className={[
                 "preview-tool",
+                tool.id === "delete" ? "danger" : "",
                 active ? "on" : "",
                 enabled ? "enabled" : "",
               ].filter(Boolean).join(" ")}
               aria-pressed={tool.id === "snap" || tool.id === "walls" ? enabled : active}
+              disabled={disabled}
               title={tool.label}
               onClick={() => { onPreviewToolSelect(tool.id); }}
             >
@@ -1336,16 +1367,26 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
 
           <div className="topbar">
             <div className="tool-group" role="toolbar" aria-label="Quick floorplan tools">
-              <button type="button" className={activeTool === "select" ? "tool on" : "tool"} title="Select" onClick={() => { onPreviewToolSelect("select"); }}>
+              <button type="button" className={activeTool === "select" ? "tool on" : "tool"} title="Select" aria-label="Select furniture" onClick={() => { onPreviewToolSelect("select"); }}>
                 <MousePointer2 size={14} aria-hidden />
               </button>
-              <button type="button" className={activeTool === "add" ? "tool on" : "tool"} title="Add" onClick={() => { onPreviewToolSelect("add"); }}>
+              <button type="button" className={activeTool === "add" ? "tool on" : "tool"} title="Add" aria-label="Add furniture" onClick={() => { onPreviewToolSelect("add"); }}>
                 <Armchair size={14} aria-hidden />
               </button>
-              <button type="button" className={activeTool === "rotate" ? "tool on" : "tool"} title="Rotate selected 90°" onClick={() => { onPreviewToolSelect("rotate"); }}>
+              <button type="button" className={activeTool === "rotate" ? "tool on" : "tool"} title="Rotate selected 90°" aria-label="Rotate selected furniture" onClick={() => { onPreviewToolSelect("rotate"); }}>
                 <RotateCw size={14} aria-hidden />
               </button>
-              <button type="button" className={activeTool === "measure" ? "tool on" : "tool"} title="Measure" onClick={() => { onPreviewToolSelect("measure"); }}>
+              <button
+                type="button"
+                className="tool danger"
+                title="Delete selected"
+                aria-label="Delete selected furniture"
+                disabled={!canDeleteSelection}
+                onClick={() => { onPreviewToolSelect("delete"); }}
+              >
+                <Trash2 size={14} aria-hidden />
+              </button>
+              <button type="button" className={activeTool === "measure" ? "tool on" : "tool"} title="Measure" aria-label="Measure layout" onClick={() => { onPreviewToolSelect("measure"); }}>
                 <Ruler size={14} aria-hidden />
               </button>
             </div>
@@ -1392,11 +1433,16 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
               onPointerCancel={onItemPointerCancel}
               role="button"
               tabIndex={0}
-              aria-label={`${item.tag ?? item.body} — drag to move, tap to inspect`}
+              aria-label={`${item.tag ?? item.body} — drag to move, tap to inspect, Delete to remove`}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setSelectedId(item.id);
+                  return;
+                }
+                if (e.key === "Delete" || e.key === "Backspace") {
+                  e.preventDefault();
+                  deleteItem(item.id);
                 }
               }}
             >
@@ -1438,6 +1484,17 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
             </div>
           ))}
           <div className="footer-note">{info.placed}</div>
+          <div className="selected-actions">
+            <button
+              type="button"
+              className="danger-action"
+              disabled={!canDeleteSelection}
+              onClick={deleteSelected}
+            >
+              <Trash2 size={14} aria-hidden />
+              Delete item
+            </button>
+          </div>
           <div className="section">
             <h5>Venue review</h5>
             <div className="kv"><span>Flow</span><span>Draft check</span></div>

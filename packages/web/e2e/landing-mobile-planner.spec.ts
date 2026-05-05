@@ -193,9 +193,15 @@ test.describe("Trades Hall landing page redesign", () => {
       await expect(page.locator(".planrise-stage")).toBeVisible();
       await expect(page.locator(".planrise img")).toHaveCount(0);
       await expect(page.locator(".planrise-mode-card")).toBeVisible();
-      await expectEmbeddedPlannerIsNotClipped(page.locator(".planner-embedded").first());
-      await expect(page.getByRole("toolbar", { name: /2D planner tools/i }).getByRole("button", { name: /Camera/i })).toBeVisible();
-      await page.getByRole("toolbar", { name: /2D planner tools/i }).getByRole("button", { name: /Camera/i }).click();
+      const embeddedPlanner = page.locator(".planner-embedded").first();
+      await expectEmbeddedPlannerIsNotClipped(embeddedPlanner);
+      const plannerTools = page.getByRole("toolbar", { name: /2D planner tools/i });
+      const initialFurnitureCount = await embeddedPlanner.locator(".furn").count();
+      await expect(plannerTools.getByRole("button", { name: /Delete/i })).toBeVisible();
+      await plannerTools.getByRole("button", { name: /Delete/i }).click();
+      await expect(embeddedPlanner.locator(".furn")).toHaveCount(initialFurnitureCount - 1);
+      await expect(plannerTools.getByRole("button", { name: /Camera/i })).toBeVisible();
+      await plannerTools.getByRole("button", { name: /Camera/i }).click();
       await expect(page.locator(".planner-embedded .camera-point")).toHaveCount(2);
       await expect(page.getByRole("link", { name: /Open The Saloon in the planner/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();
