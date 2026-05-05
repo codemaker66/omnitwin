@@ -73,6 +73,7 @@ flowchart TD
         T357(["T-357 - camera POV references"])
         T358(["T-358 - 3D planner autosave validation"])
         T359(["T-359 - landing Planrise visual cleanup"])
+        T360(["T-360 - landing 2D planner refit"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 

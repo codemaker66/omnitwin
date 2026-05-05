@@ -68,6 +68,13 @@ describe("LandingPage — Grand Hall module", () => {
   it("keeps the interactive planner preview and real Grand Hall media", () => {
     mount();
     expect(screen.getByLabelText(/Planner preview/i)).toBeTruthy();
+    const tools = screen.getByRole("toolbar", { name: /2D planner tools/i });
+    expect(within(tools).getByRole("button", { name: /Select/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Add/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Measure/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Camera/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Snap/i })).toBeTruthy();
+    expect(within(tools).getByRole("button", { name: /Review/i })).toBeTruthy();
     const img = getHeroImage();
     expect(img.getAttribute("alt")).toMatch(/Grand Hall set for a banquet/i);
     expect(img.getAttribute("src")).toBe("/rooms/Grand-Hall-scaled-opt.jpg");

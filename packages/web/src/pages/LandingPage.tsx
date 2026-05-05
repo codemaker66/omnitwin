@@ -8,6 +8,16 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from "react";
+import {
+  Armchair,
+  Camera,
+  CheckCircle2,
+  Eye,
+  Grid3X3,
+  MousePointer2,
+  RotateCw,
+  Ruler,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   computeBoundingBox,
@@ -305,26 +315,26 @@ function Hero(): ReactElement {
                 <strong>Heritage room, planning draft</strong>
               </div>
             </div>
+            <div className="hero-planner-panel" style={{ transitionDelay: ".18s" }}>
+              <div className="hero-media-planner">
+                <PlannerPreview
+                  mode="embedded"
+                  room={selectedRoom}
+                  onRoomChange={setSelectedRoomSlug}
+                  onRequestFullscreen={openMobilePlanner}
+                />
+              </div>
+              <div className="preview-caption">
+                <span>Tap a layout. Move a table. Send a draft.</span>
+                <span className="preview-caption-sub">{selectedRoom.shortTitle} · To-scale planning preview</span>
+              </div>
+              <Link to={selectedPlannerPath} className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
+                <span className="preview-cta-desktop">Open the {selectedRoom.shortTitle} planner</span>
+                <span className="preview-cta-mobile">Open the {selectedRoom.shortTitle} planner</span>
+                <span className="arrow" aria-hidden>→</span>
+              </Link>
+            </div>
           </div>
-        </div>
-        <div className="hero-planner-panel rise" style={{ transitionDelay: ".18s" }}>
-          <div className="hero-media-planner">
-            <PlannerPreview
-              mode="embedded"
-              room={selectedRoom}
-              onRoomChange={setSelectedRoomSlug}
-              onRequestFullscreen={openMobilePlanner}
-            />
-          </div>
-          <div className="preview-caption">
-            <span>Tap a layout. Move a table. Send a draft.</span>
-            <span className="preview-caption-sub">{selectedRoom.shortTitle} · To-scale planning preview</span>
-          </div>
-          <Link to={selectedPlannerPath} className="btn primary big preview-cta" onClick={onPreviewCtaClick}>
-            <span className="preview-cta-desktop">Open the {selectedRoom.shortTitle} planner</span>
-            <span className="preview-cta-mobile">Open the {selectedRoom.shortTitle} planner</span>
-            <span className="arrow" aria-hidden>→</span>
-          </Link>
         </div>
       </div>
       {mobilePlannerOpen ? (
@@ -531,6 +541,67 @@ const CATALOGUE: readonly CatalogueEntry[] = [
 const CATALOGUE_MIME = "application/x-th-catalogue-kind";
 
 type EventType = "wedding" | "gala" | "conference";
+type PreviewTool = "select" | "add" | "rotate" | "measure" | "camera" | "snap" | "walls" | "review";
+
+interface PreviewToolDefinition {
+  readonly id: PreviewTool;
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly description: string;
+}
+
+const DEFAULT_PREVIEW_TOOL: PreviewToolDefinition = {
+  id: "select",
+  label: "Select & move",
+  shortLabel: "Select",
+  description: "Drag furniture, tap items, and inspect the selected object.",
+};
+
+const PREVIEW_TOOLS: readonly PreviewToolDefinition[] = [
+  DEFAULT_PREVIEW_TOOL,
+  {
+    id: "add",
+    label: "Add furniture",
+    shortLabel: "Add",
+    description: "Drop tables, stage, bar, and dancefloor into the room.",
+  },
+  {
+    id: "rotate",
+    label: "Rotate selected",
+    shortLabel: "Rotate",
+    description: "Turn the selected object 90 degrees and keep it inside the room.",
+  },
+  {
+    id: "measure",
+    label: "Measure",
+    shortLabel: "Measure",
+    description: "Keep room dimensions, live coordinates, and scale visible.",
+  },
+  {
+    id: "camera",
+    label: "Camera points",
+    shortLabel: "Camera",
+    description: "Preview viewpoint anchors before opening the spatial planner.",
+  },
+  {
+    id: "snap",
+    label: "Grid snap",
+    shortLabel: "Snap",
+    description: "Lock new drops and moves to the planning grid.",
+  },
+  {
+    id: "walls",
+    label: "Wall outline",
+    shortLabel: "Walls",
+    description: "Toggle the room outline between strong review and clear layout modes.",
+  },
+  {
+    id: "review",
+    label: "Venue review",
+    shortLabel: "Review",
+    description: "Read the current draft checks and continue into the full planner.",
+  },
+] as const;
 
 // Door positions on the north wall (gaps in the room outline):
 //   door 1: x ≈ 1.48–3.36 m, door 2: x ≈ 9.83–11.44 m, door 3: x ≈ 17.91–19.80 m.
@@ -764,6 +835,32 @@ function layoutSummaryForRoom(
   return { seats: String(room.banquet), focus: "Room-scaled draft", status: "Draft" };
 }
 
+function PreviewToolIcon({ tool }: { readonly tool: PreviewTool }): ReactElement {
+  const iconProps = { size: 15, strokeWidth: 2.2, "aria-hidden": true } as const;
+  switch (tool) {
+    case "select":
+      return <MousePointer2 {...iconProps} />;
+    case "add":
+      return <Armchair {...iconProps} />;
+    case "rotate":
+      return <RotateCw {...iconProps} />;
+    case "measure":
+      return <Ruler {...iconProps} />;
+    case "camera":
+      return <Camera {...iconProps} />;
+    case "snap":
+      return <Grid3X3 {...iconProps} />;
+    case "walls":
+      return <Eye {...iconProps} />;
+    case "review":
+      return <CheckCircle2 {...iconProps} />;
+    default: {
+      const _exhaustive: never = tool;
+      return _exhaustive;
+    }
+  }
+}
+
 /** Drag-state tracked in a ref so pointermove doesn't trigger a re-render
  *  on every tick — we only setState on real position changes. */
 interface DragState {
@@ -793,6 +890,10 @@ function clientToMetres(
   return { xM, yM };
 }
 
+function snapMetres(value: number, enabled: boolean): number {
+  return enabled ? Math.round(value * 2) / 2 : value;
+}
+
 interface PlannerPreviewProps {
   readonly mode: "embedded" | "fullscreen";
   readonly room: VenueRoom;
@@ -814,6 +915,9 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
   /** When a catalogue chip is mid-drag, we highlight the stage with a
    *  subtle overlay to cue "drop here". */
   const [dropHint, setDropHint] = useState<boolean>(false);
+  const [activeTool, setActiveTool] = useState<PreviewTool>("select");
+  const [snapEnabled, setSnapEnabled] = useState<boolean>(true);
+  const [wallsVisible, setWallsVisible] = useState<boolean>(true);
   const dragRef = useRef<DragState | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   /** Incremented for each new item dropped from the catalogue so IDs stay
@@ -850,8 +954,10 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
   const dropCatalogueItem = (entry: CatalogueEntry, xM: number, yM: number): void => {
     newItemCounter.current += 1;
     const id = `new-${entry.kind}-${String(newItemCounter.current)}`;
-    const clampedX = Math.max(0, Math.min(metrics.widthM - entry.widthM, xM - entry.widthM / 2));
-    const clampedY = Math.max(0, Math.min(metrics.lengthM - entry.heightM, yM - entry.heightM / 2));
+    const rawX = snapMetres(xM - entry.widthM / 2, snapEnabled);
+    const rawY = snapMetres(yM - entry.heightM / 2, snapEnabled);
+    const clampedX = Math.max(0, Math.min(metrics.widthM - entry.widthM, rawX));
+    const clampedY = Math.max(0, Math.min(metrics.lengthM - entry.heightM, rawY));
     const next: PlannerItem = {
       id,
       kind: entry.kind,
@@ -897,6 +1003,26 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
         y: Math.max(0, Math.min(metrics.lengthM - newH, cy - newH / 2)),
       };
     }));
+  };
+
+  const onPreviewToolSelect = (tool: PreviewTool): void => {
+    if (requestFullscreenIfMobile()) return;
+    if (tool === "rotate") {
+      rotateSelected();
+      setActiveTool("rotate");
+      return;
+    }
+    if (tool === "snap") {
+      setSnapEnabled((value) => !value);
+      setActiveTool("snap");
+      return;
+    }
+    if (tool === "walls") {
+      setWallsVisible((value) => !value);
+      setActiveTool("walls");
+      return;
+    }
+    setActiveTool(tool);
   };
 
   /** Pointer-move over the stage — updates the live coord chip. Fires
@@ -991,8 +1117,8 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
       const maxY = Math.max(0, metrics.lengthM - i.heightM);
       return {
         ...i,
-        x: Math.max(0, Math.min(maxX, d.origXM + dxM)),
-        y: Math.max(0, Math.min(maxY, d.origYM + dyM)),
+        x: Math.max(0, Math.min(maxX, snapMetres(d.origXM + dxM, snapEnabled))),
+        y: Math.max(0, Math.min(maxY, snapMetres(d.origYM + dyM, snapEnabled))),
       };
     }));
   };
@@ -1009,12 +1135,96 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
     dragRef.current = null;
     try { (e.currentTarget).releasePointerCapture(e.pointerId); } catch { /* already released */ }
   };
+
+  const activeToolInfo = PREVIEW_TOOLS.find((tool) => tool.id === activeTool) ?? DEFAULT_PREVIEW_TOOL;
+  const stageClassName = [
+    "stage",
+    dropHint ? "stage-drop-hint" : "",
+    activeTool === "measure" ? "stage-measure-active" : "",
+    activeTool === "camera" ? "stage-camera-active" : "",
+    wallsVisible ? "" : "stage-walls-muted",
+  ].filter(Boolean).join(" ");
+
   return (
     <div className={`planner planner-${mode}`} aria-label={isFullscreen ? "Planner editor" : "Planner preview"}>
       <div className="chrome">
         <div className="dots"><i /><i /><i /></div>
         <div className="title"><b>{room.shortTitle}</b> · {eventType} layout · Draft</div>
         <div className="right">Preview</div>
+      </div>
+
+      <div className="planner-commandbar" aria-label="Planner setup">
+        <div className="command-field command-room">
+          <label htmlFor={`landing-room-command-${mode}`}>Room</label>
+          <select
+            id={`landing-room-command-${mode}`}
+            className="command-select"
+            value={room.slug}
+            onChange={onRoomSelect}
+            aria-label="Choose room"
+          >
+            {VENUE_ROOMS.map((option) => (
+              <option key={option.slug} value={option.slug}>
+                {option.shortTitle}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="command-field command-layout">
+          <span>Layout</span>
+          <div className="command-segmented" role="group" aria-label="Choose event type">
+            {(["wedding", "gala", "conference"] as const).map((next) => (
+              <button
+                key={next}
+                type="button"
+                className={eventType === next ? "command-chip on" : "command-chip"}
+                onClick={() => {
+                  if (!requestFullscreenIfMobile()) switchLayout(next);
+                }}
+              >
+                {next[0]?.toUpperCase()}{next.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="command-status" aria-live="polite">
+          <span>{summary.seats} seats</span>
+          <span>{summary.focus}</span>
+          <span>{snapEnabled ? "Snap on" : "Free move"}</span>
+        </div>
+      </div>
+
+      <div className="planner-tool-rail" role="toolbar" aria-label="2D planner tools">
+        {PREVIEW_TOOLS.map((tool) => {
+          const active = activeTool === tool.id;
+          const enabled = tool.id === "snap"
+            ? snapEnabled
+            : tool.id === "walls"
+              ? wallsVisible
+              : false;
+          return (
+            <button
+              key={tool.id}
+              type="button"
+              className={[
+                "preview-tool",
+                active ? "on" : "",
+                enabled ? "enabled" : "",
+              ].filter(Boolean).join(" ")}
+              aria-pressed={tool.id === "snap" || tool.id === "walls" ? enabled : active}
+              title={tool.label}
+              onClick={() => { onPreviewToolSelect(tool.id); }}
+            >
+              <PreviewToolIcon tool={tool.id} />
+              <span>{tool.shortLabel}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="tool-status" aria-live="polite">
+        <strong>{activeToolInfo.shortLabel}</strong>
+        <span>{activeToolInfo.description}</span>
       </div>
 
       <div className="body">
@@ -1026,7 +1236,7 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
               className="input room-select"
               value={room.slug}
               onChange={onRoomSelect}
-              aria-label="Choose room"
+              aria-label="Side controls room"
             >
               {VENUE_ROOMS.map((option) => (
                 <option key={option.slug} value={option.slug}>
@@ -1100,7 +1310,7 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
         </aside>
 
         <div
-          className={dropHint ? "stage stage-drop-hint" : "stage"}
+          className={stageClassName}
           aria-label="Floor plan preview — drag furniture to move, tap to inspect, Del to remove"
           ref={stageRef}
           tabIndex={0}
@@ -1125,27 +1335,44 @@ function PlannerPreview({ mode, room, onRoomChange, onRequestFullscreen }: Plann
           <RoomPlanSvg room={room} metrics={metrics} patternId={`th-hatch-room-${mode}-${room.slug}`} />
 
           <div className="topbar">
-            <div className="tool-group" role="toolbar" aria-hidden>
-              <div className="tool on" title="Select">⌖</div>
-              <div className="tool" title="Pan (scroll to pan)">✥</div>
-              <div
-                className="tool"
-                title="Rotate selected 90°"
-                role="button"
-                tabIndex={0}
-                onClick={rotateSelected}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    rotateSelected();
-                  }
-                }}
-              >
-                ↻
-              </div>
-              <div className="tool" title="Measure (coming soon)">⟷</div>
+            <div className="tool-group" role="toolbar" aria-label="Quick floorplan tools">
+              <button type="button" className={activeTool === "select" ? "tool on" : "tool"} title="Select" onClick={() => { onPreviewToolSelect("select"); }}>
+                <MousePointer2 size={14} aria-hidden />
+              </button>
+              <button type="button" className={activeTool === "add" ? "tool on" : "tool"} title="Add" onClick={() => { onPreviewToolSelect("add"); }}>
+                <Armchair size={14} aria-hidden />
+              </button>
+              <button type="button" className={activeTool === "rotate" ? "tool on" : "tool"} title="Rotate selected 90°" onClick={() => { onPreviewToolSelect("rotate"); }}>
+                <RotateCw size={14} aria-hidden />
+              </button>
+              <button type="button" className={activeTool === "measure" ? "tool on" : "tool"} title="Measure" onClick={() => { onPreviewToolSelect("measure"); }}>
+                <Ruler size={14} aria-hidden />
+              </button>
             </div>
           </div>
+
+          {activeTool === "camera" ? (
+            <div className="camera-points" aria-hidden>
+              <span
+                className="camera-point camera-point-entrance"
+                style={{
+                  left: `${String(metrics.roomLeftPct + metrics.widthM * 0.12 * metrics.metresToWidthPct)}%`,
+                  top: `${String(metrics.roomTopPct + metrics.lengthM * 0.22 * metrics.metresToHeightPct)}%`,
+                }}
+              >
+                Entrance POV
+              </span>
+              <span
+                className="camera-point camera-point-table"
+                style={{
+                  left: `${String(metrics.roomLeftPct + metrics.widthM * 0.56 * metrics.metresToWidthPct)}%`,
+                  top: `${String(metrics.roomTopPct + metrics.lengthM * 0.76 * metrics.metresToHeightPct)}%`,
+                }}
+              >
+                Guest POV
+              </span>
+            </div>
+          ) : null}
 
           {/* No bar stools — Trades Hall's bar doesn't come with stools
               so rendering any would misrepresent what's actually hired. */}
@@ -1275,7 +1502,7 @@ function RoomPlanSvg({ room, metrics, patternId }: RoomPlanSvgProps): ReactEleme
           <line x1="0" y1="0" x2="0" y2="8" stroke="currentColor" strokeWidth="0.8" opacity=".55" />
         </pattern>
       </defs>
-      <g style={{ color: "var(--ink-3)" }}>
+      <g className="room-shell" style={{ color: "var(--ink-3)" }}>
         <path d={outline} fill={`url(#${patternId})`} stroke="none" />
         <path
           d={outline}
@@ -1287,6 +1514,7 @@ function RoomPlanSvg({ room, metrics, patternId }: RoomPlanSvgProps): ReactEleme
         />
       </g>
       <g
+        className="room-labels"
         style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 9 }}
         fill="currentColor"
         stroke="none"
@@ -1309,6 +1537,7 @@ function RoomPlanSvg({ room, metrics, patternId }: RoomPlanSvgProps): ReactEleme
         )}
       </g>
       <g
+        className="room-dimensions"
         style={{ color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 10 }}
         fill="currentColor"
         stroke="none"

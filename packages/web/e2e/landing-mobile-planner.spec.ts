@@ -29,6 +29,7 @@ const DESKTOP_VIEWPORTS: readonly ViewportSpec[] = [
   { label: "1228x1216 desktop", width: 1228, height: 1216 },
   { label: "1280x800 desktop", width: 1280, height: 800 },
   { label: "1440x1000 desktop", width: 1440, height: 1000 },
+  { label: "2048x1000 desktop", width: 2048, height: 1000 },
 ];
 
 function collectRuntimeErrors(page: Page): string[] {
@@ -80,35 +81,35 @@ async function expectPlannerSurfaceDoesNotTextSelect(locator: Locator): Promise<
 async function expectEmbeddedPlannerIsNotClipped(preview: Locator): Promise<void> {
   const geometry = await preview.locator(".body").evaluate((body) => {
     const stage = body.querySelector<HTMLElement>(".stage");
-    const sidebar = body.querySelector<HTMLElement>(".sidebar");
     const rightcol = body.querySelector<HTMLElement>(".rightcol");
-    if (stage === null || sidebar === null || rightcol === null) {
+    if (stage === null || rightcol === null) {
       throw new Error("Planner body missing expected columns");
     }
     const bodyBox = body.getBoundingClientRect();
     const stageBox = stage.getBoundingClientRect();
-    const sidebarBox = sidebar.getBoundingClientRect();
     const rightBox = rightcol.getBoundingClientRect();
     return {
       clientWidth: body.clientWidth,
       scrollWidth: body.scrollWidth,
       bodyRight: bodyBox.right,
       stageRight: stageBox.right,
-      sidebarLeft: sidebarBox.left,
-      bodyLeft: bodyBox.left,
       rightRight: rightBox.right,
       bodyHeight: bodyBox.height,
       stageWidth: stageBox.width,
       stageHeight: stageBox.height,
+      centralBlankHeight: Math.round(bodyBox.bottom - Math.max(stageBox.bottom, rightBox.bottom)),
+      stageTop: stageBox.top,
+      viewportHeight: window.innerHeight,
     };
   });
 
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
-  expect(geometry.sidebarLeft).toBeGreaterThanOrEqual(geometry.bodyLeft - 1);
   expect(geometry.stageRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
   expect(geometry.rightRight).toBeLessThanOrEqual(geometry.bodyRight + 1);
   expect(geometry.stageWidth).toBeGreaterThanOrEqual(450);
-  expect(geometry.stageHeight).toBeGreaterThanOrEqual(geometry.bodyHeight - 40);
+  expect(geometry.stageHeight).toBeGreaterThanOrEqual(280);
+  expect(geometry.centralBlankHeight).toBeLessThanOrEqual(1);
+  expect(geometry.stageTop).toBeLessThan(geometry.viewportHeight);
 }
 
 async function expectCoreLanding(page: Page, viewport: ViewportSpec): Promise<void> {
@@ -174,9 +175,10 @@ test.describe("Trades Hall landing page redesign", () => {
 
       await expectCoreLanding(page, viewport);
       const preview = page.locator(".planner-embedded").first();
-      await expect(preview.locator(".sidebar")).toBeVisible();
+      await expect(preview.locator(".planner-commandbar")).toBeVisible();
+      await expect(preview.locator(".planner-tool-rail")).toBeVisible();
       await expect(preview.locator(".rightcol")).toBeVisible();
-      expect((await boxFor(preview)).width).toBeGreaterThan(620);
+      expect((await boxFor(preview)).width).toBeGreaterThan(540);
       expect(runtimeErrors).toEqual([]);
     });
   }
@@ -192,6 +194,9 @@ test.describe("Trades Hall landing page redesign", () => {
       await expect(page.locator(".planrise img")).toHaveCount(0);
       await expect(page.locator(".planrise-mode-card")).toBeVisible();
       await expectEmbeddedPlannerIsNotClipped(page.locator(".planner-embedded").first());
+      await expect(page.getByRole("toolbar", { name: /2D planner tools/i }).getByRole("button", { name: /Camera/i })).toBeVisible();
+      await page.getByRole("toolbar", { name: /2D planner tools/i }).getByRole("button", { name: /Camera/i }).click();
+      await expect(page.locator(".planner-embedded .camera-point")).toHaveCount(2);
       await expect(page.getByRole("link", { name: /Open The Saloon in the planner/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open Reception Room in the planner/i })).toBeVisible();
