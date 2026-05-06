@@ -41,4 +41,28 @@ describe("T-087 Spark renderer dependency unit", () => {
     expect(source).not.toContain("<Splat");
     expect(source).not.toMatch(/import\s+\{[^}]*\bSplat\b[^}]*\}\s+from\s+["']@react-three\/drei["']/);
   });
+
+  it("loads real runtime assets through Spark's SplatMesh API, not textSplats", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const componentSource = await fs.readFile(path.resolve("src/components/scene/SparkSplatLayer.tsx"), "utf-8");
+    const routeSource = await fs.readFile(path.resolve("src/pages/TradesHallVisualPage.tsx"), "utf-8");
+
+    expect(componentSource).toContain("@sparkjsdev/spark");
+    expect(componentSource).toContain("SplatMesh");
+    expect(componentSource).not.toContain("textSplats");
+    expect(routeSource).not.toContain("textSplats");
+    expect(componentSource).not.toMatch(/import\s+\{[^}]*\bSplat\b[^}]*\}\s+from\s+["']@react-three\/drei["']/);
+    expect(routeSource).not.toMatch(/import\s+\{[^}]*\bSplat\b[^}]*\}\s+from\s+["']@react-three\/drei["']/);
+  });
+
+  it("keeps the Trades Hall visual layer behind a lazy internal route", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/router.tsx"), "utf-8");
+
+    expect(source).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
+    expect(source).toContain('path: "/dev/trades-hall-visual"');
+    expect(source).not.toMatch(/^import\s+\{\s*TradesHallVisualPage\s*\}\s+from\s+["']\.\/pages\/TradesHallVisualPage/m);
+  });
 });

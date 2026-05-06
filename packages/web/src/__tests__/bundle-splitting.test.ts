@@ -42,7 +42,7 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/import\s+\{[^}]*\bSuspense\b[^}]*\}\s+from\s+["']react["']/);
   });
 
-  it("lazy-loads all five page components", async () => {
+  it("lazy-loads all route page components, including internal Spark routes", async () => {
     const { codeOnly } = await readSource(SRC);
     // Each page must be wrapped in lazy(() => import("./pages/X.js"))
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/LoginPage\.js["']/);
@@ -50,6 +50,8 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/EditorPage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/DashboardPage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/HallkeeperPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/SplatFixturePage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
   });
 
   it("wraps lazy elements in Suspense with a fallback", async () => {

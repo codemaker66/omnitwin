@@ -48,6 +48,9 @@ const PricingPage = lazy(() =>
 const SplatFixturePage = lazy(() =>
   import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage })),
 );
+const TradesHallVisualPage = lazy(() =>
+  import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -161,6 +164,12 @@ export const router = createBrowserRouter([
     // Spark 2.0 with Three.js 0.180 without reaching for drei's <Splat />.
     path: "/dev/splat-fixture",
     element: withSuspense(<SplatFixturePage />),
+  },
+  {
+    // Internal T-091 visual-layer route. It loads a caller-provided Spark URL
+    // only; no fixture-generated asset path and no signed AssetVersion claims.
+    path: "/dev/trades-hall-visual",
+    element: withSuspense(<TradesHallVisualPage />),
   },
   {
     path: "/privacy",
