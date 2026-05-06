@@ -6,6 +6,8 @@ export interface CameraReferenceDraft {
   readonly screenY: number;
   readonly source: CameraReferenceSource;
   readonly sourceLabel: string;
+  readonly placedItemId?: string | null;
+  readonly furnitureCategory?: "chair" | "table" | "other";
   readonly point: readonly [number, number];
   readonly baseY: number;
   readonly yaw: number | null;

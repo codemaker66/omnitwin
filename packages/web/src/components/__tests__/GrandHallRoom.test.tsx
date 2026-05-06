@@ -22,6 +22,9 @@ import {
   computeVisibleShortWainscotPanelCenters,
   computeWindowWallCenters,
   isInWindowWallOpeningBay,
+  shouldShowCeilingOrnamentsForSection,
+  shouldShowWallOrnamentsForSection,
+  WALL_ORNAMENT_SECTION_HIDE_BELOW_M,
   WAINSCOT_PANEL_TOP_Y,
   WINDOW_SILL_Y,
 } from "../GrandHallOrnaments.js";
@@ -116,8 +119,8 @@ describe("computeRoomSurfaces", () => {
     expect(floor.color).toBe(FLOOR_COLOR);
   });
 
-  it("uses the beige timber-panel floor colour", () => {
-    expect(FLOOR_COLOR).toBe("#c7ad79");
+  it("uses the polished honey timber floor colour", () => {
+    expect(FLOOR_COLOR).toBe("#f5d9a1");
   });
 
   // --- Ceiling ---
@@ -438,25 +441,31 @@ describe("Grand Hall ornaments source", () => {
     expect(source).toContain("depthWrite={false}");
   });
 
-  it("uses a beige staggered board texture for the floor", async () => {
+  it("uses a polished lengthwise plank texture for the floor", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/lib/grand-hall-textures.ts"), "utf-8");
 
-    expect(source).toContain("Beige timber panel floor");
+    expect(source).toContain("Polished honey timber plank floor");
     expect(source).toContain("BOARD_W");
     expect(source).toContain("rowOffset");
-    expect(source).toContain("return finalize(canvas, 3.2, 6)");
+    expect(source).toContain("endJointY");
+    expect(source).toContain("centreWear");
+    expect(source).toContain("glint");
+    expect(source).toContain("return finalize(canvas, 3.8, 3.4)");
   });
 
-  it("keeps the opposite long wall clear of procedural door assemblies", async () => {
+  it("restores three ornate double-door sets on the long wall opposite the windows", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
 
-    expect(source).not.toContain("front-long-wall-door-set");
-    expect(source).not.toContain("grand-hall-front-wall-door");
-    expect(source).not.toContain("front-wall-door-brass-handle");
+    expect(source).toContain("opposite-long-wall-three-door-cluster");
+    expect(source).toContain("const doorX = [-width * 0.29, 0, width * 0.29] as const");
+    expect(source).toContain("front-long-wall-door-set");
+    expect(source).toContain("grand-hall-front-wall-door");
+    expect(source).toContain("front-wall-door-raised-panel-frame");
+    expect(source).toContain("front-wall-door-brass-handle");
     expect(source).not.toContain("honour-cabinet-long-wall");
   });
 
@@ -483,6 +492,30 @@ describe("Grand Hall ornaments source", () => {
     expect(source).not.toContain("right-firebox-back-panel");
     expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
     expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
+  });
+
+  it("removes decorative wall and ceiling ornaments in lowered section mode", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(source).toContain("wallOrnamentsVisible");
+    expect(source).toContain("ceilingOrnamentsVisible");
+    expect(source).toContain("window-wall-ornament-cluster");
+    expect(source).toContain("opposite-long-wall-three-door-cluster");
+    expect(source).toContain("left-end-wall-focal-point");
+    expect(source).toContain("grand-hall-ceiling-ornaments");
+  });
+
+  it("keeps wall ornaments only while the section plane is above planning-cut height", () => {
+    expect(shouldShowWallOrnamentsForSection(WALL_ORNAMENT_SECTION_HIDE_BELOW_M - 0.1, 7)).toBe(false);
+    expect(shouldShowWallOrnamentsForSection(WALL_ORNAMENT_SECTION_HIDE_BELOW_M, 7)).toBe(true);
+    expect(shouldShowWallOrnamentsForSection(7, 7)).toBe(true);
+  });
+
+  it("keeps ceiling ornaments only when the full ceiling is restored", () => {
+    expect(shouldShowCeilingOrnamentsForSection(6.7, 7)).toBe(false);
+    expect(shouldShowCeilingOrnamentsForSection(6.9, 7)).toBe(true);
   });
 
   it("upgrades the fireplace beyond a flat box surround", async () => {

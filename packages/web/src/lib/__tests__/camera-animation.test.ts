@@ -443,6 +443,7 @@ describe("camera reference bookmarks", () => {
       name: "Bride chair",
       source: "furniture",
       sourceLabel: "Banquet Chair",
+      placedItemId: "chair-1",
       point: [3, -4],
       baseY: 0.4,
       yaw: Math.PI,
@@ -452,6 +453,7 @@ describe("camera reference bookmarks", () => {
     expect(bookmark.kind).toBe("reference");
     expect(bookmark.position).toEqual([3, 0.4 + SITTING_EYE_HEIGHT_M, -4]);
     expect(bookmark.reference?.sourceLabel).toBe("Banquet Chair");
+    expect(bookmark.reference?.placedItemId).toBe("chair-1");
     expect(bookmark.target[2]).toBeGreaterThan(bookmark.position[2]);
   });
 
@@ -476,6 +478,7 @@ describe("camera reference bookmarks", () => {
       name: "Bride chair",
       source: "furniture",
       sourceLabel: "Banquet Chair",
+      placedItemId: "chair-1",
       point: [3, -4],
       yaw: 0,
       heightMode: "sitting",
@@ -485,6 +488,7 @@ describe("camera reference bookmarks", () => {
     expect(standing.position[1]).toBe(STANDING_EYE_HEIGHT_M);
     expect(standing.reference?.source).toBe("furniture");
     expect(standing.reference?.sourceLabel).toBe("Banquet Chair");
+    expect(standing.reference?.placedItemId).toBe("chair-1");
   });
 });
 

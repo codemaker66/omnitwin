@@ -32,6 +32,8 @@ export type CameraEyeHeightMode = "sitting" | "standing" | "custom";
 export interface CameraReferenceMetadata {
   readonly source: CameraReferenceSource;
   readonly sourceLabel: string;
+  /** Source planner item when this POV is attached to a chair/table. */
+  readonly placedItemId?: string | null;
   /** Render-space X/Z point for the camera reference. */
   readonly point: readonly [number, number];
   /** Floor or platform Y coordinate. Heights are real metres and not render-scaled. */
@@ -47,6 +49,7 @@ export interface CameraReferenceBookmarkInput {
   readonly name: string;
   readonly source: CameraReferenceSource;
   readonly sourceLabel: string;
+  readonly placedItemId?: string | null;
   readonly point: readonly [number, number];
   readonly baseY?: number;
   readonly yaw: number | null;
@@ -219,6 +222,7 @@ export function createCameraReferenceBookmark(
   const metadata: CameraReferenceMetadata = {
     source: input.source,
     sourceLabel: input.sourceLabel,
+    placedItemId: input.placedItemId ?? null,
     point: input.point,
     baseY,
     yaw: input.yaw,
@@ -247,6 +251,7 @@ export function updateCameraReferenceHeight(
     name: bookmark.name,
     source: bookmark.reference.source,
     sourceLabel: bookmark.reference.sourceLabel,
+    placedItemId: bookmark.reference.placedItemId ?? null,
     point: bookmark.reference.point,
     baseY: bookmark.reference.baseY,
     yaw: bookmark.reference.yaw,

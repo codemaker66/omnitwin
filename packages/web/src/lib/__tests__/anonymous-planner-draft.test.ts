@@ -19,6 +19,7 @@ const objectFixture: EditorObject = {
   sortOrder: 0,
   clothed: true,
   groupId: "group-1",
+  label: "Top Table",
   notes: "VIP table",
 };
 

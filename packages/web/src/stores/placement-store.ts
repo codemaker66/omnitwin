@@ -60,6 +60,8 @@ export interface PlacementState {
   readonly clearGhost: () => void;
   /** Toggle cloth on/off for a placed item (tables only). */
   readonly toggleCloth: (id: string) => void;
+  /** Set the hallkeeper-visible label for a placed chair/table. Empty clears. */
+  readonly setItemLabel: (id: string, label: string) => void;
   /** Toggle grid snap. */
   readonly toggleSnap: () => void;
   /** Clear all placed items. */
@@ -243,6 +245,20 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     set({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, clothed: !item.clothed } : item,
+      ),
+      ...pushUndo(state),
+    });
+  },
+
+  setItemLabel: (id: string, label: string) => {
+    const normalized = label.trim().slice(0, 80);
+    const state = get();
+    const current = state.placedItems.find((item) => item.id === id);
+    if (current === undefined) return;
+    if ((current.label ?? "") === normalized) return;
+    set({
+      placedItems: state.placedItems.map((item) =>
+        item.id === id ? { ...item, label: normalized } : item,
       ),
       ...pushUndo(state),
     });

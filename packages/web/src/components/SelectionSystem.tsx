@@ -310,15 +310,22 @@ export function SelectionSystem(): null {
         if (item !== undefined) {
           const catalogueItem = getCatalogueItem(item.catalogueItemId);
           const label = catalogueItem?.name ?? "Furniture";
+          const furnitureCategory = catalogueItem?.category === "chair"
+            ? "chair"
+            : catalogueItem?.category === "table"
+              ? "table"
+              : "other";
           useCameraReferenceStore.getState().openDraft({
             screenX: clientX,
             screenY: clientY,
             source: "furniture",
             sourceLabel: label,
+            placedItemId: item.id,
+            furnitureCategory,
             point: [item.x, item.z],
             baseY: item.y,
             yaw: item.rotationY,
-            suggestedName: `${label} POV`,
+            suggestedName: (item.label ?? "").trim().length > 0 ? item.label ?? label : label,
           });
           return;
         }

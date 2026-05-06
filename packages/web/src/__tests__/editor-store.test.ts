@@ -205,6 +205,28 @@ describe("editorToBatch", () => {
     expect(batch.assetDefinitionId).toBe(CHAIR_ID);
   });
 
+  it("stores hallkeeper-visible display labels in metadata", () => {
+    const batch = editorToBatch({
+      id: "local-550e8400-e29b-41d4-a716-446655440003",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 1,
+      positionY: 0,
+      positionZ: 2,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: false,
+      groupId: null,
+      label: "Bride",
+      notes: "",
+    });
+
+    expect(batch.metadata?.displayLabel).toBe("Bride");
+  });
+
+
   it("preserves persisted IDs for existing rows", () => {
     const persistedId = "550e8400-e29b-41d4-a716-446655440002";
     const batch = editorToBatch({

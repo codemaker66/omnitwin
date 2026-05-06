@@ -365,6 +365,8 @@ export function resetPlacedIdCounter(): void {
 export interface PlacedItem {
   readonly id: string;
   readonly catalogueItemId: string;
+  /** Hallkeeper-visible seat/table label authored from the planner. */
+  readonly label?: string;
   readonly x: number;
   /** Vertical position (floor = 0). Items on platforms sit at platform.y + platform.height. */
   readonly y: number;
@@ -390,6 +392,7 @@ export function createPlacedItem(
   return {
     id: generatePlacedId(),
     catalogueItemId,
+    label: "",
     x,
     y,
     z,

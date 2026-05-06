@@ -25,6 +25,8 @@ import { api } from "./client.js";
 export interface ObjectMetadata {
   readonly clothed?: boolean;
   readonly groupId?: string | null;
+  /** Hallkeeper-visible seat/table label rendered in the planner. */
+  readonly displayLabel?: string;
   /** Planner-authored note surfaced on the hallkeeper sheet. */
   readonly notes?: string;
 }
@@ -32,6 +34,7 @@ export interface ObjectMetadata {
 const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
   groupId: z.string().nullable().optional(),
+  displayLabel: z.string().optional(),
   notes: z.string().optional(),
 }).nullable();
 

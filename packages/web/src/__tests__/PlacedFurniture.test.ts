@@ -61,4 +61,13 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).not.toMatch(/args=\{selectionBoxArgs\(/);
   });
+
+  it("renders persisted furniture labels as scene nameplates with camera-reference glow", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("function FurnitureNamePlate");
+    expect(codeOnly).toContain("furniture-nameplate");
+    expect(codeOnly).toContain("furniture-camera-reference-glow");
+    expect(codeOnly).toContain("bookmark.reference?.placedItemId");
+    expect(codeOnly).toContain("cameraEnabled={hasCameraReference}");
+  });
 });

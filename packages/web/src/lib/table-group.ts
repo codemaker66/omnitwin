@@ -207,6 +207,7 @@ export function rearrangeTableGroup(
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
     id: existingChairs[i]?.id ?? generatePlacedId(),
     catalogueItemId: chairItem.id,
+    label: existingChairs[i]?.label ?? "",
     x: pos.x,
     y: table.y,
     z: pos.z,

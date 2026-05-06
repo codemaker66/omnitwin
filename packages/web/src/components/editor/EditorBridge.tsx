@@ -57,6 +57,7 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
   return {
     id: obj.id,
     catalogueItemId: obj.assetDefinitionId,
+    label: obj.label ?? "",
     x: obj.positionX,
     y: obj.positionY,
     z: obj.positionZ,
@@ -79,7 +80,7 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
  * are assigned a real index by the editor store on first save.
  */
 export function placedItemToEditor(item: PlacedItem, existing: EditorObject | undefined): EditorObject {
-  return {
+  const base: EditorObject = {
     id: item.id,
     assetDefinitionId: item.catalogueItemId,
     positionX: item.x,
@@ -94,6 +95,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     groupId: item.groupId,
     notes: existing?.notes ?? "",
   };
+  const label = (item.label ?? "").trim();
+  return label.length > 0 ? { ...base, label } : base;
 }
 
 /** Check if two placed-item arrays have the same state across all mutable fields. */
@@ -108,6 +111,7 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     if (pa.rotationY !== eb.rotationY) return false;
     if (pa.clothed !== eb.clothed) return false;
     if (pa.groupId !== eb.groupId) return false;
+    if ((pa.label ?? "") !== (eb.label ?? "")) return false;
   }
   return true;
 }

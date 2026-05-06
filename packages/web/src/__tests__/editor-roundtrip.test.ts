@@ -157,6 +157,43 @@ describe("EditorObject <-> wire format round-trip", () => {
     expect(roundTripped.notes).toBe(original.notes);
   });
 
+  it("hallkeeper-visible display labels round-trip through metadata", () => {
+    const original: EditorObject = {
+      id: "550e8400-e29b-41d4-a716-446655440006",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 0, positionY: 0, positionZ: 0,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0,
+      clothed: false, groupId: null, label: "Bride", notes: "",
+    };
+
+    const batch = editorToBatch(original);
+    expect(batch.metadata).toEqual({
+      clothed: false,
+      groupId: null,
+      displayLabel: "Bride",
+    });
+
+    const wire = simulateDbRoundTrip(batch, original.id, "config-1");
+    const roundTripped = placedObjectToEditor(wire);
+    expect(roundTripped.label).toBe("Bride");
+  });
+
+  it("empty display labels are omitted from the metadata blob", () => {
+    const original: EditorObject = {
+      id: "550e8400-e29b-41d4-a716-446655440007",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 0, positionY: 0, positionZ: 0,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0,
+      clothed: false, groupId: null, label: "   ", notes: "",
+    };
+
+    const batch = editorToBatch(original);
+    expect(batch.metadata).not.toHaveProperty("displayLabel");
+  });
+
+
   it("empty notes field is omitted from the metadata blob to keep records lean", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440005",
@@ -264,7 +301,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
       positionX: 1, positionY: 0, positionZ: 2,
       rotationX: 0, rotationY: 0.5, rotationZ: 0,
       scale: 1, sortOrder: 3,
-      clothed: true, groupId: "g-1", notes: "",
+      clothed: true, groupId: "g-1", label: "Top Table", notes: "",
     };
 
     const placed = editorToPlacedItem(editor);
@@ -277,6 +314,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     expect(placed.rotationY).toBe(0.5);
     expect(placed.clothed).toBe(true);
     expect(placed.groupId).toBe("g-1");
+    expect(placed.label).toBe("Top Table");
   });
 
   it("placedItemToEditor with existing lookup preserves rotationX/Z, scale, sortOrder", () => {
@@ -293,7 +331,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     const item: PlacedItem = {
       id: "o1", catalogueItemId: ROUND_TABLE_ID,
       x: 3, y: 0, z: 4, rotationY: Math.PI,
-      clothed: true, groupId: "g-2",
+      clothed: true, groupId: "g-2", label: "Bride",
     };
 
     const result = placedItemToEditor(item, existing);
@@ -304,6 +342,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     expect(result.rotationY).toBe(Math.PI);
     expect(result.clothed).toBe(true);
     expect(result.groupId).toBe("g-2");
+    expect(result.label).toBe("Bride");
     // Non-scene fields come from the existing EditorObject
     expect(result.rotationX).toBe(0.15);
     expect(result.rotationZ).toBe(-0.25);

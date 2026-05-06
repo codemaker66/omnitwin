@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
+  DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
@@ -14,6 +15,8 @@ import {
 } from "../lib/camera-animation.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
+import { usePlacementStore } from "../stores/placement-store.js";
+import "./CameraReferenceComposer.css";
 
 const GOLD = "#c9a84c";
 const DIALOG_MARGIN_PX = 16;
@@ -132,16 +135,45 @@ function formatHeight(heightM: number): string {
   return `${heightM.toFixed(2)} m`;
 }
 
-function sourceCopy(sourceLabel: string, source: "floor" | "furniture"): string {
+function sourceCopy(
+  sourceLabel: string,
+  source: "floor" | "furniture",
+  furnitureCategory: "chair" | "table" | "other" | undefined,
+): string {
+  if (source === "furniture") {
+    if (furnitureCategory === "chair") return `${sourceLabel} seat label`;
+    if (furnitureCategory === "table") return `${sourceLabel} table label`;
+  }
   return source === "furniture"
-    ? `${sourceLabel} viewpoint`
+    ? `${sourceLabel} label`
     : "Floor grid viewpoint";
+}
+
+function labelEyebrow(
+  source: "floor" | "furniture",
+  furnitureCategory: "chair" | "table" | "other" | undefined,
+): string {
+  if (source === "floor") return "Camera point of reference";
+  if (furnitureCategory === "table") return "Table placement label";
+  if (furnitureCategory === "chair") return "Seat placement label";
+  return "Furniture placement label";
+}
+
+function labelTitle(
+  source: "floor" | "furniture",
+  furnitureCategory: "chair" | "table" | "other" | undefined,
+): string {
+  if (source === "floor") return "Add POV";
+  if (furnitureCategory === "table") return "Name table";
+  if (furnitureCategory === "chair") return "Name seat";
+  return "Name item";
 }
 
 export function CameraReferenceComposer(): React.ReactElement | null {
   const draft = useCameraReferenceStore((s) => s.draft);
   const closeDraft = useCameraReferenceStore((s) => s.closeDraft);
   const [name, setName] = useState("");
+  const [includeCameraReference, setIncludeCameraReference] = useState(false);
   const [heightMode, setHeightMode] = useState<CameraEyeHeightMode>("sitting");
   const [customHeightM, setCustomHeightM] = useState(DEFAULT_CUSTOM_EYE_HEIGHT_M);
   const [dialogPosition, setDialogPosition] = useState<CameraReferenceDialogPosition | null>(null);
@@ -156,6 +188,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       return;
     }
     setName(draft.suggestedName);
+    setIncludeCameraReference(draft.source === "floor");
     setHeightMode(draft.source === "furniture" ? "sitting" : "standing");
     setCustomHeightM(DEFAULT_CUSTOM_EYE_HEIGHT_M);
     setDialogPosition(getInitialCameraReferenceDialogPosition(draft.screenX, draft.screenY));
@@ -205,14 +238,25 @@ export function CameraReferenceComposer(): React.ReactElement | null {
   if (draft === null) return null;
 
   const activeDraft = draft;
+  const furnitureCategory = activeDraft.furnitureCategory;
+  const isFurnitureLabelMode = activeDraft.source === "furniture" && activeDraft.placedItemId !== null && activeDraft.placedItemId !== undefined;
+  const cameraControlsVisible = activeDraft.source === "floor" || includeCameraReference;
   const resolvedHeight = resolveCameraEyeHeight(heightMode, customHeightM);
   const cleanName = name.trim().length > 0 ? name.trim() : activeDraft.suggestedName;
 
-  function addReference(): void {
+  function commitComposer(): void {
+    if (isFurnitureLabelMode) {
+      usePlacementStore.getState().setItemLabel(activeDraft.placedItemId ?? "", cleanName);
+    }
+    if (!cameraControlsVisible) {
+      closeDraft();
+      return;
+    }
     const id = useBookmarkStore.getState().addReferenceBookmark({
       name: cleanName,
       source: activeDraft.source,
       sourceLabel: activeDraft.sourceLabel,
+      placedItemId: activeDraft.placedItemId ?? null,
       point: activeDraft.point,
       baseY: activeDraft.baseY,
       yaw: activeDraft.yaw,
@@ -275,23 +319,63 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     event.preventDefault();
   }
 
+  function preventNativeDialogTextDrag(event: ReactDragEvent<HTMLElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   return (
     <form
       ref={panelRef}
-      aria-label="Add camera POV"
+      className="camera-reference-composer"
+      aria-label={isFurnitureLabelMode ? "Label furniture" : "Add camera POV"}
       data-testid="camera-reference-composer"
       data-camera-keyboard-lock="true"
       role="dialog"
       style={{ ...panelStyle, ...panelPosition }}
+      onDragStartCapture={preventNativeDialogTextDrag}
+      onDropCapture={preventNativeDialogTextDrag}
       onSubmit={(event) => {
         event.preventDefault();
-        addReference();
+        commitComposer();
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <button
+          type="button"
+          data-testid="camera-reference-toggle"
+          aria-label={cameraControlsVisible ? "Camera POV enabled" : "Add camera POV to this label"}
+          aria-pressed={cameraControlsVisible}
+          onClick={() => {
+            if (activeDraft.source === "floor") return;
+            setIncludeCameraReference((current) => !current);
+          }}
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 14,
+            background: cameraControlsVisible
+              ? "radial-gradient(circle at 45% 35%, rgba(255,237,176,0.34), rgba(201,168,76,0.18) 55%, rgba(201,168,76,0.12))"
+              : "rgba(201,168,76,0.12)",
+            border: cameraControlsVisible
+              ? "1px solid rgba(222,190,88,0.78)"
+              : "1px solid rgba(201,168,76,0.25)",
+            display: "grid",
+            placeItems: "center",
+            color: cameraControlsVisible ? "#ffe8a1" : GOLD,
+            flex: "0 0 auto",
+            cursor: activeDraft.source === "floor" ? "default" : "pointer",
+            boxShadow: cameraControlsVisible
+              ? "0 0 0 4px rgba(201,168,76,0.12), 0 12px 26px rgba(201,168,76,0.22)"
+              : "none",
+            ...nonSelectableChromeStyle,
+          }}
+        >
+          <Camera size={21} />
+        </button>
         <div
           data-testid="camera-reference-drag-handle"
-          aria-label="Move camera POV dialog"
+          aria-label={isFurnitureLabelMode ? "Move furniture label dialog" : "Move camera POV dialog"}
           onPointerDown={beginDialogDrag}
           onMouseDown={preventChromeTextSelection}
           onPointerMove={moveDialog}
@@ -312,41 +396,24 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             ...nonSelectableChromeStyle,
           }}
         >
-          <div
-            aria-hidden="true"
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              background: "rgba(201,168,76,0.14)",
-              border: "1px solid rgba(201,168,76,0.25)",
-              display: "grid",
-              placeItems: "center",
-              color: GOLD,
-              flex: "0 0 auto",
-              ...nonSelectableChromeStyle,
-            }}
-          >
-            <Camera size={18} />
-          </div>
           <div style={{ minWidth: 0, flex: 1, ...nonSelectableChromeStyle }}>
             <div
               data-testid="camera-reference-eyebrow"
               style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
             >
-              Camera point of reference
+              {labelEyebrow(activeDraft.source, furnitureCategory)}
             </div>
             <div
               data-testid="camera-reference-title"
               style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3, ...nonSelectableChromeStyle }}
             >
-              Add POV
+              {labelTitle(activeDraft.source, furnitureCategory)}
             </div>
             <div
               data-testid="camera-reference-source"
               style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", marginTop: 5, ...nonSelectableChromeStyle }}
             >
-              {sourceCopy(draft.sourceLabel, draft.source)}
+              {sourceCopy(draft.sourceLabel, draft.source, furnitureCategory)}
             </div>
           </div>
         </div>
@@ -378,6 +445,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
         <input
           ref={nameInputRef}
           value={name}
+          draggable={false}
           onChange={(event) => {
             setName(event.target.value);
           }}
@@ -398,58 +466,61 @@ export function CameraReferenceComposer(): React.ReactElement | null {
         />
       </label>
 
-      <div style={{ marginTop: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
-            Eye height
-          </span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", ...nonSelectableChromeStyle }}>
-            {formatHeight(resolvedHeight)}
-          </span>
-        </div>
-        <div style={heightGridStyle}>
-          {(["sitting", "standing", "custom"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              style={heightButtonStyle(heightMode === mode)}
-              onClick={() => {
-                setHeightMode(mode);
+      {cameraControlsVisible && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
+              Eye height
+            </span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", ...nonSelectableChromeStyle }}>
+              {formatHeight(resolvedHeight)}
+            </span>
+          </div>
+          <div style={heightGridStyle}>
+            {(["sitting", "standing", "custom"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                style={heightButtonStyle(heightMode === mode)}
+                onClick={() => {
+                  setHeightMode(mode);
+                }}
+              >
+                {mode === "sitting" ? "Sitting" : mode === "standing" ? "Standing" : "Custom"}
+              </button>
+            ))}
+          </div>
+          {heightMode === "custom" && (
+            <input
+              aria-label="Custom eye height"
+              type="number"
+              draggable={false}
+              min={MIN_CUSTOM_EYE_HEIGHT_M}
+              max={MAX_CUSTOM_EYE_HEIGHT_M}
+              step={0.05}
+              value={customHeightM}
+              onChange={(event) => {
+                setCustomHeightM(Number(event.target.value));
               }}
-            >
-              {mode === "sitting" ? "Sitting" : mode === "standing" ? "Standing" : "Custom"}
-            </button>
-          ))}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                minHeight: 44,
+                boxSizing: "border-box",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.13)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#fff",
+                padding: "0 12px",
+                fontSize: 14,
+                outline: "none",
+                userSelect: "text",
+                WebkitUserSelect: "text",
+              }}
+            />
+          )}
         </div>
-        {heightMode === "custom" && (
-          <input
-            aria-label="Custom eye height"
-            type="number"
-            min={MIN_CUSTOM_EYE_HEIGHT_M}
-            max={MAX_CUSTOM_EYE_HEIGHT_M}
-            step={0.05}
-            value={customHeightM}
-            onChange={(event) => {
-              setCustomHeightM(Number(event.target.value));
-            }}
-            style={{
-              marginTop: 8,
-              width: "100%",
-              minHeight: 44,
-              boxSizing: "border-box",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.13)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#fff",
-              padding: "0 12px",
-              fontSize: 14,
-              outline: "none",
-              userSelect: "text",
-              WebkitUserSelect: "text",
-            }}
-          />
-        )}
-      </div>
+      )}
 
       <button
         type="submit"
@@ -473,7 +544,11 @@ export function CameraReferenceComposer(): React.ReactElement | null {
         }}
       >
         <Check size={16} />
-        Add + view
+        {activeDraft.source === "floor"
+          ? "Add + view"
+          : cameraControlsVisible
+            ? "Save label + view"
+            : "Save label"}
       </button>
     </form>
   );

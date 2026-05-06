@@ -66,6 +66,7 @@ test.describe("Public Editor", () => {
         "Events Sheet",
       ].map((name) => expect(page.getByRole("button", { name })).toBeVisible()),
     );
+    await expect(page.getByRole("button", { name: "Toggle wall visibility panel" })).toHaveCount(0);
   });
 
   // ---------------------------------------------------------------------------
@@ -125,6 +126,17 @@ test.describe("Public Editor", () => {
     await expect(composer).toBeVisible({ timeout: 5_000 });
     await expect(composer.getByText("Eye height")).toBeVisible();
     await expect(composer.getByRole("button", { name: "Standing" })).toBeVisible();
+    const nameInput = composer.getByLabel("Name");
+    await expect(nameInput).toHaveJSProperty("draggable", false);
+    await expect.poll(async () =>
+      nameInput.evaluate((input) => {
+        const event = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+        return !input.dispatchEvent(event) && event.defaultPrevented;
+      }),
+    ).toBe(true);
+    await expect.poll(async () =>
+      nameInput.evaluate((input) => getComputedStyle(input, "::selection").backgroundColor),
+    ).toBe("rgba(191, 153, 55, 0.5)");
     const composerBoxBefore = await composer.boundingBox();
     expect(composerBoxBefore).not.toBeNull();
     if (composerBoxBefore === null) return;

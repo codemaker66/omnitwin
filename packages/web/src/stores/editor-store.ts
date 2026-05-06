@@ -30,6 +30,11 @@ export interface EditorObject {
   /** Group ID — items sharing a groupId move together. Persisted in metadata. */
   readonly groupId: string | null;
   /**
+   * Hallkeeper-visible seat/table label rendered directly in the planner.
+   * Persisted in metadata.displayLabel. Omitted when empty.
+   */
+  readonly label?: string;
+  /**
    * Planner-authored note surfaced on the hallkeeper sheet ("VIP
    * table", "needs HDMI run"). Persisted in metadata. Empty string
    * when no note is attached.
@@ -46,7 +51,8 @@ export interface EditorObject {
  */
 export function placedObjectToEditor(p: PlacedObject): EditorObject {
   const meta = p.metadata ?? {};
-  return {
+  const displayLabel = typeof meta.displayLabel === "string" ? meta.displayLabel.trim() : "";
+  const editorObject: EditorObject = {
     id: p.id,
     assetDefinitionId: p.assetDefinitionId,
     positionX: parseFloat(p.positionX),
@@ -61,6 +67,9 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
   };
+  return displayLabel.length > 0
+    ? { ...editorObject, label: displayLabel }
+    : editorObject;
 }
 
 /**
@@ -85,6 +94,7 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
     metadata: {
       clothed: o.clothed,
       groupId: o.groupId,
+      ...((o.label ?? "").trim().length > 0 ? { displayLabel: (o.label ?? "").trim() } : {}),
       ...(o.notes.length > 0 ? { notes: o.notes } : {}),
     },
   };

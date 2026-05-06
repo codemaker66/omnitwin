@@ -18,6 +18,7 @@ const EditorObjectDraftSchema = z.object({
   sortOrder: z.number().int(),
   clothed: z.boolean(),
   groupId: z.string().nullable(),
+  label: z.string().max(80).optional(),
   notes: z.string(),
 });
 

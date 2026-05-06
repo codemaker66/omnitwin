@@ -118,6 +118,44 @@ describe("rotateItem", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Label items
+// ---------------------------------------------------------------------------
+
+describe("setItemLabel", () => {
+  it("sets and trims a hallkeeper-visible item label", () => {
+    usePlacementStore.getState().placeItem(chairId, 0, 0);
+    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
+
+    usePlacementStore.getState().setItemLabel(id, "  Bride  ");
+
+    expect(usePlacementStore.getState().placedItems[0]?.label).toBe("Bride");
+    expect(usePlacementStore.getState().canUndo()).toBe(true);
+  });
+
+  it("clears a label and supports undo", () => {
+    usePlacementStore.getState().placeItem(chairId, 0, 0);
+    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
+
+    usePlacementStore.getState().setItemLabel(id, "Bride");
+    usePlacementStore.getState().setItemLabel(id, "");
+
+    expect(usePlacementStore.getState().placedItems[0]?.label).toBe("");
+    usePlacementStore.getState().undo();
+    expect(usePlacementStore.getState().placedItems[0]?.label).toBe("Bride");
+  });
+
+  it("does not add undo history for an unchanged label", () => {
+    usePlacementStore.getState().placeItem(chairId, 0, 0);
+    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
+    const undoCount = usePlacementStore.getState().undoStack.length;
+
+    usePlacementStore.getState().setItemLabel(id, "");
+
+    expect(usePlacementStore.getState().undoStack).toHaveLength(undoCount);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Ghost
 // ---------------------------------------------------------------------------
 

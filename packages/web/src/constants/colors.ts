@@ -2,7 +2,7 @@
  * Trades Hall Glasgow palette — Robert Adam Georgian neoclassical interior.
  *
  * Tuned against reference photos of the actual Grand Hall (1791–1794):
- *   - Beige timber panel floor
+ *   - Polished honey timber plank floor
  *   - Warm cream plaster walls with white trim
  *   - Dark oak wainscot panelling
  *   - West African avodire timber ceiling and seven-metre dome
@@ -18,8 +18,8 @@
 // Surfaces
 // ---------------------------------------------------------------------------
 
-/** Beige timber panels - warm, polished, mid-value so furniture reads above it. */
-export const FLOOR_COLOR = "#c7ad79";
+/** Polished honey timber planks - light varnish tint that lets the floor texture carry the grain. */
+export const FLOOR_COLOR = "#f5d9a1";
 
 /** Warm cream plaster — the dominant interior tone. */
 export const WALL_COLOR = "#efe2c5";

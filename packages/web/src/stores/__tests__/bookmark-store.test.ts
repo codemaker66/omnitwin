@@ -119,6 +119,7 @@ describe("addReferenceBookmark", () => {
       name: "Bride chair",
       source: "furniture",
       sourceLabel: "Banquet Chair",
+      placedItemId: "chair-1",
       point: [2, -3],
       baseY: 0,
       yaw: Math.PI,
@@ -129,6 +130,7 @@ describe("addReferenceBookmark", () => {
     expect(bookmark?.kind).toBe("reference");
     expect(bookmark?.name).toBe("Bride chair");
     expect(bookmark?.reference?.heightMode).toBe("sitting");
+    expect(bookmark?.reference?.placedItemId).toBe("chair-1");
   });
 
   it("updates a viewed reference height and queues a fresh camera navigation", () => {

@@ -5,7 +5,7 @@
  *   - Crown moulding, skirting, and raised dark-timber wainscot panels
  *   - Pilasters framing the three arched windows on one long wall
  *   - Curtain-dressed arched-window facades with cool daylight panes
- *   - Ochre mural frieze, short-end focal wall cues, and window-wall rhythm
+ *   - Ochre mural frieze, three opposite-wall double doors, and short-end focal wall cues
  *   - Avodire geometric coffer field and fourteen-trade dome ring
  *   - Three chandeliers along the 21m hall axis, with the central chandelier under the dome
  *
@@ -29,6 +29,7 @@ import {
 } from "../constants/colors.js";
 import { DOME_RADIUS } from "./GrandHallRoom.js";
 import { SurfaceVisibilityGroup } from "./SurfaceVisibilityGroup.js";
+import { useSectionStore } from "../stores/section-store.js";
 
 const AVODIRE_BEAM = "#714018";
 const AVODIRE_HIGHLIGHT = "#d49a55";
@@ -47,6 +48,19 @@ const GLASS_HIGHLIGHT = "#f4fbff";
 const FIREBOX_DARK = "#120d09";
 const EMBER_ORANGE = "#d86924";
 const SOOT_SHADOW = "#24160f";
+const DOOR_TIMBER = "#2b160c";
+const DOOR_HIGHLIGHT = "#6c411d";
+export const WALL_ORNAMENT_SECTION_HIDE_BELOW_M = 3.2;
+export const CEILING_ORNAMENT_SECTION_EPSILON_M = 0.12;
+
+export function shouldShowWallOrnamentsForSection(sectionHeight: number, roomHeight: number): boolean {
+  const threshold = Math.max(0, Math.min(roomHeight - CEILING_ORNAMENT_SECTION_EPSILON_M, WALL_ORNAMENT_SECTION_HIDE_BELOW_M));
+  return sectionHeight >= threshold;
+}
+
+export function shouldShowCeilingOrnamentsForSection(sectionHeight: number, roomHeight: number): boolean {
+  return sectionHeight >= roomHeight - CEILING_ORNAMENT_SECTION_EPSILON_M;
+}
 
 // ---------------------------------------------------------------------------
 // Crown moulding — slim ivory strip at the top of every wall
@@ -589,6 +603,110 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
 }
 
 // ---------------------------------------------------------------------------
+// Opposite-wall double doors — three ornate timber sets facing the window wall
+// ---------------------------------------------------------------------------
+
+const FRONT_DOOR_WIDTH = 1.42;
+const FRONT_DOOR_HEIGHT = 2.62;
+const FRONT_DOOR_DEPTH = 0.08;
+const FRONT_DOOR_FRAME = 0.13;
+
+function DoorRaisedPanel({
+  x,
+  y,
+  width,
+  height,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}): React.ReactElement {
+  return (
+    <group position={[x, y, -FRONT_DOOR_DEPTH * 0.72]}>
+      <mesh name="front-wall-door-raised-panel-frame">
+        <boxGeometry args={[width, height, 0.035]} />
+        <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.58} metalness={0.02} />
+      </mesh>
+      <mesh name="front-wall-door-recessed-panel" position={[0, 0, -0.012]}>
+        <boxGeometry args={[width * 0.76, height * 0.74, 0.036]} />
+        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.72} metalness={0} />
+      </mesh>
+    </group>
+  );
+}
+
+function OrnateDoubleDoorSet({ x, z }: { readonly x: number; readonly z: number }): React.ReactElement {
+  const leafWidth = (FRONT_DOOR_WIDTH - 0.08) / 2;
+  const leafCenterX = leafWidth / 2 + 0.02;
+  const y = FRONT_DOOR_HEIGHT / 2;
+
+  return (
+    <group name="front-long-wall-door-set" position={[x, 0, z]}>
+      <mesh name="grand-hall-front-wall-door-frame-left" position={[-FRONT_DOOR_WIDTH / 2 - FRONT_DOOR_FRAME / 2, y, 0]}>
+        <boxGeometry args={[FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35]} />
+        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.58} metalness={0.02} />
+      </mesh>
+      <mesh name="grand-hall-front-wall-door-frame-right" position={[FRONT_DOOR_WIDTH / 2 + FRONT_DOOR_FRAME / 2, y, 0]}>
+        <boxGeometry args={[FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35]} />
+        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.58} metalness={0.02} />
+      </mesh>
+      <mesh name="grand-hall-front-wall-door-top-rail" position={[0, FRONT_DOOR_HEIGHT + 0.1, 0]}>
+        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.2, 0.2, FRONT_DOOR_DEPTH * 1.42]} />
+        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.56} metalness={0.02} />
+      </mesh>
+      <mesh name="grand-hall-front-wall-door-cornice" position={[0, FRONT_DOOR_HEIGHT + 0.28, -0.01]}>
+        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.9, 0.12, FRONT_DOOR_DEPTH * 1.72]} />
+        <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.5} metalness={0.04} />
+      </mesh>
+      <mesh name="grand-hall-front-wall-door-threshold" position={[0, 0.05, -0.015]}>
+        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.3, 0.1, FRONT_DOOR_DEPTH * 1.55]} />
+        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.62} metalness={0.02} />
+      </mesh>
+
+      {[-leafCenterX, leafCenterX].map((leafX, i) => (
+        <group key={`grand-hall-front-wall-door-leaf-${String(i)}`} name="grand-hall-front-wall-door-leaf" position={[leafX, y, -0.012]}>
+          <mesh name="grand-hall-front-wall-door">
+            <boxGeometry args={[leafWidth, FRONT_DOOR_HEIGHT, FRONT_DOOR_DEPTH]} />
+            <meshStandardMaterial color={DOOR_TIMBER} roughness={0.66} metalness={0.01} />
+          </mesh>
+          <DoorRaisedPanel x={0} y={0.48} width={leafWidth * 0.66} height={0.88} />
+          <DoorRaisedPanel x={0} y={-0.58} width={leafWidth * 0.66} height={0.72} />
+          <mesh name="front-wall-door-vertical-stile" position={[i === 0 ? leafWidth / 2 - 0.03 : -leafWidth / 2 + 0.03, 0, -FRONT_DOOR_DEPTH * 0.74]}>
+            <boxGeometry args={[0.06, FRONT_DOOR_HEIGHT * 0.92, 0.034]} />
+            <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.54} metalness={0.03} />
+          </mesh>
+        </group>
+      ))}
+
+      <mesh name="front-wall-door-center-seam" position={[0, y, -FRONT_DOOR_DEPTH * 0.86]}>
+        <boxGeometry args={[0.045, FRONT_DOOR_HEIGHT * 0.9, 0.036]} />
+        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.68} metalness={0.01} />
+      </mesh>
+      {[-0.13, 0.13].map((handleX, i) => (
+        <mesh key={`front-wall-door-brass-handle-${String(i)}`} name="front-wall-door-brass-handle" position={[handleX, 1.16, -FRONT_DOOR_DEPTH * 1.18]}>
+          <sphereGeometry args={[0.055, 14, 14]} />
+          <meshStandardMaterial color={BRASS_GOLD} roughness={0.26} metalness={0.72} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function OppositeLongWallDoors({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
+  const z = length / 2 - 0.085;
+  const doorX = [-width * 0.29, 0, width * 0.29] as const;
+
+  return (
+    <SurfaceVisibilityGroup surfaceKey="wall-front" name="opposite-long-wall-three-door-cluster">
+      {doorX.map((x, i) => (
+        <OrnateDoubleDoorSet key={`front-long-wall-door-set-${String(i)}`} x={x} z={z} />
+      ))}
+    </SurfaceVisibilityGroup>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Timber coffer beams — geometric depth over the avodire ceiling texture
 // ---------------------------------------------------------------------------
 
@@ -1022,6 +1140,7 @@ export function GrandHallOrnaments({
   length = GRAND_HALL_RENDER_DIMENSIONS.length,
   height = GRAND_HALL_RENDER_DIMENSIONS.height,
 }: GrandHallOrnamentsProps): React.ReactElement {
+  const sectionHeight = useSectionStore((s) => s.height);
   const halfL = length / 2;
   const windowWallZ = -halfL + 0.025;
 
@@ -1039,53 +1158,66 @@ export function GrandHallOrnaments({
     () => [-width * 0.28, 0, width * 0.28],
     [width],
   );
+  const wallOrnamentsVisible = shouldShowWallOrnamentsForSection(sectionHeight, height);
+  const ceilingOrnamentsVisible = shouldShowCeilingOrnamentsForSection(sectionHeight, height);
 
   return (
     <group name="grand-hall-ornaments">
-      <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-ornaments">
-        <CofferedAvodireCeiling width={width} length={length} height={height} />
-      </SurfaceVisibilityGroup>
-      <CrownMoulding width={width} length={length} wallHeight={height} />
-      <Skirting width={width} length={length} />
-      <WainscotRaisedPanels width={width} length={length} />
-      <TradeFrieze width={width} length={length} height={height} />
-      <EndWallFocalPoint width={width} length={length} />
-      {/* Pilasters and arched windows along the window wall only. */}
-      <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
-        {pilasterX.map((x, i) => (
-          <Pilaster
-            key={`pilaster-window-wall-${String(i)}`}
-            position={[x, 0, -halfL + 0.12]}
-            height={height}
-            wallAxis="z"
-          />
-        ))}
+      {ceilingOrnamentsVisible && (
+        <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-ornaments">
+          <CofferedAvodireCeiling width={width} length={length} height={height} />
+        </SurfaceVisibilityGroup>
+      )}
+      {wallOrnamentsVisible && (
+        <>
+          <CrownMoulding width={width} length={length} wallHeight={height} />
+          <Skirting width={width} length={length} />
+          <WainscotRaisedPanels width={width} length={length} />
+          <TradeFrieze width={width} length={length} height={height} />
+          <OppositeLongWallDoors width={width} length={length} />
+          <EndWallFocalPoint width={width} length={length} />
+          {/* Pilasters and arched windows along the window wall only. */}
+          <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
+            {pilasterX.map((x, i) => (
+              <Pilaster
+                key={`pilaster-window-wall-${String(i)}`}
+                position={[x, 0, -halfL + 0.12]}
+                height={height}
+                wallAxis="z"
+              />
+            ))}
 
-        {/* Arched windows on the real window wall, facing inward. */}
-        {windowX.map((x, i) => (
-          <ArchedWindow
-            key={`window-long-wall-${String(i)}`}
-            position={[x, 0, windowWallZ]}
-            rotationY={0}
-          />
-        ))}
-      </SurfaceVisibilityGroup>
+            {/* Arched windows on the real window wall, facing inward. */}
+            {windowX.map((x, i) => (
+              <ArchedWindow
+                key={`window-long-wall-${String(i)}`}
+                position={[x, 0, windowWallZ]}
+                rotationY={0}
+              />
+            ))}
+          </SurfaceVisibilityGroup>
+        </>
+      )}
 
       {/* Ceiling rosette ring around the dome base */}
-      <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-rosette">
-        <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
-      </SurfaceVisibilityGroup>
+      {ceilingOrnamentsVisible && (
+        <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-rosette">
+          <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
+        </SurfaceVisibilityGroup>
+      )}
 
       {/* Three chandeliers along the 21m hall centerline. */}
-      {chandelierX.map((x, i) => (
-        <Chandelier
-          key={`chandelier-${String(i)}`}
-          anchorY={height - 0.08}
-          dropLength={i === 1 ? 2.18 : 1.78}
-          x={x}
-          scale={i === 1 ? 1.08 : 0.82}
-        />
-      ))}
+      {ceilingOrnamentsVisible
+        ? chandelierX.map((x, i) => (
+            <Chandelier
+              key={`chandelier-${String(i)}`}
+              anchorY={height - 0.08}
+              dropLength={i === 1 ? 2.18 : 1.78}
+              x={x}
+              scale={i === 1 ? 1.08 : 0.82}
+            />
+          ))
+        : null}
     </group>
   );
 }
