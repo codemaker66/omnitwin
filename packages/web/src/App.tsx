@@ -34,6 +34,7 @@ import { useEditorStore } from "./stores/editor-store.js";
 import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
+import "./App.css";
 
 // Initialize stores with Grand Hall dimensions (default).
 // Runs once at module load. The useEffect in App() re-initializes when
@@ -93,7 +94,7 @@ export function App(): React.ReactElement {
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
   return (
-    <>
+    <div className="venviewer-planner-shell">
       {/* Canvas sits inside a wrapper whose padding is driven by CSS vars that
           VerticalToolbox sets on <html>. Desktop: --toolbox-offset = 68 (the
           left rail width), --toolbox-bottom = 0. Mobile (≤640): --toolbox-offset
@@ -201,6 +202,6 @@ export function App(): React.ReactElement {
         }}
       />
       {import.meta.env.DEV && <PerfOverlay />}
-    </>
+    </div>
   );
 }

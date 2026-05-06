@@ -85,6 +85,50 @@ test.describe("Public Editor", () => {
     await expect(panel.getByText("Round Table")).toBeVisible({ timeout: 5_000 });
   });
 
+  test("planner chrome text cannot be drag-highlighted", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Furniture" }).click();
+    const panel = page.getByTestId("furniture-panel");
+    await panel.waitFor({ state: "visible" });
+    const panelBox = await panel.boundingBox();
+    expect(panelBox).not.toBeNull();
+    if (panelBox === null) return;
+
+    await page.mouse.move(panelBox.x + 42, panelBox.y + 62);
+    await page.mouse.down();
+    await page.mouse.move(panelBox.x + panelBox.width - 36, panelBox.y + 390, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(async () => page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+    await expect.poll(async () =>
+      panel.evaluate((node) => getComputedStyle(node).userSelect),
+    ).toBe("none");
+    await expect.poll(async () =>
+      page.getByRole("textbox", { name: "Search furniture" }).evaluate((node) => getComputedStyle(node).userSelect),
+    ).toBe("none");
+    const search = page.getByRole("textbox", { name: "Search furniture" });
+    await search.fill("chair");
+    await expect(search).toHaveValue("chair");
+  });
+
+  test("active furniture toolbar caption fits inside its button", async ({ page }) => {
+    const addFurnitureButton = page.getByRole("button", { name: "Add Furniture" });
+    await addFurnitureButton.click();
+    const caption = page.getByTestId("tool-caption-add-furniture");
+    await expect(caption).toBeVisible();
+
+    const fitsInsideButton = await caption.evaluate((node) => {
+      const button = node.closest("button");
+      if (button === null) return false;
+      const captionBox = node.getBoundingClientRect();
+      const buttonBox = button.getBoundingClientRect();
+      return captionBox.left >= buttonBox.left
+        && captionBox.right <= buttonBox.right
+        && node.scrollWidth <= node.clientWidth;
+    });
+
+    expect(fitsInsideButton).toBe(true);
+  });
+
   test("clicking Add Furniture again closes the catalogue panel", async ({ page }) => {
     const btn = page.getByRole("button", { name: "Add Furniture" });
     await btn.click();

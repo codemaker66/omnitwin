@@ -190,6 +190,51 @@ export function isInWindowWallOpeningBay(x: number, width: number): boolean {
   );
 }
 
+const FRONT_DOOR_WIDTH = 1.42;
+const FRONT_DOOR_HEIGHT = 2.62;
+const FRONT_DOOR_DEPTH = 0.08;
+const FRONT_DOOR_FRAME = 0.13;
+const OPPOSITE_LONG_WALL_DOOR_CENTER_RATIO = 0.29;
+const FRONT_WALL_CHAIR_RAIL_DOOR_CLEARANCE = FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 3 + 0.22;
+
+export interface ChairRailSegment {
+  readonly centerX: number;
+  readonly width: number;
+}
+
+export function computeOppositeLongWallDoorCenters(width: number): readonly number[] {
+  return [-width * OPPOSITE_LONG_WALL_DOOR_CENTER_RATIO, 0, width * OPPOSITE_LONG_WALL_DOOR_CENTER_RATIO] as const;
+}
+
+export function computeOppositeLongWallChairRailSegments(width: number): readonly ChairRailSegment[] {
+  const railHalfWidth = Math.max(0, (width - 0.65) / 2);
+  const doorHalfClearance = FRONT_WALL_CHAIR_RAIL_DOOR_CLEARANCE / 2;
+  const openings = computeOppositeLongWallDoorCenters(width)
+    .map((centerX) => ({
+      start: Math.max(-railHalfWidth, centerX - doorHalfClearance),
+      end: Math.min(railHalfWidth, centerX + doorHalfClearance),
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  const segments: ChairRailSegment[] = [];
+  let cursor = -railHalfWidth;
+
+  for (const opening of openings) {
+    const segmentWidth = opening.start - cursor;
+    if (segmentWidth > 0.08) {
+      segments.push({ centerX: cursor + segmentWidth / 2, width: segmentWidth });
+    }
+    cursor = Math.max(cursor, opening.end);
+  }
+
+  const trailingWidth = railHalfWidth - cursor;
+  if (trailingWidth > 0.08) {
+    segments.push({ centerX: cursor + trailingWidth / 2, width: trailingWidth });
+  }
+
+  return segments;
+}
+
 export function computeVisibleLongWainscotPanelCenters(
   _width: number,
   side: "back" | "front",
@@ -197,8 +242,8 @@ export function computeVisibleLongWainscotPanelCenters(
   // The arched-window wall already carries tall window frames, curtains,
   // pilasters, and daylight panes. Dark raised panels on this wall read as
   // black blocker squares in the placeholder renderer, so keep them off the
-  // window wall. Keep the opposite long wall to rails/frieze only until the
-  // real captured asset can carry exact door/portrait placement.
+  // window wall. The opposite long wall keeps rails and the explicit door
+  // assemblies, but not repeated dark panel blocks.
   if (side === "front") return [];
   return [];
 }
@@ -225,6 +270,14 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
     () => computeVisibleLongWainscotPanelCenters(width, "front"),
     [width],
   );
+  const backLongChairRailSegments = useMemo(
+    () => [{ centerX: 0, width: width - 0.65 }] as const,
+    [width],
+  );
+  const frontLongChairRailSegments = useMemo(
+    () => computeOppositeLongWallChairRailSegments(width),
+    [width],
+  );
   const leftShortZ = useMemo(
     () => computeVisibleShortWainscotPanelCenters(length, "left"),
     [length],
@@ -234,6 +287,7 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
     [length],
   );
   const shortPanelSpacing = length / 5;
+  const longChairRailY = WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2 + 0.12;
 
   return (
     <group name="raised-wainscot-panels">
@@ -250,10 +304,16 @@ function WainscotRaisedPanels({ width, length }: { readonly width: number; reado
               <meshStandardMaterial color={i % 2 === 0 ? PANEL_DARK_OAK : PANEL_SHADOW} roughness={0.74} metalness={0} />
             </mesh>
           ))}
-          <mesh position={[0, WAINSCOT_PANEL_Y + WAINSCOT_PANEL_HEIGHT / 2 + 0.12, z]}>
-            <boxGeometry args={[width - 0.65, 0.1, 0.075]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
-          </mesh>
+          {(sideIndex === 0 ? backLongChairRailSegments : frontLongChairRailSegments).map((segment, i) => (
+            <mesh
+              key={`wainscot-long-chair-rail-${String(sideIndex)}-${String(i)}`}
+              name={sideIndex === 0 ? "back-long-wall-chair-rail" : "front-long-wall-door-interrupted-chair-rail"}
+              position={[segment.centerX, longChairRailY, z]}
+            >
+              <boxGeometry args={[segment.width, 0.1, 0.075]} />
+              <meshStandardMaterial color={BRASS_GOLD} roughness={0.45} metalness={0.25} />
+            </mesh>
+          ))}
         </group>
         </SurfaceVisibilityGroup>
       ))}
@@ -606,11 +666,6 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
 // Opposite-wall double doors — three ornate timber sets facing the window wall
 // ---------------------------------------------------------------------------
 
-const FRONT_DOOR_WIDTH = 1.42;
-const FRONT_DOOR_HEIGHT = 2.62;
-const FRONT_DOOR_DEPTH = 0.08;
-const FRONT_DOOR_FRAME = 0.13;
-
 function DoorRaisedPanel({
   x,
   y,
@@ -695,7 +750,7 @@ function OrnateDoubleDoorSet({ x, z }: { readonly x: number; readonly z: number 
 
 function OppositeLongWallDoors({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const z = length / 2 - 0.085;
-  const doorX = [-width * 0.29, 0, width * 0.29] as const;
+  const doorX = computeOppositeLongWallDoorCenters(width);
 
   return (
     <SurfaceVisibilityGroup surfaceKey="wall-front" name="opposite-long-wall-three-door-cluster">

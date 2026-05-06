@@ -59,7 +59,7 @@ const btnStyle = (active: boolean, disabled = false, compact = false): React.CSS
   // square. Default desktop mode grows vertically to fit a 9px caption
   // beneath the icon — taller button + tighter rail gap = same rough
   // overall toolbar height even with 12 captions.
-  width: compact ? 56 : 48,
+  width: compact ? 56 : 58,
   height: compact ? 52 : 58,
   display: "flex",
   flexDirection: "column",
@@ -318,6 +318,9 @@ function ToolBtn({
     dismiss();
     onClick();
   };
+  const captionTestId = subLabel !== undefined
+    ? `tool-caption-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
+    : undefined;
 
   return (
     <div
@@ -334,14 +337,16 @@ function ToolBtn({
       >
         {children}
         {subLabel !== undefined && (
-          <span style={{
+          <span data-testid={captionTestId} style={{
             // Subtle, professional caption — uppercase Inter at 9px with
             // generous tracking. Active button flips to dark text on the
             // gold gradient; inactive uses a low-contrast neutral so the
             // icon stays the dominant visual element.
-            fontSize: compact ? 8 : 9,
+            display: "block",
+            maxWidth: "100%",
+            fontSize: compact ? 8 : subLabel.length >= 8 ? 8.5 : 9,
             fontWeight: 600,
-            letterSpacing: compact ? 0.2 : 0.6,
+            letterSpacing: compact ? 0.2 : subLabel.length >= 8 ? 0.25 : 0.6,
             lineHeight: 1,
             color: active
               ? "rgba(14,14,14,0.78)"
@@ -349,6 +354,7 @@ function ToolBtn({
                 ? "rgba(255,255,255,0.18)"
                 : "rgba(255,255,255,0.42)",
             textTransform: "uppercase",
+            whiteSpace: "nowrap",
             fontFamily: "'Inter', system-ui, sans-serif",
             userSelect: "none",
             pointerEvents: "none",
@@ -1318,6 +1324,7 @@ export function VerticalToolbox(): React.ReactElement {
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); }}
               placeholder="Search furniture\u2026"
+              aria-label="Search furniture"
               style={{
                 width: "100%", padding: "9px 12px 9px 32px", fontSize: 13,
                 fontFamily: "'Inter', system-ui, sans-serif",

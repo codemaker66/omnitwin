@@ -18,6 +18,8 @@ import {
 } from "../../constants/colors.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import {
+  computeOppositeLongWallChairRailSegments,
+  computeOppositeLongWallDoorCenters,
   computeVisibleLongWainscotPanelCenters,
   computeVisibleShortWainscotPanelCenters,
   computeWindowWallCenters,
@@ -461,12 +463,38 @@ describe("Grand Hall ornaments source", () => {
     const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
 
     expect(source).toContain("opposite-long-wall-three-door-cluster");
-    expect(source).toContain("const doorX = [-width * 0.29, 0, width * 0.29] as const");
+    expect(source).toContain("computeOppositeLongWallDoorCenters(width)");
     expect(source).toContain("front-long-wall-door-set");
     expect(source).toContain("grand-hall-front-wall-door");
     expect(source).toContain("front-wall-door-raised-panel-frame");
     expect(source).toContain("front-wall-door-brass-handle");
     expect(source).not.toContain("honour-cabinet-long-wall");
+  });
+
+  it("interrupts the opposite-wall chair rail around each double-door set", () => {
+    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
+    const segments = computeOppositeLongWallChairRailSegments(width);
+    const doorCenters = computeOppositeLongWallDoorCenters(width);
+
+    expect(segments).toHaveLength(4);
+    for (const doorCenter of doorCenters) {
+      expect(
+        segments.some((segment) => {
+          const start = segment.centerX - segment.width / 2;
+          const end = segment.centerX + segment.width / 2;
+          return start < doorCenter && end > doorCenter;
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("renders a named interrupted chair rail on the opposite-wall door side", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+
+    expect(source).toContain("front-long-wall-door-interrupted-chair-rail");
+    expect(source).toContain("computeOppositeLongWallChairRailSegments(width)");
   });
 
   it("keeps the opposite short end wall clear of door assemblies", async () => {
