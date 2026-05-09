@@ -125,10 +125,16 @@ test.describe("Public Editor", () => {
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
 
+    await expect(panel.getByTestId("catalogue-workflow-cards")).toBeVisible();
+    await expect(panel.getByText("Build the room")).toBeVisible();
     const sectionJumps = panel.locator('[data-testid^="catalogue-section-jump-"]');
     await expect.poll(async () => sectionJumps.count()).toBeGreaterThan(5);
     await expect(panel.getByTestId("catalogue-section-jump-table")).toBeVisible();
     await expect(panel.getByTestId("catalogue-section-jump-chair")).toBeVisible();
+
+    await panel.getByTestId("catalogue-section-jump-chair").click();
+    await expect(panel.getByTestId("chair-brush-hint")).toBeVisible();
+    await expect(panel.getByText("Drag straight across the floor for a row.")).toBeVisible();
 
     await panel.getByTestId("catalogue-section-jump-stage").click();
     await expect(panel.getByTestId("category-header-stage")).toBeVisible({ timeout: 5_000 });

@@ -19,13 +19,11 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Computes default camera position for an immersive interior perspective
- * — like standing just inside the entrance of the room, looking across
- * its full length.
+ * Computes default camera position for a cinematic planning perspective.
  *
- * The camera is placed at human eye level (1.7m), near one end of the
- * room's longest axis, with a slight lateral offset for a natural 3/4
- * feel. The room should fill 80-90% of the viewport at FOV 55°.
+ * Desktop opens in a high, diagonal, room-composition view so layouts read as
+ * a premium planning board immediately. Saved POVs still provide human eye
+ * mode; the default authoring pose is intentionally god-view-first.
  */
 export function computeDefaultCameraPosition(
   dimensions: SpaceDimensions,
@@ -50,22 +48,21 @@ export function computeDefaultCameraPosition(
     return [lateral, lift, alongAxis];
   }
 
-  // Landscape / desktop — interior eye-level pose (unchanged).
-  // Position ~38% of the longest axis from center — inside the room,
-  // near one wall. This gives enough distance to frame the opposite end.
-  const alongAxis = maxDim * 0.38;
-  const lateral = minDim * 0.08;
-  const eyeLevel = 1.7;
+  // Landscape / desktop — premium top-down 3/4 authoring pose.
+  const alongAxis = maxDim * 0.30;
+  const lateral = -minDim * 0.30;
+  const lift = Math.max(dimensions.height * 1.4, maxDim * 0.55);
 
   if (width >= length) {
-    return [alongAxis, eyeLevel, lateral];
+    return [alongAxis, lift, lateral];
   }
-  return [lateral, eyeLevel, alongAxis];
+  return [lateral, lift, alongAxis];
 }
 
 /**
  * Computes the orbit target.
- * Landscape: center of room at 1.5 m (human eye level) — natural interior feel.
+ * Landscape: low centre-of-room target so the default authoring pose reads the
+ * entire layout surface and wall rhythm.
  * Portrait: slightly higher target so the elevated interior pose reads the
  * ceiling and chandeliers without aiming above the room.
  */
@@ -74,7 +71,7 @@ export function computeCameraTarget(
   aspect = 1.78,
 ): readonly [number, number, number] {
   if (aspect < 1.2) return [0, dimensions.height * 0.32, 0];
-  return [0, 1.5, 0];
+  return [0, dimensions.height * 0.1, 0];
 }
 
 /**

@@ -67,6 +67,60 @@ describe("placeItem", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Chair brush
+// ---------------------------------------------------------------------------
+
+describe("placeChairBrush", () => {
+  it("places a clean row of chairs from a floor drag", () => {
+    const ids = usePlacementStore.getState().placeChairBrush(
+      chairId,
+      0,
+      0,
+      GRID_SPACING_RENDER * 5,
+      0,
+      0,
+    );
+
+    expect(ids.length).toBeGreaterThan(4);
+    const items = usePlacementStore.getState().placedItems;
+    expect(items.map((item) => item.id)).toEqual(ids);
+    expect(items.every((item) => item.catalogueItemId === chairId)).toBe(true);
+    expect(new Set(items.map((item) => item.z)).size).toBe(1);
+    expect(usePlacementStore.getState().canUndo()).toBe(true);
+  });
+
+  it("places a block of chairs from a diagonal area drag", () => {
+    const ids = usePlacementStore.getState().placeChairBrush(
+      chairId,
+      0,
+      0,
+      GRID_SPACING_RENDER * 4,
+      GRID_SPACING_RENDER * 4,
+      0,
+    );
+
+    expect(ids.length).toBeGreaterThan(9);
+    const items = usePlacementStore.getState().placedItems;
+    expect(new Set(items.map((item) => item.x)).size).toBeGreaterThan(2);
+    expect(new Set(items.map((item) => item.z)).size).toBeGreaterThan(2);
+  });
+
+  it("ignores non-chair catalogue items", () => {
+    const ids = usePlacementStore.getState().placeChairBrush(
+      tableId,
+      0,
+      0,
+      GRID_SPACING_RENDER * 4,
+      0,
+      0,
+    );
+
+    expect(ids).toHaveLength(0);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Remove items
 // ---------------------------------------------------------------------------
 

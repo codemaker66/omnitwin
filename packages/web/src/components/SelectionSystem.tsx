@@ -12,7 +12,7 @@ import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js"
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
-import { getGroupMemberIds, snapToPlatformEdge, snapToWallEdge } from "../lib/placement.js";
+import { expandIdsToGroupMembers, getGroupMemberIds, snapToPlatformEdge, snapToWallEdge } from "../lib/placement.js";
 import { computeSnapGuides, snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import {
@@ -66,6 +66,7 @@ function screenToFloor(
  * - Drag selected furniture: move on floor plane
  * - Q / E: rotate selected items by ±15°
  * - R key: rotate selected 15° clockwise (legacy, kept for compat)
+ * - Ctrl/Cmd+G: group or ungroup selected items
  * - G key: toggle grid snap
  * - Delete/Backspace: remove selected items
  * - Escape: clear selection
@@ -84,6 +85,16 @@ function findFurnitureGroups(scene: Object3D): Object3D[] {
 }
 
 const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
+
+function selectedItemsAreOneWholeGroup(ids: ReadonlySet<string>): boolean {
+  if (ids.size < 2) return false;
+  const placedItems = usePlacementStore.getState().placedItems;
+  const expandedIds = expandIdsToGroupMembers(ids, placedItems);
+  const expandedItems = placedItems.filter((item) => expandedIds.has(item.id));
+  if (expandedItems.length < 2) return false;
+  const groupIds = new Set(expandedItems.map((item) => item.groupId));
+  return groupIds.size === 1 && !groupIds.has(null);
+}
 
 /** Walk the parent chain looking for a wall name or click-plane name. */
 function findWallKey(obj: Object3D): WallKey | null {
@@ -203,6 +214,22 @@ export function SelectionSystem(): null {
           undoStack: [...store.undoStack, store.placedItems].slice(-50),
           redoStack: [],
         });
+        invalidateRef.current();
+        return;
+      }
+
+      // Ctrl/Cmd+G — group selected items, or ungroup a complete selected group.
+      if (event.code === "KeyG" && (event.ctrlKey || event.metaKey)) {
+        if (selectedIds.size < 2) return;
+        event.preventDefault();
+        const placement = usePlacementStore.getState();
+        const expandedIds = expandIdsToGroupMembers(selectedIds, placement.placedItems);
+        if (selectedItemsAreOneWholeGroup(selectedIds)) {
+          placement.ungroupItems(expandedIds);
+        } else {
+          placement.groupItems(expandedIds);
+        }
+        useSelectionStore.getState().selectMultiple([...expandedIds]);
         invalidateRef.current();
         return;
       }
@@ -436,7 +463,7 @@ export function SelectionSystem(): null {
         // can fire far more often than the display refreshes, wasting GPU cycles.
         const clientX = event.clientX;
         const clientY = event.clientY;
-        const shiftKey = event.shiftKey;
+        const additiveKey = event.shiftKey || event.ctrlKey || event.metaKey;
 
         cancelAnimationFrame(marqueeRafId.current);
         marqueeRafId.current = requestAnimationFrame(() => {
@@ -469,7 +496,7 @@ export function SelectionSystem(): null {
             }
           }
 
-          if (shiftKey) {
+          if (additiveKey) {
             const existing = useSelectionStore.getState().selectedIds;
             const merged = [...existing, ...idsInRect];
             useSelectionStore.getState().selectMultiple(merged);
@@ -603,7 +630,7 @@ export function SelectionSystem(): null {
       if (!isDragging.current) {
         // This was a click, not a drag
         if (dragItemId.current !== null) {
-          if (event.shiftKey) {
+          if (event.shiftKey || event.ctrlKey || event.metaKey) {
             useSelectionStore.getState().toggleSelect(dragItemId.current);
           } else {
             useSelectionStore.getState().select(dragItemId.current);

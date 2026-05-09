@@ -15,6 +15,7 @@ import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
+import { computeChairBrushSummary } from "../lib/chair-brush.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture, ghost state, undo/redo history
@@ -43,6 +44,15 @@ export interface PlacementState {
 
   /** Place the currently selected catalogue item at the ghost position. */
   readonly placeItem: (catalogueItemId: string, x: number, z: number, rotationY?: number) => void;
+  /** Place a row or block of chairs from a drag brush. Returns newly placed IDs. */
+  readonly placeChairBrush: (
+    catalogueItemId: string,
+    startX: number,
+    startZ: number,
+    endX: number,
+    endZ: number,
+    rotationY?: number,
+  ) => readonly string[];
   /** Remove a placed item by ID. */
   readonly removeItem: (id: string) => void;
   /** Remove multiple placed items by ID. */
@@ -136,6 +146,42 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
     set({ placedItems: [...state.placedItems, item], ...pushUndo(state) });
+  },
+
+  placeChairBrush: (
+    catalogueItemId: string,
+    startX: number,
+    startZ: number,
+    endX: number,
+    endZ: number,
+    rotationY: number = 0,
+  ) => {
+    const state = get();
+    const catalogueItem = getCatalogueItem(catalogueItemId);
+    if (catalogueItem === undefined || catalogueItem.category !== "chair") return [];
+
+    const start = state.snapEnabled ? snapPositionToGrid(startX, startZ) : [startX, 0, startZ] as const;
+    const end = state.snapEnabled ? snapPositionToGrid(endX, endZ) : [endX, 0, endZ] as const;
+    const summary = computeChairBrushSummary(
+      catalogueItem,
+      start[0],
+      start[2],
+      end[0],
+      end[2],
+      rotationY,
+    );
+    if (summary.points.length <= 1) return [];
+
+    const newItems = summary.points.map((point) => {
+      const surfaceY = computeSurfaceHeight(point.x, point.z, state.placedItems, new Set());
+      return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
+    });
+    if (newItems.length === 0) return [];
+    set({
+      placedItems: [...state.placedItems, ...newItems],
+      ...pushUndo(state),
+    });
+    return newItems.map((item) => item.id);
   },
 
   removeItem: (id: string) => {

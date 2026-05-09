@@ -30,12 +30,12 @@ describe("computeDefaultCameraPosition", () => {
     expect(pos).toHaveLength(3);
   });
 
-  it("places camera at eye level (1.7m)", () => {
+  it("opens desktop in a high cinematic planning pose", () => {
     const pos = computeDefaultCameraPosition(grandHall);
-    expect(pos[1]).toBe(1.7);
+    expect(pos[1]).toBeGreaterThan(grandHall.height);
   });
 
-  it("places camera INSIDE the room (within half of longest dimension)", () => {
+  it("keeps desktop camera horizontally inside the room footprint", () => {
     const pos = computeDefaultCameraPosition(grandHall);
     const maxHalf = Math.max(grandHall.width, grandHall.length) / 2;
     const horizontalDist = Math.sqrt(pos[0] ** 2 + pos[2] ** 2);
@@ -83,14 +83,16 @@ describe("computeDefaultCameraPosition", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeCameraTarget", () => {
-  it("returns room center at eye level (1.5m)", () => {
+  it("returns a low room-centre planning target on desktop", () => {
     const target = computeCameraTarget({ width: 21, length: 10.5, height: 7 });
-    expect(target).toEqual([0, 1.5, 0]);
+    expect(target[0]).toBe(0);
+    expect(target[1]).toBeCloseTo(0.7);
+    expect(target[2]).toBe(0);
   });
 
-  it("returns same target regardless of dimensions", () => {
+  it("scales desktop target height with room height", () => {
     const target = computeCameraTarget({ width: 100, length: 50, height: 20 });
-    expect(target).toEqual([0, 1.5, 0]);
+    expect(target).toEqual([0, 2, 0]);
   });
 
   it("raises the portrait mobile target enough to include ceiling detail", () => {

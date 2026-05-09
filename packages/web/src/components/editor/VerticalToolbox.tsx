@@ -38,7 +38,7 @@ import type { CatalogueItem } from "../../lib/catalogue.js";
 // ---------------------------------------------------------------------------
 
 const TOOLBAR_W = 68;
-const PANEL_W = 290;
+const PANEL_W = 336;
 const GOLD = "#c9a84c";
 const ICON_SIZE = 22;
 
@@ -93,9 +93,9 @@ const dividerStyle: React.CSSProperties = {
 
 const panelStyle: React.CSSProperties = {
   position: "fixed", left: TOOLBAR_W, top: 0, bottom: 0, width: PANEL_W,
-  background: "linear-gradient(180deg, rgba(10,10,10,0.985) 0%, rgba(18,15,12,0.985) 54%, rgba(10,9,8,0.985) 100%)",
-  borderRight: "1px solid rgba(201,168,76,0.2)",
-  zIndex: 49, overflowY: "auto", padding: "24px 16px",
+  background: "radial-gradient(circle at 22% 0%, rgba(201,168,76,0.13), transparent 31%), linear-gradient(180deg, rgba(8,9,10,0.988) 0%, rgba(16,14,12,0.99) 46%, rgba(8,8,8,0.99) 100%)",
+  borderRight: "1px solid rgba(201,168,76,0.24)",
+  zIndex: 49, overflowY: "auto", padding: "24px 18px",
   fontFamily: "'Inter', sans-serif", color: "#ccc",
   backdropFilter: "blur(24px) saturate(1.05)", WebkitBackdropFilter: "blur(24px) saturate(1.05)",
   boxShadow: "18px 0 64px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,232,170,0.07), inset -16px 0 42px rgba(201,168,76,0.04)",
@@ -103,14 +103,48 @@ const panelStyle: React.CSSProperties = {
 
 const categoryHeaderStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2,
-  color: GOLD, padding: "16px 8px 8px", cursor: "pointer",
+  color: GOLD, padding: "18px 8px 9px", cursor: "pointer",
   display: "flex", justifyContent: "space-between", alignItems: "center",
   borderBottom: "1px solid rgba(201,168,76,0.08)",
 };
 
+const catalogueHeroStyle: React.CSSProperties = {
+  padding: "15px 16px",
+  borderRadius: 18,
+  marginBottom: 14,
+  background: "linear-gradient(145deg, rgba(255,255,255,0.072), rgba(201,168,76,0.055))",
+  border: "1px solid rgba(255,255,255,0.08)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 18px 42px rgba(0,0,0,0.24)",
+};
+
+const workflowGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 7,
+  margin: "0 0 14px",
+};
+
+const workflowCardStyle = (active = false): React.CSSProperties => ({
+  minHeight: 76,
+  borderRadius: 14,
+  border: active ? "1px solid rgba(201,168,76,0.58)" : "1px solid rgba(255,255,255,0.08)",
+  background: active
+    ? "linear-gradient(145deg, rgba(215,180,77,0.22), rgba(108,76,20,0.18))"
+    : "linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.022))",
+  color: active ? "#fff0c8" : "rgba(255,255,255,0.72)",
+  padding: "10px 8px",
+  display: "grid",
+  alignContent: "space-between",
+  gap: 8,
+  textAlign: "left",
+  cursor: "pointer",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  boxShadow: active ? "0 12px 28px rgba(201,168,76,0.13), inset 0 1px 0 rgba(255,255,255,0.08)" : "none",
+});
+
 const catalogueQuickNavStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: 6,
   margin: "0 0 14px",
   padding: 6,
@@ -120,7 +154,7 @@ const catalogueQuickNavStyle: React.CSSProperties = {
 };
 
 const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
-  minHeight: 38,
+  minHeight: 42,
   borderRadius: 9,
   border: active ? `1px solid rgba(201,168,76,0.5)` : "1px solid rgba(255,255,255,0.08)",
   background: active
@@ -131,10 +165,10 @@ const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
   alignItems: "center",
   justifyContent: "space-between",
   gap: 6,
-  padding: "0 10px",
+  padding: "0 8px",
   cursor: "pointer",
   fontFamily: "'Inter', system-ui, sans-serif",
-  fontSize: 10,
+  fontSize: 9,
   fontWeight: 750,
   letterSpacing: 1.2,
   textTransform: "uppercase",
@@ -142,8 +176,8 @@ const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
 });
 
 const assetRowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-  borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#ddd",
+  display: "flex", alignItems: "center", gap: 11, padding: "10px 10px",
+  borderRadius: 12, cursor: "pointer", fontSize: 13, color: "#ddd",
   transition: "background 0.15s, border-color 0.15s",
   touchAction: "none",
   userSelect: "none",
@@ -1833,13 +1867,53 @@ export function VerticalToolbox(): React.ReactElement {
               : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
           }}
         >
-          {/* Gold accent */}
-          <div style={{ width: 32, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.2))`, marginBottom: 14 }} />
-          <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 2.5, color: GOLD, marginBottom: 4 }}>
-            Catalogue
+          <div style={catalogueHeroStyle}>
+            <div style={{ width: 40, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.12))`, marginBottom: 12 }} />
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: 2.4, color: GOLD, marginBottom: 4 }}>
+              Event kit
+            </div>
+            <div style={{ fontSize: 28, lineHeight: 1, fontWeight: 850, color: "#fff8e7", fontFamily: "'Playfair Display', serif", letterSpacing: -0.4 }}>
+              Build the room
+            </div>
+            <div style={{ marginTop: 8, color: "rgba(255,246,224,0.58)", fontSize: 12, lineHeight: 1.45 }}>
+              Drag chairs into rows or blocks. Drop cloths and place settings straight onto selected tables.
+            </div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", fontFamily: "'Playfair Display', serif", marginBottom: 16, letterSpacing: -0.3 }}>
-            Furniture
+
+          <div data-testid="catalogue-workflow-cards" style={workflowGridStyle}>
+            <button
+              type="button"
+              style={workflowCardStyle(focusedCategory === "chair")}
+              onClick={() => { handleCatalogueCategoryJump("chair"); }}
+            >
+              <Armchair size={18} />
+              <span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Rows</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>drag chair</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              style={workflowCardStyle(focusedCategory === "table")}
+              onClick={() => { handleCatalogueCategoryJump("table"); }}
+            >
+              <Grid3X3 size={18} />
+              <span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Tables</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>rounds + rows</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              style={workflowCardStyle(focusedCategory === "decor")}
+              onClick={() => { handleCatalogueCategoryJump("decor"); }}
+            >
+              <PenLine size={18} />
+              <span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Dress</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>cloth + plates</span>
+              </span>
+            </button>
           </div>
 
           {/* Search */}
@@ -1917,6 +1991,26 @@ export function VerticalToolbox(): React.ReactElement {
                   <span>{categoryLabel(cat)} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
                   <span style={{ fontSize: 14 }}>{collapsed ? "+" : "\u2212"}</span>
                 </div>
+                {cat === "chair" && !collapsed && q.length === 0 && (
+                  <div
+                    data-testid="chair-brush-hint"
+                    style={{
+                      margin: "10px 0 8px",
+                      padding: "10px 11px",
+                      borderRadius: 13,
+                      background: "linear-gradient(145deg, rgba(201,168,76,0.12), rgba(255,255,255,0.045))",
+                      border: "1px solid rgba(201,168,76,0.18)",
+                      color: "rgba(255,245,220,0.72)",
+                      fontSize: 11,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <span style={{ color: GOLD, fontWeight: 850, letterSpacing: 1.4, textTransform: "uppercase" }}>Chair brush</span>
+                    <span style={{ display: "block", marginTop: 3 }}>
+                      Drag straight across the floor for a row. Drag diagonally to fill a seating block.
+                    </span>
+                  </div>
+                )}
                 {!collapsed && items.map((item, idx) => (
                   <div
                     key={item.id}

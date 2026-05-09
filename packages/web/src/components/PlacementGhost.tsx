@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
 import { Vector2 } from "three";
 
@@ -9,7 +9,7 @@ import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
-import { getCatalogueItem } from "../lib/catalogue.js";
+import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import { ROTATION_SNAP_RAD } from "../lib/selection.js";
@@ -27,6 +27,7 @@ import {
   tableGroupedChairCount,
   tableSettingForCatalogueItem,
 } from "../lib/table-dressing.js";
+import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -74,6 +75,11 @@ export function PlacementGhost(): React.ReactElement | null {
   const ghostValid = usePlacementStore((s) => s.ghostValid);
   const ghostInvalidReason = usePlacementStore((s) => s.ghostInvalidReason);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
+  const [chairBrushPreview, setChairBrushPreview] = useState<readonly ChairBrushPoint[]>([]);
+  const chairBrushStartRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
+  const chairBrushEndRef = useRef<{ readonly x: number; readonly z: number } | null>(null);
+  const chairBrushActiveRef = useRef(false);
+  const suppressClickAfterBrushRef = useRef(false);
 
   // No manual store subscriptions needed — the useStore selectors above
   // (selectedItemId, ghostPosition, ghostValid) trigger React re-renders.
@@ -114,6 +120,55 @@ export function PlacementGhost(): React.ReactElement | null {
       return null;
     }
 
+    function clearChairBrush(): void {
+      chairBrushStartRef.current = null;
+      chairBrushEndRef.current = null;
+      chairBrushActiveRef.current = false;
+      setChairBrushPreview([]);
+    }
+
+    function selectedChairItem(itemId: string | null): CatalogueItem | null {
+      if (itemId === null) return null;
+      const item = getCatalogueItem(itemId);
+      return item?.category === "chair" ? item : null;
+    }
+
+    function updateChairBrush(itemId: string, hit: { readonly x: number; readonly z: number }, buttons: number): void {
+      const item = selectedChairItem(itemId);
+      if (item === null || (buttons & 1) === 0) return;
+      if (chairBrushStartRef.current === null) {
+        chairBrushStartRef.current = hit;
+      }
+      const start = chairBrushStartRef.current;
+      const summary = computeChairBrushSummary(
+        item,
+        start.x,
+        start.z,
+        hit.x,
+        hit.z,
+        usePlacementStore.getState().ghostRotation,
+      );
+      if (summary.points.length > 1) {
+        chairBrushActiveRef.current = true;
+        chairBrushEndRef.current = hit;
+        setChairBrushPreview(summary.points);
+      } else if (!chairBrushActiveRef.current) {
+        setChairBrushPreview([]);
+      }
+    }
+
+    function onPointerDown(event: PointerEvent): void {
+      if (event.button !== 0) return;
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      if (selectedChairItem(itemId) === null) return;
+      const hit = raycastToFloor(event.clientX, event.clientY);
+      if (hit === null) return;
+      chairBrushStartRef.current = hit;
+      chairBrushEndRef.current = hit;
+      chairBrushActiveRef.current = false;
+      setChairBrushPreview([]);
+    }
+
     function onPointerMove(event: PointerEvent): void {
       const itemId = useCatalogueStore.getState().selectedItemId;
       if (itemId === null) return;
@@ -129,6 +184,7 @@ export function PlacementGhost(): React.ReactElement | null {
           );
           useSelectionStore.getState().setActiveGuides(guides);
         }
+        updateChairBrush(itemId, hit, event.buttons);
         invalidateRef.current();
       }
     }
@@ -195,11 +251,36 @@ export function PlacementGhost(): React.ReactElement | null {
 
     function onPointerUp(event: PointerEvent): void {
       if (event.button !== 0) return;
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      if (
+        itemId !== null &&
+        chairBrushActiveRef.current &&
+        chairBrushStartRef.current !== null &&
+        chairBrushEndRef.current !== null
+      ) {
+        const newIds = usePlacementStore.getState().placeChairBrush(
+          itemId,
+          chairBrushStartRef.current.x,
+          chairBrushStartRef.current.z,
+          chairBrushEndRef.current.x,
+          chairBrushEndRef.current.z,
+          usePlacementStore.getState().ghostRotation,
+        );
+        if (newIds.length > 0) {
+          useSelectionStore.getState().selectMultiple(newIds);
+        }
+        suppressClickAfterBrushRef.current = true;
+        useCatalogueStore.getState().clearSelection();
+        usePlacementStore.getState().clearGhost();
+        useSelectionStore.getState().setActiveGuides([]);
+        clearChairBrush();
+        invalidateRef.current();
+        return;
+      }
       if (!useCatalogueStore.getState().dragActive) return;
 
       // Update ghost one final time at release position
       const hit = raycastToFloor(event.clientX, event.clientY);
-      const itemId = useCatalogueStore.getState().selectedItemId;
       if (hit !== null && itemId !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       }
@@ -207,29 +288,43 @@ export function PlacementGhost(): React.ReactElement | null {
       useCatalogueStore.getState().endDrag();
       usePlacementStore.getState().clearGhost();
       useSelectionStore.getState().setActiveGuides([]);
+      clearChairBrush();
       invalidateRef.current();
     }
 
     function onClick(event: MouseEvent): void {
       if (event.button !== 0) return;
+      if (suppressClickAfterBrushRef.current) {
+        suppressClickAfterBrushRef.current = false;
+        return;
+      }
       // Click-to-place only when NOT in drag mode
       if (useCatalogueStore.getState().dragActive) return;
       placeAtGhost();
     }
 
+    function onPointerCancel(): void {
+      clearChairBrush();
+    }
+
     // Listen on window so dragging out of the catalogue can cross into the
     // canvas smoothly; the floor raycast itself still uses the canvas bounds.
+    canvasEl.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
     canvasEl.addEventListener("click", onClick);
 
     return () => {
+      canvasEl.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";
       usePlacementStore.getState().clearGhost();
       useSelectionStore.getState().setActiveGuides([]);
+      clearChairBrush();
     };
   }, [selectedItemId, scene, camera, raycaster, gl]);
 
@@ -366,6 +461,29 @@ export function PlacementGhost(): React.ReactElement | null {
   const showConstraintSkin = !ghostValid &&
     ghostInvalidReason !== "Maximum reached for this item" &&
     ghostInvalidReason !== "Unknown catalogue item";
+
+  if (catalogueItem.category === "chair" && chairBrushPreview.length > 1) {
+    return (
+      <group name="chair-brush-preview">
+        {chairBrushPreview.map((point, index) => (
+          <group
+            key={`${point.x.toFixed(3)}:${point.z.toFixed(3)}:${String(index)}`}
+            position={[point.x, ghostPosition[1], point.z]}
+            rotation={[0, point.rotationY, 0]}
+          >
+            <FurnitureProxy
+              item={catalogueItem}
+              position={[0, 0, 0]}
+              rotationY={0}
+              opacity={0.52}
+              colorOverride="#d6b44f"
+              name={`chair-brush-preview-${String(index)}`}
+            />
+          </group>
+        ))}
+      </group>
+    );
+  }
 
   return (
     <group position={ghostPosition} rotation={[0, ghostRotation, 0]} name="placement-ghost">
