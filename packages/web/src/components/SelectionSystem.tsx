@@ -10,6 +10,7 @@ import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
+import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { expandIdsToGroupMembers, getGroupMemberIds, snapToPlatformEdge, snapToWallEdge } from "../lib/placement.js";
@@ -335,6 +336,7 @@ export function SelectionSystem(): null {
 
     function openCameraReferenceDraft(clientX: number, clientY: number): void {
       if (useMarkupStore.getState().active) return;
+      if (useBookmarkStore.getState().activeReferenceId !== null) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
@@ -400,19 +402,9 @@ export function SelectionSystem(): null {
         suppressNextContextMenu.current = false;
         return;
       }
-
-      const start = rightClickStart.current;
-      rightClickStart.current = null;
-      if (
-        rightClickMoved.current ||
-        start !== null &&
-        screenDistance(start.x, start.y, event.clientX, event.clientY) > DRAG_THRESHOLD_PX
-      ) {
-        rightClickMoved.current = false;
-        return;
-      }
-
-      openCameraReferenceDraft(event.clientX, event.clientY);
+      // Contextmenu coordinates differ across platforms, especially on Linux
+      // Chromium in CI. Keep this path as browser-menu suppression only; the
+      // right-button release handler owns true-click POV creation.
     }
 
     function onPointerMove(event: PointerEvent): void {

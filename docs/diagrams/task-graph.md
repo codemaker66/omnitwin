@@ -402,10 +402,10 @@ planner polish commit: the GitHub Actions E2E timeout now matches the actual
 expanded Playwright suite, and the dev Truth Mode overlay no longer intercepts
 planner controls during local/CI dev-mode tests.
 `T-401 → T-402` captures the remote-only Playwright flakes found after the
-timeout was fixed: right-button drag suppression now uses tracked movement
-rather than platform-specific contextmenu coordinates, catalogue drag/drop has a
-mouseup fallback for remote Chromium, and the hallkeeper route protection test
-seeds an explicit unauthenticated E2E auth state.
+timeout was fixed: right-button release now owns POV creation while contextmenu
+only suppresses the browser menu, catalogue drag/drop has a mouseup fallback for
+remote Chromium, and the hallkeeper route protection test seeds an explicit
+unauthenticated E2E auth state.
 
 `T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
 and `T-121 → T-091` capture the new D-024 planning split: real venue
