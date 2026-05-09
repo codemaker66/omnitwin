@@ -80,6 +80,13 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain("rollupOptions");
   });
 
+  it("raises the chunk warning limit only for deliberate lazy 3D vendor chunks", async () => {
+    const { raw } = await readSource(SRC);
+    expect(raw).toMatch(/chunkSizeWarningLimit:\s*5_500/);
+    expect(raw).toContain("Three/Spark chunks are intentionally large");
+    expect(raw).toContain("absence of Spark from");
+  });
+
   it("defines the three expected vendor chunk groups", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toContain(`"react-vendor"`);
@@ -109,5 +116,14 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
   it("clerk chunk isolates @clerk/react", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toMatch(/"clerk":\s*\[[^\]]*"@clerk\/react"[^\]]*\]/);
+  });
+
+  it("keeps Spark out of the normal app and editor route sources", async () => {
+    const [{ codeOnly: appSource }, { codeOnly: editorSource }] = await Promise.all([
+      readSource("src/App.tsx"),
+      readSource("src/pages/EditorPage.tsx"),
+    ]);
+    expect(appSource).not.toContain("@sparkjsdev/spark");
+    expect(editorSource).not.toContain("@sparkjsdev/spark");
   });
 });

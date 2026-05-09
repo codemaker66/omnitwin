@@ -16,6 +16,10 @@ import {
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
+import {
+  copyForEditorSaveStatus,
+  deriveEditorSaveStatus,
+} from "../lib/editor-save-status.js";
 import * as spacesApi from "../api/spaces.js";
 
 const DEFAULT_SPACE_SLUG = "grand-hall";
@@ -228,7 +232,10 @@ function PlannerCommsLayer(): React.ReactElement {
       {mobile ? (
         <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
       ) : (
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
+        <>
+          <PlannerStatusHeader viewMode={viewMode} />
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
+        </>
       )}
       {canEditEventDetails && viewMode === "3d" && (
         <button
@@ -260,6 +267,51 @@ function PlannerCommsLayer(): React.ReactElement {
         <SaveErrorToast message={saveError} isAuthenticated={authState} />
       ) : null}
     </>
+  );
+}
+
+function PlannerStatusHeader({ viewMode }: { viewMode: "3d" | "2d" }): React.ReactElement {
+  const spaceName = useEditorStore((s) => s.space?.name ?? "Grand Hall");
+  const configId = useEditorStore((s) => s.configId);
+  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  const objectCount = useEditorStore((s) => s.objects.length);
+  const isDirty = useEditorStore((s) => s.isDirty);
+  const isSaving = useEditorStore((s) => s.isSaving);
+  const saveError = useEditorStore((s) => s.saveError);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const status = deriveEditorSaveStatus({ isDirty, isSaving, saveError, lastSavedAt });
+  const saveCopy = copyForEditorSaveStatus(status);
+  const layoutMode = isPublicPreview ? "Guest draft" : "Team layout";
+  const formattedObjectCount = objectCount.toLocaleString("en-GB");
+  const furnitureCopy = objectCount === 1 ? "1 placed item" : `${formattedObjectCount} placed items`;
+  const viewLabel = viewMode === "3d" ? "3D planning" : "2D planning";
+  const configLabel = configId === null ? "Opening layout" : "Layout proposal";
+
+  return (
+    <section
+      className="planner-status-header"
+      data-testid="planner-status-header"
+      aria-label="Planner status"
+      data-save-status={status}
+    >
+      <div className="planner-status-header__mark" aria-hidden="true">Th</div>
+      <div className="planner-status-header__body">
+        <div className="planner-status-header__eyebrow">
+          <span>{layoutMode}</span>
+          <span aria-hidden="true">/</span>
+          <span>{viewLabel}</span>
+        </div>
+        <div className="planner-status-header__title">{spaceName}</div>
+        <div className="planner-status-header__meta">
+          <span className="planner-status-header__dot" aria-hidden="true" />
+          <span>{saveCopy.label}</span>
+          <span aria-hidden="true">·</span>
+          <span>{configLabel}</span>
+          <span aria-hidden="true">·</span>
+          <span>{furnitureCopy}</span>
+        </div>
+      </div>
+    </section>
   );
 }
 

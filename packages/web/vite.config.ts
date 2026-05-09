@@ -25,6 +25,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     build: {
       target: "es2022",
+      // The Three/Spark chunks are intentionally large and deliberately lazy:
+      // source tests below pin both the split and the absence of Spark from
+      // normal editor routes. Raising this limit quiets Vite's generic warning
+      // without hiding accidental eager imports.
+      chunkSizeWarningLimit: 5_500,
       rollupOptions: {
         output: {
           manualChunks: {

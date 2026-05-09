@@ -70,6 +70,117 @@
   filter: saturate(1.06) contrast(1.03) brightness(0.99);
 }
 
+.planner-status-header {
+  position: fixed;
+  top: max(16px, calc(env(safe-area-inset-top) + 14px));
+  left: calc(var(--toolbox-offset, 68px) + 24px);
+  z-index: 32;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  width: min(360px, calc(100vw - var(--toolbox-offset, 68px) - 168px));
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(15, 14, 12, 0.92), rgba(23, 20, 16, 0.78)),
+    radial-gradient(circle at 18% 0%, rgba(201, 168, 76, 0.16), transparent 42%);
+  box-shadow:
+    0 24px 54px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 246, 219, 0.08);
+  color: #f4efe6;
+  font-family: "Inter", system-ui, sans-serif;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  backdrop-filter: blur(18px) saturate(1.16);
+}
+
+.planner-status-header__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 242, 202, 0.18), transparent 45%),
+    linear-gradient(145deg, #15120e, #080706);
+  border: 1px solid rgba(201, 168, 76, 0.36);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #d7bd68;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.planner-status-header__body {
+  min-width: 0;
+}
+
+.planner-status-header__eyebrow,
+.planner-status-header__meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: rgba(244, 239, 230, 0.68);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.105em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planner-status-header__title {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #fff9ed;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-status-header__meta {
+  margin-top: 6px;
+  color: rgba(244, 239, 230, 0.78);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.planner-status-header__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #74d08c;
+  box-shadow: 0 0 0 4px rgba(116, 208, 140, 0.13);
+}
+
+.planner-status-header[data-save-status="unsaved"] .planner-status-header__dot,
+.planner-status-header[data-save-status="saving"] .planner-status-header__dot {
+  background: #d7bd68;
+  box-shadow: 0 0 0 4px rgba(215, 189, 104, 0.14);
+}
+
+.planner-status-header[data-save-status="failed"] .planner-status-header__dot,
+.planner-status-header[data-save-status="offline"] .planner-status-header__dot {
+  background: #d86666;
+  box-shadow: 0 0 0 4px rgba(216, 102, 102, 0.14);
+}
+
 @media (max-width: 640px) {
   .planner-canvas-stage::before {
     background:

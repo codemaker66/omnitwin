@@ -44,6 +44,18 @@ test.describe("Public Editor", () => {
     await expect(page.locator("canvas")).toBeVisible();
   });
 
+  test("desktop planner shows a premium status command surface", async ({ page }) => {
+    const statusHeader = page.getByTestId("planner-status-header");
+    await expect(statusHeader).toBeVisible({ timeout: 5_000 });
+    await expect(statusHeader).toContainText("Grand Hall");
+    await expect(statusHeader).toContainText("Guest draft");
+    await expect(statusHeader).toContainText("3D planning");
+    await expect(statusHeader).toContainText(/Save Layout|Saved just now|Unsaved changes|Saving/);
+    await expect.poll(async () =>
+      statusHeader.evaluate((node) => getComputedStyle(node).userSelect),
+    ).toBe("none");
+  });
+
   // ---------------------------------------------------------------------------
   // Toolbar presence
   // ---------------------------------------------------------------------------
