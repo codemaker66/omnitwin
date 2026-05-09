@@ -11,12 +11,22 @@ import { useSelectionStore } from "../stores/selection-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
+import type { PlacedItem } from "../lib/placement.js";
 import { ROTATION_SNAP_RAD } from "../lib/selection.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import { findNearestTable, CLOTH_SNAP_DISTANCE_RENDER } from "../lib/cloth-snap.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
+import { TableSettingMesh } from "./meshes/TableSettingMesh.js";
 import { ClothPreview } from "./cloth/ClothPreview.js";
+import { ConstraintViolationSkin } from "./ConstraintViolationSkin.js";
+import {
+  TABLE_CLOTH_COLORS,
+  tableClothStyleForCatalogueItem,
+  tableDressingTargetIds,
+  tableGroupedChairCount,
+  tableSettingForCatalogueItem,
+} from "../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -31,8 +41,11 @@ import { ClothPreview } from "./cloth/ClothPreview.js";
  * cloth dispatch survives any future ID migration.
  */
 export function isCloth(id: string | null): boolean {
-  if (id === null) return false;
-  return getCatalogueItem(id)?.slug === "black-table-cloth";
+  return tableClothStyleForCatalogueItem(id) !== null;
+}
+
+export function isTableSetting(id: string | null): boolean {
+  return tableSettingForCatalogueItem(id) !== null;
 }
 
 /**
@@ -59,6 +72,8 @@ export function PlacementGhost(): React.ReactElement | null {
   const ghostPosition = usePlacementStore((s) => s.ghostPosition);
   const ghostRotation = usePlacementStore((s) => s.ghostRotation);
   const ghostValid = usePlacementStore((s) => s.ghostValid);
+  const ghostInvalidReason = usePlacementStore((s) => s.ghostInvalidReason);
+  const selectedIds = useSelectionStore((s) => s.selectedIds);
 
   // No manual store subscriptions needed — the useStore selectors above
   // (selectedItemId, ghostPosition, ghostValid) trigger React re-renders.
@@ -84,6 +99,8 @@ export function PlacementGhost(): React.ReactElement | null {
         floorMesh = scene.getObjectByName("floor") ?? null;
         if (floorMesh === null) return null;
       }
+      const topElement = document.elementFromPoint(clientX, clientY);
+      if (topElement !== canvasEl) return null;
       const rect = canvasEl.getBoundingClientRect();
       const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -122,28 +139,38 @@ export function PlacementGhost(): React.ReactElement | null {
       if (catState.selectedItemId === null) return;
       if (placeState.ghostPosition === null) return;
 
-      // Cloth: toggle on nearest table (skip ghostValid — cloth doesn't collide)
-      if (isCloth(catState.selectedItemId)) {
+      // Table dressing: apply to selected table(s), or the nearest table under the drop.
+      const clothStyle = tableClothStyleForCatalogueItem(catState.selectedItemId);
+      const tableSetting = tableSettingForCatalogueItem(catState.selectedItemId);
+      if (clothStyle !== null || tableSetting !== null) {
         const nearest = findNearestTable(
           placeState.ghostPosition[0],
           placeState.ghostPosition[2],
           placeState.placedItems,
           CLOTH_SNAP_DISTANCE_RENDER,
         );
-        if (nearest !== null) {
-          placeState.toggleCloth(nearest.id);
+        const targetIds = new Set(tableDressingTargetIds(
+          placeState.placedItems,
+          useSelectionStore.getState().selectedIds,
+          nearest?.id ?? null,
+        ));
+        if (targetIds.size > 0) {
+          if (clothStyle !== null) {
+            placeState.applyTableCloth(targetIds, clothStyle);
+          } else if (tableSetting !== null) {
+            placeState.applyTableSetting(targetIds, tableSetting);
+          }
           invalidateRef.current();
         }
         return;
       }
 
-      // All non-cloth items require valid ghost position
-      if (!placeState.ghostValid) return;
-
       // Table: show chair count dialog instead of placing directly
       // (poseur tables skip the dialog — no chairs)
       const item = getCatalogueItem(catState.selectedItemId);
-      if (item !== undefined && item.tableShape !== null && !isPoseurTable(catState.selectedItemId)) {
+      if (item === undefined || placeState.ghostInvalidReason === "Maximum reached for this item") return;
+
+      if (item.tableShape !== null && !isPoseurTable(catState.selectedItemId)) {
         useChairDialogStore.getState().showDialog({
           catalogueItemId: catState.selectedItemId,
           x: placeState.ghostPosition[0],
@@ -177,6 +204,10 @@ export function PlacementGhost(): React.ReactElement | null {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       }
       placeAtGhost();
+      useCatalogueStore.getState().endDrag();
+      usePlacementStore.getState().clearGhost();
+      useSelectionStore.getState().setActiveGuides([]);
+      invalidateRef.current();
     }
 
     function onClick(event: MouseEvent): void {
@@ -186,13 +217,14 @@ export function PlacementGhost(): React.ReactElement | null {
       placeAtGhost();
     }
 
-    // Listen on window for pointerup so drag works even if cursor leaves canvas
-    canvasEl.addEventListener("pointermove", onPointerMove);
+    // Listen on window so dragging out of the catalogue can cross into the
+    // canvas smoothly; the floor raycast itself still uses the canvas bounds.
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
     canvasEl.addEventListener("click", onClick);
 
     return () => {
-      canvasEl.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";
@@ -240,8 +272,10 @@ export function PlacementGhost(): React.ReactElement | null {
   const catalogueItem = getCatalogueItem(selectedItemId);
   if (catalogueItem === undefined) return null;
 
-  // --- Cloth ghost: show preview on nearest table or floating icon ---
-  if (isCloth(selectedItemId)) {
+  // --- Table dressing ghost: show preview on selected/nearest table or floating icon ---
+  const clothStyle = tableClothStyleForCatalogueItem(selectedItemId);
+  const tableSetting = tableSettingForCatalogueItem(selectedItemId);
+  if (clothStyle !== null || tableSetting !== null) {
     const placedItems = usePlacementStore.getState().placedItems;
     const nearestTable = findNearestTable(
       ghostPosition[0],
@@ -249,8 +283,46 @@ export function PlacementGhost(): React.ReactElement | null {
       placedItems,
       CLOTH_SNAP_DISTANCE_RENDER,
     );
+    const targetIds = tableDressingTargetIds(placedItems, selectedIds, nearestTable?.id ?? null);
 
-    if (nearestTable !== null) {
+    if (targetIds.length > 0) {
+      const previewGroups = targetIds
+        .map((id) => placedItems.find((placed) => placed.id === id))
+        .filter((placed): placed is PlacedItem => placed !== undefined);
+      if (previewGroups.length > 0) {
+        return (
+          <>
+            {previewGroups.map((target) => {
+              const tableItem = getCatalogueItem(target.catalogueItemId);
+              if (tableItem === undefined) return null;
+              return (
+                <group
+                  key={target.id}
+                  position={[target.x, target.y, target.z]}
+                  rotation={[0, target.rotationY, 0]}
+                >
+                  {clothStyle !== null ? (
+                    <TableClothMesh
+                      tableItem={tableItem}
+                      opacity={0.58}
+                      colorOverride={TABLE_CLOTH_COLORS[clothStyle]}
+                    />
+                  ) : (
+                    <TableSettingMesh
+                      tableItem={tableItem}
+                      opacity={0.62}
+                      settingsCount={tableGroupedChairCount(placedItems, target)}
+                    />
+                  )}
+                </group>
+              );
+            })}
+          </>
+        );
+      }
+    }
+
+    if (nearestTable !== null && clothStyle !== null) {
       const tableItem = getCatalogueItem(nearestTable.catalogueItemId);
       if (tableItem !== undefined) {
         return (
@@ -261,32 +333,53 @@ export function PlacementGhost(): React.ReactElement | null {
             <TableClothMesh
               tableItem={tableItem}
               opacity={0.5}
+              colorOverride={TABLE_CLOTH_COLORS[clothStyle]}
             />
           </group>
         );
       }
     }
 
-    // No table nearby — show floating cloth with billowing physics
+    if (clothStyle !== null) {
+      // No table nearby — show floating cloth with billowing physics.
+      return (
+        <ClothPreview
+          position={ghostPosition}
+          nearTable={false}
+          colorOverride={TABLE_CLOTH_COLORS[clothStyle]}
+        />
+      );
+    }
+
     return (
-      <ClothPreview
-        position={ghostPosition}
-        nearTable={false}
-      />
+      <group position={ghostPosition} name="table-setting-placement-ghost">
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.16, 0.24, 32]} />
+          <meshStandardMaterial color="#d6b44f" emissive="#8a6c1a" emissiveIntensity={0.5} transparent opacity={0.72} />
+        </mesh>
+      </group>
     );
   }
 
   // --- Normal furniture ghost ---
   const ghostColor = ghostValid ? PLACEMENT_COLOR_VALID : PLACEMENT_COLOR_INVALID;
+  const showConstraintSkin = !ghostValid &&
+    ghostInvalidReason !== "Maximum reached for this item" &&
+    ghostInvalidReason !== "Unknown catalogue item";
 
   return (
-    <FurnitureProxy
-      item={catalogueItem}
-      position={ghostPosition}
-      rotationY={ghostRotation}
-      opacity={0.6}
-      colorOverride={ghostColor}
-      name="placement-ghost"
-    />
+    <group position={ghostPosition} rotation={[0, ghostRotation, 0]} name="placement-ghost">
+      <FurnitureProxy
+        item={catalogueItem}
+        position={[0, 0, 0]}
+        rotationY={0}
+        opacity={0.6}
+        colorOverride={ghostColor}
+        name="placement-ghost-mesh"
+      />
+      {showConstraintSkin && (
+        <ConstraintViolationSkin item={catalogueItem} y={0} />
+      )}
+    </group>
   );
 }

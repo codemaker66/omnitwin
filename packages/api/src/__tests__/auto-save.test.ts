@@ -56,6 +56,10 @@ describe("auto-save message schemas", () => {
       position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
       rotation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
       scale: z.number().positive(),
+      clothed: z.boolean().optional(),
+      clothStyle: z.enum(["black", "white"]).nullable().optional(),
+      tableSetting: z.enum(["dinner"]).nullable().optional(),
+      groupId: z.string().nullable().optional(),
     });
 
     const valid = ObjectDataSchema.safeParse({
@@ -63,6 +67,10 @@ describe("auto-save message schemas", () => {
       position: { x: 1, y: 0, z: 2 },
       rotation: { x: 0, y: 1.57, z: 0 },
       scale: 1,
+      clothed: true,
+      clothStyle: "white",
+      tableSetting: "dinner",
+      groupId: "group-table-1",
     });
     expect(valid.success).toBe(true);
   });

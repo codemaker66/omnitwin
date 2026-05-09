@@ -60,6 +60,7 @@ test.describe("Public Editor", () => {
         "Undo",
         "Redo",
         "Camera Views",
+        "Laser Diagram",
         "Grid Snap",
         "Show All Walls",
         "Save Layout",
@@ -78,11 +79,90 @@ test.describe("Public Editor", () => {
     await expect(page.getByTestId("furniture-panel")).toBeVisible({ timeout: 5_000 });
   });
 
+  test("laser diagram tool draws persisted floor markup", async ({ page }) => {
+    await page.getByRole("button", { name: "Laser Diagram" }).click();
+    const panel = page.getByTestId("markup-panel");
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+    await expect(panel).toContainText("Draw on the floor");
+    await expect(page.getByText("Click to add furniture")).toHaveCount(0);
+
+    const canvasBox = await page.locator("canvas").boundingBox();
+    expect(canvasBox).not.toBeNull();
+    if (canvasBox === null) return;
+
+    const startX = canvasBox.x + canvasBox.width * 0.42;
+    const startY = canvasBox.y + canvasBox.height * 0.56;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 120, startY + 46, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(async () => page.evaluate(() => {
+      const raw = window.localStorage.getItem("venviewer:planner-markup:v1:e2e-config-001");
+      if (raw === null) return 0;
+      const parsed = JSON.parse(raw) as { readonly strokes?: readonly unknown[] };
+      return parsed.strokes?.length ?? 0;
+    })).toBeGreaterThan(0);
+
+    await panel.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(async () => page.evaluate(() => {
+      const raw = window.localStorage.getItem("venviewer:planner-markup:v1:e2e-config-001");
+      if (raw === null) return 0;
+      const parsed = JSON.parse(raw) as { readonly strokes?: readonly unknown[] };
+      return parsed.strokes?.length ?? 0;
+    })).toBe(0);
+  });
+
   test("furniture catalogue lists Round Table", async ({ page }) => {
     await page.getByRole("button", { name: "Add Furniture" }).click();
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     await expect(panel.getByText("Round Table")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("furniture catalogue exposes section jumps without deep scrolling", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Furniture" }).click();
+    const panel = page.getByTestId("furniture-panel");
+    await panel.waitFor({ state: "visible" });
+
+    const sectionJumps = panel.locator('[data-testid^="catalogue-section-jump-"]');
+    await expect.poll(async () => sectionJumps.count()).toBeGreaterThan(5);
+    await expect(panel.getByTestId("catalogue-section-jump-table")).toBeVisible();
+    await expect(panel.getByTestId("catalogue-section-jump-chair")).toBeVisible();
+
+    await panel.getByTestId("catalogue-section-jump-stage").click();
+    await expect(panel.getByTestId("category-header-stage")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("dragging catalogue furniture lifts a polished placement token", async ({ page }) => {
+    await page.getByRole("button", { name: "Add Furniture" }).click();
+    const panel = page.getByTestId("furniture-panel");
+    await panel.waitFor({ state: "visible" });
+
+    const chairRow = panel.getByTestId("catalogue-item-banquet-chair");
+    await chairRow.scrollIntoViewIfNeeded();
+    const rowBox = await chairRow.boundingBox();
+    const canvasBox = await page.locator("canvas").boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(canvasBox).not.toBeNull();
+    if (rowBox === null || canvasBox === null) return;
+
+    const startX = rowBox.x + rowBox.width * 0.42;
+    const startY = rowBox.y + rowBox.height * 0.5;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 20, startY + 6, { steps: 2 });
+
+    const preview = page.getByTestId("catalogue-drag-preview");
+    await expect(preview).toBeVisible({ timeout: 2_000 });
+    await expect(preview).toContainText("Banquet Chair");
+    await expect(preview).toContainText("Drop to place");
+
+    await page.mouse.move(canvasBox.x + canvasBox.width * 0.62, canvasBox.y + canvasBox.height * 0.56, { steps: 12 });
+    await page.mouse.up();
+
+    await expect(preview).toHaveCount(0, { timeout: 3_000 });
+    await expect(panel).toBeVisible();
   });
 
   test("planner chrome text cannot be drag-highlighted", async ({ page }) => {
@@ -199,6 +279,19 @@ test.describe("Public Editor", () => {
     await composer.getByRole("button", { name: "Add + view" }).click();
 
     await expect(page.getByLabel("POV height")).toBeVisible({ timeout: 5_000 });
+    await page.waitForTimeout(1_600);
+    const povBox = await canvas.boundingBox();
+    expect(povBox).not.toBeNull();
+    if (povBox === null) return;
+    const lookStartX = povBox.x + Math.floor(povBox.width * 0.5);
+    const lookStartY = povBox.y + Math.floor(povBox.height * 0.5);
+    await page.mouse.move(lookStartX, lookStartY);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(lookStartX + 120, lookStartY - 24, { steps: 6 });
+    await page.mouse.up({ button: "right" });
+    await expect(page.getByRole("dialog", { name: "Add camera POV" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByLabel("POV height")).toHaveCount(0);
     await page.getByRole("button", { name: "Camera Views" }).click();
     await expect(page.getByRole("button", { name: /Floor POV Standing POV - Floor grid/ })).toBeVisible({ timeout: 5_000 });
   });

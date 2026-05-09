@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { usePlacementStore } from "../placement-store.js";
-import { resetPlacedIdCounter, GRID_SPACING_RENDER, createPlacedItem } from "../../lib/placement.js";
+import {
+  resetPlacedIdCounter,
+  GRID_SPACING_RENDER,
+  createPlacedItem,
+  getGroupMemberIds,
+} from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 
 const tableId = "round-table-6ft";
@@ -14,6 +19,7 @@ function resetStore(): void {
     undoStack: [],
     ghostPosition: null,
     ghostValid: false,
+    ghostInvalidReason: null,
     snapEnabled: true,
   });
 }
@@ -152,6 +158,59 @@ describe("setItemLabel", () => {
     usePlacementStore.getState().setItemLabel(id, "");
 
     expect(usePlacementStore.getState().undoStack).toHaveLength(undoCount);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Table dressing
+// ---------------------------------------------------------------------------
+
+describe("table dressing", () => {
+  it("applies a white cloth to multiple selected tables", () => {
+    usePlacementStore.getState().placeItem(tableId, 0, 0);
+    usePlacementStore.getState().placeItem(tableId, GRID_SPACING_RENDER * 2, 0);
+    usePlacementStore.getState().placeItem(chairId, GRID_SPACING_RENDER * 4, 0);
+    const items = usePlacementStore.getState().placedItems;
+    const ids = new Set(items.map((item) => item.id));
+
+    usePlacementStore.getState().applyTableCloth(ids, "white");
+
+    const after = usePlacementStore.getState().placedItems;
+    const tables = after.filter((item) => item.catalogueItemId === tableId);
+    expect(tables).toHaveLength(2);
+    for (const table of tables) {
+      expect(table.clothed).toBe(true);
+      expect(table.clothStyle).toBe("white");
+    }
+    const chair = after.find((item) => item.catalogueItemId === chairId);
+    expect(chair?.clothed).toBe(false);
+    expect(chair?.clothStyle).toBeNull();
+  });
+
+  it("applies dinner table settings to selected tables only", () => {
+    usePlacementStore.getState().placeItem(tableId, 0, 0);
+    usePlacementStore.getState().placeItem(chairId, GRID_SPACING_RENDER * 2, 0);
+    const ids = new Set(usePlacementStore.getState().placedItems.map((item) => item.id));
+
+    usePlacementStore.getState().applyTableSetting(ids, "dinner");
+
+    const table = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === tableId);
+    const chair = usePlacementStore.getState().placedItems.find((item) => item.catalogueItemId === chairId);
+    expect(table?.tableSetting).toBe("dinner");
+    expect(chair?.tableSetting).toBeNull();
+  });
+
+  it("toggleCloth preserves legacy keyboard behavior with a black cloth", () => {
+    usePlacementStore.getState().placeItem(tableId, 0, 0);
+    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
+
+    usePlacementStore.getState().toggleCloth(id);
+    expect(usePlacementStore.getState().placedItems[0]?.clothed).toBe(true);
+    expect(usePlacementStore.getState().placedItems[0]?.clothStyle).toBe("black");
+
+    usePlacementStore.getState().toggleCloth(id);
+    expect(usePlacementStore.getState().placedItems[0]?.clothed).toBe(false);
+    expect(usePlacementStore.getState().placedItems[0]?.clothStyle).toBeNull();
   });
 });
 
@@ -409,5 +468,123 @@ describe("moveItemsByDelta", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     usePlacementStore.getState().moveItemsByDelta(new Set(), 5, 5);
     expect(usePlacementStore.getState().placedItems[0]?.x).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Table/chair group integrity
+// ---------------------------------------------------------------------------
+
+describe("table group integrity", () => {
+  it("moves every labelled chair with a dragged table", () => {
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 10);
+    const initialItems = usePlacementStore.getState().placedItems;
+    const table = initialItems.find((item) => item.catalogueItemId === tableId);
+    expect(table).toBeDefined();
+    if (table === undefined) throw new Error("Expected table group to include a table");
+
+    const groupIds = getGroupMemberIds(table.id, initialItems);
+    expect(groupIds.size).toBe(11);
+
+    let labelIndex = 1;
+    for (const id of groupIds) {
+      usePlacementStore.getState().setItemLabel(id, id === table.id ? "Presidents" : `Seat ${String(labelIndex)}`);
+      if (id !== table.id) labelIndex += 1;
+    }
+
+    const labelledItems = usePlacementStore.getState().placedItems;
+    const before = new Map<string, { readonly x: number; readonly z: number; readonly label: string }>();
+    for (const item of labelledItems) {
+      if (groupIds.has(item.id)) {
+        before.set(item.id, { x: item.x, z: item.z, label: item.label ?? "" });
+      }
+    }
+
+    const primaryBefore = labelledItems.find((item) => item.id === table.id);
+    expect(primaryBefore).toBeDefined();
+    if (primaryBefore === undefined) throw new Error("Expected labelled table to still exist");
+
+    usePlacementStore.getState().beginDragMove();
+    usePlacementStore.getState().moveItem(
+      table.id,
+      primaryBefore.x + GRID_SPACING_RENDER * 2,
+      primaryBefore.z + GRID_SPACING_RENDER,
+    );
+    const primaryAfterSnap = usePlacementStore.getState().placedItems.find((item) => item.id === table.id);
+    expect(primaryAfterSnap).toBeDefined();
+    if (primaryAfterSnap === undefined) throw new Error("Expected moved table to still exist");
+
+    const effectiveDx = primaryAfterSnap.x - primaryBefore.x;
+    const effectiveDz = primaryAfterSnap.z - primaryBefore.z;
+    const otherIds = new Set<string>();
+    for (const id of groupIds) {
+      if (id !== table.id) otherIds.add(id);
+    }
+    usePlacementStore.getState().moveItemsByDelta(otherIds, effectiveDx, effectiveDz);
+
+    const movedItems = usePlacementStore.getState().placedItems;
+    for (const id of groupIds) {
+      const itemBefore = before.get(id);
+      const itemAfter = movedItems.find((item) => item.id === id);
+      expect(itemBefore).toBeDefined();
+      expect(itemAfter).toBeDefined();
+      if (itemBefore === undefined || itemAfter === undefined) {
+        throw new Error("Expected every original table-group member after move");
+      }
+      expect(itemAfter.x).toBeCloseTo(itemBefore.x + effectiveDx);
+      expect(itemAfter.z).toBeCloseTo(itemBefore.z + effectiveDz);
+      expect(itemAfter.label).toBe(itemBefore.label);
+    }
+  });
+
+  it("ungroups a partially selected table ring as a whole group", () => {
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 6);
+    const initialItems = usePlacementStore.getState().placedItems;
+    const firstChair = initialItems.find((item) => item.catalogueItemId === chairId);
+    expect(firstChair).toBeDefined();
+    if (firstChair === undefined) throw new Error("Expected table group to include chairs");
+
+    const groupIds = getGroupMemberIds(firstChair.id, initialItems);
+    expect(groupIds.size).toBe(7);
+
+    usePlacementStore.getState().ungroupItems(new Set([firstChair.id]));
+
+    const after = usePlacementStore.getState().placedItems;
+    for (const id of groupIds) {
+      const item = after.find((candidate) => candidate.id === id);
+      expect(item?.groupId).toBeNull();
+    }
+  });
+
+  it("regroups an existing table ring without leaving chairs behind", () => {
+    const store = usePlacementStore.getState();
+    store.placeTableGroup(tableId, 0, 0, 0, 4);
+    store.placeItem(chairId, GRID_SPACING_RENDER * 6, GRID_SPACING_RENDER * 6);
+    const initialItems = usePlacementStore.getState().placedItems;
+    const table = initialItems.find((item) => item.catalogueItemId === tableId);
+    const standaloneChair = initialItems.find((item) => item.groupId === null && item.catalogueItemId === chairId);
+    expect(table).toBeDefined();
+    expect(standaloneChair).toBeDefined();
+    if (table === undefined || standaloneChair === undefined) {
+      throw new Error("Expected table group and standalone chair");
+    }
+
+    const originalGroupIds = getGroupMemberIds(table.id, initialItems);
+    usePlacementStore.getState().groupItems(new Set([table.id, standaloneChair.id]));
+
+    const after = usePlacementStore.getState().placedItems;
+    const regroupedTable = after.find((item) => item.id === table.id);
+    expect(regroupedTable?.groupId).not.toBeNull();
+    const newGroupId = regroupedTable?.groupId ?? null;
+    expect(newGroupId).not.toBeNull();
+
+    for (const id of originalGroupIds) {
+      const item = after.find((candidate) => candidate.id === id);
+      expect(item?.groupId).toBe(newGroupId);
+    }
+    const regroupedStandalone = after.find((item) => item.id === standaloneChair.id);
+    expect(regroupedStandalone?.groupId).toBe(newGroupId);
   });
 });

@@ -17,6 +17,7 @@ import {
   computeSurfaceHeight,
   snapToPlatformEdge,
   snapToWallEdge,
+  getPlacementViolations,
 } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
 import { toRenderSpace, toRealWorld, RENDER_SCALE } from "../../constants/scale.js";
@@ -192,6 +193,39 @@ describe("isWithinRoomBounds", () => {
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
     expect(isWithinRoomBounds(8, 0, smallItem, 0, smallRoom)).toBe(false);
   });
+
+  it("rejects an item whose footprint crosses the room edge even when its center is inside", () => {
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    expect(isWithinRoomBounds(4.5, 0, smallItem, 0, smallRoom)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPlacementViolations
+// ---------------------------------------------------------------------------
+
+describe("getPlacementViolations", () => {
+  beforeEach(() => { resetPlacedIdCounter(); });
+
+  it("returns an outside_room violation when the exact footprint crosses the wall", () => {
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    const violations = getPlacementViolations(4.5, 0, smallItem, 0, [], new Set(), 0, smallRoom);
+    expect(violations).toContainEqual({
+      kind: "outside_room",
+      message: "Furniture footprint crosses the room boundary",
+    });
+  });
+
+  it("returns overlap violations without hard-blocking stage edge contact", () => {
+    const placed: PlacedItem[] = [createPlacedItem("round-table-6ft", 0, 0)];
+    const overlap = getPlacementViolations(0, 0, smallItem, 0, placed, new Set());
+    expect(overlap.some((violation) => violation.kind === "overlap")).toBe(true);
+
+    const stage: PlacedItem[] = [createPlacedItem("platform", 0, 0, 0, null, 0)];
+    const halfW = toRenderSpace(platformItem.width);
+    const stageViolations = getPlacementViolations(halfW, 0, platformItem, 0, stage, new Set(), 0);
+    expect(stageViolations.some((violation) => violation.kind === "overlap")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -239,6 +273,9 @@ describe("createPlacedItem", () => {
     expect(item.x).toBe(5);
     expect(item.z).toBe(-3);
     expect(item.rotationY).toBe(Math.PI / 4);
+    expect(item.clothed).toBe(false);
+    expect(item.clothStyle).toBeNull();
+    expect(item.tableSetting).toBeNull();
   });
 
   it("defaults rotation to 0", () => {

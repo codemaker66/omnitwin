@@ -140,7 +140,7 @@ describe("EditorBridge component", () => {
     // Push directly into placement-store to simulate a user interaction.
     usePlacementStore.setState({
       placedItems: [
-        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, groupId: null },
+        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null },
       ],
     });
 

@@ -4,6 +4,7 @@ import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-q
 import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText, Check, X, MoreHorizontal,
+  PenLine, Eraser, Minus, Plus,
 } from "lucide-react";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
@@ -12,7 +13,11 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js";
+import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
+import { useMeasurementStore } from "../../stores/measurement-store.js";
+import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { AuthModal } from "./AuthModal.js";
+import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
@@ -39,12 +44,9 @@ const ICON_SIZE = 22;
 
 const toolbarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: TOOLBAR_W,
-  // Subtle gradient + gold-tinted right border reads as "premium tool
-  // rail" instead of a flat dark strip; the outer shadow and inset
-  // accent tick give depth without competing with the 3D canvas.
-  background: "linear-gradient(180deg, #151515 0%, #1a1a1a 50%, #141414 100%)",
-  borderRight: "1px solid rgba(201,168,76,0.15)",
-  boxShadow: "2px 0 20px rgba(0,0,0,0.35), inset -1px 0 0 rgba(201,168,76,0.03)",
+  background: "linear-gradient(180deg, rgba(7,7,7,0.99) 0%, rgba(18,15,12,0.99) 48%, rgba(8,8,8,0.99) 100%)",
+  borderRight: "1px solid rgba(218,183,86,0.24)",
+  boxShadow: "12px 0 42px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,236,180,0.08), inset -10px 0 24px rgba(201,168,76,0.035)",
   display: "flex", flexDirection: "column", alignItems: "center",
   padding: "14px 0", gap: 6, zIndex: 50,
   boxSizing: "border-box",
@@ -70,29 +72,33 @@ const btnStyle = (active: boolean, disabled = false, compact = false): React.CSS
   borderRadius: 10,
   cursor: disabled ? "default" : "pointer",
   background: active
-    ? `linear-gradient(145deg, ${GOLD}, #b6962f)`
-    : "rgba(255,255,255,0.02)",
+    ? `linear-gradient(145deg, #e0c66c 0%, ${GOLD} 44%, #9d7a23 100%)`
+    : "linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018))",
   color: active ? "#0e0e0e" : disabled ? "#555" : "#d8d8d8",
-  transition: "background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s",
+  transition: "background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s",
   opacity: disabled ? 0.4 : 1,
+  borderColor: active ? "rgba(255,239,177,0.62)" : "rgba(255,255,255,0.045)",
   boxShadow: active
-    ? "0 4px 16px rgba(201,168,76,0.35), inset 0 1px 0 rgba(255,255,255,0.2)"
-    : "none",
+    ? "0 10px 26px rgba(201,168,76,0.32), 0 0 0 1px rgba(201,168,76,0.24), inset 0 1px 0 rgba(255,255,255,0.36)"
+    : "inset 0 1px 0 rgba(255,255,255,0.045), 0 8px 18px rgba(0,0,0,0.16)",
   padding: 0,
 });
 
 const dividerStyle: React.CSSProperties = {
-  width: 28, height: 1, background: "#333", margin: "4px 0",
+  width: 30,
+  height: 1,
+  background: "linear-gradient(90deg, transparent, rgba(201,168,76,0.34), transparent)",
+  margin: "5px 0",
 };
 
 const panelStyle: React.CSSProperties = {
   position: "fixed", left: TOOLBAR_W, top: 0, bottom: 0, width: PANEL_W,
-  background: "linear-gradient(180deg, rgba(16,16,16,0.98) 0%, rgba(22,22,22,0.98) 100%)",
-  borderRight: "1px solid rgba(201,168,76,0.1)",
+  background: "linear-gradient(180deg, rgba(10,10,10,0.985) 0%, rgba(18,15,12,0.985) 54%, rgba(10,9,8,0.985) 100%)",
+  borderRight: "1px solid rgba(201,168,76,0.2)",
   zIndex: 49, overflowY: "auto", padding: "24px 16px",
   fontFamily: "'Inter', sans-serif", color: "#ccc",
-  backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-  boxShadow: "8px 0 40px rgba(0,0,0,0.4), inset -1px 0 0 rgba(201,168,76,0.05)",
+  backdropFilter: "blur(24px) saturate(1.05)", WebkitBackdropFilter: "blur(24px) saturate(1.05)",
+  boxShadow: "18px 0 64px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,232,170,0.07), inset -16px 0 42px rgba(201,168,76,0.04)",
 };
 
 const categoryHeaderStyle: React.CSSProperties = {
@@ -102,11 +108,86 @@ const categoryHeaderStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(201,168,76,0.08)",
 };
 
+const catalogueQuickNavStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 6,
+  margin: "0 0 14px",
+  padding: 6,
+  borderRadius: 14,
+  background: "linear-gradient(145deg, rgba(255,255,255,0.035), rgba(201,168,76,0.035))",
+  border: "1px solid rgba(255,255,255,0.055)",
+};
+
+const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
+  minHeight: 38,
+  borderRadius: 9,
+  border: active ? `1px solid rgba(201,168,76,0.5)` : "1px solid rgba(255,255,255,0.08)",
+  background: active
+    ? "linear-gradient(145deg, rgba(229,194,92,0.28), rgba(128,91,24,0.18))"
+    : "linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",
+  color: active ? "#f3ddb0" : "rgba(255,255,255,0.62)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 6,
+  padding: "0 10px",
+  cursor: "pointer",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  fontSize: 10,
+  fontWeight: 750,
+  letterSpacing: 1.2,
+  textTransform: "uppercase",
+  boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 22px rgba(0,0,0,0.18)" : "none",
+});
+
 const assetRowStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
   borderRadius: 8, cursor: "pointer", fontSize: 13, color: "#ddd",
   transition: "background 0.15s, border-color 0.15s",
+  touchAction: "none",
+  userSelect: "none",
+  WebkitUserSelect: "none",
 };
+
+const CATALOGUE_DRAG_THRESHOLD_PX = 7;
+
+interface CatalogueDragPreview {
+  readonly item: CatalogueItem;
+  readonly x: number;
+  readonly y: number;
+  readonly active: boolean;
+}
+
+const catalogueDragPreviewStyle = (preview: CatalogueDragPreview): React.CSSProperties => ({
+  position: "fixed",
+  left: 0,
+  top: 0,
+  transform: `translate3d(${String(preview.x + 18)}px, ${String(preview.y + 14)}px, 0) scale(${preview.active ? "1.04" : "0.96"}) rotate(-1.5deg)`,
+  transformOrigin: "16px 16px",
+  width: 238,
+  minHeight: 82,
+  pointerEvents: "none",
+  zIndex: 220,
+  display: "grid",
+  gridTemplateColumns: "54px minmax(0, 1fr)",
+  gap: 12,
+  alignItems: "center",
+  padding: "12px 14px",
+  borderRadius: 18,
+  background: "linear-gradient(145deg, rgba(18,18,18,0.94), rgba(31,29,24,0.95))",
+  border: "1px solid rgba(201,168,76,0.48)",
+  boxShadow: preview.active
+    ? "0 24px 70px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.08), 0 0 32px rgba(201,168,76,0.18)"
+    : "0 14px 40px rgba(0,0,0,0.46)",
+  color: "#f6efe0",
+  fontFamily: "'Inter', system-ui, sans-serif",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+  animation: "omni-catalogue-drag-lift 0.18s cubic-bezier(0.16, 1, 0.3, 1) both",
+  userSelect: "none",
+  WebkitUserSelect: "none",
+});
 
 const cameraDropdownStyle: React.CSSProperties = {
   position: "fixed", left: TOOLBAR_W + 8, background: "linear-gradient(145deg, #141414, #1c1c1c)",
@@ -120,6 +201,239 @@ const cameraItemStyle: React.CSSProperties = {
   background: "none", border: "none", color: "#ccc", cursor: "pointer",
   textAlign: "left", borderRadius: 8, fontFamily: "'Inter', sans-serif",
 };
+
+const MARKUP_COLOR_META: Record<MarkupColor, {
+  readonly label: string;
+  readonly swatch: string;
+  readonly halo: string;
+}> = {
+  gold: { label: "Gold", swatch: "#f1c861", halo: "rgba(201,168,76,0.32)" },
+  ivory: { label: "Ivory", swatch: "#fff2cf", halo: "rgba(255,242,207,0.26)" },
+  ruby: { label: "Ruby", swatch: "#ff5d6c", halo: "rgba(169,46,58,0.28)" },
+  cyan: { label: "Cyan", swatch: "#7bdcff", halo: "rgba(72,169,207,0.24)" },
+};
+
+function markupPanelShellStyle(open: boolean, mobileChrome: boolean): React.CSSProperties {
+  return {
+    position: "fixed",
+    left: mobileChrome ? 10 : TOOLBAR_W + 10,
+    right: mobileChrome ? 10 : "auto",
+    top: mobileChrome ? "auto" : 216,
+    bottom: mobileChrome ? "calc(var(--toolbox-bottom, 64px) + 10px)" : "auto",
+    width: mobileChrome ? "auto" : 310,
+    zIndex: 51,
+    padding: 14,
+    borderRadius: 18,
+    background: "linear-gradient(145deg, rgba(16,16,16,0.96), rgba(31,29,24,0.97))",
+    border: "1px solid rgba(201,168,76,0.2)",
+    boxShadow: "0 22px 70px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)",
+    color: "#f2ead9",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    animation: open
+      ? "omni-dropdown-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards"
+      : "omni-dropdown-pop-out 0.2s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+  };
+}
+
+const markupPanelEyebrowStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 850,
+  letterSpacing: 2,
+  textTransform: "uppercase",
+  color: GOLD,
+};
+
+const markupPanelTitleStyle: React.CSSProperties = {
+  marginTop: 4,
+  fontSize: 21,
+  lineHeight: 1.05,
+  fontWeight: 820,
+  color: "#fff6df",
+};
+
+const markupPanelDetailStyle: React.CSSProperties = {
+  marginTop: 5,
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "rgba(246,238,220,0.65)",
+};
+
+function markupActionButtonStyle(primary = false, disabled = false): React.CSSProperties {
+  return {
+    minHeight: 42,
+    borderRadius: 12,
+    border: primary ? "1px solid rgba(201,168,76,0.55)" : "1px solid rgba(255,255,255,0.1)",
+    background: primary
+      ? "linear-gradient(145deg, #d5b652, #b99a32)"
+      : "rgba(255,255,255,0.05)",
+    color: primary ? "#15120c" : "#f4ead7",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    fontSize: 12,
+    fontWeight: 760,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.42 : 1,
+    padding: "0 12px",
+  };
+}
+
+function MarkupToolPanel({
+  open,
+  mobileChrome,
+}: {
+  readonly open: boolean;
+  readonly mobileChrome: boolean;
+}): React.ReactElement {
+  const selectedColor = useMarkupStore((state) => state.selectedColor);
+  const selectedWidth = useMarkupStore((state) => state.selectedWidth);
+  const strokes = useMarkupStore((state) => state.strokes);
+  const draftStroke = useMarkupStore((state) => state.draftStroke);
+  const canUndoMarkup = draftStroke !== null || strokes.length > 0;
+  const widthLabel = selectedWidth < 0.024 ? "Fine" : selectedWidth > 0.052 ? "Bold" : "Signature";
+
+  return (
+    <div data-testid="markup-panel" style={markupPanelShellStyle(open, mobileChrome)}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div>
+          <div style={markupPanelEyebrowStyle}>Laser diagram</div>
+          <div style={markupPanelTitleStyle}>Draw on the floor</div>
+        </div>
+        <div style={{
+          width: 44,
+          height: 44,
+          borderRadius: 14,
+          display: "grid",
+          placeItems: "center",
+          background: MARKUP_COLOR_META[selectedColor].halo,
+          border: "1px solid rgba(201,168,76,0.28)",
+          color: MARKUP_COLOR_META[selectedColor].swatch,
+          boxShadow: `0 0 28px ${MARKUP_COLOR_META[selectedColor].halo}`,
+        }}>
+          <PenLine size={22} />
+        </div>
+      </div>
+
+      <div style={markupPanelDetailStyle}>
+        Drag across the hall to sketch service routes, staging notes, photo angles, or quick diagrams directly in the scene.
+      </div>
+
+      <div style={{ marginTop: 15, display: "grid", gap: 9 }}>
+        <div style={markupPanelEyebrowStyle}>Colour</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 7 }}>
+          {MARKUP_COLOR_VALUES.map((color) => {
+            const active = color === selectedColor;
+            return (
+              <button
+                key={color}
+                type="button"
+                aria-label={`Use ${MARKUP_COLOR_META[color].label} laser ink`}
+                aria-pressed={active}
+                onClick={() => { useMarkupStore.getState().setColor(color); }}
+                style={{
+                  minHeight: 48,
+                  borderRadius: 13,
+                  border: active ? "1px solid rgba(255,255,255,0.34)" : "1px solid rgba(255,255,255,0.08)",
+                  background: active ? MARKUP_COLOR_META[color].halo : "rgba(255,255,255,0.035)",
+                  color: "#f7ecd4",
+                  cursor: "pointer",
+                  display: "grid",
+                  placeItems: "center",
+                  boxShadow: active ? `0 0 24px ${MARKUP_COLOR_META[color].halo}` : "none",
+                }}
+              >
+                <span style={{
+                  width: 21,
+                  height: 21,
+                  borderRadius: "50%",
+                  background: MARKUP_COLOR_META[color].swatch,
+                  boxShadow: `0 0 18px ${MARKUP_COLOR_META[color].halo}`,
+                }} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 15, display: "grid", gap: 9 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={markupPanelEyebrowStyle}>Stroke</div>
+          <div style={{ fontSize: 12, color: "rgba(246,238,220,0.64)", fontWeight: 700 }}>{widthLabel}</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "42px 1fr 42px", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            aria-label="Make laser stroke thinner"
+            onClick={() => { useMarkupStore.getState().setWidth(selectedWidth - 0.008); }}
+            style={markupActionButtonStyle()}
+          >
+            <Minus size={16} />
+          </button>
+          <div style={{
+            height: 42,
+            borderRadius: 13,
+            border: "1px solid rgba(255,255,255,0.09)",
+            background: "rgba(255,255,255,0.04)",
+            display: "grid",
+            placeItems: "center",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              width: "72%",
+              height: Math.max(3, selectedWidth * 120),
+              borderRadius: 999,
+              background: MARKUP_COLOR_META[selectedColor].swatch,
+              boxShadow: `0 0 18px ${MARKUP_COLOR_META[selectedColor].halo}`,
+            }} />
+          </div>
+          <button
+            type="button"
+            aria-label="Make laser stroke thicker"
+            onClick={() => { useMarkupStore.getState().setWidth(selectedWidth + 0.008); }}
+            style={markupActionButtonStyle()}
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 15, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canUndoMarkup}
+          onClick={() => { useMarkupStore.getState().undoStroke(); }}
+          style={markupActionButtonStyle(false, !canUndoMarkup)}
+        >
+          <Undo2 size={16} /> Undo
+        </button>
+        <button
+          type="button"
+          disabled={strokes.length === 0 && draftStroke === null}
+          onClick={() => { useMarkupStore.getState().clearStrokes(); }}
+          style={markupActionButtonStyle(false, strokes.length === 0 && draftStroke === null)}
+        >
+          <Eraser size={16} /> Clear
+        </button>
+      </div>
+
+      <div style={{
+        marginTop: 12,
+        padding: "10px 11px",
+        borderRadius: 13,
+        border: "1px solid rgba(201,168,76,0.13)",
+        background: "rgba(201,168,76,0.07)",
+        color: "rgba(246,238,220,0.66)",
+        fontSize: 11,
+        lineHeight: 1.4,
+      }}>
+        Markups are local planning notes on this browser. They do not change venue truth, capacity checks, or submitted evidence.
+      </div>
+    </div>
+  );
+}
 
 
 // ---------------------------------------------------------------------------
@@ -170,6 +484,14 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       0% { opacity: 0; transform: translateX(-16px); }
       100% { opacity: 1; transform: translateX(0); }
     }
+    @keyframes omni-catalogue-drag-lift {
+      0% { opacity: 0; filter: blur(3px); }
+      100% { opacity: 1; filter: blur(0); }
+    }
+    @keyframes omni-catalogue-drag-pulse {
+      0%, 100% { opacity: 0.48; transform: scaleX(0.82); }
+      50% { opacity: 1; transform: scaleX(1); }
+    }
     @keyframes omni-dropdown-pop {
       0% { opacity: 0; transform: scale(0.9) translateY(-8px); filter: blur(4px); }
       60% { transform: scale(1.02) translateY(2px); }
@@ -181,15 +503,36 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
     }
     .omni-asset-row {
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-user-drag: none;
+      touch-action: none;
+    }
+    .omni-asset-row * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-user-drag: none;
     }
     .omni-asset-row:hover {
-      background: rgba(201,168,76,0.08) !important;
+      background: linear-gradient(90deg, rgba(201,168,76,0.14), rgba(255,255,255,0.035)) !important;
       padding-left: 16px !important;
-      border-left: 2px solid rgba(201,168,76,0.5) !important;
+      border-left: 2px solid rgba(230,195,92,0.72) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 12px 24px rgba(0,0,0,0.18);
     }
     .omni-asset-row:active {
       transform: scale(0.97);
       background: rgba(201,168,76,0.15) !important;
+    }
+    [data-testid="planner-toolbar"] button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    [data-testid="planner-toolbar"] button:focus-visible {
+      outline: 2px solid rgba(226,193,93,0.72);
+      outline-offset: 2px;
+    }
+    .omni-catalogue-dragging .omni-asset-row {
+      cursor: grabbing !important;
     }
     .omni-cam-item {
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
@@ -644,7 +987,7 @@ function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement 
 // Mobile interaction dock
 // ---------------------------------------------------------------------------
 
-type ActiveTool = "select" | "add" | "rotate" | "delete";
+type ActiveTool = "select" | "add" | "rotate" | "delete" | "markup";
 
 type MobileShellMode = "idle" | "placing" | "selected";
 
@@ -674,6 +1017,7 @@ interface MobilePlannerDockProps {
   readonly placingName: string | null;
   readonly onSelect: () => void;
   readonly onAdd: () => void;
+  readonly onMarkup: () => void;
   readonly onCamera: () => void;
   readonly onMore: () => void;
   readonly onSnap: () => void;
@@ -711,11 +1055,11 @@ const mobileDockSurfaceStyle: React.CSSProperties = {
   gap: 6,
   padding: 8,
   borderRadius: 28,
-  background: "rgba(18, 17, 15, 0.92)",
-  border: "1px solid rgba(246, 232, 201, 0.1)",
-  boxShadow: "0 18px 48px rgba(0, 0, 0, 0.34)",
-  backdropFilter: "blur(18px)",
-  WebkitBackdropFilter: "blur(18px)",
+  background: "linear-gradient(145deg, rgba(11, 10, 9, 0.94), rgba(27, 22, 15, 0.92))",
+  border: "1px solid rgba(246, 232, 201, 0.16)",
+  boxShadow: "0 22px 60px rgba(0, 0, 0, 0.44), inset 0 1px 0 rgba(255,255,255,0.08)",
+  backdropFilter: "blur(22px) saturate(1.08)",
+  WebkitBackdropFilter: "blur(22px) saturate(1.08)",
   pointerEvents: "auto",
 };
 
@@ -756,14 +1100,15 @@ function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
     borderRadius: 22,
     border: "1px solid transparent",
     background: primary
-      ? "#c9a84c"
+      ? "linear-gradient(145deg, #e0c66c, #b99130)"
       : danger
         ? "rgba(145, 34, 45, 0.18)"
         : active
-          ? "rgba(201,168,76,0.22)"
+          ? "linear-gradient(145deg, rgba(201,168,76,0.26), rgba(201,168,76,0.12))"
           : quiet
             ? "rgba(255,255,255,0.03)"
-            : "rgba(255,255,255,0.06)",
+            : "linear-gradient(145deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))",
+    borderColor: active || primary ? "rgba(255,231,166,0.28)" : "rgba(255,255,255,0.04)",
     color: primary ? "#16120c" : danger ? "#ffc1c8" : "#f6ead0",
     display: "flex",
     flexDirection: "column",
@@ -814,6 +1159,7 @@ function MobilePlannerDock({
   placingName,
   onSelect,
   onAdd,
+  onMarkup,
   onCamera,
   onMore,
   onSnap,
@@ -831,6 +1177,7 @@ function MobilePlannerDock({
   const idleActions: readonly MobileDockAction[] = [
     { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
     { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
+    { label: "Draw", active: activeTool === "markup", onClick: onMarkup, icon: <PenLine size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
     { label: "More", active: moreOpen, onClick: onMore, icon: <MoreHorizontal size={20} /> },
   ];
@@ -932,9 +1279,15 @@ export function VerticalToolbox(): React.ReactElement {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [focusedCategory, setFocusedCategory] = useState<FurnitureCategory>(CATALOGUE_CATEGORIES[0] ?? "table");
   const [saveFlash, setSaveFlash] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalogueDragPreview, setCatalogueDragPreview] = useState<CatalogueDragPreview | null>(null);
+  const categoryRefs = useRef<Map<FurnitureCategory, HTMLDivElement>>(new Map());
+  const suppressNextAssetClickRef = useRef(false);
+  const catalogueDragRafRef = useRef<number | null>(null);
+  const catalogueDragCleanupRef = useRef<(() => void) | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try { return window.localStorage.getItem(ONBOARDING_KEY) === "1"; }
@@ -989,12 +1342,30 @@ export function VerticalToolbox(): React.ReactElement {
       // button — hide the hint for good even if they never tick the checkbox.
       setOnboardingDismissed(true);
       try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
+    } else if (tool === "markup") {
+      setPanelOpen(false);
+      setActiveTool("markup");
+      useCatalogueStore.getState().clearSelection();
+      usePlacementStore.getState().clearGhost();
+      useSelectionStore.getState().clearSelection();
+      useMeasurementStore.getState().deactivate();
+      useGuidelineStore.getState().deactivate();
     } else {
       setPanelOpen(false);
       setActiveTool(tool);
     }
     setCameraOpen(false);
     setMobileMoreOpen(false);
+  }, []);
+
+  useEffect(() => {
+    useMarkupStore.getState().setActive(activeTool === "markup");
+  }, [activeTool]);
+
+  useEffect(() => {
+    return () => {
+      useMarkupStore.getState().setActive(false);
+    };
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -1009,6 +1380,7 @@ export function VerticalToolbox(): React.ReactElement {
 
   const handleCameraToggle = useCallback(() => {
     setCameraOpen((p) => !p);
+    setActiveTool("select");
     setPanelOpen(false);
     setMobileMoreOpen(false);
   }, []);
@@ -1109,7 +1481,110 @@ export function VerticalToolbox(): React.ReactElement {
     });
   }, []);
 
+  const queueCatalogueDragPreview = useCallback((item: CatalogueItem, x: number, y: number, active: boolean): void => {
+    if (catalogueDragRafRef.current !== null) {
+      window.cancelAnimationFrame(catalogueDragRafRef.current);
+    }
+    catalogueDragRafRef.current = window.requestAnimationFrame(() => {
+      catalogueDragRafRef.current = null;
+      setCatalogueDragPreview({ item, x, y, active });
+    });
+  }, []);
+
+  const settleCatalogueDragPreview = useCallback((item: CatalogueItem, x: number, y: number): void => {
+    if (catalogueDragRafRef.current !== null) {
+      window.cancelAnimationFrame(catalogueDragRafRef.current);
+      catalogueDragRafRef.current = null;
+    }
+    setCatalogueDragPreview({ item, x, y, active: false });
+    window.setTimeout(() => {
+      setCatalogueDragPreview((current) => current?.item.id === item.id ? null : current);
+    }, 120);
+  }, []);
+
+  const handleAssetPointerDown = useCallback((item: CatalogueItem, event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return;
+
+    catalogueDragCleanupRef.current?.();
+
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+
+    const clearDragChrome = (): void => {
+      document.body.classList.remove("omni-catalogue-dragging");
+      document.body.style.cursor = "";
+    };
+
+    const finishSession = (): void => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      clearDragChrome();
+      catalogueDragCleanupRef.current = null;
+    };
+
+    function beginDrag(clientX: number, clientY: number): void {
+      if (dragging) return;
+      dragging = true;
+      suppressNextAssetClickRef.current = true;
+      document.body.classList.add("omni-catalogue-dragging");
+      document.body.style.cursor = "grabbing";
+      useCatalogueStore.getState().startDrag(item.id);
+      queueCatalogueDragPreview(item, clientX, clientY, true);
+    }
+
+    function onPointerMove(moveEvent: PointerEvent): void {
+      if (moveEvent.pointerId !== pointerId) return;
+      const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (!dragging && distance >= CATALOGUE_DRAG_THRESHOLD_PX) {
+        beginDrag(moveEvent.clientX, moveEvent.clientY);
+      }
+      if (dragging) {
+        moveEvent.preventDefault();
+        queueCatalogueDragPreview(item, moveEvent.clientX, moveEvent.clientY, true);
+      }
+    }
+
+    function onPointerUp(upEvent: PointerEvent): void {
+      if (upEvent.pointerId !== pointerId) return;
+      finishSession();
+      if (!dragging) return;
+      upEvent.preventDefault();
+      settleCatalogueDragPreview(item, upEvent.clientX, upEvent.clientY);
+      window.setTimeout(() => {
+        const catState = useCatalogueStore.getState();
+        if (catState.dragActive && catState.selectedItemId === item.id) {
+          catState.endDrag();
+          usePlacementStore.getState().clearGhost();
+          useSelectionStore.getState().setActiveGuides([]);
+        }
+      }, 0);
+    }
+
+    function onPointerCancel(cancelEvent: PointerEvent): void {
+      if (cancelEvent.pointerId !== pointerId) return;
+      finishSession();
+      if (dragging) {
+        useCatalogueStore.getState().endDrag();
+        usePlacementStore.getState().clearGhost();
+        useSelectionStore.getState().setActiveGuides([]);
+      }
+      setCatalogueDragPreview(null);
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    catalogueDragCleanupRef.current = finishSession;
+  }, [queueCatalogueDragPreview, settleCatalogueDragPreview]);
+
   const handleAssetClick = useCallback((item: CatalogueItem) => {
+    if (suppressNextAssetClickRef.current) {
+      suppressNextAssetClickRef.current = false;
+      return;
+    }
     useCatalogueStore.getState().selectItem(item.id);
     setPanelOpen(false);
     setActiveTool("select");
@@ -1122,6 +1597,26 @@ export function VerticalToolbox(): React.ReactElement {
       if (next.has(cat)) { next.delete(cat); } else { next.add(cat); }
       return next;
     });
+  }, []);
+
+  const handleCatalogueCategoryJump = useCallback((cat: FurnitureCategory) => {
+    setFocusedCategory(cat);
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      next.delete(cat);
+      return next;
+    });
+    window.requestAnimationFrame(() => {
+      categoryRefs.current.get(cat)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+  }, []);
+
+  const setCategoryRef = useCallback((cat: FurnitureCategory, node: HTMLDivElement | null) => {
+    if (node === null) {
+      categoryRefs.current.delete(cat);
+    } else {
+      categoryRefs.current.set(cat, node);
+    }
   }, []);
 
   const handleCameraPreset = useCallback((presetIndex: number) => {
@@ -1139,6 +1634,7 @@ export function VerticalToolbox(): React.ReactElement {
   // Delayed unmount for exit animations
   const panelMounted = useDelayedUnmount(panelOpen, 300);
   const cameraMounted = useDelayedUnmount(cameraOpen, 250);
+  const markupMounted = useDelayedUnmount(activeTool === "markup", 220);
 
   // F key opens furniture panel
   useEffect(() => {
@@ -1148,15 +1644,35 @@ export function VerticalToolbox(): React.ReactElement {
         // Don't conflict with placement rotation (handled by PlacementGhost)
         if (useCatalogueStore.getState().selectedItemId !== null) return;
         handleToolClick("add");
+      } else if (e.code === "KeyD" && !e.ctrlKey && !e.metaKey) {
+        if (useCatalogueStore.getState().selectedItemId !== null) return;
+        handleToolClick("markup");
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [handleToolClick]);
 
+  useEffect(() => {
+    return () => {
+      catalogueDragCleanupRef.current?.();
+      if (catalogueDragRafRef.current !== null) {
+        window.cancelAnimationFrame(catalogueDragRafRef.current);
+        catalogueDragRafRef.current = null;
+      }
+      document.body.classList.remove("omni-catalogue-dragging");
+      document.body.style.cursor = "";
+    };
+  }, []);
+
   // OnboardingHint measures the Furniture button position itself via the
   // DOM — no static constant to keep in sync when button styling shifts.
-  const showOnboarding = !onboardingDismissed && placedCount === 0 && !panelOpen && !isNarrow && !isTouch;
+  const showOnboarding = !onboardingDismissed
+    && placedCount === 0
+    && activeTool === "select"
+    && !panelOpen
+    && !isNarrow
+    && !isTouch;
 
   const showDesktopHints = !isTouch && !isNarrow;
   const selectDescription = isTouch
@@ -1194,6 +1710,7 @@ export function VerticalToolbox(): React.ReactElement {
           placingName={placingCatalogueItem?.name ?? null}
           onSelect={() => { handleToolClick("select"); }}
           onAdd={() => { handleToolClick("add"); }}
+          onMarkup={() => { handleToolClick("markup"); }}
           onCamera={handleCameraToggle}
           onMore={handleMobileMoreToggle}
           onSnap={handleSnapToggle}
@@ -1221,9 +1738,9 @@ export function VerticalToolbox(): React.ReactElement {
         left: 0, right: 0, bottom: 0,
         height: "calc(64px + env(safe-area-inset-bottom))",
         boxSizing: "border-box" as const,
-        background: "linear-gradient(180deg, #141414 0%, #1a1a1a 50%, #151515 100%)",
-        borderTop: "1px solid rgba(201,168,76,0.15)",
-        boxShadow: "0 -2px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(201,168,76,0.03)",
+        background: "linear-gradient(180deg, rgba(8,8,8,0.98) 0%, rgba(21,17,12,0.98) 100%)",
+        borderTop: "1px solid rgba(201,168,76,0.22)",
+        boxShadow: "0 -10px 42px rgba(0,0,0,0.46), inset 0 1px 0 rgba(255,236,180,0.08)",
         display: "flex", flexDirection: "row" as const, alignItems: "center",
         padding: "6px 10px calc(6px + env(safe-area-inset-bottom))", gap: 6, zIndex: 50,
         overflowX: "auto" as const,
@@ -1262,8 +1779,12 @@ export function VerticalToolbox(): React.ReactElement {
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." tooltipEnabled={showDesktopHints} onClick={() => { setCameraOpen((p) => !p); setPanelOpen(false); }}>
+        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." tooltipEnabled={showDesktopHints} onClick={handleCameraToggle}>
           <Camera size={ICON_SIZE} />
+        </ToolBtn>
+
+        <ToolBtn active={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Sketch routes, zones, and setup notes directly on the hall floor with polished luminous markup." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
+          <PenLine size={ICON_SIZE} />
         </ToolBtn>
 
         <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
@@ -1285,6 +1806,10 @@ export function VerticalToolbox(): React.ReactElement {
         </ToolBtn>
       </div>
       )}
+
+      {markupMounted ? (
+        <MarkupToolPanel open={activeTool === "markup"} mobileChrome={mobileChrome} />
+      ) : null}
 
       {/* === Slide-out asset panel === */}
       {panelMounted && (
@@ -1323,7 +1848,7 @@ export function VerticalToolbox(): React.ReactElement {
               type="text"
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); }}
-              placeholder="Search furniture\u2026"
+              placeholder="Search furniture…"
               aria-label="Search furniture"
               style={{
                 width: "100%", padding: "9px 12px 9px 32px", fontSize: 13,
@@ -1341,6 +1866,34 @@ export function VerticalToolbox(): React.ReactElement {
             </svg>
           </div>
 
+          <div style={catalogueQuickNavStyle} role="tablist" aria-label="Furniture sections">
+            {CATALOGUE_CATEGORIES.map((cat) => {
+              const allItems = getCatalogueByCategory(cat);
+              const q = searchQuery.trim().toLowerCase();
+              const visibleCount = q.length > 0
+                ? allItems.filter((item) => item.name.toLowerCase().includes(q) || item.subtitle.toLowerCase().includes(q) || categoryLabel(cat).toLowerCase().includes(q)).length
+                : allItems.length;
+              const active = focusedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls={`catalogue-section-${cat}`}
+                  data-testid={`catalogue-section-jump-${cat}`}
+                  style={catalogueChipStyle(active)}
+                  onClick={() => { handleCatalogueCategoryJump(cat); }}
+                >
+                  <span>{categoryLabel(cat)}</span>
+                  <span style={{ color: active ? "#f7e7bd" : "rgba(255,255,255,0.34)", fontVariantNumeric: "tabular-nums" }}>
+                    {visibleCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           {CATALOGUE_CATEGORIES.map((cat) => {
             const allItems = getCatalogueByCategory(cat);
             const q = searchQuery.trim().toLowerCase();
@@ -1348,8 +1901,19 @@ export function VerticalToolbox(): React.ReactElement {
             if (items.length === 0) return null;
             const collapsed = collapsedCategories.has(cat) && q.length === 0;
             return (
-              <div key={cat}>
-                <div data-testid={`category-header-${cat}`} style={categoryHeaderStyle} onClick={() => { toggleCategory(cat); }}>
+              <div
+                key={cat}
+                id={`catalogue-section-${cat}`}
+                ref={(node) => { setCategoryRef(cat, node); }}
+              >
+                <div
+                  data-testid={`category-header-${cat}`}
+                  style={categoryHeaderStyle}
+                  onClick={() => {
+                    setFocusedCategory(cat);
+                    toggleCategory(cat);
+                  }}
+                >
                   <span>{categoryLabel(cat)} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
                   <span style={{ fontSize: 14 }}>{collapsed ? "+" : "\u2212"}</span>
                 </div>
@@ -1357,11 +1921,14 @@ export function VerticalToolbox(): React.ReactElement {
                   <div
                     key={item.id}
                     className="omni-asset-row"
+                    data-testid={`catalogue-item-${item.slug}`}
                     style={{
                       ...assetRowStyle,
                       animation: `omni-panel-item 0.3s cubic-bezier(0.16, 1, 0.3, 1) ${String(idx * 0.04)}s both`,
                       borderLeft: "2px solid transparent",
                     }}
+                    draggable={false}
+                    onPointerDown={(e) => { handleAssetPointerDown(item, e); }}
                     onClick={() => { handleAssetClick(item); }}
                     role="button"
                     tabIndex={0}
@@ -1375,7 +1942,10 @@ export function VerticalToolbox(): React.ReactElement {
                         border: "1px solid rgba(201,168,76,0.08)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         padding: 2,
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
                       }}
+                      draggable={false}
                       dangerouslySetInnerHTML={{ __html: catalogueIcon(item) }}
                     />
                     {/* Name + subtitle */}
@@ -1402,6 +1972,69 @@ export function VerticalToolbox(): React.ReactElement {
               No items match &ldquo;{searchQuery.trim()}&rdquo;
             </div>
           )}
+        </div>
+      )}
+
+      {catalogueDragPreview !== null && (
+        <div
+          data-testid="catalogue-drag-preview"
+          style={catalogueDragPreviewStyle(catalogueDragPreview)}
+          aria-hidden="true"
+        >
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 15,
+              background: "linear-gradient(145deg, rgba(201,168,76,0.18), rgba(201,168,76,0.06))",
+              border: "1px solid rgba(201,168,76,0.34)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+            }}
+            dangerouslySetInnerHTML={{ __html: catalogueIcon(catalogueDragPreview.item) }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{
+              width: 34,
+              height: 3,
+              borderRadius: 99,
+              marginBottom: 7,
+              background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.18))`,
+              animation: "omni-catalogue-drag-pulse 1.1s ease-in-out infinite",
+            }} />
+            <div style={{
+              fontSize: 14,
+              fontWeight: 850,
+              letterSpacing: -0.1,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}>
+              {catalogueDragPreview.item.name}
+            </div>
+            <div style={{
+              marginTop: 2,
+              fontSize: 11,
+              color: "rgba(246,239,224,0.54)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}>
+              {catalogueDragPreview.item.subtitle}
+            </div>
+            <div style={{
+              marginTop: 8,
+              fontSize: 9,
+              fontWeight: 800,
+              letterSpacing: 1.5,
+              textTransform: "uppercase",
+              color: GOLD,
+            }}>
+              Drop to place
+            </div>
+          </div>
         </div>
       )}
 

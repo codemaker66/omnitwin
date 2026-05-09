@@ -98,6 +98,16 @@ flowchart TD
         T382(["T-382 - no native planner text selection"])
         T383(["T-383 - toolbar caption fit"])
         T384(["T-384 - internal Spark visual route"])
+        T390(["T-390 - table/chair group integrity"])
+        T391(["T-391 - furniture category navigation"])
+        T392(["T-392 - chair brush + premium planner continuation"])
+        T393(["T-393 - first-person POV controls"])
+        T394(["T-394 - drag-from-catalogue placement"])
+        T395(["T-395 - permissive precise placement"])
+        T396(["T-396 - selected-table dressing"])
+        T397(["T-397 - laser diagram markup"])
+        T398(["T-398 - cinematic planner shell"])
+        T399(["T-399 - transitive audit floors"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -130,6 +140,11 @@ flowchart TD
         T119(["T-119 — RealityScan/PGSR/2DGS/neural compare"])
         T120(["T-120 — Chandelier/stained-glass proxy workflow"])
         T121(["T-121 — Truth Mode authority display"])
+        T385(["T-385 — splat-transform bridge feasibility"])
+        T386(["T-386 — splat-transform scene.ply fixture"])
+        T387(["T-387 — PlayCanvas toolchain feasibility"])
+        T388(["T-388 — SuperSplat diagnostic viewer fixture"])
+        T389(["T-389 — PlayCanvas voxel/collision proxy eval"])
     end
 
     subgraph D [d · tier 3 — geass cluster]
@@ -196,7 +211,28 @@ flowchart TD
     T379 --> T380
     T087 --> T384
     T384 --> T091
+    T385 --> T386
+    T091 --> T386
+    T385 --> T387
+    T387 --> T388
+    T091 --> T388
+    T386 --> T388
+    T387 --> T389
+    T386 --> T389
     T357 --> T366
+    T357 --> T393
+    T366 --> T393
+    T391 --> T394
+    T390 --> T395
+    T394 --> T395
+    T378 --> T396
+    T394 --> T396
+    T395 --> T396
+    T135 --> T397
+    T395 --> T397
+    T392 --> T398
+    T397 --> T398
+    T080 --> T399
     T357 --> T372
     T366 --> T372
     T372 --> T373
@@ -289,9 +325,9 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T393,T394,T395,T396,T397,T398,T399 done
     class T001 inprogress
-    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121 notstarted
+    class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121,T386,T388,T389,T392 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -318,6 +354,37 @@ pipeline lives there.
 `T-001 → T-118` reflects that deterministic E57 meshing needs the capture
 and training artifact flow available before it can be compared against the
 real Trades Hall data.
+`T-385 → T-386` and `T-091 → T-386` capture the splat-transform bridge
+split: the feasibility note is complete, but the actual cleanup/statistics/
+voxel/collision fixture waits for a real RunPod `scene.ply`.
+`T-385 → T-387` captures the wider PlayCanvas toolchain feasibility follow-up.
+`T-387 → T-388` and `T-091/T-386 → T-388` keep the SuperSplat diagnostic
+viewer fixture behind a real scene and the first splat-transform fixture.
+`T-387/T-386 → T-389` keeps PlayCanvas voxel/collision proxy evaluation
+separate from authoritative operational geometry until fixture evidence exists.
+`T-390` closes the labelled table/chair group-integrity regression in the
+current 3D planner. `T-391 → T-392` separates the first catalogue-navigation
+upgrade from the larger premium planner continuation: chair row/block brush
+placement, richer multi-select ergonomics, and deeper visual direction work.
+`T-390/T-394 → T-395` closes the first precision-placement slice: catalogue
+dragging and table-ring integrity are preserved while furniture movement becomes
+grab-offset based, alignment-aware, permissive under soft violations, and visibly
+constraint-labelled instead of hard-blocked.
+`T-378/T-394/T-395 → T-396` adds table-bound dressing actions on top of labels,
+drag-from-catalogue placement, and permissive targeting: selected tables can
+receive black/white cloths and dinner place settings without placing loose decor
+objects or losing metadata on save/reload.
+`T-392/T-397 → T-398` captures the first shared cinematic shell slice after the
+larger premium-planner follow-up and laser markup tool: the planner canvas now has
+warm grading/vignette, and toolbar/catalogue/mobile dock chrome uses the same
+deeper black/gold material system without changing runtime data or public claims.
+`T-357/T-366 → T-393` keeps saved camera-reference POVs aligned with the
+existing right-click POV and dialog-keyboard safety work: entering a saved
+chair/table/floor POV switches to human eye-point look controls until Escape
+restores the previous planner camera.
+`T-080 → T-399` records the 2026-05-09 transitive audit floor refresh: the
+Clerk/security hardening baseline remains clean after new Fastify/AWS SDK
+advisories by pinning patched `fast-uri` and `fast-xml-builder` versions.
 
 `T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
 and `T-121 → T-091` capture the new D-024 planning split: real venue

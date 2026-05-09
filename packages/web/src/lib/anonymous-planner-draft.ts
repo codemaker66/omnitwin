@@ -17,6 +17,8 @@ const EditorObjectDraftSchema = z.object({
   scale: z.number().finite(),
   sortOrder: z.number().int(),
   clothed: z.boolean(),
+  clothStyle: z.enum(["black", "white"]).nullable().default(null),
+  tableSetting: z.enum(["dinner"]).nullable().default(null),
   groupId: z.string().nullable(),
   label: z.string().max(80).optional(),
   notes: z.string(),

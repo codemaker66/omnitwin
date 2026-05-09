@@ -136,7 +136,11 @@ export type ConfigurationMetadata = z.infer<typeof ConfigurationMetadataSchema>;
 // ---------------------------------------------------------------------------
 
 export const PlacedObjectMetadataSchema = z.object({
+  clothed: z.boolean().optional(),
+  clothStyle: z.enum(["black", "white"]).nullable().optional(),
+  tableSetting: z.enum(["dinner"]).nullable().optional(),
   groupId: z.string().nullable().optional(),
+  displayLabel: z.string().max(80).optional(),
   notes: z.string().max(500).optional(),
 }).passthrough();
 export type PlacedObjectMetadata = z.infer<typeof PlacedObjectMetadataSchema>;

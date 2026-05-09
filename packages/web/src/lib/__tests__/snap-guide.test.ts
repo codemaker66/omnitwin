@@ -7,6 +7,7 @@ import {
   SNAP_GUIDE_Y,
   SNAP_GUIDE_DASH,
   SNAP_GUIDE_GAP,
+  snapToFurnitureAlignment,
 } from "../snap-guide.js";
 import type { SnapGuide } from "../snap-guide.js";
 import { createPlacedItem, resetPlacedIdCounter } from "../placement.js";
@@ -90,6 +91,28 @@ describe("computeSnapGuides edge alignment", () => {
     const guides = computeSnapGuides(0, 0, tableId, 0, placed, new Set());
     const edgeGuides = guides.filter((g) => g.kind === "edge" && g.axis === "z");
     expect(edgeGuides.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// snapToFurnitureAlignment
+// ---------------------------------------------------------------------------
+
+describe("snapToFurnitureAlignment", () => {
+  it("snaps center alignment when close enough", () => {
+    const placed = [createPlacedItem(chairId, 0, 6, 0)];
+    const result = snapToFurnitureAlignment(SNAP_GUIDE_THRESHOLD * 0.5, 0, tableId, 0, placed, new Set());
+    expect(result.x).toBe(0);
+    expect(result.z).toBe(0);
+  });
+
+  it("snaps edge alignment without moving excluded group members", () => {
+    const placed = [createPlacedItem(chairId, 2.28, 0, 0)];
+    const result = snapToFurnitureAlignment(0.12, 0, tableId, 0, placed, new Set());
+    expect(result.x).toBeCloseTo(0, 3);
+
+    const excluded = snapToFurnitureAlignment(0.12, 0, tableId, 0, placed, new Set([placed[0]?.id ?? ""]));
+    expect(excluded.x).toBeCloseTo(0.12);
   });
 });
 

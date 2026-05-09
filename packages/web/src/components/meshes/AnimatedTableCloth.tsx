@@ -259,6 +259,7 @@ export function applyWaveRipple(
 
 interface AnimatedTableClothProps {
   readonly tableItem: CatalogueItem;
+  readonly colorOverride?: string;
   /** Called when the animation completes. */
   readonly onComplete?: () => void;
 }
@@ -271,6 +272,7 @@ interface AnimatedTableClothProps {
  */
 export function AnimatedTableCloth({
   tableItem,
+  colorOverride,
   onComplete,
 }: AnimatedTableClothProps): React.ReactElement {
   const { invalidate } = useThree();
@@ -401,7 +403,7 @@ export function AnimatedTableCloth({
       <mesh geometry={initialGeom} ref={meshRef}>
         <meshStandardMaterial
           ref={matRef}
-          color={CLOTH_COLOR}
+          color={colorOverride ?? CLOTH_COLOR}
           roughness={0.88}
           metalness={0.02}
           side={DoubleSide}

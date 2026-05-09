@@ -81,7 +81,7 @@ describe("loadConfiguration", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: true,
+      clothed: true, clothStyle: "black", tableSetting: null,
       groupId: "group-draft",
       notes: "Head table",
     };
@@ -175,7 +175,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
       notes: "",
     });
@@ -196,7 +196,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
       notes: "",
     });
@@ -217,7 +217,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
       label: "Bride",
       notes: "",
@@ -240,7 +240,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: true,
+      clothed: true, clothStyle: "black", tableSetting: null,
       groupId: "group-1",
       notes: "",
     });
@@ -468,7 +468,7 @@ function fixtureObj(
     rotationZ: 0,
     scale: 1,
     sortOrder: 0,
-    clothed: false,
+    clothed: false, clothStyle: null, tableSetting: null,
     groupId,
     notes: "",
   };

@@ -214,6 +214,8 @@ export function rearrangeTableGroup(
     rotationY: pos.rotationY,
     groupId,
     clothed: false,
+    clothStyle: null,
+    tableSetting: null,
   }));
 
   return [...others, table, ...newChairs];

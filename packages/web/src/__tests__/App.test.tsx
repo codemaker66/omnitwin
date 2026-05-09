@@ -55,6 +55,12 @@ describe("App", () => {
     expect(getByTestId("r3f-canvas")).toBeDefined();
   });
 
+  it("wraps the scene canvas in the cinematic stage shell", () => {
+    const { container } = render(<App />);
+    expect(container.querySelector(".planner-canvas-stage")).not.toBeNull();
+    expect(container.querySelector(".venviewer-planner-shell")).not.toBeNull();
+  });
+
   it("passes frameloop='demand' to Canvas", () => {
     CanvasMock.mockClear();
     render(<App />);

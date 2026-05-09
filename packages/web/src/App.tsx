@@ -21,6 +21,8 @@ import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
 import { SnapGuides } from "./components/SnapGuides.js";
+import { MarkupLayer } from "./components/MarkupLayer.js";
+import { MarkupPersistence } from "./components/MarkupPersistence.js";
 import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
@@ -102,14 +104,17 @@ export function App(): React.ReactElement {
           always fills the non-toolbar area regardless of viewport — previously
           a hardcoded marginLeft: 52 ate into narrow mobile viewports AND
           didn't match the toolbar's real width of 68 on desktop. */}
-      <div style={{
-        position: "absolute",
-        inset: 0,
-        paddingLeft: "var(--toolbox-offset, 68px)",
-        paddingBottom: "var(--toolbox-bottom, 0px)",
-        boxSizing: "border-box",
-        touchAction: "none",
-      }}>
+      <div
+        className="planner-canvas-stage"
+        style={{
+          position: "absolute",
+          inset: 0,
+          paddingLeft: "var(--toolbox-offset, 68px)",
+          paddingBottom: "var(--toolbox-bottom, 0px)",
+          boxSizing: "border-box",
+          touchAction: "none",
+        }}
+      >
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
@@ -117,7 +122,8 @@ export function App(): React.ReactElement {
         camera={{ fov: 55, near: 0.1, far: 200 }}
         style={{ width: "100%", height: "100%" }}
       >
-        <color attach="background" args={["#f5f5f0"]} />
+        <color attach="background" args={["#eee9de"]} />
+        <fog attach="fog" args={["#efe9dc", 54, 138]} />
         <SceneProvider />
         <SectionPlane />
         <InvalidateOnToggle />
@@ -139,6 +145,7 @@ export function App(): React.ReactElement {
         <SelectionSystem />
         <SnapGuides />
         <MarqueeSelect />
+        <MarkupLayer />
         <DiagramLabels />
         <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
@@ -146,6 +153,7 @@ export function App(): React.ReactElement {
       </div>
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
+      <MarkupPersistence />
       <VerticalToolbox />
 
       {!mobileChrome && (

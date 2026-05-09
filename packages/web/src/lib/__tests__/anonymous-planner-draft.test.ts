@@ -17,7 +17,7 @@ const objectFixture: EditorObject = {
   rotationZ: 0,
   scale: 1,
   sortOrder: 0,
-  clothed: true,
+  clothed: true, clothStyle: "black", tableSetting: null,
   groupId: "group-1",
   label: "Top Table",
   notes: "VIP table",

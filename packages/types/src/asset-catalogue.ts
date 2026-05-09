@@ -259,6 +259,26 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     maxCount: null, subtitle: "Drapes over any table", color: "#1a1a1a",
     equipmentTags: [],
   },
+  {
+    id: "22a9184e-694e-5458-af23-4b95ed37ceeb",
+    slug: "white-table-cloth",
+    name: "White Table Cloth",
+    category: "decor",
+    widthM: 0.50, depthM: 0.50, heightM: 0.01,
+    seatCount: null, collisionType: "box", tableShape: null,
+    maxCount: null, subtitle: "Drapes over any table", color: "#f5f1e8",
+    equipmentTags: [],
+  },
+  {
+    id: "1797ad4e-89c2-5895-a3e8-9af85ec110c0",
+    slug: "dinner-place-setting",
+    name: "Dinner Place Setting",
+    category: "decor",
+    widthM: 0.35, depthM: 0.35, heightM: 0.08,
+    seatCount: null, collisionType: "box", tableShape: null,
+    maxCount: null, subtitle: "Plates, glasses and cutlery for tables", color: "#f7f2e6",
+    equipmentTags: [],
+  },
 
   // --- Bar ---
   // Physical bar counter — dark-wood finish, 1600 × 610 mm footprint,

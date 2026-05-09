@@ -63,6 +63,8 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
     z: obj.positionZ,
     rotationY: obj.rotationY,
     clothed: obj.clothed,
+    clothStyle: obj.clothStyle,
+    tableSetting: obj.tableSetting,
     groupId: obj.groupId,
   };
 }
@@ -92,6 +94,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     scale: existing?.scale ?? 1,
     sortOrder: existing?.sortOrder ?? 0,
     clothed: item.clothed,
+    clothStyle: item.clothStyle,
+    tableSetting: item.tableSetting,
     groupId: item.groupId,
     notes: existing?.notes ?? "",
   };
@@ -110,6 +114,8 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
     if (pa.rotationY !== eb.rotationY) return false;
     if (pa.clothed !== eb.clothed) return false;
+    if (pa.clothStyle !== eb.clothStyle) return false;
+    if (pa.tableSetting !== eb.tableSetting) return false;
     if (pa.groupId !== eb.groupId) return false;
     if ((pa.label ?? "") !== (eb.label ?? "")) return false;
   }

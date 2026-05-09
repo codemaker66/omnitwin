@@ -1,19 +1,20 @@
 import { create } from "zustand";
-import type { PlacedItem } from "../lib/placement.js";
+import type { PlacedItem, TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
   createPlacedItem,
   generatePlacedId,
   snapPositionToGrid,
-  isWithinRoomBounds,
-  checkCollision,
   getGroupMemberIds,
+  expandIdsToGroupMembers,
   snapToPlatformEdge,
   computeSurfaceHeight,
   snapToWallEdge,
+  getPlacementViolations,
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
+import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture, ghost state, undo/redo history
@@ -60,6 +61,10 @@ export interface PlacementState {
   readonly clearGhost: () => void;
   /** Toggle cloth on/off for a placed item (tables only). */
   readonly toggleCloth: (id: string) => void;
+  /** Apply a table cloth style to one or more placed tables. */
+  readonly applyTableCloth: (ids: ReadonlySet<string>, style: TableClothStyle) => void;
+  /** Apply dinner tableware to one or more placed tables. */
+  readonly applyTableSetting: (ids: ReadonlySet<string>, setting: TableSettingStyle) => void;
   /** Set the hallkeeper-visible label for a placed chair/table. Empty clears. */
   readonly setItemLabel: (id: string, label: string) => void;
   /** Toggle grid snap. */
@@ -84,9 +89,9 @@ export interface PlacementState {
   readonly moveGroup: (itemId: string, dx: number, dz: number) => void;
   /** Move a set of items by a uniform delta (no per-item snapping). Recomputes surface height. */
   readonly moveItemsByDelta: (ids: ReadonlySet<string>, dx: number, dz: number) => void;
-  /** Group selected items together under a new shared groupId. */
+  /** Group selected items and any existing group members under a new shared groupId. */
   readonly groupItems: (ids: ReadonlySet<string>) => void;
-  /** Ungroup all selected items (set groupId to null). */
+  /** Ungroup selected item groups as whole sets (set groupId to null). */
   readonly ungroupItems: (ids: ReadonlySet<string>) => void;
 }
 
@@ -124,6 +129,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
+      const alignmentSnap = snapToFurnitureAlignment(finalX, finalZ, catalogueItemId, rotationY, state.placedItems, new Set());
+      finalX = alignmentSnap.x;
+      finalZ = alignmentSnap.z;
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
@@ -141,13 +149,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   removeItems: (ids: ReadonlySet<string>) => {
     if (ids.size === 0) return;
     const state = get();
-    // Expand selection to include all group members (e.g. deleting a table also deletes its chairs)
-    const allIds = new Set<string>();
-    for (const id of ids) {
-      for (const memberId of getGroupMemberIds(id, state.placedItems)) {
-        allIds.add(memberId);
-      }
-    }
+    const allIds = expandIdsToGroupMembers(ids, state.placedItems);
     set({
       placedItems: state.placedItems.filter((item) => !allIds.has(item.id)),
       ...pushUndo(state),
@@ -212,6 +214,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const wallSnap = snapToWallEdge(finalX, finalZ, catalogueItem, rot, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
+      const alignmentSnap = snapToFurnitureAlignment(finalX, finalZ, catalogueItemId, rot, state.placedItems, new Set());
+      finalX = alignmentSnap.x;
+      finalZ = alignmentSnap.z;
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const pos = [finalX, surfaceY, finalZ] as const;
@@ -219,15 +224,16 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     let reason: string | null = null;
     if (catalogueItem === undefined) {
       valid = false;
-    } else if (!isWithinRoomBounds(pos[0], pos[2], catalogueItem, rot, roomDims)) {
-      valid = false;
-      reason = "Outside room bounds";
-    } else if (checkCollision(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), 0.01, surfaceY)) {
-      valid = false;
-      reason = "Overlaps existing furniture";
+      reason = "Unknown catalogue item";
     } else if (isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId))) {
       valid = false;
       reason = "Maximum reached for this item";
+    } else {
+      const violations = getPlacementViolations(pos[0], pos[2], catalogueItem, rot, state.placedItems, new Set(), surfaceY, roomDims);
+      if (violations.length > 0) {
+        valid = false;
+        reason = violations[0]?.message ?? "Constraint warning";
+      }
     }
     set({ ghostPosition: pos, ghostValid: valid, ghostInvalidReason: reason });
   },
@@ -242,12 +248,60 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
   toggleCloth: (id: string) => {
     const state = get();
+    const target = state.placedItems.find((item) => item.id === id);
+    if (target === undefined) return;
+    const catalogueItem = getCatalogueItem(target.catalogueItemId);
+    if (catalogueItem?.category !== "table") return;
     set({
       placedItems: state.placedItems.map((item) =>
-        item.id === id ? { ...item, clothed: !item.clothed } : item,
+        item.id === id
+          ? {
+              ...item,
+              clothed: !item.clothed,
+              clothStyle: item.clothed ? null : "black",
+            }
+          : item,
       ),
       ...pushUndo(state),
     });
+  },
+
+  applyTableCloth: (ids, style) => {
+    if (ids.size === 0) return;
+    const state = get();
+    const targetIds = new Set<string>();
+    for (const item of state.placedItems) {
+      if (!ids.has(item.id)) continue;
+      const catalogueItem = getCatalogueItem(item.catalogueItemId);
+      if (catalogueItem?.category !== "table") continue;
+      if (item.clothed && item.clothStyle === style) continue;
+      targetIds.add(item.id);
+    }
+    if (targetIds.size === 0) return;
+    const placedItems = state.placedItems.map((item) => {
+      if (!targetIds.has(item.id)) return item;
+      return { ...item, clothed: true, clothStyle: style };
+    });
+    set({ placedItems, ...pushUndo(state) });
+  },
+
+  applyTableSetting: (ids, setting) => {
+    if (ids.size === 0) return;
+    const state = get();
+    const targetIds = new Set<string>();
+    for (const item of state.placedItems) {
+      if (!ids.has(item.id)) continue;
+      const catalogueItem = getCatalogueItem(item.catalogueItemId);
+      if (catalogueItem?.category !== "table") continue;
+      if (item.tableSetting === setting) continue;
+      targetIds.add(item.id);
+    }
+    if (targetIds.size === 0) return;
+    const placedItems = state.placedItems.map((item) => {
+      if (!targetIds.has(item.id)) return item;
+      return { ...item, tableSetting: setting };
+    });
+    set({ placedItems, ...pushUndo(state) });
   },
 
   setItemLabel: (id: string, label: string) => {
@@ -271,7 +325,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   clearAll: () => {
     const state = get();
     if (state.placedItems.length === 0) return;
-    set({ placedItems: [], ghostPosition: null, ghostValid: false, ...pushUndo(state) });
+    set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null, ...pushUndo(state) });
   },
 
   undo: () => {
@@ -321,6 +375,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const wallSnap = snapToWallEdge(finalX, finalZ, catItem, rotationY, roomDims);
       finalX = wallSnap.x;
       finalZ = wallSnap.z;
+      const alignmentSnap = snapToFurnitureAlignment(finalX, finalZ, catalogueItemId, rotationY, state.placedItems, new Set());
+      finalX = alignmentSnap.x;
+      finalZ = alignmentSnap.z;
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const group = createTableGroup(catalogueItemId, finalX, finalZ, rotationY, chairCount, surfaceY);
@@ -387,10 +444,12 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   groupItems: (ids: ReadonlySet<string>) => {
     if (ids.size < 2) return;
     const state = get();
+    const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
+    if (expandedIds.size < 2) return;
     const newGroupId = generatePlacedId();
     set({
       placedItems: state.placedItems.map((item) =>
-        ids.has(item.id) ? { ...item, groupId: newGroupId } : item,
+        expandedIds.has(item.id) ? { ...item, groupId: newGroupId } : item,
       ),
       ...pushUndo(state),
     });
@@ -399,9 +458,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   ungroupItems: (ids: ReadonlySet<string>) => {
     if (ids.size === 0) return;
     const state = get();
+    const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
     set({
       placedItems: state.placedItems.map((item) =>
-        ids.has(item.id) ? { ...item, groupId: null } : item,
+        expandedIds.has(item.id) ? { ...item, groupId: null } : item,
       ),
       ...pushUndo(state),
     });

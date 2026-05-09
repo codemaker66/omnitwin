@@ -9,11 +9,12 @@ import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js";
-import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
+import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
-import { isWithinRoomBounds, checkCollision, getGroupMemberIds, computeSurfaceHeight } from "../lib/placement.js";
-import { computeSnapGuides } from "../lib/snap-guide.js";
+import { getGroupMemberIds, snapToPlatformEdge, snapToWallEdge } from "../lib/placement.js";
+import { computeSnapGuides, snapToFurnitureAlignment } from "../lib/snap-guide.js";
+import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -116,6 +117,7 @@ export function SelectionSystem(): null {
   const isMarquee = useRef(false);
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
+  const dragGrabOffset = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
   const wallClickKey = useRef<WallKey | null>(null);
   const rightClickStart = useRef<{ x: number; y: number } | null>(null);
   const suppressNextContextMenu = useRef(false);
@@ -142,6 +144,7 @@ export function SelectionSystem(): null {
     function onKeyDown(event: KeyboardEvent): void {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      if (useMarkupStore.getState().active) return;
 
       const selectedIds = useSelectionStore.getState().selectedIds;
 
@@ -236,6 +239,7 @@ export function SelectionSystem(): null {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
         return;
       }
+      if (useMarkupStore.getState().active) return;
       // Only handle left-click
       if (event.button !== 0) return;
       // Don't interfere with placement mode
@@ -279,15 +283,28 @@ export function SelectionSystem(): null {
       }
       dragItemId.current = found.itemId;
       wallClickKey.current = found.wallKey;
+      dragGrabOffset.current = { x: 0, z: 0 };
+      if (found.itemId !== null) {
+        const floorPos = screenToFloor(event.clientX, event.clientY, cachedRect, camera, raycaster);
+        const item = usePlacementStore.getState().placedItems.find((placed) => placed.id === found.itemId);
+        if (floorPos !== null && item !== undefined) {
+          dragGrabOffset.current = {
+            x: floorPos.x - item.x,
+            z: floorPos.z - item.z,
+          };
+        }
+      }
     }
 
     function onMouseDown(event: MouseEvent): void {
+      if (useMarkupStore.getState().active) return;
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
       }
     }
 
     function openCameraReferenceDraft(clientX: number, clientY: number): void {
+      if (useMarkupStore.getState().active) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
 
@@ -345,6 +362,10 @@ export function SelectionSystem(): null {
 
     function onContextMenu(event: MouseEvent): void {
       event.preventDefault();
+      if (useMarkupStore.getState().active) {
+        rightClickStart.current = null;
+        return;
+      }
       if (suppressNextContextMenu.current) {
         suppressNextContextMenu.current = false;
         return;
@@ -363,6 +384,7 @@ export function SelectionSystem(): null {
     }
 
     function onPointerMove(event: PointerEvent): void {
+      if (useMarkupStore.getState().active) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       if ((event.buttons & 1) === 0) return; // Left button not held
 
@@ -470,8 +492,14 @@ export function SelectionSystem(): null {
             const selectedIds = useSelectionStore.getState().selectedIds;
             // Read placed items once for the entire handler — consistent snapshot
             const placedItems = usePlacementStore.getState().placedItems;
-            // Collect all IDs being moved (selected + their group members)
+            // Collect all IDs being moved. Seed from the actively dragged
+            // item first so a table ring stays intact even if selection state
+            // lags a pointer frame or contains only part of the group.
             const allMovingIds = new Set<string>();
+            const primaryId = dragItemId.current;
+            for (const gid of getGroupMemberIds(primaryId, placedItems)) {
+              allMovingIds.add(gid);
+            }
             for (const sid of selectedIds) {
               for (const gid of getGroupMemberIds(sid, placedItems)) {
                 allMovingIds.add(gid);
@@ -479,57 +507,56 @@ export function SelectionSystem(): null {
             }
 
             // Move all items in the moving set (selected + group members)
-            const primaryId = dragItemId.current;
             const primary = placedItems.find((p) => p.id === primaryId);
             if (primary !== undefined) {
-              const dx = hit.point.x - primary.x;
-              const dz = hit.point.z - primary.z;
-
-              // Check collision + bounds for every moving item at its new position
-              const roomDims = useRoomDimensionsStore.getState().dimensions;
-              let blocked = false;
-              for (const id of allMovingIds) {
-                const item = placedItems.find((p) => p.id === id);
-                if (item === undefined) continue;
-                const catItem = getCatalogueItem(item.catalogueItemId);
-                if (catItem === undefined) continue;
-                const newX = item.x + dx;
-                const newZ = item.z + dz;
-                const newY = computeSurfaceHeight(newX, newZ, placedItems, allMovingIds);
-                if (!isWithinRoomBounds(newX, newZ, catItem, item.rotationY, roomDims) ||
-                    checkCollision(newX, newZ, catItem, item.rotationY, placedItems, allMovingIds, 0.01, newY)) {
-                  blocked = true;
-                  break;
-                }
+              let targetX = hit.point.x - dragGrabOffset.current.x;
+              let targetZ = hit.point.z - dragGrabOffset.current.z;
+              const primaryCatalogueItem = getCatalogueItem(primary.catalogueItemId);
+              if (primaryCatalogueItem !== undefined) {
+                const platformSnap = snapToPlatformEdge(
+                  targetX,
+                  targetZ,
+                  primaryCatalogueItem,
+                  primary.rotationY,
+                  placedItems,
+                  allMovingIds,
+                );
+                targetX = platformSnap.x;
+                targetZ = platformSnap.z;
+                const wallSnap = snapToWallEdge(
+                  targetX,
+                  targetZ,
+                  primaryCatalogueItem,
+                  primary.rotationY,
+                  useRoomDimensionsStore.getState().dimensions,
+                );
+                targetX = wallSnap.x;
+                targetZ = wallSnap.z;
+                const furnitureSnap = snapToFurnitureAlignment(
+                  targetX,
+                  targetZ,
+                  primary.catalogueItemId,
+                  primary.rotationY,
+                  placedItems,
+                  allMovingIds,
+                );
+                targetX = furnitureSnap.x;
+                targetZ = furnitureSnap.z;
               }
 
-              if (!blocked) {
-                // Snap only the primary item (grid + edge + wall), then move
-                // all group members by the same effective delta to preserve
-                // their relative arrangement.
-                usePlacementStore.getState().moveItem(primaryId, primary.x + dx, primary.z + dz);
-                const movedPrimary = usePlacementStore.getState().placedItems.find((p) => p.id === primaryId);
-                if (movedPrimary !== undefined) {
-                  const effectiveDx = movedPrimary.x - primary.x;
-                  const effectiveDz = movedPrimary.z - primary.z;
-                  // Move remaining group members by the snapped delta (no per-item snapping)
-                  const othersToMove = new Set<string>();
-                  for (const id of allMovingIds) {
-                    if (id !== primaryId) othersToMove.add(id);
-                  }
-                  if (othersToMove.size > 0) {
-                    usePlacementStore.getState().moveItemsByDelta(othersToMove, effectiveDx, effectiveDz);
-                  }
-                  // Compute snap alignment guides for the moved primary item
-                  const guides = computeSnapGuides(
-                    movedPrimary.x, movedPrimary.z,
-                    movedPrimary.catalogueItemId, movedPrimary.rotationY,
-                    usePlacementStore.getState().placedItems, allMovingIds,
-                  );
-                  useSelectionStore.getState().setActiveGuides(guides);
-                }
-                invalidateRef.current();
+              const effectiveDx = targetX - primary.x;
+              const effectiveDz = targetZ - primary.z;
+              usePlacementStore.getState().moveItemsByDelta(allMovingIds, effectiveDx, effectiveDz);
+              const movedPrimary = usePlacementStore.getState().placedItems.find((p) => p.id === primaryId);
+              if (movedPrimary !== undefined) {
+                const guides = computeSnapGuides(
+                  movedPrimary.x, movedPrimary.z,
+                  movedPrimary.catalogueItemId, movedPrimary.rotationY,
+                  usePlacementStore.getState().placedItems, allMovingIds,
+                );
+                useSelectionStore.getState().setActiveGuides(guides);
               }
+              invalidateRef.current();
             }
           }
         }
@@ -556,6 +583,7 @@ export function SelectionSystem(): null {
     }
 
     function onPointerUp(event: PointerEvent): void {
+      if (useMarkupStore.getState().active) return;
       if (handleRightButtonRelease(event)) return;
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
@@ -598,10 +626,12 @@ export function SelectionSystem(): null {
     }
 
     function onMouseUp(event: MouseEvent): void {
+      if (useMarkupStore.getState().active) return;
       handleRightButtonRelease(event);
     }
 
     function onDblClick(event: MouseEvent): void {
+      if (useMarkupStore.getState().active) return;
       if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;

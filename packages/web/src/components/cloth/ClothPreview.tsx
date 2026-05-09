@@ -8,7 +8,7 @@
 
 import { useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { BufferGeometry, Float32BufferAttribute } from "three";
+import { BufferGeometry, Color, Float32BufferAttribute } from "three";
 import type { ShaderMaterial, Mesh } from "three";
 import {
   CLOTH_HOVER_HEIGHT,
@@ -118,6 +118,8 @@ interface ClothPreviewProps {
   readonly position: readonly [number, number, number];
   /** Whether the cloth is near a valid table (changes glow color). */
   readonly nearTable: boolean;
+  /** Fabric colour for the selected cloth style. */
+  readonly colorOverride?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +143,7 @@ interface PhysicsInternal {
 export function ClothPreview({
   position,
   nearTable,
+  colorOverride,
 }: ClothPreviewProps): React.ReactElement {
   const meshRef = useRef<Mesh>(null);
   const glowRef = useRef<Mesh>(null);
@@ -157,6 +160,7 @@ export function ClothPreview({
     () => createClothUniforms(CLOTH_HOVER_HEIGHT, CLOTH_EDGE_SAG, CLOTH_RADIUS),
     [],
   );
+  uniforms.uColor.value = new Color(colorOverride ?? "#1a1a1a");
 
   const material = useMemo<ShaderMaterial>(
     () => createClothMaterial(uniforms),

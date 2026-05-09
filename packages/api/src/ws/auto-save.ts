@@ -24,6 +24,8 @@ const ObjectDataSchema = z.object({
   scale: z.number().positive(),
   sortOrder: z.number().int().nonnegative().optional(),
   clothed: z.boolean().optional(),
+  clothStyle: z.enum(["black", "white"]).nullable().optional(),
+  tableSetting: z.enum(["dinner"]).nullable().optional(),
   groupId: z.string().nullable().optional(),
 });
 
@@ -206,9 +208,14 @@ export async function registerAutoSave(
               scale: String(obj.scale),
             };
             if (obj.sortOrder !== undefined) setData["sortOrder"] = obj.sortOrder;
-            // clothed and groupId are stored in metadata JSONB, not as top-level columns.
+            // Scene dressing/grouping state is stored in metadata JSONB, not top-level columns.
             // Merge with existing metadata to preserve any other keys.
-            if (obj.clothed !== undefined || obj.groupId !== undefined) {
+            if (
+              obj.clothed !== undefined ||
+              obj.clothStyle !== undefined ||
+              obj.tableSetting !== undefined ||
+              obj.groupId !== undefined
+            ) {
               const [existing] = await tx.select({ metadata: placedObjects.metadata })
                 .from(placedObjects)
                 .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
@@ -216,6 +223,8 @@ export async function registerAutoSave(
               const existingMeta = (existing?.metadata as Record<string, unknown> | null) ?? {};
               const merged: Record<string, unknown> = { ...existingMeta };
               if (obj.clothed !== undefined) merged["clothed"] = obj.clothed;
+              if (obj.clothStyle !== undefined) merged["clothStyle"] = obj.clothStyle;
+              if (obj.tableSetting !== undefined) merged["tableSetting"] = obj.tableSetting;
               if (obj.groupId !== undefined) merged["groupId"] = obj.groupId;
               setData["metadata"] = merged;
             }
@@ -227,6 +236,8 @@ export async function registerAutoSave(
               toInsert.map((obj) => {
                 const meta: Record<string, unknown> = {};
                 if (obj.clothed !== undefined) meta["clothed"] = obj.clothed;
+                if (obj.clothStyle !== undefined) meta["clothStyle"] = obj.clothStyle;
+                if (obj.tableSetting !== undefined) meta["tableSetting"] = obj.tableSetting;
                 if (obj.groupId !== undefined) meta["groupId"] = obj.groupId;
                 const hasMetadata = Object.keys(meta).length > 0;
                 return {

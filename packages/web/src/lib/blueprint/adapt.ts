@@ -91,6 +91,11 @@ export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
   return null;
 }
 
+function linenLabelForObject(o: EditorObject): "Black" | "Ivory" | undefined {
+  if (!o.clothed) return undefined;
+  return o.clothStyle === "black" ? "Black" : "Ivory";
+}
+
 /**
  * Convert a single editor object into a blueprint item, given the
  * room dimensions for centre-to-corner origin translation. Returns
@@ -131,7 +136,7 @@ export function editorObjectToBlueprintItem(
       center: { x: cx, y: cy },
       diameterM,
       seats: asset.seatCount ?? 0,
-      linen: o.clothed ? "Ivory" : undefined,
+      linen: linenLabelForObject(o),
       centrepiece: undefined,
       rotationDeg,
       chairs,
@@ -163,7 +168,7 @@ export function editorObjectToBlueprintItem(
       widthM,
       lengthM,
       seats: asset.seatCount ?? undefined,
-      linen: o.clothed ? "Ivory" : undefined,
+      linen: linenLabelForObject(o),
       rotationDeg,
     };
   }

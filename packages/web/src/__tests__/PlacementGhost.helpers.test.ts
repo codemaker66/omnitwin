@@ -16,15 +16,20 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect } from "vitest";
-import { isCloth, isPoseurTable } from "../components/PlacementGhost.js";
+import { isCloth, isPoseurTable, isTableSetting } from "../components/PlacementGhost.js";
 import { CATALOGUE_ITEMS } from "../lib/catalogue.js";
 
 describe("PlacementGhost.isCloth", () => {
-  it("recognises the cloth by its catalogue UUID", () => {
+  it("recognises black and white cloths by catalogue UUID", () => {
     const cloth = CATALOGUE_ITEMS.find((i) => i.slug === "black-table-cloth");
     expect(cloth, "black-table-cloth must exist in CATALOGUE_ITEMS").toBeDefined();
     if (cloth === undefined) return;
     expect(isCloth(cloth.id)).toBe(true);
+
+    const white = CATALOGUE_ITEMS.find((i) => i.slug === "white-table-cloth");
+    expect(white, "white-table-cloth must exist in CATALOGUE_ITEMS").toBeDefined();
+    if (white === undefined) return;
+    expect(isCloth(white.id)).toBe(true);
   });
 
   it("recognises the cloth by its slug too (slug fallback path)", () => {
@@ -41,8 +46,25 @@ describe("PlacementGhost.isCloth", () => {
 
   it("returns false for non-cloth catalogue items", () => {
     for (const item of CATALOGUE_ITEMS) {
-      if (item.slug === "black-table-cloth") continue;
+      if (item.slug === "black-table-cloth" || item.slug === "white-table-cloth") continue;
       expect(isCloth(item.id), `${item.slug} (${item.id}) must not be a cloth`).toBe(false);
+    }
+  });
+});
+
+describe("PlacementGhost.isTableSetting", () => {
+  it("recognises dinner place settings by catalogue UUID and slug", () => {
+    const setting = CATALOGUE_ITEMS.find((i) => i.slug === "dinner-place-setting");
+    expect(setting, "dinner-place-setting must exist in CATALOGUE_ITEMS").toBeDefined();
+    if (setting === undefined) return;
+    expect(isTableSetting(setting.id)).toBe(true);
+    expect(isTableSetting("dinner-place-setting")).toBe(true);
+  });
+
+  it("returns false for non-table-setting catalogue items", () => {
+    for (const item of CATALOGUE_ITEMS) {
+      if (item.slug === "dinner-place-setting") continue;
+      expect(isTableSetting(item.id), `${item.slug} (${item.id}) must not be a table setting`).toBe(false);
     }
   });
 });

@@ -1,8 +1,26 @@
+.venviewer-planner-shell {
+  --vv-cinema-black: #090807;
+  --vv-cinema-ink: #12100d;
+  --vv-cinema-amber: #c9a84c;
+  --vv-cinema-amber-soft: rgba(201, 168, 76, 0.18);
+  --vv-cinema-paper: #efe9dc;
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(120deg, rgba(7, 7, 6, 0.96), rgba(17, 13, 8, 0.84) 34%, rgba(235, 226, 211, 0.36) 100%),
+    var(--vv-cinema-black);
+  color-scheme: dark;
+  isolation: isolate;
+}
+
 .venviewer-planner-shell,
 .venviewer-planner-shell * {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .venviewer-planner-shell input,
@@ -15,4 +33,57 @@
 .venviewer-planner-shell ::selection {
   background: transparent;
   color: inherit;
+}
+
+.planner-canvas-stage {
+  background:
+    radial-gradient(120% 92% at 58% 44%, rgba(255, 241, 208, 0.24), rgba(255, 241, 208, 0.04) 36%, transparent 62%),
+    linear-gradient(180deg, rgba(246, 241, 231, 0.98), rgba(221, 208, 184, 0.86) 58%, rgba(18, 13, 9, 0.24));
+}
+
+.planner-canvas-stage::before,
+.planner-canvas-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.planner-canvas-stage::before {
+  z-index: 2;
+  background:
+    linear-gradient(90deg, rgba(5, 5, 4, 0.18), transparent 14%, transparent 86%, rgba(5, 5, 4, 0.2)),
+    linear-gradient(180deg, rgba(5, 5, 4, 0.2), transparent 12%, transparent 80%, rgba(5, 5, 4, 0.26));
+  mix-blend-mode: multiply;
+}
+
+.planner-canvas-stage::after {
+  z-index: 3;
+  opacity: 0.018;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 7px);
+}
+
+.planner-canvas-stage canvas {
+  display: block;
+  filter: saturate(1.06) contrast(1.03) brightness(0.99);
+}
+
+@media (max-width: 640px) {
+  .planner-canvas-stage::before {
+    background:
+      linear-gradient(180deg, rgba(5, 5, 4, 0.13), transparent 18%, transparent 76%, rgba(5, 5, 4, 0.28));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .venviewer-planner-shell *,
+  .venviewer-planner-shell *::before,
+  .venviewer-planner-shell *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }

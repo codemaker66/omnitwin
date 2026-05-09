@@ -9,6 +9,7 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -27,6 +28,10 @@ export interface EditorObject {
   readonly sortOrder: number;
   /** Whether a cloth is draped over this item (tables only). Persisted in metadata. */
   readonly clothed: boolean;
+  /** Cloth style draped over this table. Persisted in metadata. */
+  readonly clothStyle: TableClothStyle | null;
+  /** Tableware style placed on this table. Persisted in metadata. */
+  readonly tableSetting: TableSettingStyle | null;
   /** Group ID — items sharing a groupId move together. Persisted in metadata. */
   readonly groupId: string | null;
   /**
@@ -52,6 +57,11 @@ export interface EditorObject {
 export function placedObjectToEditor(p: PlacedObject): EditorObject {
   const meta = p.metadata ?? {};
   const displayLabel = typeof meta.displayLabel === "string" ? meta.displayLabel.trim() : "";
+  const clothStyle: TableClothStyle | null =
+    meta.clothed === true
+      ? meta.clothStyle === "white" ? "white" : "black"
+      : null;
+  const tableSetting: TableSettingStyle | null = meta.tableSetting === "dinner" ? "dinner" : null;
   const editorObject: EditorObject = {
     id: p.id,
     assetDefinitionId: p.assetDefinitionId,
@@ -64,6 +74,8 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     scale: parseFloat(p.scale),
     sortOrder: p.sortOrder,
     clothed: meta.clothed === true,
+    clothStyle,
+    tableSetting,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
   };
@@ -93,6 +105,8 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
     sortOrder: o.sortOrder,
     metadata: {
       clothed: o.clothed,
+      clothStyle: o.clothed ? o.clothStyle ?? "black" : null,
+      tableSetting: o.tableSetting,
       groupId: o.groupId,
       ...((o.label ?? "").trim().length > 0 ? { displayLabel: (o.label ?? "").trim() } : {}),
       ...(o.notes.length > 0 ? { notes: o.notes } : {}),
@@ -305,7 +319,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: get().objects.length,
-      clothed: false, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
     };
     set((s) => ({ objects: [...s.objects, obj], isDirty: true }));
 

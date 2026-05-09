@@ -24,6 +24,8 @@ import { api } from "./client.js";
  */
 export interface ObjectMetadata {
   readonly clothed?: boolean;
+  readonly clothStyle?: "black" | "white" | null;
+  readonly tableSetting?: "dinner" | null;
   readonly groupId?: string | null;
   /** Hallkeeper-visible seat/table label rendered in the planner. */
   readonly displayLabel?: string;
@@ -33,6 +35,8 @@ export interface ObjectMetadata {
 
 const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
+  clothStyle: z.enum(["black", "white"]).nullable().optional(),
+  tableSetting: z.enum(["dinner"]).nullable().optional(),
   groupId: z.string().nullable().optional(),
   displayLabel: z.string().optional(),
   notes: z.string().optional(),

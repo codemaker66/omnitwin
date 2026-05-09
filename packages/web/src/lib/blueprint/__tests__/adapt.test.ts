@@ -48,7 +48,7 @@ function makeObj(
     rotationZ: 0,
     scale: 1,
     sortOrder: 0,
-    clothed: false,
+    clothed: false, clothStyle: null, tableSetting: null,
     groupId,
     notes: "",
   };
@@ -151,5 +151,25 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     expect(item).not.toBeNull();
     if (item === null || item.shape !== "round") return;
     expect(item.chairs).toBeUndefined();
+  });
+
+  it("preserves black and white linen labels for 2D blueprint output", () => {
+    expect(ROUND_TABLE).toBeDefined();
+    if (ROUND_TABLE === undefined) return;
+
+    const black = editorObjectToBlueprintItem(
+      { ...makeObj("black", ROUND_TABLE.id, 0, 0), clothed: true, clothStyle: "black" },
+      { widthM: 10, lengthM: 10 },
+    );
+    const white = editorObjectToBlueprintItem(
+      { ...makeObj("white", ROUND_TABLE.id, 2, 0), clothed: true, clothStyle: "white" },
+      { widthM: 10, lengthM: 10 },
+    );
+
+    expect(black?.shape).toBe("round");
+    expect(white?.shape).toBe("round");
+    if (black === null || black.shape !== "round" || white === null || white.shape !== "round") return;
+    expect(black.linen).toBe("Black");
+    expect(white.linen).toBe("Ivory");
   });
 });

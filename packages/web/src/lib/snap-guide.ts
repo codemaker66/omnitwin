@@ -46,6 +46,11 @@ export interface SnapGuide {
   readonly end: number;
 }
 
+export interface AlignmentSnapResult {
+  readonly x: number;
+  readonly z: number;
+}
+
 // ---------------------------------------------------------------------------
 // Core computation
 // ---------------------------------------------------------------------------
@@ -145,6 +150,71 @@ export function computeSnapGuides(
   }
 
   return deduplicateGuides(raw);
+}
+
+export function snapToFurnitureAlignment(
+  dragX: number,
+  dragZ: number,
+  dragItemId: string,
+  dragRotationY: number,
+  placedItems: readonly PlacedItem[],
+  excludeIds: ReadonlySet<string>,
+  threshold: number = SNAP_GUIDE_THRESHOLD,
+): AlignmentSnapResult {
+  const dragItem = getCatalogueItem(dragItemId);
+  if (dragItem === undefined) return { x: dragX, z: dragZ };
+
+  const { halfW: dHalfW, halfD: dHalfD } = computeRotatedFootprint(dragItem, dragRotationY);
+  let bestDx = 0;
+  let bestDz = 0;
+  let bestAbsDx = threshold;
+  let bestAbsDz = threshold;
+
+  for (const other of placedItems) {
+    if (excludeIds.has(other.id)) continue;
+    const otherItem = getCatalogueItem(other.catalogueItemId);
+    if (otherItem === undefined) continue;
+
+    const { halfW: oHalfW, halfD: oHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const oLeftX = other.x - oHalfW;
+    const oRightX = other.x + oHalfW;
+    const oBackZ = other.z - oHalfD;
+    const oFrontZ = other.z + oHalfD;
+
+    const xCandidates = [
+      other.x,
+      oLeftX + dHalfW,
+      oRightX - dHalfW,
+      oRightX + dHalfW,
+      oLeftX - dHalfW,
+    ];
+    for (const candidateX of xCandidates) {
+      const dx = candidateX - dragX;
+      const absDx = Math.abs(dx);
+      if (absDx < bestAbsDx) {
+        bestAbsDx = absDx;
+        bestDx = dx;
+      }
+    }
+
+    const zCandidates = [
+      other.z,
+      oBackZ + dHalfD,
+      oFrontZ - dHalfD,
+      oFrontZ + dHalfD,
+      oBackZ - dHalfD,
+    ];
+    for (const candidateZ of zCandidates) {
+      const dz = candidateZ - dragZ;
+      const absDz = Math.abs(dz);
+      if (absDz < bestAbsDz) {
+        bestAbsDz = absDz;
+        bestDz = dz;
+      }
+    }
+  }
+
+  return { x: dragX + bestDx, z: dragZ + bestDz };
 }
 
 // ---------------------------------------------------------------------------

@@ -182,19 +182,23 @@ describe("rearrangeTableGroup", () => {
     expect(table?.catalogueItemId).toBe(ROUND_TABLE_ID);
   });
 
-  it("preserves table clothed state", () => {
+  it("preserves table dressing state", () => {
     const group = createTableGroup(ROUND_TABLE_ID, 0, 0, 0, 4);
     const first = group[0];
     expect(first).toBeDefined();
     if (first === undefined) return;
 
     const clothed: PlacedItem[] = group.map((item) =>
-      item.id === first.id ? { ...item, clothed: true } : { ...item },
+      item.id === first.id
+        ? { ...item, clothed: true, clothStyle: "white", tableSetting: "dinner" }
+        : { ...item },
     );
 
     const newItems = rearrangeTableGroup(first.id, 6, clothed);
     const table = newItems.find((p) => p.id === first.id);
     expect(table?.clothed).toBe(true);
+    expect(table?.clothStyle).toBe("white");
+    expect(table?.tableSetting).toBe("dinner");
   });
 
   it("preserves non-group items", () => {
@@ -210,7 +214,7 @@ describe("rearrangeTableGroup", () => {
       y: 0,
       z: 10,
       rotationY: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
     };
     const allItems = [...group, extraItem];
@@ -228,7 +232,7 @@ describe("rearrangeTableGroup", () => {
       y: 0,
       z: 0,
       rotationY: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
     }];
     const result = rearrangeTableGroup("nonexistent", 4, items);

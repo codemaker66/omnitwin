@@ -83,7 +83,7 @@ describe("EditorObject <-> wire format round-trip", () => {
       rotationZ: -0.2,
       scale: 1.05,
       sortOrder: 7,
-      clothed: true,
+      clothed: true, clothStyle: "black", tableSetting: null,
       groupId: "group-abc",
       notes: "",
     };
@@ -107,7 +107,7 @@ describe("EditorObject <-> wire format round-trip", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
       notes: "",
     };
@@ -126,7 +126,7 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 7,
-      clothed: false, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
     };
 
     const batch = editorToBatch(original);
@@ -144,17 +144,38 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
-      clothed: true, groupId: "g-vip", notes: "VIP table — reserved for the Anderson family",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-vip", notes: "VIP table — reserved for the Anderson family",
     };
     const batch = editorToBatch(original);
     expect(batch.metadata).toEqual({
-      clothed: true,
+      clothed: true, clothStyle: "black", tableSetting: null,
       groupId: "g-vip",
       notes: "VIP table — reserved for the Anderson family",
     });
     const wire = simulateDbRoundTrip(batch, original.id, "config-1");
     const roundTripped = placedObjectToEditor(wire);
     expect(roundTripped.notes).toBe(original.notes);
+  });
+
+  it("white cloth and dinner place settings round-trip through metadata", () => {
+    const original: EditorObject = {
+      id: "550e8400-e29b-41d4-a716-446655440008",
+      assetDefinitionId: ROUND_TABLE_ID,
+      positionX: 0, positionY: 0, positionZ: 0,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0,
+      clothed: true, clothStyle: "white", tableSetting: "dinner", groupId: "g-dinner", notes: "",
+    };
+
+    const batch = editorToBatch(original);
+    expect(batch.metadata).toEqual({
+      clothed: true,
+      clothStyle: "white",
+      tableSetting: "dinner",
+      groupId: "g-dinner",
+    });
+    const wire = simulateDbRoundTrip(batch, original.id, "config-1");
+    expect(placedObjectToEditor(wire)).toEqual(original);
   });
 
   it("hallkeeper-visible display labels round-trip through metadata", () => {
@@ -164,12 +185,12 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
-      clothed: false, groupId: null, label: "Bride", notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, label: "Bride", notes: "",
     };
 
     const batch = editorToBatch(original);
     expect(batch.metadata).toEqual({
-      clothed: false,
+      clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
       displayLabel: "Bride",
     });
@@ -186,7 +207,7 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
-      clothed: false, groupId: null, label: "   ", notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, label: "   ", notes: "",
     };
 
     const batch = editorToBatch(original);
@@ -201,7 +222,7 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
-      clothed: false, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
     };
     const batch = editorToBatch(original);
     expect(batch.metadata).not.toHaveProperty("notes");
@@ -214,11 +235,11 @@ describe("EditorObject <-> wire format round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
-      clothed: true, groupId: "g-xyz", notes: "",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-xyz", notes: "",
     };
 
     const batch = editorToBatch(original);
-    expect(batch.metadata).toEqual({ clothed: true, groupId: "g-xyz" });
+    expect(batch.metadata).toEqual({ clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-xyz" });
   });
 
   it("tolerates null metadata from legacy records (defaults applied)", () => {
@@ -265,14 +286,14 @@ describe("EditorObject <-> wire format round-trip", () => {
         positionX: 0, positionY: 0, positionZ: 0,
         rotationX: 0, rotationY: 0, rotationZ: 0,
         scale: 1, sortOrder: 0,
-        clothed: true, groupId, notes: "",
+        clothed: true, clothStyle: "black", tableSetting: null, groupId, notes: "",
       },
       ...Array.from({ length: 8 }, (_, i): EditorObject => ({
         id: `c${String(i)}`, assetDefinitionId: CHAIR_ID,
         positionX: Math.cos(i), positionY: 0, positionZ: Math.sin(i),
         rotationX: 0, rotationY: (i / 8) * 2 * Math.PI, rotationZ: 0,
         scale: 1, sortOrder: i + 1,
-        clothed: false, groupId, notes: "",
+        clothed: false, clothStyle: null, tableSetting: null, groupId, notes: "",
       })),
     ];
 
@@ -301,7 +322,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
       positionX: 1, positionY: 0, positionZ: 2,
       rotationX: 0, rotationY: 0.5, rotationZ: 0,
       scale: 1, sortOrder: 3,
-      clothed: true, groupId: "g-1", label: "Top Table", notes: "",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-1", label: "Top Table", notes: "",
     };
 
     const placed = editorToPlacedItem(editor);
@@ -326,12 +347,12 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
       positionX: 0, positionY: 0, positionZ: 0,
       rotationX: 0.15, rotationY: 0, rotationZ: -0.25,
       scale: 1.1, sortOrder: 5,
-      clothed: false, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
     };
     const item: PlacedItem = {
       id: "o1", catalogueItemId: ROUND_TABLE_ID,
       x: 3, y: 0, z: 4, rotationY: Math.PI,
-      clothed: true, groupId: "g-2", label: "Bride",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-2", label: "Bride",
     };
 
     const result = placedItemToEditor(item, existing);
@@ -356,7 +377,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     const item: PlacedItem = {
       id: "new-1", catalogueItemId: CHAIR_ID,
       x: 0, y: 0, z: 0, rotationY: 0,
-      clothed: false, groupId: null,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null,
     };
 
     const result = placedItemToEditor(item, undefined);
@@ -375,7 +396,7 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
       positionX: 2.5, positionY: 0, positionZ: -1.25,
       rotationX: 0.1, rotationY: 0.7, rotationZ: -0.05,
       scale: 1.02, sortOrder: 4,
-      clothed: true, groupId: "g-full", notes: "",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-full", notes: "",
     };
 
     const asScene = editorToPlacedItem(original);
@@ -400,7 +421,7 @@ describe("End-to-end round-trip: API <-> store <-> scene", () => {
       positionX: 1.23, positionY: 0, positionZ: -4.56,
       rotationX: 0.05, rotationY: 2.1, rotationZ: -0.05,
       scale: 1.03, sortOrder: 11,
-      clothed: true, groupId: "g-full-chain", notes: "",
+      clothed: true, clothStyle: "black", tableSetting: null, groupId: "g-full-chain", notes: "",
     };
 
     // Save path: editor -> batch -> wire

@@ -47,33 +47,6 @@ export function snapPositionToGrid(x: number, z: number): Position3 {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns true if an item placed at (x, z) in render-space fits within the
- * room bounds. Only requires the item's center to be within the room so
- * furniture (e.g. chairs) can sit flush against walls.
- *
- * @param roomDims - Current render-space room dimensions. Defaults to Grand
- *   Hall for backward compatibility with tests; production callers should
- *   always pass the active room dimensions from useRoomDimensionsStore.
- */
-export function isWithinRoomBounds(
-  x: number,
-  z: number,
-  _item: CatalogueItem,
-  _rotationY: number = 0,
-  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
-): boolean {
-  const halfRoomW = roomDims.width / 2;
-  const halfRoomL = roomDims.length / 2;
-
-  return (
-    x >= -halfRoomW &&
-    x <= halfRoomW &&
-    z >= -halfRoomL &&
-    z <= halfRoomL
-  );
-}
-
-/**
  * Computes the axis-aligned half-extents of an item's footprint
  * after rotation around the Y axis.
  */
@@ -90,6 +63,44 @@ export function computeRotatedFootprint(
     halfD: (renderW * sin + renderD * cos) / 2,
   };
 }
+
+/**
+ * Returns true if an item placed at (x, z) in render-space fits within the
+ * room bounds using its rotated footprint, not only its centre point.
+ *
+ * @param roomDims - Current render-space room dimensions. Defaults to Grand
+ *   Hall for backward compatibility with tests; production callers should
+ *   always pass the active room dimensions from useRoomDimensionsStore.
+ */
+export function isWithinRoomBounds(
+  x: number,
+  z: number,
+  item: CatalogueItem,
+  rotationY: number = 0,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+): boolean {
+  const halfRoomW = roomDims.width / 2;
+  const halfRoomL = roomDims.length / 2;
+  const { halfW, halfD } = computeRotatedFootprint(item, rotationY);
+
+  return (
+    x - halfW >= -halfRoomW &&
+    x + halfW <= halfRoomW &&
+    z - halfD >= -halfRoomL &&
+    z + halfD <= halfRoomL
+  );
+}
+
+export type PlacementViolationKind = "outside_room" | "overlap";
+
+export interface PlacementViolation {
+  readonly kind: PlacementViolationKind;
+  readonly message: string;
+  readonly itemId?: string;
+}
+
+export type TableClothStyle = "black" | "white";
+export type TableSettingStyle = "dinner";
 
 // ---------------------------------------------------------------------------
 // Platform edge snapping
@@ -342,6 +353,55 @@ export function checkCollision(
   return false;
 }
 
+export function getPlacementViolations(
+  x: number,
+  z: number,
+  item: CatalogueItem,
+  rotationY: number,
+  placedItems: readonly PlacedItem[],
+  excludeIds: ReadonlySet<string>,
+  y: number = 0,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+): readonly PlacementViolation[] {
+  const violations: PlacementViolation[] = [];
+
+  if (!isWithinRoomBounds(x, z, item, rotationY, roomDims)) {
+    violations.push({
+      kind: "outside_room",
+      message: "Furniture footprint crosses the room boundary",
+    });
+  }
+
+  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY);
+  const aBottom = y;
+  const aTop = y + item.height;
+
+  for (const other of placedItems) {
+    if (excludeIds.has(other.id)) continue;
+    const otherItem = getCatalogueItem(other.catalogueItemId);
+    if (otherItem === undefined) continue;
+
+    const bBottom = other.y;
+    const bTop = other.y + otherItem.height;
+    if (aBottom >= bTop - 0.001 || bBottom >= aTop - 0.001) continue;
+
+    const effectivePadding = (item.category === "stage" && otherItem.category === "stage") ? -0.05 : 0;
+    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding);
+    const overlapZ = Math.abs(z - other.z) < (aHalfD + bHalfD + effectivePadding);
+
+    if (overlapX && overlapZ) {
+      violations.push({
+        kind: "overlap",
+        message: `Overlaps ${otherItem.name}`,
+        itemId: other.id,
+      });
+    }
+  }
+
+  return violations;
+}
+
 // ---------------------------------------------------------------------------
 // Placed object creation
 // ---------------------------------------------------------------------------
@@ -374,6 +434,10 @@ export interface PlacedItem {
   readonly rotationY: number;
   /** Whether a cloth is draped over this item (tables only). */
   readonly clothed: boolean;
+  /** Cloth colour/style draped over this table. Null when not clothed. */
+  readonly clothStyle: TableClothStyle | null;
+  /** Tableware placed on this table. Null when no table setting is applied. */
+  readonly tableSetting: TableSettingStyle | null;
   /** Group ID — items sharing a groupId move together (e.g. table + its chairs). */
   readonly groupId: string | null;
 }
@@ -398,6 +462,8 @@ export function createPlacedItem(
     z,
     rotationY,
     clothed: false,
+    clothStyle: null,
+    tableSetting: null,
     groupId,
   };
 }
@@ -417,6 +483,24 @@ export function getGroupMemberIds(
     if (p.groupId === item.groupId) ids.add(p.id);
   }
   return ids;
+}
+
+/**
+ * Expands an arbitrary set of item IDs to include every member of each
+ * selected item's group. Ctrl+G/ungroup/delete actions use this so table
+ * rings do not get split by a partial selection.
+ */
+export function expandIdsToGroupMembers(
+  ids: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+): ReadonlySet<string> {
+  const expanded = new Set<string>();
+  for (const id of ids) {
+    for (const memberId of getGroupMemberIds(id, placedItems)) {
+      expanded.add(memberId);
+    }
+  }
+  return expanded;
 }
 
 /**

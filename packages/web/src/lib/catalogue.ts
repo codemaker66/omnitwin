@@ -102,6 +102,12 @@ export function catalogueIcon(item: CatalogueItem): string {
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="4" x2="20" y2="32" stroke="${s}" stroke-width="1.5"/><circle cx="20" cy="4" r="3" fill="${f}" stroke="${s}" stroke-width="1"/><line x1="12" y1="32" x2="28" y2="32" stroke="${s}" stroke-width="2"/></svg>`;
     case "lectern":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="4" width="16" height="24" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="28" x2="14" y2="36" stroke="${s}" stroke-width="1.5"/><line x1="26" y1="28" x2="26" y2="36" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "black-table-cloth":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 13c3-4 21-4 24 0v15c-5 3-19 3-24 0V13Z" fill="rgba(10,10,10,0.82)" stroke="${s}" stroke-width="1.5"/><path d="M10 14c4 3 16 3 20 0" fill="none" stroke="${s}" stroke-width="1" opacity="0.6"/><path d="M13 18v10M20 17v12M27 18v10" stroke="rgba(201,168,76,0.38)" stroke-width="1"/></svg>`;
+    case "white-table-cloth":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 13c3-4 21-4 24 0v15c-5 3-19 3-24 0V13Z" fill="rgba(245,241,232,0.9)" stroke="${s}" stroke-width="1.5"/><path d="M10 14c4 3 16 3 20 0" fill="none" stroke="${s}" stroke-width="1" opacity="0.6"/><path d="M13 18v10M20 17v12M27 18v10" stroke="rgba(110,88,50,0.32)" stroke-width="1"/></svg>`;
+    case "dinner-place-setting":
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="9" fill="rgba(247,242,230,0.78)" stroke="${s}" stroke-width="1.5"/><circle cx="20" cy="20" r="5" fill="none" stroke="${s}" stroke-width="0.9" opacity="0.42"/><rect x="8" y="10" width="1.8" height="20" rx="0.9" fill="${s}" opacity="0.75"/><rect x="30.2" y="10" width="1.8" height="20" rx="0.9" fill="${s}" opacity="0.75"/><circle cx="27" cy="12" r="2.2" fill="rgba(180,220,255,0.28)" stroke="${s}" stroke-width="0.8"/></svg>`;
     default:
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="8" width="24" height="24" rx="4" fill="${f}" stroke="${s}" stroke-width="1.5"/></svg>`;
   }

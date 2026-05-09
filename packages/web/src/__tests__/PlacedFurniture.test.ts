@@ -65,9 +65,18 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
   it("renders persisted furniture labels as scene nameplates with camera-reference glow", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toContain("function FurnitureNamePlate");
-    expect(codeOnly).toContain("furniture-nameplate");
-    expect(codeOnly).toContain("furniture-camera-reference-glow");
+    expect(codeOnly).toContain("item-nameplate");
+    expect(codeOnly).toContain("camera-reference-glow");
     expect(codeOnly).toContain("bookmark.reference?.placedItemId");
     expect(codeOnly).toContain("cameraEnabled={hasCameraReference}");
+  });
+
+  it("renders table dressing layers over placed tables", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("TableClothMesh");
+    expect(codeOnly).toContain("AnimatedTableCloth");
+    expect(codeOnly).toContain("TableSettingMesh");
+    expect(codeOnly).toContain("TABLE_CLOTH_COLORS");
+    expect(codeOnly).toContain("placed.tableSetting === \"dinner\"");
   });
 });
