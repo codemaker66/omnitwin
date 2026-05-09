@@ -162,6 +162,13 @@ async function seedAuthenticatedPlanner(page: Page): Promise<void> {
   });
 }
 
+async function seedUnauthenticatedE2E(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: null, writable: false });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Hallkeeper page — full-data render tests
 // ---------------------------------------------------------------------------
@@ -269,7 +276,9 @@ test.describe("Hallkeeper Page", () => {
 
 test.describe("Hallkeeper Page — route protection", () => {
   test("unauthenticated navigation redirects to /login", async ({ page }) => {
-    // No seedAuthenticatedPlanner() — page mounts with isAuthenticated=false
+    // Explicitly seed the dev-only E2E auth bridge with no user so remote CI
+    // cannot hang on Clerk's async loading state before ProtectedRoute runs.
+    await seedUnauthenticatedE2E(page);
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     // ProtectedRoute calls <Navigate to="/login" replace />
     await page.waitForURL(/\/login/, { timeout: 10_000 });

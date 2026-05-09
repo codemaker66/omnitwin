@@ -131,6 +131,7 @@ export function SelectionSystem(): null {
   const dragGrabOffset = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
   const wallClickKey = useRef<WallKey | null>(null);
   const rightClickStart = useRef<{ x: number; y: number } | null>(null);
+  const rightClickMoved = useRef(false);
   const suppressNextContextMenu = useRef(false);
   const marqueeRafId = useRef<number>(0);
   // floorCache removed — drag uses math plane intersection
@@ -264,6 +265,7 @@ export function SelectionSystem(): null {
     function onPointerDown(event: PointerEvent): void {
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
+        rightClickMoved.current = false;
         return;
       }
       if (useMarkupStore.getState().active) return;
@@ -327,6 +329,7 @@ export function SelectionSystem(): null {
       if (useMarkupStore.getState().active) return;
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
+        rightClickMoved.current = false;
       }
     }
 
@@ -401,9 +404,11 @@ export function SelectionSystem(): null {
       const start = rightClickStart.current;
       rightClickStart.current = null;
       if (
+        rightClickMoved.current ||
         start !== null &&
         screenDistance(start.x, start.y, event.clientX, event.clientY) > DRAG_THRESHOLD_PX
       ) {
+        rightClickMoved.current = false;
         return;
       }
 
@@ -412,6 +417,11 @@ export function SelectionSystem(): null {
 
     function onPointerMove(event: PointerEvent): void {
       if (useMarkupStore.getState().active) return;
+      if ((event.buttons & 2) !== 0 && rightClickStart.current !== null) {
+        rightClickMoved.current =
+          rightClickMoved.current ||
+          screenDistance(rightClickStart.current.x, rightClickStart.current.y, event.clientX, event.clientY) > DRAG_THRESHOLD_PX;
+      }
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       if ((event.buttons & 1) === 0) return; // Left button not held
 
@@ -596,6 +606,7 @@ export function SelectionSystem(): null {
         rightClickStart.current = null;
         if (
           start !== null &&
+          !rightClickMoved.current &&
           screenDistance(start.x, start.y, event.clientX, event.clientY) <= DRAG_THRESHOLD_PX
         ) {
           event.preventDefault();
@@ -604,6 +615,7 @@ export function SelectionSystem(): null {
         } else if (start !== null) {
           suppressNextContextMenu.current = true;
         }
+        rightClickMoved.current = false;
         return true;
       }
       return false;
