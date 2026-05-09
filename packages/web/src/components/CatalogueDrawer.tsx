@@ -755,8 +755,19 @@ export function CatalogueDrawer(): React.ReactElement | null {
         });
       }
     }
+    function onMouseUp(): void {
+      if (useCatalogueStore.getState().dragActive) {
+        requestAnimationFrame(() => {
+          useCatalogueStore.getState().endDrag();
+        });
+      }
+    }
     window.addEventListener("pointerup", onPointerUp);
-    return () => { window.removeEventListener("pointerup", onPointerUp); };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
   }, []);
 
   if (!drawerOpen) return null;

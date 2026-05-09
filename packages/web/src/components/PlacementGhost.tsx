@@ -249,8 +249,8 @@ export function PlacementGhost(): React.ReactElement | null {
       invalidateRef.current();
     }
 
-    function onPointerUp(event: PointerEvent): void {
-      if (event.button !== 0) return;
+    function finishPlacementRelease(clientX: number, clientY: number, button: number): void {
+      if (button !== 0) return;
       const itemId = useCatalogueStore.getState().selectedItemId;
       if (
         itemId !== null &&
@@ -280,7 +280,7 @@ export function PlacementGhost(): React.ReactElement | null {
       if (!useCatalogueStore.getState().dragActive) return;
 
       // Update ghost one final time at release position
-      const hit = raycastToFloor(event.clientX, event.clientY);
+      const hit = raycastToFloor(clientX, clientY);
       if (hit !== null && itemId !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       }
@@ -290,6 +290,14 @@ export function PlacementGhost(): React.ReactElement | null {
       useSelectionStore.getState().setActiveGuides([]);
       clearChairBrush();
       invalidateRef.current();
+    }
+
+    function onPointerUp(event: PointerEvent): void {
+      finishPlacementRelease(event.clientX, event.clientY, event.button);
+    }
+
+    function onMouseUp(event: MouseEvent): void {
+      finishPlacementRelease(event.clientX, event.clientY, event.button);
     }
 
     function onClick(event: MouseEvent): void {
@@ -312,6 +320,7 @@ export function PlacementGhost(): React.ReactElement | null {
     canvasEl.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("pointercancel", onPointerCancel);
     canvasEl.addEventListener("click", onClick);
 
@@ -319,6 +328,7 @@ export function PlacementGhost(): React.ReactElement | null {
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("pointercancel", onPointerCancel);
       canvasEl.removeEventListener("click", onClick);
       canvasEl.style.cursor = "";

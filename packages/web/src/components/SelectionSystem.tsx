@@ -600,6 +600,13 @@ export function SelectionSystem(): null {
       }
     }
 
+    function onMouseMove(event: MouseEvent): void {
+      if ((event.buttons & 2) === 0 || rightClickStart.current === null) return;
+      rightClickMoved.current =
+        rightClickMoved.current ||
+        screenDistance(rightClickStart.current.x, rightClickStart.current.y, event.clientX, event.clientY) > DRAG_THRESHOLD_PX;
+    }
+
     function handleRightButtonRelease(event: PointerEvent | MouseEvent): boolean {
       if (event.button === 2) {
         const start = rightClickStart.current;
@@ -718,6 +725,7 @@ export function SelectionSystem(): null {
     canvasEl.addEventListener("pointerdown", onPointerDown);
     canvasEl.addEventListener("mousedown", onMouseDown);
     canvasEl.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("mousemove", onMouseMove);
     canvasEl.addEventListener("pointerup", onPointerUp);
     canvasEl.addEventListener("mouseup", onMouseUp);
     canvasEl.addEventListener("contextmenu", onContextMenu);
@@ -728,6 +736,7 @@ export function SelectionSystem(): null {
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       canvasEl.removeEventListener("mousedown", onMouseDown);
       canvasEl.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("mousemove", onMouseMove);
       canvasEl.removeEventListener("pointerup", onPointerUp);
       canvasEl.removeEventListener("mouseup", onMouseUp);
       canvasEl.removeEventListener("contextmenu", onContextMenu);
