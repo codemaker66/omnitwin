@@ -71,6 +71,14 @@ describe("TruthModeIndicator", () => {
     expect(root.getAttribute("style") ?? "").toContain("calc(100vw - 24px)");
   });
 
+  it("does not let the diagnostic shell intercept planner controls", () => {
+    renderProceduralIndicator();
+    const root = screen.getByTestId("truth-mode-indicator");
+    const toggle = screen.getByTestId("truth-mode-toggle");
+    expect(root.getAttribute("style") ?? "").toContain("pointer-events: none");
+    expect(toggle.getAttribute("style") ?? "").toContain("pointer-events: auto");
+  });
+
   it("is gated in production unless the query param is present", () => {
     expect(isTruthModeUiEnabled(new URLSearchParams(), false)).toBe(false);
     expect(isTruthModeUiEnabled(new URLSearchParams("truth=1"), false)).toBe(true);

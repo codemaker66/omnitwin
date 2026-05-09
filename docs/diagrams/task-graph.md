@@ -109,6 +109,7 @@ flowchart TD
         T398(["T-398 - cinematic planner shell"])
         T399(["T-399 - transitive audit floors"])
         T400(["T-400 - planner status + chunk warning guard"])
+        T401(["T-401 - CI E2E timeout guard"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -236,6 +237,7 @@ flowchart TD
     T080 --> T399
     T087 --> T400
     T398 --> T400
+    T400 --> T401
     T357 --> T372
     T366 --> T372
     T372 --> T373
@@ -328,7 +330,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121,T386,T388,T389 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -393,6 +395,10 @@ of the Spark/Three split and cinematic shell: the known large vendor chunks stay
 lazy/manual-chunked, the generic Vite size warning is quieted intentionally, and
 desktop `/plan` gets a Grand Hall command/status surface without changing public
 claims or real-asset/T-091 state.
+`T-400 → T-401` records the CI/E2E stabilization pass after the first pushed
+planner polish commit: the GitHub Actions E2E timeout now matches the actual
+expanded Playwright suite, and the dev Truth Mode overlay no longer intercepts
+planner controls during local/CI dev-mode tests.
 
 `T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
 and `T-121 → T-091` capture the new D-024 planning split: real venue

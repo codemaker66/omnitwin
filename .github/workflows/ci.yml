@@ -144,7 +144,11 @@ jobs:
   e2e:
     name: E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The full Chromium suite now covers the cinematic planner, landing
+    # planner, private-brief guard, and mobile/tablet matrices. Fifteen minutes
+    # was cancelling healthy runs before Playwright could finish and upload
+    # artifacts; keep this above normal runtime while still bounding hangs.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4

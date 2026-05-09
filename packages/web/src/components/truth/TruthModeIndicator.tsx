@@ -19,12 +19,13 @@ const warningToken = TRUTH_MODE_TOKENS.contested;
 const rootStyle: CSSProperties = {
   position: "fixed",
   left: 12,
-  bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+  top: "calc(env(safe-area-inset-top, 0px) + 84px)",
   zIndex: 38,
   width: "calc(100vw - 24px)",
-  maxWidth: 340,
+  maxWidth: 320,
   boxSizing: "border-box",
   fontFamily: "'Inter', system-ui, sans-serif",
+  pointerEvents: "none",
 };
 
 const indicatorButtonStyle: CSSProperties = {
@@ -42,14 +43,15 @@ const indicatorButtonStyle: CSSProperties = {
   boxShadow: "0 14px 34px rgba(0,0,0,0.34)",
   cursor: "pointer",
   textAlign: "left",
+  pointerEvents: "auto",
 };
 
 const popoverStyle: CSSProperties = {
   position: "fixed",
   left: 12,
-  bottom: "calc(env(safe-area-inset-bottom, 0px) + 176px)",
+  top: "calc(env(safe-area-inset-top, 0px) + 184px)",
   width: "calc(100vw - 24px)",
-  maxWidth: 340,
+  maxWidth: 320,
   boxSizing: "border-box",
   borderRadius: 12,
   border: `1px solid ${shellToken.border}`,
@@ -59,6 +61,7 @@ const popoverStyle: CSSProperties = {
   maxHeight: "calc(100dvh - 200px)",
   overflowY: "auto",
   overflowX: "hidden",
+  pointerEvents: "auto",
 };
 
 const labelStyle: CSSProperties = {
@@ -243,7 +246,10 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): React.
         aria-expanded={open}
         aria-controls={popoverId}
         onClick={() => { setOpen((value) => !value); }}
-        style={indicatorButtonStyle}
+        style={{
+          ...indicatorButtonStyle,
+          pointerEvents: open ? "none" : "auto",
+        }}
       >
         <ShieldQuestion size={18} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto" }} />
         <StatusDot summary={summary} />
