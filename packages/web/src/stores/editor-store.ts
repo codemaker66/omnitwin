@@ -9,7 +9,8 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
-import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
+import { createGrandHallStarterProposal } from "../lib/grand-hall-starter-proposal.js";
+import type { PlacedItem, TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -162,7 +163,10 @@ interface EditorActions {
    */
   readonly loadConfiguration: (configId: string, isAuthenticated?: boolean) => Promise<void>;
   readonly loadSpace: (venueId: string, spaceId: string) => Promise<void>;
-  readonly createPublicConfig: (spaceId: string) => Promise<string>;
+  readonly createPublicConfig: (
+    spaceId: string,
+    options?: { readonly seedGrandHallStarter?: boolean },
+  ) => Promise<string>;
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
   readonly updateObject: (objectId: string, transform: Partial<Pick<EditorObject, "positionX" | "positionY" | "positionZ" | "rotationX" | "rotationY" | "rotationZ" | "scale">>) => void;
   /**
@@ -191,6 +195,30 @@ interface EditorActions {
 type EditorStore = EditorState & EditorActions;
 
 let localIdCounter = 0;
+
+function starterProposalToEditorObjects(items: readonly PlacedItem[]): readonly EditorObject[] {
+  return items.map((item, sortOrder) => {
+    const base: EditorObject = {
+      id: item.id,
+      assetDefinitionId: item.catalogueItemId,
+      positionX: item.x,
+      positionY: item.y,
+      positionZ: item.z,
+      rotationX: 0,
+      rotationY: item.rotationY,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder,
+      clothed: item.clothed,
+      clothStyle: item.clothStyle,
+      tableSetting: item.tableSetting,
+      groupId: item.groupId,
+      notes: "",
+    };
+    const label = (item.label ?? "").trim();
+    return label.length > 0 ? { ...base, label } : base;
+  });
+}
 
 // Auto-save is owned by EditorBridge — no internal debounce needed here.
 
@@ -267,17 +295,20 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
   },
 
-  createPublicConfig: async (spaceId) => {
+  createPublicConfig: async (spaceId, options) => {
     set({ isLoading: true, error: null });
     try {
       const config = await configApi.createPublicConfig(spaceId);
+      const starterObjects = options?.seedGrandHallStarter === true
+        ? starterProposalToEditorObjects(createGrandHallStarterProposal())
+        : [];
       set({
         configId: config.id,
         spaceId: config.spaceId,
         venueId: config.venueId,
         isPublicPreview: true,
-        objects: [],
-        isDirty: false,
+        objects: starterObjects,
+        isDirty: starterObjects.length > 0,
         isLoading: false,
       });
 

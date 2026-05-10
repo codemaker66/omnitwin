@@ -27,6 +27,7 @@ import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
 import { PlannerCommandDeck } from "./components/editor/PlannerCommandDeck.js";
+import { PlannerSpatialHud } from "./components/editor/PlannerSpatialHud.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
@@ -156,17 +157,15 @@ export function App(): React.ReactElement {
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />
       <VerticalToolbox />
-      {!mobileChrome && <PlannerCommandDeck />}
+      {!mobileChrome && (
+        <>
+          <PlannerSpatialHud />
+          <PlannerCommandDeck />
+        </>
+      )}
 
       {!mobileChrome && (
-        <div style={{
-          position: "absolute",
-          right: 20,
-          top: "50%",
-          transform: "translateY(-50%)",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-          zIndex: 10, pointerEvents: "auto",
-        }}>
+        <div className="planner-section-slider-dock">
           <SectionSlider />
         </div>
       )}

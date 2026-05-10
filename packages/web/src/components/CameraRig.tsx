@@ -49,9 +49,12 @@ export function computeDefaultCameraPosition(
   }
 
   // Landscape / desktop — premium top-down 3/4 authoring pose.
-  const alongAxis = maxDim * 0.30;
-  const lateral = -minDim * 0.30;
-  const lift = Math.max(dimensions.height * 1.4, maxDim * 0.55);
+  // Keep the camera close to the room centre and lift aggressively so a new
+  // layout opens as a complete planning board, not as a cropped inspection
+  // view. Users can still zoom down to individual chairs immediately.
+  const alongAxis = maxDim * 0.1;
+  const lateral = -minDim * 0.18;
+  const lift = Math.max(dimensions.height * 1.8, maxDim * 0.92);
 
   if (width >= length) {
     return [alongAxis, lift, lateral];

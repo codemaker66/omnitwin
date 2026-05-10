@@ -63,8 +63,14 @@ const MOCK_SPACE = {
   name: "Grand Hall",
   slug: "grand-hall",
   widthM: "21",
-  lengthM: "10",
+  lengthM: "10.5",
   heightM: "7",
+  floorPlanOutline: [
+    { x: 0, y: 0 },
+    { x: 21, y: 0 },
+    { x: 21, y: 10.5 },
+    { x: 0, y: 10.5 },
+  ],
 };
 
 const MOCK_OBJECT: MockPlacedObject = {
@@ -113,6 +119,9 @@ async function mockSpacePickerApis(page: Page): Promise<void> {
   });
   await page.route(`${API}/venues/${VENUE_ID}/spaces`, (route) => {
     void route.fulfill({ json: [MOCK_SPACE] });
+  });
+  await page.route(`${API}/venues/${VENUE_ID}/spaces/${SPACE_ID}`, (route) => {
+    void route.fulfill({ json: { data: MOCK_SPACE } });
   });
 }
 
@@ -169,6 +178,30 @@ test.describe.skip("Config creation from space picker", () => {
     await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
     await page.waitForSelector("canvas", { timeout: 15_000 });
     await expect(page.locator("canvas")).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Public /plan entry — auto-created Grand Hall starter proposal
+// ---------------------------------------------------------------------------
+
+test.describe("Grand Hall public starter proposal", () => {
+  test("opening /plan creates an editable cinematic starter layout", async ({ page }) => {
+    await mockSpacePickerApis(page);
+    await page.route(`${API}/public/configurations`, (route) => {
+      void route.fulfill({ status: 201, json: { data: MOCK_CONFIG_EMPTY } });
+    });
+
+    await page.goto("/plan");
+    await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
+    await page.waitForSelector("canvas", { timeout: 15_000 });
+
+    await expect(page.getByTestId("save-send-panel")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("planner-spatial-hud")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText("8 round tables")).toBeVisible();
+    await expect(page.getByText("8 trestles")).toBeVisible();
+    await expect(page.getByText("116 chairs")).toBeVisible();
+    await expect(page.getByText("16 tables dressed")).toBeVisible();
   });
 });
 
