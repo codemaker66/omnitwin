@@ -26,6 +26,7 @@ import { MarkupPersistence } from "./components/MarkupPersistence.js";
 import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
+import { PlannerCommandDeck } from "./components/editor/PlannerCommandDeck.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
@@ -155,6 +156,7 @@ export function App(): React.ReactElement {
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />
       <VerticalToolbox />
+      {!mobileChrome && <PlannerCommandDeck />}
 
       {!mobileChrome && (
         <div style={{

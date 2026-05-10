@@ -181,6 +181,202 @@
   box-shadow: 0 0 0 4px rgba(216, 102, 102, 0.14);
 }
 
+.planner-command-deck {
+  position: fixed;
+  left: calc(var(--toolbox-offset, 68px) + ((100vw - var(--toolbox-offset, 68px)) / 2));
+  bottom: calc(var(--toolbox-bottom, 0px) + max(18px, env(safe-area-inset-bottom)));
+  z-index: 34;
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) auto;
+  gap: 12px 18px;
+  align-items: center;
+  width: min(760px, calc(100vw - var(--toolbox-offset, 68px) - 240px));
+  min-height: 86px;
+  padding: 14px 16px 14px 18px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 168, 76, 0.3);
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(12, 11, 10, 0.94), rgba(28, 24, 18, 0.84)),
+    radial-gradient(circle at 12% 12%, rgba(201, 168, 76, 0.18), transparent 38%);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.4),
+    0 4px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 249, 229, 0.09);
+  color: #f7f0e4;
+  font-family: "Inter", system-ui, sans-serif;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  -webkit-user-select: none;
+  user-select: none;
+  backdrop-filter: blur(20px) saturate(1.16);
+  contain: layout paint style;
+}
+
+.planner-command-deck__glow {
+  position: absolute;
+  inset: auto 12% -64px 12%;
+  height: 92px;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(201, 168, 76, 0.3), transparent 64%);
+  filter: blur(18px);
+}
+
+.planner-command-deck__copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.planner-command-deck__kicker {
+  margin: 0 0 4px;
+  color: #d7bd68;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.planner-command-deck__title {
+  overflow: hidden;
+  margin: 0;
+  color: #fff8ea;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-command-deck__detail {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 6px 0 0;
+  color: rgba(247, 240, 228, 0.73);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.planner-command-deck__meta {
+  position: relative;
+  z-index: 1;
+  justify-self: end;
+  align-self: start;
+  max-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid rgba(201, 168, 76, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 246, 222, 0.07);
+  color: rgba(247, 240, 228, 0.72);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  line-height: 1.1;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planner-command-deck__actions {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.planner-command-deck__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 102px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid rgba(247, 240, 228, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(247, 240, 228, 0.9);
+  cursor: pointer;
+  gap: 8px;
+  font: 800 12px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.planner-command-deck__button svg {
+  flex: 0 0 auto;
+}
+
+.planner-command-deck__button:hover:not(:disabled),
+.planner-command-deck__button:focus-visible {
+  border-color: rgba(215, 189, 104, 0.56);
+  background: rgba(215, 189, 104, 0.13);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  color: #fff7e8;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.planner-command-deck__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.planner-command-deck__button--primary {
+  border-color: rgba(215, 189, 104, 0.72);
+  background: linear-gradient(180deg, rgba(219, 190, 91, 0.95), rgba(177, 142, 43, 0.95));
+  box-shadow:
+    0 14px 30px rgba(177, 142, 43, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #16120b;
+}
+
+.planner-command-deck__button--primary:hover:not(:disabled),
+.planner-command-deck__button--primary:focus-visible {
+  background: linear-gradient(180deg, rgba(238, 209, 105, 1), rgba(190, 152, 43, 1));
+  color: #110e08;
+}
+
+.planner-command-deck__button--danger {
+  border-color: rgba(226, 108, 108, 0.26);
+  color: #ffd8d8;
+}
+
+.planner-command-deck__button--danger:hover:not(:disabled),
+.planner-command-deck__button--danger:focus-visible {
+  border-color: rgba(226, 108, 108, 0.58);
+  background: rgba(142, 36, 36, 0.24);
+}
+
+@media (max-width: 1180px) {
+  .planner-command-deck {
+    width: min(680px, calc(100vw - var(--toolbox-offset, 68px) - 168px));
+  }
+
+  .planner-command-deck__meta {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .planner-command-deck {
+    display: none;
+  }
+}
+
 @media (max-width: 640px) {
   .planner-canvas-stage::before {
     background:

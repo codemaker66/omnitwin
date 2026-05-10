@@ -54,6 +54,12 @@ test.describe("Public Editor", () => {
     await expect.poll(async () =>
       statusHeader.evaluate((node) => getComputedStyle(node).userSelect),
     ).toBe("none");
+
+    const commandDeck = page.getByTestId("planner-command-deck");
+    await expect(commandDeck).toBeVisible({ timeout: 5_000 });
+    await expect(commandDeck).toContainText("Build the room from the floor");
+    await commandDeck.getByTestId("planner-command-action-open-catalogue").click();
+    await expect(page.getByTestId("furniture-panel")).toBeVisible({ timeout: 5_000 });
   });
 
   // ---------------------------------------------------------------------------

@@ -24,6 +24,10 @@ import {
   type EditorSaveStatus,
 } from "../../lib/editor-save-status.js";
 import {
+  PLANNER_TOOLBAR_COMMAND_EVENT,
+  readPlannerToolbarCommand,
+} from "../../lib/planner-toolbar-events.js";
+import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
   getCatalogueItem,
@@ -1368,14 +1372,23 @@ export function VerticalToolbox(): React.ReactElement {
     try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
   }, []);
 
+  const openFurniturePanel = useCallback(() => {
+    setPanelOpen(true);
+    setActiveTool("add");
+    setCameraOpen(false);
+    setMobileMoreOpen(false);
+    setOnboardingDismissed(true);
+    try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
+  }, []);
+
   const handleToolClick = useCallback((tool: ActiveTool) => {
     if (tool === "add") {
-      setPanelOpen((p) => !p);
-      setActiveTool((prev) => prev === "add" ? "select" : "add");
-      // Once the user opens the Furniture panel they've obviously found the
-      // button — hide the hint for good even if they never tick the checkbox.
-      setOnboardingDismissed(true);
-      try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch { /* storage unavailable */ }
+      if (activeTool === "add" && panelOpen) {
+        setPanelOpen(false);
+        setActiveTool("select");
+      } else {
+        openFurniturePanel();
+      }
     } else if (tool === "markup") {
       setPanelOpen(false);
       setActiveTool("markup");
@@ -1390,7 +1403,25 @@ export function VerticalToolbox(): React.ReactElement {
     }
     setCameraOpen(false);
     setMobileMoreOpen(false);
-  }, []);
+  }, [activeTool, openFurniturePanel, panelOpen]);
+
+  useEffect(() => {
+    function onPlannerToolbarCommand(event: Event): void {
+      const command = readPlannerToolbarCommand(event);
+      if (command === "open-furniture") {
+        openFurniturePanel();
+      } else if (command === "open-markup") {
+        handleToolClick("markup");
+      } else if (command === "select") {
+        handleToolClick("select");
+      }
+    }
+
+    window.addEventListener(PLANNER_TOOLBAR_COMMAND_EVENT, onPlannerToolbarCommand);
+    return () => {
+      window.removeEventListener(PLANNER_TOOLBAR_COMMAND_EVENT, onPlannerToolbarCommand);
+    };
+  }, [handleToolClick, openFurniturePanel]);
 
   useEffect(() => {
     useMarkupStore.getState().setActive(activeTool === "markup");
