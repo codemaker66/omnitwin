@@ -39,12 +39,21 @@ CREATE INDEX IF NOT EXISTS "configurations_venue_review_status_idx"
 -- populated together, or both null. Enforced at the DB level so a
 -- malformed UPDATE from any service (migration script, admin panel,
 -- test harness) can never leave the pair half-set.
-ALTER TABLE "configurations"
-  ADD CONSTRAINT "configurations_approval_cols_coherent"
-  CHECK (
-    ("approved_at" IS NULL AND "approved_by" IS NULL)
-    OR ("approved_at" IS NOT NULL AND "approved_by" IS NOT NULL)
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'configurations_approval_cols_coherent'
+  ) THEN
+    ALTER TABLE "configurations"
+      ADD CONSTRAINT "configurations_approval_cols_coherent"
+      CHECK (
+        ("approved_at" IS NULL AND "approved_by" IS NULL)
+        OR ("approved_at" IS NOT NULL AND "approved_by" IS NOT NULL)
+      );
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "configuration_review_history" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
