@@ -114,6 +114,7 @@ flowchart TD
         T402(["T-402 - remote Playwright drag/auth stability"])
         T404(["T-404 - planner command deck"])
         T405(["T-405 - starter proposal + event HUD"])
+        T406(["T-406 - blank fast /plan opening"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -247,6 +248,7 @@ flowchart TD
     T392 --> T405
     T398 --> T405
     T404 --> T405
+    T405 --> T406
     T400 --> T401
     T401 --> T402
     T357 --> T372
@@ -342,7 +344,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121,T386,T388,T389 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -429,6 +431,10 @@ introducing a second planner state machine or changing public evidence claims.
 new public Grand Hall drafts now seed a real editable starter proposal with
 dressed dining rounds, a central banquet row, and a derived spaces/capacity HUD,
 while the desktop camera opens in a fuller top-down planning-board composition.
+`T-405 → T-406` records the immediate correction from live feedback: the starter
+proposal made the default planner too heavy and violated the blank-hall expectation,
+so `/plan` now creates an empty hall again while preserving the lightweight HUD/camera
+chrome.
 
 `T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
 and `T-121 → T-091` capture the new D-024 planning split: real venue

@@ -182,11 +182,11 @@ test.describe.skip("Config creation from space picker", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Public /plan entry — auto-created Grand Hall starter proposal
+// Public /plan entry — auto-created blank Grand Hall draft
 // ---------------------------------------------------------------------------
 
-test.describe("Grand Hall public starter proposal", () => {
-  test("opening /plan creates an editable cinematic starter layout", async ({ page }) => {
+test.describe("Grand Hall public blank draft", () => {
+  test("opening /plan creates an empty editable hall", async ({ page }) => {
     await mockSpacePickerApis(page);
     await page.route(`${API}/public/configurations`, (route) => {
       void route.fulfill({ status: 201, json: { data: MOCK_CONFIG_EMPTY } });
@@ -196,12 +196,10 @@ test.describe("Grand Hall public starter proposal", () => {
     await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
     await page.waitForSelector("canvas", { timeout: 15_000 });
 
-    await expect(page.getByTestId("save-send-panel")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByTestId("planner-spatial-hud")).toBeVisible({ timeout: 8_000 });
-    await expect(page.getByText("8 round tables")).toBeVisible();
-    await expect(page.getByText("8 trestles")).toBeVisible();
-    await expect(page.getByText("116 chairs")).toBeVisible();
-    await expect(page.getByText("16 tables dressed")).toBeVisible();
+    await expect(page.getByTestId("save-send-panel")).not.toBeAttached();
+    await expect(page.getByText("Start placing furniture to build capacity")).toBeVisible();
+    await expect(page.getByText("0 chairs")).toBeVisible();
   });
 });
 

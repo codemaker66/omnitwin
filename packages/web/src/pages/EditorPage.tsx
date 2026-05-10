@@ -78,9 +78,7 @@ export function EditorPage(): React.ReactElement {
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateFailed(true); return; }
-        const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, {
-          seedGrandHallStarter: space.slug === DEFAULT_SPACE_SLUG,
-        });
+        const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
         void navigate(`/plan/${newConfigId}`, { replace: true });
       } catch {
         setAutoCreateFailed(true);

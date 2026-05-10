@@ -46,7 +46,7 @@ export function PlannerSpatialHud(): React.ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const stats = useMemo(() => computeHudStats(placedItems), [placedItems]);
   const capacityPercent = Math.min(100, Math.round((stats.chairs / COMFORTABLE_CAPACITY) * 100));
-  const hasStarterScale = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
+  const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
 
   return (
     <aside className="planner-spatial-hud" data-testid="planner-spatial-hud" aria-label="Layout summary">
@@ -77,7 +77,7 @@ export function PlannerSpatialHud(): React.ReactElement {
           </div>
         </div>
         <div className="planner-spatial-hud__caption">
-          {hasStarterScale
+          {hasLayout
             ? `${String(capacityPercent)}% of comfortable planning capacity`
             : "Start placing furniture to build capacity"}
         </div>

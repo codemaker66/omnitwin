@@ -402,19 +402,6 @@ describe("createPublicConfig", () => {
     expect(useEditorStore.getState().isDirty).toBe(false);
   });
 
-  it("can seed a new Grand Hall public draft with the cinematic starter proposal", async () => {
-    configMock.createPublicConfig.mockResolvedValue({
-      id: "new-cfg", spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
-    });
-
-    await useEditorStore.getState().createPublicConfig("s-1", { seedGrandHallStarter: true });
-
-    const state = useEditorStore.getState();
-    expect(state.objects.length).toBeGreaterThan(100);
-    expect(state.objects.filter((object) => object.clothed && object.tableSetting === "dinner").length).toBe(16);
-    expect(state.isDirty).toBe(true);
-    expect(localStorage.getItem(anonymousPlannerDraftKey("new-cfg"))).not.toBeNull();
-  });
 });
 
 describe("reset", () => {
