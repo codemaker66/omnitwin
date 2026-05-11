@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/react";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router.js";
 import { ClerkAuthBridge } from "./components/auth/ClerkAuthBridge.js";
+import { JackieLarkinHeart } from "./components/JackieLarkinHeart.js";
 import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 
@@ -57,6 +58,7 @@ function AppRoot(): React.ReactElement {
     <ClerkProvider publishableKey={CLERK_KEY ?? ""} afterSignOutUrl="/">
       {E2E_ENABLED ? null : <ClerkAuthBridge />}
       <RouterProvider router={router} />
+      <JackieLarkinHeart />
     </ClerkProvider>
   );
 }
