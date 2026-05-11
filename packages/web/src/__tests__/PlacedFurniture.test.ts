@@ -74,10 +74,12 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
   it("renders labels as large camera-facing nameplates instead of tiny object strips", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toContain("groupRef.current.lookAt(camera.position)");
-    expect(codeOnly).toContain("Math.max(8.2");
-    expect(codeOnly).toContain("Math.max(3.1");
-    expect(codeOnly).toContain("visible table identifier");
-    expect(codeOnly).toContain("visible seat identifier");
+    expect(codeOnly).toContain("Math.max(7.2");
+    expect(codeOnly).toContain("Math.max(4.8");
+    expect(codeOnly).toContain("rotateOffset(tableOffset");
+    expect(codeOnly).toContain("grouped seats");
+    expect(codeOnly).toContain("Camera point of view active");
+    expect(codeOnly).toContain("item-nameplate-anchor-dot");
   });
 
   it("renders table dressing layers over placed tables", async () => {

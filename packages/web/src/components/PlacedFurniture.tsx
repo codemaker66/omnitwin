@@ -49,70 +49,121 @@ function fitCanvasText(
   return minPx;
 }
 
-function createNameplateTexture(label: string, item: CatalogueItem): CanvasTexture | null {
+interface NameplateTextureOptions {
+  readonly cameraEnabled: boolean;
+  readonly groupedSeatCount?: number;
+}
+
+function createNameplateTexture(
+  label: string,
+  item: CatalogueItem,
+  options: NameplateTextureOptions,
+): CanvasTexture | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
-  canvas.width = 1536;
-  canvas.height = 448;
+  canvas.width = 1600;
+  canvas.height = 880;
   const ctx = canvas.getContext("2d");
   if (ctx === null) return null;
 
   const isTable = item.category === "table";
   const eyebrow = isTable ? "TABLE" : item.category === "chair" ? "SEAT" : "ITEM";
   const display = label.trim().slice(0, 80);
+  const detailLines = nameplateDetailLines(item, options);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const bg = ctx.createLinearGradient(42, 46, 1494, 404);
-  bg.addColorStop(0, "rgba(11, 10, 8, 0.985)");
-  bg.addColorStop(0.54, "rgba(22, 19, 14, 0.965)");
-  bg.addColorStop(1, "rgba(8, 8, 7, 0.985)");
+  ctx.shadowColor = "rgba(0, 0, 0, 0.52)";
+  ctx.shadowBlur = 42;
+  ctx.shadowOffsetY = 24;
+
+  const bg = ctx.createLinearGradient(46, 52, 1518, 782);
+  bg.addColorStop(0, "rgba(10, 10, 9, 0.99)");
+  bg.addColorStop(0.52, "rgba(24, 21, 17, 0.975)");
+  bg.addColorStop(1, "rgba(8, 8, 7, 0.99)");
   ctx.fillStyle = bg;
-  roundedRect(ctx, 42, 46, 1452, 356, 48);
+  roundedRect(ctx, 46, 52, 1508, 724, 76);
   ctx.fill();
-
-  const sheen = ctx.createLinearGradient(42, 46, 1494, 402);
-  sheen.addColorStop(0, "rgba(255, 239, 173, 0.12)");
-  sheen.addColorStop(0.42, "rgba(255, 255, 255, 0.015)");
-  sheen.addColorStop(0.75, "rgba(219, 173, 65, 0.11)");
-  sheen.addColorStop(1, "rgba(255, 240, 184, 0.08)");
-  ctx.fillStyle = sheen;
-  roundedRect(ctx, 62, 66, 1412, 316, 42);
-  ctx.fill();
-
-  const gradient = ctx.createLinearGradient(42, 46, 1494, 402);
-  gradient.addColorStop(0, "rgba(255, 225, 120, 1)");
-  gradient.addColorStop(0.32, "rgba(151, 105, 30, 0.82)");
-  gradient.addColorStop(0.68, "rgba(235, 192, 80, 0.9)");
-  gradient.addColorStop(1, "rgba(255, 226, 134, 1)");
-  ctx.strokeStyle = gradient;
-  ctx.lineWidth = 9;
-  roundedRect(ctx, 42, 46, 1452, 356, 48);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(232, 189, 78, 0.96)";
-  ctx.font = "900 48px Inter, Arial, sans-serif";
-  ctx.letterSpacing = "8px";
-  ctx.fillText(eyebrow, 102, 140);
-
-  ctx.fillStyle = "#fff3d2";
-  fitCanvasText(ctx, display, 1280, item.category === "chair" ? 148 : 156, 76);
-  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
-  ctx.shadowBlur = 16;
-  ctx.shadowOffsetY = 8;
-  ctx.fillText(display, 100, 286);
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
 
-  ctx.fillStyle = "rgba(241, 203, 88, 0.22)";
-  for (let x = 86; x < canvas.width - 90; x += 92) {
-    ctx.fillRect(x, 82, 34, 7);
-    ctx.fillRect(x + 46, 358, 34, 7);
+  const sheen = ctx.createLinearGradient(46, 52, 1518, 776);
+  sheen.addColorStop(0, "rgba(255, 234, 160, 0.16)");
+  sheen.addColorStop(0.42, "rgba(255, 255, 255, 0.015)");
+  sheen.addColorStop(0.78, "rgba(219, 173, 65, 0.14)");
+  sheen.addColorStop(1, "rgba(255, 240, 184, 0.1)");
+  ctx.fillStyle = sheen;
+  roundedRect(ctx, 78, 84, 1444, 660, 58);
+  ctx.fill();
+
+  const gradient = ctx.createLinearGradient(42, 46, 1494, 402);
+  gradient.addColorStop(0, "rgba(255, 229, 142, 1)");
+  gradient.addColorStop(0.32, "rgba(151, 105, 30, 0.72)");
+  gradient.addColorStop(0.68, "rgba(235, 192, 80, 0.88)");
+  gradient.addColorStop(1, "rgba(255, 226, 134, 1)");
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 10;
+  roundedRect(ctx, 46, 52, 1508, 724, 76);
+  ctx.stroke();
+
+  ctx.fillStyle = options.cameraEnabled ? "rgba(76, 205, 255, 0.22)" : "rgba(232, 189, 78, 0.18)";
+  roundedRect(ctx, 102, 126, 96, 410, 42);
+  ctx.fill();
+  ctx.strokeStyle = options.cameraEnabled ? "rgba(111, 221, 255, 0.86)" : "rgba(232, 189, 78, 0.76)";
+  ctx.lineWidth = 5;
+  roundedRect(ctx, 102, 126, 96, 410, 42);
+  ctx.stroke();
+  ctx.fillStyle = options.cameraEnabled ? "rgba(151, 230, 255, 0.96)" : "rgba(247, 206, 103, 0.95)";
+  ctx.beginPath();
+  ctx.arc(150, 190, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(142, 244, 16, 210);
+
+  ctx.fillStyle = "rgba(232, 189, 78, 0.96)";
+  ctx.font = "900 58px Inter, Arial, sans-serif";
+  ctx.letterSpacing = "9px";
+  ctx.fillText(eyebrow, 246, 170);
+
+  ctx.fillStyle = "#fff3d2";
+  fitCanvasText(ctx, display, 1178, item.category === "chair" ? 178 : 188, 92);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 9;
+  ctx.fillText(display, 244, 344);
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  ctx.strokeStyle = "rgba(255, 225, 140, 0.28)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(244, 398);
+  ctx.lineTo(1424, 398);
+  ctx.stroke();
+
+  ctx.font = "760 48px Inter, Arial, sans-serif";
+  ctx.fillStyle = "rgba(255, 249, 229, 0.92)";
+  for (let i = 0; i < detailLines.length; i += 1) {
+    const y = 474 + i * 82;
+    ctx.fillStyle = i === 0 ? "rgba(255, 249, 229, 0.96)" : "rgba(226, 218, 199, 0.88)";
+    ctx.beginPath();
+    ctx.arc(260, y - 15, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillText(detailLines[i] ?? "", 292, y);
   }
 
-  ctx.fillStyle = "rgba(255, 244, 212, 0.34)";
-  ctx.font = "800 22px Inter, Arial, sans-serif";
-  ctx.fillText(isTable ? "visible table identifier" : "visible seat identifier", 104, 346);
+  if (options.cameraEnabled) {
+    ctx.fillStyle = "rgba(77, 205, 255, 0.14)";
+    roundedRect(ctx, 1058, 612, 366, 76, 32);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(117, 224, 255, 0.62)";
+    ctx.lineWidth = 3;
+    roundedRect(ctx, 1058, 612, 366, 76, 32);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(189, 241, 255, 0.96)";
+    ctx.font = "850 34px Inter, Arial, sans-serif";
+    ctx.fillText("CAMERA POV SAVED", 1092, 660);
+  }
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -120,6 +171,35 @@ function createNameplateTexture(label: string, item: CatalogueItem): CanvasTextu
   texture.magFilter = LinearFilter;
   texture.needsUpdate = true;
   return texture;
+}
+
+function nameplateDetailLines(item: CatalogueItem, options: NameplateTextureOptions): readonly string[] {
+  const lines: string[] = [];
+  if (item.category === "table") {
+    if (options.groupedSeatCount !== undefined && options.groupedSeatCount > 0) {
+      lines.push(`${String(options.groupedSeatCount)} grouped seats`);
+    } else if (item.tableShape === "round") {
+      lines.push("Round table");
+    } else {
+      lines.push("Table placement");
+    }
+    lines.push("Planner label");
+  } else if (item.category === "chair") {
+    lines.push(item.name);
+    lines.push("Seat assignment");
+  } else {
+    lines.push(item.name);
+    lines.push("Planner object");
+  }
+
+  if (options.cameraEnabled) lines.push("Camera point of view active");
+  return lines.slice(0, 3);
+}
+
+function rotateOffset(dx: number, dz: number, rotationY: number): readonly [number, number] {
+  const cos = Math.cos(rotationY);
+  const sin = Math.sin(rotationY);
+  return [dx * cos + dz * sin, -dx * sin + dz * cos];
 }
 
 function roundedRect(
@@ -149,16 +229,21 @@ function FurnitureNamePlate({
   position,
   rotationY,
   cameraEnabled,
+  groupedSeatCount,
 }: {
   readonly label: string;
   readonly item: CatalogueItem;
   readonly position: readonly [number, number, number];
   readonly rotationY: number;
   readonly cameraEnabled: boolean;
+  readonly groupedSeatCount?: number;
 }): React.ReactElement | null {
   const groupRef = useRef<Group>(null);
   const { camera } = useThree();
-  const texture = useMemo(() => createNameplateTexture(label, item), [label, item]);
+  const texture = useMemo(
+    () => createNameplateTexture(label, item, { cameraEnabled, groupedSeatCount }),
+    [cameraEnabled, groupedSeatCount, item, label],
+  );
 
   useFrame(() => {
     if (groupRef.current !== null) {
@@ -175,18 +260,23 @@ function FurnitureNamePlate({
   if (texture === null) return null;
 
   const width = item.category === "table"
-    ? Math.max(8.2, toRenderSpace(item.width) * 2.8)
-    : Math.max(3.1, toRenderSpace(item.width) * 4.8);
+    ? Math.max(7.2, toRenderSpace(item.width) * 3.2)
+    : Math.max(4.8, toRenderSpace(item.width) * 6.6);
   const height = item.category === "table"
-    ? Math.max(1.7, toRenderSpace(item.depth) * 0.62)
-    : 1.08;
-  const yOffset = item.category === "chair" ? item.height + 0.62 : item.height + 0.78;
+    ? Math.max(3.9, toRenderSpace(item.depth) * 1.48)
+    : 2.7;
+  const yOffset = item.category === "chair" ? item.height + 1.25 : item.height + 1.35;
+  const tableOffset = Math.max(2.35, toRenderSpace(item.width) * 0.72);
+  const chairOffset = Math.max(0.96, toRenderSpace(item.depth) * 1.6);
+  const [offsetX, offsetZ] = item.category === "table"
+    ? rotateOffset(tableOffset, -tableOffset * 0.32, rotationY)
+    : rotateOffset(0, -chairOffset, rotationY);
 
   return (
     <group
       ref={groupRef}
       name="item-nameplate"
-      position={[position[0], position[1] + yOffset, position[2]]}
+      position={[position[0] + offsetX, position[1] + yOffset, position[2] + offsetZ]}
       rotation={[0, rotationY, 0]}
     >
       <mesh renderOrder={cameraEnabled ? 21 : 20}>
@@ -196,6 +286,21 @@ function FurnitureNamePlate({
           side={DoubleSide}
           transparent
           opacity={cameraEnabled ? 1 : 0.96}
+          depthTest={false}
+          depthWrite={false}
+          clippingPlanes={sectionClipPlanes}
+        />
+      </mesh>
+      <mesh
+        name="item-nameplate-anchor-dot"
+        position={[-width * 0.48, -height * 0.44, 0.02]}
+        renderOrder={cameraEnabled ? 22 : 21}
+      >
+        <circleGeometry args={[0.13, 32]} />
+        <meshBasicMaterial
+          color={cameraEnabled ? "#8ee8ff" : "#f0ca66"}
+          transparent
+          opacity={0.92}
           depthTest={false}
           depthWrite={false}
           clippingPlanes={sectionClipPlanes}
@@ -368,6 +473,7 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
           position={itemPosition}
           rotationY={placed.rotationY}
           cameraEnabled={hasCameraReference}
+          groupedSeatCount={tableSettingCount}
         />
       )}
 
