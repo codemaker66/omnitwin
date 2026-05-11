@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { CanvasTexture, DoubleSide, LinearFilter, RepeatWrapping, SRGBColorSpace } from "three";
+import { CanvasTexture, DoubleSide, Group, LinearFilter, SRGBColorSpace } from "three";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
@@ -31,11 +31,29 @@ function selectionBoxArgs(item: { width: number; height: number; depth: number }
   ];
 }
 
+function fitCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  basePx: number,
+  minPx: number,
+  weight = 880,
+): number {
+  let size = basePx;
+  while (size > minPx) {
+    ctx.font = `${String(weight)} ${String(size)}px Inter, Arial, sans-serif`;
+    if (ctx.measureText(text).width <= maxWidth) return size;
+    size -= 4;
+  }
+  ctx.font = `${String(weight)} ${String(minPx)}px Inter, Arial, sans-serif`;
+  return minPx;
+}
+
 function createNameplateTexture(label: string, item: CatalogueItem): CanvasTexture | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 192;
+  canvas.width = 1536;
+  canvas.height = 448;
   const ctx = canvas.getContext("2d");
   if (ctx === null) return null;
 
@@ -44,44 +62,62 @@ function createNameplateTexture(label: string, item: CatalogueItem): CanvasTextu
   const display = label.trim().slice(0, 80);
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(10, 9, 8, 0.9)";
-  roundedRect(ctx, 20, 28, 984, 136, 26);
+  const bg = ctx.createLinearGradient(42, 46, 1494, 404);
+  bg.addColorStop(0, "rgba(11, 10, 8, 0.985)");
+  bg.addColorStop(0.54, "rgba(22, 19, 14, 0.965)");
+  bg.addColorStop(1, "rgba(8, 8, 7, 0.985)");
+  ctx.fillStyle = bg;
+  roundedRect(ctx, 42, 46, 1452, 356, 48);
   ctx.fill();
 
-  const gradient = ctx.createLinearGradient(20, 28, 1004, 164);
-  gradient.addColorStop(0, "rgba(241, 203, 88, 0.95)");
-  gradient.addColorStop(0.5, "rgba(144, 95, 34, 0.62)");
-  gradient.addColorStop(1, "rgba(241, 203, 88, 0.9)");
+  const sheen = ctx.createLinearGradient(42, 46, 1494, 402);
+  sheen.addColorStop(0, "rgba(255, 239, 173, 0.12)");
+  sheen.addColorStop(0.42, "rgba(255, 255, 255, 0.015)");
+  sheen.addColorStop(0.75, "rgba(219, 173, 65, 0.11)");
+  sheen.addColorStop(1, "rgba(255, 240, 184, 0.08)");
+  ctx.fillStyle = sheen;
+  roundedRect(ctx, 62, 66, 1412, 316, 42);
+  ctx.fill();
+
+  const gradient = ctx.createLinearGradient(42, 46, 1494, 402);
+  gradient.addColorStop(0, "rgba(255, 225, 120, 1)");
+  gradient.addColorStop(0.32, "rgba(151, 105, 30, 0.82)");
+  gradient.addColorStop(0.68, "rgba(235, 192, 80, 0.9)");
+  gradient.addColorStop(1, "rgba(255, 226, 134, 1)");
   ctx.strokeStyle = gradient;
-  ctx.lineWidth = 5;
-  roundedRect(ctx, 20, 28, 984, 136, 26);
+  ctx.lineWidth = 9;
+  roundedRect(ctx, 42, 46, 1452, 356, 48);
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(232, 189, 78, 0.9)";
-  ctx.font = "800 27px Inter, Arial, sans-serif";
-  ctx.letterSpacing = "5px";
-  ctx.fillText(eyebrow, 54, 75);
+  ctx.fillStyle = "rgba(232, 189, 78, 0.96)";
+  ctx.font = "900 48px Inter, Arial, sans-serif";
+  ctx.letterSpacing = "8px";
+  ctx.fillText(eyebrow, 102, 140);
 
-  const phrase = `${display}   •   `;
-  ctx.fillStyle = "#fff2d6";
-  ctx.font = `${display.length > 22 ? "760 46px" : "800 54px"} Inter, Arial, sans-serif`;
-  const phraseWidth = Math.max(240, ctx.measureText(phrase).width);
-  for (let x = 54; x < canvas.width + phraseWidth; x += phraseWidth) {
-    ctx.fillText(phrase, x, 131);
-  }
+  ctx.fillStyle = "#fff3d2";
+  fitCanvasText(ctx, display, 1280, item.category === "chair" ? 148 : 156, 76);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 8;
+  ctx.fillText(display, 100, 286);
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
 
   ctx.fillStyle = "rgba(241, 203, 88, 0.22)";
-  for (let x = 34; x < canvas.width; x += 72) {
-    ctx.fillRect(x, 40, 28, 6);
-    ctx.fillRect(x + 34, 146, 28, 6);
+  for (let x = 86; x < canvas.width - 90; x += 92) {
+    ctx.fillRect(x, 82, 34, 7);
+    ctx.fillRect(x + 46, 358, 34, 7);
   }
+
+  ctx.fillStyle = "rgba(255, 244, 212, 0.34)";
+  ctx.font = "800 22px Inter, Arial, sans-serif";
+  ctx.fillText(isTable ? "visible table identifier" : "visible seat identifier", 104, 346);
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.minFilter = LinearFilter;
   texture.magFilter = LinearFilter;
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
   texture.needsUpdate = true;
   return texture;
 }
@@ -120,11 +156,13 @@ function FurnitureNamePlate({
   readonly rotationY: number;
   readonly cameraEnabled: boolean;
 }): React.ReactElement | null {
+  const groupRef = useRef<Group>(null);
+  const { camera } = useThree();
   const texture = useMemo(() => createNameplateTexture(label, item), [label, item]);
 
-  useFrame((_, delta) => {
-    if (texture !== null && item.category === "table") {
-      texture.offset.x = (texture.offset.x - delta * 0.035) % 1;
+  useFrame(() => {
+    if (groupRef.current !== null) {
+      groupRef.current.lookAt(camera.position);
     }
   });
 
@@ -137,19 +175,22 @@ function FurnitureNamePlate({
   if (texture === null) return null;
 
   const width = item.category === "table"
-    ? Math.max(1.8, toRenderSpace(item.width) * 0.82)
-    : Math.max(0.75, toRenderSpace(item.width) * 0.9);
-  const depth = item.category === "table" ? 0.44 : 0.28;
-  const yOffset = item.category === "chair" ? item.height + 0.09 : item.height + 0.045;
+    ? Math.max(8.2, toRenderSpace(item.width) * 2.8)
+    : Math.max(3.1, toRenderSpace(item.width) * 4.8);
+  const height = item.category === "table"
+    ? Math.max(1.7, toRenderSpace(item.depth) * 0.62)
+    : 1.08;
+  const yOffset = item.category === "chair" ? item.height + 0.62 : item.height + 0.78;
 
   return (
     <group
+      ref={groupRef}
       name="item-nameplate"
       position={[position[0], position[1] + yOffset, position[2]]}
       rotation={[0, rotationY, 0]}
     >
-      <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={cameraEnabled ? 11 : 10}>
-        <planeGeometry args={[width, depth]} />
+      <mesh renderOrder={cameraEnabled ? 21 : 20}>
+        <planeGeometry args={[width, height]} />
         <meshBasicMaterial
           map={texture}
           side={DoubleSide}

@@ -6,7 +6,7 @@ import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 
 const panelStyle: React.CSSProperties = {
   position: "fixed",
-  top: 16,
+  top: 84,
   right: 72,
   zIndex: 60,
   display: "flex",

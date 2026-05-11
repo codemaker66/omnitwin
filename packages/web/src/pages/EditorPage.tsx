@@ -294,22 +294,36 @@ function PlannerStatusHeader({ viewMode }: { viewMode: "3d" | "2d" }): React.Rea
       aria-label="Planner status"
       data-save-status={status}
     >
-      <div className="planner-status-header__mark" aria-hidden="true">Th</div>
-      <div className="planner-status-header__body">
-        <div className="planner-status-header__eyebrow">
-          <span>{layoutMode}</span>
-          <span aria-hidden="true">/</span>
-          <span>{viewLabel}</span>
+      <div className="planner-status-header__brand">
+        <div className="planner-status-header__mark" aria-hidden="true">Vv</div>
+        <div className="planner-status-header__brand-copy">
+          <div className="planner-status-header__brand-title">Venviewer</div>
+          <div className="planner-status-header__brand-subtitle">{layoutMode}</div>
         </div>
-        <div className="planner-status-header__title">{spaceName}</div>
-        <div className="planner-status-header__meta">
-          <span className="planner-status-header__dot" aria-hidden="true" />
-          <span>{saveCopy.label}</span>
-          <span aria-hidden="true">·</span>
-          <span>{configLabel}</span>
-          <span aria-hidden="true">·</span>
-          <span>{furnitureCopy}</span>
-        </div>
+      </div>
+      <div className="planner-status-header__cell">
+        <span>Venue</span>
+        <strong>{spaceName}</strong>
+      </div>
+      <div className="planner-status-header__cell planner-status-header__cell--phase">
+        <span>Planning phase</span>
+        <strong>Build layout - submit draft</strong>
+      </div>
+      <div className="planner-status-header__review">
+        Draft layout / venue review required
+      </div>
+      <div className="planner-status-header__cell planner-status-header__cell--save">
+        <span className="planner-status-header__dot" aria-hidden="true" />
+        <span>Save status</span>
+        <strong>{saveCopy.label}</strong>
+      </div>
+      <div className="planner-status-header__cell planner-status-header__cell--runtime">
+        <span>Visual layer</span>
+        <strong>Procedural layer / no signed capture</strong>
+      </div>
+      <div className="planner-status-header__cell planner-status-header__cell--summary">
+        <span>{viewLabel}</span>
+        <strong>{configLabel} / {furnitureCopy}</strong>
       </div>
     </section>
   );
@@ -410,7 +424,7 @@ function ViewModeToggle({
     <div
       style={{
         position: "fixed",
-        top: isMobile ? "calc(env(safe-area-inset-top) + 10px)" : 16,
+        top: isMobile ? "calc(env(safe-area-inset-top) + 10px)" : 82,
         left: isMobile ? 10 : "50%",
         transform: isMobile ? "none" : "translateX(-50%)",
         zIndex: 31,

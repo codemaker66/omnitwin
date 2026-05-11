@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Trades Hall internal visual layer route", () => {
-  test("loads the empty internal route without runtime errors", async ({ page }) => {
+  test("loads the empty internal command shell without runtime errors", async ({ page }) => {
     const runtimeErrors: string[] = [];
 
     page.on("pageerror", (error) => {
@@ -14,9 +14,12 @@ test.describe("Trades Hall internal visual layer route", () => {
     });
 
     await page.goto("/dev/trades-hall-visual");
-    await expect(page.getByRole("heading", { name: "Trades Hall runtime asset loader" })).toBeVisible();
+    await expect(page.getByText("Venviewer")).toBeVisible();
+    await expect(page.getByText("Truth Mode")).toBeVisible();
+    await expect(page.getByText("Event Phase Graph")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Guest Flow Replay 180 agents/i })).toBeVisible();
     await expect(page.getByText("No real asset loaded yet")).toBeVisible();
-    await expect(page.getByText("Internal visual layer test. Not a verified photoreal runtime package.")).toBeVisible();
+    await expect(page.getByText("Internal command shell demo")).toBeVisible();
 
     const canvas = page.locator("canvas");
     await expect(canvas).toBeVisible();
@@ -26,5 +29,22 @@ test.describe("Trades Hall internal visual layer route", () => {
     }).toBeGreaterThan(300);
 
     expect(runtimeErrors).toEqual([]);
+  });
+
+  test("updates visible shell state from layer and phase controls", async ({ page }) => {
+    await page.goto("/dev/trades-hall-visual");
+
+    await page.getByRole("button", { name: /Splat/i }).click();
+    await expect(page.getByRole("button", { name: /Splat/i })).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: /Bar queue/i }).click();
+    await expect(page.getByText(/Wedding ceremony -> dinner flip \/ Bar queue/i)).toBeVisible();
+
+    await page.getByRole("button", { name: /Ops Compiler/i }).click();
+    await expect(page.getByRole("button", { name: "Ops", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+    await expect(page.getByText(/Black Label/i)).toHaveCount(0);
+    await expect(page.getByText(/production ready/i)).toHaveCount(0);
+    await expect(page.getByText(/photoreal/i)).toHaveCount(0);
   });
 });

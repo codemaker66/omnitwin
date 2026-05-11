@@ -72,30 +72,40 @@
 
 .planner-status-header {
   position: fixed;
-  top: max(16px, calc(env(safe-area-inset-top) + 14px));
-  left: calc(var(--toolbox-offset, 68px) + 24px);
-  z-index: 32;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 46;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(210px, 1.1fr) minmax(180px, 1fr) minmax(260px, 1.35fr) auto minmax(150px, 0.72fr) minmax(230px, 1.05fr) minmax(210px, 0.95fr);
+  gap: 0;
   align-items: center;
-  width: min(360px, calc(100vw - var(--toolbox-offset, 68px) - 168px));
-  min-height: 72px;
-  padding: 12px 16px;
-  border: 1px solid rgba(201, 168, 76, 0.28);
-  border-radius: 16px;
+  min-height: 70px;
+  padding: max(0px, env(safe-area-inset-top)) 0 0 var(--toolbox-offset, 68px);
+  border-bottom: 1px solid rgba(215, 189, 104, 0.2);
   background:
-    linear-gradient(145deg, rgba(15, 14, 12, 0.92), rgba(23, 20, 16, 0.78)),
-    radial-gradient(circle at 18% 0%, rgba(201, 168, 76, 0.16), transparent 42%);
+    linear-gradient(90deg, rgba(3, 4, 5, 0.985), rgba(10, 10, 10, 0.97) 42%, rgba(7, 6, 5, 0.985)),
+    radial-gradient(circle at 14% -60%, rgba(215, 189, 104, 0.2), transparent 34%);
   box-shadow:
-    0 24px 54px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 246, 219, 0.08);
+    0 18px 54px rgba(0, 0, 0, 0.42),
+    inset 0 -1px 0 rgba(255, 246, 219, 0.05);
   color: #f4efe6;
   font-family: "Inter", system-ui, sans-serif;
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
-  backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.planner-status-header__brand {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  height: 70px;
+  min-width: 0;
+  padding: 0 18px 0 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.075);
 }
 
 .planner-status-header__mark {
@@ -103,7 +113,7 @@
   place-items: center;
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 50%;
   background:
     radial-gradient(circle at 35% 28%, rgba(255, 242, 202, 0.18), transparent 45%),
     linear-gradient(145deg, #15120e, #080706);
@@ -119,50 +129,106 @@
   letter-spacing: 0;
 }
 
-.planner-status-header__body {
+.planner-status-header__brand-copy,
+.planner-status-header__cell {
   min-width: 0;
 }
 
-.planner-status-header__eyebrow,
-.planner-status-header__meta {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 7px;
-  color: rgba(244, 239, 230, 0.68);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.105em;
-  line-height: 1.1;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.planner-status-header__title {
+.planner-status-header__brand-title {
   overflow: hidden;
-  margin-top: 3px;
-  color: #fff9ed;
+  color: #fff4df;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: 0;
-  line-height: 1.05;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.planner-status-header__meta {
-  margin-top: 6px;
-  color: rgba(244, 239, 230, 0.78);
+.planner-status-header__brand-subtitle,
+.planner-status-header__cell span {
+  overflow: hidden;
+  display: block;
+  min-width: 0;
+  color: rgba(244, 239, 230, 0.54);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: none;
+  font-weight: 780;
+  letter-spacing: 0.03em;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planner-status-header__brand-subtitle {
+  margin-top: 5px;
+}
+
+.planner-status-header__cell {
+  display: grid;
+  align-content: center;
+  height: 70px;
+  gap: 6px;
+  padding: 0 20px;
+  border-right: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.planner-status-header__cell strong {
+  overflow: hidden;
+  color: #fff6e9;
+  font-size: 13px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-status-header__review {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  max-width: 330px;
+  padding: 0 18px;
+  border: 1px solid rgba(215, 167, 75, 0.48);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 219, 122, 0.16), transparent 52%),
+    rgba(104, 65, 16, 0.22);
+  color: #f1ce78;
+  font-size: 12px;
+  font-weight: 860;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.planner-status-header__cell--save {
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+.planner-status-header__cell--save strong {
+  grid-column: 2;
+  color: #dff7d8;
+}
+
+.planner-status-header__cell--runtime strong {
+  color: #f4cc79;
+}
+
+.planner-status-header__cell--summary strong {
+  color: rgba(255, 246, 229, 0.78);
+  font-size: 12px;
 }
 
 .planner-status-header__dot {
-  width: 7px;
-  height: 7px;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 8px;
+  height: 8px;
   flex: 0 0 auto;
   border-radius: 999px;
   background: #74d08c;
@@ -528,7 +594,29 @@
   text-transform: uppercase;
 }
 
+@media (max-width: 1700px) {
+  .planner-status-header {
+    grid-template-columns: minmax(270px, 1.05fr) minmax(170px, 0.72fr) minmax(230px, 0.98fr) auto minmax(140px, 0.62fr) minmax(220px, 0.95fr);
+  }
+
+  .planner-status-header__cell--summary {
+    display: none;
+  }
+}
+
 @media (max-width: 1240px) {
+  .planner-status-header {
+    grid-template-columns: minmax(210px, 1.1fr) minmax(180px, 1fr) minmax(240px, 1.25fr) minmax(250px, 1fr) minmax(150px, 0.72fr);
+  }
+
+  .planner-status-header__review {
+    display: none;
+  }
+
+  .planner-status-header__cell--summary {
+    display: none;
+  }
+
   .planner-spatial-hud {
     display: none;
   }
@@ -539,6 +627,14 @@
 }
 
 @media (max-width: 1180px) {
+  .planner-status-header {
+    grid-template-columns: minmax(210px, 1.1fr) minmax(170px, 0.9fr) minmax(230px, 1.1fr) minmax(148px, 0.72fr);
+  }
+
+  .planner-status-header__cell--runtime {
+    display: none;
+  }
+
   .planner-command-deck {
     width: min(680px, calc(100vw - var(--toolbox-offset, 68px) - 168px));
   }
@@ -549,6 +645,10 @@
 }
 
 @media (max-width: 920px) {
+  .planner-status-header {
+    display: none;
+  }
+
   .planner-command-deck {
     display: none;
   }
