@@ -1,10 +1,36 @@
-import type { FastifyInstance } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  AdminRoomsQuerySchema,
+  AssetVersionSchema,
+  CaptureSessionSchema,
+  LatestRuntimePackageQuerySchema,
+  RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
+  RegisterRuntimePackageInputSchema,
+  RoomManifestQuerySchema,
+  RoomManifestSchema,
+  RoomAssetStatusSchema,
+  RuntimeFileExtensionSchema,
+  RuntimePackageSchema,
+  TRADES_HALL_RUNTIME_ROOMS,
+  assetKindAllowsExtension,
+  isForbiddenAssetFixtureKey,
   splatExtensionForKey,
+  type AssetVersion,
+  type CaptureSession,
+  type RegisterRuntimePackageInput,
+  type RoomManifest,
+  type RoomAssetStatus,
+  type RuntimePackage,
 } from "@omnitwin/types";
-import { assetDefinitions, assetVersions, runtimePackages } from "../db/schema.js";
+import {
+  assetDefinitions,
+  assetVersions,
+  captureSessions,
+  roomManifests,
+  runtimePackages,
+} from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
 import { authenticate, authorize } from "../middleware/auth.js";
@@ -12,44 +38,247 @@ import { authenticate, authorize } from "../middleware/auth.js";
 // ---------------------------------------------------------------------------
 // Asset routes
 //
-// 1. GET  /assets — public, read-only furniture catalogue (no PII).
-// 2. POST /assets/versions — admin-only. Registers a provenance-bearing
-//    AssetVersion pointing at an R2 key (a real captured/processed splat
-//    bundle). Fixture/demo keys are rejected. Optionally publishes a
-//    RuntimePackage in the same call so the runtime can load it.
-// 3. GET  /assets/runtime-packages/latest — public read. Returns the latest
-//    published RuntimePackage (with its AssetVersion + a resolved asset URL)
-//    so the runtime can render it, or null so the runtime falls back to the
-//    procedural room. Honesty is carried by `assetVersion.evidenceStatus`;
-//    this endpoint asserts nothing about legal/safety certification.
+// Public:
+//   GET /assets
+//   GET /assets/runtime-packages/latest?venue=trades-hall&room=grand-hall
+//
+// Admin:
+//   POST /admin/assets/capture-session
+//   POST /admin/assets/register-version
+//   POST /admin/assets/register-runtime-package
+//   GET  /admin/assets/rooms?venue=trades-hall
+//   GET  /admin/assets/room-manifests
 // ---------------------------------------------------------------------------
 
-/** Resolve an R2 object key to a fetchable public URL, or null if R2 isn't configured. */
-function resolveAssetUrl(env: Env, r2Key: string): string | null {
-  if (env.R2_PUBLIC_URL === undefined) return null;
-  return `${env.R2_PUBLIC_URL.replace(/\/+$/, "")}/${r2Key.replace(/^\/+/, "")}`;
+type AssetVersionRow = typeof assetVersions.$inferSelect;
+type CaptureSessionRow = typeof captureSessions.$inferSelect;
+type RoomManifestRow = typeof roomManifests.$inferSelect;
+type RuntimePackageRow = typeof runtimePackages.$inferSelect;
+
+function dateToIso(value: Date): string {
+  return value.toISOString();
 }
 
-type AssetVersionRow = typeof assetVersions.$inferSelect;
-type RuntimePackageRow = typeof runtimePackages.$inferSelect;
+function r2PublicPath(r2Key: string): string {
+  return r2Key.replace(/^r2:/, "").replace(/^\/+/, "");
+}
+
+function resolveAssetUrl(env: Env, row: AssetVersionRow): string | null {
+  if (row.externalUrl !== null) return row.externalUrl;
+  if (row.r2Key === null) return null;
+  if (env.R2_PUBLIC_URL === undefined) return null;
+  return `${env.R2_PUBLIC_URL.replace(/\/+$/, "")}/${r2PublicPath(row.r2Key)}`;
+}
+
+function validationError(reply: FastifyReply, details: unknown): FastifyReply {
+  return reply.status(400).send({
+    error: "Validation failed",
+    code: "VALIDATION_ERROR",
+    details,
+  });
+}
+
+function serializeAssetVersion(row: AssetVersionRow): AssetVersion {
+  return AssetVersionSchema.parse({
+    id: row.id,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    captureSessionId: row.captureSessionId,
+    assetKind: row.assetKind,
+    sourceType: row.sourceType,
+    fileName: row.fileName,
+    fileExt: row.fileExt,
+    r2Key: row.r2Key,
+    externalUrl: row.externalUrl,
+    mimeType: row.mimeType,
+    sha256: row.sha256,
+    sizeBytes: row.sizeBytes,
+    evidenceStatus: row.evidenceStatus,
+    runtimeStatus: row.runtimeStatus,
+    notes: row.notes,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
+function serializeCaptureSession(row: CaptureSessionRow): CaptureSession {
+  return CaptureSessionSchema.parse({
+    id: row.id,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    captureSource: row.captureSource,
+    captureDevice: row.captureDevice,
+    captureDate: row.captureDate,
+    operatorName: row.operatorName,
+    sourceProjectName: row.sourceProjectName,
+    notes: row.notes,
+    status: row.status,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
+function serializeRoomManifest(row: RoomManifestRow): RoomManifest {
+  return RoomManifestSchema.parse({
+    id: row.id,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    displayName: row.displayName,
+    matterportMasterReference: row.matterportMasterReference,
+    alignmentStatus: row.alignmentStatus,
+    primaryCaptureSource: row.primaryCaptureSource,
+    notes: row.notes,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
+function assetStorageReferences(version: AssetVersionRow): readonly string[] {
+  return [version.r2Key, version.externalUrl].filter((value): value is string => value !== null);
+}
+
+function isServablePrimaryVisualAsset(version: AssetVersionRow): boolean {
+  if (version.assetKind !== "splat" || version.runtimeStatus !== "usable") return false;
+  if (version.evidenceStatus === "rejected") return false;
+  if (version.roomSlug === null) return false;
+  const references = assetStorageReferences(version);
+  if (references.length === 0 || references.some(isForbiddenAssetFixtureKey)) return false;
+
+  const extensions = references.map(splatExtensionForKey);
+  if (extensions.some((extension) => extension === null)) return false;
+
+  const parsedFileExt = RuntimeFileExtensionSchema.safeParse(version.fileExt);
+  if (!parsedFileExt.success) return false;
+
+  return extensions.every((extension) => extension === parsedFileExt.data) &&
+    assetKindAllowsExtension("splat", parsedFileExt.data);
+}
+
+function runtimePackageCanLoad(pkg: RuntimePackageRow): boolean {
+  if (pkg.evidenceStatus === "rejected") return false;
+  return pkg.runtimeStatus === "internal_ready" || pkg.runtimeStatus === "published";
+}
 
 function serializeRuntimePackage(
   env: Env,
   pkg: RuntimePackageRow,
-  version: AssetVersionRow,
-): Record<string, unknown> {
-  return {
+  primaryVisualAssetVersion: AssetVersionRow | null,
+): RuntimePackage {
+  const serializedAsset = primaryVisualAssetVersion === null ? null : serializeAssetVersion(primaryVisualAssetVersion);
+  return RuntimePackageSchema.parse({
     id: pkg.id,
-    venueId: pkg.venueId,
-    spaceId: pkg.spaceId,
-    assetVersionId: pkg.assetVersionId,
-    status: pkg.status,
-    label: pkg.label,
-    publishedAt: pkg.publishedAt,
-    createdAt: pkg.createdAt,
-    assetVersion: version,
-    assetUrl: resolveAssetUrl(env, version.r2Key),
-  };
+    venueSlug: pkg.venueSlug,
+    roomSlug: pkg.roomSlug,
+    primaryVisualAssetVersionId: pkg.primaryVisualAssetVersionId,
+    semanticMeshAssetVersionId: pkg.semanticMeshAssetVersionId,
+    collisionAssetVersionId: pkg.collisionAssetVersionId,
+    pointCloudAssetVersionId: pkg.pointCloudAssetVersionId,
+    manifestJson: pkg.manifestJson,
+    evidenceStatus: pkg.evidenceStatus,
+    runtimeStatus: pkg.runtimeStatus,
+    createdAt: dateToIso(pkg.createdAt),
+    updatedAt: dateToIso(pkg.updatedAt),
+    primaryVisualAssetVersion: serializedAsset,
+    primaryVisualAssetUrl: primaryVisualAssetVersion === null ? null : resolveAssetUrl(env, primaryVisualAssetVersion),
+  });
+}
+
+async function findAssetVersion(db: Database, id: string | null | undefined): Promise<AssetVersionRow | null> {
+  if (id === null || id === undefined) return null;
+  const [row] = await db
+    .select()
+    .from(assetVersions)
+    .where(eq(assetVersions.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+function validateAssetReference(
+  input: RegisterRuntimePackageInput,
+  row: AssetVersionRow | null,
+  field: "primaryVisualAssetVersionId" | "semanticMeshAssetVersionId" | "collisionAssetVersionId" | "pointCloudAssetVersionId",
+): string | null {
+  const requestedId = input[field] ?? null;
+  if (requestedId === null) return null;
+  if (row === null) return `${field} does not exist.`;
+  if (row.venueSlug !== input.venueSlug || row.roomSlug !== input.roomSlug) {
+    return `${field} must reference an asset from the same venue and room.`;
+  }
+  if (row.evidenceStatus === "rejected" || row.runtimeStatus === "rejected" || row.runtimeStatus === "archived") {
+    return `${field} must not reference a rejected or archived asset.`;
+  }
+  if (runtimePackageInputCanLoad(input) && row.runtimeStatus !== "usable") {
+    return `${field} must reference a usable asset before the package can be loadable.`;
+  }
+  return null;
+}
+
+function runtimePackageInputCanLoad(input: RegisterRuntimePackageInput): boolean {
+  return input.runtimeStatus === "internal_ready" || input.runtimeStatus === "published";
+}
+
+function validatePrimaryVisualAsset(input: RegisterRuntimePackageInput, row: AssetVersionRow | null): string | null {
+  const baseError = validateAssetReference(input, row, "primaryVisualAssetVersionId");
+  if (baseError !== null) return baseError;
+  if ((input.primaryVisualAssetVersionId ?? null) === null) return null;
+  if (row === null) return "primaryVisualAssetVersionId does not exist.";
+  if (!isServablePrimaryVisualAsset(row)) {
+    return "primaryVisualAssetVersionId must reference a non-fixture splat asset with a supported Spark file extension.";
+  }
+  return null;
+}
+
+function firstValidationMessage(messages: readonly (string | null)[]): string | null {
+  return messages.find((message): message is string => message !== null) ?? null;
+}
+
+function latestPackageByRoom(rows: readonly RuntimePackageRow[]): Map<string, RuntimePackageRow> {
+  const byRoom = new Map<string, RuntimePackageRow>();
+  for (const row of rows) {
+    if (!byRoom.has(row.roomSlug)) {
+      byRoom.set(row.roomSlug, row);
+    }
+  }
+  return byRoom;
+}
+
+function roomStatusNextAction(defaultAction: string, splatExists: boolean, pkg: RuntimePackageRow | undefined): string {
+  if (!splatExists) return defaultAction;
+  if (pkg === undefined) return "Register a runtime package for this room";
+  if (!runtimePackageCanLoad(pkg)) return "Review runtime package status before loading";
+  return "Open the internal runtime view";
+}
+
+function buildRoomAssetStatuses(
+  venueSlug: string,
+  manifests: readonly RoomManifestRow[],
+  splatRows: readonly AssetVersionRow[],
+  packageRows: readonly RuntimePackageRow[],
+): readonly RoomAssetStatus[] {
+  const manifestByRoom = new Map(manifests.map((manifest) => [manifest.roomSlug, manifest]));
+  const splatRooms = new Set(splatRows
+    .filter((row) => row.assetKind === "splat" && row.roomSlug !== null && row.runtimeStatus !== "archived")
+    .map((row) => row.roomSlug as string));
+  const packageByRoom = latestPackageByRoom(packageRows);
+  const defaults = venueSlug === "trades-hall" ? TRADES_HALL_RUNTIME_ROOMS : [];
+
+  return defaults.map((room) => {
+    const manifest = manifestByRoom.get(room.slug);
+    const pkg = packageByRoom.get(room.slug);
+    const splatExists = splatRooms.has(room.slug);
+    return RoomAssetStatusSchema.parse({
+      venueSlug,
+      roomSlug: room.slug,
+      displayName: manifest?.displayName ?? room.displayName,
+      primaryCaptureSource: manifest?.primaryCaptureSource ?? room.primaryCaptureSource,
+      currentState: room.currentState,
+      splatExists,
+      runtimePackageExists: pkg !== undefined,
+      evidenceStatus: pkg?.evidenceStatus ?? null,
+      runtimeStatus: pkg?.runtimeStatus ?? null,
+      nextAction: roomStatusNextAction(room.nextAction, splatExists, pkg),
+    });
+  });
 }
 
 export async function assetRoutes(
@@ -58,114 +287,259 @@ export async function assetRoutes(
 ): Promise<void> {
   const { db, env } = opts;
 
-  // GET /assets — public furniture catalogue.
   server.get("/", async () => {
     const rows = await db.select().from(assetDefinitions).orderBy(assetDefinitions.name);
     return { data: rows };
   });
 
-  // POST /assets/versions — register a real runtime AssetVersion (admin only).
+  server.get("/runtime-packages/latest", async (request, reply) => {
+    const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return validationError(reply, parsedQuery.error.issues);
+    }
+
+    const [row] = await db
+      .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
+      .from(runtimePackages)
+      .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
+      .where(and(
+        eq(runtimePackages.venueSlug, parsedQuery.data.venue),
+        eq(runtimePackages.roomSlug, parsedQuery.data.room),
+        inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
+        eq(assetVersions.runtimeStatus, "usable"),
+      ))
+      .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
+      .limit(1);
+
+    if (
+      row === undefined ||
+      !runtimePackageCanLoad(row.pkg) ||
+      !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
+    ) {
+      return { data: null };
+    }
+
+    return { data: serializeRuntimePackage(env, row.pkg, row.primaryVisualAssetVersion) };
+  });
+}
+
+export async function adminAssetRoutes(
+  server: FastifyInstance,
+  opts: { db: Database; env: Env },
+): Promise<void> {
+  const { db, env } = opts;
+
   server.post(
-    "/versions",
+    "/capture-session",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsed = RegisterCaptureSessionInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return validationError(reply, parsed.error.issues);
+      }
+
+      const input = parsed.data;
+      const [session] = await db.insert(captureSessions).values({
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug ?? null,
+        captureSource: input.captureSource,
+        captureDevice: input.captureDevice ?? null,
+        captureDate: input.captureDate ?? null,
+        operatorName: input.operatorName ?? null,
+        sourceProjectName: input.sourceProjectName ?? null,
+        notes: input.notes ?? null,
+        status: input.status,
+      }).returning();
+
+      if (session === undefined) {
+        return reply.status(500).send({ error: "Failed to register capture session", code: "CAPTURE_SESSION_REGISTER_FAILED" });
+      }
+
+      request.log.info({
+        userId: request.user.id,
+        captureSessionId: session.id,
+        venueSlug: session.venueSlug,
+        roomSlug: session.roomSlug,
+        captureSource: session.captureSource,
+        status: session.status,
+      }, "capture session registered");
+
+      return reply.status(201).send({ data: serializeCaptureSession(session) });
+    },
+  );
+
+  server.get(
+    "/rooms",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsedQuery = AdminRoomsQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      const venueSlug = parsedQuery.data.venue;
+      const [manifestRows, splatRows, packageRows] = await Promise.all([
+        db
+          .select()
+          .from(roomManifests)
+          .where(eq(roomManifests.venueSlug, venueSlug))
+          .orderBy(roomManifests.roomSlug),
+        db
+          .select()
+          .from(assetVersions)
+          .where(and(eq(assetVersions.venueSlug, venueSlug), eq(assetVersions.assetKind, "splat")))
+          .orderBy(desc(assetVersions.updatedAt), desc(assetVersions.createdAt)),
+        db
+          .select()
+          .from(runtimePackages)
+          .where(eq(runtimePackages.venueSlug, venueSlug))
+          .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt)),
+      ]);
+
+      return { data: buildRoomAssetStatuses(venueSlug, manifestRows, splatRows, packageRows) };
+    },
+  );
+
+  server.post(
+    "/register-version",
     { preHandler: [authenticate, authorize("admin")] },
     async (request, reply) => {
       const parsed = RegisterAssetVersionInputSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.status(400).send({
-          error: "Validation failed",
-          code: "VALIDATION_ERROR",
-          details: parsed.error.issues,
-        });
+        return validationError(reply, parsed.error.issues);
       }
 
       const input = parsed.data;
-      const splatExtension = splatExtensionForKey(input.r2Key);
-      if (splatExtension === null) {
-        // Defensive — the schema already enforces this.
-        return reply.status(400).send({ error: "Unsupported asset extension", code: "VALIDATION_ERROR" });
-      }
+      const [version] = await db.insert(assetVersions).values({
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug ?? null,
+        captureSessionId: input.captureSessionId ?? null,
+        assetKind: input.assetKind,
+        sourceType: input.sourceType,
+        fileName: input.fileName,
+        fileExt: input.fileExt,
+        r2Key: input.r2Key ?? null,
+        externalUrl: input.externalUrl ?? null,
+        mimeType: input.mimeType ?? null,
+        sha256: input.sha256 ?? null,
+        sizeBytes: input.sizeBytes ?? null,
+        evidenceStatus: input.evidenceStatus,
+        runtimeStatus: input.runtimeStatus,
+        notes: input.notes ?? null,
+      }).returning();
 
-      const created = await db.transaction(async (tx) => {
-        const [version] = await tx.insert(assetVersions).values({
-          venueId: input.venueId,
-          spaceId: input.spaceId ?? null,
-          source: input.source,
-          r2Key: input.r2Key,
-          splatExtension,
-          sha256: input.sha256,
-          captureDate: input.captureDate,
-          evidenceStatus: input.evidenceStatus,
-          sizeBytes: input.sizeBytes ?? null,
-          label: input.label ?? null,
-          createdBy: request.user.id,
-        }).returning();
-
-        if (version === undefined) return null;
-
-        let runtimePackage: RuntimePackageRow | null = null;
-        if (input.publish) {
-          const [pkg] = await tx.insert(runtimePackages).values({
-            venueId: version.venueId,
-            spaceId: version.spaceId,
-            assetVersionId: version.id,
-            status: "published",
-            label: input.label ?? null,
-            publishedAt: new Date(),
-            createdBy: request.user.id,
-          }).returning();
-          runtimePackage = pkg ?? null;
-        }
-
-        return { version, runtimePackage };
-      });
-
-      if (created === null) {
+      if (version === undefined) {
         return reply.status(500).send({ error: "Failed to register asset version", code: "ASSET_REGISTER_FAILED" });
       }
 
       request.log.info({
         userId: request.user.id,
-        assetVersionId: created.version.id,
-        venueId: created.version.venueId,
-        source: created.version.source,
-        evidenceStatus: created.version.evidenceStatus,
-        published: created.runtimePackage !== null,
+        assetVersionId: version.id,
+        venueSlug: version.venueSlug,
+        roomSlug: version.roomSlug,
+        assetKind: version.assetKind,
+        sourceType: version.sourceType,
+        runtimeStatus: version.runtimeStatus,
       }, "asset version registered");
 
-      return reply.status(201).send({
-        data: {
-          assetVersion: created.version,
-          runtimePackage: created.runtimePackage === null
-            ? null
-            : serializeRuntimePackage(env, created.runtimePackage, created.version),
-        },
-      });
+      return reply.status(201).send({ data: serializeAssetVersion(version) });
     },
   );
 
-  // GET /assets/runtime-packages/latest — latest published package (public read).
-  // Optional ?spaceId=<uuid> narrows to one room. Returns { data: null } when
-  // nothing is published, which tells the runtime to use the procedural room.
-  server.get("/runtime-packages/latest", async (request) => {
-    const rawSpaceId = (request.query as { spaceId?: unknown }).spaceId;
-    const spaceId = typeof rawSpaceId === "string" && rawSpaceId.length > 0 ? rawSpaceId : null;
+  server.post(
+    "/register-runtime-package",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsed = RegisterRuntimePackageInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return validationError(reply, parsed.error.issues);
+      }
 
-    const whereClause = spaceId === null
-      ? eq(runtimePackages.status, "published")
-      : and(eq(runtimePackages.status, "published"), eq(runtimePackages.spaceId, spaceId));
+      const input = parsed.data;
+      const primaryVisualAsset = await findAssetVersion(db, input.primaryVisualAssetVersionId);
+      const semanticMeshAsset = await findAssetVersion(db, input.semanticMeshAssetVersionId);
+      const collisionAsset = await findAssetVersion(db, input.collisionAssetVersionId);
+      const pointCloudAsset = await findAssetVersion(db, input.pointCloudAssetVersionId);
+      const assetError = firstValidationMessage([
+        validatePrimaryVisualAsset(input, primaryVisualAsset),
+        validateAssetReference(input, semanticMeshAsset, "semanticMeshAssetVersionId"),
+        validateAssetReference(input, collisionAsset, "collisionAssetVersionId"),
+        validateAssetReference(input, pointCloudAsset, "pointCloudAssetVersionId"),
+      ]);
+      if (assetError !== null) {
+        return validationError(reply, assetError);
+      }
 
-    const [row] = await db
-      .select({ pkg: runtimePackages, version: assetVersions })
-      .from(runtimePackages)
-      .innerJoin(assetVersions, eq(runtimePackages.assetVersionId, assetVersions.id))
-      .where(whereClause)
-      .orderBy(desc(runtimePackages.publishedAt))
-      .limit(1);
+      const values = {
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug,
+        primaryVisualAssetVersionId: input.primaryVisualAssetVersionId ?? null,
+        semanticMeshAssetVersionId: input.semanticMeshAssetVersionId ?? null,
+        collisionAssetVersionId: input.collisionAssetVersionId ?? null,
+        pointCloudAssetVersionId: input.pointCloudAssetVersionId ?? null,
+        manifestJson: input.manifestJson,
+        evidenceStatus: input.evidenceStatus,
+        runtimeStatus: input.runtimeStatus,
+        updatedAt: new Date(),
+      };
+      const [existingPackage] = await db
+        .select()
+        .from(runtimePackages)
+        .where(and(
+          eq(runtimePackages.venueSlug, input.venueSlug),
+          eq(runtimePackages.roomSlug, input.roomSlug),
+        ))
+        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
+        .limit(1);
 
-    if (row === undefined) {
-      return { data: null };
-    }
+      const [pkg] = existingPackage === undefined
+        ? await db.insert(runtimePackages).values(values).returning()
+        : await db
+          .update(runtimePackages)
+          .set(values)
+          .where(eq(runtimePackages.id, existingPackage.id))
+          .returning();
 
-    return { data: serializeRuntimePackage(env, row.pkg, row.version) };
-  });
+      if (pkg === undefined) {
+        return reply.status(500).send({ error: "Failed to register runtime package", code: "RUNTIME_PACKAGE_REGISTER_FAILED" });
+      }
+
+      request.log.info({
+        userId: request.user.id,
+        runtimePackageId: pkg.id,
+        venueSlug: pkg.venueSlug,
+        roomSlug: pkg.roomSlug,
+        runtimeStatus: pkg.runtimeStatus,
+      }, "runtime package registered");
+
+      return reply.status(201).send({ data: serializeRuntimePackage(env, pkg, primaryVisualAsset) });
+    },
+  );
+
+  server.get(
+    "/room-manifests",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsedQuery = RoomManifestQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      const filters = parsedQuery.data.venue === undefined
+        ? undefined
+        : parsedQuery.data.room === undefined
+          ? eq(roomManifests.venueSlug, parsedQuery.data.venue)
+          : and(
+            eq(roomManifests.venueSlug, parsedQuery.data.venue),
+            eq(roomManifests.roomSlug, parsedQuery.data.room),
+          );
+
+      const baseQuery = db.select().from(roomManifests);
+      const rows = filters === undefined
+        ? await baseQuery.orderBy(roomManifests.venueSlug, roomManifests.roomSlug)
+        : await baseQuery.where(filters).orderBy(roomManifests.venueSlug, roomManifests.roomSlug);
+
+      return { data: rows.map(serializeRoomManifest) };
+    },
+  );
 }

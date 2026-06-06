@@ -7,12 +7,14 @@ import {
   numeric,
   jsonb,
   integer,
+  bigint,
   boolean,
   date,
   index,
   unique,
   primaryKey,
 } from "drizzle-orm/pg-core";
+import type { RuntimePackageManifestJson } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // 1. venues
@@ -621,59 +623,121 @@ export const stripeEvents = pgTable("stripe_events", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 17. asset_versions — provenance record for one processed visual asset.
+// 17. capture_sessions — raw or processed room/master capture events.
 //
-// An AssetVersion is the immutable provenance anchor for a Gaussian-splat
-// bundle staged in R2 (e.g. a RunPod training output or an XGRIDS export).
-// `evidence_status` is the ONLY trust signal and is deliberately honest:
-// 'unverified' | 'machine_checked' | 'human_reviewed'. It NEVER asserts
-// legal/safety certification — "human_reviewed" means a human looked at it,
-// not that it is survey-grade or approved for occupancy. `r2_key` is the
-// object key; the runtime resolves it to a fetchable URL at read time.
-// Fixture/demo keys are rejected at the API boundary, never stored here.
+// Slug-based scoping is deliberate for this foundation: XGRIDS or RunPod
+// outputs can be registered before a room has a fully managed `spaces` row.
+// ---------------------------------------------------------------------------
+
+export const captureSessions = pgTable("capture_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }),
+  captureSource: varchar("capture_source", { length: 30 }).notNull(),
+  captureDevice: text("capture_device"),
+  captureDate: date("capture_date"),
+  operatorName: text("operator_name"),
+  sourceProjectName: text("source_project_name"),
+  notes: text("notes"),
+  status: varchar("status", { length: 30 }).notNull().default("captured"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("capture_sessions_venue_room_idx").on(table.venueSlug, table.roomSlug),
+  index("capture_sessions_status_idx").on(table.status),
+]);
+
+// ---------------------------------------------------------------------------
+// 18. asset_versions — provenance record for one stored runtime/capture asset.
 // ---------------------------------------------------------------------------
 
 export const assetVersions = pgTable("asset_versions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  venueId: uuid("venue_id").notNull().references(() => venues.id),
-  spaceId: uuid("space_id").references(() => spaces.id),
-  source: varchar("source", { length: 30 }).notNull(),
-  r2Key: text("r2_key").notNull(),
-  splatExtension: varchar("splat_extension", { length: 10 }).notNull(),
-  sha256: varchar("sha256", { length: 64 }).notNull(),
-  captureDate: date("capture_date"),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }),
+  captureSessionId: uuid("capture_session_id").references(() => captureSessions.id, { onDelete: "set null" }),
+  assetKind: varchar("asset_kind", { length: 30 }).notNull(),
+  sourceType: varchar("source_type", { length: 30 }).notNull(),
+  fileName: text("file_name").notNull(),
+  fileExt: varchar("file_ext", { length: 16 }).notNull(),
+  r2Key: text("r2_key"),
+  externalUrl: text("external_url"),
+  mimeType: text("mime_type"),
+  sha256: varchar("sha256", { length: 64 }),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
   evidenceStatus: varchar("evidence_status", { length: 20 }).notNull().default("unverified"),
-  sizeBytes: integer("size_bytes"),
-  label: text("label"),
-  createdBy: uuid("created_by").references(() => users.id),
+  runtimeStatus: varchar("runtime_status", { length: 20 }).notNull().default("staged"),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  index("asset_versions_venue_idx").on(table.venueId),
-  index("asset_versions_space_idx").on(table.spaceId),
+  unique("asset_versions_r2_key_unique").on(table.r2Key),
+  index("asset_versions_venue_room_idx").on(table.venueSlug, table.roomSlug),
+  index("asset_versions_capture_session_idx").on(table.captureSessionId),
+  index("asset_versions_runtime_status_idx").on(table.runtimeStatus),
 ]);
 
 // ---------------------------------------------------------------------------
-// 18. runtime_packages — publishable pointer that exposes an AssetVersion
-// to the runtime renderer.
-//
-// Only rows with status='published' are served to the runtime; the renderer
-// fetches the latest published package (by published_at desc) and falls back
-// to the procedural room when none exists. ON DELETE CASCADE from
-// asset_versions keeps packages from dangling if a version is removed.
+// 19. room_manifests — room registry and alignment state for captured rooms.
+// ---------------------------------------------------------------------------
+
+export const roomManifests = pgTable("room_manifests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  displayName: text("display_name").notNull(),
+  matterportMasterReference: text("matterport_master_reference"),
+  alignmentStatus: varchar("alignment_status", { length: 20 }).notNull().default("unaligned"),
+  primaryCaptureSource: text("primary_capture_source"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("room_manifests_venue_room_unique").on(table.venueSlug, table.roomSlug),
+  index("room_manifests_alignment_idx").on(table.alignmentStatus),
+]);
+
+// ---------------------------------------------------------------------------
+// 20. runtime_packages — room-scoped runtime manifest and asset pointers.
 // ---------------------------------------------------------------------------
 
 export const runtimePackages = pgTable("runtime_packages", {
   id: uuid("id").primaryKey().defaultRandom(),
-  venueId: uuid("venue_id").notNull().references(() => venues.id),
-  spaceId: uuid("space_id").references(() => spaces.id),
-  assetVersionId: uuid("asset_version_id").notNull().references(() => assetVersions.id, { onDelete: "cascade" }),
-  status: varchar("status", { length: 20 }).notNull().default("draft"),
-  label: text("label"),
-  publishedAt: timestamp("published_at", { withTimezone: true }),
-  createdBy: uuid("created_by").references(() => users.id),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  primaryVisualAssetVersionId: uuid("primary_visual_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
+  semanticMeshAssetVersionId: uuid("semantic_mesh_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
+  collisionAssetVersionId: uuid("collision_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
+  pointCloudAssetVersionId: uuid("point_cloud_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
+  manifestJson: jsonb("manifest_json").$type<RuntimePackageManifestJson>().notNull(),
+  evidenceStatus: varchar("evidence_status", { length: 20 }).notNull().default("unverified"),
+  runtimeStatus: varchar("runtime_status", { length: 20 }).notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  index("runtime_packages_venue_status_idx").on(table.venueId, table.status),
-  index("runtime_packages_published_idx").on(table.status, table.publishedAt),
+  index("runtime_packages_venue_room_status_idx").on(table.venueSlug, table.roomSlug, table.runtimeStatus),
+  index("runtime_packages_primary_visual_idx").on(table.primaryVisualAssetVersionId),
+]);
+
+// ---------------------------------------------------------------------------
+// 21. processing_jobs — optional lineage/processing tracker for capture assets.
+// ---------------------------------------------------------------------------
+
+export const processingJobs = pgTable("processing_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }),
+  sourceAssetVersionId: uuid("source_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
+  targetRoomSlug: varchar("target_room_slug", { length: 100 }),
+  processor: varchar("processor", { length: 30 }).notNull(),
+  machineType: text("machine_type"),
+  requiredRamGb: numeric("required_ram_gb", { precision: 6, scale: 2 }),
+  status: varchar("status", { length: 30 }).notNull().default("planned"),
+  outputNotes: text("output_notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("processing_jobs_venue_room_idx").on(table.venueSlug, table.roomSlug),
+  index("processing_jobs_source_asset_idx").on(table.sourceAssetVersionId),
+  index("processing_jobs_status_idx").on(table.status),
 ]);

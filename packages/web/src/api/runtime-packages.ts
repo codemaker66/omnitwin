@@ -1,19 +1,22 @@
-import { RuntimePackageSchema, type RuntimePackage } from "@omnitwin/types";
+import {
+  RuntimePackageSchema,
+  type LatestRuntimePackageQuery,
+  type RuntimePackage,
+} from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Runtime package client — fetches the latest published visual asset package
-// for the runtime renderer. Public read (no auth). Returns null when nothing
-// is published, which tells the renderer to fall back to the procedural room.
+// Runtime package client
 //
-// Response is validated through the shared Zod schema at the boundary; a
-// drifted shape throws ApiError(RESPONSE_VALIDATION_ERROR) rather than feeding
-// a malformed asset into Spark.
+// Public read. Returns null when no usable package exists for the room, or
+// when the API has no resolved asset URL because object storage is not
+// configured. The caller decides whether to mount Spark or show fallback.
 // ---------------------------------------------------------------------------
 
-export async function getLatestRuntimePackage(spaceId?: string): Promise<RuntimePackage | null> {
-  const query = spaceId !== undefined && spaceId.length > 0
-    ? `?spaceId=${encodeURIComponent(spaceId)}`
-    : "";
-  return api.get(`/assets/runtime-packages/latest${query}`, RuntimePackageSchema.nullable());
+export async function getLatestRuntimePackage(query: LatestRuntimePackageQuery): Promise<RuntimePackage | null> {
+  const params = new URLSearchParams({
+    venue: query.venue,
+    room: query.room,
+  });
+  return api.get(`/assets/runtime-packages/latest?${params.toString()}`, RuntimePackageSchema.nullable());
 }

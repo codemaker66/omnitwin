@@ -24,7 +24,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
-import { assetRoutes } from "./routes/assets.js";
+import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
@@ -259,6 +259,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(clientRoutes, { db, prefix: "/clients" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
+  await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });

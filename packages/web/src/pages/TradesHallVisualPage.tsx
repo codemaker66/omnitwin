@@ -49,7 +49,11 @@ import {
   parseRuntimeSplatUrl,
   runtimeSplatUrlFromSearchParams,
 } from "../lib/runtime-visual-asset.js";
-import { decideRuntimeAsset } from "../lib/runtime-package-resolution.js";
+import {
+  decideRuntimeAsset,
+  runtimeRoomTargetFromSearchParams,
+  type RuntimeRoomTarget,
+} from "../lib/runtime-package-resolution.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
 import type { RuntimePackage } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
@@ -155,15 +159,17 @@ function selectedModeLabel(mode: VisualCommandMode): string {
 function VenueCommandTopBar({
   phase,
   visualState,
+  runtimeTarget,
 }: {
   readonly phase: VisualEventPhase;
   readonly visualState: VisualState;
+  readonly runtimeTarget: RuntimeRoomTarget;
 }): ReactElement {
-  const runtimeLabel = visualState.status === "loaded"
-    ? "Runtime asset loaded, not yet verified/signed."
-    : visualState.status === "loading"
-      ? "Loading runtime asset"
-      : "No captured visual layer loaded";
+  const runtimeLabel = visualState.status === "loaded" ||
+    visualState.status === "loading" ||
+    visualState.status === "invalid"
+    ? visualState.message
+    : "No real asset loaded yet";
 
   return (
     <header className="visual-topbar">
@@ -179,13 +185,13 @@ function VenueCommandTopBar({
       <div className="visual-topbar-cell">
         <div>
           <p className="visual-field-label">Venue</p>
-          <p className="visual-field-value">{TRADES_HALL_VISUAL_DEMO_STATE.venueName}</p>
+          <p className="visual-field-value">{runtimeTarget.venue}</p>
         </div>
       </div>
       <div className="visual-topbar-cell">
         <div>
-          <p className="visual-field-label">Event phase</p>
-          <p className="visual-field-value">{TRADES_HALL_VISUAL_DEMO_STATE.eventName} / {phase.label}</p>
+          <p className="visual-field-label">Room / phase</p>
+          <p className="visual-field-value">{runtimeTarget.roomLabel} / {phase.label}</p>
         </div>
       </div>
       <div className="visual-topbar-cell">
@@ -640,6 +646,7 @@ function VisualInsightCards({
 export function TradesHallVisualPage(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryAsset = useMemo(() => runtimeSplatUrlFromSearchParams(searchParams), [searchParams]);
+  const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
   const [draftUrl, setDraftUrl] = useState(queryAsset.url ?? "");
   const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");
   const [opacity, setOpacity] = useState(0.82);
@@ -652,14 +659,17 @@ export function TradesHallVisualPage(): ReactElement {
     if (queryAsset.error !== null) {
       return { status: "invalid", message: queryAsset.error, splatCount: null };
     }
+    if (runtimeTarget.error !== null && !queryAsset.ok) {
+      return { status: "invalid", message: runtimeTarget.error, splatCount: null };
+    }
     return queryAsset.ok ? { status: "loading", message: "Loading runtime asset", splatCount: null } : EMPTY_STATE;
   });
 
   const parsedDraft = useMemo(() => parseRuntimeSplatUrl(draftUrl), [draftUrl]);
   const activeAsset = queryAsset.ok && queryAsset.url !== null ? queryAsset : null;
   const activeAssetUrl = activeAsset?.url ?? null;
-  // Manual dev URL wins; otherwise the latest published RuntimePackage; otherwise
-  // null → procedural Grand Hall fallback. See runtime-package-resolution.
+  // Manual dev URL wins; otherwise the latest usable RuntimePackage for the
+  // selected room; otherwise null means procedural fallback.
   const assetDecision = useMemo(
     () => decideRuntimeAsset(activeAssetUrl, publishedPackage),
     [activeAssetUrl, publishedPackage],
@@ -674,23 +684,31 @@ export function TradesHallVisualPage(): ReactElement {
       setVisualState({ status: "invalid", message: queryAsset.error, splatCount: null });
       return;
     }
+    if (runtimeTarget.error !== null && !queryAsset.ok) {
+      setVisualState({ status: "invalid", message: runtimeTarget.error, splatCount: null });
+      return;
+    }
     setVisualState(queryAsset.ok ? { status: "loading", message: "Loading runtime asset", splatCount: null } : EMPTY_STATE);
-  }, [queryAsset.error, queryAsset.ok, queryAsset.url]);
+  }, [queryAsset.error, queryAsset.ok, queryAsset.url, runtimeTarget.error]);
 
-  // Fetch the latest published runtime package once on mount. A failure (or
-  // none published) leaves publishedPackage null → procedural fallback.
+  // Fetch the latest usable runtime package for the selected room. A failure
+  // or empty API result leaves publishedPackage null and keeps fallback.
   useEffect(() => {
     let cancelled = false;
-    void getLatestRuntimePackage()
+    if (runtimeTarget.error !== null) {
+      setPublishedPackage(null);
+      return () => { cancelled = true; };
+    }
+    void getLatestRuntimePackage({ venue: runtimeTarget.venue, room: runtimeTarget.room })
       .then((pkg) => { if (!cancelled) setPublishedPackage(pkg); })
       .catch(() => { if (!cancelled) setPublishedPackage(null); });
     return () => { cancelled = true; };
-  }, []);
+  }, [runtimeTarget.error, runtimeTarget.room, runtimeTarget.venue]);
 
-  // When a published asset becomes the active decision (no manual override),
+  // When a package asset becomes the active decision (no manual override),
   // show a loading line until Spark resolves it; onLoad/onError refine it.
   useEffect(() => {
-    if (assetDecision.source === "published" && assetDecision.splatUrl !== null) {
+    if (assetDecision.source === "package" && assetDecision.splatUrl !== null) {
       setVisualState({ status: "loading", message: "Loading runtime asset", splatCount: null });
     }
   }, [assetDecision.source, assetDecision.splatUrl]);
@@ -705,21 +723,25 @@ export function TradesHallVisualPage(): ReactElement {
         splatCount: null,
       });
       if (next.error === null) {
-        setSearchParams({}, { replace: true });
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("splatUrl");
+        setSearchParams(nextParams, { replace: true });
       }
       return;
     }
 
     setVisualState({ status: "loading", message: "Loading runtime asset", splatCount: null });
-    setSearchParams({ splatUrl: next.url }, { replace: true });
-  }, [draftUrl, setSearchParams]);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("splatUrl", next.url);
+    setSearchParams(nextParams, { replace: true });
+  }, [draftUrl, searchParams, setSearchParams]);
 
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
     setVisualState({
       status: "loaded",
-      message: assetDecision.source === "published"
+      message: assetDecision.source === "package"
         ? assetDecision.evidenceLabel
-        : "Runtime asset loaded, not yet verified/signed.",
+        : "Runtime asset loaded, not yet verified/signed",
       splatCount: event.splatCount,
     });
   }, [assetDecision.source, assetDecision.evidenceLabel]);
@@ -745,7 +767,7 @@ export function TradesHallVisualPage(): ReactElement {
 
   return (
     <main className="visual-shell">
-      <VenueCommandTopBar phase={selectedPhase} visualState={visualState} />
+      <VenueCommandTopBar phase={selectedPhase} visualState={visualState} runtimeTarget={runtimeTarget} />
       <VenueCommandRail activeMode={activeMode} onModeChange={setActiveMode} />
       <section className="visual-stage" aria-label="Trades Hall visual command canvas">
         <div className="visual-canvas-frame">
@@ -788,7 +810,7 @@ export function TradesHallVisualPage(): ReactElement {
         draftUrl={draftUrl}
         parsedDraftOk={parsedDraft.ok}
         parsedDraftError={parsedDraft.error}
-        activeAssetUrl={activeAssetUrl}
+        activeAssetUrl={assetDecision.splatUrl}
         opacity={opacity}
         onDraftUrlChange={setDraftUrl}
         onSubmitUrl={submitUrl}

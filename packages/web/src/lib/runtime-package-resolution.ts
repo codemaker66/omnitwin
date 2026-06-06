@@ -1,36 +1,106 @@
 import type { AssetEvidenceStatus, RuntimePackage } from "@omnitwin/types";
+import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
 
 // ---------------------------------------------------------------------------
-// Runtime asset decision — what the /dev/trades-hall-visual canvas should
-// render, and the honest label to show for it.
+// Runtime asset decision for /dev/trades-hall-visual.
 //
-// Precedence: a manually-mounted dev URL wins (explicit operator override),
-// then the latest published RuntimePackage, then nothing (procedural room).
-// All labels stay inside the planning-evidence vocabulary — they never assert
-// legal/safety certification, occupancy approval, or photoreal fidelity.
+// Manual URL is an explicit internal override. Otherwise the page uses the
+// latest usable RuntimePackage for the selected venue/room. Every URL is
+// revalidated in the browser before Spark sees it, even if it came from the
+// API, so polluted registry rows fall back to the procedural scene.
 // ---------------------------------------------------------------------------
 
-export type RuntimeAssetSource = "manual" | "published" | "none";
+export const TRADES_HALL_RUNTIME_ROOMS = [
+  { slug: "grand-hall", label: "Grand Hall", sourceHint: "runpod" },
+  { slug: "robert-adam-room", label: "Robert Adam Room", sourceHint: "xgrids" },
+  { slug: "saloon", label: "Saloon", sourceHint: "xgrids" },
+] as const;
+
+export type TradesHallRuntimeRoomSlug = (typeof TRADES_HALL_RUNTIME_ROOMS)[number]["slug"];
+export type RuntimeAssetSource = "manual" | "package" | "none";
+
+export interface RuntimeRoomTarget {
+  readonly venue: string;
+  readonly room: TradesHallRuntimeRoomSlug;
+  readonly roomLabel: string;
+  readonly sourceHint: string;
+  readonly error: string | null;
+}
 
 export interface RuntimeAssetDecision {
-  /** URL to hand to SparkSplatLayer, or null to render the procedural room only. */
   readonly splatUrl: string | null;
   readonly source: RuntimeAssetSource;
   readonly evidenceStatus: AssetEvidenceStatus | null;
-  /** SAFE, human-readable status line. Never a certification claim. */
   readonly evidenceLabel: string;
   readonly isProceduralFallback: boolean;
+}
+
+const DEFAULT_VENUE = "trades-hall";
+const DEFAULT_ROOM: TradesHallRuntimeRoomSlug = "grand-hall";
+
+function slugIsSafe(value: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
+}
+
+function roomForSlug(slug: string): (typeof TRADES_HALL_RUNTIME_ROOMS)[number] | null {
+  return TRADES_HALL_RUNTIME_ROOMS.find((room) => room.slug === slug) ?? null;
+}
+
+export function runtimeRoomTargetFromSearchParams(searchParams: URLSearchParams): RuntimeRoomTarget {
+  const rawVenue = searchParams.get("venue")?.trim() ?? DEFAULT_VENUE;
+  const rawRoom = searchParams.get("room")?.trim() ?? DEFAULT_ROOM;
+
+  const room = roomForSlug(rawRoom);
+  if (!slugIsSafe(rawVenue)) {
+    const fallbackRoom = roomForSlug(DEFAULT_ROOM);
+    return {
+      venue: DEFAULT_VENUE,
+      room: DEFAULT_ROOM,
+      roomLabel: fallbackRoom?.label ?? "Grand Hall",
+      sourceHint: fallbackRoom?.sourceHint ?? "runpod",
+      error: "Unsupported venue query; showing procedural planning context.",
+    };
+  }
+  if (room === null) {
+    const fallbackRoom = roomForSlug(DEFAULT_ROOM);
+    return {
+      venue: rawVenue,
+      room: DEFAULT_ROOM,
+      roomLabel: fallbackRoom?.label ?? "Grand Hall",
+      sourceHint: fallbackRoom?.sourceHint ?? "runpod",
+      error: "Unsupported room query; showing procedural planning context.",
+    };
+  }
+
+  return {
+    venue: rawVenue,
+    room: room.slug,
+    roomLabel: room.label,
+    sourceHint: room.sourceHint,
+    error: null,
+  };
 }
 
 export function evidenceStatusLabel(status: AssetEvidenceStatus): string {
   switch (status) {
     case "unverified":
-      return "Runtime asset loaded — unverified, human review required";
+      return "Runtime asset loaded, not yet verified/signed";
     case "machine_checked":
-      return "Runtime asset loaded — machine checked, human review required";
+      return "Runtime asset loaded, machine checked; human review required";
     case "human_reviewed":
-      return "Runtime asset loaded — human reviewed, not legally certified";
+      return "Runtime asset loaded, human reviewed";
   }
+}
+
+function usablePackageUrl(published: RuntimePackage): string | null {
+  if (published.runtimeStatus !== "usable") return null;
+  const asset = published.primaryVisualAssetVersion;
+  if (asset === null) return null;
+  if (asset.assetKind !== "splat" || asset.runtimeStatus !== "usable") return null;
+  if (published.primaryVisualAssetUrl === null) return null;
+
+  const parsed = parseRuntimeSplatUrl(published.primaryVisualAssetUrl);
+  return parsed.ok ? parsed.url : null;
 }
 
 export function decideRuntimeAsset(
@@ -42,26 +112,29 @@ export function decideRuntimeAsset(
       splatUrl: manualUrl,
       source: "manual",
       evidenceStatus: null,
-      evidenceLabel: "Runtime asset URL mounted manually — not signed, human review required",
+      evidenceLabel: "Runtime asset URL mounted manually; human review required",
       isProceduralFallback: false,
     };
   }
 
-  if (published !== null && published.assetUrl !== null && published.assetUrl.length > 0) {
-    return {
-      splatUrl: published.assetUrl,
-      source: "published",
-      evidenceStatus: published.assetVersion.evidenceStatus,
-      evidenceLabel: evidenceStatusLabel(published.assetVersion.evidenceStatus),
-      isProceduralFallback: false,
-    };
+  if (published !== null) {
+    const packageUrl = usablePackageUrl(published);
+    if (packageUrl !== null) {
+      return {
+        splatUrl: packageUrl,
+        source: "package",
+        evidenceStatus: published.evidenceStatus,
+        evidenceLabel: evidenceStatusLabel(published.evidenceStatus),
+        isProceduralFallback: false,
+      };
+    }
   }
 
   return {
     splatUrl: null,
     source: "none",
     evidenceStatus: null,
-    evidenceLabel: "No runtime asset published — showing procedural planning context",
+    evidenceLabel: "No real asset loaded yet",
     isProceduralFallback: true,
   };
 }

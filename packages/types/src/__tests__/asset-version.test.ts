@@ -1,115 +1,281 @@
 import { describe, it, expect } from "vitest";
 import {
-  splatExtensionForKey,
-  isForbiddenAssetFixtureKey,
-  RegisterAssetVersionInputSchema,
   AssetVersionSchema,
+  LatestRuntimePackageQuerySchema,
+  RegisterAssetVersionInputSchema,
+  RegisterRuntimePackageInputSchema,
+  RoomManifestSchema,
+  RuntimePackageManifestJsonSchema,
   RuntimePackageSchema,
+  assetKindAllowsExtension,
+  isForbiddenAssetFixtureKey,
+  isR2ObjectKeyShape,
+  runtimeFileExtensionForKey,
+  splatExtensionForKey,
 } from "../asset-version.js";
 
-const VENUE_ID = "00000000-0000-0000-0000-000000000001";
+const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
+const SEMANTIC_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000002";
+const COLLISION_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
 const SHA = "a".repeat(64);
-const validKey = "private/venues/trades-hall/runtime/grand-hall/scene.spz";
+const R2_KEY = "venues/trades-hall/rooms/robert-adam-room/xgrids/2026-06-06/scene.ply";
 
-const validInput = {
-  venueId: VENUE_ID,
-  source: "runpod" as const,
-  r2Key: validKey,
-  sha256: SHA,
-  captureDate: "2026-06-01",
+const manifestJson = {
+  schemaVersion: "venviewer.runtime-package.v1" as const,
+  venueSlug: "trades-hall",
+  roomSlug: "robert-adam-room",
+  packageType: "room-runtime" as const,
+  assets: {
+    primaryVisualAssetVersionId: ASSET_VERSION_ID,
+    semanticMeshAssetVersionId: null,
+    collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
+  },
+  generatedAt: "2026-06-06T10:00:00.000Z",
 };
 
-describe("splatExtensionForKey", () => {
-  it("returns the extension for every supported splat container", () => {
-    expect(splatExtensionForKey("a/b/scene.ply")).toBe(".ply");
-    expect(splatExtensionForKey("a/b/scene.spz")).toBe(".spz");
-    expect(splatExtensionForKey("a/SCENE.SPLAT")).toBe(".splat");
-    expect(splatExtensionForKey("a/scene.ksplat")).toBe(".ksplat");
-    expect(splatExtensionForKey("a/scene.rad")).toBe(".rad");
-    expect(splatExtensionForKey("a/scene.radc")).toBe(".radc");
+const validVersionInput = {
+  venueSlug: "trades-hall",
+  roomSlug: "robert-adam-room",
+  assetKind: "splat" as const,
+  sourceType: "xgrids" as const,
+  r2Key: R2_KEY,
+  fileName: "scene.ply",
+  fileExt: ".ply" as const,
+  sha256: SHA,
+  sizeBytes: 2_048,
+};
+
+describe("runtime file extension helpers", () => {
+  it("returns the extension for supported runtime asset files", () => {
+    expect(runtimeFileExtensionForKey("a/b/scene.ply")).toBe(".ply");
+    expect(runtimeFileExtensionForKey("a/b/scene.spz")).toBe(".spz");
+    expect(runtimeFileExtensionForKey("a/SCENE.SPLAT")).toBe(".splat");
+    expect(runtimeFileExtensionForKey("a/scene.glb")).toBe(".glb");
+    expect(runtimeFileExtensionForKey("a/cloud.e57")).toBe(".e57");
+    expect(runtimeFileExtensionForKey("a/manifest.json")).toBe(".json");
   });
 
-  it("returns null for non-splat keys", () => {
-    expect(splatExtensionForKey("a/b/scene.png")).toBeNull();
-    expect(splatExtensionForKey("a/b/scene")).toBeNull();
+  it("separates Spark splat extensions from broader registry formats", () => {
+    expect(splatExtensionForKey("a/b/scene.ply")).toBe(".ply");
+    expect(splatExtensionForKey("a/b/scene.spz?signature=abc")).toBe(".spz");
+    expect(splatExtensionForKey("a/b/scene.glb")).toBeNull();
+  });
+
+  it("pins asset kind to allowed file formats", () => {
+    expect(assetKindAllowsExtension("splat", ".ply")).toBe(true);
+    expect(assetKindAllowsExtension("mesh", ".glb")).toBe(true);
+    expect(assetKindAllowsExtension("mesh", ".ply")).toBe(false);
+    expect(assetKindAllowsExtension("video", ".json")).toBe(false);
   });
 });
 
-describe("isForbiddenAssetFixtureKey", () => {
+describe("R2 key and fixture rejection", () => {
+  it("accepts object keys and rejects URLs/root-relative paths", () => {
+    expect(isR2ObjectKeyShape(R2_KEY)).toBe(true);
+    expect(isR2ObjectKeyShape("https://assets.example/scene.ply")).toBe(false);
+    expect(isR2ObjectKeyShape("/venues/trades-hall/scene.ply")).toBe(false);
+    expect(isR2ObjectKeyShape("venues/trades-hall/../scene.ply")).toBe(false);
+    expect(isR2ObjectKeyShape("venues\\trades-hall\\scene.ply")).toBe(false);
+  });
+
   it("flags fixture/demo markers regardless of case", () => {
     expect(isForbiddenAssetFixtureKey("dev/Splat-Fixture/scene.spz")).toBe(true);
     expect(isForbiddenAssetFixtureKey("dev/textsplats/x.ply")).toBe(true);
     expect(isForbiddenAssetFixtureKey("a/spark-fixture/y.splat")).toBe(true);
-  });
-
-  it("passes clean runtime keys", () => {
-    expect(isForbiddenAssetFixtureKey(validKey)).toBe(false);
+    expect(isForbiddenAssetFixtureKey(R2_KEY)).toBe(false);
   });
 });
 
 describe("RegisterAssetVersionInputSchema", () => {
-  it("accepts a valid payload and applies safe defaults", () => {
-    const parsed = RegisterAssetVersionInputSchema.parse(validInput);
+  it("accepts a room-scoped XGRIDS splat and applies safe defaults", () => {
+    const parsed = RegisterAssetVersionInputSchema.parse(validVersionInput);
+    expect(parsed.venueSlug).toBe("trades-hall");
+    expect(parsed.roomSlug).toBe("robert-adam-room");
     expect(parsed.evidenceStatus).toBe("unverified");
-    expect(parsed.publish).toBe(false);
+    expect(parsed.runtimeStatus).toBe("staged");
   });
 
-  it("rejects a fixture/demo asset key", () => {
+  it("accepts a master scan with a nullable room slug", () => {
+    const parsed = RegisterAssetVersionInputSchema.parse({
+      ...validVersionInput,
+      roomSlug: null,
+      assetKind: "point_cloud",
+      fileName: "master.e57",
+      fileExt: ".e57",
+      r2Key: "venues/trades-hall/master/matterport/master.e57",
+      sourceType: "matterport",
+    });
+    expect(parsed.roomSlug).toBeNull();
+  });
+
+  it("rejects fixture/demo asset keys", () => {
     const result = RegisterAssetVersionInputSchema.safeParse({
-      ...validInput,
-      r2Key: "dev/splat-fixture/scene.spz",
+      ...validVersionInput,
+      r2Key: "dev/splat-fixture/scene.ply",
     });
     expect(result.success).toBe(false);
   });
 
-  it("rejects a non-splat extension", () => {
-    const result = RegisterAssetVersionInputSchema.safeParse({ ...validInput, r2Key: "a/b/scene.png" });
+  it("rejects arbitrary URL registration", () => {
+    const result = RegisterAssetVersionInputSchema.safeParse({
+      ...validVersionInput,
+      r2Key: "https://assets.example/scene.ply",
+    });
     expect(result.success).toBe(false);
   });
 
-  it("rejects a malformed sha256", () => {
-    const result = RegisterAssetVersionInputSchema.safeParse({ ...validInput, sha256: "nope" });
+  it("rejects a file extension that does not match the R2 key", () => {
+    const result = RegisterAssetVersionInputSchema.safeParse({
+      ...validVersionInput,
+      fileExt: ".spz",
+    });
     expect(result.success).toBe(false);
   });
 
-  it("rejects a non-ISO capture date", () => {
-    const result = RegisterAssetVersionInputSchema.safeParse({ ...validInput, captureDate: "01/06/2026" });
+  it("rejects a format not allowed for the asset kind", () => {
+    const result = RegisterAssetVersionInputSchema.safeParse({
+      ...validVersionInput,
+      assetKind: "mesh",
+    });
     expect(result.success).toBe(false);
   });
 
-  it("rejects an unknown source", () => {
-    const result = RegisterAssetVersionInputSchema.safeParse({ ...validInput, source: "polycam" });
+  it("rejects malformed hashes and unknown statuses", () => {
+    expect(RegisterAssetVersionInputSchema.safeParse({ ...validVersionInput, sha256: "nope" }).success).toBe(false);
+    expect(RegisterAssetVersionInputSchema.safeParse({ ...validVersionInput, runtimeStatus: "published" }).success).toBe(false);
+    expect(RegisterAssetVersionInputSchema.safeParse({ ...validVersionInput, evidenceStatus: "certified" }).success).toBe(false);
+  });
+});
+
+describe("runtime package manifest schemas", () => {
+  it("accepts a strict v1 manifest", () => {
+    const parsed = RuntimePackageManifestJsonSchema.parse(manifestJson);
+    expect(parsed.assets.primaryVisualAssetVersionId).toBe(ASSET_VERSION_ID);
+  });
+
+  it("rejects unknown manifest fields", () => {
+    const result = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      arbitraryClaim: true,
+    });
     expect(result.success).toBe(false);
   });
 
-  it("rejects an unknown evidence status", () => {
-    const result = RegisterAssetVersionInputSchema.safeParse({ ...validInput, evidenceStatus: "certified" });
+  it("requires package fields to match manifest fields", () => {
+    const result = RegisterRuntimePackageInputSchema.safeParse({
+      venueSlug: "trades-hall",
+      roomSlug: "saloon",
+      primaryVisualAssetVersionId: ASSET_VERSION_ID,
+      manifestJson,
+      runtimeStatus: "usable",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("requires a primary visual asset before a package can be usable", () => {
+    const result = RegisterRuntimePackageInputSchema.safeParse({
+      venueSlug: "trades-hall",
+      roomSlug: "saloon",
+      primaryVisualAssetVersionId: null,
+      manifestJson: {
+        ...manifestJson,
+        roomSlug: "saloon",
+        assets: {
+          primaryVisualAssetVersionId: null,
+          semanticMeshAssetVersionId: null,
+          collisionAssetVersionId: null,
+        },
+      },
+      runtimeStatus: "usable",
+    });
     expect(result.success).toBe(false);
   });
 });
 
 describe("response schemas", () => {
   const assetVersion = {
-    id: "av1", venueId: VENUE_ID, spaceId: null, source: "runpod", r2Key: validKey,
-    splatExtension: ".spz", sha256: SHA, captureDate: "2026-06-01", evidenceStatus: "machine_checked",
-    sizeBytes: 1024, label: "Grand Hall v1", createdBy: "u1", createdAt: "2026-06-06T10:00:00.000Z",
+    id: ASSET_VERSION_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "robert-adam-room",
+    captureSessionId: null,
+    assetKind: "splat",
+    sourceType: "xgrids",
+    r2Key: R2_KEY,
+    fileName: "scene.ply",
+    fileExt: ".ply",
+    externalUrl: null,
+    mimeType: "application/octet-stream",
+    sha256: SHA,
+    sizeBytes: 2048,
+    evidenceStatus: "machine_checked",
+    runtimeStatus: "usable",
+    notes: null,
+    createdAt: "2026-06-06T10:00:00.000Z",
+    updatedAt: "2026-06-06T10:00:00.000Z",
   };
 
-  it("parses a valid AssetVersion", () => {
-    expect(AssetVersionSchema.parse(assetVersion).evidenceStatus).toBe("machine_checked");
-  });
+  it("parses AssetVersion, RoomManifest, and RuntimePackage API shapes", () => {
+    expect(AssetVersionSchema.parse(assetVersion).runtimeStatus).toBe("usable");
 
-  it("rejects an AssetVersion with an invalid evidence status", () => {
-    expect(AssetVersionSchema.safeParse({ ...assetVersion, evidenceStatus: "approved" }).success).toBe(false);
-  });
+    expect(RoomManifestSchema.parse({
+      id: "rm1",
+      venueSlug: "trades-hall",
+      roomSlug: "saloon",
+      displayName: "Saloon",
+      matterportMasterReference: null,
+      alignmentStatus: "approximate",
+      primaryCaptureSource: null,
+      notes: null,
+      createdAt: "2026-06-06T10:00:00.000Z",
+      updatedAt: "2026-06-06T10:00:00.000Z",
+    }).roomSlug).toBe("saloon");
 
-  it("parses a valid RuntimePackage with nested asset version and resolved url", () => {
     const pkg = RuntimePackageSchema.parse({
-      id: "rp1", venueId: VENUE_ID, spaceId: null, assetVersionId: "av1", status: "published",
-      label: null, publishedAt: "2026-06-06T10:00:00.000Z", createdAt: "2026-06-06T10:00:00.000Z",
-      assetVersion, assetUrl: "https://assets.example/scene.spz",
+      id: "rp1",
+      venueSlug: "trades-hall",
+      roomSlug: "robert-adam-room",
+      primaryVisualAssetVersionId: ASSET_VERSION_ID,
+      semanticMeshAssetVersionId: null,
+      collisionAssetVersionId: null,
+      pointCloudAssetVersionId: null,
+      manifestJson,
+      evidenceStatus: "machine_checked",
+      runtimeStatus: "internal_ready",
+      createdAt: "2026-06-06T10:00:00.000Z",
+      updatedAt: "2026-06-06T10:00:00.000Z",
+      primaryVisualAssetVersion: assetVersion,
+      primaryVisualAssetUrl: "https://assets.example/scene.ply",
     });
-    expect(pkg.status).toBe("published");
-    expect(pkg.assetVersion.evidenceStatus).toBe("machine_checked");
+    expect(pkg.primaryVisualAssetVersion?.sourceType).toBe("xgrids");
+  });
+
+  it("parses the latest runtime package room query", () => {
+    expect(LatestRuntimePackageQuerySchema.parse({
+      venue: "trades-hall",
+      room: "grand-hall",
+    }).room).toBe("grand-hall");
+  });
+
+  it("pins semantic/collision ids in the manifest when present", () => {
+    const result = RegisterRuntimePackageInputSchema.safeParse({
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      primaryVisualAssetVersionId: ASSET_VERSION_ID,
+      semanticMeshAssetVersionId: SEMANTIC_ASSET_VERSION_ID,
+      collisionAssetVersionId: COLLISION_ASSET_VERSION_ID,
+      manifestJson: {
+        ...manifestJson,
+        roomSlug: "grand-hall",
+        assets: {
+          primaryVisualAssetVersionId: ASSET_VERSION_ID,
+          semanticMeshAssetVersionId: SEMANTIC_ASSET_VERSION_ID,
+          collisionAssetVersionId: COLLISION_ASSET_VERSION_ID,
+          pointCloudAssetVersionId: null,
+        },
+      },
+      runtimeStatus: "draft",
+    });
+    expect(result.success).toBe(true);
   });
 });
