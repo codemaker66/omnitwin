@@ -530,3 +530,26 @@ export {
   type LayoutResolveResponse,
   type LayoutResolveQuery,
 } from "./url-identifiers.js";
+
+export {
+  ASSET_EVIDENCE_STATUSES,
+  AssetEvidenceStatusSchema,
+  ASSET_SOURCES,
+  AssetSourceSchema,
+  RUNTIME_PACKAGE_STATUSES,
+  RuntimePackageStatusSchema,
+  RUNTIME_SPLAT_EXTENSIONS,
+  FORBIDDEN_ASSET_FIXTURE_MARKERS,
+  splatExtensionForKey,
+  isForbiddenAssetFixtureKey,
+  RegisterAssetVersionInputSchema,
+  AssetVersionSchema,
+  RuntimePackageSchema,
+  type AssetEvidenceStatus,
+  type AssetSource,
+  type RuntimePackageStatus,
+  type RuntimeSplatExtension,
+  type RegisterAssetVersionInput,
+  type AssetVersion,
+  type RuntimePackage,
+} from "./asset-version.js";

@@ -619,3 +619,61 @@ export const stripeEvents = pgTable("stripe_events", {
 }, (table) => [
   index("stripe_events_type_idx").on(table.type),
 ]);
+
+// ---------------------------------------------------------------------------
+// 17. asset_versions — provenance record for one processed visual asset.
+//
+// An AssetVersion is the immutable provenance anchor for a Gaussian-splat
+// bundle staged in R2 (e.g. a RunPod training output or an XGRIDS export).
+// `evidence_status` is the ONLY trust signal and is deliberately honest:
+// 'unverified' | 'machine_checked' | 'human_reviewed'. It NEVER asserts
+// legal/safety certification — "human_reviewed" means a human looked at it,
+// not that it is survey-grade or approved for occupancy. `r2_key` is the
+// object key; the runtime resolves it to a fetchable URL at read time.
+// Fixture/demo keys are rejected at the API boundary, never stored here.
+// ---------------------------------------------------------------------------
+
+export const assetVersions = pgTable("asset_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").references(() => spaces.id),
+  source: varchar("source", { length: 30 }).notNull(),
+  r2Key: text("r2_key").notNull(),
+  splatExtension: varchar("splat_extension", { length: 10 }).notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  captureDate: date("capture_date"),
+  evidenceStatus: varchar("evidence_status", { length: 20 }).notNull().default("unverified"),
+  sizeBytes: integer("size_bytes"),
+  label: text("label"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("asset_versions_venue_idx").on(table.venueId),
+  index("asset_versions_space_idx").on(table.spaceId),
+]);
+
+// ---------------------------------------------------------------------------
+// 18. runtime_packages — publishable pointer that exposes an AssetVersion
+// to the runtime renderer.
+//
+// Only rows with status='published' are served to the runtime; the renderer
+// fetches the latest published package (by published_at desc) and falls back
+// to the procedural room when none exists. ON DELETE CASCADE from
+// asset_versions keeps packages from dangling if a version is removed.
+// ---------------------------------------------------------------------------
+
+export const runtimePackages = pgTable("runtime_packages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").references(() => spaces.id),
+  assetVersionId: uuid("asset_version_id").notNull().references(() => assetVersions.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 20 }).notNull().default("draft"),
+  label: text("label"),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("runtime_packages_venue_status_idx").on(table.venueId, table.status),
+  index("runtime_packages_published_idx").on(table.status, table.publishedAt),
+]);

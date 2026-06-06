@@ -49,6 +49,9 @@ import {
   parseRuntimeSplatUrl,
   runtimeSplatUrlFromSearchParams,
 } from "../lib/runtime-visual-asset.js";
+import { decideRuntimeAsset } from "../lib/runtime-package-resolution.js";
+import { getLatestRuntimePackage } from "../api/runtime-packages.js";
+import type { RuntimePackage } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
@@ -644,6 +647,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [selectedPhaseId, setSelectedPhaseId] = useState(TRADES_HALL_VISUAL_DEMO_STATE.defaultPhaseId);
   const [activeOverlay, setActiveOverlay] = useState<VisualOverlayKey>("guestFlow");
   const [overlays, setOverlays] = useState<OverlayState>(INITIAL_OVERLAYS);
+  const [publishedPackage, setPublishedPackage] = useState<RuntimePackage | null>(null);
   const [visualState, setVisualState] = useState<VisualState>(() => {
     if (queryAsset.error !== null) {
       return { status: "invalid", message: queryAsset.error, splatCount: null };
@@ -654,6 +658,12 @@ export function TradesHallVisualPage(): ReactElement {
   const parsedDraft = useMemo(() => parseRuntimeSplatUrl(draftUrl), [draftUrl]);
   const activeAsset = queryAsset.ok && queryAsset.url !== null ? queryAsset : null;
   const activeAssetUrl = activeAsset?.url ?? null;
+  // Manual dev URL wins; otherwise the latest published RuntimePackage; otherwise
+  // null → procedural Grand Hall fallback. See runtime-package-resolution.
+  const assetDecision = useMemo(
+    () => decideRuntimeAsset(activeAssetUrl, publishedPackage),
+    [activeAssetUrl, publishedPackage],
+  );
   const selectedPhase = visualPhaseById(selectedPhaseId);
   const meshVisible = layerMode === "hybrid" || layerMode === "mesh";
   const splatVisible = layerMode === "hybrid" || layerMode === "splat";
@@ -666,6 +676,24 @@ export function TradesHallVisualPage(): ReactElement {
     }
     setVisualState(queryAsset.ok ? { status: "loading", message: "Loading runtime asset", splatCount: null } : EMPTY_STATE);
   }, [queryAsset.error, queryAsset.ok, queryAsset.url]);
+
+  // Fetch the latest published runtime package once on mount. A failure (or
+  // none published) leaves publishedPackage null → procedural fallback.
+  useEffect(() => {
+    let cancelled = false;
+    void getLatestRuntimePackage()
+      .then((pkg) => { if (!cancelled) setPublishedPackage(pkg); })
+      .catch(() => { if (!cancelled) setPublishedPackage(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // When a published asset becomes the active decision (no manual override),
+  // show a loading line until Spark resolves it; onLoad/onError refine it.
+  useEffect(() => {
+    if (assetDecision.source === "published" && assetDecision.splatUrl !== null) {
+      setVisualState({ status: "loading", message: "Loading runtime asset", splatCount: null });
+    }
+  }, [assetDecision.source, assetDecision.splatUrl]);
 
   const submitUrl = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -689,10 +717,12 @@ export function TradesHallVisualPage(): ReactElement {
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
     setVisualState({
       status: "loaded",
-      message: "Runtime asset loaded, not yet verified/signed.",
+      message: assetDecision.source === "published"
+        ? assetDecision.evidenceLabel
+        : "Runtime asset loaded, not yet verified/signed.",
       splatCount: event.splatCount,
     });
-  }, []);
+  }, [assetDecision.source, assetDecision.evidenceLabel]);
 
   const handleError = useCallback((event: SparkSplatErrorEvent) => {
     setVisualState({
@@ -728,9 +758,9 @@ export function TradesHallVisualPage(): ReactElement {
             <ambientLight intensity={0.75} />
             <directionalLight position={[6, 9, 6]} intensity={0.65} />
             {meshVisible && <GrandHallRoom />}
-            {activeAssetUrl !== null && (
+            {assetDecision.splatUrl !== null && (
               <SparkSplatLayer
-                url={activeAssetUrl}
+                url={assetDecision.splatUrl}
                 visible={splatVisible}
                 opacity={opacity}
                 onLoad={handleLoad}
