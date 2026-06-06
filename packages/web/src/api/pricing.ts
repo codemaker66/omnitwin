@@ -1,33 +1,50 @@
-import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
+import { z } from "zod";
+import { PricingTypeSchema, LineItemSchema, ModifierSchema, type LineItem } from "@omnitwin/types";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types — PricingType, LineItem, Modifier imported from @omnitwin/types.
-// PricingRule and CreatePricingRuleInput are kept local because the API
-// returns amount as string (DB numeric column) while the shared schema uses
-// number. PriceEstimateInput matches PriceEstimateRequest in @omnitwin/types.
+// Response schemas — Zod validation at the API boundary.
+//
+// PricingType, LineItem, and Modifier schemas are reused from @omnitwin/types
+// (single source of truth). PricingRule is kept local because the API returns
+// `amount` as a string (DB numeric column) while the shared schema uses a
+// number. Request types (CreatePricingRuleInput, PriceEstimateInput) stay as
+// plain interfaces — they are outbound payloads, not parsed from untrusted
+// JSON.
 // ---------------------------------------------------------------------------
 
 export type { LineItem };
 
-export interface PricingRule {
-  readonly id: string;
-  readonly venueId: string;
-  readonly spaceId: string | null;
-  readonly name: string;
-  readonly type: PricingType;
-  readonly amount: string;
-  readonly currency: string;
-  readonly minHours: number | null;
-  readonly minGuests: number | null;
-  readonly isActive: boolean;
-  readonly validFrom: string | null;
-  readonly validTo: string | null;
-}
+const PricingRuleResponseSchema = z.object({
+  id: z.string(),
+  venueId: z.string(),
+  spaceId: z.string().nullable(),
+  name: z.string(),
+  type: PricingTypeSchema,
+  amount: z.string(),
+  currency: z.string(),
+  minHours: z.number().nullable(),
+  minGuests: z.number().nullable(),
+  isActive: z.boolean(),
+  validFrom: z.string().nullable(),
+  validTo: z.string().nullable(),
+});
+
+export type PricingRule = z.infer<typeof PricingRuleResponseSchema>;
+
+const PriceEstimateResponseSchema = z.object({
+  lineItems: z.array(LineItemSchema),
+  subtotal: z.number(),
+  modifiers: z.array(ModifierSchema),
+  total: z.number(),
+  currency: z.string(),
+});
+
+export type PriceEstimate = z.infer<typeof PriceEstimateResponseSchema>;
 
 export interface CreatePricingRuleInput {
   readonly name: string;
-  readonly type: PricingType;
+  readonly type: z.infer<typeof PricingTypeSchema>;
   readonly amount: number;
   readonly currency?: string;
   readonly spaceId?: string | null;
@@ -42,24 +59,16 @@ export interface PriceEstimateInput {
   readonly guestCount: number;
 }
 
-export interface PriceEstimate {
-  readonly lineItems: readonly LineItem[];
-  readonly subtotal: number;
-  readonly modifiers: readonly Modifier[];
-  readonly total: number;
-  readonly currency: string;
-}
-
 // ---------------------------------------------------------------------------
 // API functions
 // ---------------------------------------------------------------------------
 
 export async function listPricingRules(venueId: string): Promise<PricingRule[]> {
-  return api.get<PricingRule[]>(`/venues/${venueId}/pricing`);
+  return api.get(`/venues/${venueId}/pricing`, z.array(PricingRuleResponseSchema));
 }
 
 export async function createPricingRule(venueId: string, data: CreatePricingRuleInput): Promise<PricingRule> {
-  return api.post<PricingRule>(`/venues/${venueId}/pricing`, data);
+  return api.post(`/venues/${venueId}/pricing`, data, undefined, PricingRuleResponseSchema);
 }
 
 export async function deletePricingRule(venueId: string, ruleId: string): Promise<void> {
@@ -67,5 +76,5 @@ export async function deletePricingRule(venueId: string, ruleId: string): Promis
 }
 
 export async function estimatePrice(venueId: string, data: PriceEstimateInput): Promise<PriceEstimate> {
-  return api.post<PriceEstimate>(`/venues/${venueId}/pricing/estimate`, data);
+  return api.post(`/venues/${venueId}/pricing/estimate`, data, undefined, PriceEstimateResponseSchema);
 }

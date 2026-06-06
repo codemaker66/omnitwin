@@ -233,15 +233,17 @@ describe("spaces API venue functions (#25) — source-grep", () => {
     expect(typeof mod.updateVenue).toBe("function");
   });
 
-  it("Venue interface includes logoUrl and brandColour", async () => {
+  it("Venue schema includes nullable logoUrl and brandColour", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const raw = await fs.readFile(path.resolve("src/api/spaces.ts"), "utf-8");
     const codeOnly = raw
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    expect(codeOnly).toMatch(/logoUrl:\s*string\s*\|\s*null/);
-    expect(codeOnly).toMatch(/brandColour:\s*string\s*\|\s*null/);
+    // VenueSchema is a Zod response schema now (validated at the API boundary);
+    // both fields remain nullable strings.
+    expect(codeOnly).toMatch(/logoUrl:\s*z\.string\(\)\.nullable\(\)/);
+    expect(codeOnly).toMatch(/brandColour:\s*z\.string\(\)\.nullable\(\)/);
   });
 });
 

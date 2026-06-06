@@ -1,17 +1,26 @@
+import { z } from "zod";
 import { api, ApiError } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Response schemas — Zod validation at the API boundary.
+//
+// The presign response is parsed from server JSON, so it is validated. A
+// drifted shape (e.g. a missing fileId or a non-URL field) now fails loudly
+// at the network boundary instead of producing a broken upload deep in the
+// flow. UploadProgress is a client-local XHR construct, not server JSON, so
+// it stays a plain interface.
 // ---------------------------------------------------------------------------
 
-export interface PresignedUrlResponse {
-  readonly uploadUrl: string;
-  readonly fileKey: string;
-  readonly publicUrl: string | null;
-  readonly readUrl: string | null;
-  readonly fileId: string;
-  readonly visibility: "private" | "public";
-}
+const PresignedUrlResponseSchema = z.object({
+  uploadUrl: z.string(),
+  fileKey: z.string(),
+  publicUrl: z.string().nullable(),
+  readUrl: z.string().nullable(),
+  fileId: z.string(),
+  visibility: z.enum(["private", "public"]),
+});
+
+export type PresignedUrlResponse = z.infer<typeof PresignedUrlResponseSchema>;
 
 export interface UploadProgress {
   readonly loaded: number;
@@ -30,9 +39,9 @@ export async function getPresignedUrl(
   context: string,
   contextId: string,
 ): Promise<PresignedUrlResponse> {
-  return api.post<PresignedUrlResponse>("/uploads/presigned", {
+  return api.post("/uploads/presigned", {
     filename, contentType, contentLengthBytes, context, contextId,
-  });
+  }, undefined, PresignedUrlResponseSchema);
 }
 
 /**

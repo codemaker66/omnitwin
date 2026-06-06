@@ -1,57 +1,69 @@
+import { z } from "zod";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Response schemas — Zod validation at the API boundary.
+//
+// Every loadout response parsed from server JSON is validated through a Zod
+// schema before reaching application code, so contract drift (a renamed
+// field, a missing column, a string where a number was expected) fails loudly
+// at the network boundary instead of crashing deep in dashboard components.
 // ---------------------------------------------------------------------------
 
-export interface Loadout {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string | null;
-  readonly createdAt: string;
-  readonly photoCount: number;
-  readonly coverFileKey: string | null;
-}
+const LoadoutSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  createdAt: z.string(),
+  photoCount: z.number(),
+  coverFileKey: z.string().nullable(),
+});
 
-export interface LoadoutPhoto {
-  readonly id: string;
-  readonly fileId: string;
-  readonly caption: string | null;
-  readonly sortOrder: number;
-  readonly fileKey: string;
-  readonly filename: string;
-  readonly contentType: string;
-}
+export type Loadout = z.infer<typeof LoadoutSchema>;
 
-export interface LoadoutDetail {
-  readonly id: string;
-  readonly spaceId: string;
-  readonly venueId: string;
-  readonly name: string;
-  readonly description: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly photos: readonly LoadoutPhoto[];
-}
+const LoadoutPhotoSchema = z.object({
+  id: z.string(),
+  fileId: z.string(),
+  caption: z.string().nullable(),
+  sortOrder: z.number(),
+  fileKey: z.string(),
+  filename: z.string(),
+  contentType: z.string(),
+});
+
+export type LoadoutPhoto = z.infer<typeof LoadoutPhotoSchema>;
+
+const LoadoutDetailSchema = z.object({
+  id: z.string(),
+  spaceId: z.string(),
+  venueId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  photos: z.array(LoadoutPhotoSchema),
+});
+
+export type LoadoutDetail = z.infer<typeof LoadoutDetailSchema>;
 
 // ---------------------------------------------------------------------------
 // API functions
 // ---------------------------------------------------------------------------
 
 export async function listLoadouts(venueId: string, spaceId: string): Promise<Loadout[]> {
-  return api.get<Loadout[]>(`/venues/${venueId}/spaces/${spaceId}/loadouts`);
+  return api.get(`/venues/${venueId}/spaces/${spaceId}/loadouts`, z.array(LoadoutSchema));
 }
 
 export async function getLoadout(venueId: string, spaceId: string, id: string): Promise<LoadoutDetail> {
-  return api.get<LoadoutDetail>(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`);
+  return api.get(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, LoadoutDetailSchema);
 }
 
 export async function createLoadout(venueId: string, spaceId: string, name: string, description?: string): Promise<LoadoutDetail> {
-  return api.post<LoadoutDetail>(`/venues/${venueId}/spaces/${spaceId}/loadouts`, { name, description });
+  return api.post(`/venues/${venueId}/spaces/${spaceId}/loadouts`, { name, description }, undefined, LoadoutDetailSchema);
 }
 
 export async function updateLoadout(venueId: string, spaceId: string, id: string, data: { name?: string; description?: string | null }): Promise<LoadoutDetail> {
-  return api.patch<LoadoutDetail>(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, data);
+  return api.patch(`/venues/${venueId}/spaces/${spaceId}/loadouts/${id}`, data, LoadoutDetailSchema);
 }
 
 export async function deleteLoadout(venueId: string, spaceId: string, id: string): Promise<void> {
@@ -59,11 +71,11 @@ export async function deleteLoadout(venueId: string, spaceId: string, id: string
 }
 
 export async function addPhoto(loadoutId: string, fileId: string, caption?: string): Promise<LoadoutPhoto> {
-  return api.post<LoadoutPhoto>(`/loadouts/${loadoutId}/photos`, { fileId, caption });
+  return api.post(`/loadouts/${loadoutId}/photos`, { fileId, caption }, undefined, LoadoutPhotoSchema);
 }
 
 export async function updatePhoto(loadoutId: string, photoId: string, data: { caption?: string | null; sortOrder?: number }): Promise<LoadoutPhoto> {
-  return api.patch<LoadoutPhoto>(`/loadouts/${loadoutId}/photos/${photoId}`, data);
+  return api.patch(`/loadouts/${loadoutId}/photos/${photoId}`, data, LoadoutPhotoSchema);
 }
 
 export async function deletePhoto(loadoutId: string, photoId: string): Promise<void> {
@@ -71,5 +83,5 @@ export async function deletePhoto(loadoutId: string, photoId: string): Promise<v
 }
 
 export async function reorderPhotos(loadoutId: string, photoIds: readonly string[]): Promise<LoadoutPhoto[]> {
-  return api.post<LoadoutPhoto[]>(`/loadouts/${loadoutId}/photos/reorder`, { photoIds });
+  return api.post(`/loadouts/${loadoutId}/photos/reorder`, { photoIds }, undefined, z.array(LoadoutPhotoSchema));
 }

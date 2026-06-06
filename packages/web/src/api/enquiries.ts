@@ -1,38 +1,48 @@
+import { z } from "zod";
 import { api } from "./client.js";
 
 // ---------------------------------------------------------------------------
-// Types
+// Response schemas — Zod validation at the API boundary.
+//
+// Enquiry responses are parsed from server JSON and validated before reaching
+// the dashboard. `state`/status fields stay `z.string()` (rather than a strict
+// enum) so a newly-added server-side status never hard-fails the list view;
+// the dashboard maps unknown states defensively.
 // ---------------------------------------------------------------------------
 
-export interface Enquiry {
-  readonly id: string;
-  readonly venueId: string;
-  readonly spaceId: string;
-  readonly configurationId: string | null;
-  readonly userId: string | null;
-  readonly guestEmail: string | null;
-  readonly guestPhone: string | null;
-  readonly guestName: string | null;
-  readonly state: string;
-  readonly name: string;
-  readonly email: string;
-  readonly preferredDate: string | null;
-  readonly eventType: string | null;
-  readonly estimatedGuests: number | null;
-  readonly message: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
+const EnquirySchema = z.object({
+  id: z.string(),
+  venueId: z.string(),
+  spaceId: z.string(),
+  configurationId: z.string().nullable(),
+  userId: z.string().nullable(),
+  guestEmail: z.string().nullable(),
+  guestPhone: z.string().nullable(),
+  guestName: z.string().nullable(),
+  state: z.string(),
+  name: z.string(),
+  email: z.string(),
+  preferredDate: z.string().nullable(),
+  eventType: z.string().nullable(),
+  estimatedGuests: z.number().nullable(),
+  message: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
 
-export interface StatusHistoryEntry {
-  readonly id: string;
-  readonly enquiryId: string;
-  readonly fromStatus: string;
-  readonly toStatus: string;
-  readonly changedBy: string | null;
-  readonly note: string | null;
-  readonly createdAt: string;
-}
+export type Enquiry = z.infer<typeof EnquirySchema>;
+
+const StatusHistoryEntrySchema = z.object({
+  id: z.string(),
+  enquiryId: z.string(),
+  fromStatus: z.string(),
+  toStatus: z.string(),
+  changedBy: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type StatusHistoryEntry = z.infer<typeof StatusHistoryEntrySchema>;
 
 // ---------------------------------------------------------------------------
 // API functions
@@ -40,19 +50,19 @@ export interface StatusHistoryEntry {
 
 export async function listEnquiries(status?: string): Promise<Enquiry[]> {
   const params = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
-  return api.get<Enquiry[]>(`/enquiries${params}`);
+  return api.get(`/enquiries${params}`, z.array(EnquirySchema));
 }
 
 export async function getEnquiry(id: string): Promise<Enquiry> {
-  return api.get<Enquiry>(`/enquiries/${id}`);
+  return api.get(`/enquiries/${id}`, EnquirySchema);
 }
 
 export async function transitionEnquiry(id: string, status: string, note?: string): Promise<Enquiry> {
-  return api.post<Enquiry>(`/enquiries/${id}/transition`, { status, note });
+  return api.post(`/enquiries/${id}/transition`, { status, note }, undefined, EnquirySchema);
 }
 
 export async function getEnquiryHistory(id: string): Promise<StatusHistoryEntry[]> {
-  return api.get<StatusHistoryEntry[]>(`/enquiries/${id}/history`);
+  return api.get(`/enquiries/${id}/history`, z.array(StatusHistoryEntrySchema));
 }
 
 // NOTE: Per-enquiry hallkeeper PDF removed when the review workflow
