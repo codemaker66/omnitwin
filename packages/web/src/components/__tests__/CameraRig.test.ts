@@ -7,6 +7,7 @@ import {
   computeKeyboardPanDirection,
   computeEdgeScrollDirection,
   isCameraKeyboardInputLocked,
+  isCameraKeyboardPanSuspendedByPlannerState,
   MIN_POLAR_ANGLE,
   MAX_POLAR_ANGLE,
   DAMPING_FACTOR,
@@ -199,6 +200,16 @@ describe("isCameraKeyboardInputLocked", () => {
     expect(isCameraKeyboardInputLocked(button)).toBe(true);
   });
 
+  it("locks camera keyboard pan from focused planner buttons and toolbars", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("role", "toolbar");
+    const button = document.createElement("button");
+    toolbar.append(button);
+
+    expect(isCameraKeyboardInputLocked(button)).toBe(true);
+    expect(isCameraKeyboardInputLocked(toolbar)).toBe(true);
+  });
+
   it("locks camera keyboard pan for content-editable regions", () => {
     const editable = document.createElement("div");
     editable.setAttribute("contenteditable", "true");
@@ -216,6 +227,43 @@ describe("isCameraKeyboardInputLocked", () => {
     expect(isCameraKeyboardInputLocked(scene)).toBe(false);
     expect(isCameraKeyboardInputLocked(inertEditable)).toBe(false);
     expect(isCameraKeyboardInputLocked(null)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isCameraKeyboardPanSuspendedByPlannerState
+// ---------------------------------------------------------------------------
+
+describe("isCameraKeyboardPanSuspendedByPlannerState", () => {
+  const idleState = {
+    catalogueDrawerOpen: false,
+    catalogueSelectionActive: false,
+    catalogueDragActive: false,
+    cameraReferenceDraftOpen: false,
+    guidelineActive: false,
+    markupActive: false,
+    measurementActive: false,
+    selectedItemCount: 0,
+    marqueeActive: false,
+  };
+
+  it("allows camera keyboard pan when the planner scene is idle", () => {
+    expect(isCameraKeyboardPanSuspendedByPlannerState(idleState)).toBe(false);
+  });
+
+  it("suspends camera keyboard pan while planner chrome or tools own the interaction", () => {
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, catalogueDrawerOpen: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, catalogueSelectionActive: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, catalogueDragActive: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, markupActive: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, measurementActive: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, guidelineActive: true })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, cameraReferenceDraftOpen: true })).toBe(true);
+  });
+
+  it("suspends camera keyboard pan while furniture is selected or marquee selection is active", () => {
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, selectedItemCount: 1 })).toBe(true);
+    expect(isCameraKeyboardPanSuspendedByPlannerState({ ...idleState, marqueeActive: true })).toBe(true);
   });
 });
 

@@ -5,6 +5,12 @@ import { Euler, Vector3 } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
+import { useCatalogueStore } from "../stores/catalogue-store.js";
+import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
+import { useGuidelineStore } from "../stores/guideline-store.js";
+import { useMarkupStore } from "../stores/markup-store.js";
+import { useMeasurementStore } from "../stores/measurement-store.js";
+import { useSelectionStore } from "../stores/selection-store.js";
 import { sampleTransition } from "../lib/camera-animation.js";
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
@@ -184,13 +190,59 @@ export function isCameraKeyboardInputLocked(target: EventTarget | null): boolean
 
   if (
     target.closest(
-      "input, textarea, select, [role='textbox'], [contenteditable]:not([contenteditable='false'])",
+      "input, textarea, select, button, [role='button'], [role='textbox'], [role='toolbar'], [role='menu'], [role='listbox'], [role='option'], [contenteditable]:not([contenteditable='false'])",
     ) !== null
   ) {
     return true;
   }
 
   return target.closest("[role='dialog'], [data-camera-keyboard-lock='true']") !== null;
+}
+
+export interface CameraKeyboardPlannerState {
+  readonly catalogueDrawerOpen: boolean;
+  readonly catalogueSelectionActive: boolean;
+  readonly catalogueDragActive: boolean;
+  readonly cameraReferenceDraftOpen: boolean;
+  readonly guidelineActive: boolean;
+  readonly markupActive: boolean;
+  readonly measurementActive: boolean;
+  readonly selectedItemCount: number;
+  readonly marqueeActive: boolean;
+}
+
+export function isCameraKeyboardPanSuspendedByPlannerState(state: CameraKeyboardPlannerState): boolean {
+  return (
+    state.catalogueDrawerOpen ||
+    state.catalogueSelectionActive ||
+    state.catalogueDragActive ||
+    state.cameraReferenceDraftOpen ||
+    state.guidelineActive ||
+    state.markupActive ||
+    state.measurementActive ||
+    state.selectedItemCount > 0 ||
+    state.marqueeActive
+  );
+}
+
+function readCameraKeyboardPlannerState(): CameraKeyboardPlannerState {
+  const catalogue = useCatalogueStore.getState();
+  const selection = useSelectionStore.getState();
+  return {
+    catalogueDrawerOpen: catalogue.drawerOpen,
+    catalogueSelectionActive: catalogue.selectedItemId !== null,
+    catalogueDragActive: catalogue.dragActive,
+    cameraReferenceDraftOpen: useCameraReferenceStore.getState().draft !== null,
+    guidelineActive: useGuidelineStore.getState().active,
+    markupActive: useMarkupStore.getState().active,
+    measurementActive: useMeasurementStore.getState().active,
+    selectedItemCount: selection.selectedIds.size,
+    marqueeActive: selection.marqueeActive,
+  };
+}
+
+function isCameraKeyboardPanSuspended(): boolean {
+  return isCameraKeyboardPanSuspendedByPlannerState(readCameraKeyboardPlannerState());
 }
 
 function onKeyUp(event: KeyboardEvent): void {
@@ -430,7 +482,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
       }
 
       if (PAN_KEYS.has(event.code)) {
-        if (isCameraKeyboardInputLocked(event.target)) {
+        if (isCameraKeyboardInputLocked(event.target) || isCameraKeyboardPanSuspended()) {
           keyboardKeys.delete(event.code);
           return;
         }
@@ -640,7 +692,10 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     // Skip normal camera controls while a bookmark transition is active
     if (!controls.enabled) return;
 
-    if (typeof document !== "undefined" && isCameraKeyboardInputLocked(document.activeElement)) {
+    if (
+      (typeof document !== "undefined" && isCameraKeyboardInputLocked(document.activeElement)) ||
+      isCameraKeyboardPanSuspended()
+    ) {
       if (keyboardKeys.size > 0) keyboardKeys.clear();
       return;
     }

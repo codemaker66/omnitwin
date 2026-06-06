@@ -59,7 +59,38 @@ test.describe("Public Editor", () => {
     await expect(commandDeck).toBeVisible({ timeout: 5_000 });
     await expect(commandDeck).toContainText("Build the room from the floor");
     await commandDeck.getByTestId("planner-command-action-open-catalogue").click();
-    await expect(page.getByTestId("furniture-panel")).toBeVisible({ timeout: 5_000 });
+    const furniturePanel = page.getByTestId("furniture-panel");
+    await expect(furniturePanel).toBeVisible({ timeout: 5_000 });
+
+    const headerBox = await statusHeader.boundingBox();
+    const panelBox = await furniturePanel.boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    if (headerBox !== null && panelBox !== null) {
+      expect(panelBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
+    }
+  });
+
+  test("desktop toolbar starts below the command header", async ({ page }) => {
+    const statusHeader = page.getByTestId("planner-status-header");
+    const toolbar = page.getByTestId("planner-toolbar");
+    await expect(statusHeader).toBeVisible({ timeout: 5_000 });
+    await expect(toolbar).toBeVisible({ timeout: 5_000 });
+
+    const boxes = await Promise.all([
+      statusHeader.boundingBox(),
+      toolbar.boundingBox(),
+      page.getByRole("button", { name: "Select & Move" }).boundingBox(),
+    ]);
+    const [headerBox, toolbarBox, selectButtonBox] = boxes;
+    expect(headerBox).not.toBeNull();
+    expect(toolbarBox).not.toBeNull();
+    expect(selectButtonBox).not.toBeNull();
+    if (headerBox === null || toolbarBox === null || selectButtonBox === null) return;
+
+    const headerBottom = headerBox.y + headerBox.height;
+    expect(toolbarBox.y).toBeGreaterThanOrEqual(headerBottom - 1);
+    expect(selectButtonBox.y).toBeGreaterThanOrEqual(headerBottom + 6);
   });
 
   // ---------------------------------------------------------------------------

@@ -43,11 +43,12 @@ import type { CatalogueItem } from "../../lib/catalogue.js";
 
 const TOOLBAR_W = 68;
 const PANEL_W = 336;
+const DESKTOP_HEADER_H = 70;
 const GOLD = "#c9a84c";
 const ICON_SIZE = 22;
 
 const toolbarStyle: React.CSSProperties = {
-  position: "fixed", left: 0, top: 0, bottom: 0, width: TOOLBAR_W,
+  position: "fixed", left: 0, top: DESKTOP_HEADER_H, bottom: 0, width: TOOLBAR_W,
   background: "linear-gradient(180deg, rgba(7,7,7,0.99) 0%, rgba(18,15,12,0.99) 48%, rgba(8,8,8,0.99) 100%)",
   borderRight: "1px solid rgba(218,183,86,0.24)",
   boxShadow: "12px 0 42px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,236,180,0.08), inset -10px 0 24px rgba(201,168,76,0.035)",
@@ -96,7 +97,7 @@ const dividerStyle: React.CSSProperties = {
 };
 
 const panelStyle: React.CSSProperties = {
-  position: "fixed", left: TOOLBAR_W, top: 0, bottom: 0, width: PANEL_W,
+  position: "fixed", left: TOOLBAR_W, top: DESKTOP_HEADER_H, bottom: 0, width: PANEL_W,
   background: "radial-gradient(circle at 22% 0%, rgba(201,168,76,0.13), transparent 31%), linear-gradient(180deg, rgba(8,9,10,0.988) 0%, rgba(16,14,12,0.99) 46%, rgba(8,8,8,0.99) 100%)",
   borderRight: "1px solid rgba(201,168,76,0.24)",
   zIndex: 49, overflowY: "auto", padding: "24px 18px",

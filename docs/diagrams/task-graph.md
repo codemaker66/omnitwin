@@ -12,6 +12,7 @@ Regenerate after each `tasks.md` change.
 - **A1** — this week, RunPod foundation
 - **A2** — this week, ops baseline + audit fixes
 - **A3** — this week, viewer presentation polish + trust doctrine
+- **A4** — strategy readiness
 - **B** — next 2 weeks, gap closing + ops follow-on
 - **C** — weeks 3–6, reconstruction + edge cases
 - **D** — Tier 3, Geass cluster
@@ -119,7 +120,14 @@ flowchart TD
         T408(["T-408 - live /plan command shell + readable labels"])
         T409(["T-409 - hidden heart easter egg"])
         T410(["T-410 - premium table/seat callouts"])
+        T418(["T-418 - planner header/toolbar overlap fix"])
+        T419(["T-419 - smooth non-magnetic furniture drag"])
+        T420(["T-420 - suspend camera keys during UI input"])
         T137(["T-137 - Residual Radiance doctrine"])
+    end
+
+    subgraph A4 [a4 · strategy readiness]
+        T412(["T-412 - OpenAI/FDE readiness memo"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -262,6 +270,12 @@ flowchart TD
     T406 --> T408
     T378 --> T410
     T408 --> T410
+    T408 --> T418
+    T395 --> T419
+    T408 --> T419
+    T393 --> T420
+    T397 --> T420
+    T408 --> T420
     T400 --> T401
     T401 --> T402
     T357 --> T372
@@ -357,7 +371,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121,T386,T388,T389 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -464,6 +478,24 @@ editable fields and planner naming flows.
 feedback: table and seat names now render as larger black/gold command
 callouts with contextual rows and object-side anchoring rather than tiny
 strips across the furniture surface.
+`T-412` records the internal OpenAI Deployment Company / FDE-readiness
+strategy memo. It is intentionally doc-only: it maps Venviewer to an
+FDE-style workflow deployment pattern, identifies missing proof, and does
+not imply OpenAI endorsement, partnership, investment, or support.
+`T-418` records the targeted desktop `/plan` chrome correction after the
+command header work: the left rail and catalogue panel now dock below the
+top Venviewer status bar, with Playwright coverage preventing the first
+toolbar button from peeking under the top-left brand area again.
+`T-395/T-408 → T-419` records the active-drag feel correction after the
+permissive placement and live command-shell work: placed furniture now follows
+the grabbed pointer point continuously during drag while smart alignment stays
+visual-only, removing wall/object magnetism without changing grouping,
+constraints, or save semantics.
+`T-393/T-397/T-408 → T-420` records the camera-keyboard input safety fix after
+human POV, Laser Diagram, and command-shell work: WASD/arrow camera panning now
+only runs while the scene is idle, so menus, active tools, selected furniture,
+marquee selection, placement, and dialogs cannot accidentally fling the view
+away from the hall.
 
 `T-116 → T-091`, `T-118 → T-091`, `T-117 → T-091`, `T-120 → T-091`,
 and `T-121 → T-091` capture the new D-024 planning split: real venue

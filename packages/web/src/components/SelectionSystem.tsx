@@ -13,9 +13,8 @@ import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
-import { expandIdsToGroupMembers, getGroupMemberIds, snapToPlatformEdge, snapToWallEdge } from "../lib/placement.js";
-import { computeSnapGuides, snapToFurnitureAlignment } from "../lib/snap-guide.js";
-import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { expandIdsToGroupMembers, getGroupMemberIds } from "../lib/placement.js";
+import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -538,53 +537,15 @@ export function SelectionSystem(): null {
             // Move all items in the moving set (selected + group members)
             const primary = placedItems.find((p) => p.id === primaryId);
             if (primary !== undefined) {
-              let targetX = hit.point.x - dragGrabOffset.current.x;
-              let targetZ = hit.point.z - dragGrabOffset.current.z;
-              const primaryCatalogueItem = getCatalogueItem(primary.catalogueItemId);
-              if (primaryCatalogueItem !== undefined) {
-                const platformSnap = snapToPlatformEdge(
-                  targetX,
-                  targetZ,
-                  primaryCatalogueItem,
-                  primary.rotationY,
-                  placedItems,
-                  allMovingIds,
-                );
-                targetX = platformSnap.x;
-                targetZ = platformSnap.z;
-                const wallSnap = snapToWallEdge(
-                  targetX,
-                  targetZ,
-                  primaryCatalogueItem,
-                  primary.rotationY,
-                  useRoomDimensionsStore.getState().dimensions,
-                );
-                targetX = wallSnap.x;
-                targetZ = wallSnap.z;
-                const furnitureSnap = snapToFurnitureAlignment(
-                  targetX,
-                  targetZ,
-                  primary.catalogueItemId,
-                  primary.rotationY,
-                  placedItems,
-                  allMovingIds,
-                );
-                targetX = furnitureSnap.x;
-                targetZ = furnitureSnap.z;
-              }
-
-              const effectiveDx = targetX - primary.x;
-              const effectiveDz = targetZ - primary.z;
-              usePlacementStore.getState().moveItemsByDelta(allMovingIds, effectiveDx, effectiveDz);
-              const movedPrimary = usePlacementStore.getState().placedItems.find((p) => p.id === primaryId);
-              if (movedPrimary !== undefined) {
-                const guides = computeSnapGuides(
-                  movedPrimary.x, movedPrimary.z,
-                  movedPrimary.catalogueItemId, movedPrimary.rotationY,
-                  usePlacementStore.getState().placedItems, allMovingIds,
-                );
-                useSelectionStore.getState().setActiveGuides(guides);
-              }
+              const frame = computeFluidFurnitureDragFrame(
+                primary,
+                hit.point,
+                dragGrabOffset.current,
+                placedItems,
+                allMovingIds,
+              );
+              usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
+              useSelectionStore.getState().setActiveGuides(frame.guides);
               invalidateRef.current();
             }
           }
