@@ -463,6 +463,22 @@ export {
   type ReviewGateMessageKeyFamily,
 } from "./review-gate.js";
 
+// --- ASPIRATIONAL: Data Sufficiency metadata vocabulary ---
+export {
+  DATA_SUFFICIENCY_OUTCOMES,
+  DATA_SUFFICIENCY_SURFACES,
+  DATA_SUFFICIENCY_REQUIRED_INPUT_CATEGORIES,
+  DATA_SUFFICIENCY_MESSAGE_KEY_FAMILIES,
+  DataSufficiencyOutcomeSchema,
+  DataSufficiencySurfaceSchema,
+  DataSufficiencyRequiredInputCategorySchema,
+  DataSufficiencyMessageKeyFamilySchema,
+  type DataSufficiencyOutcome,
+  type DataSufficiencySurface,
+  type DataSufficiencyRequiredInputCategory,
+  type DataSufficiencyMessageKeyFamily,
+} from "./data-sufficiency.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
