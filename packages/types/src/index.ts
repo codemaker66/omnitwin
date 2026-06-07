@@ -725,6 +725,39 @@ export {
   type ScenarioTemplateV0,
 } from "./scenario-template.js";
 
+// --- ASPIRATIONAL: Guest Flow Scenario Instance metadata schema ---
+export {
+  SCENARIO_INSTANCE_SCHEMA_VERSION,
+  SCENARIO_INSTANCE_ROUTE_MODEL_TYPES,
+  SCENARIO_INSTANCE_SEED_POLICIES,
+  SCENARIO_INSTANCE_ARTIFACT_REF_TYPES,
+  SCENARIO_INSTANCE_STALENESS_TRIGGERS,
+  ScenarioInstanceRouteModelTypeSchema,
+  ScenarioInstanceSeedPolicySchema,
+  ScenarioInstanceArtifactRefTypeSchema,
+  ScenarioInstanceStalenessTriggerSchema,
+  ScenarioInstanceAssumptionRefSchema,
+  ScenarioInstancePolicyBundleRefSchema,
+  ScenarioInstanceRouteModelRefSchema,
+  ScenarioInstanceSimulatorRefSchema,
+  ScenarioInstanceSeedRefSchema,
+  ScenarioInstanceArtifactRefSchema,
+  ScenarioInstanceMetricSummarySchema,
+  ScenarioInstanceV0Schema,
+  type ScenarioInstanceRouteModelType,
+  type ScenarioInstanceSeedPolicy,
+  type ScenarioInstanceArtifactRefType,
+  type ScenarioInstanceStalenessTrigger,
+  type ScenarioInstanceAssumptionRef,
+  type ScenarioInstancePolicyBundleRef,
+  type ScenarioInstanceRouteModelRef,
+  type ScenarioInstanceSimulatorRef,
+  type ScenarioInstanceSeedRef,
+  type ScenarioInstanceArtifactRef,
+  type ScenarioInstanceMetricSummary,
+  type ScenarioInstanceV0,
+} from "./scenario-instance.js";
+
 // --- ASPIRATIONAL: Residual Radiance Layer metadata for research planning ---
 export {
   RESIDUAL_LAYER_ROLES,
