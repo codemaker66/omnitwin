@@ -503,6 +503,21 @@ export {
   type HumanReviewOverlay,
 } from "./human-review-overlay.js";
 
+// --- ASPIRATIONAL: Flow Zone Authoring Layer metadata vocabulary ---
+export {
+  FLOW_ZONE_KINDS,
+  FLOW_ZONE_CUSTOMER_VISIBILITY_LEVELS,
+  FLOW_ZONE_CONSUMERS,
+  FLOW_ZONE_KIND_CUSTOMER_VISIBILITY,
+  FLOW_ZONE_KIND_CONSUMERS,
+  FlowZoneKindSchema,
+  FlowZoneCustomerVisibilitySchema,
+  FlowZoneConsumerSchema,
+  type FlowZoneKind,
+  type FlowZoneCustomerVisibility,
+  type FlowZoneConsumer,
+} from "./flow-zone.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
