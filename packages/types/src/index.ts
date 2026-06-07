@@ -482,6 +482,35 @@ export {
   type ArtifactType,
 } from "./artifact-type.js";
 
+export {
+  ARTIFACT_MANIFEST_V0_SCHEMA_VERSION,
+  ARTIFACT_EXPOSURE_TIERS,
+  ARTIFACT_FRESHNESS_STATES,
+  ARTIFACT_EXPORT_SAFETY_STATES,
+  ARTIFACT_CREATOR_TYPES,
+  ARTIFACT_REFERENCE_TYPES,
+  ArtifactExposureTierSchema,
+  ArtifactFreshnessStateSchema,
+  ArtifactExportSafetySchema,
+  ArtifactCreatorTypeSchema,
+  ArtifactReferenceTypeSchema,
+  ArtifactContentHashSchema,
+  ArtifactReferenceSchema,
+  ArtifactCreatorSchema,
+  ArtifactRuntimeCompatibilitySchema,
+  ArtifactManifestV0Schema,
+  type ArtifactExposureTier,
+  type ArtifactFreshnessState,
+  type ArtifactExportSafety,
+  type ArtifactCreatorType,
+  type ArtifactReferenceType,
+  type ArtifactContentHash,
+  type ArtifactReference,
+  type ArtifactCreator,
+  type ArtifactRuntimeCompatibility,
+  type ArtifactManifestV0,
+} from "./artifact-manifest.js";
+
 // --- ASPIRATIONAL: solver not yet consumed by web/API at runtime ---
 export {
   solveLayout,
