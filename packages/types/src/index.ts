@@ -518,6 +518,22 @@ export {
   type FlowZoneConsumer,
 } from "./flow-zone.js";
 
+// --- ASPIRATIONAL: Geometry Approximation Policy metadata vocabulary ---
+export {
+  GEOMETRY_APPROXIMATION_KINDS,
+  GEOMETRY_APPROXIMATION_METADATA_FIELDS,
+  GEOMETRY_APPROXIMATION_PURPOSES,
+  GEOMETRY_APPROXIMATION_CONSERVATISM_DIRECTIONS,
+  GeometryApproximationKindSchema,
+  GeometryApproximationMetadataFieldSchema,
+  GeometryApproximationPurposeSchema,
+  GeometryApproximationConservatismDirectionSchema,
+  type GeometryApproximationKind,
+  type GeometryApproximationMetadataField,
+  type GeometryApproximationPurpose,
+  type GeometryApproximationConservatismDirection,
+} from "./geometry-approximation.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
