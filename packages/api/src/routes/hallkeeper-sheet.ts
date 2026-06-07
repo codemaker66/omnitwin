@@ -12,6 +12,7 @@ import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
+import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-progress.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet routes — v2 end-to-end
@@ -20,7 +21,7 @@ import { canAccessResource } from "../utils/query.js";
 //   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF
 //   GET   /hallkeeper/:configId/v2        → JSON HallkeeperSheetV2
 //   GET   /hallkeeper/:configId/progress  → checked row keys
-//   PATCH /hallkeeper/:configId/progress  → toggle a row's check state
+//   PATCH /hallkeeper/:configId/progress  → set or toggle a row's check state
 //
 // SECURITY: these endpoints expose PII (contact name, email, phone,
 // event details). Access is granted to:
@@ -32,7 +33,13 @@ import { canAccessResource } from "../utils/query.js";
 
 const ConfigIdParam = z.object({ configId: z.string().uuid() });
 const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("false") });
-const ToggleBody = z.object({ rowKey: z.string().min(1).max(300) });
+// `checked` present → idempotent set-state (force the row); omitted → legacy
+// toggle (flip). Unknown keys are stripped, so older `{ rowKey }`-only clients
+// keep working and newer set-state clients are accepted by older servers.
+const ProgressBody = z.object({
+  rowKey: z.string().min(1).max(300),
+  checked: z.boolean().optional(),
+});
 
 /**
  * Lightweight ownership probe for the progress routes — these routes
@@ -191,12 +198,17 @@ export async function hallkeeperSheetRoutes(
   // Progress endpoints — server-backed checkbox state
   //
   // The hallkeeper_progress table stores which rows are checked for a given
-  // config. GET returns all checked keys; PATCH toggles one key. Multiple
-  // hallkeepers share the same state — no localStorage isolation.
+  // config. GET returns all checked keys. Multiple hallkeepers share the same
+  // state — no localStorage isolation.
   //
-  // The toggle is idempotent: PATCH with a checked key unchecks it (DELETE),
-  // PATCH with an unchecked key checks it (INSERT). The client sends the
-  // current desired action ("check" or "uncheck") to avoid races.
+  // PATCH has two modes (see `resolveProgressMutation`):
+  //   - `{ rowKey, checked }` → idempotent SET-STATE: force the row to
+  //     `checked` (INSERT if absent, DELETE if present, no-op if already
+  //     there). Safe to replay — the offline sync queue relies on this so a
+  //     lost response or a concurrent device can't flip the row to the wrong
+  //     value.
+  //   - `{ rowKey }`          → legacy TOGGLE: flip the current state. Kept
+  //     for backward compatibility with older clients.
   // -------------------------------------------------------------------------
 
   // GET /hallkeeper/:configId/progress — list all checked row keys
@@ -226,14 +238,14 @@ export async function hallkeeperSheetRoutes(
     return { data: { configId: params.data.configId, checked } };
   });
 
-  // PATCH /hallkeeper/:configId/progress — toggle a row's check state
+  // PATCH /hallkeeper/:configId/progress — set or toggle a row's check state
   server.patch("/:configId/progress", { preHandler: [authenticate] }, async (request, reply) => {
     const params = ConfigIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const body = ToggleBody.safeParse(request.body);
+    const body = ProgressBody.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
@@ -244,9 +256,9 @@ export async function hallkeeperSheetRoutes(
     }
 
     const { configId } = params.data;
-    const { rowKey } = body.data;
+    const { rowKey, checked: desired } = body.data;
 
-    // Check if already checked
+    // Current state for this row.
     const [existing] = await db.select({ id: hallkeeperProgress.id })
       .from(hallkeeperProgress)
       .where(and(
@@ -255,20 +267,21 @@ export async function hallkeeperSheetRoutes(
       ))
       .limit(1);
 
-    if (existing !== undefined) {
-      // Uncheck: delete the row
+    const exists = existing !== undefined;
+    const mutation = resolveProgressMutation(exists, desired);
+
+    if (mutation === "insert") {
+      await db.insert(hallkeeperProgress).values({
+        configId,
+        rowKey,
+        checkedBy: request.user.id,
+      });
+    } else if (mutation === "delete" && existing !== undefined) {
       await db.delete(hallkeeperProgress)
         .where(eq(hallkeeperProgress.id, existing.id));
-      return { data: { configId, rowKey, checked: false } };
     }
+    // mutation === "noop" → server already in the desired state; nothing to do.
 
-    // Check: insert a new row
-    await db.insert(hallkeeperProgress).values({
-      configId,
-      rowKey,
-      checkedBy: request.user.id,
-    });
-
-    return { data: { configId, rowKey, checked: true } };
+    return { data: { configId, rowKey, checked: checkedStateAfter(mutation, exists) } };
   });
 }

@@ -192,4 +192,25 @@ describe("PATCH /hallkeeper/:configId/progress — auth gate", () => {
     expect(res.statusCode).not.toBe(401);
     expect(res.statusCode).not.toBe(400);
   });
+
+  it("returns 400 for a non-boolean `checked` value", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      headers: adminAuth,
+      payload: { rowKey: validBody.rowKey, checked: "yes" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("accepts an idempotent set-state body (rowKey + checked) past validation", async () => {
+    const res = await server.inject({
+      method: "PATCH",
+      url: `/hallkeeper/${FAKE_CONFIG_ID}/progress`,
+      headers: adminAuth,
+      payload: { rowKey: validBody.rowKey, checked: true },
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(400);
+  });
 });

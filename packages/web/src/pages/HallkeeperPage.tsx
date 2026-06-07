@@ -193,7 +193,7 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, {
-          method: "PATCH", headers, body: JSON.stringify({ rowKey }),
+          method: "PATCH", headers, body: JSON.stringify({ rowKey, checked: desiredChecked }),
         });
         result = { ok: res.ok, status: res.status };
       } catch {
@@ -240,9 +240,10 @@ export function HallkeeperPage(): React.ReactElement {
   // toggles and would make every op look already-applied, silently
   // discarding the very edits we are trying to save. Ops the server
   // already satisfies are acknowledged without a network call; the rest
-  // are re-issued (exactly one toggle each, since server ≠ desired ⇒ one
-  // flip converges). Successful and terminally-rejected replays are
-  // dropped; network/5xx failures stay queued for the next flush.
+  // are re-issued as idempotent set-state (`checked: desiredChecked`), which
+  // converges on the user's intent regardless of any change between the read
+  // and the write (no toggle TOCTOU). Successful and terminally-rejected
+  // replays are dropped; network/5xx failures stay queued for the next flush.
   useEffect(() => {
     if (configId === undefined) return;
 
@@ -285,7 +286,7 @@ export function HallkeeperPage(): React.ReactElement {
             let result: ReplayResult;
             try {
               const res = await fetch(`${API_URL}/hallkeeper/${op.configId}/progress`, {
-                method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey }),
+                method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey, checked: op.desiredChecked }),
               });
               result = { ok: res.ok, status: res.status };
             } catch {
