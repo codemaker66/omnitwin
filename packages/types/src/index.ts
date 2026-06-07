@@ -650,6 +650,39 @@ export {
   type CrowdSimulatorSourceName,
 } from "./crowd-simulation-replay.js";
 
+// --- ASPIRATIONAL: Guest Flow Scenario Template metadata schema ---
+export {
+  SCENARIO_TEMPLATE_SCHEMA_VERSION,
+  SCENARIO_TEMPLATE_GEOMETRY_CLASSES,
+  SCENARIO_TEMPLATE_ROUTE_INPUT_REQUIREMENTS,
+  SCENARIO_TEMPLATE_ENDPOINT_SEMANTICS,
+  SCENARIO_TEMPLATE_MEASUREMENT_UNITS,
+  SCENARIO_TEMPLATE_WITNESS_INTEGRATION_RULES,
+  SCENARIO_TEMPLATE_HUMAN_REVIEW_TRIGGERS,
+  ScenarioTemplateGeometryClassSchema,
+  ScenarioTemplateRouteInputRequirementSchema,
+  ScenarioTemplateEndpointSemanticSchema,
+  ScenarioTemplateMeasurementUnitSchema,
+  ScenarioTemplateWitnessIntegrationRuleSchema,
+  ScenarioTemplateHumanReviewTriggerSchema,
+  ScenarioTemplateFlowZoneRequirementSchema,
+  ScenarioTemplateAssumptionRequirementSchema,
+  ScenarioTemplateAgentProfileMixSchema,
+  ScenarioTemplateMeasurementDefinitionSchema,
+  ScenarioTemplateV0Schema,
+  type ScenarioTemplateGeometryClass,
+  type ScenarioTemplateRouteInputRequirement,
+  type ScenarioTemplateEndpointSemantic,
+  type ScenarioTemplateMeasurementUnit,
+  type ScenarioTemplateWitnessIntegrationRule,
+  type ScenarioTemplateHumanReviewTrigger,
+  type ScenarioTemplateFlowZoneRequirement,
+  type ScenarioTemplateAssumptionRequirement,
+  type ScenarioTemplateAgentProfileMix,
+  type ScenarioTemplateMeasurementDefinition,
+  type ScenarioTemplateV0,
+} from "./scenario-template.js";
+
 // --- ASPIRATIONAL: Residual Radiance Layer metadata for research planning ---
 export {
   RESIDUAL_LAYER_ROLES,
