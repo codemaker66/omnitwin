@@ -38,7 +38,7 @@ export const RESIDUAL_COMPOSITION_MODES = [
   "alpha_over",
 ] as const;
 
-export const DEFAULT_RESIDUAL_COMPOSITION_MODE = "additive" as const;
+export const DEFAULT_RESIDUAL_COMPOSITION_MODE = "additive";
 
 export const ResidualCompositionModeSchema = z.enum(RESIDUAL_COMPOSITION_MODES);
 export type ResidualCompositionMode = z.infer<typeof ResidualCompositionModeSchema>;

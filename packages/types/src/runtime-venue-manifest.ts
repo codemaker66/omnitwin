@@ -2,7 +2,7 @@ import { z } from "zod";
 import { SpaceIdSchema, SpaceSlugSchema } from "./space.js";
 import { VenueIdSchema, VenueSlugSchema } from "./venue.js";
 
-export const RUNTIME_VENUE_MANIFEST_V0_VERSION = "runtime-venue-manifest/v0" as const;
+export const RUNTIME_VENUE_MANIFEST_V0_VERSION = "runtime-venue-manifest/v0";
 
 export const RUNTIME_COORDINATE_SYSTEMS = [
   "rhs_y_up_meters",

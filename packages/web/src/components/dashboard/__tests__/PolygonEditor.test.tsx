@@ -24,7 +24,7 @@ function readValue(container: HTMLElement): readonly FloorPlanPoint[] {
   const node = container.querySelector("[data-testid='harness-value']");
   if (node === null) return [];
   const text = node.textContent;
-  if (text === "") return [];
+  if (text === null || text === "") return [];
   return JSON.parse(text) as readonly FloorPlanPoint[];
 }
 

@@ -51,6 +51,8 @@ export async function resolveLayoutLoader(
     }
     return { configId: result.configId };
   } catch (err) {
+    // React Router error boundaries consume thrown Response objects.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     if (err instanceof Response) throw err;
     // Network-error fallback: if the resolver endpoint is unreachable
     // (E2E with a fully mocked backend, or a transient prod outage),

@@ -22,14 +22,14 @@ function asPackageJson(value: unknown): {
 describe("T-087 Spark renderer dependency unit", () => {
   it("pins Three.js to the 0.180 compatibility line required by Spark 2.0", async () => {
     const pkg = asPackageJson(await readJson("package.json"));
-    expect(pkg.dependencies?.["three"]).toBe("^0.180.0");
-    expect(pkg.devDependencies?.["@types/three"]).toBe("^0.180.0");
+    expect(pkg.dependencies?.["three"]).toBe("0.180.0");
+    expect(pkg.devDependencies?.["@types/three"]).toBe("0.180.0");
   });
 
   it("uses the React 18-compatible R3F/drei line while adding Spark 2.0", async () => {
     const pkg = asPackageJson(await readJson("package.json"));
-    expect(pkg.dependencies?.["@react-three/fiber"]).toBe("^8.18.0");
-    expect(pkg.dependencies?.["@react-three/drei"]).toBe("^9.122.0");
+    expect(pkg.dependencies?.["@react-three/fiber"]).toBe("8.18.0");
+    expect(pkg.dependencies?.["@react-three/drei"]).toBe("9.122.0");
     expect(pkg.dependencies?.["@sparkjsdev/spark"]).toBe("2.0.0");
   });
 

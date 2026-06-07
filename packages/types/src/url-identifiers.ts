@@ -30,7 +30,7 @@ const SHORTCODE_REGEX = /^[23456789abcdefghjkmnpqrstuvwxyz]{6}$/;
  * as a const export so server + tests reference the same string.
  */
 export const SHORTCODE_ALPHABET_CHARS: string = SHORTCODE_ALPHABET;
-export const SHORTCODE_LENGTH = 6 as const;
+export const SHORTCODE_LENGTH = 6;
 
 /**
  * First-segment path names that can never be a username. Any signup
