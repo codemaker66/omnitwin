@@ -681,7 +681,9 @@ JuPedSim, MILo/Frosting, Spark/SPZ, commercial-simulator, and
 generated-artifact provenance license-review tasks. T-296 through T-301
 are the Operational Geometry Compiler doctrine and follow-up GeoJSON schema,
 walkable-area compiler, geometry-hash, polygon-validity, and data-sufficiency
-tasks. T-302 through T-306 are the Flow Zone Authoring Layer doctrine and
+tasks. T-297 has landed as the shared operational GeoJSON contract in
+`@omnitwin/types`; compiler and validation behavior remain separate tasks.
+T-302 through T-306 are the Flow Zone Authoring Layer doctrine and
 follow-up zone-vocabulary, editor-spike, validation-test, and Trades Hall bar
 queue authoring tasks. T-307 through T-311 are the Planning Evidence
 Disclosure doctrine and follow-up wording-registry, PDF watermark, replay
