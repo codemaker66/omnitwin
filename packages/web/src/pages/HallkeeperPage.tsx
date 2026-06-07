@@ -2,8 +2,11 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   ackProgress,
   enqueueProgress,
+  isReplayStatusTerminal,
   listPendingProgress,
-  opsStillNeedingReplay,
+  partitionReplay,
+  resolveReplayDisposition,
+  type ReplayResult,
 } from "../lib/progress-sync-queue.js";
 import { useParams } from "react-router-dom";
 import type {
@@ -184,6 +187,7 @@ export function HallkeeperPage(): React.ReactElement {
     setChecks((prev) => toggleCheck(prev, rowKey, desiredChecked));
 
     void (async () => {
+      let result: ReplayResult;
       try {
         const token = await getAuthToken();
         const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -191,62 +195,103 @@ export function HallkeeperPage(): React.ReactElement {
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, {
           method: "PATCH", headers, body: JSON.stringify({ rowKey }),
         });
-        if (!res.ok) throw new Error("toggle failed");
+        result = { ok: res.ok, status: res.status };
       } catch {
-        // Network / server error — KEEP the optimistic UI and queue
-        // the intent for replay. The flush effect below drains on
-        // reconnect.
-        try {
-          await enqueueProgress(configId, rowKey, desiredChecked);
-          const pending = await listPendingProgress();
-          setPendingCount(pending.length);
-        } catch {
-          // IDB unreachable — last-resort rollback so the UI doesn't
-          // show a check that's neither on the server nor in IDB.
-          setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
-        }
+        // No response at all — treat as offline / retriable.
+        result = { ok: false, status: null };
+      }
+
+      if (result.ok) return; // Server has the toggle; nothing to queue.
+
+      // The server actively REJECTED the toggle (revoked access, deleted
+      // row, bad payload). Replaying it could never succeed, so don't
+      // queue a poison op — revert the optimistic flip so the UI stays
+      // honest about what the server actually holds.
+      if (result.status !== null && isReplayStatusTerminal(result.status)) {
+        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
+        return;
+      }
+
+      // Retriable failure (offline / 5xx / 408 / 429) — KEEP the
+      // optimistic UI and queue the intent for replay on reconnect.
+      try {
+        await enqueueProgress(configId, rowKey, desiredChecked);
+        const pending = await listPendingProgress();
+        setPendingCount(pending.length);
+      } catch {
+        // IDB unreachable — last-resort rollback so the UI doesn't
+        // show a check that's neither on the server nor in IDB.
+        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
       }
     })();
   }, [configId, checks]);
 
+  // Guards overlapping flushes. The mount drain and the `online` event
+  // can fire concurrently, and the server PATCH is a non-idempotent
+  // toggle — two in-flight flushes could double-flip the same row, so
+  // only one flush runs at a time.
+  const flushInFlightRef = useRef(false);
+
   // --- Flush queued progress on reconnect ---
   //
-  // The browser fires a global `online` event when network comes
-  // back. We read the queue, filter to ops still needing replay
-  // (the server may already match, e.g. another device toggled the
-  // same row), then re-issue each PATCH. Successful replays delete
-  // their queue entry; failures stay queued for the next attempt.
+  // On reconnect (or mount) reconcile the offline queue against the
+  // server. We fetch AUTHORITATIVE server state first — never the
+  // optimistic local `checks`, which already reflects the queued
+  // toggles and would make every op look already-applied, silently
+  // discarding the very edits we are trying to save. Ops the server
+  // already satisfies are acknowledged without a network call; the rest
+  // are re-issued (exactly one toggle each, since server ≠ desired ⇒ one
+  // flip converges). Successful and terminally-rejected replays are
+  // dropped; network/5xx failures stay queued for the next flush.
   useEffect(() => {
     if (configId === undefined) return;
 
     const flush = (): void => {
+      if (flushInFlightRef.current) return;
+      flushInFlightRef.current = true;
       void (async () => {
         try {
           const queued = await listPendingProgress();
-          if (queued.length === 0) return;
-          const serverChecked = new Set(
-            Object.keys(checks).filter((k) => checks[k] === true),
-          );
-          const toReplay = opsStillNeedingReplay(queued, serverChecked);
+          if (queued.length === 0) {
+            setPendingCount(0);
+            return;
+          }
 
           const token = await getAuthToken();
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-          for (const op of toReplay) {
+          // Authoritative server truth. If we can't read it, bail and
+          // keep the queue intact rather than guessing and dropping edits.
+          let serverChecked: Set<string>;
+          try {
+            const stateRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
+            if (!stateRes.ok) return;
+            const stateJson = (await stateRes.json()) as { data: { checked: Record<string, string> } };
+            serverChecked = new Set(Object.keys(stateJson.data.checked));
+          } catch {
+            return;
+          }
+
+          const { replay, converged } = partitionReplay(queued, serverChecked);
+
+          // Server already satisfies these — safe to drop, no network.
+          for (const op of converged) {
+            await ackProgress(op.configId, op.rowKey);
+          }
+
+          // Server still differs — re-issue one toggle each.
+          for (const op of replay) {
+            let result: ReplayResult;
             try {
               const res = await fetch(`${API_URL}/hallkeeper/${op.configId}/progress`, {
                 method: "PATCH", headers, body: JSON.stringify({ rowKey: op.rowKey }),
               });
-              if (res.ok) await ackProgress(op.configId, op.rowKey);
+              result = { ok: res.ok, status: res.status };
             } catch {
-              // Leave queued for next flush.
+              result = { ok: false, status: null };
             }
-          }
-
-          // Acknowledge any ops that were already-converged no-ops too.
-          for (const op of queued) {
-            if (!toReplay.some((r) => r.rowKey === op.rowKey)) {
+            if (resolveReplayDisposition(result) === "ack") {
               await ackProgress(op.configId, op.rowKey);
             }
           }
@@ -255,6 +300,8 @@ export function HallkeeperPage(): React.ReactElement {
           setPendingCount(remaining.length);
         } catch {
           // Don't surface — flush failures are silent ops noise.
+        } finally {
+          flushInFlightRef.current = false;
         }
       })();
     };
@@ -266,7 +313,7 @@ export function HallkeeperPage(): React.ReactElement {
     return () => {
       window.removeEventListener("online", flush);
     };
-  }, [configId, checks]);
+  }, [configId]);
 
   // --- Phase collapse ---
   const toggleCollapse = useCallback((phase: string) => {

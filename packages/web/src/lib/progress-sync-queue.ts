@@ -94,3 +94,67 @@ export function opsStillNeedingReplay(
     return isCurrentlyChecked !== op.desiredChecked;
   });
 }
+
+/**
+ * Split the queue against AUTHORITATIVE server state into the ops that
+ * still need a PATCH (`replay` — server differs from intent) and the
+ * ops the server already satisfies (`converged` — safe to drop without
+ * touching the network).
+ *
+ * `serverChecked` MUST be freshly fetched server truth, never the
+ * optimistic local UI state. Feeding it optimistic state classifies
+ * every op as already-converged and silently discards offline edits —
+ * the exact data-loss bug this partition exists to prevent.
+ */
+export interface ReplayPartition {
+  readonly replay: readonly QueuedProgressOp[];
+  readonly converged: readonly QueuedProgressOp[];
+}
+
+export function partitionReplay(
+  queued: readonly QueuedProgressOp[],
+  serverChecked: ReadonlySet<string>,
+): ReplayPartition {
+  const replay = opsStillNeedingReplay(queued, serverChecked);
+  const replayKeys = new Set(replay.map((op) => op.rowKey));
+  const converged = queued.filter((op) => !replayKeys.has(op.rowKey));
+  return { replay, converged };
+}
+
+/** Outcome of a single replayed PATCH, normalised for disposition. */
+export interface ReplayResult {
+  readonly ok: boolean;
+  /** HTTP status, or `null` when the request never produced a response (network error). */
+  readonly status: number | null;
+}
+
+export type ReplayDisposition = "ack" | "keep";
+
+/**
+ * Is this HTTP status a TERMINAL failure for a replayed progress PATCH?
+ *
+ * 4xx means the request itself is unacceptable (deleted config, revoked
+ * access, malformed row) — replaying it can never succeed, so the op
+ * must be dropped rather than retried forever (poison-message guard).
+ * The two exceptions, 408 (timeout) and 429 (rate limited), are
+ * transient and worth retrying. 5xx is a server-side blip — retriable.
+ */
+export function isReplayStatusTerminal(status: number): boolean {
+  if (status === 408 || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
+/**
+ * Decide whether a replayed op can be acknowledged (removed from the
+ * queue) or must be kept for a later flush.
+ *
+ *   - success               → ack
+ *   - network error         → keep (we'll retry when back online)
+ *   - terminal 4xx          → ack (drop the poison op; it can never land)
+ *   - retriable 5xx/408/429  → keep
+ */
+export function resolveReplayDisposition(result: ReplayResult): ReplayDisposition {
+  if (result.ok) return "ack";
+  if (result.status === null) return "keep";
+  return isReplayStatusTerminal(result.status) ? "ack" : "keep";
+}
