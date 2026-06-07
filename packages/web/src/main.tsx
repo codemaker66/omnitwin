@@ -7,6 +7,7 @@ import { ClerkAuthBridge } from "./components/auth/ClerkAuthBridge.js";
 import { JackieLarkinHeart } from "./components/JackieLarkinHeart.js";
 import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { AppErrorBoundary } from "./error-boundary.js";
+import { initBrowserSentry } from "./observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // E2E auth seeding — dev/test-only bypass for Clerk
@@ -48,6 +49,8 @@ if ((CLERK_KEY === undefined || CLERK_KEY === "") && import.meta.env.PROD) {
     "Set it in your .env or deployment environment.",
   );
 }
+
+await initBrowserSentry();
 
 // ---------------------------------------------------------------------------
 // AppRoot — Clerk provider wraps the entire app

@@ -4,14 +4,11 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "src/**/__tests__/**/*.test.ts"],
     testTimeout: 10000,
-    // singleFork + heap bump avoids V8 "MemoryExhaustion" on Windows when
-    // the Drizzle/Fastify test surface is loaded in parallel workers.
+    // Serial file execution + heap bump avoids V8 "MemoryExhaustion" on
+    // Windows when the Drizzle/Fastify test surface is loaded in parallel
+    // workers. Vitest 4 moved these fork options to the top-level test config.
     pool: "forks",
-    poolOptions: {
-      forks: {
-        singleFork: true,
-        execArgv: ["--max-old-space-size=8192"],
-      },
-    },
+    fileParallelism: false,
+    execArgv: ["--max-old-space-size=8192"],
   },
 });

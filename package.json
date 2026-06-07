@@ -19,15 +19,17 @@
   "pnpm": {
     "overrides": {
       "brace-expansion@<2": "1.1.13",
-      "brace-expansion@>=4 <5.0.5": "5.0.5",
+      "brace-expansion@>=4 <5.0.6": "5.0.6",
       "esbuild": "0.25.0",
       "fast-uri": "3.1.2",
       "fast-xml-builder": "1.1.7",
       "flatted": "3.4.2",
+      "js-cookie@<=3.0.5": "3.0.7",
       "picomatch": "4.0.4",
       "postcss": "8.5.10",
       "resend>svix": "1.92.2",
-      "vite": "6.4.2"
+      "vite": "6.4.2",
+      "ws@>=8.0.0 <8.20.1": "8.20.1"
     }
   }
 }

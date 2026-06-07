@@ -7,6 +7,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    setupFiles: ["./src/test/vitest-setup.ts"],
     globals: false,
     environment: "happy-dom",
     passWithNoTests: true,
@@ -18,11 +19,7 @@ export default defineConfig({
     // genuinely hung test.
     testTimeout: 20000,
     pool: "forks",
-    poolOptions: {
-      forks: {
-        maxForks: 4,
-        execArgv: ["--max-old-space-size=8192"],
-      },
-    },
+    maxWorkers: 4,
+    execArgv: ["--max-old-space-size=8192"],
   },
 });

@@ -1,5 +1,6 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { captureBoundaryError } from "./observability/sentry.js";
 
 // ---------------------------------------------------------------------------
 // AppErrorBoundary — top-level recovery UI
@@ -45,8 +46,12 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBo
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    // eslint-disable-next-line no-console
-    console.error("VenViewer uncaught error:", error, info.componentStack);
+    void captureBoundaryError(error, info);
+
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.error("VenViewer uncaught error:", error, info.componentStack);
+    }
   }
 
   override render(): ReactNode {

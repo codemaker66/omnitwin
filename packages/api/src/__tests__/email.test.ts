@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   newEnquiryNotification,
@@ -72,7 +74,7 @@ describe("enquiryApproved", () => {
     venueName: "Trades Hall Glasgow",
     spaceName: "Grand Hall",
     eventDate: "2026-06-15",
-    configUrl: "http://localhost:5173/editor/config-123",
+    configUrl: "http://localhost:5173/plan/config-123",
   } as const;
 
   it("includes space name in subject", async () => {
@@ -93,12 +95,27 @@ describe("enquiryApproved", () => {
 
   it("includes config link", async () => {
     const { html } = await enquiryApproved(baseData);
-    expect(html).toContain("editor/config-123");
+    expect(html).toContain("plan/config-123");
   });
 
   it("handles null configUrl", async () => {
     const { html } = await enquiryApproved({ ...baseData, configUrl: null });
     expect(html).not.toContain("View Your Layout");
+  });
+});
+
+describe("email preview URLs", () => {
+  it("uses planner routes in local preview sample data", async () => {
+    const sources = await Promise.all([
+      readFile(resolve("emails/enquiry-approved.tsx"), "utf-8"),
+      readFile(resolve("emails/config-approved.tsx"), "utf-8"),
+      readFile(resolve("emails/config-changes-requested.tsx"), "utf-8"),
+      readFile(resolve("emails/config-rejected.tsx"), "utf-8"),
+    ]);
+    const combined = sources.join("\n");
+
+    expect(combined).toContain("/plan/");
+    expect(combined).not.toContain("/editor/");
   });
 });
 
@@ -235,11 +252,11 @@ function makeCaptureLogger(): { logs: CapturedLog[]; info: (o: Record<string, un
 }
 
 // Mock the Resend SDK so we control every response shape.
-const resendSendMock: ReturnType<typeof vi.fn> = vi.fn();
+const resendSendMock = vi.fn<(...args: unknown[]) => unknown>();
 vi.mock("resend", () => ({
   Resend: class {
     emails = {
-      send: (...args: unknown[]): unknown => resendSendMock(...args) as unknown,
+      send: (...args: unknown[]): unknown => resendSendMock(...args),
     };
   },
 }));

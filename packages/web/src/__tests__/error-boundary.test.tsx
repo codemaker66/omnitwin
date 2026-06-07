@@ -1,7 +1,16 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach, type MockInstance } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 import { Component, type ReactNode } from "react";
+import type { ErrorInfo } from "react";
 import { AppErrorBoundary, classifyError } from "../error-boundary.js";
+
+const captureBoundaryErrorMock = vi.hoisted(() =>
+  vi.fn<(error: Error, info: ErrorInfo) => Promise<void>>(() => Promise.resolve()),
+);
+
+vi.mock("../observability/sentry.js", () => ({
+  captureBoundaryError: captureBoundaryErrorMock,
+}));
 
 // ---------------------------------------------------------------------------
 // classifyError — pure function, fully tested in isolation
@@ -53,9 +62,10 @@ class Thrower extends Component<{ readonly error: Error; readonly children?: Rea
 }
 
 describe("AppErrorBoundary", () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let consoleSpy: MockInstance<(...data: unknown[]) => void>;
 
   beforeEach(() => {
+    captureBoundaryErrorMock.mockClear();
     consoleSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
   });
 
@@ -86,6 +96,21 @@ describe("AppErrorBoundary", () => {
     expect(getByText("Something went wrong")).toBeDefined();
     expect(getByText("scene graph corrupted")).toBeDefined();
     expect(getByText("Reload Page")).toBeDefined();
+  });
+
+  it("reports caught render errors to the observability layer", () => {
+    const error = new Error("scene graph corrupted");
+    render(
+      <AppErrorBoundary>
+        <Thrower error={error} />
+      </AppErrorBoundary>,
+    );
+
+    const firstCall = captureBoundaryErrorMock.mock.calls.at(0);
+    expect(firstCall).toBeDefined();
+    if (firstCall === undefined) throw new Error("Expected observability capture call");
+    expect(firstCall[0]).toBe(error);
+    expect(firstCall[1].componentStack).toContain("Thrower");
   });
 
   it("renders children when no error has occurred", () => {

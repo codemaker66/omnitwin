@@ -1,6 +1,10 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
-import { assertRequiredProductionEnv } from "./src/lib/production-env";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
+import {
+  assertRequiredProductionEnv,
+  getSentrySourceMapUploadConfig,
+} from "./src/lib/production-env";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -19,12 +23,42 @@ import { assertRequiredProductionEnv } from "./src/lib/production-env";
 // ---------------------------------------------------------------------------
 
 export default defineConfig(({ mode }) => {
-  assertRequiredProductionEnv(mode);
+  const env = loadEnv(mode, process.cwd(), "");
+  assertRequiredProductionEnv(mode, env);
+  const sentrySourceMapUpload = mode === "production"
+    ? getSentrySourceMapUploadConfig(env)
+    : null;
+  const plugins: PluginOption[] = [react()];
+
+  if (sentrySourceMapUpload !== null) {
+    plugins.push(...sentryVitePlugin({
+      authToken: sentrySourceMapUpload.authToken,
+      org: sentrySourceMapUpload.org,
+      project: sentrySourceMapUpload.project,
+      release: {
+        name: sentrySourceMapUpload.release,
+        setCommits: false,
+      },
+      sourcemaps: {
+        assets: "./dist/assets/**",
+        filesToDeleteAfterUpload: "./dist/assets/**/*.map",
+      },
+      telemetry: false,
+      silent: true,
+      bundleSizeOptimizations: {
+        excludeReplayCanvas: true,
+        excludeReplayIframe: true,
+        excludeReplayShadowDom: true,
+        excludeReplayWorker: true,
+      },
+    }));
+  }
 
   return {
-    plugins: [react()],
+    plugins,
     build: {
       target: "es2022",
+      sourcemap: sentrySourceMapUpload === null ? false : "hidden",
       // The Three/Spark chunks are intentionally large and deliberately lazy:
       // source tests below pin both the split and the absence of Spark from
       // normal editor routes. Raising this limit quiets Vite's generic warning
