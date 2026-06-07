@@ -422,6 +422,25 @@ export {
   type PurposeConfidenceLabel,
 } from "./purpose-fit.js";
 
+// --- ASPIRATIONAL: Assumption Ledger metadata vocabulary ---
+export {
+  ASSUMPTION_CATEGORIES,
+  ASSUMPTION_SOURCES,
+  ASSUMPTION_ASSURANCE_BANDS,
+  ASSUMPTION_STALE_TRIGGERS,
+  ASSUMPTION_REVIEW_REQUIREMENTS,
+  AssumptionCategorySchema,
+  AssumptionSourceSchema,
+  AssumptionAssuranceBandSchema,
+  AssumptionStaleTriggerSchema,
+  AssumptionReviewRequirementSchema,
+  type AssumptionCategory,
+  type AssumptionSource,
+  type AssumptionAssuranceBand,
+  type AssumptionStaleTrigger,
+  type AssumptionReviewRequirement,
+} from "./assumption-ledger.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
