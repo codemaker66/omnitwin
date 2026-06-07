@@ -7,6 +7,8 @@ import {
   OPERATIONAL_GEOMETRY_CLASS_GEOMETRY_TYPES,
   OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_STATUSES,
   OPERATIONAL_GEOMETRY_FEATURE_CLASSES,
+  OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX,
+  OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION,
   OPERATIONAL_GEOMETRY_PURPOSES,
   OPERATIONAL_GEOMETRY_SCHEMA_VERSION,
   OPERATIONAL_GEOMETRY_SOURCE_KINDS,
@@ -14,9 +16,13 @@ import {
   OperationalGeoJsonGeometryTypeSchema,
   OperationalGeometryDataSufficiencyStatusSchema,
   OperationalGeometryFeatureClassSchema,
+  OperationalGeometryHashMaterialV0Schema,
   OperationalGeometryPurposeSchema,
   OperationalGeometrySourceKindSchema,
   isOperationalGeometryDataSufficiencyOutcome,
+  operationalGeometryHash,
+  operationalGeometryHashJson,
+  operationalGeometryHashMaterial,
   type OperationalGeoJsonGeometry,
   type OperationalGeoJsonFeature,
   type OperationalGeoJsonFeatureCollectionV0,
@@ -235,6 +241,93 @@ function withFirstFeatureInput(patch: {
   };
 }
 
+function hashFixture(): OperationalGeoJsonFeatureCollectionV0 {
+  return patchFeatureProperties(
+    patchFeatureProperties(
+      {
+        ...COLLECTION,
+        metadata: {
+          ...COLLECTION.metadata,
+          sourceRefs: [
+            ref("layout_snapshot:grand-hall-draft", "source"),
+            ref("room_geometry:grand-hall-shell-v1", "canonical_geometry"),
+          ],
+        },
+      },
+      "furniture_footprint:round-table-001",
+      (properties) => ({
+        ...properties,
+        assumptionRefs: [ref("assumption:round-table-clearance-buffer", "scenario_assumption")],
+        policyRefs: [ref("policy:clearance-envelope-v1", "policy")],
+        sourceRefs: [ref("layout_object:round-table-001", "source")],
+      }),
+    ),
+    "queue_zone:bar-preview",
+    (properties) => ({
+      ...properties,
+      sourceKind: "authored_flow_zone",
+      sourceRefs: [ref("flow_zone:bar-preview", "source")],
+      provenanceRefs: [ref("operator_annotation:bar-preview-v1", "provenance")],
+    }),
+  );
+}
+
+function patchFeatureProperties(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  featureId: string,
+  patch: (
+    properties: OperationalGeometryFeatureProperties,
+  ) => OperationalGeometryFeatureProperties,
+): OperationalGeoJsonFeatureCollectionV0 {
+  let patched = false;
+  const features = collection.features.map((candidate) => {
+    if (candidate.id !== featureId) {
+      return candidate;
+    }
+
+    patched = true;
+    return {
+      ...candidate,
+      properties: patch(candidate.properties),
+    };
+  });
+
+  if (!patched) {
+    throw new Error(`Missing fixture feature ${featureId}.`);
+  }
+
+  return { ...collection, features };
+}
+
+function patchFeatureGeometry(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  featureId: string,
+  geometry: OperationalGeoJsonGeometry,
+): OperationalGeoJsonFeatureCollectionV0 {
+  let patched = false;
+  const features = collection.features.map((candidate) => {
+    if (candidate.id !== featureId) {
+      return candidate;
+    }
+
+    patched = true;
+    return {
+      ...candidate,
+      geometry,
+    };
+  });
+
+  if (!patched) {
+    throw new Error(`Missing fixture feature ${featureId}.`);
+  }
+
+  return { ...collection, features };
+}
+
+function referenceKey(reference: OperationalGeometryReference): string {
+  return `${reference.refType}:${reference.ref}:${reference.role}`;
+}
+
 describe("Operational Geometry GeoJSON schema", () => {
   it("pins feature classes from OGC-001", () => {
     expect(OPERATIONAL_GEOMETRY_FEATURE_CLASSES).toEqual([
@@ -444,5 +537,178 @@ describe("Operational Geometry GeoJSON schema", () => {
     expect(DataSufficiencyOutcomeSchema.safeParse("sufficient").success).toBe(false);
     expect(OperationalGeometryDataSufficiencyStatusSchema.safeParse("pass").success).toBe(false);
     expect(OperationalGeometryDataSufficiencyStatusSchema.safeParse("fail").success).toBe(false);
+  });
+});
+
+describe("Operational Geometry hash policy", () => {
+  it("builds hash material over compiler, layout, geometry refs, zones, portals, and assumptions", () => {
+    const material = operationalGeometryHashMaterial(hashFixture());
+
+    expect(OperationalGeometryHashMaterialV0Schema.parse(material)).toEqual(material);
+    expect(material.hashPolicyVersion).toBe(OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION);
+    expect(OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX).toBe(
+      "venviewer.operational-geometry.hash.v0\n",
+    );
+    expect(material.compilerVersion).toBe("manual-schema-v0");
+    expect(material.layoutSnapshotDigest).toBe("a".repeat(64));
+    expect(material.canonicalRoomGeometryRefs.map(referenceKey)).toEqual([
+      "test_ref:artifact:room-shell-v0:provenance",
+      "test_ref:layout_snapshot:grand-hall-draft:source",
+      "test_ref:room_geometry:grand-hall-shell-v1:canonical_geometry",
+      "test_ref:room:grand-hall:source",
+    ]);
+    expect(material.furnitureFootprintRefs).toEqual(["object:round-table-001"]);
+    expect(material.venueZoneFeatureIds).toEqual([
+      "queue_zone:bar-preview",
+      "staff_only_zone:service-edge",
+    ]);
+    expect(material.portalConnectorFeatureIds).toEqual([
+      "accessibility_connector:main-door",
+      "portal:main-door",
+    ]);
+    expect(material.policyRefs.map(referenceKey)).toEqual([
+      "test_ref:policy:clearance-envelope-v1:policy",
+    ]);
+    expect(material.scenarioAssumptionRefs.map(referenceKey)).toEqual([
+      "test_ref:assumption:round-table-clearance-buffer:scenario_assumption",
+    ]);
+    expect(material.features.map((feature) => feature.id)).toEqual([
+      "accessibility_connector:main-door",
+      "furniture_footprint:round-table-001",
+      "portal:main-door",
+      "queue_zone:bar-preview",
+      "room_boundary:grand-hall",
+      "staff_only_zone:service-edge",
+      "unknown_or_unverified_area:stage-edge",
+      "walkable_area:grand-hall-main",
+    ]);
+    expect(operationalGeometryHashJson(hashFixture())).toContain(
+      "\"hashPolicyVersion\":\"venviewer.operational-geometry.hash.v0\"",
+    );
+    expect(operationalGeometryHash(hashFixture())).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("keeps the hash stable across semantically unordered arrays and feature order", () => {
+    const base = hashFixture();
+    const reordered: OperationalGeoJsonFeatureCollectionV0 = {
+      ...base,
+      metadata: {
+        ...base.metadata,
+        purposes: [...base.metadata.purposes].reverse(),
+        sourceRefs: [...base.metadata.sourceRefs].reverse(),
+        dataSufficiency: {
+          ...base.metadata.dataSufficiency,
+          requiredInputRefs: [...base.metadata.dataSufficiency.requiredInputRefs].reverse(),
+          missingInputRefs: [...base.metadata.dataSufficiency.missingInputRefs].reverse(),
+        },
+      },
+      features: [...base.features].reverse().map((candidate) => ({
+        ...candidate,
+        properties: {
+          ...candidate.properties,
+          purposes: [...candidate.properties.purposes].reverse(),
+          sourceRefs: [...candidate.properties.sourceRefs].reverse(),
+          provenanceRefs: [...candidate.properties.provenanceRefs].reverse(),
+          assumptionRefs: [...candidate.properties.assumptionRefs].reverse(),
+          policyRefs: [...candidate.properties.policyRefs].reverse(),
+          connectedFeatureIds: [...candidate.properties.connectedFeatureIds].reverse(),
+          sourceObjectRefs: [...candidate.properties.sourceObjectRefs].reverse(),
+          dataSufficiency: {
+            ...candidate.properties.dataSufficiency,
+            requiredInputRefs: [
+              ...candidate.properties.dataSufficiency.requiredInputRefs,
+            ].reverse(),
+            missingInputRefs: [
+              ...candidate.properties.dataSufficiency.missingInputRefs,
+            ].reverse(),
+          },
+        },
+      })),
+    };
+
+    expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse(reordered).success).toBe(true);
+    expect(operationalGeometryHashJson(reordered)).toBe(operationalGeometryHashJson(base));
+    expect(operationalGeometryHash(reordered)).toBe(operationalGeometryHash(base));
+  });
+
+  it("ignores generatedAt and notes because they are not operational geometry identity", () => {
+    const base = hashFixture();
+    const changedAnnotations: OperationalGeoJsonFeatureCollectionV0 = {
+      ...base,
+      metadata: {
+        ...base.metadata,
+        generatedAt: "2026-06-08T13:30:00.000Z",
+      },
+      features: base.features.map((candidate) => ({
+        ...candidate,
+        properties: {
+          ...candidate.properties,
+          notes: `operator note for ${candidate.id}`,
+        },
+      })),
+    };
+
+    expect(operationalGeometryHashJson(changedAnnotations)).toBe(
+      operationalGeometryHashJson(base),
+    );
+    expect(operationalGeometryHash(changedAnnotations)).toBe(operationalGeometryHash(base));
+  });
+
+  it("changes the hash when compiler, layout, policy, assumption, source object, or geometry changes", () => {
+    const base = hashFixture();
+    const compilerChanged: OperationalGeoJsonFeatureCollectionV0 = {
+      ...base,
+      metadata: { ...base.metadata, compilerVersion: "manual-schema-v1" },
+    };
+    const layoutChanged: OperationalGeoJsonFeatureCollectionV0 = {
+      ...base,
+      metadata: { ...base.metadata, layoutSnapshotDigest: "b".repeat(64) },
+    };
+    const policyChanged = patchFeatureProperties(
+      base,
+      "furniture_footprint:round-table-001",
+      (properties) => ({
+        ...properties,
+        policyRefs: [ref("policy:clearance-envelope-v2", "policy")],
+      }),
+    );
+    const assumptionChanged = patchFeatureProperties(
+      base,
+      "furniture_footprint:round-table-001",
+      (properties) => ({
+        ...properties,
+        assumptionRefs: [ref("assumption:alternate-table-spacing", "scenario_assumption")],
+      }),
+    );
+    const sourceObjectChanged = patchFeatureProperties(
+      base,
+      "furniture_footprint:round-table-001",
+      (properties) => ({
+        ...properties,
+        sourceObjectRefs: ["object:round-table-002"],
+      }),
+    );
+    const geometryChanged = patchFeatureGeometry(
+      base,
+      "walkable_area:grand-hall-main",
+      {
+        type: "Polygon",
+        coordinates: [[
+          [0, 0],
+          [0, 10],
+          [10, 10],
+          [10, 0],
+          [0, 0],
+        ]],
+      },
+    );
+
+    const baseHash = operationalGeometryHash(base);
+    expect(operationalGeometryHash(compilerChanged)).not.toBe(baseHash);
+    expect(operationalGeometryHash(layoutChanged)).not.toBe(baseHash);
+    expect(operationalGeometryHash(policyChanged)).not.toBe(baseHash);
+    expect(operationalGeometryHash(assumptionChanged)).not.toBe(baseHash);
+    expect(operationalGeometryHash(sourceObjectChanged)).not.toBe(baseHash);
+    expect(operationalGeometryHash(geometryChanged)).not.toBe(baseHash);
   });
 });

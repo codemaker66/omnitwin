@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  sha256Hex,
+  stableCanonicalJson,
+  type CanonicalJsonValue,
+} from "./canonical-layout-snapshot.js";
 import { DataSufficiencyOutcomeSchema } from "./data-sufficiency.js";
 import {
   GeometryApproximationKindSchema,
@@ -6,6 +11,10 @@ import {
 } from "./geometry-approximation.js";
 
 export const OPERATIONAL_GEOMETRY_SCHEMA_VERSION = "venviewer.operational-geojson.v0";
+export const OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION =
+  "venviewer.operational-geometry.hash.v0";
+export const OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX =
+  `${OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION}\n`;
 
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T/;
 const SLUG_TOKEN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
@@ -442,15 +451,295 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
           message: "Feature coordinate frame must match collection metadata.",
         });
       }
-
     }
   });
 export type OperationalGeoJsonFeatureCollectionV0 = z.infer<
   typeof OperationalGeoJsonFeatureCollectionV0Schema
 >;
 
+export const OperationalGeometryHashFeatureSchema = z
+  .object({
+    id: OperationalGeometryFeatureIdSchema,
+    featureClass: OperationalGeometryFeatureClassSchema,
+    geometry: OperationalGeoJsonGeometrySchema,
+    coordinateFrame: OperationalGeometryCoordinateFrameSchema,
+    units: OperationalGeometryUnitsSchema,
+    roomSlug: z.string().trim().min(1).max(120).regex(SLUG_TOKEN),
+    venueSlug: z.string().trim().min(1).max(120).regex(SLUG_TOKEN),
+    levelId: z.string().trim().min(1).max(120).regex(FEATURE_ID).nullable(),
+    flowZoneKind: z.string().trim().min(1).max(80).regex(SLUG_TOKEN).nullable(),
+    purposes: z.array(OperationalGeometryPurposeSchema).min(1),
+    sourceKind: OperationalGeometrySourceKindSchema,
+    sourceRefs: z.array(OperationalGeometryReferenceSchema),
+    provenanceRefs: z.array(OperationalGeometryReferenceSchema),
+    policyRefs: z.array(OperationalGeometryReferenceSchema),
+    assumptionRefs: z.array(OperationalGeometryReferenceSchema),
+    relatedFeatureIds: z.array(OperationalGeometryFeatureIdSchema),
+    connectedFeatureIds: z.array(OperationalGeometryFeatureIdSchema),
+    sourceObjectRefs: z.array(z.string().trim().min(1).max(160).regex(FEATURE_ID)),
+    approximationKind: GeometryApproximationKindSchema.nullable(),
+    approximationPurpose: GeometryApproximationPurposeSchema.nullable(),
+    dataSufficiency: OperationalGeometryDataSufficiencySchema,
+  })
+  .strict();
+export type OperationalGeometryHashFeature = z.infer<
+  typeof OperationalGeometryHashFeatureSchema
+>;
+
+export const OperationalGeometryHashMaterialV0Schema = z
+  .object({
+    hashPolicyVersion: z.literal(OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION),
+    schemaVersion: z.literal(OPERATIONAL_GEOMETRY_SCHEMA_VERSION),
+    geometryId: z.string().trim().min(1).max(160).regex(FEATURE_ID),
+    venueSlug: z.string().trim().min(1).max(120).regex(SLUG_TOKEN),
+    roomSlug: z.string().trim().min(1).max(120).regex(SLUG_TOKEN),
+    coordinateFrame: OperationalGeometryCoordinateFrameSchema,
+    units: OperationalGeometryUnitsSchema,
+    purposes: z.array(OperationalGeometryPurposeSchema).min(1),
+    compilerVersion: z.string().trim().min(1).max(120),
+    layoutSnapshotDigest: z.string().trim().length(64).regex(/^[a-f0-9]+$/).nullable(),
+    canonicalRoomGeometryRefs: z.array(OperationalGeometryReferenceSchema),
+    furnitureFootprintRefs: z.array(z.string().trim().min(1).max(160).regex(FEATURE_ID)),
+    venueZoneFeatureIds: z.array(OperationalGeometryFeatureIdSchema),
+    venueZoneRefs: z.array(OperationalGeometryReferenceSchema),
+    portalConnectorFeatureIds: z.array(OperationalGeometryFeatureIdSchema),
+    policyRefs: z.array(OperationalGeometryReferenceSchema),
+    scenarioAssumptionRefs: z.array(OperationalGeometryReferenceSchema),
+    sourceRefs: z.array(OperationalGeometryReferenceSchema),
+    dataSufficiency: OperationalGeometryDataSufficiencySchema,
+    features: z.array(OperationalGeometryHashFeatureSchema).min(1),
+  })
+  .strict();
+export type OperationalGeometryHashMaterialV0 = z.infer<
+  typeof OperationalGeometryHashMaterialV0Schema
+>;
+
+export function operationalGeometryHashMaterial(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+): OperationalGeometryHashMaterialV0 {
+  const parsed = OperationalGeoJsonFeatureCollectionV0Schema.parse(collection);
+  const features = parsed.features
+    .map(normalizeOperationalGeometryFeatureForHash)
+    .sort(compareHashFeatures);
+
+  return OperationalGeometryHashMaterialV0Schema.parse({
+    hashPolicyVersion: OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION,
+    schemaVersion: parsed.schemaVersion,
+    geometryId: parsed.metadata.geometryId,
+    venueSlug: parsed.metadata.venueSlug,
+    roomSlug: parsed.metadata.roomSlug,
+    coordinateFrame: parsed.metadata.coordinateFrame,
+    units: parsed.metadata.units,
+    purposes: uniqueSortedPurposes(parsed.metadata.purposes),
+    compilerVersion: parsed.metadata.compilerVersion,
+    layoutSnapshotDigest: parsed.metadata.layoutSnapshotDigest,
+    canonicalRoomGeometryRefs: canonicalRoomGeometryRefs(features, parsed.metadata.sourceRefs),
+    furnitureFootprintRefs: furnitureFootprintRefs(features),
+    venueZoneFeatureIds: venueZoneFeatureIds(features),
+    venueZoneRefs: venueZoneRefs(features),
+    portalConnectorFeatureIds: portalConnectorFeatureIds(features),
+    policyRefs: uniqueSortedReferences(features.flatMap((feature) => feature.policyRefs)),
+    scenarioAssumptionRefs: uniqueSortedReferences(
+      features.flatMap((feature) => feature.assumptionRefs),
+    ),
+    sourceRefs: uniqueSortedReferences([
+      ...parsed.metadata.sourceRefs,
+      ...features.flatMap((feature) => feature.sourceRefs),
+      ...features.flatMap((feature) => feature.provenanceRefs),
+    ]),
+    dataSufficiency: normalizeOperationalGeometryDataSufficiencyForHash(
+      parsed.metadata.dataSufficiency,
+    ),
+    features,
+  });
+}
+
+export function operationalGeometryHashJson(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+): string {
+  return stableCanonicalJson(
+    operationalGeometryHashMaterial(collection) as CanonicalJsonValue,
+  );
+}
+
+export function operationalGeometryHash(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+): string {
+  return sha256Hex(
+    `${OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX}${operationalGeometryHashJson(collection)}`,
+  );
+}
+
 export function isOperationalGeometryDataSufficiencyOutcome(
   status: OperationalGeometryDataSufficiencyStatus,
 ): boolean {
   return status !== "sufficient" && DataSufficiencyOutcomeSchema.safeParse(status).success;
+}
+
+const ROOM_GEOMETRY_CLASSES: readonly OperationalGeometryFeatureClass[] = [
+  "room_boundary",
+  "walkable_area",
+];
+
+const FURNITURE_FOOTPRINT_CLASSES: readonly OperationalGeometryFeatureClass[] = [
+  "furniture_footprint",
+  "clearance_envelope",
+];
+
+const VENUE_ZONE_CLASSES: readonly OperationalGeometryFeatureClass[] = [
+  "queue_zone",
+  "spawn_zone",
+  "goal_zone",
+  "staff_only_zone",
+  "service_zone",
+  "heritage_restricted_zone",
+];
+
+const PORTAL_CONNECTOR_CLASSES: readonly OperationalGeometryFeatureClass[] = [
+  "portal",
+  "connector",
+  "accessibility_connector",
+];
+
+function normalizeOperationalGeometryFeatureForHash(
+  feature: OperationalGeoJsonFeature,
+): OperationalGeometryHashFeature {
+  return OperationalGeometryHashFeatureSchema.parse({
+    id: feature.id,
+    featureClass: feature.properties.featureClass,
+    geometry: feature.geometry,
+    coordinateFrame: feature.properties.coordinateFrame,
+    units: feature.properties.units,
+    roomSlug: feature.properties.roomSlug,
+    venueSlug: feature.properties.venueSlug,
+    levelId: feature.properties.levelId,
+    flowZoneKind: feature.properties.flowZoneKind,
+    purposes: uniqueSortedPurposes(feature.properties.purposes),
+    sourceKind: feature.properties.sourceKind,
+    sourceRefs: uniqueSortedReferences(feature.properties.sourceRefs),
+    provenanceRefs: uniqueSortedReferences(feature.properties.provenanceRefs),
+    policyRefs: uniqueSortedReferences(feature.properties.policyRefs),
+    assumptionRefs: uniqueSortedReferences(feature.properties.assumptionRefs),
+    relatedFeatureIds: uniqueSortedFeatureIds(feature.properties.relatedFeatureIds),
+    connectedFeatureIds: uniqueSortedFeatureIds(feature.properties.connectedFeatureIds),
+    sourceObjectRefs: uniqueSortedStrings(feature.properties.sourceObjectRefs),
+    approximationKind: feature.properties.approximationKind,
+    approximationPurpose: feature.properties.approximationPurpose,
+    dataSufficiency: normalizeOperationalGeometryDataSufficiencyForHash(
+      feature.properties.dataSufficiency,
+    ),
+  });
+}
+
+function normalizeOperationalGeometryDataSufficiencyForHash(
+  dataSufficiency: OperationalGeometryDataSufficiency,
+): OperationalGeometryDataSufficiency {
+  return OperationalGeometryDataSufficiencySchema.parse({
+    ...dataSufficiency,
+    requiredInputRefs: uniqueSortedReferences(dataSufficiency.requiredInputRefs),
+    missingInputRefs: uniqueSortedReferences(dataSufficiency.missingInputRefs),
+  });
+}
+
+function canonicalRoomGeometryRefs(
+  features: readonly OperationalGeometryHashFeature[],
+  collectionSourceRefs: readonly OperationalGeometryReference[],
+): OperationalGeometryReference[] {
+  const roomFeatureRefs = features
+    .filter((feature) => featureClassIn(feature.featureClass, ROOM_GEOMETRY_CLASSES))
+    .flatMap((feature) => [...feature.sourceRefs, ...feature.provenanceRefs]);
+  return uniqueSortedReferences([...collectionSourceRefs, ...roomFeatureRefs]);
+}
+
+function furnitureFootprintRefs(
+  features: readonly OperationalGeometryHashFeature[],
+): string[] {
+  return uniqueSortedStrings(
+    features
+      .filter((feature) => featureClassIn(feature.featureClass, FURNITURE_FOOTPRINT_CLASSES))
+      .flatMap((feature) => feature.sourceObjectRefs),
+  );
+}
+
+function venueZoneFeatureIds(
+  features: readonly OperationalGeometryHashFeature[],
+): OperationalGeometryFeatureId[] {
+  return uniqueSortedFeatureIds(
+    features
+      .filter((feature) => featureClassIn(feature.featureClass, VENUE_ZONE_CLASSES))
+      .map((feature) => feature.id),
+  );
+}
+
+function venueZoneRefs(
+  features: readonly OperationalGeometryHashFeature[],
+): OperationalGeometryReference[] {
+  return uniqueSortedReferences(
+    features
+      .filter((feature) => featureClassIn(feature.featureClass, VENUE_ZONE_CLASSES))
+      .flatMap((feature) => [...feature.sourceRefs, ...feature.provenanceRefs]),
+  );
+}
+
+function portalConnectorFeatureIds(
+  features: readonly OperationalGeometryHashFeature[],
+): OperationalGeometryFeatureId[] {
+  return uniqueSortedFeatureIds(
+    features
+      .filter((feature) => featureClassIn(feature.featureClass, PORTAL_CONNECTOR_CLASSES))
+      .map((feature) => feature.id),
+  );
+}
+
+function featureClassIn(
+  featureClass: OperationalGeometryFeatureClass,
+  featureClasses: readonly OperationalGeometryFeatureClass[],
+): boolean {
+  return featureClasses.includes(featureClass);
+}
+
+function uniqueSortedPurposes(
+  purposes: readonly OperationalGeometryPurpose[],
+): OperationalGeometryPurpose[] {
+  return [...new Set(purposes)].sort();
+}
+
+function uniqueSortedFeatureIds(
+  featureIds: readonly OperationalGeometryFeatureId[],
+): OperationalGeometryFeatureId[] {
+  return [...new Set(featureIds)].sort();
+}
+
+function uniqueSortedStrings(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function uniqueSortedReferences(
+  references: readonly OperationalGeometryReference[],
+): OperationalGeometryReference[] {
+  const referencesByKey = new Map<string, OperationalGeometryReference>();
+  for (const reference of references) {
+    referencesByKey.set(operationalGeometryReferenceKey(reference), reference);
+  }
+  return [...referencesByKey.values()].sort(compareOperationalGeometryReferences);
+}
+
+function compareHashFeatures(
+  left: OperationalGeometryHashFeature,
+  right: OperationalGeometryHashFeature,
+): number {
+  return left.id.localeCompare(right.id);
+}
+
+function compareOperationalGeometryReferences(
+  left: OperationalGeometryReference,
+  right: OperationalGeometryReference,
+): number {
+  return operationalGeometryReferenceKey(left).localeCompare(
+    operationalGeometryReferenceKey(right),
+  );
+}
+
+function operationalGeometryReferenceKey(reference: OperationalGeometryReference): string {
+  return `${reference.refType}\u0000${reference.ref}\u0000${reference.role}`;
 }

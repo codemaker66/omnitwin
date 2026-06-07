@@ -585,6 +585,8 @@ export {
   OPERATIONAL_GEOJSON_GEOMETRY_TYPES,
   OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_STATUSES,
   OPERATIONAL_GEOMETRY_CLASS_GEOMETRY_TYPES,
+  OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION,
+  OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX,
   OperationalGeometryFeatureClassSchema,
   OperationalGeometryPurposeSchema,
   OperationalGeometrySourceKindSchema,
@@ -610,6 +612,11 @@ export {
   OperationalGeoJsonFeatureSchema,
   OperationalGeometryCollectionMetadataSchema,
   OperationalGeoJsonFeatureCollectionV0Schema,
+  OperationalGeometryHashFeatureSchema,
+  OperationalGeometryHashMaterialV0Schema,
+  operationalGeometryHashMaterial,
+  operationalGeometryHashJson,
+  operationalGeometryHash,
   isOperationalGeometryDataSufficiencyOutcome,
   type OperationalGeometryFeatureClass,
   type OperationalGeometryPurpose,
@@ -630,6 +637,8 @@ export {
   type OperationalGeoJsonFeature,
   type OperationalGeometryCollectionMetadata,
   type OperationalGeoJsonFeatureCollectionV0,
+  type OperationalGeometryHashFeature,
+  type OperationalGeometryHashMaterialV0,
 } from "./operational-geometry.js";
 
 // --- ASPIRATIONAL: 2.5D Event Object Semantics metadata vocabulary ---
