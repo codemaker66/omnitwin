@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "./constants/scale.js";
 import type { SpaceDimensions } from "@omnitwin/types";
+import { PlannerCanvasBoundary } from "./components/PlannerCanvasBoundary.js";
 import { CameraRig } from "./components/CameraRig.js";
 import { GrandHallRoom } from "./components/GrandHallRoom.js";
 import { RoomMesh } from "./components/editor/RoomMesh.js";
@@ -117,6 +118,7 @@ export function App(): React.ReactElement {
           touchAction: "none",
         }}
       >
+      <PlannerCanvasBoundary>
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
@@ -152,6 +154,7 @@ export function App(): React.ReactElement {
         <CameraRig dimensions={dimensions} />
         {import.meta.env.DEV && <PerfMonitor />}
       </Canvas>
+      </PlannerCanvasBoundary>
       </div>
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
