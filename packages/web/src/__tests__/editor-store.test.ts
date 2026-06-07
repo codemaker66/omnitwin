@@ -10,6 +10,7 @@ vi.mock("../api/configurations.js", () => ({
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
+  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -36,6 +37,7 @@ const mockConfig = {
   userId: null,
   name: "Test Layout",
   isPublicPreview: true,
+  revision: 1,
   objects: [
     {
       id: "obj-1", configurationId: "cfg-1", assetDefinitionId: "a-1",
@@ -61,6 +63,7 @@ describe("loadConfiguration", () => {
     const s = useEditorStore.getState();
     expect(s.configId).toBe("cfg-1");
     expect(s.spaceId).toBe("s-1");
+    expect(s.configRevision).toBe(1);
     expect(s.isPublicPreview).toBe(true);
     expect(s.objects).toHaveLength(1);
     expect(s.objects[0]?.positionX).toBe(1.0);
@@ -90,6 +93,7 @@ describe("loadConfiguration", () => {
       configId: "cfg-1",
       spaceId: "s-1",
       venueId: "v-1",
+      baseRevision: 1,
       updatedAtMs: Date.now(),
       hasUnsavedLocalChanges: true,
       objects: [localDraftObject],
@@ -100,6 +104,46 @@ describe("loadConfiguration", () => {
     const s = useEditorStore.getState();
     expect(s.objects).toEqual([localDraftObject]);
     expect(s.isDirty).toBe(true);
+  });
+
+  it("rejects an anonymous draft based on an older server revision", async () => {
+    configMock.getPublicConfig.mockResolvedValue({ ...mockConfig, revision: 2 });
+    const localDraftObject = {
+      id: "local-stale-draft-1",
+      assetDefinitionId: ROUND_TABLE_ID,
+      positionX: 7,
+      positionY: 0,
+      positionZ: -2,
+      rotationX: 0,
+      rotationY: 0.5,
+      rotationZ: 0,
+      scale: 1,
+      sortOrder: 0,
+      clothed: true,
+      clothStyle: "black",
+      tableSetting: null,
+      groupId: "group-draft",
+      notes: "Stale head table",
+    };
+    localStorage.setItem(anonymousPlannerDraftKey("cfg-1"), JSON.stringify({
+      version: 1,
+      configId: "cfg-1",
+      spaceId: "s-1",
+      venueId: "v-1",
+      baseRevision: 1,
+      updatedAtMs: Date.now(),
+      hasUnsavedLocalChanges: true,
+      objects: [localDraftObject],
+    }));
+
+    await useEditorStore.getState().loadConfiguration("cfg-1");
+
+    const s = useEditorStore.getState();
+    expect(s.configRevision).toBe(2);
+    expect(s.objects).toHaveLength(1);
+    expect(s.objects[0]?.id).toBe("obj-1");
+    expect(s.isDirty).toBe(false);
+    expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
   });
 
   it("sets error on failure", async () => {
@@ -312,32 +356,36 @@ describe("removeObject", () => {
 
 describe("saveToServer", () => {
   it("calls public endpoint for public preview configs", async () => {
-    configMock.publicBatchSave.mockResolvedValue([
-      { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: "a1",
-        positionX: "0", positionY: "0", positionZ: "0",
-        rotationX: "0", rotationY: "0", rotationZ: "0",
-        scale: "1", sortOrder: 0, metadata: null },
-    ]);
+    configMock.publicBatchSave.mockResolvedValue({
+      revision: 2,
+      objects: [
+        { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: "a1",
+          positionX: "0", positionY: "0", positionZ: "0",
+          rotationX: "0", rotationY: "0", rotationZ: "0",
+          scale: "1", sortOrder: 0, metadata: null },
+      ],
+    });
 
-    useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
+    useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
     useEditorStore.getState().addObject("a1", 0, 0, 0);
 
     const saved = await useEditorStore.getState().saveToServer(false);
 
-    expect(configMock.publicBatchSave).toHaveBeenCalled();
+    expect(configMock.publicBatchSave).toHaveBeenCalledWith("cfg-1", expect.any(Array), 1);
     expect(saved).toBe(true);
+    expect(useEditorStore.getState().configRevision).toBe(2);
     expect(useEditorStore.getState().isDirty).toBe(false);
     expect(useEditorStore.getState().lastSavedAt).not.toBeNull();
   });
 
   it("calls authenticated endpoint when logged in", async () => {
-    configMock.authBatchSave.mockResolvedValue([]);
+    configMock.authBatchSave.mockResolvedValue({ revision: 2, objects: [] });
 
-    useEditorStore.setState({ configId: "cfg-1", isDirty: true, objects: [] });
+    useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, objects: [] });
 
     await useEditorStore.getState().saveToServer(true);
 
-    expect(configMock.authBatchSave).toHaveBeenCalled();
+    expect(configMock.authBatchSave).toHaveBeenCalledWith("cfg-1", [], 1);
   });
 
   it("does nothing when configId is null", async () => {
@@ -350,7 +398,7 @@ describe("saveToServer", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* expected save failure */ });
     configMock.publicBatchSave.mockRejectedValue(new Error("Network failed"));
 
-    useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
+    useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
     useEditorStore.getState().addObject("a1", 0, 0, 0);
 
     try {
@@ -370,16 +418,44 @@ describe("saveToServer", () => {
     }
   });
 
+  it("rejects stale full-sync saves without clearing the local dirty layout", async () => {
+    const conflict = {
+      expectedRevision: 1,
+      currentRevision: 2,
+      message: "Layout changed on the server. Reload before saving again.",
+    };
+    configMock.parseRevisionConflict.mockReturnValueOnce(conflict);
+    configMock.publicBatchSave.mockRejectedValue(new Error("stale"));
+
+    useEditorStore.setState({ configId: "cfg-1", configRevision: 1, isDirty: true, isPublicPreview: true });
+    useEditorStore.getState().addObject("a1", 0, 0, 0);
+    const localObjects = useEditorStore.getState().objects;
+
+    const saved = await useEditorStore.getState().saveToServer(false);
+
+    expect(saved).toBe(false);
+    expect(configMock.publicBatchSave).toHaveBeenCalledWith("cfg-1", expect.any(Array), 1);
+    expect(useEditorStore.getState().isDirty).toBe(true);
+    expect(useEditorStore.getState().objects).toEqual(localObjects);
+    expect(useEditorStore.getState().configRevision).toBe(1);
+    expect(useEditorStore.getState().saveConflict).toEqual(conflict);
+    expect(useEditorStore.getState().saveError).toContain("changed in another tab");
+  });
+
   it("clears the anonymous draft after a successful public save", async () => {
-    configMock.publicBatchSave.mockResolvedValue([
-      { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: ROUND_TABLE_ID,
-        positionX: "0", positionY: "0", positionZ: "0",
-        rotationX: "0", rotationY: "0", rotationZ: "0",
-        scale: "1", sortOrder: 0, metadata: null },
-    ]);
+    configMock.publicBatchSave.mockResolvedValue({
+      revision: 2,
+      objects: [
+        { id: "srv-1", configurationId: "cfg-1", assetDefinitionId: ROUND_TABLE_ID,
+          positionX: "0", positionY: "0", positionZ: "0",
+          rotationX: "0", rotationY: "0", rotationZ: "0",
+          scale: "1", sortOrder: 0, metadata: null },
+      ],
+    });
 
     useEditorStore.setState({
       configId: "cfg-1",
+      configRevision: 1,
       spaceId: "s-1",
       venueId: "v-1",
       isDirty: false,
@@ -399,12 +475,14 @@ describe("createPublicConfig", () => {
   it("creates config and stores in localStorage", async () => {
     configMock.createPublicConfig.mockResolvedValue({
       id: "new-cfg", spaceId: "s-1", venueId: "v-1", userId: null, name: "New Layout", isPublicPreview: true,
+      revision: 1,
     });
 
     const id = await useEditorStore.getState().createPublicConfig("s-1");
 
     expect(id).toBe("new-cfg");
     expect(useEditorStore.getState().configId).toBe("new-cfg");
+    expect(useEditorStore.getState().configRevision).toBe(1);
     const stored = JSON.parse(localStorage.getItem("omnitwin_my_configs") ?? "[]") as { configId: string }[];
     expect(stored).toHaveLength(1);
     expect(stored[0]?.configId).toBe("new-cfg");

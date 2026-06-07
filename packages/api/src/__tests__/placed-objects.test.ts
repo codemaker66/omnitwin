@@ -174,7 +174,10 @@ describe("POST /configurations/:configId/objects/batch", () => {
     const res = await server.inject({
       method: "POST",
       url: `/configurations/${CONFIG_ID}/objects/batch`,
-      payload: { objects: [{ assetDefinitionId: ASSET_ID, positionX: 0, positionY: 0, positionZ: 0 }] },
+      payload: {
+        expectedRevision: 1,
+        objects: [{ assetDefinitionId: ASSET_ID, positionX: 0, positionY: 0, positionZ: 0 }],
+      },
     });
     expect(res.statusCode).toBe(401);
   });
@@ -184,7 +187,7 @@ describe("POST /configurations/:configId/objects/batch", () => {
       method: "POST",
       url: `/configurations/${CONFIG_ID}/objects/batch`,
       headers: { authorization: `Bearer ${adminToken()}` },
-      payload: { objects: [] },
+      payload: { expectedRevision: 1, objects: [] },
     });
     // Not 400 = passed Zod validation (may be 500 from mock DB)
     expect(res.statusCode).not.toBe(400);
@@ -205,6 +208,7 @@ describe("POST /configurations/:configId/objects/batch", () => {
       url: `/configurations/${CONFIG_ID}/objects/batch`,
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: {
+        expectedRevision: 1,
         objects: [
           { assetDefinitionId: ASSET_ID, positionX: 0, positionY: 0, positionZ: 0 },
           { assetDefinitionId: ASSET_ID, positionX: 2, positionY: 0, positionZ: 2, rotationY: 1.57 },
@@ -214,5 +218,30 @@ describe("POST /configurations/:configId/objects/batch", () => {
     });
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
+  });
+});
+
+describe("placed-objects.ts revision conflict guardrails", () => {
+  async function readSource(): Promise<string> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    return fs.readFile(path.resolve("src/routes/placed-objects.ts"), "utf-8");
+  }
+
+  it("requires an expectedRevision on authenticated batch saves", async () => {
+    const source = await readSource();
+    expect(source).toContain("expectedRevision: z.number().int().min(1)");
+  });
+
+  it("uses compare-and-swap revision advancement before writing objects", async () => {
+    const source = await readSource();
+    expect(source).toContain("eq(configurations.revision, parsed.data.expectedRevision)");
+    expect(source).toContain("revision: sql`${configurations.revision} + 1`");
+  });
+
+  it("records a persisted layout revision for saved full-sync batches", async () => {
+    const source = await readSource();
+    expect(source).toContain("configurationLayoutRevisions");
+    expect(source).toContain('source: "authenticated_batch"');
   });
 });

@@ -1341,13 +1341,21 @@ export function VerticalToolbox(): React.ReactElement {
   const isSaving = useEditorStore((s) => s.isSaving);
   const isDirty = useEditorStore((s) => s.isDirty);
   const saveError = useEditorStore((s) => s.saveError);
+  const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
   const saveStatus = deriveEditorSaveStatus({ isDirty, isSaving, saveError, lastSavedAt });
   const displayedSaveStatus: EditorSaveStatus =
     saveFlash && saveStatus !== "failed" && saveStatus !== "saving" ? "saved" : saveStatus;
-  const saveCopy = copyForEditorSaveStatus(displayedSaveStatus);
+  const baseSaveCopy = copyForEditorSaveStatus(displayedSaveStatus);
+  const saveCopy = saveConflict === null
+    ? baseSaveCopy
+    : {
+      label: "Reload layout",
+      shortLabel: "Reload",
+      description: "This layout changed in another tab. Reload the server copy before saving again.",
+    };
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const selectedIdList = Array.from(selectedIds);
@@ -1540,6 +1548,10 @@ export function VerticalToolbox(): React.ReactElement {
     // still applies — if a config is already claimed, the auth path is used
     // regardless of the flag.
     const authed = useAuthStore.getState().isAuthenticated;
+    if (useEditorStore.getState().saveConflict !== null) {
+      void useEditorStore.getState().reloadAfterConflict(authed);
+      return;
+    }
     void useEditorStore.getState().saveToServer(authed).then((saved) => {
       if (!saved) return;
       setSaveFlash(true);

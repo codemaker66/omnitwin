@@ -18,6 +18,7 @@ import {
   assetVersions,
   roomManifests,
   runtimePackages,
+  configurationLayoutRevisions,
   processingJobs,
 } from "../db/schema.js";
 import { getTableColumns } from "drizzle-orm";
@@ -94,6 +95,7 @@ describe("configurations table", () => {
     expect(cols.guestCount).toBeDefined();
     expect(cols.isTemplate).toBeDefined();
     expect(cols.visibility).toBeDefined();
+    expect(cols.revision).toBeDefined();
   });
 });
 
@@ -164,6 +166,31 @@ describe("pricingRules table", () => {
 });
 
 describe("table count", () => {
+  it("exports the configuration layout revision history table", () => {
+    const cols = getTableColumns(configurationLayoutRevisions);
+    expect(cols.id).toBeDefined();
+    expect(cols.configurationId).toBeDefined();
+    expect(cols.revision).toBeDefined();
+    expect(cols.source).toBeDefined();
+    expect(cols.actorUserId).toBeDefined();
+    expect(cols.payload).toBeDefined();
+    expect(cols.createdAt).toBeDefined();
+  });
+
+  it("pins the configuration revision migration guardrails", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const migration = await fs.readFile(path.resolve("drizzle/0025_configuration_revisions.sql"), "utf-8");
+
+    expect(migration).toContain('ALTER TABLE "configurations"');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS "revision" integer NOT NULL DEFAULT 1');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "configuration_layout_revisions"');
+    expect(migration).toContain('"source" IN (');
+    expect(migration).toContain("public_batch");
+    expect(migration).toContain("authenticated_batch");
+    expect(migration).toContain("configuration_layout_revisions_config_revision_unique");
+  });
+
   it("exports the runtime asset registry tables", () => {
     const captureCols = getTableColumns(captureSessions);
     expect(captureCols.venueSlug).toBeDefined();
@@ -247,13 +274,14 @@ describe("table count", () => {
     expect(migration).toContain("asset_versions_storage_ref_required");
   });
 
-  it("exports exactly 19 tables", () => {
+  it("exports exactly 20 tables", () => {
     const tables = [
       venues, spaces, users, assetDefinitions, configurations,
       placedObjects, enquiries, enquiryStatusHistory, photoReferences,
       pricingRules, files, referenceLoadouts, referencePhotos, guestLeads,
-      captureSessions, assetVersions, roomManifests, runtimePackages, processingJobs,
+      captureSessions, assetVersions, roomManifests, runtimePackages,
+      configurationLayoutRevisions, processingJobs,
     ];
-    expect(tables).toHaveLength(19);
+    expect(tables).toHaveLength(20);
   });
 });

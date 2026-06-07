@@ -34,6 +34,7 @@ describe("anonymous planner draft persistence", () => {
       configId: "cfg-1",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: true,
       objects: [objectFixture],
       isDirty: true,
@@ -42,9 +43,11 @@ describe("anonymous planner draft persistence", () => {
     const draft = readAnonymousPlannerDraft("cfg-1", {
       spaceId: "space-1",
       venueId: "venue-1",
+      baseRevision: 1,
     });
 
     expect(draft?.objects).toEqual([objectFixture]);
+    expect(draft?.baseRevision).toBe(1);
     expect(draft?.hasUnsavedLocalChanges).toBe(true);
   });
 
@@ -53,6 +56,7 @@ describe("anonymous planner draft persistence", () => {
       configId: "cfg-1",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: true,
       objects: [objectFixture],
       isDirty: true,
@@ -62,6 +66,7 @@ describe("anonymous planner draft persistence", () => {
       configId: "cfg-1",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: true,
       objects: [objectFixture],
       isDirty: false,
@@ -75,6 +80,7 @@ describe("anonymous planner draft persistence", () => {
       configId: "cfg-1",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: false,
       objects: [objectFixture],
       isDirty: true,
@@ -89,6 +95,7 @@ describe("anonymous planner draft persistence", () => {
       configId: "cfg-1",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: true,
       objects: [objectFixture],
       isDirty: true,
@@ -97,12 +104,14 @@ describe("anonymous planner draft persistence", () => {
     expect(readAnonymousPlannerDraft("cfg-1", {
       spaceId: "other-space",
       venueId: "venue-1",
+      baseRevision: 1,
     })).toBeNull();
 
     persistAnonymousPlannerDraft({
       configId: "cfg-2",
       spaceId: "space-1",
       venueId: "venue-1",
+      configRevision: 1,
       isPublicPreview: true,
       objects: [objectFixture],
       isDirty: true,
@@ -113,6 +122,26 @@ describe("anonymous planner draft persistence", () => {
     expect(readAnonymousPlannerDraft("cfg-2", {
       spaceId: "space-1",
       venueId: "venue-1",
+      baseRevision: 1,
     })).toBeNull();
+  });
+
+  it("rejects drafts saved against an older server revision", () => {
+    persistAnonymousPlannerDraft({
+      configId: "cfg-1",
+      spaceId: "space-1",
+      venueId: "venue-1",
+      configRevision: 1,
+      isPublicPreview: true,
+      objects: [objectFixture],
+      isDirty: true,
+    });
+
+    expect(readAnonymousPlannerDraft("cfg-1", {
+      spaceId: "space-1",
+      venueId: "venue-1",
+      baseRevision: 2,
+    })).toBeNull();
+    expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
   });
 });

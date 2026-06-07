@@ -1,8 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { buildLayoutPathKey } from "@omnitwin/types";
-import { configurations, layoutAliases, placedObjects, spaces, assetDefinitions } from "../db/schema.js";
+import {
+  configurations,
+  configurationLayoutRevisions,
+  layoutAliases,
+  placedObjects,
+  spaces,
+  assetDefinitions,
+} from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import {
@@ -10,6 +17,10 @@ import {
   loadSpacePolygon,
   placementOutOfBoundsBody,
 } from "../lib/placement-validation.js";
+import {
+  configurationRevisionEtag,
+  revisionConflictBody,
+} from "../lib/configuration-revision.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -37,6 +48,7 @@ const BatchObjectItem = z.object({
 });
 
 const BatchBody = z.object({
+  expectedRevision: z.number().int().min(1),
   objects: z.array(BatchObjectItem).max(500),
 });
 
@@ -135,6 +147,7 @@ export async function publicConfigRoutes(
       console.warn("public-configs: layout_aliases seed failed (resolver Tier 2 still covers):", err);
     }
 
+    reply.header("ETag", configurationRevisionEtag(config.revision));
     return reply.status(201).send({ data: config });
   });
 
@@ -164,6 +177,11 @@ export async function publicConfigRoutes(
 
     if (config === undefined) {
       return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
+    }
+
+    if (config.revision !== parsed.data.expectedRevision) {
+      reply.header("ETag", configurationRevisionEtag(config.revision));
+      return reply.status(409).send(revisionConflictBody(parsed.data.expectedRevision, config.revision));
     }
 
     // Verify all referenced assetDefinitionIds exist before touching the DB.
@@ -207,8 +225,36 @@ export async function publicConfigRoutes(
     const configId = params.data.configId;
 
     // Atomic batch: delete stale + update + insert in one transaction
-    const results = await db.transaction(async (tx) => {
+    const saveResult = await db.transaction(async (tx) => {
       const txResults: (typeof placedObjects.$inferSelect)[] = [];
+
+      const [advanced] = await tx.update(configurations)
+        .set({
+          revision: sql`${configurations.revision} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(configurations.id, configId),
+          eq(configurations.revision, parsed.data.expectedRevision),
+          eq(configurations.isPublicPreview, true),
+          isNull(configurations.deletedAt),
+        ))
+        .returning({ revision: configurations.revision });
+
+      if (advanced === undefined) {
+        const [current] = await tx.select({ revision: configurations.revision })
+          .from(configurations)
+          .where(and(
+            eq(configurations.id, configId),
+            eq(configurations.isPublicPreview, true),
+            isNull(configurations.deletedAt),
+          ))
+          .limit(1);
+        return {
+          status: "conflict" as const,
+          currentRevision: current?.revision ?? config.revision,
+        };
+      }
 
       const batchIds = toUpdate.map((o) => o.id).filter((id): id is string => id !== undefined);
       if (batchIds.length > 0) {
@@ -249,10 +295,33 @@ export async function publicConfigRoutes(
         txResults.push(...inserted);
       }
 
-      return txResults;
+      await tx.insert(configurationLayoutRevisions).values({
+        configurationId: configId,
+        revision: advanced.revision,
+        source: "public_batch",
+        actorUserId: null,
+        payload: {
+          objectCount: txResults.length,
+          objects: txResults,
+        },
+      });
+
+      return {
+        status: "saved" as const,
+        objects: txResults,
+        revision: advanced.revision,
+      };
     });
 
-    return { data: results };
+    if (saveResult.status === "conflict") {
+      reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
+      return reply.status(409).send(
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+      );
+    }
+
+    reply.header("ETag", configurationRevisionEtag(saveResult.revision));
+    return { data: { objects: saveResult.objects, revision: saveResult.revision } };
   });
 
   // POST /public/configurations/:configId/thumbnail — set floor plan diagram
@@ -302,6 +371,9 @@ export async function publicConfigRoutes(
       .where(eq(configurations.id, params.data.configId))
       .returning();
 
+    if (updated !== undefined) {
+      reply.header("ETag", configurationRevisionEtag(updated.revision));
+    }
     return { data: updated };
   });
 
@@ -341,6 +413,7 @@ export async function publicConfigRoutes(
       .where(eq(placedObjects.configurationId, params.data.configId))
       .orderBy(placedObjects.sortOrder);
 
+    reply.header("ETag", configurationRevisionEtag(config.revision));
     return { data: { ...config, objects } };
   });
 }

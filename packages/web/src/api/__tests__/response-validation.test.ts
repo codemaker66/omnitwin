@@ -21,6 +21,7 @@ const enquiries = await import("../enquiries.js");
 const pricing = await import("../pricing.js");
 const spaces = await import("../spaces.js");
 const uploads = await import("../uploads.js");
+const configurations = await import("../configurations.js");
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -144,5 +145,72 @@ describe("uploads response validation", () => {
   it("rejects a presign response with an invalid visibility value", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: { ...validPresign, visibility: "secret" } }));
     await expectValidationError(uploads.getPresignedUrl("a.jpg", "image/jpeg", 100, "loadout", "l1"));
+  });
+});
+
+describe("configurations response validation", () => {
+  const validPlacedObject = {
+    id: "o1",
+    configurationId: "c1",
+    assetDefinitionId: "a1",
+    positionX: "0",
+    positionY: "0",
+    positionZ: "0",
+    rotationX: "0",
+    rotationY: "0",
+    rotationZ: "0",
+    scale: "1",
+    sortOrder: 0,
+    metadata: null,
+  };
+
+  const validConfiguration = {
+    id: "c1",
+    spaceId: "s1",
+    venueId: "v1",
+    userId: null,
+    name: "Layout",
+    isPublicPreview: true,
+    revision: 1,
+    objects: [validPlacedObject],
+  };
+
+  it("parses a valid public configuration with a revision token", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: validConfiguration }));
+    const result = await configurations.getPublicConfig("c1");
+    expect(result.revision).toBe(1);
+  });
+
+  it("rejects a configuration whose revision token is missing", async () => {
+    const { revision: _omit, ...broken } = validConfiguration;
+    fetchMock.mockResolvedValue(jsonResponse({ data: broken }));
+    await expectValidationError(configurations.getPublicConfig("c1"));
+  });
+
+  it("parses a valid batch-save envelope with objects and a new revision", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: { objects: [validPlacedObject], revision: 2 } }));
+    const result = await configurations.publicBatchSave("c1", [], 1);
+    expect(result.revision).toBe(2);
+    expect(result.objects[0]?.id).toBe("o1");
+  });
+
+  it("rejects legacy bare-array batch-save responses", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [validPlacedObject] }));
+    await expectValidationError(configurations.publicBatchSave("c1", [], 1));
+  });
+
+  it("parses typed revision conflicts from ApiError details", () => {
+    const err = new ApiError(
+      409,
+      "Layout changed on the server. Reload before saving again.",
+      "REVISION_CONFLICT",
+      { expectedRevision: 1, currentRevision: 2 },
+    );
+
+    expect(configurations.parseRevisionConflict(err)).toEqual({
+      expectedRevision: 1,
+      currentRevision: 2,
+      message: "Layout changed on the server. Reload before saving again.",
+    });
   });
 });

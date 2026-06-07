@@ -237,6 +237,13 @@ export const configurations = pgTable("configurations", {
   guestCount: integer("guest_count").notNull().default(0),
   isTemplate: boolean("is_template").notNull().default(false),
   visibility: varchar("visibility", { length: 20 }).notNull().default("private"),
+  /**
+   * Optimistic-concurrency token for full-layout saves. Every successful
+   * full-sync batch increments this value atomically before replacing the
+   * placed_objects set. Clients must send the revision they loaded; stale
+   * saves return 409 instead of silently overwriting another tab.
+   */
+  revision: integer("revision").notNull().default(1),
   thumbnailUrl: text("thumbnail_url"),
   lightmapUrl: text("lightmap_url"),
   /**
@@ -267,7 +274,29 @@ export const configurations = pgTable("configurations", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 5b. configuration_review_history — audit trail for review transitions
+// 5b. configuration_layout_revisions — immutable layout-save history
+//
+// Full-sync planner saves replace the placed_objects set. This table records
+// each accepted revision so a conflict can be explained and a future layout
+// history UI has a real source of truth. It is not the approved hallkeeper
+// snapshot table; this is draft/edit history.
+// ---------------------------------------------------------------------------
+
+export const configurationLayoutRevisions = pgTable("configuration_layout_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull(),
+  source: varchar("source", { length: 40 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("configuration_layout_revisions_config_revision_unique").on(table.configurationId, table.revision),
+  index("configuration_layout_revisions_config_created_idx").on(table.configurationId, table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 5c. configuration_review_history — audit trail for review transitions
 //
 // Shape parallels `enquiry_status_history` so the web timeline component
 // renders both. ON DELETE CASCADE from configurations cleans the trail
@@ -288,7 +317,7 @@ export const configurationReviewHistory = pgTable("configuration_review_history"
 ]);
 
 // ---------------------------------------------------------------------------
-// 5bb. review_sessions — presence tracking (who is viewing a review)
+// 5d. review_sessions — presence tracking (who is viewing a review)
 //
 // Polling-based presence: viewer client heartbeats every ~10s while
 // the review detail is open, server upserts `last_seen_at = now()`.
@@ -307,7 +336,7 @@ export const reviewSessions = pgTable("review_sessions", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 5c. configuration_sheet_snapshots — immutable hallkeeper-sheet artifacts
+// 5e. configuration_sheet_snapshots — immutable hallkeeper-sheet artifacts
 //
 // The freeze boundary between the live config (edit-forever) and what
 // the hallkeeper sees (frozen at approval). See 0013 migration comment

@@ -51,6 +51,7 @@ vi.mock("../api/configurations.js", () => ({
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
+  parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
 }));
@@ -115,6 +116,7 @@ function publicConfigFor(space: Space, id: string): Configuration {
     userId: null,
     name: "New Layout",
     isPublicPreview: true,
+    revision: 1,
     objects: [],
   };
 }

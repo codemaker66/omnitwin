@@ -284,6 +284,7 @@ function PlannerCommsLayer(): React.ReactElement {
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const saveError = useEditorStore((s) => s.saveError);
+  const saveConflict = useEditorStore((s) => s.saveConflict);
   const placedObjectCount = useEditorStore((s) => s.objects.length);
   const authState = useAuthStore((s) => s.isAuthenticated);
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
@@ -356,7 +357,7 @@ function PlannerCommsLayer(): React.ReactElement {
       <SubmitForReviewPanel />
       {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
-        <SaveErrorToast message={saveError} isAuthenticated={authState} />
+        <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
     </>
   );
@@ -426,12 +427,26 @@ function PlannerStatusHeader({ viewMode }: { viewMode: "3d" | "2d" }): React.Rea
  * overlap the SaveSendPanel (bottom-right). Provides an inline retry
  * (re-fires saveToServer) and a dismiss. The 3D Canvas above stays
  * mounted — the user's in-progress layout is preserved. */
-function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthenticated: boolean }): React.ReactElement {
+function SaveErrorToast({
+  message,
+  isAuthenticated,
+  conflict,
+}: {
+  message: string;
+  isAuthenticated: boolean;
+  conflict: { readonly expectedRevision: number; readonly currentRevision: number } | null;
+}): React.ReactElement {
   const retry = (): void => {
     useEditorStore.getState().clearSaveError();
     void useEditorStore.getState().saveToServer(isAuthenticated);
   };
+  const reload = (): void => {
+    void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
+  };
   const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
+  const body = conflict === null
+    ? `Couldn't save — ${message}. Your layout is safe; we'll try again.`
+    : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
   return (
     <div
       role="status"
@@ -452,18 +467,32 @@ function SaveErrorToast({ message, isAuthenticated }: { message: string; isAuthe
       }}
     >
       <span style={{ color: "#e88", fontSize: 15 }}>⚠</span>
-      <span style={{ flex: 1 }}>Couldn't save — {message}. Your layout is safe; we'll try again.</span>
-      <button
-        type="button"
-        onClick={retry}
-        style={{
-          padding: "4px 12px", fontSize: 12, fontWeight: 600,
-          background: "#c9a84c", color: "#141311", border: "none",
-          borderRadius: 4, cursor: "pointer",
-        }}
-      >
-        Retry
-      </button>
+      <span style={{ flex: 1 }}>{body}</span>
+      {conflict === null ? (
+        <button
+          type="button"
+          onClick={retry}
+          style={{
+            padding: "4px 12px", fontSize: 12, fontWeight: 600,
+            background: "#c9a84c", color: "#141311", border: "none",
+            borderRadius: 4, cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={reload}
+          style={{
+            padding: "4px 12px", fontSize: 12, fontWeight: 600,
+            background: "#c9a84c", color: "#141311", border: "none",
+            borderRadius: 4, cursor: "pointer",
+          }}
+        >
+          Reload
+        </button>
+      )}
       <button
         type="button"
         onClick={dismiss}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { EventInstructions, GuestEnquiry } from "@omnitwin/types";
-import { api } from "./client.js";
+import { ApiError, api } from "./client.js";
 
 // ---------------------------------------------------------------------------
 // Response schemas — Zod validation at the API boundary
@@ -66,6 +66,7 @@ const ConfigurationResponseSchema = z.object({
   userId: z.string().nullable(),
   name: z.string(),
   isPublicPreview: z.boolean(),
+  revision: z.number().int().min(1),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,
@@ -81,6 +82,13 @@ const ConfigurationResponseSchema = z.object({
 export type Configuration = z.infer<typeof ConfigurationResponseSchema>;
 
 const PlacedObjectArraySchema = z.array(PlacedObjectResponseSchema);
+
+const BatchSaveResponseSchema = z.object({
+  objects: PlacedObjectArraySchema,
+  revision: z.number().int().min(1),
+});
+
+export type BatchSaveResponse = z.infer<typeof BatchSaveResponseSchema>;
 
 const GuestEnquiryResponseSchema = z.object({
   enquiryId: z.string(),
@@ -107,6 +115,12 @@ export interface BatchObjectInput {
   readonly metadata?: ObjectMetadata | null;
 }
 
+export interface RevisionConflict {
+  readonly expectedRevision: number;
+  readonly currentRevision: number;
+  readonly message: string;
+}
+
 /** Re-export the canonical guest enquiry input type from @omnitwin/types. */
 export type GuestEnquiryInput = GuestEnquiry;
 
@@ -118,8 +132,17 @@ export async function createPublicConfig(spaceId: string, name?: string): Promis
   return api.post("/public/configurations", { spaceId, name }, true, ConfigurationResponseSchema);
 }
 
-export async function publicBatchSave(configId: string, objects: readonly BatchObjectInput[]): Promise<PlacedObject[]> {
-  return api.post(`/public/configurations/${configId}/objects/batch`, { objects }, true, PlacedObjectArraySchema);
+export async function publicBatchSave(
+  configId: string,
+  objects: readonly BatchObjectInput[],
+  expectedRevision: number,
+): Promise<BatchSaveResponse> {
+  return api.post(
+    `/public/configurations/${configId}/objects/batch`,
+    { expectedRevision, objects },
+    true,
+    BatchSaveResponseSchema,
+  );
 }
 
 export async function getPublicConfig(configId: string): Promise<Configuration> {
@@ -146,8 +169,34 @@ export async function claimConfig(configId: string): Promise<Configuration> {
   return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
 }
 
-export async function authBatchSave(configId: string, objects: readonly BatchObjectInput[]): Promise<PlacedObject[]> {
-  return api.post(`/configurations/${configId}/objects/batch`, { objects }, undefined, PlacedObjectArraySchema);
+export async function authBatchSave(
+  configId: string,
+  objects: readonly BatchObjectInput[],
+  expectedRevision: number,
+): Promise<BatchSaveResponse> {
+  return api.post(
+    `/configurations/${configId}/objects/batch`,
+    { expectedRevision, objects },
+    undefined,
+    BatchSaveResponseSchema,
+  );
+}
+
+const RevisionConflictDetailsSchema = z.object({
+  expectedRevision: z.number().int().min(1),
+  currentRevision: z.number().int().min(1),
+});
+
+export function parseRevisionConflict(err: unknown): RevisionConflict | null {
+  if (!(err instanceof ApiError)) return null;
+  if (err.status !== 409 || err.code !== "REVISION_CONFLICT") return null;
+  const parsed = RevisionConflictDetailsSchema.safeParse(err.details);
+  if (!parsed.success) return null;
+  return {
+    expectedRevision: parsed.data.expectedRevision,
+    currentRevision: parsed.data.currentRevision,
+    message: err.message,
+  };
 }
 
 // ---------------------------------------------------------------------------

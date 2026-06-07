@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, inArray } from "drizzle-orm";
-import { placedObjects, configurations } from "../db/schema.js";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { placedObjects, configurations, configurationLayoutRevisions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
@@ -11,6 +11,10 @@ import {
   loadSpacePolygon,
   placementOutOfBoundsBody,
 } from "../lib/placement-validation.js";
+import {
+  configurationRevisionEtag,
+  revisionConflictBody,
+} from "../lib/configuration-revision.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -59,6 +63,7 @@ const BatchObjectItem = z.object({
 });
 
 const BatchBody = z.object({
+  expectedRevision: z.number().int().min(1),
   objects: z.array(BatchObjectItem).max(500),
 });
 
@@ -271,6 +276,13 @@ export async function placedObjectRoutes(
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
 
+    if (result.config.revision !== parsed.data.expectedRevision) {
+      reply.header("ETag", configurationRevisionEtag(result.config.revision));
+      return reply.status(409).send(
+        revisionConflictBody(parsed.data.expectedRevision, result.config.revision),
+      );
+    }
+
     // Polygon containment check. Batches are atomic — we validate every
     // placement before opening the transaction; any failure fails the whole
     // batch with a 422 that lists every offending row so the client can
@@ -291,8 +303,31 @@ export async function placedObjectRoutes(
     const toInsert = parsed.data.objects.filter((o) => o.id === undefined);
     const configId = params.data.configId;
 
-    const results = await db.transaction(async (tx) => {
+    const saveResult = await db.transaction(async (tx) => {
       const txResults: (typeof placedObjects.$inferSelect)[] = [];
+
+      const [advanced] = await tx.update(configurations)
+        .set({
+          revision: sql`${configurations.revision} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(configurations.id, configId),
+          eq(configurations.revision, parsed.data.expectedRevision),
+          isNull(configurations.deletedAt),
+        ))
+        .returning({ revision: configurations.revision });
+
+      if (advanced === undefined) {
+        const [current] = await tx.select({ revision: configurations.revision })
+          .from(configurations)
+          .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
+          .limit(1);
+        return {
+          status: "conflict" as const,
+          currentRevision: current?.revision ?? result.config.revision,
+        };
+      }
 
       // Delete objects not in the batch
       const batchIds = toUpdate.map((o) => o.id).filter((id): id is string => id !== undefined);
@@ -350,9 +385,32 @@ export async function placedObjectRoutes(
         txResults.push(...inserted);
       }
 
-      return txResults;
+      await tx.insert(configurationLayoutRevisions).values({
+        configurationId: configId,
+        revision: advanced.revision,
+        source: "authenticated_batch",
+        actorUserId: request.user.id,
+        payload: {
+          objectCount: txResults.length,
+          objects: txResults,
+        },
+      });
+
+      return {
+        status: "saved" as const,
+        objects: txResults,
+        revision: advanced.revision,
+      };
     });
 
-    return { data: results };
+    if (saveResult.status === "conflict") {
+      reply.header("ETag", configurationRevisionEtag(saveResult.currentRevision));
+      return reply.status(409).send(
+        revisionConflictBody(parsed.data.expectedRevision, saveResult.currentRevision),
+      );
+    }
+
+    reply.header("ETag", configurationRevisionEtag(saveResult.revision));
+    return { data: { objects: saveResult.objects, revision: saveResult.revision } };
   });
 }

@@ -13,6 +13,7 @@ import { authenticate } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canAccessResource } from "../utils/query.js";
+import { configurationRevisionEtag } from "../lib/configuration-revision.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -135,6 +136,7 @@ export async function configurationRoutes(
       .where(eq(placedObjects.configurationId, params.data.id))
       .orderBy(placedObjects.sortOrder);
 
+    reply.header("ETag", configurationRevisionEtag(config.revision));
     return { data: { ...config, objects } };
   });
 
@@ -166,6 +168,11 @@ export async function configurationRoutes(
       visibility: parsed.data.visibility,
     }).returning();
 
+    if (config === undefined) {
+      return reply.status(500).send({ error: "Insert returned no row", code: "INSERT_FAILED" });
+    }
+
+    reply.header("ETag", configurationRevisionEtag(config.revision));
     return reply.status(201).send({ data: config });
   });
 
@@ -228,6 +235,9 @@ export async function configurationRoutes(
       .where(eq(configurations.id, params.data.id))
       .returning();
 
+    if (updated !== undefined) {
+      reply.header("ETag", configurationRevisionEtag(updated.revision));
+    }
     return { data: updated };
   });
 

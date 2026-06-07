@@ -334,12 +334,13 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
       method: "POST",
       url: `/configurations/${configId}/objects/batch`,
       headers: auth(plannerToken),
-      payload: { objects: batchObjects },
+      payload: { expectedRevision: 1, objects: batchObjects },
     });
     expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body) as { data: { id: string }[] };
-    expect(body.data).toHaveLength(5);
-    placedObjectIds = body.data.map((o) => o.id);
+    const body = JSON.parse(res.body) as { data: { objects: { id: string }[]; revision: number } };
+    expect(body.data.objects).toHaveLength(5);
+    expect(body.data.revision).toBe(2);
+    placedObjectIds = body.data.objects.map((o) => o.id);
   }, 15000);
 
   // --- 11. GET placed objects ---
@@ -578,6 +579,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
       method: "POST",
       url: `/public/configurations/${publicConfigId}/objects/batch`,
       payload: {
+        expectedRevision: 1,
         objects: [
           { assetDefinitionId: assetId, positionX: 1, positionY: 0, positionZ: 2 },
           { assetDefinitionId: assetId, positionX: 3, positionY: 0, positionZ: 4 },
@@ -585,8 +587,9 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
       },
     });
     expect(batchRes.statusCode).toBe(200);
-    const batchBody = JSON.parse(batchRes.body) as { data: { id: string }[] };
-    expect(batchBody.data).toHaveLength(2);
+    const batchBody = JSON.parse(batchRes.body) as { data: { objects: { id: string }[]; revision: number } };
+    expect(batchBody.data.objects).toHaveLength(2);
+    expect(batchBody.data.revision).toBe(2);
 
     const getRes = await server.inject({
       method: "GET",
@@ -809,7 +812,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
       method: "POST",
       url: `/configurations/${lShapeConfigId}/objects/batch`,
       headers: auth(plannerToken),
-      payload: { objects: batch },
+      payload: { expectedRevision: 1, objects: batch },
     });
     expect(res.statusCode).toBe(422);
     const body = JSON.parse(res.body) as {
@@ -849,6 +852,7 @@ describe.skipIf(!IS_REAL_DB)("Integration: end-to-end against Neon", () => {
         method: "POST",
         url: `/public/configurations/${publicLConfigId}/objects/batch`,
         payload: {
+          expectedRevision: 1,
           objects: [
             { assetDefinitionId: assetId, positionX: 9, positionY: 0, positionZ: 9 },
           ],

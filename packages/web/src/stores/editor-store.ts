@@ -122,6 +122,7 @@ interface EditorState {
   readonly configId: string | null;
   readonly spaceId: string | null;
   readonly venueId: string | null;
+  readonly configRevision: number | null;
   readonly space: Space | null;
   readonly isPublicPreview: boolean;
   readonly objects: readonly EditorObject[];
@@ -139,6 +140,7 @@ interface EditorState {
    * and leaves the scene rendering.
    */
   readonly saveError: string | null;
+  readonly saveConflict: configApi.RevisionConflict | null;
   // Punch list #24: the live Three.js scene ref, set by SceneProvider
   // inside the Canvas. Needed by the ortho-capture utility which runs
   // outside the Canvas (in SaveSendPanel) to generate the floor plan
@@ -183,6 +185,8 @@ interface EditorActions {
   readonly deselectObject: () => void;
   /** Save to server. Uses public endpoint for preview configs, authenticated for claimed. */
   readonly saveToServer: (isAuthenticated?: boolean) => Promise<boolean>;
+  /** Reload the server copy after an explicit conflict acknowledgement. */
+  readonly reloadAfterConflict: (isAuthenticated?: boolean) => Promise<void>;
   /** Dismiss the current save-error toast. */
   readonly clearSaveError: () => void;
   readonly reset: () => void;
@@ -209,6 +213,7 @@ const INITIAL_STATE: EditorState = {
   configId: null,
   spaceId: null,
   venueId: null,
+  configRevision: null,
   space: null,
   isPublicPreview: false,
   objects: [],
@@ -219,6 +224,7 @@ const INITIAL_STATE: EditorState = {
   isLoading: false,
   error: null,
   saveError: null,
+  saveConflict: null,
   scene: null,
 };
 
@@ -236,6 +242,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ? readAnonymousPlannerDraft(config.id, {
           spaceId: config.spaceId,
           venueId: config.venueId,
+          baseRevision: config.revision,
         })
         : null;
       const objects = localDraft?.objects ?? serverObjects;
@@ -244,10 +251,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         configId: config.id,
         spaceId: config.spaceId,
         venueId: config.venueId,
+        configRevision: config.revision,
         isPublicPreview: config.isPublicPreview,
         objects,
         isDirty: restoredAnonymousDraft,
         isLoading: false,
+        saveConflict: null,
       });
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
@@ -275,10 +284,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         configId: config.id,
         spaceId: config.spaceId,
         venueId: config.venueId,
+        configRevision: config.revision,
         isPublicPreview: true,
         objects: [],
         isDirty: false,
         isLoading: false,
+        saveConflict: null,
       });
 
       // Load space data for room geometry rendering.
@@ -366,28 +377,51 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   deselectObject: () => { set({ selectedObjectId: null }); },
 
   saveToServer: async (isAuthenticated) => {
-    const { configId, objects, isSaving, isPublicPreview } = get();
+    const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
+    if (configRevision === null) {
+      set({
+        saveError: "Cannot save because the layout revision is missing. Reload the layout and try again.",
+        saveConflict: null,
+      });
+      return false;
+    }
 
     // Determine save path: use authenticated endpoint if config is claimed
     // (isPublicPreview=false) OR if caller explicitly says authenticated.
     // Public preview configs always use the public endpoint.
     const useAuthPath = !isPublicPreview || isAuthenticated === true;
 
-    set({ isSaving: true, saveError: null });
+    set({ isSaving: true, saveError: null, saveConflict: null });
     try {
       const batch = objects.map(editorToBatch);
-      let saved: configApi.PlacedObject[];
+      let saved: configApi.BatchSaveResponse;
       if (useAuthPath) {
-        saved = await configApi.authBatchSave(configId, batch);
+        saved = await configApi.authBatchSave(configId, batch, configRevision);
       } else {
-        saved = await configApi.publicBatchSave(configId, batch);
+        saved = await configApi.publicBatchSave(configId, batch, configRevision);
       }
       // Update local IDs with server IDs
-      const serverObjects = saved.map(placedObjectToEditor);
-      set({ objects: serverObjects, isDirty: false, isSaving: false, lastSavedAt: new Date() });
+      const serverObjects = saved.objects.map(placedObjectToEditor);
+      set({
+        objects: serverObjects,
+        configRevision: saved.revision,
+        isDirty: false,
+        isSaving: false,
+        lastSavedAt: new Date(),
+        saveConflict: null,
+      });
       return true;
     } catch (err) {
+      const conflict = configApi.parseRevisionConflict(err);
+      if (conflict !== null) {
+        set({
+          isSaving: false,
+          saveError: "This layout changed in another tab. Reload the server copy before saving again.",
+          saveConflict: conflict,
+        });
+        return false;
+      }
       const message = err instanceof Error ? err.message : "Save failed";
       // Log the failing payload so we can see which field the server rejects.
       // Safe to log — no PII in the placed-object batch.
@@ -396,12 +430,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // Set saveError (NOT error) — leaving `error: null` keeps EditorPage's
       // main render path alive, so the Canvas stays mounted and the user
       // doesn't lose their in-progress layout.
-      set({ isSaving: false, saveError: message });
+      set({ isSaving: false, saveError: message, saveConflict: null });
       return false;
     }
   },
 
-  clearSaveError: () => { set({ saveError: null }); },
+  reloadAfterConflict: async (isAuthenticated) => {
+    const configId = get().configId;
+    if (configId === null) return;
+    set({ saveError: null, saveConflict: null });
+    await get().loadConfiguration(configId, isAuthenticated);
+  },
+
+  clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
   reset: () => {
     // Preserve the scene ref — reset clears editor data but the Three.js
@@ -415,6 +456,7 @@ useEditorStore.subscribe((state, previous) => {
     state.configId === previous.configId
     && state.spaceId === previous.spaceId
     && state.venueId === previous.venueId
+    && state.configRevision === previous.configRevision
     && state.isPublicPreview === previous.isPublicPreview
     && state.objects === previous.objects
     && state.isDirty === previous.isDirty
@@ -426,6 +468,7 @@ useEditorStore.subscribe((state, previous) => {
     configId: state.configId,
     spaceId: state.spaceId,
     venueId: state.venueId,
+    configRevision: state.configRevision,
     isPublicPreview: state.isPublicPreview,
     objects: state.objects,
     isDirty: state.isDirty,

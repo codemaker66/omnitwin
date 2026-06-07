@@ -154,6 +154,7 @@ export function MobilePlannerTopBar({
   const isSaving = useEditorStore((s) => s.isSaving);
   const isDirty = useEditorStore((s) => s.isDirty);
   const saveError = useEditorStore((s) => s.saveError);
+  const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const online = useOnlineStatus();
@@ -178,6 +179,10 @@ export function MobilePlannerTopBar({
   const saveCopy = copyForEditorSaveStatus(status);
 
   const retrySave = (): void => {
+    if (saveConflict !== null) {
+      void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
+      return;
+    }
     useEditorStore.getState().clearSaveError();
     void useEditorStore.getState().saveToServer(isAuthenticated);
   };
@@ -211,9 +216,9 @@ export function MobilePlannerTopBar({
               type="button"
               style={saveRetryStyle}
               onClick={retrySave}
-              aria-label="Save failed - retry"
+              aria-label={saveConflict === null ? "Save failed - retry" : "Save conflict - reload"}
             >
-              {saveCopy.label}
+              {saveConflict === null ? saveCopy.label : "Reload layout"}
             </button>
           ) : (
             <div role="status" aria-live="polite" style={saveStyle}>

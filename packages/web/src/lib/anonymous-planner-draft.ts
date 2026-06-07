@@ -29,6 +29,7 @@ const AnonymousPlannerDraftSchema = z.object({
   configId: z.string().min(1),
   spaceId: z.string().min(1),
   venueId: z.string().min(1),
+  baseRevision: z.number().int().min(1),
   updatedAtMs: z.number().int().nonnegative(),
   hasUnsavedLocalChanges: z.boolean(),
   objects: z.array(EditorObjectDraftSchema).max(1_000),
@@ -40,6 +41,7 @@ export interface PersistAnonymousPlannerDraftInput {
   readonly configId: string | null;
   readonly spaceId: string | null;
   readonly venueId: string | null;
+  readonly configRevision: number | null;
   readonly isPublicPreview: boolean;
   readonly objects: readonly EditorObject[];
   readonly isDirty: boolean;
@@ -74,7 +76,7 @@ export function persistAnonymousPlannerDraft(
     return;
   }
 
-  if (input.spaceId === null || input.venueId === null) return;
+  if (input.spaceId === null || input.venueId === null || input.configRevision === null) return;
 
   const storage = storageAvailable();
   if (storage === null) return;
@@ -84,6 +86,7 @@ export function persistAnonymousPlannerDraft(
     configId: input.configId,
     spaceId: input.spaceId,
     venueId: input.venueId,
+    baseRevision: input.configRevision,
     updatedAtMs: Date.now(),
     hasUnsavedLocalChanges: true,
     objects: [...input.objects],
@@ -101,6 +104,7 @@ export function readAnonymousPlannerDraft(
   expected: {
     readonly spaceId: string;
     readonly venueId: string;
+    readonly baseRevision: number;
   },
 ): AnonymousPlannerDraft | null {
   const storage = storageAvailable();
@@ -134,7 +138,8 @@ export function readAnonymousPlannerDraft(
   const mismatched =
     draft.configId !== configId
     || draft.spaceId !== expected.spaceId
-    || draft.venueId !== expected.venueId;
+    || draft.venueId !== expected.venueId
+    || draft.baseRevision !== expected.baseRevision;
 
   if (expired || mismatched) {
     removeDraft(configId);
