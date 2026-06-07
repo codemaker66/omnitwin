@@ -11,12 +11,12 @@ const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
 function makePackage(overrides: {
   assetUrl?: string | null;
   evidenceStatus?: AssetEvidenceStatus;
-  runtimeStatus?: "staged" | "usable" | "rejected" | "archived";
+  runtimeStatus?: "draft" | "internal_ready" | "published" | "archived";
   assetRuntimeStatus?: "staged" | "usable" | "rejected" | "archived";
   assetKind?: "splat" | "mesh";
 } = {}): RuntimePackage {
   const evidenceStatus = overrides.evidenceStatus ?? "machine_checked";
-  const runtimeStatus = overrides.runtimeStatus ?? "usable";
+  const runtimeStatus = overrides.runtimeStatus ?? "published";
   const assetRuntimeStatus = overrides.assetRuntimeStatus ?? "usable";
   const assetKind = overrides.assetKind ?? "splat";
   return {
@@ -26,6 +26,7 @@ function makePackage(overrides: {
     primaryVisualAssetVersionId: ASSET_VERSION_ID,
     semanticMeshAssetVersionId: null,
     collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
     manifestJson: {
       schemaVersion: "venviewer.runtime-package.v1",
       venueSlug: "trades-hall",
@@ -35,6 +36,7 @@ function makePackage(overrides: {
         primaryVisualAssetVersionId: ASSET_VERSION_ID,
         semanticMeshAssetVersionId: null,
         collisionAssetVersionId: null,
+        pointCloudAssetVersionId: null,
       },
     },
     evidenceStatus,
@@ -54,11 +56,13 @@ function makePackage(overrides: {
       r2Key: "venues/trades-hall/rooms/robert-adam-room/xgrids/scene.ply",
       fileName: "scene.ply",
       fileExt: ".ply",
+      externalUrl: null,
       mimeType: "application/octet-stream",
       sha256: "a".repeat(64),
       sizeBytes: 2048,
       evidenceStatus,
       runtimeStatus: assetRuntimeStatus,
+      notes: null,
       createdAt: "2026-06-06T10:00:00.000Z",
       updatedAt: "2026-06-06T10:00:00.000Z",
     },
@@ -142,7 +146,7 @@ describe("decideRuntimeAsset", () => {
   });
 
   it("falls back for staged packages and staged primary assets", () => {
-    expect(decideRuntimeAsset(null, makePackage({ runtimeStatus: "staged" })).source).toBe("none");
+    expect(decideRuntimeAsset(null, makePackage({ runtimeStatus: "draft" })).source).toBe("none");
     expect(decideRuntimeAsset(null, makePackage({ assetRuntimeStatus: "staged" })).source).toBe("none");
   });
 

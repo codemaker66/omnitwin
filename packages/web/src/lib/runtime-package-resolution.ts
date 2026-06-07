@@ -89,11 +89,13 @@ export function evidenceStatusLabel(status: AssetEvidenceStatus): string {
       return "Runtime asset loaded, machine checked; human review required";
     case "human_reviewed":
       return "Runtime asset loaded, human reviewed";
+    case "rejected":
+      return "Runtime asset rejected in review — not loaded";
   }
 }
 
 function usablePackageUrl(published: RuntimePackage): string | null {
-  if (published.runtimeStatus !== "usable") return null;
+  if (published.runtimeStatus !== "internal_ready" && published.runtimeStatus !== "published") return null;
   const asset = published.primaryVisualAssetVersion;
   if (asset === null) return null;
   if (asset.assetKind !== "splat" || asset.runtimeStatus !== "usable") return null;
