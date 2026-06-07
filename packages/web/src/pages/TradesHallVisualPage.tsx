@@ -117,6 +117,7 @@ const VISUAL_CAMERA_POSITION = [
 ] as const;
 const VISUAL_CAMERA_TARGET = computeCameraTarget(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
 const VISUAL_CAMERA_DISTANCE_LIMITS = computeDistanceLimits(GRAND_HALL_RENDER_DIMENSIONS);
+const MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED = import.meta.env.DEV;
 
 function statusTone(status: LoadStatus): string {
   switch (status) {
@@ -645,7 +646,12 @@ function VisualInsightCards({
 
 export function TradesHallVisualPage(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
-  const queryAsset = useMemo(() => runtimeSplatUrlFromSearchParams(searchParams), [searchParams]);
+  const queryAsset = useMemo(
+    () => runtimeSplatUrlFromSearchParams(searchParams, {
+      allowManualUrl: MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED,
+    }),
+    [searchParams],
+  );
   const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
   const [draftUrl, setDraftUrl] = useState(queryAsset.url ?? "");
   const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");

@@ -149,6 +149,17 @@ describe("TradesHallVisualPage", () => {
     });
   });
 
+  it("requests the Reception Room package from query params", async () => {
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
+    expect(screen.getByText(/Reception Room/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledWith({
+        venue: "trades-hall",
+        room: "reception-room",
+      });
+    });
+  });
+
   it("mounts a registry runtime package only after the API returns one", async () => {
     getLatestRuntimePackageMock.mockResolvedValue(makeRuntimePackage("robert-adam-room"));
     render(
@@ -212,5 +223,13 @@ describe("TradesHallVisualPage", () => {
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/pages/TradesHallVisualPage.tsx"), "utf-8");
     expect(source).not.toContain("textSplats");
+  });
+
+  it("keeps manual runtime asset URLs behind a dev-only gate", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/pages/TradesHallVisualPage.tsx"), "utf-8");
+    expect(source).toContain("const MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED = import.meta.env.DEV;");
+    expect(source).toContain("allowManualUrl: MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED");
   });
 });

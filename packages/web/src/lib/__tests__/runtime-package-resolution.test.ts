@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import type { AssetEvidenceStatus, RuntimePackage } from "@omnitwin/types";
+import {
+  TRADES_HALL_RUNTIME_ROOMS as SHARED_TRADES_HALL_RUNTIME_ROOMS,
+  type AssetEvidenceStatus,
+  type RuntimePackage,
+} from "@omnitwin/types";
 import {
   decideRuntimeAsset,
   evidenceStatusLabel,
@@ -105,6 +109,28 @@ describe("runtimeRoomTargetFromSearchParams", () => {
       room: "saloon",
     }));
     expect(saloon.roomLabel).toBe("Saloon");
+
+    const reception = runtimeRoomTargetFromSearchParams(new URLSearchParams({
+      venue: "trades-hall",
+      room: "reception-room",
+    }));
+    expect(reception.roomLabel).toBe("Reception Room");
+  });
+
+  it("stays aligned with every shared Trades Hall runtime room", () => {
+    for (const room of SHARED_TRADES_HALL_RUNTIME_ROOMS) {
+      const target = runtimeRoomTargetFromSearchParams(new URLSearchParams({
+        venue: "trades-hall",
+        room: room.slug,
+      }));
+      expect(target).toMatchObject({
+        venue: "trades-hall",
+        room: room.slug,
+        roomLabel: room.displayName,
+        sourceHint: room.primaryCaptureSource,
+        error: null,
+      });
+    }
   });
 
   it("rejects unsupported room params with a fallback target", () => {
@@ -156,6 +182,12 @@ describe("decideRuntimeAsset", () => {
     }));
     expect(decision.source).toBe("none");
     expect(decision.splatUrl).toBeNull();
+
+    const demoDecision = decideRuntimeAsset(null, makePackage({
+      assetUrl: "https://assets.example/dev/demo/scene.ply",
+    }));
+    expect(demoDecision.source).toBe("none");
+    expect(demoDecision.splatUrl).toBeNull();
   });
 
   it("does not treat non-splat primary assets as package runtime assets", () => {

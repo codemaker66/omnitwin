@@ -1,3 +1,5 @@
+import { FORBIDDEN_ASSET_FIXTURE_MARKERS } from "@omnitwin/types";
+
 export const RUNTIME_SPLAT_EXTENSIONS = [
   ".ply",
   ".spz",
@@ -16,7 +18,11 @@ export interface RuntimeSplatUrlResult {
   readonly error: string | null;
 }
 
-const FORBIDDEN_FIXTURE_MARKERS = ["textsplats", "text-splats", "spark-fixture", "splat-fixture"];
+export interface RuntimeSplatUrlSearchOptions {
+  readonly allowManualUrl?: boolean;
+}
+
+const FORBIDDEN_FIXTURE_MARKERS = FORBIDDEN_ASSET_FIXTURE_MARKERS;
 
 function extensionForPath(pathname: string): RuntimeSplatExtension | null {
   const lowerPath = pathname.toLowerCase();
@@ -66,6 +72,17 @@ export function parseRuntimeSplatUrl(rawUrl: string | null | undefined): Runtime
 
 export function runtimeSplatUrlFromSearchParams(
   searchParams: URLSearchParams,
+  options: RuntimeSplatUrlSearchOptions = {},
 ): RuntimeSplatUrlResult {
-  return parseRuntimeSplatUrl(searchParams.get("splatUrl"));
+  const rawUrl = searchParams.get("splatUrl");
+  const trimmed = rawUrl?.trim() ?? "";
+  if (trimmed.length > 0 && options.allowManualUrl === false) {
+    return result(
+      false,
+      null,
+      null,
+      "Manual runtime asset URLs are disabled in this build; use a registered runtime package.",
+    );
+  }
+  return parseRuntimeSplatUrl(rawUrl);
 }

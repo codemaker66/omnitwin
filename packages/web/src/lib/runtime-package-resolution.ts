@@ -1,4 +1,9 @@
-import type { AssetEvidenceStatus, RuntimePackage } from "@omnitwin/types";
+import {
+  TRADES_HALL_RUNTIME_ROOMS as SHARED_TRADES_HALL_RUNTIME_ROOMS,
+  type AssetEvidenceStatus,
+  type RuntimePackage,
+  type TradesHallRuntimeRoomSlug,
+} from "@omnitwin/types";
 import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
 
 // ---------------------------------------------------------------------------
@@ -10,13 +15,17 @@ import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
 // API, so polluted registry rows fall back to the procedural scene.
 // ---------------------------------------------------------------------------
 
-export const TRADES_HALL_RUNTIME_ROOMS = [
-  { slug: "grand-hall", label: "Grand Hall", sourceHint: "runpod" },
-  { slug: "robert-adam-room", label: "Robert Adam Room", sourceHint: "xgrids" },
-  { slug: "saloon", label: "Saloon", sourceHint: "xgrids" },
-] as const;
+export type { TradesHallRuntimeRoomSlug } from "@omnitwin/types";
 
-export type TradesHallRuntimeRoomSlug = (typeof TRADES_HALL_RUNTIME_ROOMS)[number]["slug"];
+export const TRADES_HALL_RUNTIME_ROOMS = SHARED_TRADES_HALL_RUNTIME_ROOMS.map((room) => ({
+  slug: room.slug,
+  label: room.displayName,
+  sourceHint: room.primaryCaptureSource,
+})) satisfies readonly {
+  readonly slug: TradesHallRuntimeRoomSlug;
+  readonly label: string;
+  readonly sourceHint: string;
+}[];
 export type RuntimeAssetSource = "manual" | "package" | "none";
 
 export interface RuntimeRoomTarget {

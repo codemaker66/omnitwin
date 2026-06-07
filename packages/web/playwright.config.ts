@@ -7,9 +7,22 @@ import { defineConfig, devices } from "@playwright/test";
 // Usage:
 //   pnpm --filter @omnitwin/web e2e        (runs tests)
 //   pnpm --filter @omnitwin/web e2e:ui     (interactive mode)
+//   $env:E2E_WEB_SERVER="preview"; pnpm --filter @omnitwin/web e2e
+//     (runs against an existing production build via Vite preview)
 // ---------------------------------------------------------------------------
 
-const BASE_URL = process.env["E2E_BASE_URL"] ?? "http://localhost:5173";
+const WEB_SERVER_MODE = process.env["E2E_WEB_SERVER"] ?? "dev";
+const IS_PREVIEW_MODE = WEB_SERVER_MODE === "preview";
+const BASE_URL = process.env["E2E_BASE_URL"] ??
+  (IS_PREVIEW_MODE ? "http://127.0.0.1:4176" : "http://localhost:5173");
+const START_SERVER = process.env["E2E_START_SERVER"] !== "false";
+
+function webServerCommand(): string {
+  if (IS_PREVIEW_MODE) {
+    return "pnpm exec vite preview --host 127.0.0.1 --port 4176";
+  }
+  return "pnpm dev";
+}
 
 export default defineConfig({
   testDir: "./e2e",
@@ -33,11 +46,12 @@ export default defineConfig({
     },
   ],
 
-  // Start Vite dev server before running tests (only if not already running)
-  webServer: {
-    command: "pnpm dev",
+  // Start Vite dev/preview before running tests, unless an external base URL
+  // is provided with E2E_START_SERVER=false.
+  webServer: START_SERVER ? {
+    command: webServerCommand(),
     url: BASE_URL,
     reuseExistingServer: !process.env["CI"],
-    timeout: 30_000,
-  },
+    timeout: IS_PREVIEW_MODE ? 60_000 : 30_000,
+  } : undefined,
 });

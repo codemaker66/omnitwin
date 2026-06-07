@@ -30,6 +30,8 @@ describe("runtime visual asset URL parsing", () => {
   it("rejects fixture-only Spark sources", () => {
     expect(parseRuntimeSplatUrl("textSplats:VSIR").error).toMatch(/Fixture-only/i);
     expect(parseRuntimeSplatUrl("/dev/splat-fixture/scene.ply").error).toMatch(/Fixture-only/i);
+    expect(parseRuntimeSplatUrl("/dev/fixture/scene.ply").error).toMatch(/Fixture-only/i);
+    expect(parseRuntimeSplatUrl("https://assets.venviewer.test/demo/scene.ply").error).toMatch(/Fixture-only/i);
   });
 
   it("reads the splatUrl query parameter", () => {
@@ -41,6 +43,18 @@ describe("runtime visual asset URL parsing", () => {
       url: "https://assets.venviewer.test/trades-hall/scene.ply",
       extension: ".ply",
       error: null,
+    });
+  });
+
+  it("can disable manual splatUrl overrides for production builds", () => {
+    const params = new URLSearchParams({
+      splatUrl: "https://assets.venviewer.test/trades-hall/scene.ply",
+    });
+    expect(runtimeSplatUrlFromSearchParams(params, { allowManualUrl: false })).toMatchObject({
+      ok: false,
+      url: null,
+      extension: null,
+      error: "Manual runtime asset URLs are disabled in this build; use a registered runtime package.",
     });
   });
 });
