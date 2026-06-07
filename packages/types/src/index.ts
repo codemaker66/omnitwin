@@ -475,6 +475,13 @@ export {
   type DoorScheduleSummaryEvent,
 } from "./event-sheet-rendering.js";
 
+// --- ASPIRATIONAL: Artifact Registry metadata vocabulary (VAR-001) ---
+export {
+  ARTIFACT_TYPES,
+  ArtifactTypeSchema,
+  type ArtifactType,
+} from "./artifact-type.js";
+
 // --- ASPIRATIONAL: solver not yet consumed by web/API at runtime ---
 export {
   solveLayout,
