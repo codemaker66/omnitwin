@@ -9,11 +9,8 @@ import {
   inferSeatingStyle,
   comfortBandLabel,
 } from "../../lib/layout-capacity.js";
-import {
-  computeCirculation,
-  circulationBandLabel,
-  type FurnitureFootprint,
-} from "../../lib/circulation.js";
+import { circulationBandLabel } from "../../lib/circulation.js";
+import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 
 interface HudStats {
   readonly roundTables: number;
@@ -80,27 +77,10 @@ export function PlannerSpatialHud(): React.ReactElement {
     [floorAreaM2, stats.chairs, seatingStyle],
   );
 
-  // Circulation: exact aisle clearance between table footprints. Only tables
-  // count as obstacles — chairs cluster at their table, so including them would
-  // report the (intentionally tiny) chair-to-table gaps instead of walkways.
-  // Render-space x/z divide back to metres; catalogue width/depth are metres.
-  const circulation = useMemo(() => {
-    const footprints: FurnitureFootprint[] = [];
-    for (const placed of placedItems) {
-      const item = getCatalogueItem(placed.catalogueItemId);
-      if (item === undefined || item.category !== "table") continue;
-      footprints.push({
-        id: placed.id,
-        label: item.name,
-        cx: placed.x / RENDER_SCALE,
-        cz: placed.z / RENDER_SCALE,
-        width: item.width,
-        depth: item.depth,
-        rotation: placed.rotationY,
-      });
-    }
-    return computeCirculation(footprints);
-  }, [placedItems]);
+  // Circulation: exact aisle clearance between table footprints (tables only —
+  // see placedTableFootprints for why chairs are excluded). The HUD and the
+  // in-scene overlay share this same computation so they can never disagree.
+  const circulation = useMemo(() => placedItemsCirculation(placedItems), [placedItems]);
 
   const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
   const gaugeFill = Math.min(100, capacity.utilizationPercent);

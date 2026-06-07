@@ -55,6 +55,10 @@ export interface CirculationGap {
   readonly bLabel: string;
   /** Minimum clear distance between the two footprints, metres. */
   readonly gapM: number;
+  /** Closest point on footprint `a` (witness of the gap), metres. */
+  readonly pointA: Vec2;
+  /** Closest point on footprint `b` (witness of the gap), metres. */
+  readonly pointB: Vec2;
 }
 
 export interface CirculationReport {
@@ -93,17 +97,33 @@ export function footprintCorners(f: FurnitureFootprint): readonly Vec2[] {
   }));
 }
 
-/** Shortest distance from point `p` to segment `a`–`b`. */
-export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
+/** The point on segment `a`–`b` closest to `p` (clamped to the endpoints). */
+export function closestPointOnSegment(p: Vec2, a: Vec2, b: Vec2): Vec2 {
   const abx = b.x - a.x;
   const abz = b.z - a.z;
   const lenSq = abx * abx + abz * abz;
-  if (lenSq === 0) return Math.hypot(p.x - a.x, p.z - a.z);
+  if (lenSq === 0) return { x: a.x, z: a.z };
   let t = ((p.x - a.x) * abx + (p.z - a.z) * abz) / lenSq;
   t = Math.max(0, Math.min(1, t));
-  const projX = a.x + t * abx;
-  const projZ = a.z + t * abz;
-  return Math.hypot(p.x - projX, p.z - projZ);
+  return { x: a.x + t * abx, z: a.z + t * abz };
+}
+
+/** Shortest distance from point `p` to segment `a`–`b`. */
+export function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
+  const c = closestPointOnSegment(p, a, b);
+  return Math.hypot(p.x - c.x, p.z - c.z);
+}
+
+/** Centroid (mean of vertices) of a polygon, metres. */
+export function polygonCentroid(poly: readonly Vec2[]): Vec2 {
+  let sx = 0;
+  let sz = 0;
+  for (const v of poly) {
+    sx += v.x;
+    sz += v.z;
+  }
+  const n = poly.length === 0 ? 1 : poly.length;
+  return { x: sx / n, z: sz / n };
 }
 
 /**
@@ -139,26 +159,66 @@ function projectPolygon(poly: readonly Vec2[], axisX: number, axisZ: number): [n
   return [min, max];
 }
 
+/** Exact minimum distance plus the witness points realizing it. */
+export interface PolygonClosest {
+  /** Minimum clear distance, metres. 0 when the polygons overlap or touch. */
+  readonly distance: number;
+  /** Closest point on polygon `a`. */
+  readonly pointA: Vec2;
+  /** Closest point on polygon `b`. */
+  readonly pointB: Vec2;
+}
+
+/**
+ * Exact closest points between two convex polygons. When they overlap or
+ * touch the distance is 0 and the witnesses fall back to the centroids (no
+ * single closest pair exists inside an overlap). Otherwise the witnesses are
+ * the true closest vertex/edge points — for convex polygons the global minimum
+ * is always realized by a vertex of one against an edge of the other.
+ */
+export function convexPolygonClosestPoints(a: readonly Vec2[], b: readonly Vec2[]): PolygonClosest {
+  if (convexPolygonsOverlap(a, b)) {
+    return { distance: 0, pointA: polygonCentroid(a), pointB: polygonCentroid(b) };
+  }
+  let min = Infinity;
+  let pointA: Vec2 = a[0] ?? { x: 0, z: 0 };
+  let pointB: Vec2 = b[0] ?? { x: 0, z: 0 };
+  // (vertices of `from`) against (edges of `into`). `aIsVertex` tracks which
+  // polygon owns the vertex so the witness pair is reported a-then-b.
+  for (const { from, into, aIsVertex } of [
+    { from: a, into: b, aIsVertex: true },
+    { from: b, into: a, aIsVertex: false },
+  ] as const) {
+    for (const v of from) {
+      for (let i = 0; i < into.length; i += 1) {
+        const e1 = into[i];
+        const e2 = into[(i + 1) % into.length];
+        if (e1 === undefined || e2 === undefined) continue;
+        const cp = closestPointOnSegment(v, e1, e2);
+        const d = Math.hypot(v.x - cp.x, v.z - cp.z);
+        if (d < min) {
+          min = d;
+          if (aIsVertex) {
+            pointA = v;
+            pointB = cp;
+          } else {
+            pointA = cp;
+            pointB = v;
+          }
+        }
+      }
+    }
+  }
+  return { distance: min, pointA, pointB };
+}
+
 /**
  * Exact minimum distance between two convex polygons. 0 when they overlap or
  * touch; otherwise the closest vertex-to-edge distance (which, for convex
  * polygons, is the true separation).
  */
 export function convexPolygonDistance(a: readonly Vec2[], b: readonly Vec2[]): number {
-  if (convexPolygonsOverlap(a, b)) return 0;
-  let min = Infinity;
-  for (const [poly, other] of [[a, b], [b, a]] as const) {
-    for (const v of poly) {
-      for (let i = 0; i < other.length; i += 1) {
-        const e1 = other[i];
-        const e2 = other[(i + 1) % other.length];
-        if (e1 === undefined || e2 === undefined) continue;
-        const d = pointSegmentDistance(v, e1, e2);
-        if (d < min) min = d;
-      }
-    }
-  }
-  return min;
+  return convexPolygonClosestPoints(a, b).distance;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,14 +264,23 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
       const cb = corners[j];
       if (a === undefined || b === undefined || ca === undefined || cb === undefined) continue;
       pairCount += 1;
-      const gapM = convexPolygonDistance(ca, cb);
+      const closest = convexPolygonClosestPoints(ca, cb);
+      const gapM = closest.distance;
 
       if (gapM < CIRCULATION_AISLE.blockedM) blockedCount += 1;
       else if (gapM < CIRCULATION_AISLE.tightM) tightCount += 1;
 
       if (gapM < tightestGapM) {
         tightestGapM = gapM;
-        tightestPair = { aId: a.id, bId: b.id, aLabel: a.label, bLabel: b.label, gapM };
+        tightestPair = {
+          aId: a.id,
+          bId: b.id,
+          aLabel: a.label,
+          bLabel: b.label,
+          gapM,
+          pointA: closest.pointA,
+          pointB: closest.pointB,
+        };
       }
     }
   }

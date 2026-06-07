@@ -22,6 +22,7 @@ import { PlacedFurniture } from "./components/PlacedFurniture.js";
 import { SelectionSystem } from "./components/SelectionSystem.js";
 import { MarqueeSelect } from "./components/MarqueeSelect.js";
 import { SnapGuides } from "./components/SnapGuides.js";
+import { CirculationOverlay } from "./components/CirculationOverlay.js";
 import { MarkupLayer } from "./components/MarkupLayer.js";
 import { MarkupPersistence } from "./components/MarkupPersistence.js";
 import { SceneProvider } from "./components/SceneProvider.js";
@@ -148,6 +149,7 @@ export function App(): React.ReactElement {
         <PlacementGhost />
         <SelectionSystem />
         <SnapGuides />
+        <CirculationOverlay />
         <MarqueeSelect />
         <MarkupLayer />
         <DiagramLabels />

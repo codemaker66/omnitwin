@@ -2,8 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   footprintCorners,
   pointSegmentDistance,
+  closestPointOnSegment,
+  polygonCentroid,
   convexPolygonsOverlap,
   convexPolygonDistance,
+  convexPolygonClosestPoints,
   computeCirculation,
   circulationBandLabel,
   type FurnitureFootprint,
@@ -73,6 +76,58 @@ describe("convexPolygonsOverlap", () => {
   });
 });
 
+describe("closestPointOnSegment", () => {
+  it("returns the perpendicular foot when it lands inside the segment", () => {
+    const c = closestPointOnSegment({ x: 0, z: 1 }, { x: -1, z: 0 }, { x: 1, z: 0 });
+    expect(c.x).toBeCloseTo(0, 6);
+    expect(c.z).toBeCloseTo(0, 6);
+  });
+  it("clamps to the nearest endpoint when the projection falls outside", () => {
+    const c = closestPointOnSegment({ x: 3, z: 0 }, { x: -1, z: 0 }, { x: 1, z: 0 });
+    expect(c.x).toBeCloseTo(1, 6);
+    expect(c.z).toBeCloseTo(0, 6);
+  });
+  it("returns the shared endpoint for a degenerate segment", () => {
+    const c = closestPointOnSegment({ x: 3, z: 4 }, { x: 2, z: 2 }, { x: 2, z: 2 });
+    expect(c.x).toBeCloseTo(2, 6);
+    expect(c.z).toBeCloseTo(2, 6);
+  });
+});
+
+describe("polygonCentroid", () => {
+  it("averages the vertices of an unrotated box back to its centre", () => {
+    const c = polygonCentroid(footprintCorners(box("a", 3, -2, 2, 4)));
+    expect(c.x).toBeCloseTo(3, 6);
+    expect(c.z).toBeCloseTo(-2, 6);
+  });
+});
+
+describe("convexPolygonClosestPoints", () => {
+  it("reports the axis-aligned witnesses of the gap between two boxes", () => {
+    // 1×1 boxes centred 2 apart on X → gap 1.0 between the facing edges at
+    // x = 0.5 and x = 1.5, at the same z.
+    const r = convexPolygonClosestPoints(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 2, 0)));
+    expect(r.distance).toBeCloseTo(1, 6);
+    expect(r.pointA.x).toBeCloseTo(0.5, 6);
+    expect(r.pointB.x).toBeCloseTo(1.5, 6);
+    expect(r.pointA.z).toBeCloseTo(r.pointB.z, 6);
+  });
+  it("reports the corner witnesses of a diagonal gap", () => {
+    const r = convexPolygonClosestPoints(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 2, 2)));
+    expect(r.distance).toBeCloseTo(Math.SQRT2, 6);
+    expect(r.pointA.x).toBeCloseTo(0.5, 6);
+    expect(r.pointA.z).toBeCloseTo(0.5, 6);
+    expect(r.pointB.x).toBeCloseTo(1.5, 6);
+    expect(r.pointB.z).toBeCloseTo(1.5, 6);
+  });
+  it("falls back to centroids with distance 0 when the boxes overlap", () => {
+    const r = convexPolygonClosestPoints(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 0.5, 0)));
+    expect(r.distance).toBe(0);
+    expect(r.pointA.x).toBeCloseTo(0, 6);
+    expect(r.pointB.x).toBeCloseTo(0.5, 6);
+  });
+});
+
 describe("convexPolygonDistance", () => {
   it("is 0 for overlapping boxes", () => {
     expect(convexPolygonDistance(footprintCorners(box("a", 0, 0)), footprintCorners(box("b", 0.5, 0)))).toBe(0);
@@ -101,6 +156,9 @@ describe("computeCirculation", () => {
     expect(r.band).toBe("comfortable"); // [0.9, 1.2)
     expect(r.tightestPair?.aId).toBe("a");
     expect(r.tightestPair?.bId).toBe("b");
+    // Witness points sit on the facing edges of the two footprints.
+    expect(r.tightestPair?.pointA.x).toBeCloseTo(0.5, 6);
+    expect(r.tightestPair?.pointB.x).toBeCloseTo(1.5, 6);
   });
 
   it("reports generous when every gap clears the comfortable width", () => {
