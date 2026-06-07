@@ -67,6 +67,48 @@ export {
   type CreateConfiguration,
 } from "./configuration.js";
 
+// --- ASPIRATIONAL: Canonical Layout Snapshot v0 evidence subject ---
+export {
+  CANONICAL_LAYOUT_SNAPSHOT_V0_SCHEMA_VERSION,
+  CANONICAL_LAYOUT_SNAPSHOT_DOMAIN_PREFIX,
+  CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  CanonicalJsonValueSchema,
+  LayoutSnapshotSourceStateSchema,
+  LayoutSnapshotAssumptionSourceSchema,
+  LayoutSnapshotRoomGeometrySourceSchema,
+  LayoutSnapshotGeneratorTypeSchema,
+  LayoutSnapshotUnitsSchema,
+  LayoutSnapshotTolerancePolicySchema,
+  LayoutSnapshotAssetDefinitionSchema,
+  LayoutSnapshotPlacedObjectSchema,
+  LayoutSnapshotEventMetadataSchema,
+  LayoutSnapshotScenarioAssumptionSchema,
+  LayoutSnapshotVenueRuntimeReferenceSchema,
+  LayoutSnapshotPolicyBundleReferenceSchema,
+  LayoutSnapshotGeneratorProvenanceSchema,
+  CanonicalLayoutSnapshotV0Schema,
+  normalizeCanonicalLayoutSnapshot,
+  stableCanonicalJson,
+  canonicalLayoutSnapshotJson,
+  sha256Hex,
+  canonicalLayoutSnapshotDigest,
+  type CanonicalJsonValue,
+  type LayoutSnapshotSourceState,
+  type LayoutSnapshotAssumptionSource,
+  type LayoutSnapshotRoomGeometrySource,
+  type LayoutSnapshotGeneratorType,
+  type LayoutSnapshotUnits,
+  type LayoutSnapshotTolerancePolicy,
+  type LayoutSnapshotAssetDefinition,
+  type LayoutSnapshotPlacedObject,
+  type LayoutSnapshotEventMetadata,
+  type LayoutSnapshotScenarioAssumption,
+  type LayoutSnapshotVenueRuntimeReference,
+  type LayoutSnapshotPolicyBundleReference,
+  type LayoutSnapshotGeneratorProvenance,
+  type CanonicalLayoutSnapshotV0,
+} from "./canonical-layout-snapshot.js";
+
 // --- ASPIRATIONAL: template management not yet implemented in web/API ---
 export {
   LayoutTemplateIdSchema,
