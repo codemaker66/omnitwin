@@ -479,6 +479,30 @@ export {
   type DataSufficiencyMessageKeyFamily,
 } from "./data-sufficiency.js";
 
+// --- ASPIRATIONAL: Human Review Overlay schema ---
+export {
+  HUMAN_REVIEW_OVERLAY_SCHEMA_VERSION,
+  HUMAN_REVIEW_DECISIONS,
+  HUMAN_REVIEW_REASON_CATEGORIES,
+  HUMAN_REVIEW_SCOPES,
+  HUMAN_REVIEW_REFERENCE_TYPES,
+  HUMAN_REVIEW_LIFECYCLE_EFFECTS,
+  HumanReviewDecisionSchema,
+  HumanReviewReasonCategorySchema,
+  HumanReviewScopeSchema,
+  HumanReviewReferenceTypeSchema,
+  HumanReviewLifecycleEffectSchema,
+  HumanReviewReferenceSchema,
+  HumanReviewOverlaySchema,
+  type HumanReviewDecision,
+  type HumanReviewReasonCategory,
+  type HumanReviewScope,
+  type HumanReviewReferenceType,
+  type HumanReviewLifecycleEffect,
+  type HumanReviewReference,
+  type HumanReviewOverlay,
+} from "./human-review-overlay.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
