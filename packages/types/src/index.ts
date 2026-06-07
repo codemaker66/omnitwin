@@ -565,6 +565,18 @@ export {
   type EventObjectOperationalSemantics,
 } from "./event-object-semantics.js";
 
+// --- ASPIRATIONAL: Regulatory Trigger Tags metadata vocabulary ---
+export {
+  REGULATORY_TRIGGER_TAGS,
+  REGULATORY_TRIGGER_REVIEW_OUTCOMES,
+  REGULATORY_TRIGGER_TAG_REVIEW_REASONS,
+  REGULATORY_TRIGGER_TAG_HUMAN_REVIEW_TRIGGERS,
+  RegulatoryTriggerTagSchema,
+  RegulatoryTriggerReviewOutcomeSchema,
+  type RegulatoryTriggerTag,
+  type RegulatoryTriggerReviewOutcome,
+} from "./regulatory-trigger-tags.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
