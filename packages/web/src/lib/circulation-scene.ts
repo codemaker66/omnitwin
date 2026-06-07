@@ -18,7 +18,9 @@ import type { PlacedItem } from "./placement.js";
 import { RENDER_SCALE } from "../constants/scale.js";
 import {
   computeCirculation,
+  bandForGap,
   type CirculationBand,
+  type CirculationGap,
   type CirculationReport,
   type FurnitureFootprint,
 } from "./circulation.js";
@@ -71,6 +73,8 @@ export interface CirculationOverlaySegment {
   readonly color: string;
   /** Whether the gap warrants attention (tight or blocked). */
   readonly emphasis: boolean;
+  /** The headline (tightest) aisle, drawn prominently; secondaries are subtle. */
+  readonly primary: boolean;
 }
 
 /** Band → colour, aligned with the HUD's warning palette. */
@@ -89,6 +93,30 @@ export function circulationBandColor(band: CirculationBand): string {
   }
 }
 
+/** Map one gap (metres) to a render-space overlay segment, banded by its own gap. */
+function gapToOverlaySegment(
+  gap: CirculationGap,
+  primary: boolean,
+  renderScale: number,
+  floorY: number,
+): CirculationOverlaySegment {
+  const band = bandForGap(gap.gapM);
+  const ax = gap.pointA.x * renderScale;
+  const az = gap.pointA.z * renderScale;
+  const bx = gap.pointB.x * renderScale;
+  const bz = gap.pointB.z * renderScale;
+  return {
+    from: [ax, floorY, az],
+    to: [bx, floorY, bz],
+    mid: [(ax + bx) / 2, floorY, (az + bz) / 2],
+    gapM: gap.gapM,
+    band,
+    color: circulationBandColor(band),
+    emphasis: band === "tight" || band === "blocked",
+    primary,
+  };
+}
+
 /**
  * Map a circulation report to a render-space overlay segment for the tightest
  * aisle, or null when there is nothing meaningful to draw (fewer than two
@@ -102,19 +130,29 @@ export function circulationOverlaySegment(
 ): CirculationOverlaySegment | null {
   const pair = report.tightestPair;
   if (report.band === "open" || pair === null) return null;
+  return gapToOverlaySegment(pair, true, renderScale, floorY);
+}
 
-  const ax = pair.pointA.x * renderScale;
-  const az = pair.pointA.z * renderScale;
-  const bx = pair.pointB.x * renderScale;
-  const bz = pair.pointB.z * renderScale;
-
-  return {
-    from: [ax, floorY, az],
-    to: [bx, floorY, bz],
-    mid: [(ax + bx) / 2, floorY, (az + bz) / 2],
-    gapM: pair.gapM,
-    band: report.band,
-    color: circulationBandColor(report.band),
-    emphasis: report.band === "tight" || report.band === "blocked",
-  };
+/**
+ * Every aisle worth drawing: the headline tightest pair (`primary`) followed by
+ * each *other* sub-comfortable pinch point (`primary: false`), so a layout with
+ * several tight or blocked aisles surfaces all of them — not just the worst.
+ * Returns an empty array when there is nothing to draw (fewer than two tables).
+ *
+ * `problemGaps[0]` coincides with the tightest pair, so the secondaries are
+ * exactly `problemGaps.slice(1)`. When the tightest aisle is itself comfortable
+ * or generous there are no problem pairs, and only the primary is returned.
+ */
+export function circulationOverlaySegments(
+  report: CirculationReport,
+  renderScale: number = RENDER_SCALE,
+  floorY: number = CIRCULATION_OVERLAY_Y,
+): CirculationOverlaySegment[] {
+  const primary = circulationOverlaySegment(report, renderScale, floorY);
+  if (primary === null) return [];
+  const segments = [primary];
+  for (const gap of report.problemGaps.slice(1)) {
+    segments.push(gapToOverlaySegment(gap, false, renderScale, floorY));
+  }
+  return segments;
 }

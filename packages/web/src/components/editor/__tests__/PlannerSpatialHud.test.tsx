@@ -146,4 +146,23 @@ describe("PlannerSpatialHud", () => {
       ),
     ).toBeDefined();
   });
+
+  it("flags the count of pinch points when several aisles fall below comfortable", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    expect(roundTable).toBeDefined();
+    if (roundTable === undefined) return;
+
+    // Three tables packed in a tight row → more than one sub-comfortable aisle.
+    usePlacementStore.setState({
+      placedItems: [
+        createPlacedItem(roundTable.id, 0, 0, 0),
+        createPlacedItem(roundTable.id, 2, 0, 0),
+        createPlacedItem(roundTable.id, 4, 0, 0),
+      ],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    expect(screen.getByText(/\d+ aisles below comfortable/)).toBeDefined();
+  });
 });

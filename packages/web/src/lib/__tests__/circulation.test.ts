@@ -9,6 +9,8 @@ import {
   convexPolygonClosestPoints,
   computeCirculation,
   circulationBandLabel,
+  bandForGap,
+  CIRCULATION_AISLE,
   type FurnitureFootprint,
   type CirculationBand,
 } from "../circulation.js";
@@ -192,6 +194,50 @@ describe("computeCirculation", () => {
     expect(r.tightestGapM).toBeCloseTo(0.7, 6);
     expect(r.band).toBe("tight");
     expect(new Set([r.tightestPair?.aId, r.tightestPair?.bId])).toEqual(new Set(["b", "c"]));
+  });
+});
+
+describe("computeCirculation problemGaps", () => {
+  it("is empty when every aisle clears the comfortable width", () => {
+    const r = computeCirculation([box("a", 0, 0), box("b", 2.5, 0)]); // gap 1.5
+    expect(r.problemGaps).toHaveLength(0);
+  });
+
+  it("collects every sub-comfortable pair, sorted tightest-first", () => {
+    // a—b gap 0.6 (tight), b—c gap 0.4-overlap→0 (blocked), a—c far (clear).
+    const r = computeCirculation([
+      box("a", 0, 0),
+      box("b", 1.6, 0), // gap to a = 0.6 (tight)
+      box("c", 2.0, 0), // gap to b = 0 (overlap → blocked); gap to a = 1.0 (clear)
+    ]);
+    expect(r.problemGaps).toHaveLength(2);
+    // Sorted tightest-first: the blocked 0 gap leads, then the 0.6 tight gap.
+    expect(r.problemGaps[0]?.gapM).toBeCloseTo(0, 6);
+    expect(r.problemGaps[1]?.gapM).toBeCloseTo(0.6, 6);
+    // problemGaps[0] coincides with the headline tightest pair.
+    expect(r.problemGaps[0]?.gapM).toBe(r.tightestGapM);
+    expect(new Set([r.problemGaps[0]?.aId, r.problemGaps[0]?.bId])).toEqual(new Set(["b", "c"]));
+  });
+
+  it("counts match the problem list (tightCount + blockedCount === problemGaps.length)", () => {
+    const r = computeCirculation([box("a", 0, 0), box("b", 1.6, 0), box("c", 2.0, 0)]);
+    expect(r.tightCount + r.blockedCount).toBe(r.problemGaps.length);
+  });
+});
+
+describe("bandForGap", () => {
+  it("maps a single gap to the right band", () => {
+    expect(bandForGap(null)).toBe("open");
+    expect(bandForGap(1.5)).toBe("generous");
+    expect(bandForGap(1.0)).toBe("comfortable");
+    expect(bandForGap(0.6)).toBe("tight");
+    expect(bandForGap(0.2)).toBe("blocked");
+    expect(bandForGap(0)).toBe("blocked");
+  });
+  it("treats the band thresholds as inclusive lower bounds", () => {
+    expect(bandForGap(CIRCULATION_AISLE.comfortableM)).toBe("generous");
+    expect(bandForGap(CIRCULATION_AISLE.tightM)).toBe("comfortable");
+    expect(bandForGap(CIRCULATION_AISLE.blockedM)).toBe("tight");
   });
 });
 

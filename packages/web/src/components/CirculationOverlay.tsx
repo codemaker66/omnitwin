@@ -5,30 +5,32 @@ import { usePlacementStore } from "../stores/placement-store.js";
 import { circulationBandLabel } from "../lib/circulation.js";
 import {
   placedItemsCirculation,
-  circulationOverlaySegment,
+  circulationOverlaySegments,
   type CirculationOverlaySegment,
 } from "../lib/circulation-scene.js";
 
 // ---------------------------------------------------------------------------
-// CirculationOverlay — draws the tightest table aisle in the 3D scene.
+// CirculationOverlay — draws the table aisles in the 3D scene.
 //
 // The planner HUD reports a number ("Tightest table aisle 0.7 m"); this turns
-// that number into something you can see — a dashed measurement line laid in
-// the actual gap between the two closest tables, anchored at the exact closest
-// points (computed by the convex-polygon geometry engine), with a band-coloured
-// distance pill at the midpoint. One annotation only — the single tightest
-// pair — so it informs without cluttering the scene.
+// it into something you can see — a dashed measurement line laid in the actual
+// gap between two tables, anchored at the exact closest points (from the
+// convex-polygon geometry engine), with a band-coloured distance pill at the
+// midpoint.
+//
+// It surfaces EVERY pinch point, not just the worst: the tightest aisle is the
+// prominent "primary" annotation, and every other sub-comfortable (tight or
+// blocked) aisle is drawn subtly so a layout with several problems shows all of
+// them. Comfortable/generous layouts show just the single headline measurement.
 //
 // SAFE LANGUAGE: a PLANNING-GRADE circulation estimate, never a legal egress
 // route or fire-code width. The label text comes from circulationBandLabel.
 // ---------------------------------------------------------------------------
 
-const badgePill: React.CSSProperties = {
+const basePill: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
-  padding: "3px 9px",
-  fontSize: 11,
   fontWeight: 700,
   fontFamily: "system-ui, -apple-system, sans-serif",
   lineHeight: 1.2,
@@ -63,64 +65,76 @@ function lineGeometry(seg: CirculationOverlaySegment): BufferGeometry {
 function EndDot({
   position,
   color,
+  radius,
 }: {
   readonly position: readonly [number, number, number];
   readonly color: string;
+  readonly radius: number;
 }): React.ReactElement {
   return (
     <mesh position={[position[0], position[1], position[2]]} renderOrder={4}>
-      <sphereGeometry args={[0.14, 16, 16]} />
+      <sphereGeometry args={[radius, 16, 16]} />
       <meshBasicMaterial color={color} depthTest={false} transparent opacity={0.95} />
     </mesh>
   );
 }
 
-export function CirculationOverlay(): React.ReactElement | null {
-  const placedItems = usePlacementStore((s) => s.placedItems);
+/** One aisle annotation. Primary (tightest) is prominent; secondaries are subtle. */
+function CirculationSegment({ segment }: { readonly segment: CirculationOverlaySegment }): React.ReactElement {
+  const { primary } = segment;
 
-  const segment = useMemo(
-    () => circulationOverlaySegment(placedItemsCirculation(placedItems)),
-    [placedItems],
-  );
-
-  const geometry = useMemo(() => (segment === null ? null : lineGeometry(segment)), [segment]);
+  const geometry = useMemo(() => lineGeometry(segment), [segment]);
   const material = useMemo(
     () =>
-      segment === null
-        ? null
-        : new LineDashedMaterial({
-            color: segment.color,
-            dashSize: 0.35,
-            gapSize: 0.22,
-            depthTest: false,
-            transparent: true,
-            opacity: 0.95,
-          }),
-    [segment],
+      new LineDashedMaterial({
+        color: segment.color,
+        dashSize: primary ? 0.35 : 0.22,
+        gapSize: primary ? 0.22 : 0.18,
+        depthTest: false,
+        transparent: true,
+        opacity: primary ? 0.95 : 0.5,
+      }),
+    [segment, primary],
   );
 
   // Release GPU resources when the segment changes or the overlay unmounts.
-  useEffect(() => () => geometry?.dispose(), [geometry]);
-  useEffect(() => () => material?.dispose(), [material]);
-
-  if (segment === null || geometry === null || material === null) return null;
+  useEffect(() => {
+    return () => { geometry.dispose(); };
+  }, [geometry]);
+  useEffect(() => {
+    return () => { material.dispose(); };
+  }, [material]);
 
   const gapText = `${segment.gapM.toFixed(1)} m`;
-  const ariaLabel = `Tightest table aisle ${gapText}. ${circulationBandLabel(segment.band)}`;
+  const bandLabel = circulationBandLabel(segment.band);
+  const ariaLabel = primary
+    ? `Tightest table aisle ${gapText}. ${bandLabel}`
+    : `Secondary table aisle ${gapText}. ${bandLabel}`;
+  const dotRadius = primary ? 0.14 : 0.1;
+  const dotSize = primary ? 8 : 6;
 
   return (
-    <group name="circulation-overlay" renderOrder={3}>
+    <group renderOrder={3}>
       <lineSegments geometry={geometry} material={material} renderOrder={3} />
-      <EndDot position={segment.from} color={segment.color} />
-      <EndDot position={segment.to} color={segment.color} />
-      <group position={[segment.mid[0], segment.mid[1] + 0.45, segment.mid[2]]}>
+      <EndDot position={segment.from} color={segment.color} radius={dotRadius} />
+      <EndDot position={segment.to} color={segment.color} radius={dotRadius} />
+      <group position={[segment.mid[0], segment.mid[1] + (primary ? 0.45 : 0.32), segment.mid[2]]}>
         <Html center>
-          <div style={badgePill} title={circulationBandLabel(segment.band)} aria-label={ariaLabel}>
+          <div
+            style={{
+              ...basePill,
+              fontSize: primary ? 11 : 10,
+              padding: primary ? "3px 9px" : "2px 7px",
+              opacity: primary ? 1 : 0.82,
+            }}
+            title={bandLabel}
+            aria-label={ariaLabel}
+          >
             <span
               aria-hidden="true"
               style={{
-                width: 8,
-                height: 8,
+                width: dotSize,
+                height: dotSize,
                 borderRadius: "50%",
                 background: segment.color,
                 flexShrink: 0,
@@ -130,6 +144,28 @@ export function CirculationOverlay(): React.ReactElement | null {
           </div>
         </Html>
       </group>
+    </group>
+  );
+}
+
+export function CirculationOverlay(): React.ReactElement | null {
+  const placedItems = usePlacementStore((s) => s.placedItems);
+
+  const segments = useMemo(
+    () => circulationOverlaySegments(placedItemsCirculation(placedItems)),
+    [placedItems],
+  );
+
+  if (segments.length === 0) return null;
+
+  return (
+    <group name="circulation-overlay" renderOrder={3}>
+      {segments.map((seg) => (
+        <CirculationSegment
+          key={`${String(seg.from[0])},${String(seg.from[2])}-${String(seg.to[0])},${String(seg.to[2])}`}
+          segment={seg}
+        />
+      ))}
     </group>
   );
 }

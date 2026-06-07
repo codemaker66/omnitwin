@@ -68,6 +68,13 @@ export interface CirculationReport {
   readonly tightestGapM: number | null;
   /** The pair that produced `tightestGapM`, or null with fewer than 2. */
   readonly tightestPair: CirculationGap | null;
+  /**
+   * Every pair whose gap falls below the comfortable single-file width
+   * (`tightM`) — i.e. the tight and blocked aisles — sorted tightest-first.
+   * `tightestPair` is the first entry when this list is non-empty. The whole
+   * list is what lets the planner see *every* pinch point, not just the worst.
+   */
+  readonly problemGaps: readonly CirculationGap[];
   /** Gaps in [blockedM, tightM) — passable but below comfortable. */
   readonly tightCount: number;
   /** Gaps below blockedM (including overlaps at 0). */
@@ -225,11 +232,12 @@ export function convexPolygonDistance(a: readonly Vec2[], b: readonly Vec2[]): n
 // Circulation report
 // ---------------------------------------------------------------------------
 
-function bandForGap(tightestGapM: number | null): CirculationBand {
-  if (tightestGapM === null) return "open";
-  if (tightestGapM >= CIRCULATION_AISLE.comfortableM) return "generous";
-  if (tightestGapM >= CIRCULATION_AISLE.tightM) return "comfortable";
-  if (tightestGapM >= CIRCULATION_AISLE.blockedM) return "tight";
+/** Classify a single clear gap (metres) into a circulation band. null → open. */
+export function bandForGap(gapM: number | null): CirculationBand {
+  if (gapM === null) return "open";
+  if (gapM >= CIRCULATION_AISLE.comfortableM) return "generous";
+  if (gapM >= CIRCULATION_AISLE.tightM) return "comfortable";
+  if (gapM >= CIRCULATION_AISLE.blockedM) return "tight";
   return "blocked";
 }
 
@@ -243,6 +251,7 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
       pairCount: 0,
       tightestGapM: null,
       tightestPair: null,
+      problemGaps: [],
       tightCount: 0,
       blockedCount: 0,
       band: "open",
@@ -252,6 +261,7 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
   const corners = footprints.map(footprintCorners);
   let tightestGapM = Infinity;
   let tightestPair: CirculationGap | null = null;
+  const problemGaps: CirculationGap[] = [];
   let tightCount = 0;
   let blockedCount = 0;
   let pairCount = 0;
@@ -270,26 +280,37 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
       if (gapM < CIRCULATION_AISLE.blockedM) blockedCount += 1;
       else if (gapM < CIRCULATION_AISLE.tightM) tightCount += 1;
 
+      const gap: CirculationGap = {
+        aId: a.id,
+        bId: b.id,
+        aLabel: a.label,
+        bLabel: b.label,
+        gapM,
+        pointA: closest.pointA,
+        pointB: closest.pointB,
+      };
+
+      // Every aisle below the comfortable single-file width is a pinch point.
+      if (gapM < CIRCULATION_AISLE.tightM) problemGaps.push(gap);
+
       if (gapM < tightestGapM) {
         tightestGapM = gapM;
-        tightestPair = {
-          aId: a.id,
-          bId: b.id,
-          aLabel: a.label,
-          bLabel: b.label,
-          gapM,
-          pointA: closest.pointA,
-          pointB: closest.pointB,
-        };
+        tightestPair = gap;
       }
     }
   }
+
+  // Tightest-first so problemGaps[0] is the headline pinch point and the rest
+  // are the secondary ones the overlay marks subtly. Stable sort keeps ties in
+  // discovery order, so problemGaps[0] coincides with tightestPair.
+  problemGaps.sort((p, q) => p.gapM - q.gapM);
 
   const tightest = tightestPair === null ? null : tightestGapM;
   return {
     pairCount,
     tightestGapM: tightest,
     tightestPair,
+    problemGaps,
     tightCount,
     blockedCount,
     band: bandForGap(tightest),

@@ -136,6 +136,11 @@ export function PlannerSpatialHud(): React.ReactElement {
             Tightest table aisle {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
           </div>
         )}
+        {circulation.problemGaps.length > 1 && (
+          <div className="planner-spatial-hud__subcaption" style={{ color: "#d98324" }}>
+            {circulation.problemGaps.length} aisles below comfortable — flagged in the scene
+          </div>
+        )}
         <div className="planner-spatial-hud__subcaption">
           {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
         </div>

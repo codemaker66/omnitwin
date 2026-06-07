@@ -2,14 +2,19 @@ import { describe, it, expect } from "vitest";
 import { getCatalogueItemBySlug } from "../catalogue.js";
 import { createPlacedItem } from "../placement.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
-import type { CirculationReport } from "../circulation.js";
+import { computeCirculation, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
 import {
   placedTableFootprints,
   placedItemsCirculation,
   circulationBandColor,
   circulationOverlaySegment,
+  circulationOverlaySegments,
   CIRCULATION_OVERLAY_Y,
 } from "../circulation-scene.js";
+
+function box(id: string, cx: number, cz: number, width = 1, depth = 1): FurnitureFootprint {
+  return { id, label: id, cx, cz, width, depth, rotation: 0 };
+}
 
 const roundTable = getCatalogueItemBySlug("round-table-6ft");
 const chair = getCatalogueItemBySlug("banquet-chair");
@@ -76,6 +81,7 @@ describe("circulationOverlaySegment", () => {
       pairCount: 1,
       tightestGapM: gapM,
       tightestPair: { aId: "a", bId: "b", aLabel: "A", bLabel: "B", gapM, pointA, pointB },
+      problemGaps: [],
       tightCount: band === "tight" ? 1 : 0,
       blockedCount: band === "blocked" ? 1 : 0,
       band,
@@ -87,6 +93,7 @@ describe("circulationOverlaySegment", () => {
       pairCount: 0,
       tightestGapM: null,
       tightestPair: null,
+      problemGaps: [],
       tightCount: 0,
       blockedCount: 0,
       band: "open",
@@ -121,5 +128,43 @@ describe("circulationOverlaySegment", () => {
     const seg = circulationOverlaySegment(reportWith("generous", { x: 1, z: 1 }, { x: 2, z: 1 }, 1.5));
     expect(seg?.from[0]).toBeCloseTo(1 * RENDER_SCALE, 6);
     expect(seg?.to[0]).toBeCloseTo(2 * RENDER_SCALE, 6);
+  });
+});
+
+describe("circulationOverlaySegments", () => {
+  it("draws nothing with fewer than two tables", () => {
+    expect(circulationOverlaySegments(computeCirculation([box("a", 0, 0)]))).toEqual([]);
+  });
+
+  it("draws only the primary when the tightest aisle is already comfortable", () => {
+    const segs = circulationOverlaySegments(computeCirculation([box("a", 0, 0), box("b", 2, 0)])); // gap 1.0
+    expect(segs).toHaveLength(1);
+    expect(segs[0]?.primary).toBe(true);
+    expect(segs[0]?.band).toBe("comfortable");
+  });
+
+  it("surfaces every sub-comfortable aisle: one primary, the rest secondary", () => {
+    // a—b gap 0.6 (tight); b—c overlap → 0 (blocked); a—c gap 1.0 (comfortable, not a problem).
+    const segs = circulationOverlaySegments(
+      computeCirculation([box("a", 0, 0), box("b", 1.6, 0), box("c", 2.0, 0)]),
+    );
+    expect(segs).toHaveLength(2);
+    // Exactly one primary, tightest-first.
+    expect(segs.filter((s) => s.primary)).toHaveLength(1);
+    expect(segs[0]?.primary).toBe(true);
+    expect(segs[0]?.band).toBe("blocked"); // the 0 gap leads
+    expect(segs[1]?.primary).toBe(false);
+    expect(segs[1]?.band).toBe("tight"); // the 0.6 gap follows
+    expect(segs[0]?.gapM).toBeLessThanOrEqual(segs[1]?.gapM ?? Infinity);
+  });
+
+  it("bands each secondary by its own gap, not the headline band", () => {
+    const segs = circulationOverlaySegments(
+      computeCirculation([box("a", 0, 0), box("b", 1.6, 0), box("c", 2.0, 0)]),
+    );
+    // The secondary is tight even though the primary is blocked.
+    const secondary = segs.find((s) => !s.primary);
+    expect(secondary?.band).toBe("tight");
+    expect(secondary?.color).toBe(circulationBandColor("tight"));
   });
 });
