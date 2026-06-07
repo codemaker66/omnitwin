@@ -441,6 +441,28 @@ export {
   type AssumptionReviewRequirement,
 } from "./assumption-ledger.js";
 
+// --- ASPIRATIONAL: Review Gate metadata vocabulary ---
+export {
+  REVIEW_GATE_REASONS,
+  REVIEW_GATE_REVIEWER_ROLES,
+  REVIEW_GATE_REQUIRED_DATA_CATEGORIES,
+  REVIEW_GATE_BLOCKING_MODES,
+  REVIEW_GATE_LIFECYCLE_STATUSES,
+  REVIEW_GATE_MESSAGE_KEY_FAMILIES,
+  ReviewGateReasonSchema,
+  ReviewGateReviewerRoleSchema,
+  ReviewGateRequiredDataCategorySchema,
+  ReviewGateBlockingModeSchema,
+  ReviewGateLifecycleStatusSchema,
+  ReviewGateMessageKeyFamilySchema,
+  type ReviewGateReason,
+  type ReviewGateReviewerRole,
+  type ReviewGateRequiredDataCategory,
+  type ReviewGateBlockingMode,
+  type ReviewGateLifecycleStatus,
+  type ReviewGateMessageKeyFamily,
+} from "./review-gate.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
