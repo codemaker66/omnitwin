@@ -406,6 +406,22 @@ export {
   type ClaimLifecycleSourceCategory,
 } from "./claim-lifecycle.js";
 
+// --- ASPIRATIONAL: Purpose-Fit Evidence metadata vocabulary ---
+export {
+  PURPOSE_FIT_CATEGORIES,
+  PURPOSE_FIT_STATUSES,
+  PURPOSE_EVIDENCE_REQUIREMENT_REFS,
+  PURPOSE_CONFIDENCE_LABELS,
+  PurposeFitCategorySchema,
+  PurposeFitStatusSchema,
+  PurposeEvidenceRequirementRefSchema,
+  PurposeConfidenceLabelSchema,
+  type PurposeFitCategory,
+  type PurposeFitStatus,
+  type PurposeEvidenceRequirementRef,
+  type PurposeConfidenceLabel,
+} from "./purpose-fit.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
