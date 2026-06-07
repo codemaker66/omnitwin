@@ -7,7 +7,9 @@ import {
   VENREPLAY_FILE_ROLES,
   VENREPLAY_GEOJSON_FEATURE_REQUIREMENTS,
   VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION,
+  VENREPLAY_MANIFEST_FILE_PATH,
   VENREPLAY_OPTIONAL_FILE_PATHS,
+  VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS,
   VENREPLAY_REQUIRED_FILE_PATHS,
   VENREPLAY_WITNESS_COMPATIBILITY_REQUIREMENTS,
   VenreplayFileHashSchema,
@@ -15,7 +17,6 @@ import {
   venreplayLogicalArtifactDigest,
   venreplayLogicalDigestJson,
   venreplayLogicalDigestMaterial,
-  venreplayOrderedPayloadFileHashes,
   type VenreplayFileHash,
   type VenreplayManifestV0,
 } from "../venreplay-artifact.js";
@@ -133,13 +134,6 @@ const REPLAY_READY_INSTANCE: ScenarioInstanceV0 = {
 };
 
 const FILE_HASHES: readonly VenreplayFileHash[] = [
-  {
-    path: "manifest.json",
-    role: "manifest",
-    sha256: HASH_A,
-    byteSize: 512,
-    required: true,
-  },
   {
     path: "geometry.geojson",
     role: "geometry",
@@ -304,6 +298,16 @@ describe("Venreplay artifact schema", () => {
       "bottlenecks.geojson",
       "witness.json",
     ]);
+    expect(VENREPLAY_MANIFEST_FILE_PATH).toBe("manifest.json");
+    expect(VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS).toEqual([
+      "geometry.geojson",
+      "scenario.json",
+      "agents.csv",
+      "trajectory.csv",
+      "metrics.json",
+      "bottlenecks.geojson",
+      "witness.json",
+    ]);
 
     expect(VENREPLAY_OPTIONAL_FILE_PATHS).toEqual(["scene.glb"]);
     expect(VENREPLAY_FILE_ROLES).toEqual([
@@ -344,9 +348,6 @@ describe("Venreplay artifact schema", () => {
       "trajectory.csv",
       "witness.json",
     ]);
-    expect(material.orderedPayloadFileHashes.some(
-      (fileHash) => fileHash.path === "manifest.json",
-    )).toBe(false);
     expect(venreplayLogicalDigestJson(VALID_MANIFEST)).toContain(
       "\"digestPolicyVersion\":\"venviewer.venreplay.logical-digest.v0\"",
     );
@@ -388,7 +389,7 @@ describe("Venreplay artifact schema", () => {
     );
   });
 
-  it("ignores zip container metadata and raw manifest serialization hash changes", () => {
+  it("ignores zip container metadata and excludes manifest self-hash from fileHashes", () => {
     const containerA = {
       manifest: VALID_MANIFEST,
       zipMetadata: {
@@ -399,17 +400,7 @@ describe("Venreplay artifact schema", () => {
       },
     } as const;
     const containerB = {
-      manifest: {
-        ...VALID_MANIFEST,
-        fileHashes: VALID_MANIFEST.fileHashes.map((fileHash) =>
-          fileHash.path === "manifest.json"
-            ? {
-                ...fileHash,
-                sha256: HASH_4,
-              }
-            : fileHash,
-        ),
-      },
+      manifest: VALID_MANIFEST,
       zipMetadata: {
         compression: "store",
         entryOrder: ["trajectory.csv", "geometry.geojson", "manifest.json"],
@@ -419,9 +410,13 @@ describe("Venreplay artifact schema", () => {
     } as const;
 
     expect(containerA.zipMetadata).not.toEqual(containerB.zipMetadata);
-    expect(venreplayOrderedPayloadFileHashes(containerB.manifest).some(
-      (fileHash) => fileHash.path === "manifest.json",
-    )).toBe(false);
+    expect(VenreplayFileHashSchema.safeParse({
+      path: "manifest.json",
+      role: "manifest",
+      sha256: HASH_A,
+      byteSize: 128,
+      required: true,
+    }).success).toBe(false);
     expect(venreplayLogicalArtifactDigest(containerA.manifest)).toBe(
       venreplayLogicalArtifactDigest(containerB.manifest),
     );
@@ -465,7 +460,7 @@ describe("Venreplay artifact schema", () => {
       fileHashes: [
         ...VALID_MANIFEST.fileHashes,
         {
-          ...requireFileHash("manifest.json"),
+          ...requireFileHash("geometry.geojson"),
           sha256: HASH_3,
         },
       ],

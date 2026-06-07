@@ -763,9 +763,12 @@ export {
   VENREPLAY_ARTIFACT_SCHEMA_VERSION,
   VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION,
   VENREPLAY_LOGICAL_DIGEST_DOMAIN_PREFIX,
+  VENREPLAY_MANIFEST_FILE_PATH,
   VENREPLAY_REQUIRED_FILE_PATHS,
   VENREPLAY_OPTIONAL_FILE_PATHS,
   VENREPLAY_FILE_PATHS,
+  VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS,
+  VENREPLAY_PAYLOAD_FILE_PATHS,
   VENREPLAY_FILE_ROLES,
   VENREPLAY_EXPOSURE_TIERS,
   VENREPLAY_CSV_CONTRACTS,
@@ -778,6 +781,8 @@ export {
   VenreplayRequiredFilePathSchema,
   VenreplayOptionalFilePathSchema,
   VenreplayFilePathSchema,
+  VenreplayRequiredPayloadFilePathSchema,
+  VenreplayPayloadFilePathSchema,
   VenreplayFileRoleSchema,
   VenreplayExposureTierSchema,
   VenreplayCsvContractSchema,
@@ -803,6 +808,8 @@ export {
   type VenreplayRequiredFilePath,
   type VenreplayOptionalFilePath,
   type VenreplayFilePath,
+  type VenreplayRequiredPayloadFilePath,
+  type VenreplayPayloadFilePath,
   type VenreplayFileRole,
   type VenreplayExposureTier,
   type VenreplayCsvContract,
@@ -819,6 +826,28 @@ export {
   type VenreplayLogicalDigestMaterialV0,
   type VenreplayManifestV0,
 } from "./venreplay-artifact.js";
+
+// --- ASPIRATIONAL: Venviewer Replay Artifact in-memory validator ---
+export {
+  VENREPLAY_WITNESS_SCHEMA_VERSION,
+  VENREPLAY_STRUCTURED_TEXT_FILE_PATHS,
+  VENREPLAY_STRUCTURED_JSON_FILE_PATHS,
+  VENREPLAY_VALIDATION_ISSUE_CODES,
+  VenreplayStructuredTextFilePathSchema,
+  VenreplayStructuredJsonFilePathSchema,
+  VenreplayValidationIssueCodeSchema,
+  VenreplayWitnessV0Schema,
+  validateVenreplayArtifact,
+  type VenreplayStructuredTextFilePath,
+  type VenreplayStructuredJsonFilePath,
+  type VenreplayValidationIssueCode,
+  type VenreplayWitnessV0,
+  type VenreplayArtifactFileContent,
+  type VenreplayArtifactFile,
+  type VenreplayValidationIssue,
+  type VenreplayFileIntegrityResult,
+  type VenreplayArtifactValidationResult,
+} from "./venreplay-validator.js";
 
 // --- ASPIRATIONAL: Residual Radiance Layer metadata for research planning ---
 export {

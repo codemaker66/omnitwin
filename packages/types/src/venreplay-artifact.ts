@@ -25,6 +25,7 @@ export const VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION =
   "venviewer.venreplay.logical-digest.v0";
 export const VENREPLAY_LOGICAL_DIGEST_DOMAIN_PREFIX =
   `${VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION}\n`;
+export const VENREPLAY_MANIFEST_FILE_PATH = "manifest.json";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const SLUG_TOKEN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
@@ -32,7 +33,7 @@ const SEMVERISH = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const CSV_COLUMN_TOKEN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
 export const VENREPLAY_REQUIRED_FILE_PATHS = [
-  "manifest.json",
+  VENREPLAY_MANIFEST_FILE_PATH,
   "geometry.geojson",
   "scenario.json",
   "agents.csv",
@@ -54,6 +55,29 @@ export const VENREPLAY_FILE_PATHS = [
 ] as const;
 export const VenreplayFilePathSchema = z.enum(VENREPLAY_FILE_PATHS);
 export type VenreplayFilePath = z.infer<typeof VenreplayFilePathSchema>;
+
+export const VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS = [
+  "geometry.geojson",
+  "scenario.json",
+  "agents.csv",
+  "trajectory.csv",
+  "metrics.json",
+  "bottlenecks.geojson",
+  "witness.json",
+] as const;
+export const VenreplayRequiredPayloadFilePathSchema = z.enum(
+  VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS,
+);
+export type VenreplayRequiredPayloadFilePath = z.infer<
+  typeof VenreplayRequiredPayloadFilePathSchema
+>;
+
+export const VENREPLAY_PAYLOAD_FILE_PATHS = [
+  ...VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS,
+  ...VENREPLAY_OPTIONAL_FILE_PATHS,
+] as const;
+export const VenreplayPayloadFilePathSchema = z.enum(VENREPLAY_PAYLOAD_FILE_PATHS);
+export type VenreplayPayloadFilePath = z.infer<typeof VenreplayPayloadFilePathSchema>;
 
 export const VENREPLAY_FILE_ROLES = [
   "manifest",
@@ -164,12 +188,12 @@ const VENREPLAY_FILE_ROLE_BY_PATH = {
   "scene.glb": "display_scene",
 } as const satisfies Record<VenreplayFilePath, VenreplayFileRole>;
 
-const REQUIRED_FILE_PATH_SET: ReadonlySet<VenreplayFilePath> = new Set(
-  VENREPLAY_REQUIRED_FILE_PATHS,
+const REQUIRED_PAYLOAD_FILE_PATH_SET: ReadonlySet<VenreplayPayloadFilePath> = new Set(
+  VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS,
 );
 
 export const VenreplayFileHashSchema = z.object({
-  path: VenreplayFilePathSchema,
+  path: VenreplayPayloadFilePathSchema,
   role: VenreplayFileRoleSchema,
   sha256: z.string().regex(SHA256_HEX),
   byteSize: z.number().int().positive(),
@@ -177,10 +201,7 @@ export const VenreplayFileHashSchema = z.object({
 }).strict();
 export type VenreplayFileHash = z.infer<typeof VenreplayFileHashSchema>;
 
-export const VenreplayPayloadFileHashSchema = VenreplayFileHashSchema.refine(
-  (fileHash) => fileHash.path !== "manifest.json",
-  "Logical digest payload file hashes exclude manifest.json.",
-);
+export const VenreplayPayloadFileHashSchema = VenreplayFileHashSchema;
 export type VenreplayPayloadFileHash = z.infer<typeof VenreplayPayloadFileHashSchema>;
 
 export const VenreplayMetricsShapeSchema = z.object({
@@ -229,7 +250,7 @@ export const VenreplayManifestV0BaseSchema = z.object({
   generatedAt: z.string().datetime(),
   assumptions: z.array(ScenarioInstanceAssumptionRefSchema).min(1),
   limitations: z.array(z.string().trim().min(1).max(1000)).min(1),
-  fileHashes: z.array(VenreplayFileHashSchema).min(VENREPLAY_REQUIRED_FILE_PATHS.length),
+  fileHashes: z.array(VenreplayFileHashSchema).min(VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS.length),
   csvColumnContracts: z.array(VenreplayCsvColumnContractSchema).min(2),
   geojsonFeatureContracts: z.array(VenreplayGeojsonFeatureContractSchema).min(2),
   metricsShape: z.array(VenreplayMetricsShapeSchema).min(1),
@@ -249,14 +270,14 @@ export const VenreplayLogicalDigestMaterialV0Schema = z.object({
   manifest: VenreplayManifestDigestIdentitySchema,
   orderedPayloadFileHashes: z
     .array(VenreplayPayloadFileHashSchema)
-    .min(VENREPLAY_REQUIRED_FILE_PATHS.length - 1),
+    .min(VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS.length),
 }).strict();
 export type VenreplayLogicalDigestMaterialV0 = z.infer<
   typeof VenreplayLogicalDigestMaterialV0Schema
 >;
 
 export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefine((manifest, ctx) => {
-  const filePaths = new Set<VenreplayFilePath>();
+  const filePaths = new Set<VenreplayPayloadFilePath>();
 
   for (const fileHash of manifest.fileHashes) {
     if (filePaths.has(fileHash.path)) {
@@ -278,7 +299,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
       });
     }
 
-    const expectedRequired = REQUIRED_FILE_PATH_SET.has(fileHash.path);
+    const expectedRequired = REQUIRED_PAYLOAD_FILE_PATH_SET.has(fileHash.path);
     if (fileHash.required !== expectedRequired) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -288,7 +309,7 @@ export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefi
     }
   }
 
-  for (const path of VENREPLAY_REQUIRED_FILE_PATHS) {
+  for (const path of VENREPLAY_REQUIRED_PAYLOAD_FILE_PATHS) {
     if (!filePaths.has(path)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -454,7 +475,6 @@ export function venreplayOrderedPayloadFileHashes(
 ): VenreplayPayloadFileHash[] {
   const parsed = VenreplayManifestV0Schema.parse(manifest);
   return parsed.fileHashes
-    .filter((fileHash) => fileHash.path !== "manifest.json")
     .sort(compareFileHashes);
 }
 

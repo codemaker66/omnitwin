@@ -62,7 +62,7 @@ The zip should not contain public marketing copy. Human-readable summaries can b
 - `limitations`
 - `fileHashes`
 
-`assumptions` may inline a compact assumption summary or reference Assumption Ledger IDs. `fileHashes` must cover every required and optional file included in the artifact.
+`assumptions` may inline a compact assumption summary or reference Assumption Ledger IDs. `fileHashes` must cover every required and optional payload file included in the artifact, excluding `manifest.json` itself. Validators should compute and report the raw `manifest.json` hash separately after extraction; embedding that hash inside `manifest.json.fileHashes` would make the manifest self-referential.
 
 ## File Roles
 
@@ -94,7 +94,8 @@ Versioning rules:
 
 V0 hash policy:
 
-- Each file in the zip must be individually hashed and listed in `manifest.json.fileHashes`.
+- Each payload file in the zip must be individually hashed and listed in `manifest.json.fileHashes`.
+- `manifest.json` is a required archive file but must not be listed in its own `fileHashes`; validators compute its raw hash separately.
 - The artifact digest should be computed over a deterministic manifest plus the ordered file hash list, not over zip container metadata.
 - Zip timestamps, compression level, file order, and platform metadata must not affect the logical artifact digest.
 - Layout snapshot hash, runtime package hash, policy bundle digest, scenario template version, scenario instance ID, simulator version, seed, and assumptions must be part of the logical replay identity.
@@ -106,8 +107,8 @@ T-244 implementation rule:
 - Build logical digest material with `digestPolicyVersion = venviewer.venreplay.logical-digest.v0`.
 - The `manifest` section of the digest material is every parsed manifest field except `fileHashes`.
 - Normalize semantically unordered manifest arrays before serialization: assumptions, scenario-instance assumptions, scenario-instance artifact refs, metrics summaries, staleness triggers, CSV contracts and columns, GeoJSON contracts and requirements, metrics shape, witness compatibility, and seed sets.
-- Add `orderedPayloadFileHashes`, sorted by path, from `fileHashes` excluding `manifest.json`.
-- `manifest.json`'s raw file hash remains stored and should be verified by validators, but it is excluded from the logical digest because the deterministic manifest identity is already part of the digest material.
+- Add `orderedPayloadFileHashes`, sorted by path, from payload `fileHashes`.
+- `manifest.json`'s raw file hash is reported by validators outside the manifest object and is excluded from the logical digest because the deterministic manifest identity is already part of the digest material.
 - Serialize digest material with `stableCanonicalJson`.
 - Compute `sha256Hex("venviewer.venreplay.logical-digest.v0\n" + stableCanonicalJson(material))`.
 - Do not feed zip entry timestamps, compression method, central-directory order, platform attributes, or raw zip bytes into the logical digest.
@@ -124,6 +125,7 @@ A `.venreplay.zip` is replayable when:
 - `metrics.json` can be traced to trajectory or simulator outputs.
 - `witness.json` cites the scenario instance, layout snapshot hash, runtime package hash, assumptions, simulator version, and seed/seed set.
 - Limitations are present and explicit.
+- Portable structured files do not contain unsupported public-claim wording.
 
 Replayability means the artifact can be inspected and replayed; it does not mean the simulation is certified or universally valid.
 
