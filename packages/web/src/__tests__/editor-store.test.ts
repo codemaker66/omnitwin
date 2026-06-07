@@ -347,17 +347,27 @@ describe("saveToServer", () => {
   });
 
   it("returns false and keeps dirty state when the save request fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* expected save failure */ });
     configMock.publicBatchSave.mockRejectedValue(new Error("Network failed"));
 
     useEditorStore.setState({ configId: "cfg-1", isDirty: true, isPublicPreview: true });
     useEditorStore.getState().addObject("a1", 0, 0, 0);
 
-    const saved = await useEditorStore.getState().saveToServer(false);
+    try {
+      const saved = await useEditorStore.getState().saveToServer(false);
 
-    expect(saved).toBe(false);
-    expect(useEditorStore.getState().isDirty).toBe(true);
-    expect(useEditorStore.getState().saveError).toBe("Network failed");
-    expect(useEditorStore.getState().lastSavedAt).toBeNull();
+      expect(saved).toBe(false);
+      expect(useEditorStore.getState().isDirty).toBe(true);
+      expect(useEditorStore.getState().saveError).toBe("Network failed");
+      expect(useEditorStore.getState().lastSavedAt).toBeNull();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[editor-store] save failed:",
+        "Network failed",
+        expect.objectContaining({ objects: expect.any(Array) }),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("clears the anonymous draft after a successful public save", async () => {
