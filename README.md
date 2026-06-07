@@ -8,7 +8,7 @@ tables, chairs, and staging into a to-scale 2D/3D model of the room, then
 export a hallkeeper sheet for the venue ops team. Venviewer is building toward
 verified venue twins; public claims stay tied to implemented evidence.
 
-This is a single-tenant production app, not a library.
+This repository is an application workspace, not a reusable library.
 
 ## Tech stack
 
@@ -25,12 +25,20 @@ All packages run TypeScript in strict mode with `noUncheckedIndexedAccess`,
 
 ```
 packages/
-  types/   @omnitwin/types   shared Zod schemas + interfaces      (935 tests)
-  api/     @omnitwin/api     Fastify backend, Drizzle ORM         (389 tests)
-  web/     @omnitwin/web     React + R3F frontend                 (1,112 tests)
+  types/   @omnitwin/types   shared Zod schemas + interfaces
+  api/     @omnitwin/api     Fastify backend, Drizzle ORM
+  web/     @omnitwin/web     React + R3F frontend
 ```
 
-**2,436 tests** across the workspace, all passing on every commit.
+Package-specific onboarding:
+
+- [`packages/types/README.md`](packages/types/README.md)
+- [`packages/api/README.md`](packages/api/README.md)
+- [`packages/web/README.md`](packages/web/README.md)
+
+The exact test count changes as the product moves. CI runs the workspace audit,
+lint, typecheck, unit, and E2E gates on every `master` push and PR targeting
+`master`.
 
 ## Requirements
 
