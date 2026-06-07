@@ -534,6 +534,37 @@ export {
   type GeometryApproximationConservatismDirection,
 } from "./geometry-approximation.js";
 
+// --- ASPIRATIONAL: 2.5D Event Object Semantics metadata vocabulary ---
+export {
+  EVENT_OBJECT_OPERATIONAL_SCHEMA_VERSION,
+  EVENT_OBJECT_SEMANTIC_METADATA_FIELDS,
+  EVENT_OBJECT_FOOTPRINT_KINDS,
+  EVENT_OBJECT_TEMPORARY_STRUCTURE_STATUSES,
+  EVENT_OBJECT_STAGE_PLATFORM_STATUSES,
+  EVENT_OBJECT_RIGGING_REQUIREMENTS,
+  EVENT_OBJECT_FLOOR_LOADING_RELEVANCE,
+  EVENT_OBJECT_HEAT_OUTPUT_RELEVANCE,
+  EVENT_OBJECT_HUMAN_REVIEW_TRIGGERS,
+  EventObjectSemanticMetadataFieldSchema,
+  EventObjectFootprintKindSchema,
+  EventObjectTemporaryStructureStatusSchema,
+  EventObjectStagePlatformStatusSchema,
+  EventObjectRiggingRequirementSchema,
+  EventObjectFloorLoadingRelevanceSchema,
+  EventObjectHeatOutputRelevanceSchema,
+  EventObjectHumanReviewTriggerSchema,
+  EventObjectOperationalSemanticsSchema,
+  type EventObjectSemanticMetadataField,
+  type EventObjectFootprintKind,
+  type EventObjectTemporaryStructureStatus,
+  type EventObjectStagePlatformStatus,
+  type EventObjectRiggingRequirement,
+  type EventObjectFloorLoadingRelevance,
+  type EventObjectHeatOutputRelevance,
+  type EventObjectHumanReviewTrigger,
+  type EventObjectOperationalSemantics,
+} from "./event-object-semantics.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
