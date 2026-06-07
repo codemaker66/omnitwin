@@ -100,6 +100,18 @@ V0 hash policy:
 - Layout snapshot hash, runtime package hash, policy bundle digest, scenario template version, scenario instance ID, simulator version, seed, and assumptions must be part of the logical replay identity.
 - Raw simulator output kept internally should have its own hash and retention reference if cited by `witness.json`, but it does not need to be embedded in the portable artifact.
 
+T-244 implementation rule:
+
+- Parse `manifest.json` with `VenreplayManifestV0Schema`.
+- Build logical digest material with `digestPolicyVersion = venviewer.venreplay.logical-digest.v0`.
+- The `manifest` section of the digest material is every parsed manifest field except `fileHashes`.
+- Normalize semantically unordered manifest arrays before serialization: assumptions, scenario-instance assumptions, scenario-instance artifact refs, metrics summaries, staleness triggers, CSV contracts and columns, GeoJSON contracts and requirements, metrics shape, witness compatibility, and seed sets.
+- Add `orderedPayloadFileHashes`, sorted by path, from `fileHashes` excluding `manifest.json`.
+- `manifest.json`'s raw file hash remains stored and should be verified by validators, but it is excluded from the logical digest because the deterministic manifest identity is already part of the digest material.
+- Serialize digest material with `stableCanonicalJson`.
+- Compute `sha256Hex("venviewer.venreplay.logical-digest.v0\n" + stableCanonicalJson(material))`.
+- Do not feed zip entry timestamps, compression method, central-directory order, platform attributes, or raw zip bytes into the logical digest.
+
 ## Replayability Requirements
 
 A `.venreplay.zip` is replayable when:

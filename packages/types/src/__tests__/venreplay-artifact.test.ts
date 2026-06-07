@@ -6,11 +6,16 @@ import {
   VENREPLAY_EXPOSURE_TIERS,
   VENREPLAY_FILE_ROLES,
   VENREPLAY_GEOJSON_FEATURE_REQUIREMENTS,
+  VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION,
   VENREPLAY_OPTIONAL_FILE_PATHS,
   VENREPLAY_REQUIRED_FILE_PATHS,
   VENREPLAY_WITNESS_COMPATIBILITY_REQUIREMENTS,
   VenreplayFileHashSchema,
   VenreplayManifestV0Schema,
+  venreplayLogicalArtifactDigest,
+  venreplayLogicalDigestJson,
+  venreplayLogicalDigestMaterial,
+  venreplayOrderedPayloadFileHashes,
   type VenreplayFileHash,
   type VenreplayManifestV0,
 } from "../venreplay-artifact.js";
@@ -29,6 +34,7 @@ const HASH_F = "f".repeat(64);
 const HASH_1 = "1".repeat(64);
 const HASH_2 = "2".repeat(64);
 const HASH_3 = "3".repeat(64);
+const HASH_4 = "4".repeat(64);
 
 const REPLAY_READY_INSTANCE: ScenarioInstanceV0 = {
   schemaVersion: SCENARIO_INSTANCE_SCHEMA_VERSION,
@@ -322,6 +328,128 @@ describe("Venreplay artifact schema", () => {
 
   it("parses a replay-ready manifest with file hashes and contracts", () => {
     expect(VenreplayManifestV0Schema.parse(VALID_MANIFEST)).toEqual(VALID_MANIFEST);
+  });
+
+  it("builds logical digest material from canonical manifest identity and ordered payload hashes", () => {
+    const material = venreplayLogicalDigestMaterial(VALID_MANIFEST);
+
+    expect(material.digestPolicyVersion).toBe(VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION);
+    expect(material.orderedPayloadFileHashes.map((fileHash) => fileHash.path)).toEqual([
+      "agents.csv",
+      "bottlenecks.geojson",
+      "geometry.geojson",
+      "metrics.json",
+      "scenario.json",
+      "scene.glb",
+      "trajectory.csv",
+      "witness.json",
+    ]);
+    expect(material.orderedPayloadFileHashes.some(
+      (fileHash) => fileHash.path === "manifest.json",
+    )).toBe(false);
+    expect(venreplayLogicalDigestJson(VALID_MANIFEST)).toContain(
+      "\"digestPolicyVersion\":\"venviewer.venreplay.logical-digest.v0\"",
+    );
+    expect(venreplayLogicalArtifactDigest(VALID_MANIFEST)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("keeps the logical digest stable across manifest and file-list ordering", () => {
+    const reordered: VenreplayManifestV0 = {
+      ...VALID_MANIFEST,
+      scenarioInstance: {
+        ...VALID_MANIFEST.scenarioInstance,
+        assumptionRefs: [...VALID_MANIFEST.scenarioInstance.assumptionRefs].reverse(),
+        artifactRefs: [...VALID_MANIFEST.scenarioInstance.artifactRefs].reverse(),
+        metricsSummary: [...VALID_MANIFEST.scenarioInstance.metricsSummary].reverse(),
+        staleWhen: [...VALID_MANIFEST.scenarioInstance.staleWhen].reverse(),
+      },
+      assumptions: [...VALID_MANIFEST.assumptions].reverse(),
+      fileHashes: [...VALID_MANIFEST.fileHashes].reverse(),
+      csvColumnContracts: [...VALID_MANIFEST.csvColumnContracts].reverse().map((contract) => ({
+        ...contract,
+        columns: [...contract.columns].reverse(),
+      })),
+      geojsonFeatureContracts: [...VALID_MANIFEST.geojsonFeatureContracts]
+        .reverse()
+        .map((contract) => ({
+          ...contract,
+          requirements: [...contract.requirements].reverse(),
+        })),
+      metricsShape: [...VALID_MANIFEST.metricsShape].reverse(),
+      witnessCompatibility: [...VALID_MANIFEST.witnessCompatibility].reverse(),
+    };
+
+    expect(VenreplayManifestV0Schema.safeParse(reordered).success).toBe(true);
+    expect(venreplayLogicalDigestJson(reordered)).toBe(
+      venreplayLogicalDigestJson(VALID_MANIFEST),
+    );
+    expect(venreplayLogicalArtifactDigest(reordered)).toBe(
+      venreplayLogicalArtifactDigest(VALID_MANIFEST),
+    );
+  });
+
+  it("ignores zip container metadata and raw manifest serialization hash changes", () => {
+    const containerA = {
+      manifest: VALID_MANIFEST,
+      zipMetadata: {
+        compression: "deflate",
+        entryOrder: ["manifest.json", "geometry.geojson", "trajectory.csv"],
+        modifiedAt: "2026-01-01T00:00:00.000Z",
+        platform: "windows",
+      },
+    } as const;
+    const containerB = {
+      manifest: {
+        ...VALID_MANIFEST,
+        fileHashes: VALID_MANIFEST.fileHashes.map((fileHash) =>
+          fileHash.path === "manifest.json"
+            ? {
+                ...fileHash,
+                sha256: HASH_4,
+              }
+            : fileHash,
+        ),
+      },
+      zipMetadata: {
+        compression: "store",
+        entryOrder: ["trajectory.csv", "geometry.geojson", "manifest.json"],
+        modifiedAt: "2026-02-03T04:05:06.000Z",
+        platform: "linux",
+      },
+    } as const;
+
+    expect(containerA.zipMetadata).not.toEqual(containerB.zipMetadata);
+    expect(venreplayOrderedPayloadFileHashes(containerB.manifest).some(
+      (fileHash) => fileHash.path === "manifest.json",
+    )).toBe(false);
+    expect(venreplayLogicalArtifactDigest(containerA.manifest)).toBe(
+      venreplayLogicalArtifactDigest(containerB.manifest),
+    );
+  });
+
+  it("changes the logical digest when payload hashes or replay identity changes", () => {
+    const changedPayload: VenreplayManifestV0 = {
+      ...VALID_MANIFEST,
+      fileHashes: VALID_MANIFEST.fileHashes.map((fileHash) =>
+        fileHash.path === "trajectory.csv"
+          ? {
+              ...fileHash,
+              sha256: HASH_4,
+            }
+          : fileHash,
+      ),
+    };
+    const changedIdentity: VenreplayManifestV0 = {
+      ...VALID_MANIFEST,
+      artifactId: "venreplay_bar_queue_after_speeches_seed_42_v2",
+    };
+
+    expect(venreplayLogicalArtifactDigest(changedPayload)).not.toBe(
+      venreplayLogicalArtifactDigest(VALID_MANIFEST),
+    );
+    expect(venreplayLogicalArtifactDigest(changedIdentity)).not.toBe(
+      venreplayLogicalArtifactDigest(VALID_MANIFEST),
+    );
   });
 
   it("rejects missing, duplicated, or mislabelled file hashes", () => {

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { type ArtifactExposureTier } from "./artifact-manifest.js";
-import { CanonicalJsonValueSchema } from "./canonical-layout-snapshot.js";
+import {
+  CanonicalJsonValueSchema,
+  sha256Hex,
+  stableCanonicalJson,
+  type CanonicalJsonValue,
+} from "./canonical-layout-snapshot.js";
 import {
   CrowdFlowMetricNameSchema,
   CrowdSimulatorSourceNameSchema,
@@ -16,6 +21,10 @@ import {
 import { SCENARIO_TEMPLATE_SCHEMA_VERSION } from "./scenario-template.js";
 
 export const VENREPLAY_ARTIFACT_SCHEMA_VERSION = "venviewer.venreplay.v0";
+export const VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION =
+  "venviewer.venreplay.logical-digest.v0";
+export const VENREPLAY_LOGICAL_DIGEST_DOMAIN_PREFIX =
+  `${VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION}\n`;
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const SLUG_TOKEN = /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/;
@@ -168,6 +177,12 @@ export const VenreplayFileHashSchema = z.object({
 }).strict();
 export type VenreplayFileHash = z.infer<typeof VenreplayFileHashSchema>;
 
+export const VenreplayPayloadFileHashSchema = VenreplayFileHashSchema.refine(
+  (fileHash) => fileHash.path !== "manifest.json",
+  "Logical digest payload file hashes exclude manifest.json.",
+);
+export type VenreplayPayloadFileHash = z.infer<typeof VenreplayPayloadFileHashSchema>;
+
 export const VenreplayMetricsShapeSchema = z.object({
   metricName: CrowdFlowMetricNameSchema,
   dataSufficiency: DataSufficiencyOutcomeSchema,
@@ -193,7 +208,7 @@ export type VenreplayGeojsonFeatureContract = z.infer<
   typeof VenreplayGeojsonFeatureContractSchema
 >;
 
-export const VenreplayManifestV0Schema = z.object({
+export const VenreplayManifestV0BaseSchema = z.object({
   schemaVersion: z.literal(VENREPLAY_ARTIFACT_SCHEMA_VERSION),
   artifactVersion: z.string().trim().regex(SEMVERISH).max(80),
   artifactId: z.string().trim().min(1).max(160).regex(SLUG_TOKEN),
@@ -221,7 +236,26 @@ export const VenreplayManifestV0Schema = z.object({
   witnessCompatibility: z.array(VenreplayWitnessCompatibilityRequirementSchema).min(1),
   exposureTier: VenreplayExposureTierSchema,
   manifestExtension: z.record(CanonicalJsonValueSchema).optional(),
-}).strict().superRefine((manifest, ctx) => {
+}).strict();
+
+export const VenreplayManifestDigestIdentitySchema =
+  VenreplayManifestV0BaseSchema.omit({ fileHashes: true });
+export type VenreplayManifestDigestIdentity = z.infer<
+  typeof VenreplayManifestDigestIdentitySchema
+>;
+
+export const VenreplayLogicalDigestMaterialV0Schema = z.object({
+  digestPolicyVersion: z.literal(VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION),
+  manifest: VenreplayManifestDigestIdentitySchema,
+  orderedPayloadFileHashes: z
+    .array(VenreplayPayloadFileHashSchema)
+    .min(VENREPLAY_REQUIRED_FILE_PATHS.length - 1),
+}).strict();
+export type VenreplayLogicalDigestMaterialV0 = z.infer<
+  typeof VenreplayLogicalDigestMaterialV0Schema
+>;
+
+export const VenreplayManifestV0Schema = VenreplayManifestV0BaseSchema.superRefine((manifest, ctx) => {
   const filePaths = new Set<VenreplayFilePath>();
 
   for (const fileHash of manifest.fileHashes) {
@@ -393,6 +427,62 @@ export const VenreplayManifestV0Schema = z.object({
 });
 export type VenreplayManifestV0 = z.infer<typeof VenreplayManifestV0Schema>;
 
+export function normalizeVenreplayManifestIdentityForDigest(
+  manifest: VenreplayManifestDigestIdentity,
+): VenreplayManifestDigestIdentity {
+  const parsed = VenreplayManifestDigestIdentitySchema.parse(manifest);
+  const normalized: VenreplayManifestDigestIdentity = {
+    ...parsed,
+    scenarioInstance: normalizeScenarioInstanceForDigest(parsed.scenarioInstance),
+    seed: normalizeSeedRefForDigest(parsed.seed),
+    assumptions: [...parsed.assumptions].sort(compareAssumptionRefs),
+    csvColumnContracts: [...parsed.csvColumnContracts]
+      .map(normalizeCsvColumnContractForDigest)
+      .sort(compareCsvColumnContracts),
+    geojsonFeatureContracts: [...parsed.geojsonFeatureContracts]
+      .map(normalizeGeojsonFeatureContractForDigest)
+      .sort(compareGeojsonFeatureContracts),
+    metricsShape: [...parsed.metricsShape].sort(compareMetricsShape),
+    witnessCompatibility: sortWitnessCompatibility(parsed.witnessCompatibility),
+  };
+
+  return normalized;
+}
+
+export function venreplayOrderedPayloadFileHashes(
+  manifest: VenreplayManifestV0,
+): VenreplayPayloadFileHash[] {
+  const parsed = VenreplayManifestV0Schema.parse(manifest);
+  return parsed.fileHashes
+    .filter((fileHash) => fileHash.path !== "manifest.json")
+    .sort(compareFileHashes);
+}
+
+export function venreplayLogicalDigestMaterial(
+  manifest: VenreplayManifestV0,
+): VenreplayLogicalDigestMaterialV0 {
+  const parsed = VenreplayManifestV0Schema.parse(manifest);
+  return VenreplayLogicalDigestMaterialV0Schema.parse({
+    digestPolicyVersion: VENREPLAY_LOGICAL_DIGEST_POLICY_VERSION,
+    manifest: normalizeVenreplayManifestIdentityForDigest(
+      venreplayManifestDigestIdentity(parsed),
+    ),
+    orderedPayloadFileHashes: venreplayOrderedPayloadFileHashes(parsed),
+  });
+}
+
+export function venreplayLogicalDigestJson(manifest: VenreplayManifestV0): string {
+  return stableCanonicalJson(
+    venreplayLogicalDigestMaterial(manifest) as CanonicalJsonValue,
+  );
+}
+
+export function venreplayLogicalArtifactDigest(manifest: VenreplayManifestV0): string {
+  return sha256Hex(
+    `${VENREPLAY_LOGICAL_DIGEST_DOMAIN_PREFIX}${venreplayLogicalDigestJson(manifest)}`,
+  );
+}
+
 export function venreplaySeedCount(seedRef: ScenarioInstanceSeedRef): number {
   switch (seedRef.seedPolicy) {
     case "no_seed_required":
@@ -404,6 +494,144 @@ export function venreplaySeedCount(seedRef: ScenarioInstanceSeedRef): number {
     case "deterministic_recipe":
       return seedRef.seedSet.length > 0 ? seedRef.seedSet.length : Number(seedRef.seed !== null);
   }
+}
+
+function venreplayManifestDigestIdentity(
+  manifest: VenreplayManifestV0,
+): VenreplayManifestDigestIdentity {
+  const identity: VenreplayManifestDigestIdentity = {
+    schemaVersion: manifest.schemaVersion,
+    artifactVersion: manifest.artifactVersion,
+    artifactId: manifest.artifactId,
+    scenarioTemplateId: manifest.scenarioTemplateId,
+    scenarioTemplateVersion: manifest.scenarioTemplateVersion,
+    scenarioTemplateSchemaVersion: manifest.scenarioTemplateSchemaVersion,
+    scenarioInstanceId: manifest.scenarioInstanceId,
+    scenarioInstance: manifest.scenarioInstance,
+    layoutSnapshotHash: manifest.layoutSnapshotHash,
+    runtimePackageId: manifest.runtimePackageId,
+    runtimePackageHash: manifest.runtimePackageHash,
+    policyBundleDigest: manifest.policyBundleDigest,
+    simulatorName: manifest.simulatorName,
+    simulatorVersion: manifest.simulatorVersion,
+    simulatorHash: manifest.simulatorHash,
+    seed: manifest.seed,
+    seedCount: manifest.seedCount,
+    generatedAt: manifest.generatedAt,
+    assumptions: manifest.assumptions,
+    limitations: manifest.limitations,
+    csvColumnContracts: manifest.csvColumnContracts,
+    geojsonFeatureContracts: manifest.geojsonFeatureContracts,
+    metricsShape: manifest.metricsShape,
+    witnessCompatibility: manifest.witnessCompatibility,
+    exposureTier: manifest.exposureTier,
+  };
+
+  if (manifest.manifestExtension === undefined) {
+    return identity;
+  }
+
+  return {
+    ...identity,
+    manifestExtension: manifest.manifestExtension,
+  };
+}
+
+function normalizeScenarioInstanceForDigest(
+  instance: VenreplayManifestDigestIdentity["scenarioInstance"],
+): VenreplayManifestDigestIdentity["scenarioInstance"] {
+  return {
+    ...instance,
+    assumptionRefs: [...instance.assumptionRefs].sort(compareAssumptionRefs),
+    artifactRefs: [...instance.artifactRefs].sort((left, right) =>
+      scenarioArtifactRefKey(left).localeCompare(scenarioArtifactRefKey(right)),
+    ),
+    metricsSummary: [...instance.metricsSummary].sort((left, right) =>
+      left.metricName.localeCompare(right.metricName) ||
+      stableCanonicalJson(left.value).localeCompare(stableCanonicalJson(right.value)),
+    ),
+    seed: normalizeSeedRefForDigest(instance.seed),
+    staleWhen: [...instance.staleWhen].sort(),
+  };
+}
+
+function normalizeSeedRefForDigest(seedRef: ScenarioInstanceSeedRef): ScenarioInstanceSeedRef {
+  return {
+    ...seedRef,
+    seedSet: [...seedRef.seedSet].sort((left, right) => left - right),
+  };
+}
+
+function normalizeCsvColumnContractForDigest(
+  contract: VenreplayCsvColumnContract,
+): VenreplayCsvColumnContract {
+  return {
+    ...contract,
+    columns: [...contract.columns].sort(),
+  };
+}
+
+function normalizeGeojsonFeatureContractForDigest(
+  contract: VenreplayGeojsonFeatureContract,
+): VenreplayGeojsonFeatureContract {
+  return {
+    ...contract,
+    requirements: [...contract.requirements].sort(compareGeojsonRequirements),
+  };
+}
+
+function compareFileHashes(left: VenreplayFileHash, right: VenreplayFileHash): number {
+  return left.path.localeCompare(right.path);
+}
+
+function compareAssumptionRefs(
+  left: ScenarioInstanceAssumptionRef,
+  right: ScenarioInstanceAssumptionRef,
+): number {
+  return assumptionKey(left).localeCompare(assumptionKey(right));
+}
+
+function compareCsvColumnContracts(
+  left: VenreplayCsvColumnContract,
+  right: VenreplayCsvColumnContract,
+): number {
+  return left.filePath.localeCompare(right.filePath) ||
+    left.contract.localeCompare(right.contract);
+}
+
+function compareGeojsonFeatureContracts(
+  left: VenreplayGeojsonFeatureContract,
+  right: VenreplayGeojsonFeatureContract,
+): number {
+  return left.filePath.localeCompare(right.filePath);
+}
+
+function compareGeojsonRequirements(
+  left: VenreplayGeojsonFeatureRequirement,
+  right: VenreplayGeojsonFeatureRequirement,
+): number {
+  return VENREPLAY_GEOJSON_FEATURE_REQUIREMENTS.indexOf(left) -
+    VENREPLAY_GEOJSON_FEATURE_REQUIREMENTS.indexOf(right);
+}
+
+function compareMetricsShape(left: VenreplayMetricsShape, right: VenreplayMetricsShape): number {
+  return left.metricName.localeCompare(right.metricName);
+}
+
+function sortWitnessCompatibility(
+  requirements: readonly VenreplayWitnessCompatibilityRequirement[],
+): VenreplayWitnessCompatibilityRequirement[] {
+  return [...requirements].sort(
+    (left, right) =>
+      VENREPLAY_WITNESS_COMPATIBILITY_REQUIREMENTS.indexOf(left) -
+      VENREPLAY_WITNESS_COMPATIBILITY_REQUIREMENTS.indexOf(right),
+  );
+}
+
+function scenarioArtifactRefKey(
+  artifactRef: VenreplayManifestDigestIdentity["scenarioInstance"]["artifactRefs"][number],
+): string {
+  return `${artifactRef.refType}\u0000${artifactRef.ref}\u0000${artifactRef.contentHash ?? "null"}`;
 }
 
 function seedRefsEqual(left: ScenarioInstanceSeedRef, right: ScenarioInstanceSeedRef): boolean {
