@@ -2,6 +2,13 @@ import { useMemo } from "react";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
+import { RENDER_SCALE } from "../../constants/scale.js";
+import {
+  computeCapacityIntelligence,
+  inferSeatingStyle,
+  comfortBandLabel,
+} from "../../lib/layout-capacity.js";
 
 interface HudStats {
   readonly roundTables: number;
@@ -10,8 +17,6 @@ interface HudStats {
   readonly stagedObjects: number;
   readonly dressedTables: number;
 }
-
-const COMFORTABLE_CAPACITY = 200;
 
 function computeHudStats(
   placedItems: readonly PlacedItem[],
@@ -44,9 +49,35 @@ function plural(value: number, singular: string, pluralLabel = `${singular}s`): 
 
 export function PlannerSpatialHud(): React.ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
+  const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const stats = useMemo(() => computeHudStats(placedItems), [placedItems]);
-  const capacityPercent = Math.min(100, Math.round((stats.chairs / COMFORTABLE_CAPACITY) * 100));
+
+  // Room dimensions are render-space (metres × RENDER_SCALE on X/Z); divide
+  // back out for a real-metre floor area. Rectangular bounding-box area is a
+  // planning-grade approximation, which is exactly the altitude this HUD reports.
+  const floorAreaM2 = useMemo(() => {
+    const widthM = dimensions.width / RENDER_SCALE;
+    const lengthM = dimensions.length / RENDER_SCALE;
+    return widthM * lengthM;
+  }, [dimensions.width, dimensions.length]);
+
+  const seatingStyle = useMemo(
+    () => inferSeatingStyle({
+      roundTables: stats.roundTables,
+      banquetTables: stats.banquetTables,
+      chairs: stats.chairs,
+    }),
+    [stats.roundTables, stats.banquetTables, stats.chairs],
+  );
+
+  const capacity = useMemo(
+    () => computeCapacityIntelligence(floorAreaM2, stats.chairs, seatingStyle),
+    [floorAreaM2, stats.chairs, seatingStyle],
+  );
+
   const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
+  const gaugeFill = Math.min(100, capacity.utilizationPercent);
+  const styleLabel = seatingStyle.replace(/-/g, " ");
 
   return (
     <aside className="planner-spatial-hud" data-testid="planner-spatial-hud" aria-label="Layout summary">
@@ -68,21 +99,29 @@ export function PlannerSpatialHud(): React.ReactElement {
         <div className="planner-spatial-hud__title">Capacity</div>
         <div
           className="planner-spatial-hud__gauge"
-          style={{ "--capacity": `${String(capacityPercent)}%` } as React.CSSProperties}
-          aria-label={`${String(stats.chairs)} seats planned, ${String(capacityPercent)} percent of comfortable capacity`}
+          style={{ "--capacity": `${String(gaugeFill)}%` } as React.CSSProperties}
+          aria-label={`${String(stats.chairs)} seats planned, comfortable planning capacity about ${String(capacity.comfortableCapacity)} guests`}
         >
           <div className="planner-spatial-hud__gauge-inner">
             <span>{stats.chairs.toLocaleString("en-GB")}</span>
-            <small>/ {COMFORTABLE_CAPACITY}</small>
+            <small>/ {capacity.comfortableCapacity.toLocaleString("en-GB")}</small>
           </div>
         </div>
         <div className="planner-spatial-hud__caption">
           {hasLayout
-            ? `${String(capacityPercent)}% of comfortable planning capacity`
+            ? comfortBandLabel(capacity.band)
             : "Start placing furniture to build capacity"}
         </div>
+        {hasLayout && capacity.spacePerGuestM2 !== null && (
+          <div className="planner-spatial-hud__subcaption">
+            {capacity.spacePerGuestM2.toFixed(1)} m²/guest · {styleLabel} · ~{capacity.comfortableCapacity.toLocaleString("en-GB")} comfortable
+          </div>
+        )}
         <div className="planner-spatial-hud__subcaption">
           {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
+        </div>
+        <div className="planner-spatial-hud__subcaption" style={{ opacity: 0.66, fontSize: "0.7em" }}>
+          Planning-grade estimate · not a legal or fire capacity · human review required
         </div>
       </section>
     </aside>
