@@ -20,9 +20,54 @@ import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
 } from "../lib/editor-save-status.js";
+import {
+  resolvePlannerVenue,
+  type PlannerVenueAccessUser,
+} from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 
 const DEFAULT_SPACE_SLUG = "grand-hall";
+
+type PlannerBootstrapBlocker =
+  | { readonly kind: "network" }
+  | { readonly kind: "empty" }
+  | { readonly kind: "not_found"; readonly requestedSlug: string }
+  | { readonly kind: "forbidden"; readonly requestedSlug: string; readonly venueName: string };
+
+interface PlannerBootstrapBlockerCopy {
+  readonly title: string;
+  readonly body: string;
+  readonly action: string;
+}
+
+function plannerBootstrapBlockerCopy(blocker: PlannerBootstrapBlocker): PlannerBootstrapBlockerCopy {
+  switch (blocker.kind) {
+    case "empty":
+      return {
+        title: "No venues are available",
+        body: "The planner cannot start because there are no active venues to open.",
+        action: "Retry",
+      };
+    case "not_found":
+      return {
+        title: "Venue not found",
+        body: `The planner link names "${blocker.requestedSlug}", but that venue is not available.`,
+        action: "Open main planner",
+      };
+    case "forbidden":
+      return {
+        title: "Planner unavailable for this venue",
+        body: `Your account is not attached to ${blocker.venueName}. Open your venue planner or ask an admin to update access.`,
+        action: "Open main planner",
+      };
+    case "network":
+      return {
+        title: "Couldn\u2019t open the planner",
+        body: "The server didn\u2019t respond in time. This is usually temporary; try again in a few seconds.",
+        action: "Retry",
+      };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // EditorPage — public 3D editor with space picker + save/send flow
@@ -35,16 +80,25 @@ export function EditorPage(): React.ReactElement {
   // without a loader (e.g. /plan itself). The /:username/:slug route that
   // needed the loader is future work — no accounts have named URLs yet so
   // nothing real is lost.
-  const params = useParams<{ configId?: string; code?: string }>();
+  const params = useParams<{ configId?: string; code?: string; venueSlug?: string }>();
   const urlConfigId = params.configId ?? params.code;
+  const routeVenueSlug = params.venueSlug;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);
   const isLoading = useEditorStore((s) => s.isLoading);
   const error = useEditorStore((s) => s.error);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const [autoCreateFailed, setAutoCreateFailed] = useState(false);
-  const autoCreateAttempted = useRef(false);
+  const authLoading = useAuthStore((s) => s.isLoading);
+  const authRole = useAuthStore((s) => s.user?.role ?? null);
+  const authVenueId = useAuthStore((s) => s.user?.venueId ?? null);
+  const [autoCreateBlocker, setAutoCreateBlocker] = useState<PlannerBootstrapBlocker | null>(null);
+  const autoCreateAttemptedFor = useRef<string | null>(null);
+  const venueAccessUser = useMemo<PlannerVenueAccessUser | null>(() => {
+    if (!isAuthenticated || authRole === null) return null;
+    return { role: authRole, venueId: authVenueId };
+  }, [authRole, authVenueId, isAuthenticated]);
+  const wantedSpaceSlug = searchParams.get("space") ?? DEFAULT_SPACE_SLUG;
 
   // Load config from URL on mount. The first load uses the current
   // isAuthenticated value (false before Clerk resolves). For public configs
@@ -58,59 +112,97 @@ export function EditorPage(): React.ReactElement {
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
 
-  // Auto-open the requested space (?space=<slug>, default grand-hall) on
-  // the first render that has no configId anywhere. Skips the SpacePicker
-  // splash — the public landing already lets visitors choose a room, so
-  // dropping them into the 3D editor immediately is the point.
+  // Auto-open the requested venue + space on the first render that has no
+  // configId anywhere. `/plan` keeps the single-tenant shortcut by choosing the
+  // first active venue; `/v/:venueSlug/plan` is explicit and fail-closed.
   useEffect(() => {
     if (urlConfigId !== undefined || storeConfigId !== null) return;
-    if (autoCreateAttempted.current || autoCreateFailed) return;
-    autoCreateAttempted.current = true;
-    const wantedSlug = searchParams.get("space") ?? DEFAULT_SPACE_SLUG;
+    if (routeVenueSlug !== undefined && authLoading) return;
+    const bootstrapKey = [
+      routeVenueSlug ?? "",
+      wantedSpaceSlug,
+      isAuthenticated ? authRole ?? "" : "anonymous",
+      authVenueId ?? "",
+    ].join("|");
+    if (autoCreateAttemptedFor.current === bootstrapKey) return;
+    autoCreateAttemptedFor.current = bootstrapKey;
+    setAutoCreateBlocker(null);
     void (async () => {
       try {
         const venues = await spacesApi.listVenues();
-        const venue = venues[0];
-        if (venue === undefined) { setAutoCreateFailed(true); return; }
-        const spaces = await spacesApi.listSpaces(venue.id);
+        const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
+        if (venueResolution.status !== "resolved") {
+          const blocker: PlannerBootstrapBlocker =
+            venueResolution.status === "forbidden"
+              ? {
+                kind: "forbidden",
+                requestedSlug: venueResolution.requestedSlug,
+                venueName: venueResolution.venue.name,
+              }
+              : venueResolution.status === "not_found"
+                ? { kind: "not_found", requestedSlug: venueResolution.requestedSlug }
+                : { kind: "empty" };
+          setAutoCreateBlocker(blocker);
+          return;
+        }
+
+        const spaces = await spacesApi.listSpaces(venueResolution.venue.id);
         const space =
-          spaces.find((s) => s.slug === wantedSlug)
+          spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
           ?? spaces[0];
-        if (space === undefined) { setAutoCreateFailed(true); return; }
+        if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
         void navigate(`/plan/${newConfigId}`, { replace: true });
       } catch {
-        setAutoCreateFailed(true);
+        setAutoCreateBlocker({ kind: "network" });
       }
     })();
-  }, [urlConfigId, storeConfigId, searchParams, navigate, autoCreateFailed]);
+  }, [
+    authLoading,
+    authRole,
+    authVenueId,
+    isAuthenticated,
+    navigate,
+    routeVenueSlug,
+    storeConfigId,
+    urlConfigId,
+    venueAccessUser,
+    wantedSpaceSlug,
+  ]);
 
   // Auto-create failed → show a minimal retry screen instead of the
   // legacy SpacePicker splash. The SpacePicker was the old entry flow
   // (pick a venue → pick a space); now /plan always drops users
   // straight into a Grand Hall config, so the splash has no role on
   // this route.
-  if (autoCreateFailed && urlConfigId === undefined && storeConfigId === null) {
+  if (autoCreateBlocker !== null && urlConfigId === undefined && storeConfigId === null) {
+    const copy = plannerBootstrapBlockerCopy(autoCreateBlocker);
     return (
       <div style={{
         minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center",
         justifyContent: "center", gap: 16, fontFamily: "'Inter', sans-serif",
         color: "#333", background: "#f5f5f0", padding: 24, textAlign: "center",
       }}>
-        <div style={{ fontSize: 20, fontWeight: 600 }}>Couldn&rsquo;t open the planner</div>
+        <div style={{ fontSize: 20, fontWeight: 600 }}>{copy.title}</div>
         <div style={{ fontSize: 14, color: "#666", maxWidth: 360 }}>
-          The server didn&rsquo;t respond in time. This is usually temporary — try again in a few seconds.
+          {copy.body}
         </div>
         <button
           type="button"
-          onClick={() => { window.location.reload(); }}
+          onClick={() => {
+            if (autoCreateBlocker.kind === "not_found" || autoCreateBlocker.kind === "forbidden") {
+              void navigate("/plan", { replace: true });
+              return;
+            }
+            window.location.reload();
+          }}
           style={{
             marginTop: 8, padding: "10px 24px", background: "#7a1f2a", color: "#fff",
             border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
           }}
         >
-          Retry
+          {copy.action}
         </button>
       </div>
     );

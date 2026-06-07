@@ -138,11 +138,11 @@ export const router = createBrowserRouter([
   },
   {
     // Venue-scoped planner entry (B2). Opt-in multi-venue routing — when a
-    // known slug is present, SpacePicker loads that venue's spaces instead
-    // of defaulting to the first venue. Unknown slugs fall back silently,
-    // so stale bookmarks don't 404. When a SaaS onboarding flow lands,
-    // this becomes the primary URL; `/plan` stays as the single-tenant
-    // shortcut for the flagship customer.
+    // known slug is present, EditorPage opens that venue's spaces instead of
+    // defaulting to the first venue. Unknown or unauthorized slugs show an
+    // explicit safe state. When a SaaS onboarding flow lands, this becomes
+    // the primary URL; `/plan` stays as the single-tenant shortcut for the
+    // flagship customer.
     path: "/v/:venueSlug/plan",
     element: withSuspense(<EditorPage />),
   },
