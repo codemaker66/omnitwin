@@ -6,6 +6,7 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { GRAND_HALL_RENDER_DIMENSIONS, RENDER_SCALE } from "../../../constants/scale.js";
 import { computeCapacityIntelligence, inferSeatingStyle, comfortBandLabel } from "../../../lib/layout-capacity.js";
+import { computeCirculation, circulationBandLabel, type FurnitureFootprint } from "../../../lib/circulation.js";
 import { PlannerSpatialHud } from "../PlannerSpatialHud.js";
 
 function resetStore(): void {
@@ -103,6 +104,46 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByText((content) => content.includes("m²/guest"))).toBeDefined();
     expect(
       screen.getByText("Planning-grade estimate · not a legal or fire capacity · human review required"),
+    ).toBeDefined();
+  });
+
+  it("reports the tightest table aisle from real placed geometry", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    expect(roundTable).toBeDefined();
+    if (roundTable === undefined) return;
+
+    // Two round tables 8 render units apart on X → 4 m centre-to-centre.
+    usePlacementStore.setState({
+      placedItems: [
+        createPlacedItem(roundTable.id, 0, 0, 0),
+        createPlacedItem(roundTable.id, 8, 0, 0),
+      ],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    // Mirror the component's footprint mapping: render units ÷ RENDER_SCALE = m.
+    const footprints: FurnitureFootprint[] = [0, 8].map((renderX, i) => ({
+      id: `t${String(i)}`,
+      label: roundTable.name,
+      cx: renderX / RENDER_SCALE,
+      cz: 0,
+      width: roundTable.width,
+      depth: roundTable.depth,
+      rotation: 0,
+    }));
+    const circ = computeCirculation(footprints);
+    expect(circ.band).not.toBe("open");
+    expect(circ.tightestGapM).not.toBeNull();
+    if (circ.tightestGapM === null) return;
+    const gap = circ.tightestGapM;
+
+    expect(
+      screen.getByText((content) =>
+        content.includes("Tightest table aisle") &&
+        content.includes(`${gap.toFixed(1)} m`) &&
+        content.includes(circulationBandLabel(circ.band)),
+      ),
     ).toBeDefined();
   });
 });

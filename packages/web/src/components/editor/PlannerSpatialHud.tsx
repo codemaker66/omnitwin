@@ -9,6 +9,11 @@ import {
   inferSeatingStyle,
   comfortBandLabel,
 } from "../../lib/layout-capacity.js";
+import {
+  computeCirculation,
+  circulationBandLabel,
+  type FurnitureFootprint,
+} from "../../lib/circulation.js";
 
 interface HudStats {
   readonly roundTables: number;
@@ -75,6 +80,28 @@ export function PlannerSpatialHud(): React.ReactElement {
     [floorAreaM2, stats.chairs, seatingStyle],
   );
 
+  // Circulation: exact aisle clearance between table footprints. Only tables
+  // count as obstacles — chairs cluster at their table, so including them would
+  // report the (intentionally tiny) chair-to-table gaps instead of walkways.
+  // Render-space x/z divide back to metres; catalogue width/depth are metres.
+  const circulation = useMemo(() => {
+    const footprints: FurnitureFootprint[] = [];
+    for (const placed of placedItems) {
+      const item = getCatalogueItem(placed.catalogueItemId);
+      if (item === undefined || item.category !== "table") continue;
+      footprints.push({
+        id: placed.id,
+        label: item.name,
+        cx: placed.x / RENDER_SCALE,
+        cz: placed.z / RENDER_SCALE,
+        width: item.width,
+        depth: item.depth,
+        rotation: placed.rotationY,
+      });
+    }
+    return computeCirculation(footprints);
+  }, [placedItems]);
+
   const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
   const gaugeFill = Math.min(100, capacity.utilizationPercent);
   const styleLabel = seatingStyle.replace(/-/g, " ");
@@ -115,6 +142,18 @@ export function PlannerSpatialHud(): React.ReactElement {
         {hasLayout && capacity.spacePerGuestM2 !== null && (
           <div className="planner-spatial-hud__subcaption">
             {capacity.spacePerGuestM2.toFixed(1)} m²/guest · {styleLabel} · ~{capacity.comfortableCapacity.toLocaleString("en-GB")} comfortable
+          </div>
+        )}
+        {circulation.band !== "open" && circulation.tightestGapM !== null && (
+          <div
+            className="planner-spatial-hud__subcaption"
+            style={
+              circulation.band === "tight" || circulation.band === "blocked"
+                ? { color: "#d98324" }
+                : undefined
+            }
+          >
+            Tightest table aisle {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
           </div>
         )}
         <div className="planner-spatial-hud__subcaption">
