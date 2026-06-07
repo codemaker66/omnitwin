@@ -1822,16 +1822,16 @@ function SiteFooter(): ReactElement {
             <h5>Plan</h5>
             <ul>
               <li><Link to="/plan?space=grand-hall">Open Grand Hall planner</Link></li>
-              <li><a href="#presets">Wedding draft</a></li>
-              <li><a href="#presets">Gala draft</a></li>
-              <li><a href="#presets">Conference draft</a></li>
+              <li><Link to="/plan?space=grand-hall">Start a wedding draft</Link></li>
+              <li><Link to="/plan?space=grand-hall">Start a gala draft</Link></li>
+              <li><Link to="/plan?space=grand-hall">Start a conference draft</Link></li>
             </ul>
           </div>
           <div>
             <h5>The Hall</h5>
             <ul>
-              <li><a href="#about">About the building</a></li>
-              <li><a href="#about">History &amp; restoration</a></li>
+              <li><a href="#rooms">Explore the rooms</a></li>
+              <li><a href="#experience">How the planner works</a></li>
               <li><a href="#contact">Find us</a></li>
               <li><a href="#contact">Press</a></li>
             </ul>

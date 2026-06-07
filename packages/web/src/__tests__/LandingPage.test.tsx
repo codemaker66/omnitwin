@@ -30,6 +30,23 @@ describe("LandingPage — Grand Hall module", () => {
     expect(screen.getAllByText(/Powered by Venviewer/i).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("has no dead in-page anchors — every href=\"#id\" resolves to an element with that id", () => {
+    mount();
+    const hashAnchors = Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'),
+    );
+    // The page genuinely uses in-page anchors (header nav + footer columns).
+    expect(hashAnchors.length).toBeGreaterThan(0);
+    // Every hash anchor must resolve to a real section. A dead anchor (e.g. the
+    // old footer "#presets" / "#about" links that scrolled nowhere) is below
+    // the S+ bar and a regression we never want back.
+    const deadTargets = hashAnchors
+      .map((anchor) => anchor.getAttribute("href") ?? "")
+      .filter((href) => href.length > 1) // ignore a bare "#"
+      .filter((href) => document.getElementById(href.slice(1)) === null);
+    expect(deadTargets).toEqual([]);
+  });
+
   it("renders the proof chips without unsupported precision claims", () => {
     mount();
     expect(screen.getByText("To scale")).toBeTruthy();
