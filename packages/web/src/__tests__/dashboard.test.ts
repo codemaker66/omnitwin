@@ -137,6 +137,20 @@ describe("EnquiriesView", () => {
     const { EnquiriesView } = await import("../components/dashboard/EnquiriesView.js");
     expect(typeof EnquiriesView).toBe("function");
   });
+
+  it("opens linked layouts through the live planner route", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(
+      path.resolve("src/components/dashboard/EnquiriesView.tsx"),
+      "utf-8",
+    );
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(codeOnly).toContain("/plan/${selected.configurationId}");
+    expect(codeOnly).not.toContain("/editor/${selected.configurationId}");
+  });
 });
 
 describe("ClientSearchView", () => {

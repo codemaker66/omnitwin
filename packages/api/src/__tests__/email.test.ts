@@ -72,7 +72,7 @@ describe("enquiryApproved", () => {
     venueName: "Trades Hall Glasgow",
     spaceName: "Grand Hall",
     eventDate: "2026-06-15",
-    configUrl: "http://localhost:5173/editor/config-123",
+    configUrl: "http://localhost:5173/plan/config-123",
   } as const;
 
   it("includes space name in subject", async () => {
@@ -93,7 +93,7 @@ describe("enquiryApproved", () => {
 
   it("includes config link", async () => {
     const { html } = await enquiryApproved(baseData);
-    expect(html).toContain("editor/config-123");
+    expect(html).toContain("plan/config-123");
   });
 
   it("handles null configUrl", async () => {

@@ -168,7 +168,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
               </>
             )}
             {selected.configurationId !== null && (
-              <a href={`/editor/${selected.configurationId}`} target="_blank" rel="noreferrer"
+              <a href={`/plan/${selected.configurationId}`} target="_blank" rel="noreferrer"
                 style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#3b82f6", color: "#fff", borderRadius: 6, textDecoration: "none" }}>
                 View Layout
               </a>

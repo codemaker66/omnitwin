@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 
@@ -238,6 +240,12 @@ describe("POST /enquiries/:id/transition", () => {
       payload: { status: "approved", note: "Looks good!" },
     });
     expect(res.statusCode).not.toBe(400);
+  });
+
+  it("builds approved layout links with the live planner route", async () => {
+    const raw = await readFile(resolve("src/routes/enquiries.ts"), "utf-8");
+    expect(raw).toContain("/plan/${enquiry.configurationId}");
+    expect(raw).not.toContain("/editor/${enquiry.configurationId}");
   });
 });
 
