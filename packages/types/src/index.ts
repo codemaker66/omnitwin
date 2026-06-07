@@ -384,6 +384,28 @@ export {
   type TruthModeTokenCategory,
 } from "./truth-mode.js";
 
+// --- ASPIRATIONAL: Venue Claim Lifecycle metadata vocabulary (VCL-001) ---
+export {
+  CLAIM_LIFECYCLE_STATES,
+  CLAIM_LIFECYCLE_EVENTS,
+  CLAIM_STALENESS_TRIGGERS,
+  CLAIM_REGENERATION_DECISIONS,
+  CLAIM_LIFECYCLE_ACTOR_CATEGORIES,
+  CLAIM_LIFECYCLE_SOURCE_CATEGORIES,
+  ClaimLifecycleStateSchema,
+  ClaimLifecycleEventSchema,
+  ClaimStalenessTriggerSchema,
+  ClaimRegenerationDecisionSchema,
+  ClaimLifecycleActorCategorySchema,
+  ClaimLifecycleSourceCategorySchema,
+  type ClaimLifecycleState,
+  type ClaimLifecycleEvent,
+  type ClaimStalenessTrigger,
+  type ClaimRegenerationDecision,
+  type ClaimLifecycleActorCategory,
+  type ClaimLifecycleSourceCategory,
+} from "./claim-lifecycle.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
