@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 import { Component, type ReactNode } from "react";
 import { render, cleanup } from "@testing-library/react";
-import { MeshErrorBoundary } from "../FurnitureProxy.js";
+import { MeshErrorBoundary } from "../MeshErrorBoundary.js";
 
 // ---------------------------------------------------------------------------
 // MeshErrorBoundary — pinning the containment guarantee:
@@ -18,8 +18,8 @@ class Thrower extends Component<{ readonly error: Error }> {
 }
 
 describe("MeshErrorBoundary", () => {
-  let consoleErrSpy: ReturnType<typeof vi.spyOn>;
-  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrSpy: MockInstance<(...data: unknown[]) => void>;
+  let consoleWarnSpy: MockInstance<(...data: unknown[]) => void>;
 
   beforeEach(() => {
     // React logs every caught error to console.error; the boundary itself

@@ -23,201 +23,34 @@ import {
 } from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/** Stone block dimensions in meters (width × height × depth). */
-export const BLOCK_WIDTH = 0.4;
-export const BLOCK_HEIGHT = 0.2;
-export const BLOCK_DEPTH = 0.08;
-
-/** Mortar gap between blocks in meters. */
-export const MORTAR_GAP = 0.008;
-
-/** How far blocks scatter outward from the wall face (meters). */
-export const SCATTER_DISTANCE = 2.2;
-
-/** Proportion of the 0→1 timeline used for row stagger.
- *  0.8 = very sequential — each row mostly finishes before the next starts.
- *  This gives a realistic bottom-up bricklaying feel. */
-export const STAGGER_SPAN = 0.8;
-
-/** Random per-brick timing jitter (fraction of timeline).
- *  Low value = tidy rows like a real bricklayer. */
-export const BRICK_JITTER = 0.03;
-
-/** Max random rotation (radians) when fully scattered — kept low for heavy feel. */
-export const MAX_SCATTER_ROTATION = 0.12;
-
-/** Fraction of per-brick timeline where the brick reaches its rest position.
- *  The remaining time is used for the impact bounce. */
-export const IMPACT_POINT = 0.6;
-
-/** How far past rest position the brick overshoots on impact (fraction of SCATTER_DISTANCE). */
-export const BOUNCE_OVERSHOOT = 0.04;
-
-// ---------------------------------------------------------------------------
-// Pure layout helpers — fully testable
-// ---------------------------------------------------------------------------
-
-export interface BrickInstance {
-  /** Rest position in wall-local space (wall centered at origin, facing +Z). */
-  readonly restX: number;
-  readonly restY: number;
-  /** Normalized row height (0 = bottom row, 1 = top row). Bottom bricks build first. */
-  readonly stagger: number;
-  /** Scatter offset direction (unit vector). Bricks slide in from below/outward. */
-  readonly scatterDirX: number;
-  readonly scatterDirY: number;
-  readonly scatterDirZ: number;
-  /** Random rotation axes and magnitude for scatter. */
-  readonly scatterRotX: number;
-  readonly scatterRotY: number;
-  readonly scatterRotZ: number;
-}
-
-/**
- * Simple seeded PRNG (mulberry32) for deterministic brick scatter.
- * Returns a function that produces values in [0, 1).
- */
-export function createSeededRandom(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * Computes a grid of brick instances for a wall of given dimensions.
- *
- * The wall is centered at local origin, spanning [-w/2, w/2] × [-h/2, h/2].
- * Bricks are laid in a standard running bond pattern (half-brick offset on alternating rows).
- *
- * @param wallWidth  - Wall width in meters.
- * @param wallHeight - Wall height in meters.
- * @param seed       - PRNG seed for deterministic scatter directions.
- */
-export function computeBrickLayout(
-  wallWidth: number,
-  wallHeight: number,
-  seed: number,
-): readonly BrickInstance[] {
-  const rand = createSeededRandom(seed);
-  const bricks: BrickInstance[] = [];
-
-  const cellW = BLOCK_WIDTH + MORTAR_GAP;
-  const cellH = BLOCK_HEIGHT + MORTAR_GAP;
-  const cols = Math.ceil(wallWidth / cellW);
-  const rows = Math.ceil(wallHeight / cellH);
-
-  const halfW = wallWidth / 2;
-  const halfH = wallHeight / 2;
-  const maxRow = Math.max(rows - 1, 1);
-
-  for (let row = 0; row < rows; row++) {
-    // Running bond: offset odd rows by half a brick width.
-    const xOffset = row % 2 === 0 ? 0 : cellW * 0.5;
-    // Bottom-up base stagger: row 0 (bottom) = 0, top row = 1.
-    const rowStagger = row / maxRow;
-
-    for (let col = 0; col < cols; col++) {
-      const x = -halfW + col * cellW + xOffset + cellW * 0.5;
-      const y = -halfH + row * cellH + cellH * 0.5;
-
-      // Skip bricks entirely outside the wall boundary.
-      if (x - BLOCK_WIDTH / 2 > halfW || x + BLOCK_WIDTH / 2 < -halfW) continue;
-      if (y - BLOCK_HEIGHT / 2 > halfH || y + BLOCK_HEIGHT / 2 < -halfH) continue;
-
-      // Per-brick random jitter so bricks in the same row don't move in lockstep.
-      const jitter = (rand() - 0.5) * BRICK_JITTER * 2;
-      const stagger = Math.max(0, Math.min(1, rowStagger + jitter));
-
-      // Scatter direction: primarily upward (+Y in wall-local = above the wall).
-      // Bricks fall rapidly from the sky and slam into their grid position.
-      const spreadX = (rand() - 0.5) * 0.15;
-      const spreadY = 0.85 + rand() * 0.15; // strongly upward — bricks start above, fall down
-      const spreadZ = (rand() - 0.5) * 0.1; // minimal outward drift
-      const len = Math.sqrt(spreadX * spreadX + spreadY * spreadY + spreadZ * spreadZ);
-
-      bricks.push({
-        restX: x,
-        restY: y,
-        stagger,
-        scatterDirX: spreadX / len,
-        scatterDirY: spreadY / len,
-        scatterDirZ: spreadZ / len,
-        scatterRotX: (rand() - 0.5) * MAX_SCATTER_ROTATION * 2,
-        scatterRotY: (rand() - 0.5) * MAX_SCATTER_ROTATION * 2,
-        scatterRotZ: (rand() - 0.5) * MAX_SCATTER_ROTATION * 2,
-      });
-    }
-  }
-
-  return bricks;
-}
-
-/**
- * Heavy-landing easing: accelerate in (gravity), slam into place, damped bounce.
- *
- * Phase 1 (0 → IMPACT_POINT): ease-in quadratic — slow start, fast arrival.
- *   Simulates gravity pulling the brick toward its slot.
- * Phase 2 (IMPACT_POINT → 1): damped sine bounce — overshoot past rest then settle.
- *   Returns values slightly > 1 during bounce (brick pushes into wall, then rebounds).
- *   This is the "dud" — the visual cue of weight and impact.
- *
- * At t=0 returns 0, at t=1 returns 1. Peak overshoot ≈ 1 + BOUNCE_OVERSHOOT.
- */
-export function easeHeavyLanding(t: number): number {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-
-  if (t < IMPACT_POINT) {
-    // Ease-in quadratic: accelerates toward target (gravity feel)
-    const n = t / IMPACT_POINT;
-    return n * n;
-  }
-
-  // Post-impact: damped sine bounce
-  const postT = (t - IMPACT_POINT) / (1 - IMPACT_POINT);
-  const bounce = Math.sin(postT * Math.PI) * BOUNCE_OVERSHOOT * (1 - postT);
-  return 1 + bounce;
-}
-
-/**
- * Computes per-brick animation progress given global progress (0→1).
- *
- * - progress=0: all bricks scattered
- * - progress=1: all bricks assembled
- * - Bottom bricks assemble first (low stagger), top bricks last (high stagger).
- */
-export function computeBrickProgress(globalProgress: number, stagger: number): number {
-  // Each brick's "start time" is proportional to its stagger value.
-  const startTime = stagger * STAGGER_SPAN;
-  const endTime = startTime + (1 - STAGGER_SPAN);
-  const raw = (globalProgress - startTime) / (endTime - startTime);
-  return Math.max(0, Math.min(1, raw));
-}
-
-/**
- * Returns whether the instanced wall mesh must refresh its matrices this frame.
- *
- * A snapped target change (camera auto-hide) is not "animating", but still
- * needs one matrix/visibility update. Without this guard, camera-side walls
- * can keep their old visible matrices after the store has already hidden them.
- */
-export function shouldUpdateBrickWallMatrices(
-  progress: number,
-  target: number,
-  needsMatrixUpdate: boolean,
-  targetChanged: boolean,
-): boolean {
-  return targetChanged || needsMatrixUpdate || Math.abs(progress - target) > 0.001;
-}
+import {
+  BLOCK_DEPTH,
+  BLOCK_HEIGHT,
+  BLOCK_WIDTH,
+  SCATTER_DISTANCE,
+  computeBrickLayout,
+  computeBrickProgress,
+  easeHeavyLanding,
+  shouldUpdateBrickWallMatrices,
+} from "../lib/brick-wall.js";
+export {
+  BLOCK_DEPTH,
+  BLOCK_HEIGHT,
+  BLOCK_WIDTH,
+  BOUNCE_OVERSHOOT,
+  BRICK_JITTER,
+  IMPACT_POINT,
+  MAX_SCATTER_ROTATION,
+  MORTAR_GAP,
+  SCATTER_DISTANCE,
+  STAGGER_SPAN,
+  computeBrickLayout,
+  computeBrickProgress,
+  createSeededRandom,
+  easeHeavyLanding,
+  shouldUpdateBrickWallMatrices,
+} from "../lib/brick-wall.js";
+export type { BrickInstance } from "../lib/brick-wall.js";
 
 // ---------------------------------------------------------------------------
 // Component

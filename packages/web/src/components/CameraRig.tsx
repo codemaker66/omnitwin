@@ -19,211 +19,53 @@ import {
   isHumanPovPointerButton,
   type HumanPovLookAngles,
 } from "../lib/human-pov-camera.js";
+import {
+  DAMPING_FACTOR,
+  DAMPING_SETTLE_FRAMES,
+  MAX_POLAR_ANGLE,
+  MIN_POLAR_ANGLE,
+  PAN_KEYS,
+  PAN_SPEED,
+  ZOOM_FRICTION,
+  ZOOM_IMPULSE,
+  ZOOM_VELOCITY_THRESHOLD,
+  computeCameraTarget,
+  computeDefaultCameraPosition,
+  computeDistanceLimits,
+  computeKeyboardPanDirection,
+  computePanBounds,
+  isCameraKeyboardInputLocked,
+  isCameraKeyboardPanSuspendedByPlannerState,
+  type CameraKeyboardPlannerState,
+} from "../lib/camera-rig.js";
 
-// ---------------------------------------------------------------------------
-// Camera configuration — pure data, fully testable
-// ---------------------------------------------------------------------------
-
-/**
- * Computes default camera position for a cinematic planning perspective.
- *
- * Desktop opens in a high, diagonal, room-composition view so layouts read as
- * a premium planning board immediately. Saved POVs still provide human eye
- * mode; the default authoring pose is intentionally god-view-first.
- */
-export function computeDefaultCameraPosition(
-  dimensions: SpaceDimensions,
-  aspect = 1.78,
-): readonly [number, number, number] {
-  const { width, length } = dimensions;
-  const maxDim = Math.max(width, length);
-  const minDim = Math.min(width, length);
-
-  // Portrait / narrow viewport (aspect < 1.2) — elevated interior 3/4 view.
-  // The earlier exterior "dollhouse" pose framed the room footprint but left
-  // phone users staring at the outside of the wall. For the planner, the hall
-  // interior is the product; keep the camera inside the room and lift enough
-  // to read the ceiling, chandeliers, and long-wall rhythm.
-  if (aspect < 1.2) {
-    const alongAxis = maxDim * 0.31;
-    const lateral = minDim * 0.18;
-    const lift = Math.max(dimensions.height * 0.34, 2.2);
-    if (width >= length) {
-      return [alongAxis, lift, lateral];
-    }
-    return [lateral, lift, alongAxis];
-  }
-
-  // Landscape / desktop — premium top-down 3/4 authoring pose.
-  // Keep the camera close to the room centre and lift aggressively so a new
-  // layout opens as a complete planning board, not as a cropped inspection
-  // view. Users can still zoom down to individual chairs immediately.
-  const alongAxis = maxDim * 0.1;
-  const lateral = -minDim * 0.18;
-  const lift = Math.max(dimensions.height * 1.8, maxDim * 0.92);
-
-  if (width >= length) {
-    return [alongAxis, lift, lateral];
-  }
-  return [lateral, lift, alongAxis];
-}
-
-/**
- * Computes the orbit target.
- * Landscape: low centre-of-room target so the default authoring pose reads the
- * entire layout surface and wall rhythm.
- * Portrait: slightly higher target so the elevated interior pose reads the
- * ceiling and chandeliers without aiming above the room.
- */
-export function computeCameraTarget(
-  dimensions: SpaceDimensions,
-  aspect = 1.78,
-): readonly [number, number, number] {
-  if (aspect < 1.2) return [0, dimensions.height * 0.32, 0];
-  return [0, dimensions.height * 0.1, 0];
-}
-
-/**
- * Horizontal FOV (radians) derived from the given vertical FOV (degrees)
- * and viewport aspect ratio. Used by computeFramingDistance to pick a
- * camera-to-target distance that keeps the room bounding box in frame
- * regardless of how narrow the viewport is.
- */
-export function horizontalFovFromVertical(vFovDeg: number, aspect: number): number {
-  const v = (vFovDeg * Math.PI) / 180;
-  return 2 * Math.atan(Math.tan(v / 2) * aspect);
-}
-
-/**
- * Minimum camera-to-target distance that frames the room's bounding box
- * at the given aspect ratio and vertical FOV, with a small outer margin.
- * Used exclusively by the portrait pose — desktop keeps its existing
- * eye-level math.
- */
-export function computeFramingDistance(
-  dimensions: SpaceDimensions,
-  aspect: number,
-  vFovDeg: number,
-  margin = 1.15,
-): number {
-  const v = (vFovDeg * Math.PI) / 180;
-  const h = horizontalFovFromVertical(vFovDeg, aspect);
-  const halfW = (Math.max(dimensions.width, dimensions.length) * margin) / 2;
-  const halfH = (dimensions.height * margin) / 2;
-  return Math.max(halfH / Math.tan(v / 2), halfW / Math.tan(h / 2));
-}
-
-/**
- * Computes min/max orbit distance constraints.
- * - Min ~1.5 m: close enough to inspect individual chairs/cloths.
- * - Max: scales up to 1.6× the longest dim so the portrait hero pose
- *   (which sits outside the room) isn't clamped at the ceiling and
- *   end up hugging the room instead.
- */
-export function computeDistanceLimits(
-  dimensions: SpaceDimensions,
-): { readonly minDistance: number; readonly maxDistance: number } {
-  const maxDim = Math.max(dimensions.width, dimensions.length, dimensions.height);
-  return {
-    minDistance: 1.5,
-    maxDistance: Math.max(15, maxDim * 1.6),
-  };
-}
-
-/**
- * Computes the rectangular bounds the camera target can pan within.
- * Allows panning slightly beyond the room edges (20% margin) so
- * the user can see all corners without the target snapping at the edge.
- */
-export function computePanBounds(
-  dimensions: SpaceDimensions,
-): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } {
-  const marginX = dimensions.width * 0.2;
-  const marginZ = dimensions.length * 0.2;
-  return {
-    minX: -dimensions.width / 2 - marginX,
-    maxX: dimensions.width / 2 + marginX,
-    minZ: -dimensions.length / 2 - marginZ,
-    maxZ: dimensions.length / 2 + marginZ,
-  };
-}
-
-/** Minimum polar angle — don't let camera go below the floor plane. */
-export const MIN_POLAR_ANGLE = 0.1; // ~6° from directly overhead
-
-/** Maximum polar angle — nearly horizontal, never below the floor. */
-export const MAX_POLAR_ANGLE = Math.PI * 0.48; // ~86° from vertical (nearly horizontal)
-
-/** Damping factor — lower = more slide/coast after interaction. */
-export const DAMPING_FACTOR = 0.04;
-
-/** Base pan speed in meters per second at reference zoom distance. */
-export const PAN_SPEED = 20;
-
-/** Edge scroll zone width in pixels from screen edge. */
-export const EDGE_SCROLL_ZONE = 40;
-
-/** Number of frames to keep rendering after an OrbitControls interaction,
- *  allowing damping to coast smoothly in demand mode. ~3 seconds at 60fps. */
-export const DAMPING_SETTLE_FRAMES = 180;
-
-/** How much each scroll tick adds to zoom velocity (multiplied by current distance). */
-export const ZOOM_IMPULSE = 0.025;
-
-/** Friction applied per frame — velocity *= (1 - friction). Lower = more coast. */
-export const ZOOM_FRICTION = 0.09;
-
-/** Below this velocity, snap to zero and stop rendering zoom frames. */
-export const ZOOM_VELOCITY_THRESHOLD = 0.001;
+export {
+  DAMPING_FACTOR,
+  DAMPING_SETTLE_FRAMES,
+  EDGE_SCROLL_ZONE,
+  MAX_POLAR_ANGLE,
+  MIN_POLAR_ANGLE,
+  PAN_SPEED,
+  ZOOM_FRICTION,
+  ZOOM_IMPULSE,
+  ZOOM_VELOCITY_THRESHOLD,
+  computeCameraTarget,
+  computeDefaultCameraPosition,
+  computeDistanceLimits,
+  computeEdgeScrollDirection,
+  computeKeyboardPanDirection,
+  computePanBounds,
+  isCameraKeyboardInputLocked,
+  isCameraKeyboardPanSuspendedByPlannerState,
+  type CameraKeyboardPlannerState,
+} from "../lib/camera-rig.js";
 
 // ---------------------------------------------------------------------------
 // Keyboard state tracking
 // ---------------------------------------------------------------------------
 
-const PAN_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"]);
-
 /** Shared keyboard state — tracks which pan keys are currently held. */
 const keyboardKeys = new Set<string>();
-
-export function isCameraKeyboardInputLocked(target: EventTarget | null): boolean {
-  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
-
-  if (
-    target.closest(
-      "input, textarea, select, button, [role='button'], [role='textbox'], [role='toolbar'], [role='menu'], [role='listbox'], [role='option'], [contenteditable]:not([contenteditable='false'])",
-    ) !== null
-  ) {
-    return true;
-  }
-
-  return target.closest("[role='dialog'], [data-camera-keyboard-lock='true']") !== null;
-}
-
-export interface CameraKeyboardPlannerState {
-  readonly catalogueDrawerOpen: boolean;
-  readonly catalogueSelectionActive: boolean;
-  readonly catalogueDragActive: boolean;
-  readonly cameraReferenceDraftOpen: boolean;
-  readonly guidelineActive: boolean;
-  readonly markupActive: boolean;
-  readonly measurementActive: boolean;
-  readonly selectedItemCount: number;
-  readonly marqueeActive: boolean;
-}
-
-export function isCameraKeyboardPanSuspendedByPlannerState(state: CameraKeyboardPlannerState): boolean {
-  return (
-    state.catalogueDrawerOpen ||
-    state.catalogueSelectionActive ||
-    state.catalogueDragActive ||
-    state.cameraReferenceDraftOpen ||
-    state.guidelineActive ||
-    state.markupActive ||
-    state.measurementActive ||
-    state.selectedItemCount > 0 ||
-    state.marqueeActive
-  );
-}
 
 function readCameraKeyboardPlannerState(): CameraKeyboardPlannerState {
   const catalogue = useCatalogueStore.getState();
@@ -251,61 +93,6 @@ function onKeyUp(event: KeyboardEvent): void {
 
 function onBlur(): void {
   keyboardKeys.clear();
-}
-
-// ---------------------------------------------------------------------------
-// Pure pan direction computation
-// ---------------------------------------------------------------------------
-
-/**
- * Computes a unit XZ pan direction from currently pressed keys.
- * Returns [0, 0] if no pan keys are held. Output is normalized.
- *
- * W/Up = -Z (forward into screen), S/Down = +Z, A/Left = -X, D/Right = +X.
- * This matches camera-relative panning for a top-down RTS view.
- */
-export function computeKeyboardPanDirection(
-  pressedKeys: ReadonlySet<string>,
-): readonly [number, number] {
-  let dx = 0;
-  let dz = 0;
-
-  if (pressedKeys.has("KeyW") || pressedKeys.has("ArrowUp")) dz -= 1;
-  if (pressedKeys.has("KeyS") || pressedKeys.has("ArrowDown")) dz += 1;
-  if (pressedKeys.has("KeyA") || pressedKeys.has("ArrowLeft")) dx -= 1;
-  if (pressedKeys.has("KeyD") || pressedKeys.has("ArrowRight")) dx += 1;
-
-  if (dx === 0 && dz === 0) return [0, 0];
-
-  // Normalize diagonal movement
-  const length = Math.sqrt(dx * dx + dz * dz);
-  return [dx / length, dz / length];
-}
-
-/**
- * Computes edge scroll direction based on mouse position relative to viewport.
- * Returns [0, 0] if mouse is not near any edge.
- */
-export function computeEdgeScrollDirection(
-  mouseX: number,
-  mouseY: number,
-  viewportWidth: number,
-  viewportHeight: number,
-  zone: number,
-): readonly [number, number] {
-  let dx = 0;
-  let dz = 0;
-
-  if (mouseX < zone) dx = -1;
-  else if (mouseX > viewportWidth - zone) dx = 1;
-
-  if (mouseY < zone) dz = -1;
-  else if (mouseY > viewportHeight - zone) dz = 1;
-
-  if (dx === 0 && dz === 0) return [0, 0];
-
-  const length = Math.sqrt(dx * dx + dz * dz);
-  return [dx / length, dz / length];
 }
 
 // ---------------------------------------------------------------------------

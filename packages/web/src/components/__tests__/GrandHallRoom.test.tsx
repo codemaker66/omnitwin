@@ -36,9 +36,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const CanvasMock = vi.hoisted(() =>
-  vi.fn(({ children }: { children?: React.ReactNode }) => (
-    <div data-testid="r3f-canvas">{children}</div>
-  )),
+  vi.fn((_props: { children?: React.ReactNode }) => <div data-testid="r3f-canvas" />),
 );
 
 vi.mock("@react-three/fiber", () => ({

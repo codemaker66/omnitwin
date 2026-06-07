@@ -14,7 +14,7 @@ import {
   MAX_SCATTER_ROTATION,
   BRICK_JITTER,
   shouldUpdateBrickWallMatrices,
-} from "../BrickWall.js";
+} from "../../lib/brick-wall.js";
 
 // ---------------------------------------------------------------------------
 // createSeededRandom

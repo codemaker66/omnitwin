@@ -12,6 +12,7 @@ import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
+import { isPoseurTable } from "../lib/placement-ghost.js";
 import { ROTATION_SNAP_RAD } from "../lib/selection.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import { findNearestTable, CLOTH_SNAP_DISTANCE_RENDER } from "../lib/cloth-snap.js";
@@ -33,31 +34,7 @@ import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-bru
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
 // ---------------------------------------------------------------------------
 
-/**
- * True if the selected catalogue item is the table cloth.
- *
- * Catalogue IDs are deterministic UUIDs (introduced in d163801); literal
- * string-equals comparisons against the developer slug silently fail. This
- * helper resolves the UUID to its CatalogueItem and inspects the slug, so
- * cloth dispatch survives any future ID migration.
- */
-export function isCloth(id: string | null): boolean {
-  return tableClothStyleForCatalogueItem(id) !== null;
-}
-
-export function isTableSetting(id: string | null): boolean {
-  return tableSettingForCatalogueItem(id) !== null;
-}
-
-/**
- * True if the selected catalogue item is one of the poseur tables.
- * Poseur tables skip the chair-count dialog because they have no chairs.
- * Same UUID-vs-slug rationale as `isCloth`.
- */
-export function isPoseurTable(id: string | null): boolean {
-  if (id === null) return false;
-  return getCatalogueItem(id)?.slug.startsWith("poseur-table") ?? false;
-}
+export { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.js";
 
 /**
  * Handles drag-and-drop furniture placement from the shop bar:

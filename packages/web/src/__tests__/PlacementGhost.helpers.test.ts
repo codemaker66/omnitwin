@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect } from "vitest";
-import { isCloth, isPoseurTable, isTableSetting } from "../components/PlacementGhost.js";
+import { isCloth, isPoseurTable, isTableSetting } from "../lib/placement-ghost.js";
 import { CATALOGUE_ITEMS } from "../lib/catalogue.js";
 
 describe("PlacementGhost.isCloth", () => {

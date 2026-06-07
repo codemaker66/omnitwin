@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { buildViolationCrossMarks } from "../ConstraintViolationSkin.js";
+import { buildViolationCrossMarks } from "../../lib/constraint-violation-skin.js";
 
 describe("buildViolationCrossMarks", () => {
   it("spreads holographic warning marks across a furniture footprint", () => {

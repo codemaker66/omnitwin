@@ -67,10 +67,12 @@ describe("FurnitureProxy glTF routing (#28)", () => {
   });
 
   it("wraps GltfFurniture in MeshErrorBoundary so a bad GLB doesn't crash the scene", async () => {
-    const { codeOnly } = await readSource("src/components/FurnitureProxy.tsx");
-    expect(codeOnly).toContain("<MeshErrorBoundary");
-    expect(codeOnly).toContain("class MeshErrorBoundary");
-    expect(codeOnly).toContain("getDerivedStateFromError");
+    const proxySource = await readSource("src/components/FurnitureProxy.tsx");
+    const boundarySource = await readSource("src/components/MeshErrorBoundary.tsx");
+    expect(proxySource.codeOnly).toContain("<MeshErrorBoundary");
+    expect(proxySource.codeOnly).toMatch(/import[\s\S]*?MeshErrorBoundary[\s\S]*?from/);
+    expect(boundarySource.codeOnly).toContain("class MeshErrorBoundary");
+    expect(boundarySource.codeOnly).toContain("getDerivedStateFromError");
   });
 
   it("renders procedural mesh directly when meshUrl is null", async () => {

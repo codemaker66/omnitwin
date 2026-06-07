@@ -16,7 +16,7 @@ import {
   ZOOM_VELOCITY_THRESHOLD,
   PAN_SPEED,
   EDGE_SCROLL_ZONE,
-} from "../CameraRig.js";
+} from "../../lib/camera-rig.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------

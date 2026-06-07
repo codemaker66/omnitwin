@@ -3,7 +3,7 @@ import {
   stepWallAssemblyOpacity,
   wallAssemblyTargetFromBaseOpacity,
   wallKeyFromSurfaceKey,
-} from "../SurfaceVisibilityGroup.js";
+} from "../../lib/surface-visibility-group.js";
 
 describe("SurfaceVisibilityGroup wall assembly helpers", () => {
   it("detects wall surface keys and ignores ceiling/dome surfaces", () => {

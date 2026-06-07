@@ -5,7 +5,7 @@ import {
   createBanquetChairBackRimShape,
   createBanquetChairBackShape,
   TRADES_HALL_CHAIR_COLORS,
-} from "../meshes/ChairMesh.js";
+} from "../../lib/chair-mesh-visual.js";
 
 function banquetChair() {
   const item = getCatalogueItemBySlug("banquet-chair");

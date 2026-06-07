@@ -4,7 +4,7 @@ import {
   computeCylinderSegmentTransform,
   computeFoldingRoundTableVisualSpec,
   FOLDING_ROUND_TABLE_COLORS,
-} from "../meshes/RoundTableMesh.js";
+} from "../../lib/round-table-mesh-visual.js";
 
 function roundTable() {
   const item = getCatalogueItemBySlug("round-table-6ft");
