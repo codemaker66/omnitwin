@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactElement } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 
@@ -42,6 +42,9 @@ const PrivacyPage = lazy(() =>
 const TermsPage = lazy(() =>
   import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "terms" }) })),
 );
+const AccessibilityPage = lazy(() =>
+  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "accessibility" }) })),
+);
 const PricingPage = lazy(() =>
   import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage })),
 );
@@ -67,6 +70,11 @@ function withSuspense(node: ReactElement): ReactElement {
   return <Suspense fallback={<LoadingFallback />}>{node}</Suspense>;
 }
 
+function OnboardRedirect(): ReactElement {
+  const location = useLocation();
+  return <Navigate to={`/register${location.search}`} replace />;
+}
+
 export const router = createBrowserRouter([
   {
     // Alias kept so any stale bookmarks of `/landing` still work.
@@ -82,6 +90,12 @@ export const router = createBrowserRouter([
   {
     path: "/register",
     element: withSuspense(<RegisterPage />),
+  },
+  {
+    // Temporary acquisition path until a dedicated billing/onboarding flow lands.
+    // Pricing CTAs must not fall through to the homepage.
+    path: "/onboard",
+    element: <OnboardRedirect />,
   },
   {
     // `/editor` is the URL Trades Hall already shares publicly (on flyers,
@@ -154,8 +168,7 @@ export const router = createBrowserRouter([
   },
   {
     // Public SaaS pricing page. Entry point for prospective venues;
-    // CTAs deep-link to /onboard?tier=... once the Stripe+onboarding
-    // phases ship. Linked from LandingPage TopNav.
+    // CTAs route to registration until the Stripe+onboarding phases ship.
     path: "/pricing",
     element: withSuspense(<PricingPage />),
   },
@@ -176,8 +189,24 @@ export const router = createBrowserRouter([
     element: withSuspense(<PrivacyPage />),
   },
   {
+    path: "/legal/privacy",
+    element: withSuspense(<PrivacyPage />),
+  },
+  {
     path: "/terms",
     element: withSuspense(<TermsPage />),
+  },
+  {
+    path: "/legal/terms",
+    element: withSuspense(<TermsPage />),
+  },
+  {
+    path: "/accessibility",
+    element: withSuspense(<AccessibilityPage />),
+  },
+  {
+    path: "/legal/accessibility",
+    element: withSuspense(<AccessibilityPage />),
   },
   {
     // Public marketing homepage — ported from the Claude Design handoff

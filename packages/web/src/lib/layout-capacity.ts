@@ -8,8 +8,8 @@ import type { LayoutStyle } from "@omnitwin/types";
 // event-planning space-per-guest guidance.
 //
 // SAFE LANGUAGE: every number here is a PLANNING-GRADE comfort estimate. It is
-// NOT a legal occupancy figure, NOT a fire-capacity limit, and NOT a
-// survey-grade measurement. Human review is required before any capacity is
+// NOT a legal occupancy figure, NOT a fire-capacity limit, and NOT an
+// authoritative measured-capacity statement. Human review is required before any capacity is
 // communicated to a client. The labels below stay strictly inside that
 // vocabulary.
 // ---------------------------------------------------------------------------

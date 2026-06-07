@@ -266,7 +266,7 @@ export async function enquiryRoutes(
 
       if (parsed.data.status === "approved") {
         const configUrl = enquiry.configurationId !== null
-          ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/editor/${enquiry.configurationId}`
+          ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/plan/${enquiry.configurationId}`
           : null;
         const emailData = await enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
         // Idempotency: one approved notification per enquiry, regardless

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // API client tests — Clerk-based token retrieval via auth-bridge module
@@ -6,6 +7,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
+
+const IdSchema = z.object({ id: z.number() });
+const NameSchema = z.object({ name: z.string() });
+const OkSchema = z.object({ ok: z.boolean() });
 
 // Must import AFTER stubbing fetch
 const { api, ApiError } = await import("../api/client.js");
@@ -32,7 +37,7 @@ describe("api.get", () => {
     setTokenGetter(() => Promise.resolve("clerk-session-token"));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
-    await api.get("/test");
+    await api.get("/test", IdSchema);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer clerk-session-token");
@@ -41,7 +46,7 @@ describe("api.get", () => {
   it("omits Authorization header when no Clerk session", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
-    await api.get("/test");
+    await api.get("/test", IdSchema);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
@@ -51,7 +56,7 @@ describe("api.get", () => {
     setTokenGetter(() => Promise.resolve(null));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
-    await api.get("/test");
+    await api.get("/test", IdSchema);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
@@ -60,7 +65,7 @@ describe("api.get", () => {
   it("unwraps { data } envelope", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: { name: "Test" } }));
 
-    const result = await api.get<{ name: string }>("/test");
+    const result = await api.get("/test", NameSchema);
     expect(result).toEqual({ name: "Test" });
   });
 });
@@ -121,7 +126,7 @@ describe("api.post", () => {
   it("sends JSON body", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
 
-    await api.post("/test", { email: "a@b.com" });
+    await api.post("/test", { email: "a@b.com" }, false, OkSchema);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("POST");
@@ -132,7 +137,7 @@ describe("api.post", () => {
     setTokenGetter(() => Promise.resolve("my-token"));
     fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
 
-    await api.post("/public/test", { email: "a" }, true);
+    await api.post("/public/test", { email: "a" }, true, OkSchema);
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
@@ -152,7 +157,7 @@ describe("graceful getToken errors", () => {
     setTokenGetter(() => Promise.reject(new Error("Clerk error")));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
 
-    const result = await api.get<{ id: number }>("/test");
+    const result = await api.get("/test", IdSchema);
     expect(result).toEqual({ id: 1 });
   });
 });
@@ -287,11 +292,19 @@ describe("schema validation", () => {
   });
 
   it("legacy path without schema still works (back-compat)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { /* expected legacy warning */ });
     fetchMock.mockResolvedValue(jsonResponse({ data: { whatever: "shape" } }));
 
-    // No schema passed — falls through to the unsafe cast path
-    const result = await api.get<{ whatever: string }>("/legacy");
-    expect(result).toEqual({ whatever: "shape" });
+    try {
+      // No schema passed — falls through to the unsafe cast path
+      const result = await api.get<{ whatever: string }>("/legacy");
+      expect(result).toEqual({ whatever: "shape" });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[api] GET /legacy called without a Zod schema — response is unvalidated",
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("schema validates after the {data} envelope is unwrapped", async () => {

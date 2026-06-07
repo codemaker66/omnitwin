@@ -373,7 +373,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
-          <a href={`/editor/${entry.id}`} target="_blank" rel="noreferrer"
+          <a href={`/plan/${entry.id}`} target="_blank" rel="noreferrer"
             style={{ ...buttonSecondary, textDecoration: "none", display: "inline-block" }}>
             Open Layout
           </a>

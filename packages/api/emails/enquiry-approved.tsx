@@ -7,7 +7,7 @@ const sampleData: EnquiryApprovedData = {
   venueName: "Trades Hall Glasgow",
   spaceName: "Grand Hall",
   eventDate: "Saturday, 15 June 2026",
-  configUrl: "http://localhost:5173/editor/abc-123",
+  configUrl: "http://localhost:5173/plan/abc-123",
 };
 
 export default function Preview() {

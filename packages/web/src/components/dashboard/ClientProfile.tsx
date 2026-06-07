@@ -108,7 +108,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
           <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Configurations</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {configs.map((c) => (
-              <a key={c.id} href={`/editor/${c.id}`} style={{ ...cardStyle, textDecoration: "none", color: "inherit" }}>
+              <a key={c.id} href={`/plan/${c.id}`} style={{ ...cardStyle, textDecoration: "none", color: "inherit" }}>
                 <div style={{ fontWeight: 600 }}>{c.name}</div>
                 <div style={{ color: "#999", marginTop: 4 }}>
                   {c.spaceName} · {String(c.objectCount)} objects · {new Date(c.createdAt).toLocaleDateString()}

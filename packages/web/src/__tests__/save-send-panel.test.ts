@@ -21,6 +21,7 @@ vi.mock("../api/spaces.js", () => ({
 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ search: "?tier=pro&cycle=annual" }),
   useParams: () => ({}),
   Navigate: ({ to }: { to: string }) => `Redirect to ${to}`,
   createBrowserRouter: (routes: unknown) => routes,
@@ -97,8 +98,10 @@ describe("AuthModal", () => {
 
 describe("EditorPage", () => {
   it("exports a component", async () => {
-    const { EditorPage } = await import("../pages/EditorPage.js");
-    expect(typeof EditorPage).toBe("function");
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/pages/EditorPage.tsx"), "utf-8");
+    expect(source).toMatch(/export\s+function\s+EditorPage\s*\(/);
   });
 });
 
@@ -317,5 +320,46 @@ describe("Router", () => {
     const routes = routeEntries(router);
     const fixtureRoute = routes.find((r) => r.path === "/dev/splat-fixture");
     expect(fixtureRoute).toBeDefined();
+  });
+
+  it("keeps retail legal and onboarding routes from falling through to home", async () => {
+    const { router } = await import("../router.js");
+    const routes = routeEntries(router);
+    expect(routes.find((r) => r.path === "/onboard")).toBeDefined();
+    expect(routes.find((r) => r.path === "/legal/terms")).toBeDefined();
+    expect(routes.find((r) => r.path === "/legal/privacy")).toBeDefined();
+    expect(routes.find((r) => r.path === "/legal/accessibility")).toBeDefined();
+  });
+
+  it("preserves onboarding query parameters when redirecting to registration", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve("src/router.tsx"), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+
+    expect(codeOnly).toContain("useLocation");
+    expect(codeOnly).toContain("location.search");
+    expect(codeOnly).toContain("/register${location.search}");
+  });
+});
+
+describe("GuestEnquiryModal retail polish — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("copies planner links and resolves legacy catalogue slugs in the success summary", async () => {
+    const { codeOnly } = await readSource("src/components/editor/GuestEnquiryModal.tsx");
+    expect(codeOnly).toContain("/plan/${configId}");
+    expect(codeOnly).toContain("c.slug === item.catalogueItemId");
+    expect(codeOnly).not.toContain("/editor/${configId}");
   });
 });

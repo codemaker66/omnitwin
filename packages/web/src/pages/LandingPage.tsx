@@ -51,7 +51,7 @@ function upsertMeta(attr: "name" | "property", key: string, content: string): vo
 
 const META_TITLE = "Design your Grand Hall event — Trades Hall Glasgow";
 const META_DESC =
-  "Design your event inside the real Trades Hall Grand Hall. Try wedding, gala, or conference layouts to scale, then send a draft to the events team.";
+  "Design a planning draft for the Trades Hall Grand Hall. Try wedding, gala, or conference layouts, then send a draft to the events team.";
 const PHONE_PLANNER_QUERY = "(max-width: 639px)";
 const PLAN_VIEWBOX_WIDTH = 840;
 const PLAN_VIEWBOX_HEIGHT = 470;
@@ -278,10 +278,10 @@ function Hero(): ReactElement {
           <div className="hero-left rise">
             <div className="eyebrow">Trades Hall Glasgow · Grand Hall planner</div>
             <h1>
-              Design your event inside the real Grand Hall.
+              Design your event for the Grand Hall.
             </h1>
             <p className="lede">
-              Try a wedding, gala, or conference layout to scale — then send it directly
+              Try a wedding, gala, or conference planning draft — then send it directly
               to the Trades Hall events team.
             </p>
             <div className="ctas">
@@ -312,7 +312,7 @@ function Hero(): ReactElement {
                 loading="eager"
               />
               <div className="hero-media-photo-copy">
-                <span>Real {selectedRoom.shortTitle}</span>
+                <span>{selectedRoom.shortTitle} planning draft</span>
                 <strong>Heritage room, planning draft</strong>
               </div>
             </div>

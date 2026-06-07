@@ -69,7 +69,7 @@ function getLayoutSummary(): string {
   if (items.length === 0) return "Empty layout";
   const counts = new Map<string, number>();
   for (const item of items) {
-    const cat = CATALOGUE_ITEMS.find((c) => c.id === item.catalogueItemId);
+    const cat = CATALOGUE_ITEMS.find((c) => c.id === item.catalogueItemId || c.slug === item.catalogueItemId);
     const label = cat?.name ?? item.catalogueItemId;
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
@@ -147,7 +147,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
 
   const handleCopy = useCallback(async (): Promise<void> => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/editor/${configId}`);
+      await navigator.clipboard.writeText(`${window.location.origin}/plan/${configId}`);
       setCopied("success");
       setTimeout(() => { setCopied("idle"); }, 2500);
     } catch {

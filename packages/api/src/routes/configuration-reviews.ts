@@ -588,12 +588,12 @@ export async function configurationReviewRoutes(
     });
 
     // Notify planner + every hallkeeper on duty at the venue. The two
-    // emails are intentionally distinct: planner's CTA is editor / sheet
+    // emails are intentionally distinct: planner's CTA is planner / sheet
     // preview; hallkeeper's CTA is the day-of sheet.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
     const ctx = await loadReviewEmailContext(db, config, request.user);
     const hallkeeperUrl = `${baseFeUrl}/hallkeeper/${config.id}`;
-    const editorUrl = `${baseFeUrl}/editor/${config.id}`;
+    const editorUrl = `${baseFeUrl}/plan/${config.id}`;
     const approvedAtIso = approved.approvedAt ?? new Date().toISOString();
 
     // Emit a typed `approval.recorded` event AFTER the audit history
@@ -715,7 +715,7 @@ export async function configurationReviewRoutes(
           spaceName: ctx.spaceName,
           snapshotVersion,
           rejectedByName: ctx.actor.displayName,
-          editorUrl: `${baseFeUrl}/editor/${config.id}`,
+          editorUrl: `${baseFeUrl}/plan/${config.id}`,
           note: body.data.note,
         }),
       );
@@ -785,7 +785,7 @@ export async function configurationReviewRoutes(
           spaceName: ctx.spaceName,
           snapshotVersion,
           requestedByName: ctx.actor.displayName,
-          editorUrl: `${baseFeUrl}/editor/${config.id}`,
+          editorUrl: `${baseFeUrl}/plan/${config.id}`,
           note: body.data.note,
         }),
       );

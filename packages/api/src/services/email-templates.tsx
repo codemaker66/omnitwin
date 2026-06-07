@@ -207,7 +207,7 @@ function Layout({ label, preview, children }: LayoutProps): ReactElement {
           </Section>
           <Section style={mainSectionStyle}>{children}</Section>
           <Section style={footerStyle}>
-            Sent by VenViewer — Venue Planning Platform
+            Sent by Venviewer — Venue Planning Platform
           </Section>
         </Container>
       </Body>
@@ -586,7 +586,7 @@ export function ConfigChangesRequestedEmail(props: ConfigChangesRequestedData): 
       <EventMetaTable data={props} />
       {noteCallout("warning", "Requested changes", props.note)}
       <Text style={paragraphStyle}>
-        Open the layout in the editor, make your revisions, and re-submit for approval.
+        Open the layout in the planner, make your revisions, and resubmit for approval.
         Your planner-authored instructions, contact details, and accessibility notes carry through.
       </Text>
       <Section style={{ marginTop: 20 }}>

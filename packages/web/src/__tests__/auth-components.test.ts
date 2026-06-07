@@ -16,6 +16,8 @@ vi.mock("react-router-dom", () => ({
 // Mock Clerk
 vi.mock("@clerk/react", () => ({
   ClerkProvider: ({ children }: { children: unknown }) => children,
+  ClerkLoaded: ({ children }: { children: unknown }) => children,
+  ClerkLoading: ({ children }: { children: unknown }) => children,
   SignIn: () => "SignIn",
   SignUp: () => "SignUp",
   UserButton: () => "UserButton",
@@ -101,8 +103,10 @@ describe("Pages", () => {
   });
 
   it("EditorPage exports", async () => {
-    const { EditorPage } = await import("../pages/EditorPage.js");
-    expect(typeof EditorPage).toBe("function");
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/pages/EditorPage.tsx"), "utf-8");
+    expect(source).toMatch(/export\s+function\s+EditorPage\s*\(/);
   });
 
   it("DashboardPage exports", async () => {

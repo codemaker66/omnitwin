@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 
@@ -196,5 +198,20 @@ describe("route inventory — classification stability", () => {
       if (!present) missing.push(pinned);
     }
     expect(missing).toEqual([]);
+  });
+});
+
+describe("route-generated planner links — source-grep", () => {
+  it("uses /plan for customer and staff layout URLs", async () => {
+    const sources = await Promise.all([
+      readFile(resolve("src/routes/enquiries.ts"), "utf-8"),
+      readFile(resolve("src/routes/configuration-reviews.ts"), "utf-8"),
+    ]);
+    const source = sources.join("\n");
+
+    expect(source).toContain("/plan/${enquiry.configurationId}");
+    expect(source).toContain("/plan/${config.id}");
+    expect(source).not.toContain("/editor/${enquiry.configurationId}");
+    expect(source).not.toContain("/editor/${config.id}");
   });
 });

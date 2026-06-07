@@ -15,10 +15,11 @@ export interface TruthModeIndicatorProps {
 const shellToken = TRUTH_MODE_TOKENS["known-unknown"];
 const observedToken = TRUTH_MODE_TOKENS.observed;
 const warningToken = TRUTH_MODE_TOKENS.contested;
+const dockLeft = "clamp(12px, 7vw, 80px)";
 
 const rootStyle: CSSProperties = {
   position: "fixed",
-  left: 12,
+  left: dockLeft,
   top: "calc(env(safe-area-inset-top, 0px) + 84px)",
   zIndex: 38,
   width: "calc(100vw - 24px)",
@@ -48,7 +49,7 @@ const indicatorButtonStyle: CSSProperties = {
 
 const popoverStyle: CSSProperties = {
   position: "fixed",
-  left: 12,
+  left: dockLeft,
   top: "calc(env(safe-area-inset-top, 0px) + 184px)",
   width: "calc(100vw - 24px)",
   maxWidth: 320,

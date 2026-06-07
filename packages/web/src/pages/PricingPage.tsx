@@ -10,7 +10,8 @@ import { Link } from "react-router-dom";
 // Visual language matches the LandingPage (Playfair/Newsreader serif
 // display, oxblood accent, cream on near-black).
 //
-// Phase 1 stub: the "Start free trial" CTA currently links to `/onboard`
+// Phase 1 path: the "Start free trial" CTA routes to account creation until
+// dedicated billing/onboarding lands.
 // (which doesn't exist yet). Once Phase 1.3 ships /api/billing/checkout,
 // the handler will POST to that endpoint and redirect to Stripe.
 // ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
       }
       .pricing-hero h1 {
         font-size: 44px !important;
-        letter-spacing: -0.5px !important;
+        letter-spacing: 0 !important;
       }
       .pricing-hero p {
         font-size: 16px !important;
@@ -196,13 +197,10 @@ export function PricingPage(): React.ReactElement {
 
   const price = cycle === "annual" ? 47.99 : 57.99;
   const billingLabel = cycle === "annual" ? "billed annually · £575.88/yr" : "billed monthly";
-
-  const handleStartTrial = (): void => {
-    window.location.href = `/onboard?tier=pro&cycle=${cycle}`;
-  };
+  const trialHref = `/register?tier=pro&cycle=${cycle}`;
 
   useEffect(() => {
-    document.title = "Pricing — VenViewer";
+    document.title = "Pricing — Venviewer";
   }, []);
 
   return (
@@ -305,17 +303,18 @@ export function PricingPage(): React.ReactElement {
           Pricing
         </div>
         <h1
+          aria-label="Turn every enquiry into a yes."
           style={{
             fontFamily: SERIF,
             fontSize: "clamp(48px, 7vw, 96px)",
             lineHeight: 1.02,
             margin: 0,
             fontWeight: 400,
-            letterSpacing: -1.5,
+            letterSpacing: 0,
           }}
         >
-          Turn every enquiry<br />
-          <em style={{ color: GOLD, fontStyle: "italic" }}>into a yes.</em>
+          <span aria-hidden="true">Turn every enquiry<br />
+          <em style={{ color: GOLD, fontStyle: "italic" }}>into a yes.</em></span>
         </h1>
         <p
           style={{
@@ -328,7 +327,7 @@ export function PricingPage(): React.ReactElement {
             fontStyle: "italic",
           }}
         >
-          One monthly plan. Every room in 3D. Your clients plan their own event while your team reviews and approves in real time.
+          One monthly plan. Clients build planning drafts while your team reviews and responds from the same workspace.
         </p>
       </section>
 
@@ -362,7 +361,7 @@ export function PricingPage(): React.ReactElement {
 
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 12, marginBottom: 8 }}>
             <div style={{ fontSize: 14, letterSpacing: 3, color: GOLD, textTransform: "uppercase", fontWeight: 600 }}>
-              VenViewer Pro
+              Venviewer Pro
             </div>
             <div
               style={{
@@ -402,7 +401,7 @@ export function PricingPage(): React.ReactElement {
               "Unlimited client planning sessions",
               "Embed on your own website (one-line widget)",
               "Custom brand colour & logo",
-              "Interactive 3D planning walkthroughs included",
+              "Interactive planning workspace included",
               "Priority email support",
               "All future features, no add-on fees",
             ].map((feature) => (
@@ -416,9 +415,8 @@ export function PricingPage(): React.ReactElement {
             ))}
           </ul>
 
-          <button
-            type="button"
-            onClick={handleStartTrial}
+          <Link
+            to={trialHref}
             className="pricing-cta-primary"
             style={{
               display: "block",
@@ -436,10 +434,12 @@ export function PricingPage(): React.ReactElement {
               fontFamily: BODY,
               transition: "all 0.2s",
               boxShadow: "0 8px 24px rgba(201,168,76,0.25)",
+              textAlign: "center",
+              textDecoration: "none",
             }}
           >
             Start your 14-day free trial
-          </button>
+          </Link>
           <div style={{ textAlign: "center", fontSize: 12, color: CREAM_FAINT, marginTop: 16 }}>
             No credit card required · Cancel any time
           </div>
@@ -452,7 +452,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             Scale with your venue
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: -0.5 }}>
+          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             Pay only for what you grow into.
           </h2>
           <p style={{ fontSize: 17, color: CREAM_MUT, marginTop: 16, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
@@ -464,7 +464,7 @@ export function PricingPage(): React.ReactElement {
           {[
             { name: "Extra space", price: "£12", sub: "/ month each", desc: "Add a garden, courtyard, second hall — each room scanned and fully planable." },
             { name: "Extra staff seat", price: "£5", sub: "/ month each", desc: "Invite more planners, hallkeepers, sales staff beyond the first five." },
-            { name: "White-label", price: "£20", sub: "/ month", desc: "Remove VenViewer branding, run on your own domain (plan.yourvenue.com)." },
+            { name: "White-label", price: "£20", sub: "/ month", desc: "Remove Venviewer branding, run on your own domain (plan.yourvenue.com)." },
           ].map((addon) => (
             <div
               key={addon.name}
@@ -498,7 +498,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             One-off · Professional services
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: -0.5 }}>
+          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             Get your venue <em style={{ color: GOLD, fontStyle: "italic" }}>into the cloud.</em>
           </h2>
           <p style={{ fontSize: 17, color: CREAM_MUT, marginTop: 16, maxWidth: 580, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
@@ -549,7 +549,7 @@ export function PricingPage(): React.ReactElement {
               <div style={{ fontSize: 13, color: GOLD_DIM, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, marginBottom: 16 }}>
                 {scan.name}
               </div>
-              <div style={{ fontSize: 48, fontFamily: SERIF, fontWeight: 400, marginBottom: 14, letterSpacing: -0.5 }}>
+              <div style={{ fontSize: 48, fontFamily: SERIF, fontWeight: 400, marginBottom: 14, letterSpacing: 0 }}>
                 {scan.price}
               </div>
               <p style={{ fontSize: 14, color: CREAM_MUT, lineHeight: 1.7, margin: 0 }}>
@@ -587,7 +587,7 @@ export function PricingPage(): React.ReactElement {
               <div style={{ fontSize: 11, letterSpacing: 4, color: GOLD, textTransform: "uppercase", fontWeight: 600, marginBottom: 14 }}>
                 Founder bundle · Limited
               </div>
-              <h3 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: -0.5, color: CREAM, lineHeight: 1.1 }}>
+              <h3 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0, color: CREAM, lineHeight: 1.1 }}>
                 Scan + 12 months Pro.<br />
                 <em style={{ color: GOLD, fontStyle: "italic" }}>Save £575.</em>
               </h3>
@@ -596,9 +596,8 @@ export function PricingPage(): React.ReactElement {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => { window.location.href = "/onboard?bundle=founder"; }}
+            <Link
+              to="/register?bundle=founder"
               className="pricing-cta-primary pricing-founder-cta"
               style={{
                 padding: "22px 36px",
@@ -613,10 +612,12 @@ export function PricingPage(): React.ReactElement {
                 fontFamily: BODY,
                 transition: "all 0.2s",
                 whiteSpace: "nowrap",
+                textAlign: "center",
+                textDecoration: "none",
               }}
             >
               Book a scan →
-            </button>
+            </Link>
           </div>
         </div>
       </section>
@@ -627,7 +628,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             What you pay elsewhere
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: -0.5 }}>
+          <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             The same job, <em style={{ color: GOLD, fontStyle: "italic" }}>one-tenth the cost.</em>
           </h2>
         </div>
@@ -677,7 +678,7 @@ export function PricingPage(): React.ReactElement {
             }}
           >
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 0.5 }}>VenViewer · all-in-one</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 0.5 }}>Venviewer · all-in-one</div>
               <div style={{ fontSize: 12, color: CREAM_MUT, marginTop: 4 }}>Planner + 3D walkthrough + enquiry pipeline</div>
             </div>
             <div style={{ fontSize: 22, fontFamily: SERIF, color: GOLD, fontWeight: 500 }}>£47.99/mo</div>
@@ -691,7 +692,7 @@ export function PricingPage(): React.ReactElement {
 
       {/* === FAQ === */}
       <section style={{ position: "relative", zIndex: 2, padding: "80px 48px", maxWidth: 760, margin: "0 auto" }}>
-        <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: "0 0 40px", fontWeight: 400, textAlign: "center", letterSpacing: -0.5 }}>
+        <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: "0 0 40px", fontWeight: 400, textAlign: "center", letterSpacing: 0 }}>
           Questions, answered.
         </h2>
 
@@ -751,17 +752,17 @@ export function PricingPage(): React.ReactElement {
 
       {/* === Final CTA === */}
       <section style={{ position: "relative", zIndex: 2, padding: "100px 48px 120px", textAlign: "center", maxWidth: 800, margin: "0 auto" }}>
-        <h2 style={{ fontFamily: SERIF, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: -1, lineHeight: 1.05 }}>
+        <h2 style={{ fontFamily: SERIF, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: 0, lineHeight: 1.05 }}>
           Ready when you are.
         </h2>
         <p style={{ fontSize: 18, color: CREAM_MUT, marginTop: 24, lineHeight: 1.6 }}>
           Fourteen days on the house. Every feature. No credit card.
         </p>
-        <button
-          type="button"
-          onClick={handleStartTrial}
+        <Link
+          to={trialHref}
           className="pricing-cta-primary"
           style={{
+            display: "inline-block",
             marginTop: 32,
             padding: "22px 48px",
             background: `linear-gradient(135deg, ${GOLD}, #d4b65c)`,
@@ -775,16 +776,18 @@ export function PricingPage(): React.ReactElement {
             fontFamily: BODY,
             transition: "all 0.2s",
             boxShadow: "0 12px 32px rgba(201,168,76,0.3)",
+            textAlign: "center",
+            textDecoration: "none",
           }}
         >
           Start free trial →
-        </button>
+        </Link>
       </section>
 
       {/* Footer */}
       <footer style={{ position: "relative", zIndex: 2, padding: "40px 48px", borderTop: "1px solid rgba(255,255,255,0.05)", textAlign: "center", fontSize: 12, color: CREAM_FAINT }}>
         <div className="pricing-footer-inner" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>© 2026 VenViewer</div>
+          <div>© 2026 Venviewer</div>
           <div style={{ display: "flex", gap: 24 }}>
             <Link to="/privacy" style={{ color: CREAM_FAINT, textDecoration: "none" }}>Privacy</Link>
             <Link to="/terms" style={{ color: CREAM_FAINT, textDecoration: "none" }}>Terms</Link>

@@ -25,8 +25,8 @@ describe("LandingPage — Grand Hall module", () => {
   it("renders the Grand Hall-first hero promise", () => {
     mount();
     const h1 = screen.getByRole("heading", { level: 1 });
-    expect(h1.textContent).toMatch(/Design your event inside the real Grand Hall/);
-    expect(screen.getByText(/Try a wedding, gala, or conference layout to scale/i)).toBeTruthy();
+    expect(h1.textContent).toMatch(/Design your event for the Grand Hall/);
+    expect(screen.getByText(/Try a wedding, gala, or conference planning draft/i)).toBeTruthy();
     expect(screen.getAllByText(/Powered by Venviewer/i).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -65,7 +65,7 @@ describe("LandingPage — Grand Hall module", () => {
     expect(document.querySelector(".feat-grid")).toBeNull();
   });
 
-  it("keeps the interactive planner preview and real Grand Hall media", () => {
+  it("keeps the interactive planner preview and Grand Hall media", () => {
     mount();
     expect(screen.getByLabelText(/Planner preview/i)).toBeTruthy();
     const tools = screen.getByRole("toolbar", { name: /2D planner tools/i });

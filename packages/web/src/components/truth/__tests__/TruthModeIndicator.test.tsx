@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TruthModeIndicator } from "../TruthModeIndicator.js";
 import {
   buildProceduralTruthSummary,
+  formatConfidenceTier,
   isTruthModeUiEnabled,
 } from "../../../lib/truth-mode-summary.js";
 
@@ -63,6 +64,10 @@ describe("TruthModeIndicator", () => {
     fireEvent.click(screen.getByTestId("truth-mode-toggle"));
     expect(container.textContent).not.toMatch(/\bVerified\b/);
     expect(container.textContent).toContain("No review record or signed QA certificate is loaded");
+  });
+
+  it("does not use strong survey-grade public wording for confidence labels", () => {
+    expect(formatConfidenceTier("survey_grade")).toBe("Survey evidence tier");
   });
 
   it("uses a viewport-constrained width for mobile", () => {

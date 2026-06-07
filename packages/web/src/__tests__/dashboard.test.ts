@@ -73,6 +73,8 @@ vi.mock("@clerk/react", () => ({
   useUser: () => ({ user: null, isLoaded: true, isSignedIn: false }),
   useAuth: () => ({ getToken: vi.fn(), isLoaded: true, isSignedIn: false }),
   ClerkProvider: ({ children }: { children: ReactNode }) => children,
+  ClerkLoaded: ({ children }: { children: ReactNode }) => children,
+  ClerkLoading: ({ children }: { children: ReactNode }) => children,
   SignIn: () => null,
   SignUp: () => null,
   SignedIn: ({ children }: { children: ReactNode }) => children,
@@ -150,6 +152,33 @@ describe("ClientProfile", () => {
   it("exports", async () => {
     const { ClientProfile } = await import("../components/dashboard/ClientProfile.js");
     expect(typeof ClientProfile).toBe("function");
+  });
+});
+
+describe("Dashboard layout links — source-grep", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("opens saved layouts through planner routes, not the legacy editor shell", async () => {
+    const files = [
+      "src/components/dashboard/ClientProfile.tsx",
+      "src/components/dashboard/ClientSearchView.tsx",
+      "src/components/dashboard/EnquiriesView.tsx",
+      "src/components/dashboard/ReviewsView.tsx",
+    ];
+    const sources = await Promise.all(files.map((file) => readSource(file)));
+    const codeOnly = sources.map((source) => source.codeOnly).join("\n");
+
+    expect(codeOnly).toContain("/plan/");
+    expect(codeOnly).not.toContain("href={`/editor/");
+    expect(codeOnly).not.toContain("href={`/editor/${");
   });
 });
 

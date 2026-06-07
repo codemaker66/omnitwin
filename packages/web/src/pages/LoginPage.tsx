@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { SignIn } from "@clerk/react";
+import { ClerkLoaded, ClerkLoading, SignIn } from "@clerk/react";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
 
@@ -10,6 +10,10 @@ export function LoginPage(): React.ReactElement {
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
+    document.title = "Sign in - Venviewer";
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated && user !== null) {
       void navigate(getDefaultRoute(user.role), { replace: true });
     }
@@ -17,10 +21,45 @@ export function LoginPage(): React.ReactElement {
 
   return (
     <div style={{
-      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Inter', sans-serif", background: "#f5f5f0",
+      minHeight: "100vh", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 480px))",
+      alignItems: "center", justifyContent: "center", gap: 48,
+      fontFamily: "'Inter', sans-serif", background: "#f5f5f0", padding: 32,
     }}>
-      <SignIn routing="hash" signUpUrl="/register" />
+      <section aria-label="Venviewer sign in context" style={{ color: "#1d1712" }}>
+        <div style={{ fontSize: 13, letterSpacing: 3, textTransform: "uppercase", color: "#8a6f2f", fontWeight: 700 }}>
+          Venviewer
+        </div>
+        <h1 style={{ fontFamily: "Georgia, serif", fontSize: "clamp(34px, 7vw, 46px)", lineHeight: 1.05, margin: "14px 0 16px", fontWeight: 500 }}>
+          Sign in to your planning workspace.
+        </h1>
+        <p style={{ fontSize: 16, lineHeight: 1.65, color: "#5d5247", margin: 0 }}>
+          Continue to saved layouts, venue reviews, and hallkeeper handoff tools.
+        </p>
+      </section>
+      <section
+        aria-label="Secure sign in form"
+        style={{
+          minHeight: 422,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 8,
+          background: "#fffdf8",
+          border: "1px solid rgba(29,23,18,0.08)",
+          boxShadow: "0 18px 55px rgba(29,23,18,0.08)",
+          padding: 24,
+        }}
+      >
+        <ClerkLoading>
+          <div role="status" style={{ textAlign: "center", color: "#5d5247", lineHeight: 1.6 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#1d1712" }}>Loading secure sign-in.</div>
+            <p style={{ margin: "8px 0 0", fontSize: 14 }}>Keep this page open while the account form connects.</p>
+          </div>
+        </ClerkLoading>
+        <ClerkLoaded>
+          <SignIn routing="hash" signUpUrl="/register" />
+        </ClerkLoaded>
+      </section>
     </div>
   );
 }

@@ -122,7 +122,7 @@ export function formatEvidenceState(state: TruthEvidenceSourceState): string {
 export function formatConfidenceTier(tier: TruthConfidenceTier | null): string {
   if (tier === null) return "Not available";
   switch (tier) {
-    case "survey_grade": return "Survey grade";
+    case "survey_grade": return "Survey evidence tier";
     case "ops_grade": return "Operations grade";
     case "layout_grade": return "Layout grade";
     case "appearance_only": return "Appearance only";

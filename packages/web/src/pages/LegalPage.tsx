@@ -1,22 +1,24 @@
 // ---------------------------------------------------------------------------
-// LegalPage — placeholder pages for /privacy and /terms routes
+// LegalPage — placeholder pages for legal routes
 //
 // These routes are linked from SpacePicker footer. Real legal copy will be
 // provided by Trades Hall's legal team before production launch.
 // ---------------------------------------------------------------------------
 
 interface LegalPageProps {
-  readonly type: "privacy" | "terms";
+  readonly type: "accessibility" | "privacy" | "terms";
 }
 
 const TITLES: Record<string, string> = {
+  accessibility: "Accessibility Statement",
   privacy: "Privacy Policy",
   terms: "Terms of Service",
 };
 
 const BODIES: Record<string, string> = {
-  privacy: "This privacy policy will be updated with full details before launch. VenViewer collects only the data necessary to provide the venue planning service.",
-  terms: "These terms of service will be updated with full details before launch. By using VenViewer you agree to use the platform for legitimate venue planning purposes.",
+  accessibility: "This accessibility statement will be updated with full details before launch. Venviewer is being reviewed for keyboard, screen-reader, and responsive usability as the service matures.",
+  privacy: "This privacy policy will be updated with full details before launch. Venviewer collects only the data necessary to provide the venue planning service.",
+  terms: "These terms of service will be updated with full details before launch. By using Venviewer you agree to use the platform for legitimate venue planning purposes.",
 };
 
 export function LegalPage({ type }: LegalPageProps): React.ReactElement {
@@ -36,10 +38,10 @@ export function LegalPage({ type }: LegalPageProps): React.ReactElement {
           {body}
         </p>
         <a
-          href="/plan"
+          href="/"
           style={{ color: "#c9a84c", textDecoration: "none", fontWeight: 600, fontSize: 14 }}
         >
-          Back to the planner
+          Back to Venviewer
         </a>
       </div>
     </div>

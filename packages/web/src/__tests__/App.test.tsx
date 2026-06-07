@@ -3,9 +3,7 @@ import { render, cleanup } from "@testing-library/react";
 
 // Mock @react-three/fiber — happy-dom has no WebGL context.
 const CanvasMock = vi.hoisted(() =>
-  vi.fn(({ children }: { children?: React.ReactNode }) => (
-    <div data-testid="r3f-canvas">{children}</div>
-  )),
+  vi.fn((_props: { children?: React.ReactNode }) => <div data-testid="r3f-canvas" />),
 );
 
 vi.mock("@react-three/fiber", () => ({
