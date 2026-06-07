@@ -660,7 +660,10 @@ T-237 through T-241 are the Guest Flow Replay scenario-template/instance
 follow-up tasks; T-242 through T-248 are the `.venreplay.zip` Venviewer
 Replay Artifact doctrine and follow-up schema/hash/loader/validator tasks;
 T-249 through T-254 are the Photometric Chain-of-Custody doctrine and
-fixed-light residual capture accountability follow-up tasks; T-255 through
+fixed-light residual capture accountability follow-up tasks; T-252 has landed
+as the internal fixed-light calibration-frame operator checklist, while the
+schema/tooling tasks in that cluster remain tracked in `docs/state/tasks.md`;
+T-255 through
 T-259 are the Review Gate Engine doctrine and follow-up review-vocabulary/
 witness/Truth Mode/events-team tasks; T-260 through T-264 are the Venue
 Data Request Pack doctrine and follow-up onboarding/intake/documented-claim
