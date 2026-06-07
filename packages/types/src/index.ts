@@ -577,6 +577,33 @@ export {
   type RegulatoryTriggerReviewOutcome,
 } from "./regulatory-trigger-tags.js";
 
+// --- ASPIRATIONAL: Verified Tool Capability Registry metadata schema ---
+export {
+  TOOL_CAPABILITY_REGISTRY_SCHEMA_VERSION,
+  TOOL_CAPABILITY_TOOL_IDS,
+  TOOL_CAPABILITY_STATUSES,
+  TOOL_CAPABILITY_USAGE_MODES,
+  TOOL_CAPABILITY_PURPOSES,
+  TOOL_CAPABILITY_EVIDENCE_REF_TYPES,
+  TOOL_CAPABILITY_LICENSE_REVIEW_STATUSES,
+  ToolCapabilityToolIdSchema,
+  ToolCapabilityStatusSchema,
+  ToolCapabilityUsageModeSchema,
+  ToolCapabilityPurposeSchema,
+  ToolCapabilityEvidenceRefTypeSchema,
+  ToolCapabilityLicenseReviewStatusSchema,
+  ToolCapabilityEvidenceRefSchema,
+  ToolCapabilityRecordSchema,
+  type ToolCapabilityToolId,
+  type ToolCapabilityStatus,
+  type ToolCapabilityUsageMode,
+  type ToolCapabilityPurpose,
+  type ToolCapabilityEvidenceRefType,
+  type ToolCapabilityLicenseReviewStatus,
+  type ToolCapabilityEvidenceRef,
+  type ToolCapabilityRecord,
+} from "./tool-capability-registry.js";
+
 // --- ASPIRATIONAL: Layout Proof Object metadata for evidence-pack readiness ---
 export {
   LAYOUT_PROOF_CLAIM_FAMILIES,
