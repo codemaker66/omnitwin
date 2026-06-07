@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   resolveProgressMutation,
@@ -68,5 +70,16 @@ describe("checkedStateAfter", () => {
       const mutation: ProgressMutation = resolveProgressMutation(existing, desired);
       expect(checkedStateAfter(mutation, existing)).toBe(desired);
     }
+  });
+});
+
+describe("progress route implementation", () => {
+  it("uses conflict-safe insert for idempotent checked=true replay", async () => {
+    const source = await readFile(resolve("src/routes/hallkeeper-sheet.ts"), "utf-8");
+
+    expect(source).toContain("if (desired !== undefined)");
+    expect(source).toContain(".onConflictDoNothing({");
+    expect(source).toContain("target: [hallkeeperProgress.configId, hallkeeperProgress.rowKey]");
+    expect(source).toContain("return { data: { configId, rowKey, checked: desired } }");
   });
 });

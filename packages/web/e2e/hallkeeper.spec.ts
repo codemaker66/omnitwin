@@ -130,8 +130,10 @@ async function mockSheetData(page: Page, data: MockSheetDataV2 = MOCK_SHEET): Pr
       void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
     } else if (route.request().method() === "PATCH") {
       // Optimistic UI — the page updates locally before the PATCH resolves
-      const body = route.request().postDataJSON() as { rowKey: string };
-      void route.fulfill({ json: { data: { configId: CONFIG_ID, rowKey: body.rowKey, checked: true } } });
+      const body = route.request().postDataJSON() as { rowKey: string; checked?: unknown };
+      expect(typeof body.checked).toBe("boolean");
+      const checked = body.checked;
+      void route.fulfill({ json: { data: { configId: CONFIG_ID, rowKey: body.rowKey, checked } } });
     } else {
       void route.continue();
     }

@@ -50,7 +50,7 @@ const validRuntimePackageBody = {
       collisionAssetVersionId: null,
     },
   },
-  runtimeStatus: "usable",
+  runtimeStatus: "internal_ready",
 };
 
 describe("GET /assets", () => {
@@ -70,13 +70,13 @@ describe("GET /assets/runtime-packages/latest", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("is publicly reachable for a room query (no 404, no 401)", async () => {
+  it("returns an empty safe state when no runtime registry row can be read", async () => {
     const res = await server.inject({
       method: "GET",
       url: "/assets/runtime-packages/latest?venue=trades-hall&room=robert-adam-room",
     });
-    expect(res.statusCode).not.toBe(404);
-    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ data: null });
   });
 });
 
@@ -174,7 +174,7 @@ describe("POST /admin/assets/register-runtime-package", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("rejects a usable package without a primary visual asset", async () => {
+  it("rejects a loadable package without a primary visual asset", async () => {
     const res = await server.inject({
       method: "POST",
       url: "/admin/assets/register-runtime-package",
@@ -194,7 +194,7 @@ describe("POST /admin/assets/register-runtime-package", () => {
             collisionAssetVersionId: null,
           },
         },
-        runtimeStatus: "usable",
+        runtimeStatus: "internal_ready",
       },
     });
     expect(res.statusCode).toBe(400);

@@ -298,28 +298,37 @@ export async function assetRoutes(
       return validationError(reply, parsedQuery.error.issues);
     }
 
-    const [row] = await db
-      .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
-      .from(runtimePackages)
-      .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
-      .where(and(
-        eq(runtimePackages.venueSlug, parsedQuery.data.venue),
-        eq(runtimePackages.roomSlug, parsedQuery.data.room),
-        inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
-        eq(assetVersions.runtimeStatus, "usable"),
-      ))
-      .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
-      .limit(1);
+    try {
+      const [row] = await db
+        .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
+        .from(runtimePackages)
+        .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
+        .where(and(
+          eq(runtimePackages.venueSlug, parsedQuery.data.venue),
+          eq(runtimePackages.roomSlug, parsedQuery.data.room),
+          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
+          eq(assetVersions.runtimeStatus, "usable"),
+        ))
+        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
+        .limit(1);
 
-    if (
-      row === undefined ||
-      !runtimePackageCanLoad(row.pkg) ||
-      !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
-    ) {
+      if (
+        row === undefined ||
+        !runtimePackageCanLoad(row.pkg) ||
+        !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
+      ) {
+        return { data: null };
+      }
+
+      return { data: serializeRuntimePackage(env, row.pkg, row.primaryVisualAssetVersion) };
+    } catch (error: unknown) {
+      request.log.warn({
+        err: error,
+        venueSlug: parsedQuery.data.venue,
+        roomSlug: parsedQuery.data.room,
+      }, "runtime package registry lookup unavailable; returning empty runtime package state");
       return { data: null };
     }
-
-    return { data: serializeRuntimePackage(env, row.pkg, row.primaryVisualAssetVersion) };
   });
 }
 

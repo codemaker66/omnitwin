@@ -168,12 +168,12 @@ describe("runtime package manifest schemas", () => {
       roomSlug: "saloon",
       primaryVisualAssetVersionId: ASSET_VERSION_ID,
       manifestJson,
-      runtimeStatus: "usable",
+      runtimeStatus: "internal_ready",
     });
     expect(result.success).toBe(false);
   });
 
-  it("requires a primary visual asset before a package can be usable", () => {
+  it("requires a primary visual asset before a package can be loadable", () => {
     const result = RegisterRuntimePackageInputSchema.safeParse({
       venueSlug: "trades-hall",
       roomSlug: "saloon",
@@ -187,7 +187,7 @@ describe("runtime package manifest schemas", () => {
           collisionAssetVersionId: null,
         },
       },
-      runtimeStatus: "usable",
+      runtimeStatus: "internal_ready",
     });
     expect(result.success).toBe(false);
   });

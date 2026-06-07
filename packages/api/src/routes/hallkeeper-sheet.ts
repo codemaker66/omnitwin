@@ -258,7 +258,30 @@ export async function hallkeeperSheetRoutes(
     const { configId } = params.data;
     const { rowKey, checked: desired } = body.data;
 
-    // Current state for this row.
+    // Idempotent set-state path. Avoid select-then-insert races: two devices
+    // replaying "checked: true" for the same row must converge, not surface a
+    // duplicate-key 500 from the unique (config_id, row_key) constraint.
+    if (desired !== undefined) {
+      if (desired) {
+        await db.insert(hallkeeperProgress).values({
+          configId,
+          rowKey,
+          checkedBy: request.user.id,
+        }).onConflictDoNothing({
+          target: [hallkeeperProgress.configId, hallkeeperProgress.rowKey],
+        });
+      } else {
+        await db.delete(hallkeeperProgress)
+          .where(and(
+            eq(hallkeeperProgress.configId, configId),
+            eq(hallkeeperProgress.rowKey, rowKey),
+          ));
+      }
+
+      return { data: { configId, rowKey, checked: desired } };
+    }
+
+    // Legacy toggle path for older clients that omit `checked`.
     const [existing] = await db.select({ id: hallkeeperProgress.id })
       .from(hallkeeperProgress)
       .where(and(
@@ -268,7 +291,7 @@ export async function hallkeeperSheetRoutes(
       .limit(1);
 
     const exists = existing !== undefined;
-    const mutation = resolveProgressMutation(exists, desired);
+    const mutation = resolveProgressMutation(exists, undefined);
 
     if (mutation === "insert") {
       await db.insert(hallkeeperProgress).values({
