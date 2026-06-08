@@ -13,6 +13,8 @@ import {
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
+import { planBanquetLayout } from "../lib/auto-layout.js";
+import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { computeChairBrushSummary } from "../lib/chair-brush.js";
@@ -93,6 +95,12 @@ export interface PlacementState {
   readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
+  /**
+   * Auto-fill the room with an even, circulation-safe grid of table groups for
+   * a target guest count. Replaces the current layout (undo-safe). A target of
+   * 0 fills the whole room.
+   */
+  readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => void;
   /** Break a single item out of its group (set groupId to null). */
   readonly breakFromGroup: (id: string) => void;
   /** Move all items in the same group as the given item by a delta. */
@@ -446,6 +454,43 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
     set({ placedItems: adjusted, ...pushUndo(state) });
+  },
+
+  autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
+    const state = get();
+    const tableItem = getCatalogueItem(catalogueItemId);
+    if (tableItem === undefined || tableItem.category !== "table") return;
+
+    const seats = Math.max(0, Math.floor(chairsPerTable));
+    const dims = useRoomDimensionsStore.getState().dimensions;
+    const plan = planBanquetLayout({
+      // Room dimensions are render-space; the engine works in metres.
+      roomWidthM: toRealWorld(dims.width),
+      roomLengthM: toRealWorld(dims.length),
+      tableWidthM: tableItem.width,
+      tableDepthM: tableItem.depth,
+      seatsPerTable: seats,
+      targetGuests: targetGuests > 0 ? targetGuests : undefined,
+    });
+    if (plan.tables.length === 0) return;
+
+    // Map each planned table (metres, room-centred) back to render space and
+    // build a full table+chairs group at floor level.
+    const placedItems: PlacedItem[] = [];
+    for (const t of plan.tables) {
+      const group = createTableGroup(
+        catalogueItemId,
+        toRenderSpace(t.xM),
+        toRenderSpace(t.zM),
+        t.rotationY,
+        seats,
+      );
+      placedItems.push(...group);
+    }
+    if (placedItems.length === 0) return;
+
+    // Replaces the layout — undo restores the previous placement.
+    set({ placedItems, ...pushUndo(state) });
   },
 
   breakFromGroup: (id: string) => {

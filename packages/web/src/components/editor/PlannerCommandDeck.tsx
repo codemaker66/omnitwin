@@ -5,6 +5,7 @@ import {
   Camera,
   CircleSlash,
   Group,
+  LayoutGrid,
   MousePointer2,
   Paintbrush,
   PenLine,
@@ -13,7 +14,7 @@ import {
   Ungroup,
   Utensils,
 } from "lucide-react";
-import { getCatalogueItem } from "../../lib/catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -264,43 +265,64 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
       return { copy, actions };
     }
 
+    const emptyActions: CommandAction[] = [
+      {
+        id: "open-catalogue",
+        label: "Furniture",
+        ariaLabel: "Open furniture command",
+        tone: "primary",
+        icon: <Armchair size={16} aria-hidden="true" />,
+        onClick: () => { dispatchPlannerToolbarCommand("open-furniture"); },
+      },
+      {
+        id: "draw",
+        label: "Laser",
+        ariaLabel: "Start floor drawing",
+        icon: <PenLine size={16} aria-hidden="true" />,
+        onClick: () => { dispatchPlannerToolbarCommand("open-markup"); },
+      },
+      {
+        id: "select",
+        label: "Select",
+        ariaLabel: "Switch to select mode",
+        icon: <MousePointer2 size={16} aria-hidden="true" />,
+        onClick: () => {
+          dispatchPlannerToolbarCommand("select");
+          useMarkupStore.getState().setActive(false);
+          useCatalogueStore.getState().clearSelection();
+        },
+      },
+    ];
+
+    // Offer a one-click banquet fill only on a blank floor, so it can never
+    // overwrite work in progress. Fills the room with comfortable-aisle round
+    // tables (undo-safe); the planner then tunes from there.
+    if (placedItems.length === 0) {
+      emptyActions.splice(1, 0, {
+        id: "auto-fill",
+        label: "Auto-fill",
+        ariaLabel: "Auto-fill the room with banquet tables",
+        icon: <LayoutGrid size={16} aria-hidden="true" />,
+        onClick: () => {
+          const table = getCatalogueItemBySlug("round-table-6ft");
+          if (table === undefined) return;
+          usePlacementStore.getState().autoArrangeBanquet(table.id, 0, 8);
+        },
+      });
+    }
+
     return {
       copy: {
         kicker: "Command deck",
         title: "Build the room from the floor",
-        detail: "Open furniture, drag rows of chairs, right-click a seat for POV, or sketch with Laser Diagram.",
+        detail: placedItems.length === 0
+          ? "Auto-fill a comfortable banquet grid in one click, open furniture, or sketch with Laser Diagram."
+          : "Open furniture, drag rows of chairs, right-click a seat for POV, or sketch with Laser Diagram.",
         metric: placedItems.length === 0
           ? "No furniture placed"
           : `${placedItems.length.toLocaleString("en-GB")} placed item${placedItems.length === 1 ? "" : "s"}`,
       },
-      actions: [
-        {
-          id: "open-catalogue",
-          label: "Furniture",
-          ariaLabel: "Open furniture command",
-          tone: "primary",
-          icon: <Armchair size={16} aria-hidden="true" />,
-          onClick: () => { dispatchPlannerToolbarCommand("open-furniture"); },
-        },
-        {
-          id: "draw",
-          label: "Laser",
-          ariaLabel: "Start floor drawing",
-          icon: <PenLine size={16} aria-hidden="true" />,
-          onClick: () => { dispatchPlannerToolbarCommand("open-markup"); },
-        },
-        {
-          id: "select",
-          label: "Select",
-          ariaLabel: "Switch to select mode",
-          icon: <MousePointer2 size={16} aria-hidden="true" />,
-          onClick: () => {
-            dispatchPlannerToolbarCommand("select");
-            useMarkupStore.getState().setActive(false);
-            useCatalogueStore.getState().clearSelection();
-          },
-        },
-      ],
+      actions: emptyActions,
     };
   }, [
     activeReferenceId,

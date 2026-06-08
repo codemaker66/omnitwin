@@ -7,6 +7,7 @@ import {
   getGroupMemberIds,
 } from "../../lib/placement.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 
 const tableId = "round-table-6ft";
 const chairId = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
@@ -640,5 +641,53 @@ describe("table group integrity", () => {
     }
     const regroupedStandalone = after.find((item) => item.id === standaloneChair.id);
     expect(regroupedStandalone?.groupId).toBe(newGroupId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-arrange a banquet
+// ---------------------------------------------------------------------------
+
+describe("autoArrangeBanquet", () => {
+  beforeEach(() => {
+    // A deterministic 20 m × 10 m room (render units = metres × 2).
+    useRoomDimensionsStore.setState({ dimensions: { width: 40, length: 20, height: 7 } });
+  });
+
+  it("fills the room with table groups for a target guest count", () => {
+    usePlacementStore.getState().autoArrangeBanquet(tableId, 40, 8); // 40 / 8 = 5 tables
+    const items = usePlacementStore.getState().placedItems;
+    const tables = items.filter((i) => i.catalogueItemId === tableId);
+    const chairs = items.filter((i) => i.catalogueItemId === chairId);
+    expect(tables).toHaveLength(5);
+    expect(chairs.length).toBeGreaterThan(0);
+    // Each table sits in its own group.
+    expect(new Set(tables.map((t) => t.groupId)).size).toBe(5);
+  });
+
+  it("replaces the existing layout and is undoable", () => {
+    usePlacementStore.getState().placeItem(platformId, 0, 0);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+
+    usePlacementStore.getState().autoArrangeBanquet(tableId, 16, 8); // 2 tables
+    const after = usePlacementStore.getState().placedItems;
+    expect(after.some((i) => i.catalogueItemId === platformId)).toBe(false);
+    expect(after.filter((i) => i.catalogueItemId === tableId)).toHaveLength(2);
+
+    usePlacementStore.getState().undo();
+    const restored = usePlacementStore.getState().placedItems;
+    expect(restored).toHaveLength(1);
+    expect(restored[0]?.catalogueItemId).toBe(platformId);
+  });
+
+  it("ignores a non-table catalogue id", () => {
+    usePlacementStore.getState().autoArrangeBanquet(chairId, 40, 8);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
+
+  it("does nothing in a room too small for any table", () => {
+    useRoomDimensionsStore.setState({ dimensions: { width: 2, length: 2, height: 7 } });
+    usePlacementStore.getState().autoArrangeBanquet(tableId, 40, 8);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
   });
 });

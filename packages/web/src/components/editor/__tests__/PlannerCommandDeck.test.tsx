@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../lib/placement.js";
+import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import {
   PLANNER_TOOLBAR_COMMAND_EVENT,
   readPlannerToolbarCommand,
@@ -114,5 +115,31 @@ describe("PlannerCommandDeck", () => {
     fireEvent.click(screen.getByTestId("planner-command-action-delete"));
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it("auto-fills the room with a banquet grid from the blank state", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    expect(table).toBeDefined();
+    if (table === undefined) return;
+    useRoomDimensionsStore.setState({ dimensions: { width: 40, length: 20, height: 7 } });
+
+    render(<PlannerCommandDeck />);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
+
+    const items = usePlacementStore.getState().placedItems;
+    const tables = items.filter((i) => i.catalogueItemId === table.id);
+    expect(tables.length).toBeGreaterThan(0);
+  });
+
+  it("hides auto-fill once the floor has furniture", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) return;
+    usePlacementStore.setState({ placedItems: [createPlacedItem(table.id, 0, 0, 0, null, 0)] });
+
+    render(<PlannerCommandDeck />);
+
+    expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
   });
 });
