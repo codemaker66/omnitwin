@@ -11,6 +11,7 @@ import {
 } from "../../lib/layout-capacity.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
+import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
 
 interface HudStats {
   readonly roundTables: number;
@@ -47,6 +48,25 @@ function computeHudStats(
 
 function plural(value: number, singular: string, pluralLabel = `${singular}s`): string {
   return value === 1 ? `1 ${singular}` : `${value.toLocaleString("en-GB")} ${pluralLabel}`;
+}
+
+function gradeBandColor(band: LayoutBand): string {
+  switch (band) {
+    case "S": return "#2bb673";
+    case "A": return "#7bbf59";
+    case "B": return "#dcc64d";
+    case "C": return "#d98324";
+    case "D": return "#c0473a";
+  }
+}
+
+function recommendationColor(severity: RecommendationSeverity): string {
+  switch (severity) {
+    case "critical": return "#e06a5b";
+    case "warning": return "#e0a24a";
+    case "tip": return "#b8ad92";
+    case "praise": return "#54c98e";
+  }
 }
 
 export function PlannerSpatialHud(): React.ReactElement {
@@ -86,8 +106,67 @@ export function PlannerSpatialHud(): React.ReactElement {
   const gaugeFill = Math.min(100, capacity.utilizationPercent);
   const styleLabel = seatingStyle.replace(/-/g, " ");
 
+  // Layout intelligence: synthesise the circulation + capacity + dressing
+  // signals the HUD already computes into a single planning-grade grade.
+  const grade = useMemo(
+    () => gradeLayout({
+      hasLayout,
+      circulation,
+      capacity,
+      tableCount: stats.roundTables + stats.banquetTables,
+      chairs: stats.chairs,
+      dressedTables: stats.dressedTables,
+    }),
+    [hasLayout, circulation, capacity, stats.roundTables, stats.banquetTables, stats.chairs, stats.dressedTables],
+  );
+  const topRecommendation = grade.recommendations[0];
+  const gradeColor = gradeBandColor(grade.band);
+
   return (
     <aside className="planner-spatial-hud" data-testid="planner-spatial-hud" aria-label="Layout summary">
+      <section
+        className="planner-spatial-hud__panel planner-spatial-hud__panel--grade"
+        data-testid="planner-layout-grade"
+        aria-label={`Layout grade ${grade.band}, ${String(grade.score)} out of 100. ${grade.headline}`}
+      >
+        <div className="planner-spatial-hud__title">Layout grade</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 46,
+              height: 46,
+              flexShrink: 0,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 800,
+              fontSize: 20,
+              color: gradeColor,
+              border: `2px solid ${gradeColor}`,
+              background: "rgba(255,255,255,0.04)",
+            }}
+          >
+            {grade.band}
+          </span>
+          <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            <strong style={{ fontSize: 18, lineHeight: 1, color: gradeColor }}>
+              {grade.score}
+              <span style={{ fontSize: 11, opacity: 0.55, fontWeight: 600 }}>/100</span>
+            </strong>
+            <span style={{ fontSize: 11, opacity: 0.82 }}>{grade.headline}</span>
+          </span>
+        </div>
+        {topRecommendation !== undefined && (
+          <div
+            style={{ marginTop: 9, fontSize: 11, lineHeight: 1.35, color: recommendationColor(topRecommendation.severity) }}
+          >
+            {topRecommendation.message}
+          </div>
+        )}
+      </section>
+
       <section className="planner-spatial-hud__panel planner-spatial-hud__panel--spaces">
         <div className="planner-spatial-hud__title">Spaces</div>
         <div className="planner-spatial-hud__list">

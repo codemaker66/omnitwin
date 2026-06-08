@@ -165,4 +165,34 @@ describe("PlannerSpatialHud", () => {
 
     expect(screen.getByText(/\d+ aisles below comfortable/)).toBeDefined();
   });
+
+  it("shows a starter layout grade with nothing placed", () => {
+    render(<PlannerSpatialHud />);
+
+    const panel = screen.getByTestId("planner-layout-grade");
+    expect(panel).toBeDefined();
+    expect(panel.textContent).toContain("/100");
+    expect(panel.textContent).toMatch(/start placing furniture to grade/i);
+  });
+
+  it("grades a placed layout with a band, score, and recommendation", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    expect(roundTable).toBeDefined();
+    if (roundTable === undefined) return;
+
+    // Two well-separated dressed tables → an assessable, decent grade.
+    usePlacementStore.setState({
+      placedItems: [
+        { ...createPlacedItem(roundTable.id, 0, 0, 0), clothed: true, clothStyle: "white" },
+        { ...createPlacedItem(roundTable.id, 10, 0, 0), clothed: true, clothStyle: "white" },
+      ],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    const panel = screen.getByTestId("planner-layout-grade");
+    expect(panel.textContent).toContain("/100");
+    // Aria-label carries the band + score for screen readers.
+    expect(panel.getAttribute("aria-label")).toMatch(/Layout grade [SABCD], \d+ out of 100/);
+  });
 });
