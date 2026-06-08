@@ -3,6 +3,14 @@
 // ---------------------------------------------------------------------------
 
 import type { PricingType, LineItem, Modifier } from "@omnitwin/types";
+import {
+  poundsToMinor,
+  minorToMajor,
+  multiplyMinor,
+  scaleMinor,
+  sumMinor,
+  type Minor,
+} from "./money.js";
 export type { PricingType, LineItem, Modifier };
 
 /** A pricing rule as received from DB (parsed). */
@@ -106,6 +114,10 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
   const month = getMonth(eventDate);
 
   const lineItems: LineItem[] = [];
+  // Line-item amounts are accumulated in exact integer minor units (pence), so
+  // the subtotal and total never drift the way a float `+=` over major-unit
+  // numbers would. The single major-unit conversion happens at the boundary.
+  const itemMinors: Minor[] = [];
   const modifierMap = new Map<string, number>();
   const currency = rules[0]?.currency ?? "GBP";
 
@@ -113,25 +125,27 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
     if (!isRuleValidForDate(rule, eventDate)) continue;
     if (!isRuleForSpace(rule, spaceId)) continue;
 
-    let amount = 0;
+    let amountMinor: Minor = 0;
     let description = "";
 
     switch (rule.type) {
       case "flat_rate":
-        amount = rule.amount;
+        amountMinor = poundsToMinor(rule.amount);
         description = "Flat rate";
         break;
 
       case "per_hour": {
         const billableHours = Math.max(hours, rule.minHours ?? 0);
-        amount = rule.amount * billableHours;
+        // Fractional hours → scale the per-hour rate and round once to pence.
+        amountMinor = scaleMinor(poundsToMinor(rule.amount), billableHours);
         description = `${String(billableHours)}h × £${String(rule.amount)}/h`;
         break;
       }
 
       case "per_head": {
         const billableGuests = Math.max(guestCount, rule.minGuests ?? 0);
-        amount = rule.amount * billableGuests;
+        // Integer guest count → exact, no rounding.
+        amountMinor = multiplyMinor(poundsToMinor(rule.amount), billableGuests);
         description = `${String(billableGuests)} guests × £${String(rule.amount)}/head`;
         break;
       }
@@ -146,15 +160,16 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
               break;
             }
           }
-          amount = matched?.amount ?? 0;
+          amountMinor = poundsToMinor(matched?.amount ?? 0);
           description = `Tiered (up to ${String(matched?.upTo ?? 0)} guests)`;
         }
         break;
       }
     }
 
-    if (amount > 0) {
-      lineItems.push({ ruleName: rule.name, description, amount });
+    if (amountMinor > 0) {
+      lineItems.push({ ruleName: rule.name, description, amount: minorToMajor(amountMinor) });
+      itemMinors.push(amountMinor);
     }
 
     // Collect modifiers from this rule
@@ -175,7 +190,7 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
     }
   }
 
-  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const subtotalMinor = sumMinor(itemMinors);
 
   const modifiers: Modifier[] = [];
   let totalMultiplier = 1;
@@ -184,7 +199,14 @@ export function calculatePrice(input: PriceCalculationInput): PriceResult {
     totalMultiplier *= multiplier;
   }
 
-  const total = Math.round(subtotal * totalMultiplier * 100) / 100;
+  // Apply the combined modifier to the exact subtotal and round once to pence.
+  const totalMinor = scaleMinor(subtotalMinor, totalMultiplier);
 
-  return { lineItems, subtotal, modifiers, total, currency };
+  return {
+    lineItems,
+    subtotal: minorToMajor(subtotalMinor),
+    modifiers,
+    total: minorToMajor(totalMinor),
+    currency,
+  };
 }

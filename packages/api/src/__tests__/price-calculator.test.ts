@@ -198,6 +198,35 @@ describe("calculatePrice", () => {
     });
     expect(result.total).toBe(0);
   });
+
+  it("accumulates the subtotal in exact pence (no floating-point drift)", () => {
+    const result = calculatePrice({
+      rules: [
+        makeRule({ name: "A", type: "flat_rate", amount: 0.1 }),
+        makeRule({ name: "B", type: "flat_rate", amount: 0.1 }),
+        makeRule({ name: "C", type: "flat_rate", amount: 0.1 }),
+      ],
+      spaceId: SPACE_ID, eventDate: "2026-06-15", startTime: "10:00", endTime: "18:00", guestCount: 100,
+    });
+    // A float `0.1 + 0.1 + 0.1` reduce yields 0.30000000000000004; exact pence
+    // arithmetic yields precisely 0.30.
+    expect(result.subtotal).toBe(0.3);
+    expect(result.total).toBe(0.3);
+  });
+
+  it("rounds a fractional modified total to exact pence (half-even)", () => {
+    const result = calculatePrice({
+      rules: [makeRule({
+        name: "Per Guest", type: "per_head", amount: 12.5,
+        dayOfWeekModifiers: { saturday: 1.25 },
+      })],
+      // 2026-03-21 is a Saturday.
+      spaceId: SPACE_ID, eventDate: "2026-03-21", startTime: "10:00", endTime: "18:00", guestCount: 17,
+    });
+    expect(result.subtotal).toBe(212.5); // £12.50 × 17, exact
+    // £212.50 × 1.25 = £265.625 → 26562.5 pence → half-even → 26562 → £265.62.
+    expect(result.total).toBe(265.62);
+  });
 });
 
 // ---------------------------------------------------------------------------
