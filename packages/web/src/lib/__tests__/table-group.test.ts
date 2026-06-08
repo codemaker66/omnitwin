@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { computeChairPositions, createTableGroup, rearrangeTableGroup } from "../table-group.js";
+import {
+  computeChairPositions,
+  createTableGroup,
+  rearrangeTableGroup,
+  seatCapacity,
+} from "../table-group.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../catalogue.js";
 import { resetPlacedIdCounter } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
+import { toRenderSpace } from "../../constants/scale.js";
+import type { ChairPlacement } from "../table-group.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -292,5 +299,91 @@ describe("rearrangeTableGroup", () => {
     const freshCount = newChairs.filter((c) => !originalChairIds.has(c.id)).length;
     expect(reuseCount).toBe(4);
     expect(freshCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// seatCapacity & recommendedSeatCount
+// ---------------------------------------------------------------------------
+
+describe("seatCapacity", () => {
+  it("derives a round table's capacity from the chair-ring circumference", () => {
+    // ring radius = 1.83/2 + 0.45/2 + 0.05 = 1.19 m → 2π·1.19 / 0.6 = 12.46 → 12
+    expect(seatCapacity(getItem(ROUND_TABLE_ID))).toBe(12);
+  });
+
+  it("derives a rectangular table's capacity from sides + heads", () => {
+    // sides: floor(1.83/0.6)=3 each; heads: floor(0.76/0.6)=1 each → 2·3 + 2·1 = 8
+    expect(seatCapacity(getItem(TRESTLE_TABLE_ID))).toBe(8);
+  });
+
+  it("returns 0 for a non-table item", () => {
+    expect(seatCapacity(getItem(CHAIR_ID))).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No-overlap invariant + clamping (S+)
+// ---------------------------------------------------------------------------
+
+function minPairwiseDistance(positions: readonly ChairPlacement[]): number {
+  let min = Infinity;
+  for (let i = 0; i < positions.length; i += 1) {
+    for (let j = i + 1; j < positions.length; j += 1) {
+      const a = positions[i];
+      const b = positions[j];
+      if (a === undefined || b === undefined) continue;
+      min = Math.min(min, Math.hypot(a.x - b.x, a.z - b.z));
+    }
+  }
+  return min;
+}
+
+describe("computeChairPositions — no overlap", () => {
+  // Two banquet chairs overlap if their centres are closer than the chair width.
+  const chairWidthRender = toRenderSpace(0.45);
+
+  it("never overlaps chairs around a round table, even when over-requested", () => {
+    for (const count of [4, 8, 12, 20]) {
+      const positions = computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, count);
+      expect(minPairwiseDistance(positions)).toBeGreaterThanOrEqual(chairWidthRender - 1e-6);
+    }
+  });
+
+  it("never overlaps chairs around a rectangular table, even when over-requested", () => {
+    for (const count of [4, 5, 6, 8, 30]) {
+      const positions = computeChairPositions(0, 0, getItem(TRESTLE_TABLE_ID), 0, count);
+      expect(minPairwiseDistance(positions)).toBeGreaterThanOrEqual(chairWidthRender - 1e-6);
+    }
+  });
+
+  it("respects table rotation without overlap", () => {
+    const positions = computeChairPositions(0, 0, getItem(TRESTLE_TABLE_ID), Math.PI / 5, 8);
+    expect(minPairwiseDistance(positions)).toBeGreaterThanOrEqual(chairWidthRender - 1e-6);
+  });
+});
+
+describe("computeChairPositions — clamping & heads", () => {
+  it("clamps a round request to the geometric capacity", () => {
+    expect(computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, 100)).toHaveLength(12);
+  });
+
+  it("clamps a rectangular request to the geometric capacity", () => {
+    expect(computeChairPositions(0, 0, getItem(TRESTLE_TABLE_ID), 0, 100)).toHaveLength(8);
+  });
+
+  it("seats the heads of a rectangular table only once the long sides are full", () => {
+    const table = getItem(TRESTLE_TABLE_ID);
+    const halfWidthRender = toRenderSpace(table.width) / 2;
+    const isHeadSeat = (p: ChairPlacement): boolean =>
+      Math.abs(p.x) > halfWidthRender + 1e-6 && Math.abs(p.z) < toRenderSpace(0.3);
+
+    // 6 chairs == both long sides (3 each), no heads.
+    const sixted = computeChairPositions(0, 0, table, 0, 6);
+    expect(sixted.some(isHeadSeat)).toBe(false);
+
+    // 8 chairs == sides full + one seat at each head.
+    const eight = computeChairPositions(0, 0, table, 0, 8);
+    expect(eight.filter(isHeadSeat)).toHaveLength(2);
   });
 });

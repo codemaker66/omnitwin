@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
-import { MAX_CHAIRS_ROUND, MAX_CHAIRS_RECT } from "../lib/table-group.js";
+import { seatCapacity } from "../lib/table-group.js";
+import { getCatalogueItem } from "../lib/catalogue.js";
 
 // ---------------------------------------------------------------------------
 // ChairCountDialog — luxury modal for seating arrangement
@@ -119,7 +120,12 @@ export function ChairCountDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
-  const maxChairs = request?.tableShape === "rectangular" ? MAX_CHAIRS_RECT : MAX_CHAIRS_ROUND;
+  // Cap the stepper at what physically fits around this specific table, so the
+  // count the planner picks is exactly what gets placed (no silent clamping).
+  const tableItem = request === null ? undefined : getCatalogueItem(request.catalogueItemId);
+  const maxChairs = tableItem !== undefined
+    ? Math.max(1, seatCapacity(tableItem))
+    : request?.tableShape === "rectangular" ? 8 : 12;
 
   useEffect(() => {
     if (request !== null) {
