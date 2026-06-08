@@ -36,6 +36,7 @@ function resetPlannerStores(): void {
     nextId: 1,
     pendingNavigationId: null,
     activeReferenceId: null,
+    tour: null,
   });
   usePlacementStore.setState({
     placedItems: [],
@@ -141,5 +142,18 @@ describe("PlannerCommandDeck", () => {
     render(<PlannerCommandDeck />);
 
     expect(screen.queryByTestId("planner-command-action-auto-fill")).toBeNull();
+  });
+
+  it("starts a cinematic showcase tour from the command deck", () => {
+    useRoomDimensionsStore.setState({ dimensions: { width: 42, length: 21, height: 7 } });
+
+    render(<PlannerCommandDeck />);
+    expect(useBookmarkStore.getState().tour).toBeNull();
+
+    fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
+
+    const tour = useBookmarkStore.getState().tour;
+    expect(tour).not.toBeNull();
+    expect(tour?.legs.length).toBeGreaterThan(0);
   });
 });

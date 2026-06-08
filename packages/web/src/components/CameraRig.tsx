@@ -12,6 +12,7 @@ import { useMarkupStore } from "../stores/markup-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { sampleTransition } from "../lib/camera-animation.js";
+import { sampleCameraTour } from "../lib/camera-tour.js";
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
   computeHumanPovLookAngles,
@@ -246,12 +247,25 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
       ) {
         invalidateRef.current();
       }
+      // Wake the demand-mode frame loop when a cinematic tour begins.
+      if (state.tour !== null && previousState.tour === null) {
+        invalidateRef.current();
+      }
     });
   }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const store = useBookmarkStore.getState();
+
+      // Escape cancels a cinematic tour and hands control straight back.
+      if (event.code === "Escape" && store.tour !== null) {
+        event.preventDefault();
+        store.clearTour();
+        invalidateRef.current();
+        return;
+      }
+
       const canExitHumanPov =
         humanPovActiveRef.current ||
         humanPovRestorePoseRef.current !== null ||
@@ -414,6 +428,26 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     if (controls === null) return;
 
     const store = useBookmarkStore.getState();
+
+    // Cinematic showcase tour takes full control of the camera while playing,
+    // overriding pan/zoom/orbit and any pending navigation (same discipline as
+    // a bookmark transition). It samples the eased multi-keyframe path each
+    // frame and hands control back when the tour completes.
+    if (store.tour !== null) {
+      controls.enabled = false;
+      const { position, target, done } = sampleCameraTour(store.tour);
+      camera.position.set(position[0], position[1], position[2]);
+      controls.target.set(target[0], target[1], target[2]);
+      controls.update();
+      if (done) {
+        store.clearTour();
+        controls.enabled = true;
+      } else {
+        store.updateTour(frameDelta);
+        invalidate();
+      }
+      return;
+    }
 
     // Consume pending navigation request — UI sets this, we start the transition
     if (store.pendingNavigationId !== null) {

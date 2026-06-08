@@ -4,6 +4,7 @@ import {
   Armchair,
   Camera,
   CircleSlash,
+  Clapperboard,
   Group,
   LayoutGrid,
   MousePointer2,
@@ -15,11 +16,13 @@ import {
   Utensils,
 } from "lucide-react";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { buildShowcaseTour } from "../../lib/camera-tour.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 
 interface CommandAction {
@@ -290,6 +293,16 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
           dispatchPlannerToolbarCommand("select");
           useMarkupStore.getState().setActive(false);
           useCatalogueStore.getState().clearSelection();
+        },
+      },
+      {
+        id: "showcase",
+        label: "Showcase",
+        ariaLabel: "Play a cinematic fly-through of the room",
+        icon: <Clapperboard size={16} aria-hidden="true" />,
+        onClick: () => {
+          const dimensions = useRoomDimensionsStore.getState().dimensions;
+          useBookmarkStore.getState().startTour(buildShowcaseTour(dimensions));
         },
       },
     ];

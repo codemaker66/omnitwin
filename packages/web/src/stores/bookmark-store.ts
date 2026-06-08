@@ -11,6 +11,7 @@ import {
   type CameraReferenceBookmarkInput,
   type CameraTransition,
 } from "../lib/camera-animation.js";
+import { advanceCameraTour, type CameraTour } from "../lib/camera-tour.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +60,14 @@ export interface BookmarkState {
   readonly updateTransition: (delta: number) => boolean;
   /** Clear the active transition (called when animation completes). */
   readonly clearTransition: () => void;
+  /** Active cinematic showcase tour (null when idle). */
+  readonly tour: CameraTour | null;
+  /** Begin a cinematic fly-through; suspends manual camera control until done. */
+  readonly startTour: (tour: CameraTour) => void;
+  /** Advance the tour clock. Returns true while the tour is still playing. */
+  readonly updateTour: (deltaSec: number) => boolean;
+  /** Stop the tour (on completion or cancel) and hand control back. */
+  readonly clearTour: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,5 +189,24 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
 
   clearTransition: () => {
     set({ transition: null });
+  },
+
+  tour: null,
+
+  startTour: (tour: CameraTour) => {
+    // A tour owns the camera outright — cancel any in-flight transition / POV.
+    set({ tour, transition: null, activeReferenceId: null, pendingNavigationId: null });
+  },
+
+  updateTour: (deltaSec: number): boolean => {
+    const state = get();
+    if (state.tour === null) return false;
+    const next = advanceCameraTour(state.tour, deltaSec);
+    set({ tour: next });
+    return next.elapsedSec < next.totalSec;
+  },
+
+  clearTour: () => {
+    set({ tour: null });
   },
 }));
