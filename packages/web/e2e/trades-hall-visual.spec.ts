@@ -1,6 +1,19 @@
 import { expect, test } from "@playwright/test";
 
+const API = "http://localhost:3001";
+
 test.describe("Trades Hall internal visual layer route", () => {
+  test.beforeEach(async ({ page }) => {
+    // The route fetches the latest published runtime package on mount. With
+    // no local API the browser logs net::ERR_CONNECTION_REFUSED, tripping the
+    // zero-console-error guard below even though the page falls back to the
+    // procedural layer gracefully. Mock the lookup to its empty result so the
+    // spec exercises the same no-asset state without a live API. (T-449)
+    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+      void route.fulfill({ json: { data: null } });
+    });
+  });
+
   test("loads the empty internal command shell without runtime errors", async ({ page }) => {
     const runtimeErrors: string[] = [];
 
