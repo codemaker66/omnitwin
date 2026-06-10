@@ -4,7 +4,10 @@ import {
   stableCanonicalJson,
   type CanonicalJsonValue,
 } from "./canonical-layout-snapshot.js";
-import { DataSufficiencyOutcomeSchema } from "./data-sufficiency.js";
+import {
+  DataSufficiencyOutcomeSchema,
+  type DataSufficiencyOutcome,
+} from "./data-sufficiency.js";
 import {
   GeometryApproximationKindSchema,
   GeometryApproximationPurposeSchema,
@@ -104,6 +107,32 @@ export const OperationalGeometryDataSufficiencyStatusSchema = z.enum(
 );
 export type OperationalGeometryDataSufficiencyStatus = z.infer<
   typeof OperationalGeometryDataSufficiencyStatusSchema
+>;
+
+export const OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_IDS = [
+  "missing_door_widths",
+  "unverified_furniture_footprints",
+  "unavailable_connector_graph",
+  "unsupported_route_discovery_request",
+  "geometry_policy_gap",
+] as const;
+export const OperationalGeometryDataSufficiencyCheckIdSchema = z.enum(
+  OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_IDS,
+);
+export type OperationalGeometryDataSufficiencyCheckId = z.infer<
+  typeof OperationalGeometryDataSufficiencyCheckIdSchema
+>;
+
+export const OPERATIONAL_GEOMETRY_ROUTE_DISCOVERY_MODES = [
+  "none",
+  "submitted_route",
+  "arbitrary_route",
+] as const;
+export const OperationalGeometryRouteDiscoveryModeSchema = z.enum(
+  OPERATIONAL_GEOMETRY_ROUTE_DISCOVERY_MODES,
+);
+export type OperationalGeometryRouteDiscoveryMode = z.infer<
+  typeof OperationalGeometryRouteDiscoveryModeSchema
 >;
 
 export const OperationalGeometryFeatureIdSchema = z
@@ -265,6 +294,14 @@ export const OperationalGeometryDataSufficiencySchema = z
       });
     }
 
+    if (dataSufficiency.status === "sufficient" && dataSufficiency.messageKey !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["messageKey"],
+        message: "Sufficient operational geometry cannot carry an insufficiency message key.",
+      });
+    }
+
     if (dataSufficiency.status !== "sufficient" && dataSufficiency.messageKey === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -283,9 +320,79 @@ export const OperationalGeometryDataSufficiencySchema = z
         message: "Human-review data sufficiency outcomes need a review role.",
       });
     }
+
+    if (
+      dataSufficiency.status !== "requires_human_review" &&
+      dataSufficiency.reviewRole !== null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewRole"],
+        message:
+          "Only human-review data sufficiency outcomes may carry a review role.",
+      });
+    }
   });
 export type OperationalGeometryDataSufficiency = z.infer<
   typeof OperationalGeometryDataSufficiencySchema
+>;
+
+export const OperationalGeometryDataSufficiencyCheckRequestSchema = z
+  .object({
+    purposes: z.array(OperationalGeometryPurposeSchema).min(1),
+    needsDoorWidths: z.boolean(),
+    needsVerifiedFurnitureFootprints: z.boolean(),
+    needsConnectorGraph: z.boolean(),
+    routeDiscoveryMode: OperationalGeometryRouteDiscoveryModeSchema,
+    submittedRouteRef: OperationalGeometryReferenceSchema.nullable(),
+    requiredPolicyRefs: z.array(OperationalGeometryReferenceSchema),
+    requiredFeatureClasses: z.array(OperationalGeometryFeatureClassSchema),
+  })
+  .strict()
+  .superRefine((request, ctx) => {
+    if (request.routeDiscoveryMode !== "submitted_route" && request.submittedRouteRef !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submittedRouteRef"],
+        message: "submittedRouteRef is only valid when routeDiscoveryMode is submitted_route.",
+      });
+    }
+  });
+export type OperationalGeometryDataSufficiencyCheckRequest = z.infer<
+  typeof OperationalGeometryDataSufficiencyCheckRequestSchema
+>;
+
+export const OperationalGeometryDataSufficiencyFindingSchema = z
+  .object({
+    checkId: OperationalGeometryDataSufficiencyCheckIdSchema,
+    status: DataSufficiencyOutcomeSchema,
+    messageKey: z.string().trim().min(1).max(160).regex(MESSAGE_KEY),
+    affectedFeatureIds: z.array(OperationalGeometryFeatureIdSchema),
+    requiredInputRefs: z.array(OperationalGeometryReferenceSchema),
+    missingInputRefs: z.array(OperationalGeometryReferenceSchema),
+    policyRefs: z.array(OperationalGeometryReferenceSchema),
+    reviewRole: z.string().trim().min(1).max(120).regex(SLUG_TOKEN).nullable(),
+  })
+  .strict()
+  .superRefine((finding, ctx) => {
+    if (finding.status === "requires_human_review" && finding.reviewRole === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewRole"],
+        message: "Human-review data sufficiency findings need a review role.",
+      });
+    }
+
+    if (finding.status !== "requires_human_review" && finding.reviewRole !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewRole"],
+        message: "Only human-review data sufficiency findings may carry a review role.",
+      });
+    }
+  });
+export type OperationalGeometryDataSufficiencyFinding = z.infer<
+  typeof OperationalGeometryDataSufficiencyFindingSchema
 >;
 
 export const OperationalGeometryFeaturePropertiesSchema = z
@@ -451,6 +558,22 @@ export const OperationalGeoJsonFeatureCollectionV0Schema = z
           message: "Feature coordinate frame must match collection metadata.",
         });
       }
+
+      if (feature.properties.venueSlug !== collection.metadata.venueSlug) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["features", index, "properties", "venueSlug"],
+          message: "Feature venue slug must match collection metadata.",
+        });
+      }
+
+      if (feature.properties.roomSlug !== collection.metadata.roomSlug) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["features", index, "properties", "roomSlug"],
+          message: "Feature room slug must match collection metadata.",
+        });
+      }
     }
   });
 export type OperationalGeoJsonFeatureCollectionV0 = z.infer<
@@ -576,6 +699,34 @@ export function isOperationalGeometryDataSufficiencyOutcome(
   return status !== "sufficient" && DataSufficiencyOutcomeSchema.safeParse(status).success;
 }
 
+export function operationalGeometryDataSufficiencyFindings(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  request: OperationalGeometryDataSufficiencyCheckRequest,
+): OperationalGeometryDataSufficiencyFinding[] {
+  const parsedCollection = OperationalGeoJsonFeatureCollectionV0Schema.parse(collection);
+  const parsedRequest = OperationalGeometryDataSufficiencyCheckRequestSchema.parse(request);
+  const findings: OperationalGeometryDataSufficiencyFinding[] = [];
+
+  appendCollectionDataSufficiencyFinding(parsedCollection, findings);
+
+  if (parsedRequest.needsDoorWidths) {
+    appendMissingDoorWidthFinding(parsedCollection, findings);
+  }
+
+  if (parsedRequest.needsVerifiedFurnitureFootprints) {
+    appendUnverifiedFurnitureFootprintFinding(parsedCollection, findings);
+  }
+
+  if (parsedRequest.needsConnectorGraph) {
+    appendUnavailableConnectorGraphFinding(parsedCollection, findings);
+  }
+
+  appendRouteDiscoveryFindings(parsedRequest, findings);
+  appendPolicyAndGeometryGapFindings(parsedCollection, parsedRequest, findings);
+
+  return findings.sort(compareDataSufficiencyFindings);
+}
+
 const ROOM_GEOMETRY_CLASSES: readonly OperationalGeometryFeatureClass[] = [
   "room_boundary",
   "walkable_area",
@@ -600,6 +751,255 @@ const PORTAL_CONNECTOR_CLASSES: readonly OperationalGeometryFeatureClass[] = [
   "connector",
   "accessibility_connector",
 ];
+
+const DOOR_WIDTH_REFERENCE_ROLES = [
+  "door_width",
+  "portal_width",
+  "clear_width",
+] as const;
+
+const OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_ORDER = new Map<
+  OperationalGeometryDataSufficiencyCheckId,
+  number
+>(
+  OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_IDS.map((checkId, index) => [
+    checkId,
+    index,
+  ]),
+);
+
+function appendCollectionDataSufficiencyFinding(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  const collectionOutcome = dataSufficiencyOutcome(collection.metadata.dataSufficiency.status);
+  if (collectionOutcome === null) {
+    return;
+  }
+
+  findings.push(
+    dataSufficiencyFinding({
+      checkId: "geometry_policy_gap",
+      status: collectionOutcome,
+      messageKey:
+        collection.metadata.dataSufficiency.messageKey ??
+        "operational_geometry.collection_data_insufficient",
+      affectedFeatureIds: [],
+      requiredInputRefs: collection.metadata.dataSufficiency.requiredInputRefs,
+      missingInputRefs: collection.metadata.dataSufficiency.missingInputRefs,
+      policyRefs: [],
+      reviewRole: collection.metadata.dataSufficiency.reviewRole,
+    }),
+  );
+}
+
+function appendMissingDoorWidthFinding(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  const doorOrPortalFeatures = collection.features.filter((feature) =>
+    featureClassIn(feature.properties.featureClass, ["door", "portal"]),
+  );
+
+  if (doorOrPortalFeatures.length === 0) {
+    findings.push(
+      dataSufficiencyFinding({
+        checkId: "missing_door_widths",
+        status: "not_checked",
+        messageKey: "operational_geometry.door_widths.no_door_or_portal_features",
+        affectedFeatureIds: [],
+        requiredInputRefs: [],
+        missingInputRefs: [operationalGeometryMissingInputRef("venue_data:door_widths")],
+        policyRefs: [],
+        reviewRole: null,
+      }),
+    );
+    return;
+  }
+
+  const featuresMissingWidth = doorOrPortalFeatures.filter(
+    (feature) => !hasReferenceRole(feature, DOOR_WIDTH_REFERENCE_ROLES),
+  );
+  if (featuresMissingWidth.length === 0) {
+    return;
+  }
+
+  findings.push(
+    dataSufficiencyFinding({
+      checkId: "missing_door_widths",
+      status: "requires_human_review",
+      messageKey: "operational_geometry.door_widths.requires_human_review",
+      affectedFeatureIds: featuresMissingWidth.map((feature) => feature.id),
+      requiredInputRefs: [],
+      missingInputRefs: featuresMissingWidth.map((feature) =>
+        operationalGeometryMissingInputRef(`venue_data:door_width:${feature.id}`),
+      ),
+      policyRefs: [],
+      reviewRole: "venue_ops_reviewer",
+    }),
+  );
+}
+
+function appendUnverifiedFurnitureFootprintFinding(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  const furnitureFeatures = collection.features.filter((feature) =>
+    featureClassIn(feature.properties.featureClass, FURNITURE_FOOTPRINT_CLASSES),
+  );
+
+  const unverifiedFurnitureFeatures = furnitureFeatures.filter(
+    (feature) =>
+      feature.properties.dataSufficiency.status !== "sufficient" ||
+      feature.properties.approximationKind === null ||
+      feature.properties.approximationKind === "unsupported_geometry" ||
+      feature.properties.provenanceRefs.length === 0,
+  );
+  if (unverifiedFurnitureFeatures.length === 0) {
+    return;
+  }
+
+  findings.push(
+    dataSufficiencyFinding({
+      checkId: "unverified_furniture_footprints",
+      status: "degraded_evidence",
+      messageKey: "operational_geometry.furniture_footprints.degraded_evidence",
+      affectedFeatureIds: unverifiedFurnitureFeatures.map((feature) => feature.id),
+      requiredInputRefs: [],
+      missingInputRefs: unverifiedFurnitureFeatures.map((feature) =>
+        operationalGeometryMissingInputRef(`catalogue_footprint:${feature.id}`),
+      ),
+      policyRefs: [],
+      reviewRole: null,
+    }),
+  );
+}
+
+function appendUnavailableConnectorGraphFinding(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  const connectorFeatures = collection.features.filter((feature) =>
+    featureClassIn(feature.properties.featureClass, PORTAL_CONNECTOR_CLASSES),
+  );
+  if (connectorFeatures.length === 0) {
+    findings.push(
+      dataSufficiencyFinding({
+        checkId: "unavailable_connector_graph",
+        status: "not_checked",
+        messageKey: "operational_geometry.connector_graph.not_checked",
+        affectedFeatureIds: [],
+        requiredInputRefs: [],
+        missingInputRefs: [operationalGeometryMissingInputRef("venue_data:connector_graph")],
+        policyRefs: [],
+        reviewRole: null,
+      }),
+    );
+    return;
+  }
+
+  const featureIds = new Set(collection.features.map((feature) => feature.id));
+  const disconnectedConnectors = connectorFeatures.filter((feature) =>
+    feature.properties.connectedFeatureIds.some(
+      (connectedFeatureId) => !featureIds.has(connectedFeatureId),
+    ),
+  );
+  if (disconnectedConnectors.length === 0) {
+    return;
+  }
+
+  findings.push(
+    dataSufficiencyFinding({
+      checkId: "unavailable_connector_graph",
+      status: "requires_human_review",
+      messageKey: "operational_geometry.connector_graph.requires_human_review",
+      affectedFeatureIds: disconnectedConnectors.map((feature) => feature.id),
+      requiredInputRefs: [],
+      missingInputRefs: disconnectedConnectors.map((feature) =>
+        operationalGeometryMissingInputRef(`venue_data:connector_links:${feature.id}`),
+      ),
+      policyRefs: [],
+      reviewRole: "venue_ops_reviewer",
+    }),
+  );
+}
+
+function appendRouteDiscoveryFindings(
+  request: OperationalGeometryDataSufficiencyCheckRequest,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  if (request.routeDiscoveryMode === "arbitrary_route") {
+    findings.push(
+      dataSufficiencyFinding({
+        checkId: "unsupported_route_discovery_request",
+        status: "unsupported_request",
+        messageKey: "operational_geometry.route_discovery.unsupported_request",
+        affectedFeatureIds: [],
+        requiredInputRefs: [],
+        missingInputRefs: [],
+        policyRefs: request.requiredPolicyRefs,
+        reviewRole: null,
+      }),
+    );
+    return;
+  }
+
+  if (request.routeDiscoveryMode === "submitted_route" && request.submittedRouteRef === null) {
+    findings.push(
+      dataSufficiencyFinding({
+        checkId: "unsupported_route_discovery_request",
+        status: "not_checked",
+        messageKey: "operational_geometry.route_discovery.submitted_route_missing",
+        affectedFeatureIds: [],
+        requiredInputRefs: [],
+        missingInputRefs: [operationalGeometryMissingInputRef("submitted_route")],
+        policyRefs: request.requiredPolicyRefs,
+        reviewRole: null,
+      }),
+    );
+  }
+}
+
+function appendPolicyAndGeometryGapFindings(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  request: OperationalGeometryDataSufficiencyCheckRequest,
+  findings: OperationalGeometryDataSufficiencyFinding[],
+): void {
+  const missingPolicyRefs = request.requiredPolicyRefs.filter(
+    (requiredPolicyRef) => !collectionHasReference(collection, requiredPolicyRef),
+  );
+  const missingFeatureClasses = request.requiredFeatureClasses.filter(
+    (requiredFeatureClass) =>
+      !collection.features.some(
+        (feature) => feature.properties.featureClass === requiredFeatureClass,
+      ),
+  );
+
+  if (missingPolicyRefs.length === 0 && missingFeatureClasses.length === 0) {
+    return;
+  }
+
+  findings.push(
+    dataSufficiencyFinding({
+      checkId: "geometry_policy_gap",
+      status: missingPolicyRefs.length > 0 ? "requires_human_review" : "not_checked",
+      messageKey:
+        missingPolicyRefs.length > 0
+          ? "operational_geometry.policy_gap.requires_human_review"
+          : "operational_geometry.feature_class_gap.not_checked",
+      affectedFeatureIds: [],
+      requiredInputRefs: [],
+      missingInputRefs: [
+        ...missingPolicyRefs,
+        ...missingFeatureClasses.map((featureClass) =>
+          operationalGeometryMissingInputRef(`operational_feature_class:${featureClass}`),
+        ),
+      ],
+      policyRefs: request.requiredPolicyRefs,
+      reviewRole: missingPolicyRefs.length > 0 ? "venue_ops_reviewer" : null,
+    }),
+  );
+}
 
 function normalizeOperationalGeometryFeatureForHash(
   feature: OperationalGeoJsonFeature,
@@ -722,6 +1122,76 @@ function uniqueSortedReferences(
     referencesByKey.set(operationalGeometryReferenceKey(reference), reference);
   }
   return [...referencesByKey.values()].sort(compareOperationalGeometryReferences);
+}
+
+function dataSufficiencyFinding(
+  finding: OperationalGeometryDataSufficiencyFinding,
+): OperationalGeometryDataSufficiencyFinding {
+  return OperationalGeometryDataSufficiencyFindingSchema.parse({
+    ...finding,
+    affectedFeatureIds: uniqueSortedFeatureIds(finding.affectedFeatureIds),
+    requiredInputRefs: uniqueSortedReferences(finding.requiredInputRefs),
+    missingInputRefs: uniqueSortedReferences(finding.missingInputRefs),
+    policyRefs: uniqueSortedReferences(finding.policyRefs),
+  });
+}
+
+function dataSufficiencyOutcome(
+  status: OperationalGeometryDataSufficiencyStatus,
+): DataSufficiencyOutcome | null {
+  const parsed = DataSufficiencyOutcomeSchema.safeParse(status);
+  return parsed.success ? parsed.data : null;
+}
+
+function operationalGeometryMissingInputRef(ref: string): OperationalGeometryReference {
+  return {
+    refType: "missing_input",
+    ref,
+    role: "required",
+  };
+}
+
+function hasReferenceRole(
+  feature: OperationalGeoJsonFeature,
+  roles: readonly string[],
+): boolean {
+  return [...feature.properties.sourceRefs, ...feature.properties.provenanceRefs].some(
+    (reference) => roles.includes(reference.role),
+  );
+}
+
+function collectionHasReference(
+  collection: OperationalGeoJsonFeatureCollectionV0,
+  requiredReference: OperationalGeometryReference,
+): boolean {
+  const referenceKey = operationalGeometryReferenceKey(requiredReference);
+  const references = [
+    ...collection.metadata.sourceRefs,
+    ...collection.features.flatMap((feature) => [
+      ...feature.properties.sourceRefs,
+      ...feature.properties.provenanceRefs,
+      ...feature.properties.policyRefs,
+      ...feature.properties.assumptionRefs,
+    ]),
+  ];
+
+  return references.some(
+    (candidateReference) => operationalGeometryReferenceKey(candidateReference) === referenceKey,
+  );
+}
+
+function compareDataSufficiencyFindings(
+  left: OperationalGeometryDataSufficiencyFinding,
+  right: OperationalGeometryDataSufficiencyFinding,
+): number {
+  const orderDelta =
+    (OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_ORDER.get(left.checkId) ?? 0) -
+    (OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_ORDER.get(right.checkId) ?? 0);
+  if (orderDelta !== 0) {
+    return orderDelta;
+  }
+
+  return left.messageKey.localeCompare(right.messageKey);
 }
 
 function compareHashFeatures(

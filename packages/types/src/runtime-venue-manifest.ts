@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  ExposureMetadataV0Schema,
+  internalOnlyExposureMetadata,
+} from "./exposure-metadata.js";
+import { matrix4d, validateSimilarityTransformMatrix4d } from "./coordinate-frame.js";
 import { SpaceIdSchema, SpaceSlugSchema } from "./space.js";
 import { VenueIdSchema, VenueSlugSchema } from "./venue.js";
 
@@ -16,6 +21,41 @@ export const RUNTIME_COORDINATE_SYSTEMS = [
 export const RUNTIME_ASSET_ROLES = ["radiance", "geometry", "texture", "metadata"] as const;
 export const RUNTIME_ASSET_FORMATS = ["spz", "ply", "splat", "glb", "gltf", "bin", "ktx2", "png", "jpg", "json"] as const;
 export const RUNTIME_LAYER_KINDS = ["gaussian_splat", "mesh"] as const;
+export const RUNTIME_TRANSFORM_FRAMES = [
+  "CVF",
+  "ARF",
+  "RRF",
+  "G",
+  "M",
+  "W",
+  "COLMAP_RDF",
+  "THREE_CAMERA",
+] as const;
+export const RUNTIME_TRANSFORM_ALIGNMENT_METHODS = [
+  "manual_alignment",
+  "icp",
+  "landmark_solve",
+  "matterport_e57_extraction",
+  "blender_authored_placement",
+  "known_pose_colmap",
+  "unconstrained_colmap",
+  "visual_alignment",
+] as const;
+export const RUNTIME_TRANSFORM_PROVENANCE_STATES = [
+  "measured",
+  "inferred",
+  "generated",
+] as const;
+export const RUNTIME_TRANSFORM_REFERENCE_TYPES = [
+  "capture_session",
+  "asset_version",
+  "runtime_package",
+  "control_network",
+  "landmark_set",
+  "operator_note",
+  "artifact",
+] as const;
+export const RUNTIME_TRANSFORM_ACTOR_TYPES = ["human", "pipeline", "tool"] as const;
 
 export const IDENTITY_MATRIX4D = [
   1, 0, 0, 0,
@@ -94,6 +134,17 @@ export const RuntimeCoordinateSystemSchema = z.enum(RUNTIME_COORDINATE_SYSTEMS);
 export const RuntimeAssetRoleSchema = z.enum(RUNTIME_ASSET_ROLES);
 export const RuntimeAssetFormatSchema = z.enum(RUNTIME_ASSET_FORMATS);
 export const RuntimeLayerKindSchema = z.enum(RUNTIME_LAYER_KINDS);
+export const RuntimeTransformFrameSchema = z.enum(RUNTIME_TRANSFORM_FRAMES);
+export const RuntimeTransformAlignmentMethodSchema = z.enum(
+  RUNTIME_TRANSFORM_ALIGNMENT_METHODS,
+);
+export const RuntimeTransformProvenanceStateSchema = z.enum(
+  RUNTIME_TRANSFORM_PROVENANCE_STATES,
+);
+export const RuntimeTransformReferenceTypeSchema = z.enum(
+  RUNTIME_TRANSFORM_REFERENCE_TYPES,
+);
+export const RuntimeTransformActorTypeSchema = z.enum(RUNTIME_TRANSFORM_ACTOR_TYPES);
 
 export const RuntimeVec3Schema = z.tuple([
   z.number().finite(),
@@ -104,6 +155,16 @@ export const RuntimeVec3Schema = z.tuple([
 export const Matrix4dSchema = z
   .array(z.number().finite())
   .length(16, "Matrix4d must contain exactly 16 column-major numbers");
+
+export const RuntimeTransformMatrix4dSchema = Matrix4dSchema.superRefine((values, ctx) => {
+  const validation = validateSimilarityTransformMatrix4d(matrix4d(values), 1e-7);
+  if (!validation.ok) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `TransformArtifactV0 matrix must be a finite affine similarity transform: ${validation.reason}`,
+    });
+  }
+});
 
 export const RuntimeBoundsSchema = z
   .object({
@@ -137,11 +198,174 @@ export const RuntimeAssetSchema = z
   })
   .strict();
 
+export const RuntimeTransformReferenceSchema = z
+  .object({
+    refType: RuntimeTransformReferenceTypeSchema,
+    ref: z.string().trim().min(1).max(255).regex(SAFE_RELATIVE_PATH),
+    role: z.string().trim().min(1).max(80).regex(SAFE_MANIFEST_KEY),
+  })
+  .strict();
+
+export const RuntimeTransformProvenanceSchema = z
+  .object({
+    state: RuntimeTransformProvenanceStateSchema,
+    refs: z.array(RuntimeTransformReferenceSchema).min(1),
+  })
+  .strict();
+
+export const RuntimeTransformActorSchema = z
+  .object({
+    actorType: RuntimeTransformActorTypeSchema,
+    id: z.string().trim().min(1).max(160).regex(SAFE_RELATIVE_PATH),
+    displayName: z.string().trim().min(1).max(160).optional(),
+    role: z.string().trim().min(1).max(80).regex(SAFE_MANIFEST_KEY).optional(),
+  })
+  .strict();
+
+export const RuntimeTransformLandmarkPairSchema = z
+  .object({
+    id: RuntimeManifestKeySchema,
+    label: z.string().trim().min(1).max(160).optional(),
+    source: RuntimeVec3Schema,
+    target: RuntimeVec3Schema,
+    residualM: z.number().finite().nonnegative().nullable().optional(),
+    provenanceRefs: z.array(RuntimeTransformReferenceSchema).default([]),
+  })
+  .strict();
+
+export const TransformArtifactV0Schema = z
+  .object({
+    id: RuntimeManifestKeySchema,
+    sourceFrame: RuntimeTransformFrameSchema,
+    targetFrame: RuntimeTransformFrameSchema,
+    units: z.literal("meters"),
+    matrix: RuntimeTransformMatrix4dSchema,
+    alignmentMethod: RuntimeTransformAlignmentMethodSchema,
+    residualRmseM: z.number().finite().nonnegative().nullable(),
+    landmarks: z.array(RuntimeTransformLandmarkPairSchema).default([]),
+    provenance: RuntimeTransformProvenanceSchema,
+    creator: RuntimeTransformActorSchema,
+    reviewer: RuntimeTransformActorSchema,
+    date: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((artifact, ctx) => {
+    if (artifact.sourceFrame === artifact.targetFrame) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targetFrame"],
+        message: "TransformArtifactV0 sourceFrame and targetFrame must differ.",
+      });
+    }
+
+    if (artifact.reviewer.actorType !== "human") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewer", "actorType"],
+        message: "TransformArtifactV0 reviewer must be a human actor.",
+      });
+    }
+
+    if (artifact.reviewer.role === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["reviewer", "role"],
+        message: "TransformArtifactV0 reviewer must declare a review role.",
+      });
+    }
+
+    if (artifact.alignmentMethod === "landmark_solve" && artifact.landmarks.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["landmarks"],
+        message: "landmark_solve TransformArtifactV0 records need at least one landmark pair.",
+      });
+    }
+
+    if (artifact.alignmentMethod === "landmark_solve" && artifact.residualRmseM === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["residualRmseM"],
+        message: "landmark_solve TransformArtifactV0 records need an aggregate residual RMSE.",
+      });
+    }
+
+    for (const [index, landmark] of artifact.landmarks.entries()) {
+      if (
+        artifact.alignmentMethod === "landmark_solve" &&
+        (landmark.residualM === null || landmark.residualM === undefined)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["landmarks", index, "residualM"],
+          message: "landmark_solve landmark pairs need per-landmark residuals.",
+        });
+      }
+
+      if (
+        artifact.alignmentMethod === "landmark_solve" &&
+        landmark.provenanceRefs.length === 0
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["landmarks", index, "provenanceRefs"],
+          message: "landmark_solve landmark pairs need provenance references.",
+        });
+      }
+    }
+
+    if (
+      artifact.residualRmseM === null &&
+      artifact.landmarks.some(
+        (landmark) => landmark.residualM !== null && landmark.residualM !== undefined,
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["residualRmseM"],
+        message:
+          "TransformArtifactV0 records with landmark residuals need an aggregate residual RMSE.",
+      });
+    }
+
+    if (
+      artifact.alignmentMethod === "visual_alignment" &&
+      artifact.provenance.state === "measured"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["provenance", "state"],
+        message: "visual_alignment TransformArtifactV0 records cannot claim measured provenance.",
+      });
+    }
+
+    if (
+      artifact.alignmentMethod === "unconstrained_colmap" &&
+      artifact.provenance.state === "measured"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["provenance", "state"],
+        message:
+          "unconstrained_colmap TransformArtifactV0 records cannot claim measured provenance without external metric control.",
+      });
+    }
+  });
+
+export const RuntimeManifestExposureMetadataSchema = ExposureMetadataV0Schema.refine(
+  (metadata) => metadata.artifactType === "runtime_package",
+  {
+    path: ["artifactType"],
+    message: "Runtime manifest exposure metadata must use artifactType runtime_package.",
+  },
+);
+
 const RuntimeLayerBaseSchema = z.object({
   id: RuntimeManifestKeySchema,
   assetId: RuntimeManifestKeySchema,
   coordinateSystem: RuntimeCoordinateSystemSchema,
   transform: Matrix4dSchema.default(() => [...IDENTITY_MATRIX4D]),
+  transformArtifactId: RuntimeManifestKeySchema.optional(),
   visibleByDefault: z.boolean().default(true),
 });
 
@@ -172,9 +396,13 @@ export const RuntimeVenueManifestV0Schema = z
     spaceSlug: SpaceSlugSchema,
     createdAt: z.string().datetime({ offset: true }),
     units: z.literal("meters"),
+    exposure: RuntimeManifestExposureMetadataSchema.default(() =>
+      internalOnlyExposureMetadata("runtime_package"),
+    ),
     coordinateSystem: RuntimeCoordinateSystemSchema,
     bounds: RuntimeBoundsSchema,
     assets: z.array(RuntimeAssetSchema).min(1),
+    transformArtifacts: z.array(TransformArtifactV0Schema).default([]),
     layers: z.array(RuntimeRenderLayerSchema).min(1),
     defaultLayerId: RuntimeManifestKeySchema,
   })
@@ -183,6 +411,45 @@ export const RuntimeVenueManifestV0Schema = z
     const assetById = new Map(manifest.assets.map((asset) => [asset.id, asset]));
     const layerIds = new Set<string>();
     const assetIds = new Set<string>();
+    const transformArtifactIds = new Set<string>();
+    const transformArtifactById = new Map(
+      manifest.transformArtifacts.map((artifact) => [artifact.id, artifact]),
+    );
+
+    if (
+      manifest.exposure.ownerVenueId !== null &&
+      manifest.exposure.ownerVenueId !== manifest.venueId
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["exposure", "ownerVenueId"],
+        message: "Runtime manifest exposure ownerVenueId must match venueId.",
+      });
+    }
+
+    if (
+      (manifest.exposure.exposureTier === "authenticated_client" ||
+        manifest.exposure.exposureTier === "published_case_study") &&
+      manifest.exposure.ownerVenueId !== manifest.venueId
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["exposure", "ownerVenueId"],
+        message:
+          "Client or case-study runtime exposure must be scoped to the manifest venue.",
+      });
+    }
+
+    for (const [index, transformArtifact] of manifest.transformArtifacts.entries()) {
+      if (transformArtifactIds.has(transformArtifact.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["transformArtifacts", index, "id"],
+          message: "TransformArtifactV0 IDs must be unique",
+        });
+      }
+      transformArtifactIds.add(transformArtifact.id);
+    }
 
     for (const [index, asset] of manifest.assets.entries()) {
       if (assetIds.has(asset.id)) {
@@ -238,6 +505,40 @@ export const RuntimeVenueManifestV0Schema = z
           message: "Mesh layers must reference a geometry asset",
         });
       }
+
+      if (
+        layer.transformArtifactId !== undefined &&
+        !transformArtifactIds.has(layer.transformArtifactId)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["layers", index, "transformArtifactId"],
+          message: "Runtime layer transformArtifactId must reference a declared TransformArtifactV0",
+        });
+      }
+
+      if (layer.transformArtifactId !== undefined) {
+        const transformArtifact = transformArtifactById.get(layer.transformArtifactId);
+        if (
+          transformArtifact !== undefined &&
+          !matrix4dEquals(layer.transform, transformArtifact.matrix)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["layers", index, "transform"],
+            message:
+              "Runtime layer transform must match the referenced TransformArtifactV0 matrix",
+          });
+        }
+      }
+
+      if (layer.transformArtifactId === undefined && !matrix4dEquals(layer.transform, IDENTITY_MATRIX4D)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["layers", index, "transformArtifactId"],
+          message: "Non-identity runtime layer transforms must reference a TransformArtifactV0",
+        });
+      }
     }
 
     if (!layerIds.has(manifest.defaultLayerId)) {
@@ -253,12 +554,46 @@ export type RuntimeCoordinateSystem = z.infer<typeof RuntimeCoordinateSystemSche
 export type RuntimeAssetRole = z.infer<typeof RuntimeAssetRoleSchema>;
 export type RuntimeAssetFormat = z.infer<typeof RuntimeAssetFormatSchema>;
 export type RuntimeLayerKind = z.infer<typeof RuntimeLayerKindSchema>;
+export type RuntimeTransformFrame = z.infer<typeof RuntimeTransformFrameSchema>;
+export type RuntimeTransformAlignmentMethod = z.infer<
+  typeof RuntimeTransformAlignmentMethodSchema
+>;
+export type RuntimeTransformProvenanceState = z.infer<
+  typeof RuntimeTransformProvenanceStateSchema
+>;
+export type RuntimeTransformReferenceType = z.infer<
+  typeof RuntimeTransformReferenceTypeSchema
+>;
+export type RuntimeTransformActorType = z.infer<typeof RuntimeTransformActorTypeSchema>;
 export type RuntimeVec3 = z.infer<typeof RuntimeVec3Schema>;
 export type Matrix4d = z.infer<typeof Matrix4dSchema>;
 export type RuntimeBounds = z.infer<typeof RuntimeBoundsSchema>;
 export type RuntimeAsset = z.infer<typeof RuntimeAssetSchema>;
+export type RuntimeTransformReference = z.infer<typeof RuntimeTransformReferenceSchema>;
+export type RuntimeTransformProvenance = z.infer<typeof RuntimeTransformProvenanceSchema>;
+export type RuntimeTransformActor = z.infer<typeof RuntimeTransformActorSchema>;
+export type RuntimeTransformLandmarkPair = z.infer<typeof RuntimeTransformLandmarkPairSchema>;
+export type TransformArtifactV0 = z.infer<typeof TransformArtifactV0Schema>;
+export type RuntimeManifestExposureMetadata = z.infer<
+  typeof RuntimeManifestExposureMetadataSchema
+>;
 export type RuntimeGaussianSplatLayer = z.infer<typeof RuntimeGaussianSplatLayerSchema>;
 export type RuntimeMeshLayer = z.infer<typeof RuntimeMeshLayerSchema>;
 export type RuntimeRenderLayer = z.infer<typeof RuntimeRenderLayerSchema>;
 export type RuntimeVenueManifestV0Input = z.input<typeof RuntimeVenueManifestV0Schema>;
 export type RuntimeVenueManifestV0 = z.infer<typeof RuntimeVenueManifestV0Schema>;
+
+function matrix4dEquals(
+  left: readonly number[],
+  right: readonly number[],
+  tolerance = 1e-12,
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => {
+    const rightValue = right[index];
+    return rightValue !== undefined && Math.abs(value - rightValue) <= tolerance;
+  });
+}

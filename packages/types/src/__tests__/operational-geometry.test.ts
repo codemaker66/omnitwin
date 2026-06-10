@@ -5,21 +5,26 @@ import { LayoutProofClaimStatusSchema } from "../layout-proof-object.js";
 import {
   OPERATIONAL_GEOJSON_GEOMETRY_TYPES,
   OPERATIONAL_GEOMETRY_CLASS_GEOMETRY_TYPES,
+  OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_IDS,
   OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_STATUSES,
   OPERATIONAL_GEOMETRY_FEATURE_CLASSES,
   OPERATIONAL_GEOMETRY_HASH_DOMAIN_PREFIX,
   OPERATIONAL_GEOMETRY_HASH_POLICY_VERSION,
   OPERATIONAL_GEOMETRY_PURPOSES,
+  OPERATIONAL_GEOMETRY_ROUTE_DISCOVERY_MODES,
   OPERATIONAL_GEOMETRY_SCHEMA_VERSION,
   OPERATIONAL_GEOMETRY_SOURCE_KINDS,
   OperationalGeoJsonFeatureCollectionV0Schema,
   OperationalGeoJsonGeometryTypeSchema,
+  OperationalGeometryDataSufficiencyCheckRequestSchema,
+  OperationalGeometryDataSufficiencyFindingSchema,
   OperationalGeometryDataSufficiencyStatusSchema,
   OperationalGeometryFeatureClassSchema,
   OperationalGeometryHashMaterialV0Schema,
   OperationalGeometryPurposeSchema,
   OperationalGeometrySourceKindSchema,
   isOperationalGeometryDataSufficiencyOutcome,
+  operationalGeometryDataSufficiencyFindings,
   operationalGeometryHash,
   operationalGeometryHashJson,
   operationalGeometryHashMaterial,
@@ -27,6 +32,7 @@ import {
   type OperationalGeoJsonFeature,
   type OperationalGeoJsonFeatureCollectionV0,
   type OperationalGeometryDataSufficiency,
+  type OperationalGeometryDataSufficiencyCheckRequest,
   type OperationalGeometryFeatureProperties,
   type OperationalGeometryReference,
 } from "../operational-geometry.js";
@@ -328,6 +334,22 @@ function referenceKey(reference: OperationalGeometryReference): string {
   return `${reference.refType}:${reference.ref}:${reference.role}`;
 }
 
+function sufficiencyRequest(
+  overrides: Partial<OperationalGeometryDataSufficiencyCheckRequest> = {},
+): OperationalGeometryDataSufficiencyCheckRequest {
+  return {
+    purposes: ["route_validation", "layout_evidence_pack"],
+    needsDoorWidths: false,
+    needsVerifiedFurnitureFootprints: false,
+    needsConnectorGraph: false,
+    routeDiscoveryMode: "none",
+    submittedRouteRef: null,
+    requiredPolicyRefs: [],
+    requiredFeatureClasses: [],
+    ...overrides,
+  };
+}
+
 describe("Operational Geometry GeoJSON schema", () => {
   it("pins feature classes from OGC-001", () => {
     expect(OPERATIONAL_GEOMETRY_FEATURE_CLASSES).toEqual([
@@ -396,6 +418,20 @@ describe("Operational Geometry GeoJSON schema", () => {
       "requires_human_review",
     ]);
 
+    expect(OPERATIONAL_GEOMETRY_DATA_SUFFICIENCY_CHECK_IDS).toEqual([
+      "missing_door_widths",
+      "unverified_furniture_footprints",
+      "unavailable_connector_graph",
+      "unsupported_route_discovery_request",
+      "geometry_policy_gap",
+    ]);
+
+    expect(OPERATIONAL_GEOMETRY_ROUTE_DISCOVERY_MODES).toEqual([
+      "none",
+      "submitted_route",
+      "arbitrary_route",
+    ]);
+
     for (const purpose of OPERATIONAL_GEOMETRY_PURPOSES) {
       expect(OperationalGeometryPurposeSchema.safeParse(purpose).success).toBe(true);
     }
@@ -407,6 +443,33 @@ describe("Operational Geometry GeoJSON schema", () => {
     for (const geometryType of OPERATIONAL_GEOJSON_GEOMETRY_TYPES) {
       expect(OperationalGeoJsonGeometryTypeSchema.safeParse(geometryType).success).toBe(true);
     }
+
+    expect(OperationalGeometryDataSufficiencyCheckRequestSchema.safeParse({
+      ...sufficiencyRequest(),
+      routeDiscoveryMode: "pass",
+    }).success).toBe(false);
+    expect(OperationalGeometryDataSufficiencyCheckRequestSchema.safeParse({
+      ...sufficiencyRequest({
+        routeDiscoveryMode: "none",
+        submittedRouteRef: ref("layout_route:ceremony-entry", "submitted_route"),
+      }),
+    }).success).toBe(false);
+    expect(OperationalGeometryDataSufficiencyCheckRequestSchema.safeParse(
+      sufficiencyRequest({
+        routeDiscoveryMode: "submitted_route",
+        submittedRouteRef: ref("layout_route:ceremony-entry", "submitted_route"),
+      }),
+    ).success).toBe(true);
+    expect(OperationalGeometryDataSufficiencyFindingSchema.safeParse({
+      checkId: "missing_door_widths",
+      status: "fail",
+      messageKey: "operational_geometry.bad",
+      affectedFeatureIds: [],
+      requiredInputRefs: [],
+      missingInputRefs: [],
+      policyRefs: [],
+      reviewRole: null,
+    }).success).toBe(false);
   });
 
   it("parses an operational GeoJSON feature collection with required metadata", () => {
@@ -472,6 +535,24 @@ describe("Operational Geometry GeoJSON schema", () => {
     expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse(duplicated).success).toBe(false);
   });
 
+  it("rejects features from a different venue or room than the collection metadata", () => {
+    const first = firstFeature();
+
+    expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse(withFirstFeatureInput({
+      properties: {
+        ...first.properties,
+        venueSlug: "other-venue",
+      },
+    })).success).toBe(false);
+
+    expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse(withFirstFeatureInput({
+      properties: {
+        ...first.properties,
+        roomSlug: "saloon",
+      },
+    })).success).toBe(false);
+  });
+
   it("requires connector links and object references where geometry depends on them", () => {
     expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse({
       ...COLLECTION,
@@ -511,6 +592,16 @@ describe("Operational Geometry GeoJSON schema", () => {
       properties: {
         ...first.properties,
         dataSufficiency: {
+          ...sufficientData(),
+          messageKey: "operational_geometry.sufficient_but_warns",
+        },
+      },
+    })).success).toBe(false);
+
+    expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse(withFirstFeatureInput({
+      properties: {
+        ...first.properties,
+        dataSufficiency: {
           status: "degraded_evidence",
           requiredInputRefs: [ref("venue_data:door-width", "required")],
           missingInputRefs: [ref("venue_data:door-width", "missing")],
@@ -537,6 +628,220 @@ describe("Operational Geometry GeoJSON schema", () => {
     expect(DataSufficiencyOutcomeSchema.safeParse("sufficient").success).toBe(false);
     expect(OperationalGeometryDataSufficiencyStatusSchema.safeParse("pass").success).toBe(false);
     expect(OperationalGeometryDataSufficiencyStatusSchema.safeParse("fail").success).toBe(false);
+  });
+
+  it("rejects review roles on data-sufficiency states that do not require human review", () => {
+    expect(OperationalGeometryDataSufficiencyStatusSchema.safeParse("sufficient").success).toBe(
+      true,
+    );
+
+    expect(OperationalGeoJsonFeatureCollectionV0Schema.safeParse({
+      ...COLLECTION,
+      metadata: {
+        ...COLLECTION.metadata,
+        dataSufficiency: {
+          status: "degraded_evidence",
+          requiredInputRefs: [ref("venue_data:door-widths", "required")],
+          missingInputRefs: [ref("venue_data:door-widths", "missing")],
+          messageKey: "operational_geometry.degraded_evidence",
+          reviewRole: "venue_ops_reviewer",
+        },
+      },
+    }).success).toBe(false);
+  });
+});
+
+describe("Operational Geometry data sufficiency checks", () => {
+  it("emits a human-review finding when door or portal width evidence is missing", () => {
+    const findings = operationalGeometryDataSufficiencyFindings(
+      COLLECTION,
+      sufficiencyRequest({ needsDoorWidths: true }),
+    );
+
+    expect(findings).toMatchObject([
+      {
+        checkId: "missing_door_widths",
+        status: "requires_human_review",
+        messageKey: "operational_geometry.door_widths.requires_human_review",
+        affectedFeatureIds: ["portal:main-door"],
+        reviewRole: "venue_ops_reviewer",
+      },
+    ]);
+    expect(OperationalGeometryDataSufficiencyFindingSchema.parse(findings[0])).toEqual(
+      findings[0],
+    );
+  });
+
+  it("accepts explicit door-width evidence without inventing a finding", () => {
+    const withDoorWidth = patchFeatureProperties(
+      COLLECTION,
+      "portal:main-door",
+      (properties) => ({
+        ...properties,
+        sourceRefs: [
+          ...properties.sourceRefs,
+          { refType: "venue_data", ref: "door-widths-v1", role: "door_width" },
+        ],
+      }),
+    );
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      withDoorWidth,
+      sufficiencyRequest({ needsDoorWidths: true }),
+    )).toEqual([]);
+  });
+
+  it("downgrades evidence for unverified or unsupported furniture footprints", () => {
+    const unverifiedFurniture = patchFeatureProperties(
+      COLLECTION,
+      "furniture_footprint:round-table-001",
+      (properties) => ({
+        ...properties,
+        approximationKind: "unsupported_geometry",
+      }),
+    );
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      unverifiedFurniture,
+      sufficiencyRequest({ needsVerifiedFurnitureFootprints: true }),
+    )).toMatchObject([
+      {
+        checkId: "unverified_furniture_footprints",
+        status: "degraded_evidence",
+        affectedFeatureIds: ["furniture_footprint:round-table-001"],
+      },
+    ]);
+  });
+
+  it("reports unavailable connector graph data without treating it as a route result", () => {
+    const noConnectorGraph: OperationalGeoJsonFeatureCollectionV0 = {
+      ...COLLECTION,
+      features: COLLECTION.features.filter(
+        (candidate) =>
+          candidate.properties.featureClass !== "portal" &&
+          candidate.properties.featureClass !== "accessibility_connector",
+      ),
+    };
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      noConnectorGraph,
+      sufficiencyRequest({ needsConnectorGraph: true }),
+    )).toMatchObject([
+      {
+        checkId: "unavailable_connector_graph",
+        status: "not_checked",
+        messageKey: "operational_geometry.connector_graph.not_checked",
+      },
+    ]);
+  });
+
+  it("review-gates connector links that reference missing features", () => {
+    const brokenConnectorGraph = patchFeatureProperties(
+      COLLECTION,
+      "portal:main-door",
+      (properties) => ({
+        ...properties,
+        connectedFeatureIds: ["walkable_area:grand-hall-main", "room_boundary:missing"],
+      }),
+    );
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      brokenConnectorGraph,
+      sufficiencyRequest({ needsConnectorGraph: true }),
+    )).toMatchObject([
+      {
+        checkId: "unavailable_connector_graph",
+        status: "requires_human_review",
+        affectedFeatureIds: ["portal:main-door"],
+        reviewRole: "venue_ops_reviewer",
+      },
+    ]);
+  });
+
+  it("turns unsupported route discovery and missing submitted routes into explicit outcomes", () => {
+    expect(operationalGeometryDataSufficiencyFindings(
+      COLLECTION,
+      sufficiencyRequest({ routeDiscoveryMode: "arbitrary_route" }),
+    )).toMatchObject([
+      {
+        checkId: "unsupported_route_discovery_request",
+        status: "unsupported_request",
+      },
+    ]);
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      COLLECTION,
+      sufficiencyRequest({ routeDiscoveryMode: "submitted_route", submittedRouteRef: null }),
+    )).toMatchObject([
+      {
+        checkId: "unsupported_route_discovery_request",
+        status: "not_checked",
+        messageKey: "operational_geometry.route_discovery.submitted_route_missing",
+      },
+    ]);
+  });
+
+  it("surfaces policy and required-geometry gaps as data-sufficiency findings", () => {
+    const findings = operationalGeometryDataSufficiencyFindings(
+      COLLECTION,
+      sufficiencyRequest({
+        requiredPolicyRefs: [ref("policy:clearance-envelope-v1", "policy")],
+        requiredFeatureClasses: ["connector"],
+      }),
+    );
+
+    expect(findings).toMatchObject([
+      {
+        checkId: "geometry_policy_gap",
+        status: "requires_human_review",
+        messageKey: "operational_geometry.policy_gap.requires_human_review",
+        reviewRole: "venue_ops_reviewer",
+      },
+    ]);
+    expect(findings[0]?.missingInputRefs.map(referenceKey)).toEqual([
+      "missing_input:operational_feature_class:connector:required",
+      "test_ref:policy:clearance-envelope-v1:policy",
+    ]);
+  });
+
+  it("propagates collection-level insufficient data without losing the original outcome", () => {
+    const collectionLevelGap: OperationalGeoJsonFeatureCollectionV0 = {
+      ...COLLECTION,
+      metadata: {
+        ...COLLECTION.metadata,
+        dataSufficiency: {
+          status: "degraded_evidence",
+          requiredInputRefs: [ref("venue_data:door-widths", "required")],
+          missingInputRefs: [ref("venue_data:door-widths", "missing")],
+          messageKey: "operational_geometry.collection.degraded_evidence",
+          reviewRole: null,
+        },
+      },
+    };
+
+    expect(operationalGeometryDataSufficiencyFindings(
+      collectionLevelGap,
+      sufficiencyRequest(),
+    )).toMatchObject([
+      {
+        checkId: "geometry_policy_gap",
+        status: "degraded_evidence",
+        messageKey: "operational_geometry.collection.degraded_evidence",
+      },
+    ]);
+  });
+
+  it("rejects review roles on data-sufficiency findings that do not require human review", () => {
+    expect(OperationalGeometryDataSufficiencyFindingSchema.safeParse({
+      checkId: "unverified_furniture_footprints",
+      status: "degraded_evidence",
+      messageKey: "operational_geometry.furniture_footprints.degraded_evidence",
+      affectedFeatureIds: ["furniture_footprint:round-table-001"],
+      requiredInputRefs: [],
+      missingInputRefs: [],
+      policyRefs: [],
+      reviewRole: "venue_ops_reviewer",
+    }).success).toBe(false);
   });
 });
 

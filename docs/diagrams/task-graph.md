@@ -169,6 +169,10 @@ flowchart TD
         T119(["T-119 — RealityScan/PGSR/2DGS/neural compare"])
         T120(["T-120 — Chandelier/stained-glass proxy workflow"])
         T121(["T-121 — Truth Mode authority display"])
+        T203(["T-203 — Capture Control Network"])
+        T204(["T-204 — capture control vocabulary"])
+        T209(["T-209 — Exposure Tier doctrine"])
+        T210(["T-210 — exposure metadata manifests"])
         T385(["T-385 — splat-transform bridge feasibility"])
         T386(["T-386 — splat-transform scene.ply fixture"])
         T387(["T-387 — PlayCanvas toolchain feasibility"])
@@ -354,6 +358,10 @@ flowchart TD
     T116 --> T117
     T116 --> T120
     T116 --> T121
+    T116 --> T204
+    T203 --> T204
+    T116 --> T210
+    T209 --> T210
     T118 --> T091
     T118 --> T117
     T118 --> T119
@@ -395,10 +403,10 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T441,T442,T443,T444,T445,T446 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T441,T442,T443,T444,T445,T446 done
     class T001 inprogress
     class T060,T092 blocked
-    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T116,T117,T118,T120,T121,T386,T388,T389 notstarted
+    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -683,8 +691,11 @@ are the Operational Geometry Compiler doctrine and follow-up GeoJSON schema,
 walkable-area compiler, geometry-hash, polygon-validity, and data-sufficiency
 tasks. T-297 has landed as the shared operational GeoJSON contract in
 `@omnitwin/types`; T-299 has landed as the deterministic operational geometry
-hash policy over that contract. Compiler and validation behavior remain
-separate tasks.
+hash policy over that contract; T-301 has landed as the shared
+data-sufficiency checker that turns missing door widths, unverified furniture
+footprints, unavailable connector graphs, unsupported route discovery, and
+geometry/policy gaps into typed data-sufficiency findings. Compiler and
+polygon-validity behavior remain separate tasks.
 T-302 through T-306 are the Flow Zone Authoring Layer doctrine and
 follow-up zone-vocabulary, editor-spike, validation-test, and Trades Hall bar
 queue authoring tasks. T-307 through T-311 are the Planning Evidence
