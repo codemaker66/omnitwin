@@ -26,6 +26,7 @@ test.describe("Public Editor", () => {
             userId: null,
             name: "Test Layout",
             isPublicPreview: true,
+            revision: 1,
             objects: [],
           },
         },
@@ -100,6 +101,9 @@ test.describe("Public Editor", () => {
   test("all core toolbar buttons are present", async ({ page }) => {
     // Each ToolBtn renders a <button aria-label={label} …>. Verifying these
     // labels exist ensures the toolbox mounted and aria attributes are wired.
+    // Scoped to the toolbar: the command deck also exposes Undo/Redo, so a
+    // page-wide role query would be ambiguous under strict mode.
+    const toolbar = page.getByTestId("planner-toolbar");
     await Promise.all(
       [
         "Select & Move",
@@ -114,7 +118,7 @@ test.describe("Public Editor", () => {
         "Show All Walls",
         "Save Layout",
         "Events Sheet",
-      ].map((name) => expect(page.getByRole("button", { name })).toBeVisible()),
+      ].map((name) => expect(toolbar.getByRole("button", { name })).toBeVisible()),
     );
     await expect(page.getByRole("button", { name: "Toggle wall visibility panel" })).toHaveCount(0);
   });

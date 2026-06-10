@@ -30,6 +30,7 @@ test.describe("Editor Interactions", () => {
             userId: null,
             name: "Test Layout",
             isPublicPreview: true,
+            revision: 1,
             objects: [],
           },
         },

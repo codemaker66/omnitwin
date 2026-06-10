@@ -45,6 +45,7 @@ interface MockConfig {
   readonly userId: string | null;
   readonly name: string;
   readonly isPublicPreview: boolean;
+  readonly revision: number;
   readonly objects: readonly MockPlacedObject[];
 }
 
@@ -95,6 +96,7 @@ const MOCK_CONFIG_EMPTY: MockConfig = {
   userId: null,
   name: "My Layout",
   isPublicPreview: true,
+  revision: 1,
   objects: [],
 };
 
@@ -222,7 +224,7 @@ test.describe("Editor with empty config", () => {
     // Guest (unauthenticated) save path → publicBatchSave
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
-      (route) => { void route.fulfill({ json: { data: [] } }); },
+      (route) => { void route.fulfill({ json: { data: { objects: [], revision: 2 } } }); },
     );
     await page.getByRole("button", { name: "Save Layout" }).click();
     // setSaveFlash(true) fires in the .then() callback after the save resolves.
@@ -284,7 +286,7 @@ test.describe("Editor with placed objects", () => {
     // modal is not blocked by network errors in test.
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
-      (route) => { void route.fulfill({ json: { data: [MOCK_OBJECT] } }); },
+      (route) => { void route.fulfill({ json: { data: { objects: [MOCK_OBJECT], revision: 2 } } }); },
     );
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/thumbnail`,
@@ -298,7 +300,7 @@ test.describe("Editor with placed objects", () => {
   test("submitting the enquiry with a valid email shows the success state", async ({ page }) => {
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
-      (route) => { void route.fulfill({ json: { data: [MOCK_OBJECT] } }); },
+      (route) => { void route.fulfill({ json: { data: { objects: [MOCK_OBJECT], revision: 2 } } }); },
     );
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/thumbnail`,

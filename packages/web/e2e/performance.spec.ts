@@ -26,6 +26,7 @@ async function mockEditorConfig(page: import("@playwright/test").Page): Promise<
           userId: null,
           name: "Test Layout",
           isPublicPreview: true,
+          revision: 1,
           objects: [],
         },
       },

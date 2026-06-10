@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { SignIn } from "@clerk/react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -48,7 +49,12 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
     if (e.key === "Escape") onClose();
   };
 
-  return (
+  // Portal to <body>: the planner shell declares `isolation: isolate`, which
+  // traps any descendant z-index inside its stacking context — the overlay's
+  // zIndex 200 would otherwise paint *below* root-level planner chrome (the
+  // status header at z46 and the 3D/2D view-mode pill at z31), leaving that
+  // chrome clickable on top of an open modal.
+  return createPortal(
     <div style={overlayStyle} onClick={onClose} onKeyDown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" tabIndex={-1}>
       <div ref={trapRef} style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
         <h2 id="auth-modal-title" style={{ fontSize: 18, fontWeight: 700, color: "#1a1a2e", marginBottom: 16 }}>
@@ -56,6 +62,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
         </h2>
         <SignIn routing="hash" />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

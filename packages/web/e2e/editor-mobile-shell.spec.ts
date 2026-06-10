@@ -52,6 +52,7 @@ const MOCK_CONFIG = {
   userId: null,
   name: "Mobile Layout",
   isPublicPreview: true,
+  revision: 1,
   objects: [MOCK_OBJECT],
 };
 
@@ -105,7 +106,7 @@ async function mockPlannerApis(page: Page): Promise<void> {
     void route.fulfill({ json: { data: MOCK_SPACE } });
   });
   await page.route(`${API}/public/configurations/${CONFIG_ID}/objects/batch`, (route) => {
-    void route.fulfill({ json: { data: [MOCK_OBJECT] } });
+    void route.fulfill({ json: { data: { objects: [MOCK_OBJECT], revision: 2 } } });
   });
   await page.route(`${API}/public/configurations/${CONFIG_ID}/thumbnail`, (route) => {
     void route.fulfill({ json: { data: MOCK_CONFIG } });
