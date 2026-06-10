@@ -10,16 +10,20 @@ import {
   MousePointer2,
   Paintbrush,
   PenLine,
+  Redo2,
   Sparkles,
   Trash2,
+  Undo2,
   Ungroup,
   Utensils,
 } from "lucide-react";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { buildShowcaseTour } from "../../lib/camera-tour.js";
+import { canRedo, canUndo, redoLabel, undoLabel, type EditorHistory } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useEditorStore, type EditorObject } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -88,6 +92,35 @@ function makeButton(action: CommandAction): React.ReactElement {
   );
 }
 
+/**
+ * Undo/redo commands against the editor-store history — the single timeline
+ * shared by the 3D scene and the 2D blueprint. The aria-label carries the
+ * recorded entry label ("Undo Move 3 items") so screen readers announce
+ * exactly what will be reverted.
+ */
+function historyActions(history: EditorHistory<EditorObject>): readonly CommandAction[] {
+  const undoEntry = undoLabel(history);
+  const redoEntry = redoLabel(history);
+  return [
+    {
+      id: "undo",
+      label: "Undo",
+      ariaLabel: undoEntry === null ? "Undo" : `Undo ${undoEntry}`,
+      icon: <Undo2 size={16} aria-hidden="true" />,
+      onClick: () => { useEditorStore.getState().undo(); },
+      disabled: !canUndo(history),
+    },
+    {
+      id: "redo",
+      label: "Redo",
+      ariaLabel: redoEntry === null ? "Redo" : `Redo ${redoEntry}`,
+      icon: <Redo2 size={16} aria-hidden="true" />,
+      onClick: () => { useEditorStore.getState().redo(); },
+      disabled: !canRedo(history),
+    },
+  ];
+}
+
 export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.ReactElement {
   const catalogueSelectedId = useCatalogueStore((s) => s.selectedItemId);
   const drawerOpen = useCatalogueStore((s) => s.drawerOpen);
@@ -97,6 +130,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const placedItems = usePlacementStore((s) => s.placedItems);
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
+  const history = useEditorStore((s) => s.history);
 
   const selectedItems = useMemo(
     () => placedItems.filter((item) => selectedIds.has(item.id)),
@@ -265,6 +299,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
         );
       }
 
+      actions.push(...historyActions(history));
+
       return { copy, actions };
     }
 
@@ -295,6 +331,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
           useCatalogueStore.getState().clearSelection();
         },
       },
+      ...historyActions(history),
       {
         id: "showcase",
         label: "Showcase",
@@ -341,6 +378,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     activeReferenceId,
     chairCount,
     drawerOpen,
+    history,
     markupActive,
     markupStrokeCount,
     placedItems.length,

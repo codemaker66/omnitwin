@@ -2,6 +2,10 @@ import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react
 import { useNavigate } from "react-router-dom";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+} from "../../lib/editor-history.js";
+import {
   MousePointer2, Armchair, RotateCw, Trash2, Undo2, Redo2,
   Camera, Grid3X3, Save, User, Eye, FileText, Check, X, MoreHorizontal,
   PenLine, Eraser, Minus, Plus,
@@ -1334,8 +1338,9 @@ export function VerticalToolbox(): React.ReactElement {
   });
   const placedCount = usePlacementStore((s) => s.placedItems.length);
 
-  const canUndo = usePlacementStore((s) => s.undoStack.length > 0);
-  const canRedo = usePlacementStore((s) => s.redoStack.length > 0);
+  const history = useEditorStore((s) => s.history);
+  const canUndo = historyCanUndo(history);
+  const canRedo = historyCanRedo(history);
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isSaving = useEditorStore((s) => s.isSaving);
@@ -1443,12 +1448,12 @@ export function VerticalToolbox(): React.ReactElement {
   }, []);
 
   const handleUndo = useCallback(() => {
-    usePlacementStore.getState().undo();
+    useEditorStore.getState().undo();
     useSelectionStore.getState().clearSelection();
   }, []);
 
   const handleRedo = useCallback(() => {
-    usePlacementStore.getState().redo();
+    useEditorStore.getState().redo();
     useSelectionStore.getState().clearSelection();
   }, []);
 

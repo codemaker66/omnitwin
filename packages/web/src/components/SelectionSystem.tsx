@@ -4,6 +4,7 @@ import { Vector2, Vector3, Plane } from "three";
 import type { Object3D, Camera, Raycaster } from "three";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
+import { useEditorStore } from "../stores/editor-store.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
@@ -160,26 +161,8 @@ export function SelectionSystem(): null {
 
       const selectedIds = useSelectionStore.getState().selectedIds;
 
-      // Ctrl+Z — undo
-      if (event.code === "KeyZ" && (event.ctrlKey || event.metaKey) && !event.shiftKey) {
-        event.preventDefault();
-        usePlacementStore.getState().undo();
-        useSelectionStore.getState().clearSelection();
-        invalidateRef.current();
-        return;
-      }
-
-      // Ctrl+Shift+Z or Ctrl+Y — redo
-      if (
-        ((event.code === "KeyZ" && (event.ctrlKey || event.metaKey) && event.shiftKey) ||
-         (event.code === "KeyY" && (event.ctrlKey || event.metaKey)))
-      ) {
-        event.preventDefault();
-        usePlacementStore.getState().redo();
-        useSelectionStore.getState().clearSelection();
-        invalidateRef.current();
-        return;
-      }
+      // Undo/redo shortcuts live in useUndoRedoShortcuts (EditorPage shell),
+      // driving the editor-store history shared by the 3D and 2D views.
 
       // Delete / Backspace — remove selected items
       if (event.code === "Delete" || event.code === "Backspace") {
@@ -200,9 +183,8 @@ export function SelectionSystem(): null {
       }
 
       // Q — rotate selected counter-clockwise | E — same | R — clockwise (legacy)
-      // Batch rotation: push one undo snapshot, then update all items in a single
-      // set() call. Prevents rapid Q/E from filling the undo buffer with per-item
-      // snapshots and avoids N separate React batches for N selected items.
+      // Batch rotation: update all items in a single set() call to avoid
+      // N separate React batches for N selected items.
       if ((event.code === "KeyQ" || event.code === "KeyE" || event.code === "KeyR") && !event.ctrlKey && !event.metaKey) {
         if (selectedIds.size === 0) return;
         const delta = event.code === "KeyR" ? ROTATION_SNAP_RAD : -ROTATION_SNAP_RAD;
@@ -212,8 +194,6 @@ export function SelectionSystem(): null {
             if (!selectedIds.has(item.id)) return item;
             return { ...item, rotationY: snapRotation(item.rotationY + delta) };
           }),
-          undoStack: [...store.undoStack, store.placedItems].slice(-50),
-          redoStack: [],
         });
         invalidateRef.current();
         return;
@@ -431,7 +411,9 @@ export function SelectionSystem(): null {
         if (dragItemId.current !== null) {
           // Furniture was clicked — start drag-move
           isDragging.current = true;
-          usePlacementStore.getState().beginDragMove();
+          // Fence the undo timeline: this drag's frames coalesce into one
+          // entry, separate from anything recorded just before the drag.
+          useEditorStore.getState().bumpHistoryEpoch();
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
@@ -619,6 +601,11 @@ export function SelectionSystem(): null {
 
       // Clear snap guides when interaction ends
       useSelectionStore.getState().setActiveGuides([]);
+      if (isDragging.current) {
+        // Close the drag's coalescing epoch so the next gesture starts a
+        // fresh undo entry even when it begins within the time window.
+        useEditorStore.getState().bumpHistoryEpoch();
+      }
       isDragging.current = false;
       isMarquee.current = false;
       dragItemId.current = null;

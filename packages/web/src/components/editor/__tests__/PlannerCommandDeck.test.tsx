@@ -10,12 +10,14 @@ import {
 } from "../../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 
 function resetPlannerStores(): void {
+  useEditorStore.getState().reset();
   useCatalogueStore.setState({
     drawerOpen: false,
     selectedItemId: null,
@@ -40,8 +42,6 @@ function resetPlannerStores(): void {
   });
   usePlacementStore.setState({
     placedItems: [],
-    undoStack: [],
-    redoStack: [],
     ghostPosition: null,
     ghostRotation: 0,
     ghostValid: false,
@@ -155,5 +155,52 @@ describe("PlannerCommandDeck", () => {
     const tour = useBookmarkStore.getState().tour;
     expect(tour).not.toBeNull();
     expect(tour?.legs.length).toBeGreaterThan(0);
+  });
+
+  it("offers undo and redo in the browse state, disabled with no history", () => {
+    render(<PlannerCommandDeck />);
+
+    const undo = screen.getByTestId<HTMLButtonElement>("planner-command-action-undo");
+    const redo = screen.getByTestId<HTMLButtonElement>("planner-command-action-redo");
+    expect(undo.disabled).toBe(true);
+    expect(redo.disabled).toBe(true);
+  });
+
+  it("undoes and redoes the last layout change from the deck", () => {
+    useEditorStore.getState().addObject("a1", 1, 0, 2);
+    expect(useEditorStore.getState().objects).toHaveLength(1);
+
+    render(<PlannerCommandDeck />);
+
+    const undo = screen.getByTestId<HTMLButtonElement>("planner-command-action-undo");
+    expect(undo.disabled).toBe(false);
+    expect(undo.getAttribute("aria-label")).toMatch(/^Undo/);
+
+    fireEvent.click(undo);
+    expect(useEditorStore.getState().objects).toHaveLength(0);
+
+    const redo = screen.getByTestId<HTMLButtonElement>("planner-command-action-redo");
+    expect(redo.disabled).toBe(false);
+    expect(redo.getAttribute("aria-label")).toMatch(/^Redo/);
+
+    fireEvent.click(redo);
+    expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+
+  it("keeps undo available while furniture is selected", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    expect(table).toBeDefined();
+    if (table === undefined) return;
+
+    useEditorStore.getState().addObject(table.id, 0, 0, 0);
+    const placed = createPlacedItem(table.id, 0, 0, 0, null, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.setState({ selectedIds: new Set([placed.id]) });
+
+    render(<PlannerCommandDeck />);
+
+    expect(screen.getByText("Table selected")).toBeDefined();
+    const undo = screen.getByTestId<HTMLButtonElement>("planner-command-action-undo");
+    expect(undo.disabled).toBe(false);
   });
 });

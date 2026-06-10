@@ -17,7 +17,6 @@ function resetStore(): void {
   resetPlacedIdCounter();
   usePlacementStore.setState({
     placedItems: [],
-    undoStack: [],
     ghostPosition: null,
     ghostValid: false,
     ghostInvalidReason: null,
@@ -87,7 +86,6 @@ describe("placeChairBrush", () => {
     expect(items.map((item) => item.id)).toEqual(ids);
     expect(items.every((item) => item.catalogueItemId === chairId)).toBe(true);
     expect(new Set(items.map((item) => item.z)).size).toBe(1);
-    expect(usePlacementStore.getState().canUndo()).toBe(true);
   });
 
   it("places a block of chairs from a diagonal area drag", () => {
@@ -190,10 +188,9 @@ describe("setItemLabel", () => {
     usePlacementStore.getState().setItemLabel(id, "  Bride  ");
 
     expect(usePlacementStore.getState().placedItems[0]?.label).toBe("Bride");
-    expect(usePlacementStore.getState().canUndo()).toBe(true);
   });
 
-  it("clears a label and supports undo", () => {
+  it("clears a label", () => {
     usePlacementStore.getState().placeItem(chairId, 0, 0);
     const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
 
@@ -201,18 +198,18 @@ describe("setItemLabel", () => {
     usePlacementStore.getState().setItemLabel(id, "");
 
     expect(usePlacementStore.getState().placedItems[0]?.label).toBe("");
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems[0]?.label).toBe("Bride");
   });
 
-  it("does not add undo history for an unchanged label", () => {
+  it("leaves state untouched for an unchanged label", () => {
     usePlacementStore.getState().placeItem(chairId, 0, 0);
     const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
-    const undoCount = usePlacementStore.getState().undoStack.length;
+    const itemsBefore = usePlacementStore.getState().placedItems;
 
     usePlacementStore.getState().setItemLabel(id, "");
 
-    expect(usePlacementStore.getState().undoStack).toHaveLength(undoCount);
+    // Must not mint a new array — EditorBridge mirrors placedItems into the
+    // undo timeline, so a no-op label set must not create a history entry.
+    expect(usePlacementStore.getState().placedItems).toBe(itemsBefore);
   });
 });
 
@@ -333,80 +330,6 @@ describe("clearAll", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Undo
-// ---------------------------------------------------------------------------
-
-describe("undo", () => {
-  it("starts with empty undo stack", () => {
-    expect(usePlacementStore.getState().undoStack).toHaveLength(0);
-    expect(usePlacementStore.getState().canUndo()).toBe(false);
-  });
-
-  it("placeItem pushes to undo stack", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    expect(usePlacementStore.getState().undoStack).toHaveLength(1);
-    expect(usePlacementStore.getState().canUndo()).toBe(true);
-  });
-
-  it("undo restores previous state after place", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
-    expect(usePlacementStore.getState().canUndo()).toBe(false);
-  });
-
-  it("undo restores previous state after remove", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
-    usePlacementStore.getState().removeItem(id);
-    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
-  });
-
-  it("multiple undos restore in reverse order", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    usePlacementStore.getState().placeItem(chairId, 4, 4);
-    expect(usePlacementStore.getState().placedItems).toHaveLength(2);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(1);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
-  });
-
-  it("undo does nothing when stack is empty", () => {
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
-  });
-
-  it("undo restores after toggleCloth", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
-    usePlacementStore.getState().toggleCloth(id);
-    expect(usePlacementStore.getState().placedItems[0]?.clothed).toBe(true);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems[0]?.clothed).toBe(false);
-  });
-
-  it("undo restores after clearAll", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    usePlacementStore.getState().placeItem(chairId, 4, 4);
-    usePlacementStore.getState().clearAll();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(2);
-  });
-
-  it("undo restores after rotateItem", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
-    usePlacementStore.getState().rotateItem(id, Math.PI / 2);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems[0]?.rotationY).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Remove multiple items
 // ---------------------------------------------------------------------------
 
@@ -432,17 +355,6 @@ describe("removeItems", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     usePlacementStore.getState().removeItems(new Set());
     expect(usePlacementStore.getState().placedItems).toHaveLength(1);
-    // No undo entry for no-op
-    expect(usePlacementStore.getState().undoStack).toHaveLength(1);
-  });
-
-  it("undo restores after removeItems", () => {
-    usePlacementStore.getState().placeItem(tableId, 0, 0);
-    usePlacementStore.getState().placeItem(chairId, 4, 4);
-    const ids = new Set(usePlacementStore.getState().placedItems.map((i) => i.id));
-    usePlacementStore.getState().removeItems(ids);
-    usePlacementStore.getState().undo();
-    expect(usePlacementStore.getState().placedItems).toHaveLength(2);
   });
 });
 
@@ -560,7 +472,6 @@ describe("table group integrity", () => {
     expect(primaryBefore).toBeDefined();
     if (primaryBefore === undefined) throw new Error("Expected labelled table to still exist");
 
-    usePlacementStore.getState().beginDragMove();
     usePlacementStore.getState().moveItem(
       table.id,
       primaryBefore.x + GRID_SPACING_RENDER * 2,
@@ -665,7 +576,7 @@ describe("autoArrangeBanquet", () => {
     expect(new Set(tables.map((t) => t.groupId)).size).toBe(5);
   });
 
-  it("replaces the existing layout and is undoable", () => {
+  it("replaces the existing layout", () => {
     usePlacementStore.getState().placeItem(platformId, 0, 0);
     expect(usePlacementStore.getState().placedItems).toHaveLength(1);
 
@@ -673,11 +584,6 @@ describe("autoArrangeBanquet", () => {
     const after = usePlacementStore.getState().placedItems;
     expect(after.some((i) => i.catalogueItemId === platformId)).toBe(false);
     expect(after.filter((i) => i.catalogueItemId === tableId)).toHaveLength(2);
-
-    usePlacementStore.getState().undo();
-    const restored = usePlacementStore.getState().placedItems;
-    expect(restored).toHaveLength(1);
-    expect(restored[0]?.catalogueItemId).toBe(platformId);
   });
 
   it("ignores a non-table catalogue id", () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useEditorStore, type EditorObject } from "../../stores/editor-store.js";
+import { useEditorStore, setEditorAutosaveRequester, type EditorObject } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -169,6 +169,14 @@ export function EditorBridge(): null {
   // Keep auth ref in sync so auto-save uses the correct endpoint
   useEffect(() => { isAuthenticated.current = authState; }, [authState]);
 
+  // Store-initiated mutations (undo/redo) must reach the server through the
+  // same debounced auto-save as scene interactions. Registering a callback
+  // keeps the dependency one-directional: the store never imports the bridge.
+  useEffect(() => {
+    setEditorAutosaveRequester(() => { scheduleAutoSave(isAuthenticated.current); });
+    return () => { setEditorAutosaveRequester(null); };
+  }, []);
+
   // Track whether we're currently pushing from editor→placement to avoid feedback loops
   const syncing = useRef(false);
 
@@ -203,10 +211,9 @@ export function EditorBridge(): null {
 
       // Only update if actually different
       if (!itemsMatch(state.placedItems, editorState.objects)) {
-        useEditorStore.setState({
-          objects: newEditorObjects,
-          isDirty: true,
-        });
+        // Route through the store action so the change lands on the undo
+        // timeline; successive drag frames coalesce by interaction epoch.
+        editorState.replaceObjectsFromScene(newEditorObjects);
 
         // Schedule auto-save
         scheduleAutoSave(isAuthenticated.current);

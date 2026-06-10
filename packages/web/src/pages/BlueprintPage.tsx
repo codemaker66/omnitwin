@@ -40,6 +40,7 @@ import {
   adaptEditorStateToBlueprintScene,
   blueprintPointToEditorPosition,
 } from "../lib/blueprint/adapt.js";
+import { canRedo, canUndo } from "../lib/editor-history.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import {
   NUDGE_STEP_BIG_M,
@@ -717,6 +718,7 @@ function BlueprintFromStore(): ReactElement {
   const objects = useEditorStore((s) => s.objects);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const selectedObjectId = useEditorStore((s) => s.selectedObjectId);
+  const history = useEditorStore((s) => s.history);
 
   const [eventType, setEventType] = useState<EventType>("wedding");
   const [guestCount, setGuestCount] = useState<number>(() => Math.max(0, objects.length * 10));
@@ -799,10 +801,10 @@ function BlueprintFromStore(): ReactElement {
           onAddFromChip={null}
           onCursor={setCursor}
           cursor={cursor}
-          canUndo={false}
-          canRedo={false}
-          onUndo={noop}
-          onRedo={noop}
+          canUndo={canUndo(history)}
+          canRedo={canRedo(history)}
+          onUndo={() => { useEditorStore.getState().undo(); }}
+          onRedo={() => { useEditorStore.getState().redo(); }}
           guides={EMPTY_GUIDES}
           zoom={1}
           setZoom={noop as Dispatch<SetStateAction<number>>}

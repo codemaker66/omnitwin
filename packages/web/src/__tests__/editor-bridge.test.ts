@@ -160,6 +160,72 @@ describe("EditorBridge component", () => {
     unmount();
     cleanup();
   });
+
+  // -------------------------------------------------------------------------
+  // Undo-timeline pin: scene interactions must flow through the store's
+  // replaceObjectsFromScene action (which records an invertible history
+  // entry), never through a raw setState that would bypass the timeline.
+  // -------------------------------------------------------------------------
+  it("records a placement mutation on the undo timeline", async () => {
+    const React = await import("react");
+    const { render, cleanup } = await import("@testing-library/react");
+    const { EditorBridge, __resetEditorBridgeMountCountForTests } = await import("../components/editor/EditorBridge.js");
+    const { usePlacementStore } = await import("../stores/placement-store.js");
+    const { canUndo } = await import("../lib/editor-history.js");
+
+    __resetEditorBridgeMountCountForTests();
+    useEditorStore.setState({ configId: "cfg-hist" });
+    usePlacementStore.setState({ placedItems: [] });
+
+    const { unmount } = render(React.createElement(EditorBridge));
+
+    usePlacementStore.setState({
+      placedItems: [
+        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null },
+      ],
+    });
+    await new Promise((r) => { setTimeout(r, 0); });
+
+    expect(useEditorStore.getState().objects).toHaveLength(1);
+    expect(canUndo(useEditorStore.getState().history)).toBe(true);
+    expect(useEditorStore.getState().history.past).toHaveLength(1);
+
+    unmount();
+    cleanup();
+  });
+
+  // -------------------------------------------------------------------------
+  // Autosave-requester pin: while the bridge is mounted, store-initiated
+  // mutations (undo/redo) must schedule the same debounced auto-save as
+  // scene interactions — otherwise an undone change never reaches the
+  // server until the user happens to touch the scene again.
+  // -------------------------------------------------------------------------
+  it("registers the autosave requester so undo schedules a save", async () => {
+    const React = await import("react");
+    const { render, cleanup } = await import("@testing-library/react");
+    const { EditorBridge, __resetEditorBridgeMountCountForTests } = await import("../components/editor/EditorBridge.js");
+    const configApi = await import("../api/configurations.js");
+
+    __resetEditorBridgeMountCountForTests();
+    useEditorStore.setState({ configId: "cfg-undo", configRevision: 1, isPublicPreview: true });
+
+    const { unmount } = render(React.createElement(EditorBridge));
+
+    vi.useFakeTimers();
+    try {
+      useEditorStore.getState().addObject("a1", 0, 0, 0);
+      vi.mocked(configApi.publicBatchSave).mockResolvedValue({ objects: [], revision: 2 });
+
+      useEditorStore.getState().undo();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(configApi.publicBatchSave).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    unmount();
+    cleanup();
+  });
 });
 
 describe("keyboard-driven actions", () => {

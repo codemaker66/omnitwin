@@ -20,19 +20,14 @@ import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { computeChairBrushSummary } from "../lib/chair-brush.js";
 
 // ---------------------------------------------------------------------------
-// Placement store — manages placed furniture, ghost state, undo/redo history
+// Placement store — manages placed furniture and ghost state. Undo/redo for
+// placement changes lives on the editor-store history timeline; EditorBridge
+// mirrors placedItems into editor objects (and back on undo).
 // ---------------------------------------------------------------------------
-
-/** Maximum number of undo snapshots to retain. */
-const MAX_UNDO_DEPTH = 50;
 
 export interface PlacementState {
   /** All placed furniture items. */
   readonly placedItems: readonly PlacedItem[];
-  /** Undo history — previous placedItems snapshots. */
-  readonly undoStack: readonly (readonly PlacedItem[])[];
-  /** Redo history — snapshots pushed when undo is used. */
-  readonly redoStack: readonly (readonly PlacedItem[])[];
   /** Render-space position of the ghost cursor. Null when not placing. */
   readonly ghostPosition: readonly [number, number, number] | null;
   /** Ghost rotation around Y axis in radians. */
@@ -59,9 +54,7 @@ export interface PlacementState {
   readonly removeItem: (id: string) => void;
   /** Remove multiple placed items by ID. */
   readonly removeItems: (ids: ReadonlySet<string>) => void;
-  /** Save undo snapshot before starting a drag-move (call once at drag start). */
-  readonly beginDragMove: () => void;
-  /** Update a placed item's position (for drag-move). No undo push — call beginDragMove first. */
+  /** Update a placed item's position (for drag-move). */
   readonly moveItem: (id: string, x: number, z: number) => void;
   /** Update a placed item's rotation. */
   readonly rotateItem: (id: string, rotationY: number) => void;
@@ -83,22 +76,14 @@ export interface PlacementState {
   readonly toggleSnap: () => void;
   /** Clear all placed items. */
   readonly clearAll: () => void;
-  /** Undo the last action that changed placedItems. */
-  readonly undo: () => void;
-  /** Redo the last undone action. */
-  readonly redo: () => void;
-  /** Whether undo is available. */
-  readonly canUndo: () => boolean;
-  /** Whether redo is available. */
-  readonly canRedo: () => boolean;
   /** Place a table with auto-arranged chairs as a group. */
   readonly placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => void;
   /** Re-arrange chairs for an existing table group. */
   readonly rearrangeGroup: (tableId: string, newChairCount: number) => void;
   /**
    * Auto-fill the room with an even, circulation-safe grid of table groups for
-   * a target guest count. Replaces the current layout (undo-safe). A target of
-   * 0 fills the whole room.
+   * a target guest count. Replaces the current layout. A target of 0 fills the
+   * whole room.
    */
   readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => void;
   /** Break a single item out of its group (set groupId to null). */
@@ -113,17 +98,8 @@ export interface PlacementState {
   readonly ungroupItems: (ids: ReadonlySet<string>) => void;
 }
 
-/** Push the current placedItems onto the undo stack (capped at MAX_UNDO_DEPTH). Clears redo. */
-function pushUndo(state: PlacementState): { undoStack: readonly (readonly PlacedItem[])[]; redoStack: readonly (readonly PlacedItem[])[] } {
-  const stack = [...state.undoStack, state.placedItems];
-  const capped = stack.length > MAX_UNDO_DEPTH ? stack.slice(stack.length - MAX_UNDO_DEPTH) : stack;
-  return { undoStack: capped, redoStack: [] };
-}
-
 export const usePlacementStore = create<PlacementState>()((set, get) => ({
   placedItems: [],
-  undoStack: [],
-  redoStack: [],
   ghostPosition: null,
   ghostRotation: 0,
   ghostValid: false,
@@ -153,7 +129,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
     const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
-    set({ placedItems: [...state.placedItems, item], ...pushUndo(state) });
+    set({ placedItems: [...state.placedItems, item] });
   },
 
   placeChairBrush: (
@@ -185,34 +161,20 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
     if (newItems.length === 0) return [];
-    set({
-      placedItems: [...state.placedItems, ...newItems],
-      ...pushUndo(state),
-    });
+    set({ placedItems: [...state.placedItems, ...newItems] });
     return newItems.map((item) => item.id);
   },
 
   removeItem: (id: string) => {
     const state = get();
-    set({
-      placedItems: state.placedItems.filter((item) => item.id !== id),
-      ...pushUndo(state),
-    });
+    set({ placedItems: state.placedItems.filter((item) => item.id !== id) });
   },
 
   removeItems: (ids: ReadonlySet<string>) => {
     if (ids.size === 0) return;
     const state = get();
     const allIds = expandIdsToGroupMembers(ids, state.placedItems);
-    set({
-      placedItems: state.placedItems.filter((item) => !allIds.has(item.id)),
-      ...pushUndo(state),
-    });
-  },
-
-  beginDragMove: () => {
-    const state = get();
-    set(pushUndo(state));
+    set({ placedItems: state.placedItems.filter((item) => !allIds.has(item.id)) });
   },
 
   moveItem: (id: string, x: number, z: number) => {
@@ -248,7 +210,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, rotationY } : item,
       ),
-      ...pushUndo(state),
     });
   },
 
@@ -316,7 +277,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
             }
           : item,
       ),
-      ...pushUndo(state),
     });
   },
 
@@ -336,7 +296,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, clothed: true, clothStyle: style };
     });
-    set({ placedItems, ...pushUndo(state) });
+    set({ placedItems });
   },
 
   applyTableSetting: (ids, setting) => {
@@ -355,7 +315,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       if (!targetIds.has(item.id)) return item;
       return { ...item, tableSetting: setting };
     });
-    set({ placedItems, ...pushUndo(state) });
+    set({ placedItems });
   },
 
   setItemLabel: (id: string, label: string) => {
@@ -368,7 +328,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, label: normalized } : item,
       ),
-      ...pushUndo(state),
     });
   },
 
@@ -379,39 +338,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   clearAll: () => {
     const state = get();
     if (state.placedItems.length === 0) return;
-    set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null, ...pushUndo(state) });
-  },
-
-  undo: () => {
-    const state = get();
-    if (state.undoStack.length === 0) return;
-    const previous = state.undoStack[state.undoStack.length - 1];
-    if (previous === undefined) return;
-    set({
-      placedItems: previous,
-      undoStack: state.undoStack.slice(0, -1),
-      redoStack: [...state.redoStack, state.placedItems],
-    });
-  },
-
-  redo: () => {
-    const state = get();
-    if (state.redoStack.length === 0) return;
-    const next = state.redoStack[state.redoStack.length - 1];
-    if (next === undefined) return;
-    set({
-      placedItems: next,
-      redoStack: state.redoStack.slice(0, -1),
-      undoStack: [...state.undoStack, state.placedItems],
-    });
-  },
-
-  canUndo: () => {
-    return get().undoStack.length > 0;
-  },
-
-  canRedo: () => {
-    return get().redoStack.length > 0;
+    set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
   },
 
   placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => {
@@ -442,7 +369,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const chairY = computeSurfaceHeight(item.x, item.z, state.placedItems, new Set());
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
-    set({ placedItems: [...state.placedItems, ...adjusted], ...pushUndo(state) });
+    set({ placedItems: [...state.placedItems, ...adjusted] });
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
@@ -453,11 +380,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const surfaceY = computeSurfaceHeight(item.x, item.z, newItems, new Set([item.id]));
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
-    set({ placedItems: adjusted, ...pushUndo(state) });
+    set({ placedItems: adjusted });
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
-    const state = get();
     const tableItem = getCatalogueItem(catalogueItemId);
     if (tableItem === undefined || tableItem.category !== "table") return;
 
@@ -489,8 +415,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     if (placedItems.length === 0) return;
 
-    // Replaces the layout — undo restores the previous placement.
-    set({ placedItems, ...pushUndo(state) });
+    set({ placedItems });
   },
 
   breakFromGroup: (id: string) => {
@@ -499,7 +424,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, groupId: null } : item,
       ),
-      ...pushUndo(state),
     });
   },
 
@@ -514,7 +438,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         const surfaceY = computeSurfaceHeight(newX, newZ, state.placedItems, memberIds);
         return { ...item, x: newX, z: newZ, y: surfaceY };
       }),
-      ...pushUndo(state),
     });
   },
 
@@ -542,7 +465,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         expandedIds.has(item.id) ? { ...item, groupId: newGroupId } : item,
       ),
-      ...pushUndo(state),
     });
   },
 
@@ -554,7 +476,6 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         expandedIds.has(item.id) ? { ...item, groupId: null } : item,
       ),
-      ...pushUndo(state),
     });
   },
 }));

@@ -9,7 +9,24 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { generatePlacedId } from "../lib/placement.js";
 import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
+import {
+  diffObjects,
+  emptyHistory,
+  performRedo,
+  performUndo,
+  recordChange,
+  remapHistoryIds,
+} from "../lib/editor-history.js";
+import type {
+  EditorHistory,
+  HistoryDelta,
+  HistoryIdAdapter,
+  HistoryStep,
+  ObjectFieldPatch,
+} from "../lib/editor-history.js";
+import { useSelectionStore } from "./selection-store.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -146,6 +163,12 @@ interface EditorState {
   // outside the Canvas (in SaveSendPanel) to generate the floor plan
   // diagram for the hallkeeper sheet PDF.
   readonly scene: Scene | null;
+  /**
+   * Command-sourced undo/redo timeline. One history spans the 3D scene
+   * and the 2D blueprint because both funnel mutations through this
+   * store. Cleared whenever a different document is loaded.
+   */
+  readonly history: EditorHistory<EditorObject>;
 }
 
 interface EditorActions {
@@ -190,6 +213,19 @@ interface EditorActions {
   /** Dismiss the current save-error toast. */
   readonly clearSaveError: () => void;
   readonly reset: () => void;
+  /**
+   * Replace the document from the 3D scene funnel (EditorBridge), recording
+   * one undoable entry whose label is derived from the delta. Successive
+   * drag frames within an interaction epoch coalesce into a single entry.
+   */
+  readonly replaceObjectsFromScene: (objects: readonly EditorObject[]) => void;
+  readonly undo: () => void;
+  readonly redo: () => void;
+  /**
+   * Start a new interaction epoch. Called at drag start/end so distinct
+   * gestures never coalesce, even when they happen in quick succession.
+   */
+  readonly bumpHistoryEpoch: () => void;
 }
 
 type EditorStore = EditorState & EditorActions;
@@ -204,6 +240,150 @@ let localIdCounter = 0;
 // power user's recent history. FIFO eviction keeps the most recent entries.
 const MAX_TRACKED_CONFIGS = 50;
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
+
+// ---------------------------------------------------------------------------
+// History wiring — interaction epochs, selection capture, undo labels
+// ---------------------------------------------------------------------------
+
+/**
+ * Pause (ms) after which consecutive continuous edits stop coalescing.
+ * Drag frames arrive every ~16 ms, so a drag always stays one entry;
+ * nudges separated by more than this become separate undo steps.
+ */
+const HISTORY_COALESCE_WINDOW_MS = 800;
+
+const EDITOR_HISTORY_IDS: HistoryIdAdapter = {
+  makeLocalId: generatePlacedId,
+  isLocalId: (id) => id.startsWith("local-"),
+};
+
+let interactionEpoch = 0;
+let lastRecordAt = Number.NEGATIVE_INFINITY;
+let autosaveRequester: (() => void) | null = null;
+
+/**
+ * Register the auto-save scheduler (owned by EditorBridge) so undo/redo
+ * can request a debounced save without the store importing the bridge.
+ */
+export function setEditorAutosaveRequester(requester: (() => void) | null): void {
+  autosaveRequester = requester;
+}
+
+function currentEpoch(): number {
+  const nowMs = Date.now();
+  if (nowMs - lastRecordAt > HISTORY_COALESCE_WINDOW_MS) {
+    interactionEpoch++;
+  }
+  lastRecordAt = nowMs;
+  return interactionEpoch;
+}
+
+/**
+ * The ids undo should re-select to put the user back where they were.
+ * The 3D scene tracks multi-selection in the selection store; the 2D
+ * blueprint tracks a single id on this store — prefer the richer one.
+ */
+function captureSelection(selectedObjectId: string | null): readonly string[] {
+  const selected = useSelectionStore.getState().selectedIds;
+  if (selected.size > 0) {
+    return [...selected];
+  }
+  return selectedObjectId === null ? [] : [selectedObjectId];
+}
+
+const POSITION_KEYS: ReadonlySet<string> = new Set(["positionX", "positionY", "positionZ"]);
+const ROTATION_KEYS: ReadonlySet<string> = new Set(["rotationX", "rotationY", "rotationZ"]);
+const CLOTH_KEYS: ReadonlySet<string> = new Set(["clothed", "clothStyle"]);
+
+function catalogueName(object: EditorObject): string {
+  return getCatalogueItem(object.assetDefinitionId)?.name ?? "item";
+}
+
+function countNoun(verb: string, count: number): string {
+  return count === 1 ? `${verb} item` : `${verb} ${String(count)} items`;
+}
+
+function describeUpdates(updated: readonly ObjectFieldPatch<EditorObject>[]): string {
+  const keys = new Set<string>();
+  for (const patch of updated) {
+    for (const key of Object.keys(patch.after)) {
+      keys.add(key);
+    }
+  }
+  const within = (...sets: readonly ReadonlySet<string>[]): boolean =>
+    [...keys].every((key) => sets.some((candidate) => candidate.has(key)));
+  const count = updated.length;
+  if (within(POSITION_KEYS)) return countNoun("Move", count);
+  if (within(ROTATION_KEYS)) return countNoun("Rotate", count);
+  if (within(POSITION_KEYS, ROTATION_KEYS)) return countNoun("Move", count);
+  if (keys.size === 1) {
+    if (keys.has("scale")) return countNoun("Resize", count);
+    if (keys.has("notes")) return "Edit note";
+    if (keys.has("label")) return countNoun("Rename", count);
+    if (keys.has("tableSetting")) return "Change table setting";
+    if (keys.has("groupId")) return "Update grouping";
+  }
+  if (within(CLOTH_KEYS)) return "Change tablecloth";
+  return countNoun("Edit", count);
+}
+
+/** Human-readable label for an undo entry, derived from its delta. */
+function describeDelta(delta: HistoryDelta<EditorObject>): string {
+  const adds = delta.added.length;
+  const removes = delta.removed.length;
+  const updates = delta.updated.length;
+  const firstAdded = delta.added[0];
+  if (adds > 0 && removes === 0 && updates === 0) {
+    return adds === 1 && firstAdded !== undefined
+      ? `Place ${catalogueName(firstAdded.object)}`
+      : `Place ${String(adds)} items`;
+  }
+  const firstRemoved = delta.removed[0];
+  if (removes > 0 && adds === 0 && updates === 0) {
+    return removes === 1 && firstRemoved !== undefined
+      ? `Delete ${catalogueName(firstRemoved.object)}`
+      : `Delete ${String(removes)} items`;
+  }
+  if (updates > 0 && adds === 0 && removes === 0) {
+    return describeUpdates(delta.updated);
+  }
+  return "Rearrange items";
+}
+
+/**
+ * Record a document change against the timeline, or return null when the
+ * change is a no-op. Selection is captured live so undo can restore it.
+ */
+function recordedHistory(
+  history: EditorHistory<EditorObject>,
+  selectedObjectId: string | null,
+  before: readonly EditorObject[],
+  after: readonly EditorObject[],
+  selectionAfter?: readonly string[],
+): EditorHistory<EditorObject> | null {
+  const delta = diffObjects(before, after);
+  if (delta === null) {
+    return null;
+  }
+  const selection = captureSelection(selectedObjectId);
+  return recordChange(history, {
+    before,
+    after,
+    label: describeDelta(delta),
+    epoch: currentEpoch(),
+    selectionBefore: selection,
+    selectionAfter: selectionAfter ?? selection,
+  });
+}
+
+function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState> {
+  return {
+    history: step.history,
+    objects: step.objects,
+    isDirty: true,
+    selectedObjectId: step.selection[0] ?? null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -226,6 +406,7 @@ const INITIAL_STATE: EditorState = {
   saveError: null,
   saveConflict: null,
   scene: null,
+  history: emptyHistory<EditorObject>(),
 };
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -257,6 +438,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: restoredAnonymousDraft,
         isLoading: false,
         saveConflict: null,
+        history: emptyHistory<EditorObject>(),
       });
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
@@ -290,6 +472,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isDirty: false,
         isLoading: false,
         saveConflict: null,
+        history: emptyHistory<EditorObject>(),
       });
 
       // Load space data for room geometry rendering.
@@ -324,53 +507,69 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   addObject: (assetId, positionX, positionY, positionZ) => {
+    const s = get();
     const obj: EditorObject = {
       id: `local-${String(++localIdCounter)}`,
       assetDefinitionId: assetId,
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
-      scale: 1, sortOrder: get().objects.length,
+      scale: 1, sortOrder: s.objects.length,
       clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
     };
-    set((s) => ({ objects: [...s.objects, obj], isDirty: true }));
-
+    const after = [...s.objects, obj];
+    set({
+      objects: after,
+      isDirty: true,
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
   },
 
   updateObject: (objectId, transform) => {
-    set((s) => ({
-      objects: s.objects.map((o) => o.id === objectId ? { ...o, ...transform } : o),
+    const s = get();
+    const after = s.objects.map((o) => o.id === objectId ? { ...o, ...transform } : o);
+    set({
+      objects: after,
       isDirty: true,
-    }));
-
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
   },
 
   moveObjectsByDelta: (ids, dx, dz) => {
     if (ids.size === 0) return;
     if (dx === 0 && dz === 0) return;
-    set((s) => ({
-      objects: s.objects.map((o) =>
-        ids.has(o.id)
-          ? { ...o, positionX: o.positionX + dx, positionZ: o.positionZ + dz }
-          : o,
-      ),
+    const s = get();
+    const after = s.objects.map((o) =>
+      ids.has(o.id)
+        ? { ...o, positionX: o.positionX + dx, positionZ: o.positionZ + dz }
+        : o,
+    );
+    set({
+      objects: after,
       isDirty: true,
-    }));
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
   },
 
   setObjectNotes: (objectId, notes) => {
-    set((s) => ({
-      objects: s.objects.map((o) => o.id === objectId ? { ...o, notes } : o),
+    const s = get();
+    const after = s.objects.map((o) => o.id === objectId ? { ...o, notes } : o);
+    set({
+      objects: after,
       isDirty: true,
-    }));
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
   },
 
   removeObject: (objectId) => {
-    set((s) => ({
-      objects: s.objects.filter((o) => o.id !== objectId),
+    const s = get();
+    const after = s.objects.filter((o) => o.id !== objectId);
+    const selectionAfter = captureSelection(s.selectedObjectId).filter((id) => id !== objectId);
+    set({
+      objects: after,
       isDirty: true,
       selectedObjectId: s.selectedObjectId === objectId ? null : s.selectedObjectId,
-    }));
-
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after, selectionAfter) ?? s.history,
+    });
   },
 
   selectObject: (id) => { set({ selectedObjectId: id }); },
@@ -401,10 +600,38 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       } else {
         saved = await configApi.publicBatchSave(configId, batch, configRevision);
       }
-      // Update local IDs with server IDs
       const serverObjects = saved.objects.map(placedObjectToEditor);
+      // Whole-history id remap: zip the local ids we sent (batch order)
+      // with the rows the server inserted (echoed updates-first, then
+      // inserts, each in input order). If they cannot be aligned the
+      // timeline can no longer be trusted — clear it rather than risk
+      // undo resurrecting rows under dead ids.
+      const sentLocalIds = objects.map((o) => o.id).filter((id) => EDITOR_HISTORY_IDS.isLocalId(id));
+      const sentServerIds = new Set(objects.map((o) => o.id).filter((id) => !EDITOR_HISTORY_IDS.isLocalId(id)));
+      const insertedIds = saved.objects.map((p) => p.id).filter((id) => !sentServerIds.has(id));
+      const idMap = new Map<string, string>();
+      const aligned = sentLocalIds.length === insertedIds.length;
+      if (aligned) {
+        sentLocalIds.forEach((localId, i) => {
+          const serverId = insertedIds[i];
+          if (serverId !== undefined) {
+            idMap.set(localId, serverId);
+          }
+        });
+      }
+      // The user may have kept editing while the request was in flight —
+      // remap the latest state, not the snapshot captured before the await.
+      const latest = get();
+      const selection = useSelectionStore.getState();
+      if ([...selection.selectedIds].some((id) => idMap.has(id))) {
+        selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
+      }
       set({
         objects: serverObjects,
+        history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
+        selectedObjectId: latest.selectedObjectId === null
+          ? null
+          : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
         configRevision: saved.revision,
         isDirty: false,
         isSaving: false,
@@ -448,6 +675,37 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
     set({ ...INITIAL_STATE, scene: get().scene });
+  },
+
+  replaceObjectsFromScene: (objects) => {
+    const s = get();
+    const history = recordedHistory(s.history, s.selectedObjectId, s.objects, objects);
+    if (history === null) return;
+    set({ objects, isDirty: true, history });
+  },
+
+  undo: () => {
+    const s = get();
+    const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    if (step === null) return;
+    interactionEpoch++;
+    set(historyStepPatch(step));
+    useSelectionStore.getState().selectMultiple(step.selection);
+    autosaveRequester?.();
+  },
+
+  redo: () => {
+    const s = get();
+    const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
+    if (step === null) return;
+    interactionEpoch++;
+    set(historyStepPatch(step));
+    useSelectionStore.getState().selectMultiple(step.selection);
+    autosaveRequester?.();
+  },
+
+  bumpHistoryEpoch: () => {
+    interactionEpoch++;
   },
 }));
 

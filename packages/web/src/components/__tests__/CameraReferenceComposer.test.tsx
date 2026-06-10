@@ -54,8 +54,6 @@ function resetStores(): void {
       clothed: false, clothStyle: null, tableSetting: null,
       groupId: null,
     }],
-    undoStack: [],
-    redoStack: [],
     ghostPosition: null,
     ghostValid: false,
     ghostInvalidReason: null,

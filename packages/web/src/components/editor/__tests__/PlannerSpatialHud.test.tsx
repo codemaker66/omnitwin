@@ -12,8 +12,6 @@ import { PlannerSpatialHud } from "../PlannerSpatialHud.js";
 function resetStore(): void {
   usePlacementStore.setState({
     placedItems: [],
-    undoStack: [],
-    redoStack: [],
     ghostPosition: null,
     ghostRotation: 0,
     ghostValid: false,

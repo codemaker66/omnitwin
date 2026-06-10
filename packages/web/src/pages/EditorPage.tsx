@@ -16,6 +16,7 @@ import {
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
+import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
 import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
@@ -276,6 +277,7 @@ export function EditorPage(): React.ReactElement {
  * re-render on every UI state flip.
  */
 function PlannerCommsLayer(): React.ReactElement {
+  useUndoRedoShortcuts();
   const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();
