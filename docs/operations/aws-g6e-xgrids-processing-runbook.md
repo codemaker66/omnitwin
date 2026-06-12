@@ -177,6 +177,20 @@ r2:venviewer-training-outputs/trades-hall/rooms/reception-room/runtime/reception
 r2:venviewer-training-outputs/trades-hall/rooms/grand-hall/runtime/grand-hall_xgrids_portalcam_scene_processed.ply
 ```
 
+Room-specific runtime prefixes for external splats that already exist outside
+the repo:
+
+```text
+r2:venviewer-training-outputs/trades-hall/rooms/lady-convenors-room/runtime/
+r2:venviewer-training-outputs/trades-hall/rooms/north-gallery/runtime/
+r2:venviewer-training-outputs/trades-hall/rooms/south-gallery/runtime/
+```
+
+For those rooms, copy the verified external splat into the matching `runtime/`
+prefix before registration. Do not register a runtime package from a chat note,
+local filename, or private external URL alone. Record the final R2 key, byte
+size, SHA-256, file extension, source label, and known limitations first.
+
 ## Room Processing Order
 
 Process one room at a time.
@@ -235,7 +249,8 @@ These examples use placeholders:
 
 - `<API_BASE>`: internal API base URL
 - `<ADMIN_TOKEN>`: admin bearer token
-- `<ROOM_SLUG>`: `robert-adam-room`, `saloon`, `reception-room`, or `grand-hall`
+- `<ROOM_SLUG>`: one of `grand-hall`, `reception-room`, `robert-adam-room`,
+  `saloon`, `lady-convenors-room`, `north-gallery`, or `south-gallery`
 - `<CAPTURE_SESSION_ID>`: response id from the capture-session registration
 - `<ASSET_VERSION_ID>`: response id from the processed splat registration
 - `<SHA256>`: actual 64-character lowercase SHA-256
@@ -281,6 +296,35 @@ curl -X POST "<API_BASE>/admin/assets/register-version" \
     "evidenceStatus": "unverified",
     "runtimeStatus": "usable",
     "notes": "XGRIDS PortalCam/Lixel export. Runtime asset loaded only after internal visual check; not yet signed."
+  }'
+```
+
+For Lady Convenor's Room, North Gallery, or South Gallery, use the same endpoint
+after the external splat is copied into R2. Set `captureSessionId` only when the
+source capture session is known. If it is not known yet, leave it `null` and put
+the source label and limitation in `notes`; the asset remains unverified until a
+human review records the provenance.
+
+```bash
+curl -X POST "<API_BASE>/admin/assets/register-version" \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "venueSlug": "trades-hall",
+    "roomSlug": "<ROOM_SLUG>",
+    "captureSessionId": null,
+    "assetKind": "splat",
+    "sourceType": "xgrids",
+    "fileName": "<ROOM_SLUG>_external_splat.ply",
+    "fileExt": ".ply",
+    "r2Key": "r2:venviewer-training-outputs/trades-hall/rooms/<ROOM_SLUG>/runtime/<ROOM_SLUG>_external_splat.ply",
+    "externalUrl": null,
+    "sha256": "<SHA256>",
+    "sizeBytes": <SIZE_BYTES>,
+    "mimeType": "application/octet-stream",
+    "evidenceStatus": "unverified",
+    "runtimeStatus": "usable",
+    "notes": "External splat copied into Venviewer R2. Runtime asset loaded only after internal visual check; not yet signed."
   }'
 ```
 
@@ -357,6 +401,15 @@ https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=robert-adam-
 https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=saloon
 https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=reception-room
 https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=grand-hall
+https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=lady-convenors-room
+https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=north-gallery
+https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=south-gallery
+```
+
+The internal registry status page for all room states is:
+
+```text
+https://venviewer.com/dev/assets/rooms
 ```
 
 ## Sources Checked

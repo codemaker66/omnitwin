@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.0.0",
-  "description": "Browser-based photorealistic venue planning platform",
+  "description": "Browser-based venue planning platform",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=22.0.0"

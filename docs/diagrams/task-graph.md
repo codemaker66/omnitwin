@@ -18,6 +18,7 @@ Regenerate after each `tasks.md` change.
 - **D** — Tier 3, Geass cluster
 - **E** — Tier 3, operational + doc follow-on
 - **F** — Product Vision (deferred), capabilities per D-018
+- **G** — SS++ platform execution programme
 
 ```mermaid
 %%{init: {
@@ -208,6 +209,19 @@ flowchart TD
         T108(["T-108 — Cinematic Share"])
         T109(["T-109 — Audit Trail"])
         T110(["T-110 — Revenue Optimizer"])
+    end
+
+    subgraph G [g · ss++ platform execution programme]
+        T453(["T-453 — first real room runtime package"])
+        T454(["T-454 — XGRIDS/AWS G6e processing lane"])
+        T455(["T-455 — public room showcase"])
+        T456(["T-456 — org/workspace onboarding"])
+        T457(["T-457 — supplier portal v1"])
+        T458(["T-458 — navmesh Guest Flow Replay"])
+        T459(["T-459 — contract/e-sign/payment hooks"])
+        T460(["T-460 — OpenUSD/streaming lane"])
+        T461(["T-461 — AR/localisation research"])
+        T462(["T-462 — enterprise analytics plan"])
     end
 
     T001 --> T002
@@ -406,6 +420,23 @@ flowchart TD
     T102 --> T110
     T104 --> T110
     T107 --> T110
+    T423 --> T453
+    T445 --> T453
+    T001 --> T454
+    T423 --> T454
+    T453 --> T455
+    T451 --> T456
+    T107 --> T457
+    T427 --> T459
+    T451 --> T459
+    T094 --> T459
+    T453 --> T460
+    T454 --> T460
+    T453 --> T461
+    T460 --> T461
+    T095 --> T462
+    T447 --> T462
+    T451 --> T462
 
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
@@ -416,7 +447,7 @@ flowchart TD
     class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T441,T442,T443,T444,T445,T446,T447,T448,T449 done
     class T001 inprogress
     class T060,T092 blocked
-    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389 notstarted
+    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389,T453,T454,T455,T456,T457,T458,T459,T460,T461,T462 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -639,6 +670,12 @@ Prompt-to-Layout / Pricing / Ops Compiler triple that ships as one
 effort per D-018 §"Activation gates". The T-104 → T-103 and T-107 →
 T-103 edges represent that T-103 cannot complete without the other two,
 even though the cluster activates them concurrently.
+
+Subgraph G captures the SS++ platform execution programme from
+`docs/strategy/ss-plus-plus-platform-execution-plan.md`. It intentionally
+shows only high-signal dependencies that are already visualised elsewhere;
+full dependencies for T-453 through T-462 remain authoritative in
+`docs/state/tasks.md`.
 
 T-064, T-065, T-066 in subgraph B have no incoming edges — independent
 ops infrastructure that activates when capacity allows inside the

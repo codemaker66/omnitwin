@@ -138,6 +138,9 @@ jobs:
         # lives in src/ but runtime consumers need the compiled bundle.
         run: pnpm --filter @omnitwin/types build
 
+      - name: Claim safety guard
+        run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts
+
       - name: Test (Vitest)
         run: pnpm -r test
 

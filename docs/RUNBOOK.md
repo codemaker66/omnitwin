@@ -26,6 +26,20 @@ Last updated: 2026-04-20.
 
 ---
 
+## SS++ reliability proof pack
+
+Operational hardening records live under `docs/operations/`:
+
+- `production-monitoring-checklist.md` covers Sentry, metrics, uptime checks, alert routing, and the public-safe `/health/observability` probe.
+- `backup-restore-drill.md` defines the restore verification procedure. A drill is not complete until its dated evidence section is filled in from a real restore.
+- `status-page-entry.md` gives the status-page component names and draft incident/update text.
+- `performance-budgets.md` records route, bundle, lazy-loading, planner frame, and large-layout budgets.
+- `accessibility-audit-2026-06-12.md` records the current route audit and follow-up checks.
+
+Do not mark T-060, T-061, or T-062 complete from documentation alone. They close only when the external Sentry project/alerts, uptime monitor, and backup restore drill have been performed and recorded.
+
+---
+
 ## Deploying a change
 
 ### Web (Vercel)
