@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { GuestFlowReplayPersistenceResultSchema, type GuestFlowReplayPersistenceResult } from "@omnitwin/types";
-import { api } from "./client.js";
+import { ApiError, api, getAuthToken } from "./client.js";
 
 export interface LatestGuestFlowReplayQuery {
   readonly eventId?: string | null;
@@ -20,6 +20,10 @@ function latestReplayPath(query: LatestGuestFlowReplayQuery = {}): string {
 }
 
 export async function getLatestGuestFlowReplay(query: LatestGuestFlowReplayQuery = {}): Promise<GuestFlowReplayPersistenceResult> {
+  const token = await getAuthToken();
+  if (token === null) {
+    throw new ApiError(401, "Session unavailable — using local simulated replay", "UNAUTHORIZED");
+  }
   const payload = await api.get(latestReplayPath(query), z.unknown());
   return GuestFlowReplayPersistenceResultSchema.parse(payload);
 }
