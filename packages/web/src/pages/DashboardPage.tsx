@@ -9,6 +9,7 @@ import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
 import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
 import { ProposalsView } from "../components/dashboard/ProposalsView.js";
+import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
 
 // ---------------------------------------------------------------------------
 // DashboardPage — hallkeeper management interface
@@ -92,6 +93,8 @@ export function DashboardPage(): React.ReactElement {
             onDetailClose={enquiryReturnContext !== null ? handleEnquiryDetailClose : undefined}
           />
         );
+      case "pipeline":
+        return <CommercialPipelineView />;
       case "reviews":
         return <ReviewsView />;
       case "analytics":

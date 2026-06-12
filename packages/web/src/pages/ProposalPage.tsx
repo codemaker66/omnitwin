@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
 import {
+  approveProposalShare,
+  commentOnProposalShare,
   getPublicProposal,
+  getProposalShare,
   respondToProposal,
   type ProposalResponseAction,
   type PublicProposal,
@@ -64,7 +67,7 @@ const STATUS_BANNERS: Partial<Record<PublicProposal["status"], { heading: string
 };
 
 export function ProposalPage(): ReactElement {
-  const { shareCode } = useParams<{ shareCode: string }>();
+  const { shareCode, token } = useParams<{ shareCode?: string; token?: string }>();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [showChangesForm, setShowChangesForm] = useState(false);
   const [changesNote, setChangesNote] = useState("");
@@ -73,11 +76,16 @@ export function ProposalPage(): ReactElement {
 
   useEffect(() => {
     let cancelled = false;
-    if (shareCode === undefined || shareCode.length === 0) {
+    const loader = token !== undefined && token.length > 0
+      ? getProposalShare(token)
+      : shareCode !== undefined && shareCode.length > 0
+        ? getPublicProposal(shareCode)
+        : null;
+    if (loader === null) {
       setState({ kind: "error" });
       return;
     }
-    getPublicProposal(shareCode)
+    loader
       .then((proposal) => {
         if (!cancelled) setState({ kind: "ready", proposal });
       })
@@ -85,24 +93,29 @@ export function ProposalPage(): ReactElement {
         if (!cancelled) setState({ kind: "error" });
       });
     return () => { cancelled = true; };
-  }, [shareCode]);
+  }, [shareCode, token]);
 
   const respond = useCallback(
     (action: ProposalResponseAction, note?: string) => {
-      if (shareCode === undefined || state.kind !== "ready" || submitting) return;
+      if (state.kind !== "ready" || submitting) return;
       setSubmitting(true);
       setActionError(null);
-      respondToProposal(shareCode, action, note)
-        .then((result) => {
-          setState({ kind: "ready", proposal: { ...state.proposal, status: result.status } });
-          setShowChangesForm(false);
-        })
-        .catch(() => {
-          setActionError("Something went wrong sending your response. Please try again, or contact the venue team directly.");
-        })
-        .finally(() => { setSubmitting(false); });
+      const actionPromise = token !== undefined && token.length > 0
+        ? action === "accept"
+          ? approveProposalShare(token, note !== undefined && note.trim().length > 0 ? { body: note.trim() } : {})
+          : commentOnProposalShare(token, { body: note ?? "", kind: "request_changes" }).then(() => ({ status: "changes_requested" as const }))
+        : shareCode !== undefined
+          ? respondToProposal(shareCode, action, note)
+          : Promise.reject(new Error("Missing proposal share reference"));
+
+      actionPromise.then((result) => {
+        setState({ kind: "ready", proposal: { ...state.proposal, status: result.status } });
+        setShowChangesForm(false);
+      }).catch(() => {
+        setActionError("Something went wrong sending your response. Please try again, or contact the venue team directly.");
+      }).finally(() => { setSubmitting(false); });
     },
-    [shareCode, state, submitting],
+    [shareCode, state, submitting, token],
   );
 
   if (state.kind === "loading") {
@@ -200,6 +213,44 @@ export function ProposalPage(): ReactElement {
           </section>
         )}
 
+        {(proposal.roomSummary !== null && proposal.roomSummary !== undefined) || (proposal.layoutSummary !== null && proposal.layoutSummary !== undefined) ? (
+          <section aria-label="Planning summary" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 }}>
+            {proposal.roomSummary !== null && proposal.roomSummary !== undefined && (
+              <div style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 18px" }}>
+                <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Room summary</div>
+                <div style={{ color: CREAM_MUT, fontSize: 14, lineHeight: 1.6 }}>{proposal.roomSummary}</div>
+              </div>
+            )}
+            {proposal.layoutSummary !== null && proposal.layoutSummary !== undefined && (
+              <div style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 18px" }}>
+                <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Layout summary</div>
+                <div style={{ color: CREAM_MUT, fontSize: 14, lineHeight: 1.6 }}>{proposal.layoutSummary}</div>
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {proposal.packageSummary !== undefined && proposal.packageSummary.length > 0 && (
+          <section aria-label="Package summary" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
+            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 8 }}>Package summary</div>
+            <ul style={{ margin: 0, paddingLeft: 18, color: CREAM_MUT, fontSize: 14, lineHeight: 1.7 }}>
+              {proposal.packageSummary.map((item, index) => <li key={index}>{item}</li>)}
+            </ul>
+          </section>
+        )}
+
+        {proposal.packages !== undefined && proposal.packages.length > 0 && (
+          <section aria-label="Selected packages" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
+            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 8 }}>Selected packages</div>
+            {proposal.packages.map((item, index) => (
+              <div key={index} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderTop: index === 0 ? "none" : `1px solid ${HAIRLINE}`, padding: "8px 0", color: CREAM_MUT, fontSize: 14 }}>
+                <span>{item.label} × {item.quantity}</span>
+                <span>{formatMinor(item.totalMinor, proposal.quote?.currency ?? "GBP")}</span>
+              </div>
+            ))}
+          </section>
+        )}
+
         {proposal.capacityNote !== null && (
           <section style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
             <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 6 }}>
@@ -218,7 +269,7 @@ export function ProposalPage(): ReactElement {
                 disabled={submitting}
                 style={{ background: GOLD, color: GRAPHITE, border: "none", borderRadius: 8, padding: "13px 30px", fontSize: 15, fontWeight: 600, cursor: submitting ? "default" : "pointer", fontFamily: SANS, opacity: submitting ? 0.6 : 1 }}
               >
-                Accept proposal
+                Approve proposal
               </button>
               <button
                 type="button"
@@ -257,6 +308,20 @@ export function ProposalPage(): ReactElement {
             {actionError !== null && (
               <div role="alert" style={{ marginTop: 14, color: "#e0a8a0", fontSize: 14 }}>{actionError}</div>
             )}
+          </section>
+        )}
+
+        {proposal.comments !== undefined && proposal.comments.length > 0 && (
+          <section aria-label="Client comments" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
+            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 8 }}>Comments</div>
+            {proposal.comments.map((comment, index) => (
+              <div key={index} style={{ borderTop: index === 0 ? "none" : `1px solid ${HAIRLINE}`, padding: "8px 0" }}>
+                <div style={{ color: CREAM, fontSize: 14 }}>{comment.body}</div>
+                <div style={{ color: CREAM_MUT, fontSize: 12, marginTop: 2 }}>
+                  {comment.authorName ?? "Client"} · {new Date(comment.createdAt).toLocaleDateString("en-GB")}
+                </div>
+              </div>
+            ))}
           </section>
         )}
 

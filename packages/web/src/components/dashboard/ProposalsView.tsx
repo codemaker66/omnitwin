@@ -8,6 +8,7 @@ import {
 } from "@omnitwin/types";
 import {
   createProposal,
+  createProposalShareToken,
   createProposalVersion,
   createQuote,
   getLatestProposalVersion,
@@ -110,6 +111,7 @@ export function ProposalsView(): ReactElement {
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([]);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [latestShareUrl, setLatestShareUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refreshList = useCallback(() => {
@@ -145,6 +147,7 @@ export function ProposalsView(): ReactElement {
     setClientMessage("");
     setCapacityNote("");
     setQuoteLines([]);
+    setLatestShareUrl(null);
     getProposalHistory(proposal.id)
       .then(setHistory)
       .catch(() => { setHistory([]); });
@@ -213,6 +216,7 @@ export function ProposalsView(): ReactElement {
         // snapshot reuses them verbatim, never recomputing client-side.
         const quote = await createQuote({
           venueId: selected.venueId,
+          opportunityId: selected.opportunityId,
           proposalId: selected.id,
           name: `${selected.title} quote`,
           currency: "GBP",
@@ -272,9 +276,23 @@ export function ProposalsView(): ReactElement {
       .finally(() => { setBusy(false); });
   };
 
-  const shareUrl = selected?.shareCode !== null && selected?.shareCode !== undefined
+  const handleCreateShareToken = (): void => {
+    if (selected === null || busy) return;
+    setBusy(true);
+    setActionError(null);
+    createProposalShareToken(selected.id)
+      .then((result) => {
+        setLatestShareUrl(`${window.location.origin}${result.shareUrl}`);
+        setSelected(result.proposal);
+        refreshList();
+      })
+      .catch(() => { setActionError("Could not generate the client share link. Save a version and try again."); })
+      .finally(() => { setBusy(false); });
+  };
+
+  const shareUrl = latestShareUrl ?? (selected?.shareCode !== null && selected?.shareCode !== undefined
     ? `${window.location.origin}/proposal/${selected.shareCode}`
-    : null;
+    : null);
   const canSend = selected !== null && SENDABLE_STATUSES.includes(selected.status) && selected.currentVersion >= 1;
   const canCompose = selected !== null && SENDABLE_STATUSES.includes(selected.status);
 
@@ -384,10 +402,10 @@ export function ProposalsView(): ReactElement {
                   data-testid="send-button"
                   style={{ ...buttonPrimary, opacity: canSend && !busy ? 1 : 0.5 }}
                   disabled={!canSend || busy}
-                  title={canSend ? "Send to client" : "Save a version before sending"}
-                  onClick={() => { handleTransition("sent"); }}
+                  title={canSend ? "Generate a client share link" : "Save a version before sharing"}
+                  onClick={handleCreateShareToken}
                 >
-                  Send to client
+                  Generate client link
                 </button>
               )}
               {WITHDRAWABLE_STATUSES.includes(selected.status) && (

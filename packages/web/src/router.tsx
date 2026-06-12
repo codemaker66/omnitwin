@@ -238,6 +238,12 @@ export const router = createBrowserRouter([
     element: withSuspense(<ProposalPage />),
   },
   {
+    // Commercial-spine share token route. Public — the token is resolved by
+    // the API through a stored hash and returns only client-safe proposal data.
+    path: "/proposal-share/:token",
+    element: withSuspense(<ProposalPage />),
+  },
+  {
     path: "/privacy",
     element: withSuspense(<PrivacyPage />),
   },

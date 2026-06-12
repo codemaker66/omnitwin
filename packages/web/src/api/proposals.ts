@@ -24,8 +24,23 @@ export const PublicProposalSchema = z.object({
   venueName: z.string().nullable(),
   clientMessage: z.string().nullable(),
   capacityNote: z.string().nullable(),
+  roomSummary: z.string().nullable().optional(),
+  layoutSummary: z.string().nullable().optional(),
+  packageSummary: z.array(z.string()).optional(),
   quote: QuoteSnapshotSchema.nullable(),
   version: z.number().int().positive(),
+  comments: z.array(z.object({
+    kind: z.string(),
+    authorName: z.string().nullable(),
+    body: z.string(),
+    createdAt: z.string(),
+  })).optional(),
+  packages: z.array(z.object({
+    label: z.string(),
+    quantity: z.number().int(),
+    totalMinor: z.number().int(),
+    status: z.string(),
+  })).optional(),
 });
 
 export type PublicProposal = z.infer<typeof PublicProposalSchema>;
@@ -37,6 +52,10 @@ export type ProposalRespondResult = z.infer<typeof RespondResultSchema>;
 
 export async function getPublicProposal(shareCode: string): Promise<PublicProposal> {
   return api.get(`/public/proposals/${encodeURIComponent(shareCode)}`, PublicProposalSchema);
+}
+
+export async function getProposalShare(token: string): Promise<PublicProposal> {
+  return api.get(`/proposal-share/${encodeURIComponent(token)}`, PublicProposalSchema);
 }
 
 export async function respondToProposal(
@@ -52,6 +71,26 @@ export async function respondToProposal(
   );
 }
 
+export async function commentOnProposalShare(
+  token: string,
+  input: { readonly body: string; readonly kind?: "comment" | "request_changes"; readonly authorName?: string | null; readonly authorEmail?: string | null },
+): Promise<{ kind: string; authorName: string | null; body: string; createdAt: string }> {
+  const CommentSchema = z.object({
+    kind: z.string(),
+    authorName: z.string().nullable(),
+    body: z.string(),
+    createdAt: z.string(),
+  });
+  return api.post(`/proposal-share/${encodeURIComponent(token)}/comment`, input, true, CommentSchema);
+}
+
+export async function approveProposalShare(
+  token: string,
+  input: { readonly body?: string; readonly authorName?: string | null; readonly authorEmail?: string | null } = {},
+): Promise<ProposalRespondResult> {
+  return api.post(`/proposal-share/${encodeURIComponent(token)}/approve`, input, true, RespondResultSchema);
+}
+
 // ---------------------------------------------------------------------------
 // Staff proposal client — dashboard authoring surface (T-427 phase 4).
 //
@@ -64,6 +103,7 @@ export async function respondToProposal(
 export const StaffProposalSchema = z.object({
   id: z.string(),
   venueId: z.string(),
+  opportunityId: z.string().nullable(),
   enquiryId: z.string().nullable(),
   configurationId: z.string().nullable(),
   title: z.string(),
@@ -117,6 +157,7 @@ const StaffQuoteLineItemSchema = z.object({
 export const StaffQuoteSchema = z.object({
   id: z.string(),
   venueId: z.string(),
+  opportunityId: z.string().nullable(),
   proposalId: z.string().nullable(),
   enquiryId: z.string().nullable(),
   spaceId: z.string().nullable(),
@@ -143,9 +184,19 @@ export type StaffQuoteWithItems = z.infer<typeof StaffQuoteWithItemsSchema>;
 export interface CreateProposalInput {
   readonly venueId: string;
   readonly title: string;
+  readonly opportunityId?: string | null;
   readonly enquiryId?: string | null;
   readonly configurationId?: string | null;
 }
+
+const ShareTokenResultSchema = z.object({
+  token: z.string(),
+  shareUrl: z.string(),
+  tokenPrefix: z.string(),
+  proposal: StaffProposalSchema,
+});
+
+export type ShareTokenResult = z.infer<typeof ShareTokenResultSchema>;
 
 export async function listProposals(status?: string): Promise<StaffProposal[]> {
   const params = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
@@ -166,6 +217,10 @@ export async function updateProposalTitle(id: string, title: string): Promise<St
 
 export async function transitionProposal(id: string, status: string, note?: string): Promise<StaffProposal> {
   return api.post(`/proposals/${id}/transition`, { status, note: note ?? null }, undefined, StaffProposalSchema);
+}
+
+export async function createProposalShareToken(id: string): Promise<ShareTokenResult> {
+  return api.post(`/proposals/${id}/share-token`, {}, undefined, ShareTokenResultSchema);
 }
 
 export async function getProposalHistory(id: string): Promise<ProposalHistoryEntry[]> {

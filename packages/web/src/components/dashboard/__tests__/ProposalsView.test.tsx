@@ -12,9 +12,12 @@ const mocks = vi.hoisted(() => ({
   createProposalVersion: vi.fn(),
   getLatestProposalVersion: vi.fn(),
   createQuote: vi.fn(),
+  createProposalShareToken: vi.fn(),
+  listSpaces: vi.fn(),
 }));
 
 vi.mock("../../../api/proposals.js", () => mocks);
+vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
 
 const MOCK_USER = {
   id: "u1",
@@ -35,6 +38,7 @@ function draftProposal(overrides: Record<string, unknown> = {}): Record<string, 
   return {
     id: "p1",
     venueId: "v1",
+    opportunityId: null,
     enquiryId: null,
     configurationId: null,
     title: "Autumn gala",
@@ -53,6 +57,7 @@ function draftProposal(overrides: Record<string, unknown> = {}): Record<string, 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.listProposals.mockResolvedValue([]);
+  mocks.listSpaces.mockResolvedValue([]);
   mocks.getProposalHistory.mockResolvedValue([]);
   mocks.getLatestProposalVersion.mockRejectedValue(new Error("404"));
 });
@@ -93,7 +98,7 @@ describe("ProposalsView", () => {
     expect(await screen.findByRole("heading", { name: "Winter ball" })).toBeTruthy();
   });
 
-  it("disables sending until a version snapshot exists", async () => {
+  it("disables client-link generation until a version snapshot exists", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal({ currentVersion: 0 })]);
     render(<ProposalsView />);
     await selectFirstProposal("p1");
@@ -102,10 +107,14 @@ describe("ProposalsView", () => {
     expect((send as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("enables sending once a version exists and transitions to sent", async () => {
+  it("generates a client share link once a version exists", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal({ currentVersion: 2 })]);
-    mocks.transitionProposal.mockResolvedValue(draftProposal({ status: "sent", currentVersion: 2, shareCode: "abcdef" }));
-    mocks.getProposal.mockResolvedValue(draftProposal({ status: "sent", currentVersion: 2, shareCode: "abcdef" }));
+    mocks.createProposalShareToken.mockResolvedValue({
+      token: "client-token",
+      shareUrl: "/proposal-share/client-token",
+      tokenPrefix: "client-t",
+      proposal: draftProposal({ status: "sent", currentVersion: 2, shareCode: "abcdef" }),
+    });
     render(<ProposalsView />);
     await selectFirstProposal("p1");
 
@@ -114,7 +123,7 @@ describe("ProposalsView", () => {
     fireEvent.click(send);
 
     await waitFor(() => {
-      expect(mocks.transitionProposal).toHaveBeenCalledWith("p1", "sent");
+      expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1");
     });
     expect(await screen.findByTestId("share-link")).toBeTruthy();
   });
@@ -168,7 +177,7 @@ describe("ProposalsView", () => {
     mocks.listProposals.mockResolvedValue([draftProposal()]);
     const QUOTE_UUID = "33333333-3333-4333-8333-333333333333";
     mocks.createQuote.mockResolvedValue({
-      id: QUOTE_UUID, venueId: "v1", proposalId: "p1", enquiryId: null, spaceId: null,
+      id: QUOTE_UUID, venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null, spaceId: null,
       name: "Autumn gala quote", status: "draft", currency: "GBP",
       subtotalMinor: 12050, totalMinor: 12050, validUntil: null,
       supersededByQuoteId: null, notes: null, createdBy: "u1",
@@ -200,7 +209,7 @@ describe("ProposalsView", () => {
 
     await waitFor(() => {
       expect(mocks.createQuote).toHaveBeenCalledWith({
-        venueId: "v1", proposalId: "p1", name: "Autumn gala quote", currency: "GBP",
+        venueId: "v1", opportunityId: null, proposalId: "p1", name: "Autumn gala quote", currency: "GBP",
         lineItems: [{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: 12050 }],
       });
     });
@@ -240,5 +249,41 @@ describe("ProposalsView", () => {
     expect(screen.queryByTestId("composer-save")).toBeNull();
     expect(screen.queryByTestId("send-button")).toBeNull();
     expect(screen.queryByTestId("withdraw-button")).toBeNull();
+  });
+
+  it("computes capacity guidance from room area and inserts the SAFE note (T-429)", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    mocks.listSpaces.mockResolvedValue([{
+      id: "s1", venueId: "v1", name: "Grand Hall", slug: "grand-hall", description: "",
+      widthM: "21", lengthM: "10", heightM: "7", floorPlanOutline: [],
+      meshUrl: null, thumbnailUrl: null, sortOrder: 0, createdAt: NOW, updatedAt: NOW,
+    }]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    // 21m × 10m = 210 m²; dinner-rounds default → floor(210 / 1.5) = 140.
+    fireEvent.change(await screen.findByTestId("capacity-guests"), { target: { value: "120" } });
+
+    const result = await screen.findByTestId("capacity-result");
+    expect(result.textContent).toContain("around 140 guests");
+    expect(result.textContent).toContain("120 requested");
+    expect(result.textContent).toContain("Planning estimate only");
+
+    fireEvent.click(screen.getByTestId("capacity-insert"));
+    const note = screen.getByTestId<HTMLInputElement>("composer-capacity");
+    expect(note.value).toContain("Grand Hall: comfortable for around 140 guests");
+    expect(note.value).toContain("for 120 guests");
+    expect(note.value).toContain("not a legal occupancy or fire-capacity figure");
+  });
+
+  it("keeps capacity guidance hidden when no rooms load", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    mocks.listSpaces.mockRejectedValue(new Error("network"));
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    await screen.findByTestId("composer-save");
+    expect(screen.queryByTestId("capacity-space")).toBeNull();
+    expect(screen.queryByTestId("capacity-result")).toBeNull();
   });
 });

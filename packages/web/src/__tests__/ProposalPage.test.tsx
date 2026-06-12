@@ -4,7 +4,16 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ProposalPage } from "../pages/ProposalPage.js";
 import { PublicProposalSchema, type PublicProposal } from "../api/proposals.js";
 
-const { mockGetPublicProposal, mockRespondToProposal } = vi.hoisted(() => ({
+const {
+  mockApproveProposalShare,
+  mockCommentOnProposalShare,
+  mockGetProposalShare,
+  mockGetPublicProposal,
+  mockRespondToProposal,
+} = vi.hoisted(() => ({
+  mockApproveProposalShare: vi.fn(),
+  mockCommentOnProposalShare: vi.fn(),
+  mockGetProposalShare: vi.fn(),
   mockGetPublicProposal: vi.fn(),
   mockRespondToProposal: vi.fn(),
 }));
@@ -13,6 +22,9 @@ vi.mock("../api/proposals.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/proposals.js")>();
   return {
     ...actual,
+    approveProposalShare: mockApproveProposalShare,
+    commentOnProposalShare: mockCommentOnProposalShare,
+    getProposalShare: mockGetProposalShare,
     getPublicProposal: mockGetPublicProposal,
     respondToProposal: mockRespondToProposal,
   };
@@ -51,7 +63,20 @@ function renderPage(): void {
   );
 }
 
+function renderTokenPage(): void {
+  render(
+    <MemoryRouter initialEntries={["/proposal-share/client-token"]}>
+      <Routes>
+        <Route path="/proposal-share/:token" element={<ProposalPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 beforeEach(() => {
+  mockApproveProposalShare.mockReset();
+  mockCommentOnProposalShare.mockReset();
+  mockGetProposalShare.mockReset();
   mockGetPublicProposal.mockReset();
   mockRespondToProposal.mockReset();
 });
@@ -72,29 +97,57 @@ describe("ProposalPage", () => {
     expect(screen.getByText("Trades Hall of Glasgow")).toBeTruthy();
     expect(screen.getAllByText("£2,650.00").length).toBeGreaterThan(0);
     expect(screen.getByText("£12.50")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Accept proposal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve proposal" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Request changes" })).toBeTruthy();
     expect(screen.getByText(/planning estimates for discussion/)).toBeTruthy();
   });
 
-  it("accepts the proposal via the public respond endpoint", async () => {
+  it("accepts the proposal via the legacy public respond endpoint", async () => {
     mockGetPublicProposal.mockResolvedValue(fixtureProposal());
     mockRespondToProposal.mockResolvedValue({ status: "accepted" });
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accept proposal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve proposal" }));
 
     await waitFor(() => {
       expect(mockRespondToProposal).toHaveBeenCalledWith("abcdef", "accept", undefined);
     });
     expect(await screen.findByText("Proposal accepted")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Accept proposal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve proposal" })).toBeNull();
   });
 
-  it("requires a note before a change request can be sent", async () => {
-    mockGetPublicProposal.mockResolvedValue(fixtureProposal());
-    mockRespondToProposal.mockResolvedValue({ status: "changes_requested" });
-    renderPage();
+  it("approves a token-based proposal without exposing internal identifiers", async () => {
+    mockGetProposalShare.mockResolvedValue(fixtureProposal({
+      roomSummary: "Grand Hall visual summary for discussion.",
+      layoutSummary: "Dinner layout summary for planning review.",
+      packageSummary: ["Room hire package"],
+      comments: [{ kind: "comment", authorName: "Elaine", body: "Looks good.", createdAt: "2026-06-11T10:00:00.000Z" }],
+      packages: [{ label: "Room hire", quantity: 1, totalMinor: 250000, status: "draft" }],
+    }));
+    mockApproveProposalShare.mockResolvedValue({ status: "accepted" });
+    renderTokenPage();
+
+    expect(await screen.findByText("Grand Hall visual summary for discussion.")).toBeTruthy();
+    expect(screen.getByText("Dinner layout summary for planning review.")).toBeTruthy();
+    expect(screen.getByText("Room hire package")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/proposalId|quoteId|share token|internal/i);
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve proposal" }));
+    await waitFor(() => {
+      expect(mockApproveProposalShare).toHaveBeenCalledWith("client-token", {});
+    });
+    expect(mockRespondToProposal).not.toHaveBeenCalled();
+  });
+
+  it("requires a note before a token-based change request can be sent", async () => {
+    mockGetProposalShare.mockResolvedValue(fixtureProposal());
+    mockCommentOnProposalShare.mockResolvedValue({
+      kind: "request_changes",
+      authorName: null,
+      body: "Could we seat 130 instead?",
+      createdAt: "2026-06-11T10:00:00.000Z",
+    });
+    renderTokenPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "Request changes" }));
     const send = screen.getByRole("button", { name: "Send request" });
@@ -106,11 +159,10 @@ describe("ProposalPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => {
-      expect(mockRespondToProposal).toHaveBeenCalledWith(
-        "abcdef",
-        "request_changes",
-        "Could we seat 130 instead?",
-      );
+      expect(mockCommentOnProposalShare).toHaveBeenCalledWith("client-token", {
+        body: "Could we seat 130 instead?",
+        kind: "request_changes",
+      });
     });
     expect(await screen.findByText("Changes requested")).toBeTruthy();
   });
@@ -120,7 +172,7 @@ describe("ProposalPage", () => {
     renderPage();
 
     expect(await screen.findByText("Proposal accepted")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Accept proposal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve proposal" })).toBeNull();
   });
 
   it("shows the plain-English unavailable state when the fetch fails", async () => {
@@ -135,9 +187,9 @@ describe("ProposalPage", () => {
     mockRespondToProposal.mockRejectedValue(new Error("network"));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accept proposal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve proposal" }));
     expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Accept proposal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve proposal" })).toBeTruthy();
   });
 });
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import * as enquiriesApi from "../../api/enquiries.js";
 import type { Enquiry, StatusHistoryEntry } from "../../api/enquiries.js";
+import { createOpportunityFromEnquiry } from "../../api/crm.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { useToastStore } from "../../stores/toast-store.js";
@@ -57,6 +58,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [transition, setTransition] = useState<{ id: string; status: string } | null>(null);
+  const [creatingOpportunity, setCreatingOpportunity] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
@@ -118,6 +120,19 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     } catch {
       addToast("Failed to update status", "error");
       setTransition(null);
+    }
+  };
+
+  const handleCreateOpportunity = async (enquiry: Enquiry): Promise<void> => {
+    if (creatingOpportunity) return;
+    setCreatingOpportunity(true);
+    try {
+      const result = await createOpportunityFromEnquiry(enquiry.id);
+      addToast(result.created ? "Opportunity created from enquiry" : "Existing opportunity opened", "success");
+    } catch {
+      addToast("Failed to create opportunity from enquiry", "error");
+    } finally {
+      setCreatingOpportunity(false);
     }
   };
 
@@ -185,6 +200,15 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+            <button
+              type="button"
+              data-testid="create-opportunity-from-enquiry"
+              onClick={() => { void handleCreateOpportunity(selected); }}
+              disabled={creatingOpportunity}
+              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 6, cursor: creatingOpportunity ? "default" : "pointer", opacity: creatingOpportunity ? 0.6 : 1 }}
+            >
+              Create Opportunity
+            </button>
             {selected.state === "submitted" && (
               <button type="button" onClick={() => { setTransition({ id: selected.id, status: "under_review" }); }}
                 style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#f59e0b", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>

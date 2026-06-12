@@ -8,7 +8,7 @@ import * as spacesApi from "../../api/spaces.js";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "admin";
 
 const sidebarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
@@ -43,6 +43,7 @@ interface DashboardLayoutProps {
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean }[] = [
   { view: "enquiries", label: "Enquiries" },
+  { view: "pipeline", label: "Pipeline", staffOnly: true },
   { view: "reviews", label: "Pending Reviews" },
   { view: "analytics", label: "Executive Analytics" },
   // Proposals are a sales surface — the API grants create/mutate to staff
