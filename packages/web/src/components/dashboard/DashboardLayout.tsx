@@ -8,7 +8,7 @@ import * as spacesApi from "../../api/spaces.js";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "reviews" | "search" | "loadouts" | "settings" | "admin";
+type DashboardView = "enquiries" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "admin";
 
 const sidebarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
@@ -41,9 +41,14 @@ interface DashboardLayoutProps {
   readonly children: ReactNode;
 }
 
-const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean }[] = [
+const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean }[] = [
   { view: "enquiries", label: "Enquiries" },
   { view: "reviews", label: "Pending Reviews" },
+  { view: "analytics", label: "Executive Analytics" },
+  // Proposals are a sales surface — the API grants create/mutate to staff
+  // and admin only, so the nav mirrors that rather than offering a tab
+  // that would only ever 403.
+  { view: "proposals", label: "Proposals", staffOnly: true },
   { view: "search", label: "Client Search" },
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
@@ -88,6 +93,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
         </div>
         {NAV_ITEMS.map((item) => {
           if (item.adminOnly === true && user?.role !== "admin") return null;
+          if (item.staffOnly === true && user?.role !== "admin" && user?.role !== "staff") return null;
           return (
             <button
               key={item.view}

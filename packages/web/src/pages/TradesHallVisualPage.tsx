@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useSearchParams } from "react-router-dom";
@@ -39,6 +39,7 @@ import {
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import {
   TRADES_HALL_VISUAL_DEMO_STATE,
+  visualEventPhasesFromGraph,
   visualPhaseById,
   type VisualCommandMode,
   type VisualEventPhase,
@@ -46,20 +47,21 @@ import {
   type VisualOverlayKey,
 } from "../lib/trades-hall-visual-demo-state.js";
 import {
-  parseRuntimeSplatUrl,
-  runtimeSplatUrlFromSearchParams,
-} from "../lib/runtime-visual-asset.js";
-import {
   decideRuntimeAsset,
   runtimeRoomTargetFromSearchParams,
   type RuntimeRoomTarget,
 } from "../lib/runtime-package-resolution.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
-import type { RuntimePackage } from "@omnitwin/types";
+import { getEventPhaseGraph } from "../api/events.js";
+import { getTruthModeSummary } from "../api/truth-mode.js";
+import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
+import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
 type LoadStatus = "empty" | "invalid" | "loading" | "loaded" | "error";
+type PhaseGraphLoadStatus = "fixture" | "loading" | "loaded" | "error";
+type TruthSummaryStatus = "loading" | "loaded" | "fallback";
 
 interface VisualState {
   readonly status: LoadStatus;
@@ -68,6 +70,16 @@ interface VisualState {
 }
 
 type OverlayState = Readonly<Record<VisualOverlayKey, boolean>>;
+
+interface TruthModeTargetOption {
+  readonly id: "table" | "route" | "room" | "runtimeAsset" | "reviewGate";
+  readonly label: string;
+  readonly targetType: EvidenceTargetType;
+  readonly targetId: string;
+  readonly fallbackSource: string;
+  readonly fallbackAssumption: string;
+  readonly fallbackReviewGate: string;
+}
 
 const EMPTY_STATE: VisualState = {
   status: "empty",
@@ -117,7 +129,7 @@ const VISUAL_CAMERA_POSITION = [
 ] as const;
 const VISUAL_CAMERA_TARGET = computeCameraTarget(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
 const VISUAL_CAMERA_DISTANCE_LIMITS = computeDistanceLimits(GRAND_HALL_RENDER_DIMENSIONS);
-const MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED = import.meta.env.DEV;
+const REPLAY_OVERLAY_BOUNDS = { width: 22, height: 12 } as const;
 
 function statusTone(status: LoadStatus): string {
   switch (status) {
@@ -155,6 +167,161 @@ function insightMode(insightId: VisualInsightCard["id"]): VisualCommandMode {
 
 function selectedModeLabel(mode: VisualCommandMode): string {
   return TRADES_HALL_VISUAL_DEMO_STATE.commandModes.find((item) => item.id === mode)?.label ?? "Design";
+}
+
+function overlayPoint(point: GuestFlowPoint): { readonly left: number; readonly top: number } {
+  return {
+    left: Math.max(4, Math.min(96, (point.x / REPLAY_OVERLAY_BOUNDS.width) * 100)),
+    top: Math.max(4, Math.min(96, 100 - ((point.y / REPLAY_OVERLAY_BOUNDS.height) * 100))),
+  };
+}
+
+function agentPointAtProgress(trajectory: AgentTrajectory, progress: number): GuestFlowPoint {
+  const index = Math.min(
+    trajectory.points.length - 1,
+    Math.max(0, Math.round((trajectory.points.length - 1) * progress)),
+  );
+  return trajectory.points[index] ?? { x: 0, y: 0 };
+}
+
+function flowLineStyle(trajectory: AgentTrajectory): CSSProperties {
+  const start = overlayPoint(agentPointAtProgress(trajectory, 0));
+  const end = overlayPoint(agentPointAtProgress(trajectory, 1));
+  const dx = end.left - start.left;
+  const dy = end.top - start.top;
+  return {
+    left: `${String(start.left)}%`,
+    top: `${String(start.top)}%`,
+    width: `${String(Math.max(12, Math.hypot(dx, dy)))}%`,
+    transform: `rotate(${String(Math.atan2(dy, dx) * (180 / Math.PI))}deg)`,
+  };
+}
+
+function pointStyle(point: GuestFlowPoint): CSSProperties {
+  const position = overlayPoint(point);
+  return {
+    left: `${String(position.left)}%`,
+    top: `${String(position.top)}%`,
+  };
+}
+
+function slugForTarget(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+}
+
+function buildTruthModeTargets(input: {
+  readonly phase: VisualEventPhase;
+  readonly runtimeTarget: RuntimeRoomTarget;
+  readonly assetDecision: ReturnType<typeof decideRuntimeAsset>;
+  readonly publishedPackage: RuntimePackage | null;
+}): readonly TruthModeTargetOption[] {
+  const reviewGate = TRADES_HALL_VISUAL_DEMO_STATE.reviewGates[1] ?? TRADES_HALL_VISUAL_DEMO_STATE.reviewGates[0];
+  const reviewGateLabel = reviewGate?.label ?? "Review gate";
+  const runtimeAssetTargetId = input.publishedPackage?.id ??
+    input.assetDecision.splatUrl ??
+    `${input.runtimeTarget.room}:runtime-asset`;
+
+  return [
+    {
+      id: "table",
+      label: "Selected table",
+      targetType: "table",
+      targetId: slugForTarget(TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label),
+      fallbackSource: "Selected table overlay from the current planner scene.",
+      fallbackAssumption: `${TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.guests.toLocaleString("en-GB")} guests are shown for this table in the internal scene.`,
+      fallbackReviewGate: "Table-level evidence is not reviewed.",
+    },
+    {
+      id: "route",
+      label: "Selected route",
+      targetType: "route",
+      targetId: `${input.phase.id}:route-clearance`,
+      fallbackSource: `Route overlay for ${input.phase.label}.`,
+      fallbackAssumption: "Route-clearance evidence is not checked in this runtime view.",
+      fallbackReviewGate: "Route clearance needs review before operational use.",
+    },
+    {
+      id: "room",
+      label: "Selected room",
+      targetType: "room",
+      targetId: input.runtimeTarget.room,
+      fallbackSource: `${input.runtimeTarget.roomLabel} room context.`,
+      fallbackAssumption: "Room geometry is shown as planning context unless a reviewed evidence item is linked.",
+      fallbackReviewGate: "Room-level evidence has not been signed in this view.",
+    },
+    {
+      id: "runtimeAsset",
+      label: "Runtime asset",
+      targetType: "runtime_asset",
+      targetId: runtimeAssetTargetId,
+      fallbackSource: input.assetDecision.splatUrl === null
+        ? "No runtime visual asset is mounted for this room."
+        : "Runtime visual asset is mounted as planning context.",
+      fallbackAssumption: input.assetDecision.splatUrl === null
+        ? "Procedural context remains the visible fallback."
+        : "Loaded visual asset still needs provenance and review records.",
+      fallbackReviewGate: "Runtime asset review state is separate from visual loading.",
+    },
+    {
+      id: "reviewGate",
+      label: "Review gate",
+      targetType: "review_gate",
+      targetId: slugForTarget(reviewGateLabel),
+      fallbackSource: `${reviewGateLabel} review gate from the internal command shell.`,
+      fallbackAssumption: "Gate state is visible as planning workflow context.",
+      fallbackReviewGate: reviewGate?.owner ?? "Human review required.",
+    },
+  ];
+}
+
+function fallbackTruthModeSummary(input: {
+  readonly target: TruthModeTargetOption;
+  readonly visualState: VisualState;
+  readonly phase: VisualEventPhase;
+  readonly activeMode: VisualCommandMode;
+}): TruthModeSummary {
+  const runtimeLoaded = input.target.id === "runtimeAsset" && input.visualState.status === "loaded";
+  const missingRuntime = input.target.id === "runtimeAsset" && input.visualState.status !== "loaded";
+  const evidenceStatus = missingRuntime ? "missing" : runtimeLoaded ? "partial" : "not_checked";
+
+  return {
+    targetType: input.target.targetType,
+    targetId: input.target.targetId,
+    source: input.target.fallbackSource,
+    confidence: runtimeLoaded ? "low" : "unknown",
+    assumption: `${input.target.fallbackAssumption} Current mode: ${selectedModeLabel(input.activeMode)}; phase: ${input.phase.label}.`,
+    evidenceStatus,
+    reviewGate: input.target.fallbackReviewGate,
+    staleState: runtimeLoaded ? "review_due" : "unknown",
+    safeWording: [
+      "Planning evidence",
+      "Human review required",
+      input.target.id === "route" ? "Route-clearance evidence is not checked" : "Evidence is not yet signed",
+    ],
+    humanReviewRequired: true,
+    counts: {
+      evidenceItems: 0,
+      checkResults: 0,
+      assumptions: 0,
+      reviewGates: input.target.id === "reviewGate" || input.target.id === "route" ? 1 : 0,
+      staleEvents: 0,
+    },
+  };
+}
+
+function truthSummaryStatusLabel(status: TruthSummaryStatus): string {
+  switch (status) {
+    case "loaded":
+      return "runtime data";
+    case "loading":
+      return "loading";
+    case "fallback":
+      return "demo fallback";
+  }
 }
 
 function VenueCommandTopBar({
@@ -278,24 +445,52 @@ function CanvasLayerControls({
 }
 
 function VenueCanvasOverlays({ overlays }: { readonly overlays: OverlayState }): ReactElement {
+  const replay = TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay;
+  const flowTrajectories = replay.trajectories.slice(0, 4);
+  const ghostTrajectories = replay.trajectories.slice(0, 8);
+  const densityCells = replay.densityHeatmap.cells
+    .filter((cell) => cell.level !== "low")
+    .slice(0, 7);
+  const reviewConflicts = replay.routeConflicts
+    .filter((conflict) => conflict.severity !== "info")
+    .slice(0, 3);
+
   return (
     <div className="visual-stage-overlay" aria-hidden="true">
       {overlays.guestFlow && (
         <>
-          <span className="visual-flow-line one" />
-          <span className="visual-flow-line two" />
-          <span className="visual-flow-line three" />
+          {flowTrajectories.map((trajectory) => (
+            <span
+              key={trajectory.agentId}
+              className="visual-flow-line"
+              style={flowLineStyle(trajectory)}
+            />
+          ))}
         </>
       )}
       {overlays.agentReplay && (
         <>
-          <span className="visual-ghost-agent agent-a" />
-          <span className="visual-ghost-agent agent-b" />
-          <span className="visual-ghost-agent agent-c" />
-          <span className="visual-ghost-agent agent-d" />
+          {ghostTrajectories.map((trajectory, index) => (
+            <span
+              key={trajectory.agentId}
+              className="visual-ghost-agent"
+              style={pointStyle(agentPointAtProgress(trajectory, 0.42 + (index % 4) * 0.12))}
+            />
+          ))}
         </>
       )}
-      {overlays.densityHeatmap && <span className="visual-density-heatmap" />}
+      {overlays.densityHeatmap && (
+        <>
+          <span className="visual-density-heatmap" />
+          {densityCells.map((cell) => (
+            <span
+              key={`${String(cell.x)}:${String(cell.y)}:${String(cell.count)}`}
+              className={`visual-density-cell ${cell.level}`}
+              style={pointStyle(cell)}
+            />
+          ))}
+        </>
+      )}
       {overlays.routeClearance && (
         <>
           <span className="visual-callout clearance-a">
@@ -318,6 +513,13 @@ function VenueCanvasOverlays({ overlays }: { readonly overlays: OverlayState }):
             <strong>Route conflict</strong>
             <span>review required</span>
           </span>
+          {reviewConflicts.map((conflict) => (
+            <span
+              key={conflict.id}
+              className="visual-route-conflict-marker"
+              style={pointStyle(conflict.point)}
+            />
+          ))}
         </>
       )}
       <span className="visual-callout table">
@@ -346,6 +548,9 @@ function VenueOverlayLegend({
   readonly overlays: OverlayState;
   readonly onToggleOverlay: (key: VisualOverlayKey) => void;
 }): ReactElement {
+  const replay = TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay;
+  const replayMetrics = replay.metrics;
+
   return (
     <section className="visual-overlay-legend" aria-label="Venue overlay legend">
       <h2>Overlays</h2>
@@ -370,6 +575,14 @@ function VenueOverlayLegend({
           </div>
         );
       })}
+      <div className="visual-replay-metrics" aria-label="Guest flow replay metrics">
+        <p>{replay.disclosureLabel}</p>
+        <span>Agents {replayMetrics.agentCount.toLocaleString("en-GB")}</span>
+        <span>Bottleneck score {Math.round(replayMetrics.bottleneckScore * 100)}%</span>
+        <span>Max density {replayMetrics.maxDensity.toFixed(2)} p/m2</span>
+        <span>Route conflicts {replayMetrics.routeConflictCount}</span>
+        <small>Human review required before operational reliance.</small>
+      </div>
     </section>
   );
 }
@@ -386,45 +599,37 @@ function ViewTool({ activeMode }: { readonly activeMode: VisualCommandMode }): R
   );
 }
 
-function AssetUrlForm({
-  draftUrl,
-  parsedDraftOk,
-  parsedDraftError,
+function RuntimeAssetPackagePanel({
+  runtimeTarget,
+  packageId,
   activeAssetUrl,
   opacity,
   visualState,
-  onDraftUrlChange,
-  onSubmitUrl,
   onOpacityChange,
 }: {
-  readonly draftUrl: string;
-  readonly parsedDraftOk: boolean;
-  readonly parsedDraftError: string | null;
+  readonly runtimeTarget: RuntimeRoomTarget;
+  readonly packageId: string | null;
   readonly activeAssetUrl: string | null;
   readonly opacity: number;
   readonly visualState: VisualState;
-  readonly onDraftUrlChange: (value: string) => void;
-  readonly onSubmitUrl: (event: FormEvent<HTMLFormElement>) => void;
   readonly onOpacityChange: (value: number) => void;
 }): ReactElement {
   return (
-    <form className="visual-asset-form" onSubmit={onSubmitUrl}>
-      <label htmlFor="splat-url" className="visual-row-title">Runtime splat URL</label>
-      <div className="visual-url-row">
-        <input
-          id="splat-url"
-          className="visual-url-input"
-          value={draftUrl}
-          onChange={(event) => { onDraftUrlChange(event.currentTarget.value); }}
-          placeholder="https://.../scene.ply"
-          spellCheck={false}
-        />
-        <button type="submit" className="visual-load-button" disabled={!parsedDraftOk}>
-          Load
-        </button>
+    <div className="visual-asset-form">
+      <p className="visual-row-title">Registered runtime package</p>
+      <div className="visual-runtime-details">
+        <span>Room</span>
+        <strong>{runtimeTarget.roomLabel}</strong>
       </div>
-      {parsedDraftError !== null && <p className="visual-error-copy">{parsedDraftError}</p>}
+      <div className="visual-runtime-details">
+        <span>Package</span>
+        <strong>{packageId ?? "none"}</strong>
+      </div>
       <p className="visual-url-copy">Current URL: {activeAssetUrl ?? "none"}</p>
+      <p className="visual-url-copy">
+        Manual runtime URLs are disabled here. Register an AssetVersion and RuntimePackage before Spark loads a
+        room asset.
+      </p>
       <p className="visual-url-copy" style={{ color: statusTone(visualState.status) }}>
         {displayStatus(visualState)}
       </p>
@@ -441,87 +646,139 @@ function AssetUrlForm({
           onChange={(event) => { onOpacityChange(Number(event.currentTarget.value)); }}
         />
       </label>
-    </form>
+    </div>
   );
 }
 
 function TruthModePanel({
   activeMode,
   phase,
+  truthTargets,
+  selectedTruthTargetId,
+  truthSummary,
+  truthSummaryStatus,
   visualState,
-  draftUrl,
-  parsedDraftOk,
-  parsedDraftError,
+  runtimeTarget,
+  packageId,
   activeAssetUrl,
   opacity,
-  onDraftUrlChange,
-  onSubmitUrl,
   onOpacityChange,
+  onSelectTruthTarget,
 }: {
   readonly activeMode: VisualCommandMode;
   readonly phase: VisualEventPhase;
+  readonly truthTargets: readonly TruthModeTargetOption[];
+  readonly selectedTruthTargetId: TruthModeTargetOption["id"];
+  readonly truthSummary: TruthModeSummary;
+  readonly truthSummaryStatus: TruthSummaryStatus;
   readonly visualState: VisualState;
-  readonly draftUrl: string;
-  readonly parsedDraftOk: boolean;
-  readonly parsedDraftError: string | null;
+  readonly runtimeTarget: RuntimeRoomTarget;
+  readonly packageId: string | null;
   readonly activeAssetUrl: string | null;
   readonly opacity: number;
-  readonly onDraftUrlChange: (value: string) => void;
-  readonly onSubmitUrl: (event: FormEvent<HTMLFormElement>) => void;
   readonly onOpacityChange: (value: number) => void;
+  readonly onSelectTruthTarget: (targetId: TruthModeTargetOption["id"]) => void;
 }): ReactElement {
-  const runtimeLoaded = visualState.status === "loaded";
-
+  const selectedTruthTarget = truthTargets.find((target) => target.id === selectedTruthTargetId) ?? truthTargets[0];
   return (
     <aside className="visual-panel" aria-label="Truth Mode and visual evidence panel">
       <div className="visual-panel-inner">
         <section className="visual-panel-section">
           <div className="visual-panel-heading">
             <h2>Truth Mode</h2>
-            <span className="visual-panel-badge">3</span>
+            <span className="visual-panel-badge">{truthSummary.counts.evidenceItems}</span>
           </div>
+          <div className="visual-truth-targets" aria-label="Truth Mode selection">
+            {truthTargets.map((target) => (
+              <button
+                key={target.id}
+                type="button"
+                className={target.id === selectedTruthTargetId ? "is-active" : undefined}
+                onClick={() => { onSelectTruthTarget(target.id); }}
+                aria-pressed={target.id === selectedTruthTargetId}
+              >
+                {target.label}
+              </button>
+            ))}
+          </div>
+          <p className="visual-row-copy visual-truth-context">
+            {truthSummaryStatusLabel(truthSummaryStatus)} for {selectedModeLabel(activeMode)} / {phase.label}
+          </p>
           <div className="visual-truth-row">
             <span className="visual-truth-icon"><Box size={17} aria-hidden="true" /></span>
             <div>
               <p className="visual-row-title">Source</p>
-              <p className="visual-row-copy">
-                {runtimeLoaded
-                  ? "Runtime asset URL mounted; procedural context remains visible for comparison."
-                  : "Procedural Grand Hall context only; no captured runtime visual layer is mounted."}
-              </p>
+              <p className="visual-row-copy">{truthSummary.source}</p>
             </div>
-            <span className="visual-state-chip">{runtimeLoaded ? "loaded" : "pending"}</span>
-          </div>
-          <div className="visual-truth-row">
-            <span className="visual-truth-icon"><ShieldQuestion size={17} aria-hidden="true" /></span>
-            <div>
-              <p className="visual-row-title">Verification</p>
-              <p className="visual-row-copy">
-                {runtimeLoaded
-                  ? "Signature, provenance, and review records are not loaded in this internal route."
-                  : "No runtime bundle, signature, or review record is loaded."}
-              </p>
-            </div>
-            <span className="visual-state-chip">review</span>
+            <span className={`visual-state-chip ${truthSummaryStatus}`}>{truthSummaryStatusLabel(truthSummaryStatus)}</span>
           </div>
           <div className="visual-truth-row">
             <span className="visual-truth-icon"><ChartNoAxesCombined size={17} aria-hidden="true" /></span>
             <div>
               <p className="visual-row-title">Confidence</p>
-              <p className="visual-row-copy">
-                Draft command-shell UI for {selectedModeLabel(activeMode)} mode during {phase.label}.
-              </p>
+              <p className="visual-row-copy">{truthSummary.confidence}</p>
             </div>
-            <span className="visual-state-chip draft">draft</span>
+            <span className="visual-state-chip draft">{truthSummary.confidence}</span>
           </div>
           <div className="visual-truth-row">
             <span className="visual-truth-icon"><ClipboardList size={17} aria-hidden="true" /></span>
             <div>
-              <p className="visual-row-title">Assumptions</p>
-              <p className="visual-row-copy">{TRADES_HALL_VISUAL_DEMO_STATE.internalFixtureLabel}</p>
+              <p className="visual-row-title">Assumption</p>
+              <p className="visual-row-copy">{truthSummary.assumption}</p>
             </div>
-            <span className="visual-state-chip simulated">demo</span>
+            <span className="visual-state-chip simulated">{truthSummary.counts.assumptions}</span>
           </div>
+          <div className="visual-truth-row">
+            <span className="visual-truth-icon"><FileCheck2 size={17} aria-hidden="true" /></span>
+            <div>
+              <p className="visual-row-title">Evidence status</p>
+              <p className="visual-row-copy">{truthSummary.safeWording.join(" / ")}</p>
+            </div>
+            <span className={`visual-state-chip ${truthSummary.evidenceStatus}`}>{truthSummary.evidenceStatus}</span>
+          </div>
+          <div className="visual-truth-row">
+            <span className="visual-truth-icon"><ShieldQuestion size={17} aria-hidden="true" /></span>
+            <div>
+              <p className="visual-row-title">Review gate</p>
+              <p className="visual-row-copy">{truthSummary.reviewGate}</p>
+            </div>
+            <span className="visual-state-chip">{truthSummary.humanReviewRequired ? "review" : "clear"}</span>
+          </div>
+          <div className="visual-truth-row">
+            <span className="visual-truth-icon"><Route size={17} aria-hidden="true" /></span>
+            <div>
+              <p className="visual-row-title">Stale / current</p>
+              <p className="visual-row-copy">
+                {truthSummary.staleState === "current"
+                  ? "Current evidence state for this selection."
+                  : "Evidence may be missing, stale, or awaiting review."}
+              </p>
+            </div>
+            <span className={`visual-state-chip ${truthSummary.staleState}`}>{truthSummary.staleState}</span>
+          </div>
+          {selectedTruthTarget !== undefined && (
+            <div className="visual-ai-draft-panel">
+              <AIDraftPanel
+                title="AI Truth Mode draft"
+                useCase="truth_mode_explanation"
+                actionLabel="Draft explanation"
+                context={{
+                  selectedTarget: selectedTruthTarget.label,
+                  targetType: selectedTruthTarget.targetType,
+                  targetId: selectedTruthTarget.targetId,
+                  source: truthSummary.source,
+                  confidence: truthSummary.confidence,
+                  assumption: truthSummary.assumption,
+                  evidenceStatus: truthSummary.evidenceStatus,
+                  staleState: truthSummary.staleState,
+                  reviewGate: truthSummary.reviewGate,
+                  humanReviewRequired: truthSummary.humanReviewRequired,
+                  activeMode: selectedModeLabel(activeMode),
+                  phase: phase.label,
+                }}
+              />
+            </div>
+          )}
         </section>
 
         <section className="visual-panel-section">
@@ -558,15 +815,12 @@ function TruthModePanel({
           <div className="visual-panel-heading">
             <h2>Runtime asset</h2>
           </div>
-          <AssetUrlForm
-            draftUrl={draftUrl}
-            parsedDraftOk={parsedDraftOk}
-            parsedDraftError={parsedDraftError}
+          <RuntimeAssetPackagePanel
+            runtimeTarget={runtimeTarget}
+            packageId={packageId}
             activeAssetUrl={activeAssetUrl}
             opacity={opacity}
             visualState={visualState}
-            onDraftUrlChange={onDraftUrlChange}
-            onSubmitUrl={onSubmitUrl}
             onOpacityChange={onOpacityChange}
           />
         </section>
@@ -576,17 +830,30 @@ function TruthModePanel({
 }
 
 function EventPhaseGraph({
+  phases,
   selectedPhaseId,
   onSelectPhase,
+  loadStatus,
 }: {
+  readonly phases: readonly VisualEventPhase[];
   readonly selectedPhaseId: string;
   readonly onSelectPhase: (phaseId: string) => void;
+  readonly loadStatus: PhaseGraphLoadStatus;
 }): ReactElement {
+  const statusCopy = loadStatus === "loaded"
+    ? "Live event phase data"
+    : loadStatus === "loading"
+      ? "Loading event phase data"
+      : loadStatus === "error"
+        ? "Event phase data unavailable; showing internal demo fixture"
+        : "Internal demo phase fixture";
+
   return (
     <section className="visual-phase-graph" aria-label="Event Phase Graph">
       <h2>Event Phase Graph</h2>
+      <p className="visual-phase-source">{statusCopy}</p>
       <div className="visual-phase-track">
-        {TRADES_HALL_VISUAL_DEMO_STATE.eventPhases.map((phase, index) => (
+        {phases.map((phase, index) => (
           <button
             key={phase.id}
             type="button"
@@ -596,12 +863,15 @@ function EventPhaseGraph({
           >
             <span className="visual-phase-node">{index + 1}</span>
             <p className="visual-phase-title">{phase.label}</p>
-            <p className="visual-phase-meta">{phase.timeLabel} / {phase.durationLabel}</p>
-            <p className="visual-phase-meta">Max density {phase.maxDensityLabel}</p>
-            <p className="visual-phase-meta">Staff conflicts {phase.staffConflicts}</p>
+            <p className="visual-phase-meta">Starts {phase.timeLabel}</p>
+            <p className="visual-phase-meta">Duration {phase.durationLabel}</p>
+            <p className="visual-phase-meta">Guests {phase.guestCountLabel}</p>
+            <p className="visual-phase-meta">Density {phase.maxDensityLabel}</p>
+            <p className="visual-phase-meta">{phase.staffConflictsLabel}</p>
             <p className="visual-phase-meta">Ops tasks {phase.opsTasks}</p>
+            <p className="visual-phase-meta">Review gates {phase.reviewGates}</p>
             <p className={phase.reviewState === "ok" ? "visual-phase-ok" : "visual-phase-review"}>
-              {phase.reviewState === "ok" ? "Ready" : "Review"}
+              {phase.reviewState === "ok" ? "No phase gates" : "Review gates"}
             </p>
           </button>
         ))}
@@ -645,57 +915,126 @@ function VisualInsightCards({
 }
 
 export function TradesHallVisualPage(): ReactElement {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const queryAsset = useMemo(
-    () => runtimeSplatUrlFromSearchParams(searchParams, {
-      allowManualUrl: MANUAL_RUNTIME_ASSET_OVERRIDE_ENABLED,
-    }),
-    [searchParams],
-  );
+  const [searchParams] = useSearchParams();
+  const eventId = searchParams.get("eventId");
   const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
-  const [draftUrl, setDraftUrl] = useState(queryAsset.url ?? "");
   const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");
   const [opacity, setOpacity] = useState(0.82);
   const [activeMode, setActiveMode] = useState<VisualCommandMode>("design");
   const [selectedPhaseId, setSelectedPhaseId] = useState(TRADES_HALL_VISUAL_DEMO_STATE.defaultPhaseId);
+  const [selectedTruthTargetId, setSelectedTruthTargetId] = useState<TruthModeTargetOption["id"]>("table");
   const [activeOverlay, setActiveOverlay] = useState<VisualOverlayKey>("guestFlow");
   const [overlays, setOverlays] = useState<OverlayState>(INITIAL_OVERLAYS);
   const [publishedPackage, setPublishedPackage] = useState<RuntimePackage | null>(null);
+  const [phaseGraph, setPhaseGraph] = useState<EventPhaseGraph | null>(null);
+  const [phaseGraphStatus, setPhaseGraphStatus] = useState<PhaseGraphLoadStatus>("fixture");
+  const [truthSummary, setTruthSummary] = useState<TruthModeSummary | null>(null);
+  const [truthSummaryStatus, setTruthSummaryStatus] = useState<TruthSummaryStatus>("fallback");
   const [visualState, setVisualState] = useState<VisualState>(() => {
-    if (queryAsset.error !== null) {
-      return { status: "invalid", message: queryAsset.error, splatCount: null };
-    }
-    if (runtimeTarget.error !== null && !queryAsset.ok) {
+    if (runtimeTarget.error !== null) {
       return { status: "invalid", message: runtimeTarget.error, splatCount: null };
     }
-    return queryAsset.ok ? { status: "loading", message: "Loading runtime asset", splatCount: null } : EMPTY_STATE;
+    return EMPTY_STATE;
   });
 
-  const parsedDraft = useMemo(() => parseRuntimeSplatUrl(draftUrl), [draftUrl]);
-  const activeAsset = queryAsset.ok && queryAsset.url !== null ? queryAsset : null;
-  const activeAssetUrl = activeAsset?.url ?? null;
-  // Manual dev URL wins; otherwise the latest usable RuntimePackage for the
-  // selected room; otherwise null means procedural fallback.
   const assetDecision = useMemo(
-    () => decideRuntimeAsset(activeAssetUrl, publishedPackage),
-    [activeAssetUrl, publishedPackage],
+    () => decideRuntimeAsset(null, publishedPackage),
+    [publishedPackage],
   );
-  const selectedPhase = visualPhaseById(selectedPhaseId);
+  const eventPhases = useMemo(
+    () => phaseGraph === null
+      ? TRADES_HALL_VISUAL_DEMO_STATE.eventPhases
+      : visualEventPhasesFromGraph(phaseGraph),
+    [phaseGraph],
+  );
+  const selectedPhase = visualPhaseById(selectedPhaseId, eventPhases);
+  const truthTargets = useMemo(
+    () => buildTruthModeTargets({ phase: selectedPhase, runtimeTarget, assetDecision, publishedPackage }),
+    [assetDecision, publishedPackage, runtimeTarget, selectedPhase],
+  );
+  const selectedTruthTarget = truthTargets.find((target) => target.id === selectedTruthTargetId) ?? truthTargets[0] ?? {
+    id: "room",
+    label: "Selected room",
+    targetType: "room",
+    targetId: runtimeTarget.room,
+    fallbackSource: `${runtimeTarget.roomLabel} room context.`,
+    fallbackAssumption: "Room geometry is shown as planning context unless a reviewed evidence item is linked.",
+    fallbackReviewGate: "Human review required.",
+  };
+  const fallbackTruthSummary = useMemo(
+    () => fallbackTruthModeSummary({
+      target: selectedTruthTarget,
+      visualState,
+      phase: selectedPhase,
+      activeMode,
+    }),
+    [activeMode, selectedPhase, selectedTruthTarget, visualState],
+  );
+  const displayedTruthSummary = truthSummary ?? fallbackTruthSummary;
   const meshVisible = layerMode === "hybrid" || layerMode === "mesh";
   const splatVisible = layerMode === "hybrid" || layerMode === "splat";
 
   useEffect(() => {
-    setDraftUrl(queryAsset.url ?? "");
-    if (queryAsset.error !== null) {
-      setVisualState({ status: "invalid", message: queryAsset.error, splatCount: null });
-      return;
-    }
-    if (runtimeTarget.error !== null && !queryAsset.ok) {
+    if (runtimeTarget.error !== null) {
       setVisualState({ status: "invalid", message: runtimeTarget.error, splatCount: null });
       return;
     }
-    setVisualState(queryAsset.ok ? { status: "loading", message: "Loading runtime asset", splatCount: null } : EMPTY_STATE);
-  }, [queryAsset.error, queryAsset.ok, queryAsset.url, runtimeTarget.error]);
+    if (assetDecision.source === "none") {
+      setVisualState(EMPTY_STATE);
+    }
+  }, [assetDecision.source, runtimeTarget.error]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (eventId === null || eventId.trim().length === 0) {
+      setPhaseGraph(null);
+      setPhaseGraphStatus("fixture");
+      return () => { cancelled = true; };
+    }
+
+    setPhaseGraphStatus("loading");
+    void getEventPhaseGraph(eventId)
+      .then((graph) => {
+        if (cancelled) return;
+        setPhaseGraph(graph);
+        setPhaseGraphStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPhaseGraph(null);
+        setPhaseGraphStatus("error");
+      });
+
+    return () => { cancelled = true; };
+  }, [eventId]);
+
+  useEffect(() => {
+    if (eventPhases.some((phase) => phase.id === selectedPhaseId)) return;
+    const firstPhase = eventPhases[0];
+    setSelectedPhaseId(firstPhase?.id ?? TRADES_HALL_VISUAL_DEMO_STATE.defaultPhaseId);
+  }, [eventPhases, selectedPhaseId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTruthSummary(null);
+    setTruthSummaryStatus("loading");
+    void getTruthModeSummary({
+      targetType: selectedTruthTarget.targetType,
+      targetId: selectedTruthTarget.targetId,
+    })
+      .then((summary) => {
+        if (cancelled) return;
+        setTruthSummary(summary);
+        setTruthSummaryStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTruthSummary(null);
+        setTruthSummaryStatus("fallback");
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedTruthTarget.targetId, selectedTruthTarget.targetType]);
 
   // Fetch the latest usable runtime package for the selected room. A failure
   // or empty API result leaves publishedPackage null and keeps fallback.
@@ -711,7 +1050,7 @@ export function TradesHallVisualPage(): ReactElement {
     return () => { cancelled = true; };
   }, [runtimeTarget.error, runtimeTarget.room, runtimeTarget.venue]);
 
-  // When a package asset becomes the active decision (no manual override),
+  // When a package asset becomes the active decision,
   // show a loading line until Spark resolves it; onLoad/onError refine it.
   useEffect(() => {
     if (assetDecision.source === "package" && assetDecision.splatUrl !== null) {
@@ -719,38 +1058,13 @@ export function TradesHallVisualPage(): ReactElement {
     }
   }, [assetDecision.source, assetDecision.splatUrl]);
 
-  const submitUrl = useCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const next = parseRuntimeSplatUrl(draftUrl);
-    if (!next.ok || next.url === null) {
-      setVisualState({
-        status: next.error === null ? "empty" : "invalid",
-        message: next.error ?? EMPTY_STATE.message,
-        splatCount: null,
-      });
-      if (next.error === null) {
-        const nextParams = new URLSearchParams(searchParams);
-        nextParams.delete("splatUrl");
-        setSearchParams(nextParams, { replace: true });
-      }
-      return;
-    }
-
-    setVisualState({ status: "loading", message: "Loading runtime asset", splatCount: null });
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("splatUrl", next.url);
-    setSearchParams(nextParams, { replace: true });
-  }, [draftUrl, searchParams, setSearchParams]);
-
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
     setVisualState({
       status: "loaded",
-      message: assetDecision.source === "package"
-        ? assetDecision.evidenceLabel
-        : "Runtime asset loaded, not yet verified/signed",
+      message: assetDecision.evidenceLabel,
       splatCount: event.splatCount,
     });
-  }, [assetDecision.source, assetDecision.evidenceLabel]);
+  }, [assetDecision.evidenceLabel]);
 
   const handleError = useCallback((event: SparkSplatErrorEvent) => {
     setVisualState({
@@ -812,18 +1126,25 @@ export function TradesHallVisualPage(): ReactElement {
       <TruthModePanel
         activeMode={activeMode}
         phase={selectedPhase}
+        truthTargets={truthTargets}
+        selectedTruthTargetId={selectedTruthTarget.id}
+        truthSummary={displayedTruthSummary}
+        truthSummaryStatus={truthSummaryStatus}
         visualState={visualState}
-        draftUrl={draftUrl}
-        parsedDraftOk={parsedDraft.ok}
-        parsedDraftError={parsedDraft.error}
+        runtimeTarget={runtimeTarget}
+        packageId={publishedPackage?.id ?? null}
         activeAssetUrl={assetDecision.splatUrl}
         opacity={opacity}
-        onDraftUrlChange={setDraftUrl}
-        onSubmitUrl={submitUrl}
         onOpacityChange={setOpacity}
+        onSelectTruthTarget={setSelectedTruthTargetId}
       />
       <footer className="visual-bottom">
-        <EventPhaseGraph selectedPhaseId={selectedPhaseId} onSelectPhase={setSelectedPhaseId} />
+        <EventPhaseGraph
+          phases={eventPhases}
+          selectedPhaseId={selectedPhaseId}
+          onSelectPhase={setSelectedPhaseId}
+          loadStatus={phaseGraphStatus}
+        />
         <VisualInsightCards activeOverlay={activeOverlay} onInsightSelect={handleInsightSelect} />
       </footer>
     </main>

@@ -4,6 +4,7 @@ import type { Enquiry, StatusHistoryEntry } from "../../api/enquiries.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { AIDraftPanel } from "../ai/AIDraftPanel.js";
 
 // ---------------------------------------------------------------------------
 // EnquiriesView — list + detail for enquiry management
@@ -146,6 +147,41 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
             {selected.preferredDate !== null && <div>Date: {selected.preferredDate}</div>}
             {selected.estimatedGuests !== null && <div>Guests: {String(selected.estimatedGuests)}</div>}
             {selected.message !== null && <div style={{ gridColumn: "1 / -1" }}>Message: {selected.message}</div>}
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <AIDraftPanel
+              title="AI enquiry draft"
+              useCase="enquiry_summary"
+              actionLabel="Draft summary"
+              context={{
+                enquiryId: selected.id,
+                name: selected.guestName ?? selected.name,
+                email: selected.guestEmail ?? selected.email,
+                eventType: selected.eventType,
+                preferredDate: selected.preferredDate,
+                estimatedGuests: selected.estimatedGuests,
+                message: selected.message,
+                currentStatus: selected.state,
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <AIDraftPanel
+              title="AI proposal wording draft"
+              useCase="proposal_draft"
+              actionLabel="Draft proposal copy"
+              context={{
+                enquiryId: selected.id,
+                clientName: selected.guestName ?? selected.name,
+                eventType: selected.eventType,
+                preferredDate: selected.preferredDate,
+                estimatedGuests: selected.estimatedGuests,
+                clientNotes: selected.message,
+                currentStatus: selected.state,
+              }}
+            />
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>

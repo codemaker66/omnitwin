@@ -141,15 +141,15 @@ describe("runtimeRoomTargetFromSearchParams", () => {
 });
 
 describe("decideRuntimeAsset", () => {
-  it("uses a manual dev URL even when a usable package exists", () => {
+  it("ignores manual URLs and uses registered packages only", () => {
     const decision = decideRuntimeAsset("https://manual.example/scene.ply", makePackage());
-    expect(decision.source).toBe("manual");
-    expect(decision.splatUrl).toBe("https://manual.example/scene.ply");
+    expect(decision.source).toBe("package");
+    expect(decision.splatUrl).toBe("https://assets.example/robert-adam-room/scene.ply");
     expect(decision.isProceduralFallback).toBe(false);
-    expect(decision.evidenceStatus).toBeNull();
+    expect(decision.evidenceStatus).toBe("machine_checked");
   });
 
-  it("renders the usable package when there is no manual override", () => {
+  it("renders the usable registered package", () => {
     const decision = decideRuntimeAsset(null, makePackage({ evidenceStatus: "human_reviewed" }));
     expect(decision.source).toBe("package");
     expect(decision.splatUrl).toBe("https://assets.example/robert-adam-room/scene.ply");

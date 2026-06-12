@@ -9,10 +9,10 @@ import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
 // ---------------------------------------------------------------------------
 // Runtime asset decision for /dev/trades-hall-visual.
 //
-// Manual URL is an explicit internal override. Otherwise the page uses the
-// latest usable RuntimePackage for the selected venue/room. Every URL is
-// revalidated in the browser before Spark sees it, even if it came from the
-// API, so polluted registry rows fall back to the procedural scene.
+// The visual route uses the latest usable RuntimePackage for the selected
+// venue/room. Every URL is revalidated in the browser before Spark sees it,
+// even if it came from the API, so polluted registry rows fall back to the
+// procedural scene.
 // ---------------------------------------------------------------------------
 
 export type { TradesHallRuntimeRoomSlug } from "@omnitwin/types";
@@ -26,7 +26,7 @@ export const TRADES_HALL_RUNTIME_ROOMS = SHARED_TRADES_HALL_RUNTIME_ROOMS.map((r
   readonly label: string;
   readonly sourceHint: string;
 }[];
-export type RuntimeAssetSource = "manual" | "package" | "none";
+export type RuntimeAssetSource = "package" | "none";
 
 export interface RuntimeRoomTarget {
   readonly venue: string;
@@ -115,19 +115,10 @@ function usablePackageUrl(published: RuntimePackage): string | null {
 }
 
 export function decideRuntimeAsset(
-  manualUrl: string | null,
+  _manualUrl: string | null,
   published: RuntimePackage | null,
 ): RuntimeAssetDecision {
-  if (manualUrl !== null && manualUrl.length > 0) {
-    return {
-      splatUrl: manualUrl,
-      source: "manual",
-      evidenceStatus: null,
-      evidenceLabel: "Runtime asset URL mounted manually; human review required",
-      isProceduralFallback: false,
-    };
-  }
-
+  void _manualUrl;
   if (published !== null) {
     const packageUrl = usablePackageUrl(published);
     if (packageUrl !== null) {

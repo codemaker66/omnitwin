@@ -7,6 +7,8 @@ import { ClientProfile } from "../components/dashboard/ClientProfile.js";
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
 import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
+import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
+import { ProposalsView } from "../components/dashboard/ProposalsView.js";
 
 // ---------------------------------------------------------------------------
 // DashboardPage — hallkeeper management interface
@@ -92,6 +94,10 @@ export function DashboardPage(): React.ReactElement {
         );
       case "reviews":
         return <ReviewsView />;
+      case "analytics":
+        return <ExecutiveAnalyticsView />;
+      case "proposals":
+        return <ProposalsView />;
       case "search":
         return (
           <ClientSearchView

@@ -53,6 +53,8 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByText("1 trestle")).toBeDefined();
     expect(screen.getByText("2 chairs")).toBeDefined();
     expect(screen.getByText("1 table dressed")).toBeDefined();
+    expect(screen.getByText("Scenario-ready layout")).toBeDefined();
+    expect(screen.getByText(/2 seats can feed a revenue scenario/i)).toBeDefined();
   });
 
   it("renders a neutral empty-state capacity caption", () => {
@@ -60,6 +62,7 @@ describe("PlannerSpatialHud", () => {
 
     expect(screen.getByText("Start placing furniture to build capacity")).toBeDefined();
     expect(screen.getByText("No dressed tables yet")).toBeDefined();
+    expect(screen.getByText("No quote linked")).toBeDefined();
   });
 
   it("counts staged objects separately from chairs and tables", () => {

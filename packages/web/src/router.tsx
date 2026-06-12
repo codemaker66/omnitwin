@@ -54,6 +54,21 @@ const SplatFixturePage = lazy(() =>
 const TradesHallVisualPage = lazy(() =>
   import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage })),
 );
+const TradesHallAssetStatusPage = lazy(() =>
+  import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage })),
+);
+const ProposalPage = lazy(() =>
+  import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage })),
+);
+const OpsHandoffPage = lazy(() =>
+  import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage })),
+);
+const EventDayOpsPage = lazy(() =>
+  import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage })),
+);
+const RoomShowcasePage = lazy(() =>
+  import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -167,6 +182,22 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/ops/handoff/:handoffPackId",
+    element: (
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        {withSuspense(<OpsHandoffPage />)}
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/ops/events/:eventId",
+    element: (
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        {withSuspense(<EventDayOpsPage />)}
+      </ProtectedRoute>
+    ),
+  },
+  {
     // Public SaaS pricing page. Entry point for prospective venues;
     // CTAs route to registration until the Stripe+onboarding phases ship.
     path: "/pricing",
@@ -179,10 +210,32 @@ export const router = createBrowserRouter([
     element: withSuspense(<SplatFixturePage />),
   },
   {
-    // Internal T-091 visual-layer route. It loads a caller-provided Spark URL
-    // only; no fixture-generated asset path and no signed AssetVersion claims.
+    // Internal P0 visual-layer route. It loads registered room runtime packages
+    // when present and keeps procedural fallback copy explicit when absent.
     path: "/dev/trades-hall-visual",
     element: withSuspense(<TradesHallVisualPage />),
+  },
+  {
+    // Internal operator asset status view. Protected because it reflects
+    // capture/package registration state and links into dev runtime routes.
+    path: "/dev/assets/rooms",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        {withSuspense(<TradesHallAssetStatusPage />)}
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // Public room showcase. Uses only the client-safe room visual endpoint and
+    // planning-grade copy; internal package/debug data stays out of the route.
+    path: "/venues/:venueSlug/rooms/:roomSlug",
+    element: withSuspense(<RoomShowcasePage />),
+  },
+  {
+    // Client-facing proposal share link (T-427 phase 3). Public — the share
+    // code is the capability; the page renders only the client-safe shape.
+    path: "/proposal/:shareCode",
+    element: withSuspense(<ProposalPage />),
   },
   {
     path: "/privacy",

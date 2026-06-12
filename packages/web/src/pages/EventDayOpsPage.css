@@ -1,0 +1,371 @@
+.event-day-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(15, 31, 34, 0.94), rgba(23, 24, 24, 0.98)),
+    #111818;
+  color: #f5f1e8;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 18px;
+}
+
+.event-day-centered {
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.event-day-centered svg {
+  margin: 0 auto;
+  color: #8fd8d2;
+}
+
+.event-day-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0 18px;
+}
+
+.event-day-kicker {
+  margin: 0 0 8px;
+  color: #8fd8d2;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.event-day-hero h1,
+.event-day-section h2,
+.event-day-empty h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.event-day-hero h1 {
+  font-size: clamp(1.8rem, 8vw, 3.4rem);
+  line-height: 0.96;
+}
+
+.event-day-hero p {
+  margin: 8px 0 0;
+  color: #c9d2cc;
+}
+
+.event-day-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.event-day-sync span {
+  border: 1px solid rgba(143, 216, 210, 0.35);
+  border-radius: 999px;
+  color: #dfe9df;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.event-day-sync span[data-pending="true"] {
+  border-color: rgba(232, 184, 95, 0.55);
+  color: #f2cf83;
+}
+
+.event-day-icon-button,
+.event-day-button {
+  align-items: center;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+}
+
+.event-day-icon-button {
+  background: #8fd8d2;
+  border-radius: 50%;
+  color: #10201f;
+  height: 42px;
+  width: 42px;
+}
+
+.event-day-button {
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 0 15px;
+}
+
+.event-day-button.primary {
+  background: #e8b85f;
+  color: #1d1710;
+}
+
+.event-day-button.secondary {
+  background: #263638;
+  color: #f5f1e8;
+}
+
+.event-day-notice,
+.event-day-empty,
+.event-day-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+  padding: 18px 0;
+}
+
+.event-day-notice {
+  color: #dcead4;
+  font-weight: 800;
+  margin: 0;
+}
+
+.event-day-empty {
+  color: #d5ddd8;
+}
+
+.event-day-section-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.event-day-section-head > svg {
+  background: rgba(143, 216, 210, 0.12);
+  border-radius: 8px;
+  color: #8fd8d2;
+  flex: 0 0 auto;
+  padding: 8px;
+  width: 38px;
+  height: 38px;
+}
+
+.event-day-section h2 {
+  font-size: 1.08rem;
+}
+
+.event-day-section p,
+.event-day-muted {
+  color: #b7c2bd;
+  margin: 4px 0 0;
+}
+
+.event-day-phases {
+  display: flex;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+  scroll-snap-type: x mandatory;
+}
+
+.event-day-phases li {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  display: grid;
+  flex: 0 0 132px;
+  gap: 6px;
+  min-height: 78px;
+  padding: 12px;
+  scroll-snap-align: start;
+}
+
+.event-day-phases span,
+.event-day-task span,
+.event-day-arrivals span {
+  color: #8fd8d2;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.event-day-phases strong {
+  align-self: end;
+  color: #f2cf83;
+}
+
+.event-day-progress {
+  background: rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.event-day-progress span {
+  background: linear-gradient(90deg, #8fd8d2, #e8b85f);
+  display: block;
+  height: 100%;
+}
+
+.event-day-progress-stats {
+  color: #c9d2cc;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  font-weight: 800;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.event-day-progress-stats span {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 6px 9px;
+}
+
+.event-day-task-list,
+.event-day-arrivals,
+.event-day-escalations {
+  display: grid;
+  gap: 10px;
+}
+
+.event-day-task,
+.event-day-arrivals article {
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.event-day-task h3,
+.event-day-arrivals h3 {
+  font-size: 1rem;
+  margin: 5px 0 4px;
+}
+
+.event-day-task p,
+.event-day-arrivals p {
+  margin: 0;
+}
+
+.event-day-task-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.event-day-task-actions button {
+  background: #223032;
+  border: 1px solid rgba(143, 216, 210, 0.28);
+  border-radius: 8px;
+  color: #f5f1e8;
+  cursor: pointer;
+  font-weight: 850;
+  min-height: 42px;
+}
+
+.event-day-task-actions button:focus-visible,
+.event-day-button:focus-visible,
+.event-day-icon-button:focus-visible,
+.event-day-issue-form input:focus-visible,
+.event-day-issue-form textarea:focus-visible,
+.event-day-issue-form select:focus-visible {
+  outline: 3px solid #f2cf83;
+  outline-offset: 2px;
+}
+
+.event-day-issue-form {
+  display: grid;
+  gap: 12px;
+}
+
+.event-day-issue-form label {
+  color: #dce4df;
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 850;
+  gap: 6px;
+}
+
+.event-day-issue-form input,
+.event-day-issue-form textarea,
+.event-day-issue-form select {
+  background: #f7f4ec;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #162021;
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.event-day-change-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.event-day-change-grid div {
+  background: rgba(255, 255, 255, 0.075);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.event-day-change-grid h3 {
+  color: #b7c2bd;
+  font-size: 0.72rem;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.event-day-change-grid p {
+  color: #f2cf83;
+  font-size: 1.8rem;
+  font-weight: 900;
+  margin: 6px 0 0;
+}
+
+.event-day-escalations {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.event-day-escalations li {
+  color: #ffe0b2;
+}
+
+.event-day-spin {
+  animation: event-day-spin 1s linear infinite;
+}
+
+@keyframes event-day-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (min-width: 760px) {
+  .event-day-page {
+    padding: 30px clamp(28px, 5vw, 72px);
+  }
+
+  .event-day-hero {
+    align-items: center;
+  }
+
+  .event-day-section {
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .event-day-section-head {
+    align-items: flex-start;
+    margin-bottom: 0;
+  }
+
+  .event-day-task-list,
+  .event-day-arrivals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

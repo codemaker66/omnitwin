@@ -227,6 +227,23 @@ export function PlannerSpatialHud(): React.ReactElement {
           Planning-grade estimate · not a legal or fire capacity · human review required
         </div>
       </section>
+
+      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--revenue">
+        <div className="planner-spatial-hud__title">Revenue</div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong style={{ color: hasLayout ? "#54c98e" : "#b8ad92", fontSize: 16 }}>
+            {hasLayout ? "Scenario-ready layout" : "No quote linked"}
+          </strong>
+          <span style={{ color: "#d8d0c4", fontSize: 12, lineHeight: 1.35 }}>
+            {hasLayout
+              ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
+              : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
+          </span>
+          <span style={{ color: "#b8ad92", fontSize: 11, lineHeight: 1.35 }}>
+            Comfort status {capacity.band}; review constraints remain visible before commercial recommendations.
+          </span>
+        </div>
+      </section>
     </aside>
   );
 }

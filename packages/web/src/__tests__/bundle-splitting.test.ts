@@ -52,6 +52,8 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/HallkeeperPage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/SplatFixturePage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallAssetStatusPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/RoomShowcasePage\.js["']/);
   });
 
   it("wraps lazy elements in Suspense with a fallback", async () => {
