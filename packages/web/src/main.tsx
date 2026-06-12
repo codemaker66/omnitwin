@@ -6,6 +6,7 @@ import { router } from "./router.js";
 import { ClerkAuthBridge } from "./components/auth/ClerkAuthBridge.js";
 import { JackieLarkinHeart } from "./components/JackieLarkinHeart.js";
 import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
+import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
 
@@ -35,6 +36,12 @@ const E2E_ENABLED: boolean = import.meta.env.DEV && (window as E2EWindow).__OMNI
 if (E2E_ENABLED) {
   const seed = (window as E2EWindow).__OMNITWIN_SEED_USER__ ?? null;
   useAuthStore.getState().setUser(seed);
+  setTokenGetter(seed === null ? null : () => Promise.resolve(JSON.stringify({
+    id: seed.id,
+    email: seed.email,
+    role: seed.role,
+    venueId: seed.venueId,
+  })));
 }
 
 // ---------------------------------------------------------------------------

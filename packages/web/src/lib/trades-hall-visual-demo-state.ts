@@ -82,7 +82,7 @@ export interface TradesHallVisualDemoState {
   };
 }
 
-const TRADES_HALL_GUEST_FLOW_REPLAY_INPUT: GuestFlowReplayInput = {
+export const TRADES_HALL_GUEST_FLOW_REPLAY_INPUT: GuestFlowReplayInput = {
   scenarioType: "guest_arrival",
   layout: {
     configurationId: null,

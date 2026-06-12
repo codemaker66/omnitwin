@@ -563,6 +563,31 @@
   line-height: 1.25;
 }
 
+.visual-replay-controls {
+  display: grid;
+  grid-template-columns: 46px minmax(80px, 1fr) 48px;
+  gap: 6px;
+  align-items: center;
+  margin: 5px 0 2px;
+}
+
+.visual-replay-controls button {
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(107, 217, 232, 0.42);
+  border-radius: 5px;
+  background: rgba(18, 28, 31, 0.9);
+  color: #dffbff;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.visual-replay-controls input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
 .visual-view-tool {
   position: absolute;
   left: 24px;

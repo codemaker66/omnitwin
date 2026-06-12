@@ -16,6 +16,10 @@ const { getTruthModeSummaryMock } = vi.hoisted(() => ({
   getTruthModeSummaryMock: vi.fn(),
 }));
 
+const { getLatestGuestFlowReplayMock } = vi.hoisted(() => ({
+  getLatestGuestFlowReplayMock: vi.fn(),
+}));
+
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { readonly children?: React.ReactNode }) => {
     const renderableChildren = React.Children.toArray(children).filter((child) => {
@@ -53,6 +57,10 @@ vi.mock("../api/truth-mode.js", () => ({
   getTruthModeSummary: getTruthModeSummaryMock,
 }));
 
+vi.mock("../api/guest-flow-replay.js", () => ({
+  getLatestGuestFlowReplay: getLatestGuestFlowReplayMock,
+}));
+
 vi.mock("../components/ai/AIDraftPanel.js", () => ({
   AIDraftPanel: ({ title }: { readonly title: string }) => (
     <section aria-label={title}>AI draft panel mocked for visual page tests.</section>
@@ -64,6 +72,7 @@ import { TradesHallVisualPage } from "../pages/TradesHallVisualPage.js";
 beforeEach(() => {
   getLatestRuntimePackageMock.mockResolvedValue(null);
   getEventPhaseGraphMock.mockResolvedValue(makePhaseGraph());
+  getLatestGuestFlowReplayMock.mockRejectedValue(new Error("No stored replay in component test."));
   getTruthModeSummaryMock.mockImplementation(
     (input: { readonly targetType: EvidenceTargetType; readonly targetId: string }) =>
       Promise.resolve(makeTruthSummary(input.targetType, input.targetId)),
@@ -74,6 +83,7 @@ afterEach(() => {
   cleanup();
   getLatestRuntimePackageMock.mockReset();
   getEventPhaseGraphMock.mockReset();
+  getLatestGuestFlowReplayMock.mockReset();
   getTruthModeSummaryMock.mockReset();
 });
 
@@ -237,8 +247,12 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getByText("Event Phase Graph")).toBeTruthy();
     expect(screen.getByText("Guest Flow Replay")).toBeTruthy();
     expect(screen.getByText("Overlays")).toBeTruthy();
+    expect(screen.getByText(/Simulated guest flow .* planning evidence/i)).toBeTruthy();
     expect(screen.getByText("Simulated guest flow - planning support")).toBeTruthy();
     expect(screen.getByText(/Bottleneck score/i)).toBeTruthy();
+    expect(screen.getByLabelText("Replay controls")).toBeTruthy();
+    expect(screen.getByLabelText("Replay progress")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play" })).toBeTruthy();
     expect(screen.getByText(/Human review required before operational reliance/i)).toBeTruthy();
     expect(screen.getByText("Internal command shell demo")).toBeTruthy();
     expect(screen.getByText("Internal demo phase fixture")).toBeTruthy();
@@ -388,6 +402,25 @@ describe("TradesHallVisualPage", () => {
     expect(bodyText).not.toMatch(/certified safe/i);
     expect(bodyText).not.toMatch(/approved for occupancy/i);
     expect(bodyText).not.toMatch(/guaranteed accessible/i);
+  });
+
+  it("renders worker/fallback replay status and lets operators scrub playback", async () => {
+    mount();
+    await waitFor(() => {
+      expect(screen.getByText(/Deterministic fallback replay|Worker replay generated/i)).toBeTruthy();
+    });
+
+    const slider = screen.getByLabelText("Replay progress");
+    expect(slider).toBeInstanceOf(HTMLInputElement);
+    if (!(slider instanceof HTMLInputElement)) {
+      throw new Error("Replay progress control must be an input.");
+    }
+    fireEvent.change(slider, { target: { value: "15" } });
+    expect(slider.value).toBe("15");
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(screen.getByRole("button", { name: "Play" })).toBeTruthy();
   });
 
   it("switches mesh, splat, and hybrid layer state", () => {

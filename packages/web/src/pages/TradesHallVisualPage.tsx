@@ -38,6 +38,7 @@ import {
 } from "../components/scene/SparkSplatLayer.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import {
+  TRADES_HALL_GUEST_FLOW_REPLAY_INPUT,
   TRADES_HALL_VISUAL_DEMO_STATE,
   visualEventPhasesFromGraph,
   visualPhaseById,
@@ -51,17 +52,30 @@ import {
   runtimeRoomTargetFromSearchParams,
   type RuntimeRoomTarget,
 } from "../lib/runtime-package-resolution.js";
+import {
+  runGuestFlowReplayInBrowser,
+  type GuestFlowReplayRunMode,
+} from "../lib/guest-flow-replay-worker.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
 import { getEventPhaseGraph } from "../api/events.js";
+import { getLatestGuestFlowReplay } from "../api/guest-flow-replay.js";
 import { getTruthModeSummary } from "../api/truth-mode.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
-import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
+import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
 type LoadStatus = "empty" | "invalid" | "loading" | "loaded" | "error";
 type PhaseGraphLoadStatus = "fixture" | "loading" | "loaded" | "error";
 type TruthSummaryStatus = "loading" | "loaded" | "fallback";
+type ReplayStatus = "fixture" | "loading" | "api" | GuestFlowReplayRunMode | "error";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function uuidOrNull(value: string | null): string | null {
+  if (value === null) return null;
+  return UUID_PATTERN.test(value) ? value : null;
+}
 
 interface VisualState {
   readonly status: LoadStatus;
@@ -169,6 +183,23 @@ function selectedModeLabel(mode: VisualCommandMode): string {
   return TRADES_HALL_VISUAL_DEMO_STATE.commandModes.find((item) => item.id === mode)?.label ?? "Design";
 }
 
+function replayStatusLabel(status: ReplayStatus): string {
+  switch (status) {
+    case "worker":
+      return "Worker replay generated";
+    case "main-thread-fallback":
+      return "Deterministic fallback replay";
+    case "api":
+      return "Saved replay loaded";
+    case "loading":
+      return "Generating replay";
+    case "error":
+      return "Replay fallback fixture";
+    case "fixture":
+      return "Internal replay fixture";
+  }
+}
+
 function overlayPoint(point: GuestFlowPoint): { readonly left: number; readonly top: number } {
   return {
     left: Math.max(4, Math.min(96, (point.x / REPLAY_OVERLAY_BOUNDS.width) * 100)),
@@ -177,9 +208,10 @@ function overlayPoint(point: GuestFlowPoint): { readonly left: number; readonly 
 }
 
 function agentPointAtProgress(trajectory: AgentTrajectory, progress: number): GuestFlowPoint {
+  const boundedProgress = Math.max(0, Math.min(1, progress));
   const index = Math.min(
     trajectory.points.length - 1,
-    Math.max(0, Math.round((trajectory.points.length - 1) * progress)),
+    Math.max(0, Math.round((trajectory.points.length - 1) * boundedProgress)),
   );
   return trajectory.points[index] ?? { x: 0, y: 0 };
 }
@@ -444,8 +476,15 @@ function CanvasLayerControls({
   );
 }
 
-function VenueCanvasOverlays({ overlays }: { readonly overlays: OverlayState }): ReactElement {
-  const replay = TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay;
+function VenueCanvasOverlays({
+  overlays,
+  replay,
+  replayProgress,
+}: {
+  readonly overlays: OverlayState;
+  readonly replay: GuestFlowReplayArtifact;
+  readonly replayProgress: number;
+}): ReactElement {
   const flowTrajectories = replay.trajectories.slice(0, 4);
   const ghostTrajectories = replay.trajectories.slice(0, 8);
   const densityCells = replay.densityHeatmap.cells
@@ -474,7 +513,7 @@ function VenueCanvasOverlays({ overlays }: { readonly overlays: OverlayState }):
             <span
               key={trajectory.agentId}
               className="visual-ghost-agent"
-              style={pointStyle(agentPointAtProgress(trajectory, 0.42 + (index % 4) * 0.12))}
+              style={pointStyle(agentPointAtProgress(trajectory, (replayProgress + (index % 4) * 0.08) % 1))}
             />
           ))}
         </>
@@ -544,11 +583,24 @@ function VenueCanvasOverlays({ overlays }: { readonly overlays: OverlayState }):
 function VenueOverlayLegend({
   overlays,
   onToggleOverlay,
+  replay,
+  replayProgress,
+  replayStatus,
+  replayRunning,
+  onReplayProgressChange,
+  onToggleReplay,
+  onResetReplay,
 }: {
   readonly overlays: OverlayState;
   readonly onToggleOverlay: (key: VisualOverlayKey) => void;
+  readonly replay: GuestFlowReplayArtifact;
+  readonly replayProgress: number;
+  readonly replayStatus: ReplayStatus;
+  readonly replayRunning: boolean;
+  readonly onReplayProgressChange: (progress: number) => void;
+  readonly onToggleReplay: () => void;
+  readonly onResetReplay: () => void;
 }): ReactElement {
-  const replay = TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay;
   const replayMetrics = replay.metrics;
 
   return (
@@ -576,11 +628,26 @@ function VenueOverlayLegend({
         );
       })}
       <div className="visual-replay-metrics" aria-label="Guest flow replay metrics">
-        <p>{replay.disclosureLabel}</p>
+        <p>Simulated guest flow · planning evidence</p>
+        <span>{replay.disclosureLabel}</span>
+        <span>{replayStatusLabel(replayStatus)}</span>
         <span>Agents {replayMetrics.agentCount.toLocaleString("en-GB")}</span>
         <span>Bottleneck score {Math.round(replayMetrics.bottleneckScore * 100)}%</span>
         <span>Max density {replayMetrics.maxDensity.toFixed(2)} p/m2</span>
         <span>Route conflicts {replayMetrics.routeConflictCount}</span>
+        <span>Navmesh {replay.navmesh.walkableCellCount.toLocaleString("en-GB")} walkable cells</span>
+            <div className="visual-replay-controls" role="group" aria-label="Replay controls">
+          <button type="button" onClick={onToggleReplay}>{replayRunning ? "Pause" : "Play"}</button>
+          <input
+            aria-label="Replay progress"
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(replayProgress * 100)}
+            onChange={(event) => { onReplayProgressChange(Number(event.target.value) / 100); }}
+          />
+          <button type="button" onClick={onResetReplay}>Reset</button>
+        </div>
         <small>Human review required before operational reliance.</small>
       </div>
     </section>
@@ -930,6 +997,10 @@ export function TradesHallVisualPage(): ReactElement {
   const [phaseGraphStatus, setPhaseGraphStatus] = useState<PhaseGraphLoadStatus>("fixture");
   const [truthSummary, setTruthSummary] = useState<TruthModeSummary | null>(null);
   const [truthSummaryStatus, setTruthSummaryStatus] = useState<TruthSummaryStatus>("fallback");
+  const [guestFlowReplay, setGuestFlowReplay] = useState<GuestFlowReplayArtifact>(TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay);
+  const [replayStatus, setReplayStatus] = useState<ReplayStatus>("fixture");
+  const [replayProgress, setReplayProgress] = useState(0.42);
+  const [replayRunning, setReplayRunning] = useState(false);
   const [visualState, setVisualState] = useState<VisualState>(() => {
     if (runtimeTarget.error !== null) {
       return { status: "invalid", message: runtimeTarget.error, splatCount: null };
@@ -973,6 +1044,56 @@ export function TradesHallVisualPage(): ReactElement {
   const displayedTruthSummary = truthSummary ?? fallbackTruthSummary;
   const meshVisible = layerMode === "hybrid" || layerMode === "mesh";
   const splatVisible = layerMode === "hybrid" || layerMode === "splat";
+
+  useEffect(() => {
+    let cancelled = false;
+    setReplayStatus("loading");
+
+    const loadReplay = async (): Promise<void> => {
+      const scopedEventId = uuidOrNull(eventId);
+      const scopedPhaseId = uuidOrNull(selectedPhaseId);
+      const scopedConfigurationId = TRADES_HALL_GUEST_FLOW_REPLAY_INPUT.layout.configurationId;
+
+      if (scopedEventId !== null || scopedPhaseId !== null || scopedConfigurationId !== null) {
+        try {
+          const stored = await getLatestGuestFlowReplay({
+            eventId: scopedEventId,
+            phaseId: scopedPhaseId,
+            configurationId: scopedConfigurationId,
+          });
+          if (cancelled) return;
+          setGuestFlowReplay(stored.artifact);
+          setReplayStatus("api");
+          return;
+        } catch {
+          // API/auth may be unavailable on the internal dev route. The local
+          // deterministic worker keeps the surface useful without exposing data.
+        }
+      }
+
+      try {
+        const result = await runGuestFlowReplayInBrowser(TRADES_HALL_GUEST_FLOW_REPLAY_INPUT);
+        if (cancelled) return;
+        setGuestFlowReplay(result.artifact);
+        setReplayStatus(result.mode);
+      } catch {
+        if (cancelled) return;
+        setGuestFlowReplay(TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay);
+        setReplayStatus("error");
+      }
+    };
+
+    void loadReplay();
+    return () => { cancelled = true; };
+  }, [eventId, selectedPhaseId]);
+
+  useEffect(() => {
+    if (!replayRunning) return;
+    const id = window.setInterval(() => {
+      setReplayProgress((current) => Number(((current + 0.025) % 1).toFixed(3)));
+    }, 220);
+    return () => { window.clearInterval(id); };
+  }, [replayRunning]);
 
   useEffect(() => {
     if (runtimeTarget.error !== null) {
@@ -1119,8 +1240,21 @@ export function TradesHallVisualPage(): ReactElement {
           </Canvas>
         </div>
         <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
-        <VenueCanvasOverlays overlays={overlays} />
-        <VenueOverlayLegend overlays={overlays} onToggleOverlay={toggleOverlay} />
+        <VenueCanvasOverlays overlays={overlays} replay={guestFlowReplay} replayProgress={replayProgress} />
+        <VenueOverlayLegend
+          overlays={overlays}
+          onToggleOverlay={toggleOverlay}
+          replay={guestFlowReplay}
+          replayProgress={replayProgress}
+          replayStatus={replayStatus}
+          replayRunning={replayRunning}
+          onReplayProgressChange={setReplayProgress}
+          onToggleReplay={() => { setReplayRunning((running) => !running); }}
+          onResetReplay={() => {
+            setReplayRunning(false);
+            setReplayProgress(0);
+          }}
+        />
         <ViewTool activeMode={activeMode} />
       </section>
       <TruthModePanel
