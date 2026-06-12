@@ -162,6 +162,69 @@
       "when": 1777766400000,
       "tag": "0024_runtime_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781049600000,
+      "tag": "0025_configuration_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781136000000,
+      "tag": "0026_proposals_quotes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781139600000,
+      "tag": "0027_event_phase_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781143200000,
+      "tag": "0028_evidence_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1781146800000,
+      "tag": "0029_ops_compiler",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1781150400000,
+      "tag": "0030_event_day_ops",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781154000000,
+      "tag": "0031_guest_flow_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781157600000,
+      "tag": "0032_revenue_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1781161200000,
+      "tag": "0033_integration_layer",
+      "breakpoints": true
     }
   ]
 }

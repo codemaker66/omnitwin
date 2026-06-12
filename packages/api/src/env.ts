@@ -42,6 +42,14 @@ const EnvSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  // AI assistant — disabled unless explicitly enabled and fully configured.
+  // Product code talks to an adapter abstraction; these vars configure the
+  // optional HTTP adapter and are never returned to clients.
+  AI_ASSISTANT_ENABLED: z.enum(["true", "false"]).default("false"),
+  AI_ASSISTANT_PROVIDER: z.string().min(1).max(80).optional(),
+  AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
+  AI_ASSISTANT_BASE_URL: z.string().url().optional(),
+  AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
   // Prometheus scrape token. When unset, /metrics returns 404 — the
   // endpoint is not even discoverable. Production deployments set
   // this + configure the scraper's Authorization header. Minimum 16
@@ -93,6 +101,21 @@ const EnvSchema = z.object({
       path: ["R2_ACCOUNT_ID"],
       message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL or none",
     });
+  }
+
+  if (env.AI_ASSISTANT_ENABLED === "true") {
+    const missingAiFields: string[] = [];
+    if (env.AI_ASSISTANT_PROVIDER === undefined) missingAiFields.push("AI_ASSISTANT_PROVIDER");
+    if (env.AI_ASSISTANT_MODEL === undefined) missingAiFields.push("AI_ASSISTANT_MODEL");
+    if (env.AI_ASSISTANT_BASE_URL === undefined) missingAiFields.push("AI_ASSISTANT_BASE_URL");
+    if (env.AI_ASSISTANT_API_KEY === undefined) missingAiFields.push("AI_ASSISTANT_API_KEY");
+    if (missingAiFields.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["AI_ASSISTANT_ENABLED"],
+        message: `AI assistant is enabled but missing required provider configuration: ${missingAiFields.join(", ")}`,
+      });
+    }
   }
 });
 

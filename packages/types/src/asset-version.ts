@@ -96,59 +96,155 @@ const ASSET_KIND_EXTENSIONS: Readonly<Record<AssetKind, readonly RuntimeFileExte
   other: RUNTIME_FILE_EXTENSIONS,
 };
 
+export const TRADES_HALL_VENUE_SLUG = "trades-hall" as const;
+export const TRADES_HALL_RUNTIME_ROOM_SLUGS = [
+  "grand-hall",
+  "reception-room",
+  "robert-adam-room",
+  "saloon",
+  "lady-convenors-room",
+  "north-gallery",
+  "south-gallery",
+] as const;
+export const TradesHallRuntimeRoomSlugSchema = z.enum(TRADES_HALL_RUNTIME_ROOM_SLUGS);
+export type TradesHallRuntimeRoomSlug = z.infer<typeof TradesHallRuntimeRoomSlugSchema>;
+
+export const TRADES_HALL_ROOM_GROUPS = ["principal-room", "support-room", "gallery"] as const;
+export const TradesHallRoomGroupSchema = z.enum(TRADES_HALL_ROOM_GROUPS);
+export type TradesHallRoomGroup = z.infer<typeof TradesHallRoomGroupSchema>;
+
+export const TRADES_HALL_ROOM_DEFAULT_STATUSES = ["needs_processing", "needs_registration"] as const;
+export const TradesHallRoomDefaultStatusSchema = z.enum(TRADES_HALL_ROOM_DEFAULT_STATUSES);
+export type TradesHallRoomDefaultStatus = z.infer<typeof TradesHallRoomDefaultStatusSchema>;
+
+export const TRADES_HALL_ROOM_CAPTURE_STATUSES = [
+  "captured_needs_processing",
+  "splat_exists_outside_repo_needs_registration",
+] as const;
+export const TradesHallRoomCaptureStatusSchema = z.enum(TRADES_HALL_ROOM_CAPTURE_STATUSES);
+export type TradesHallRoomCaptureStatus = z.infer<typeof TradesHallRoomCaptureStatusSchema>;
+
+export const TRADES_HALL_ROOM_REGISTRY_RUNTIME_STATUSES = ["not_registered"] as const;
+export const TradesHallRoomRegistryRuntimeStatusSchema = z.enum(TRADES_HALL_ROOM_REGISTRY_RUNTIME_STATUSES);
+export type TradesHallRoomRegistryRuntimeStatus = z.infer<typeof TradesHallRoomRegistryRuntimeStatusSchema>;
+
 export const TRADES_HALL_RUNTIME_ROOMS = [
   {
     slug: "grand-hall",
+    roomSlug: "grand-hall",
     displayName: "Grand Hall",
+    roomGroup: "principal-room",
+    defaultStatus: "needs_processing",
+    captureStatus: "captured_needs_processing",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "runpod",
     currentState: "captured_needs_processing",
+    safeCopy: "captured / needs processing",
     nextAction: "Process captured room into a runtime splat",
   },
   {
     slug: "reception-room",
+    roomSlug: "reception-room",
     displayName: "Reception Room",
+    roomGroup: "support-room",
+    defaultStatus: "needs_processing",
+    captureStatus: "captured_needs_processing",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "captured_needs_processing",
+    safeCopy: "captured / needs processing",
     nextAction: "Process captured room into a runtime splat",
   },
   {
     slug: "robert-adam-room",
+    roomSlug: "robert-adam-room",
     displayName: "Robert Adam Room",
+    roomGroup: "support-room",
+    defaultStatus: "needs_processing",
+    captureStatus: "captured_needs_processing",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "captured_needs_processing",
+    safeCopy: "captured / needs processing",
     nextAction: "Process captured room into a runtime splat",
   },
   {
     slug: "saloon",
+    roomSlug: "saloon",
     displayName: "Saloon",
+    roomGroup: "support-room",
+    defaultStatus: "needs_processing",
+    captureStatus: "captured_needs_processing",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "captured_needs_processing",
+    safeCopy: "captured / needs processing",
     nextAction: "Process captured room into a runtime splat",
   },
   {
     slug: "lady-convenors-room",
+    roomSlug: "lady-convenors-room",
     displayName: "Lady Convenor's Room",
+    roomGroup: "support-room",
+    defaultStatus: "needs_registration",
+    captureStatus: "splat_exists_outside_repo_needs_registration",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "splat_done_outside_repo",
+    safeCopy: "splat exists outside repo / needs registration",
     nextAction: "Register external splat asset and runtime package",
   },
   {
     slug: "north-gallery",
+    roomSlug: "north-gallery",
     displayName: "North Gallery",
+    roomGroup: "gallery",
+    defaultStatus: "needs_registration",
+    captureStatus: "splat_exists_outside_repo_needs_registration",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "splat_done_outside_repo",
+    safeCopy: "splat exists outside repo / needs registration",
     nextAction: "Register external splat asset and runtime package",
   },
   {
     slug: "south-gallery",
+    roomSlug: "south-gallery",
     displayName: "South Gallery",
+    roomGroup: "gallery",
+    defaultStatus: "needs_registration",
+    captureStatus: "splat_exists_outside_repo_needs_registration",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
     currentState: "splat_done_outside_repo",
+    safeCopy: "splat exists outside repo / needs registration",
     nextAction: "Register external splat asset and runtime package",
   },
 ] as const;
-export type TradesHallRuntimeRoomSlug = (typeof TRADES_HALL_RUNTIME_ROOMS)[number]["slug"];
+export type TradesHallRuntimeRoom = (typeof TRADES_HALL_RUNTIME_ROOMS)[number];
 export type TradesHallRoomCurrentState = (typeof TRADES_HALL_RUNTIME_ROOMS)[number]["currentState"];
+
+export function isTradesHallRuntimeRoomSlug(value: string): value is TradesHallRuntimeRoomSlug {
+  return TRADES_HALL_RUNTIME_ROOM_SLUGS.includes(value as TradesHallRuntimeRoomSlug);
+}
+
+export function tradesHallRuntimeRoomForSlug(value: string): TradesHallRuntimeRoom | null {
+  return TRADES_HALL_RUNTIME_ROOMS.find((room) => room.slug === value) ?? null;
+}
 
 export const R2_TRAINING_INPUT_BUCKET = "venviewer-training-inputs";
 export const R2_TRAINING_OUTPUT_BUCKET = "venviewer-training-outputs";
@@ -200,6 +296,21 @@ export function isR2ObjectKeyShape(key: string): boolean {
 
 export function assetKindAllowsExtension(kind: AssetKind, extension: RuntimeFileExtension): boolean {
   return ASSET_KIND_EXTENSIONS[kind].includes(extension);
+}
+
+function validateSupportedTradesHallRoom(
+  venueSlug: string,
+  roomSlug: string | null | undefined,
+  ctx: z.RefinementCtx,
+  path: readonly (string | number)[],
+): void {
+  if (venueSlug !== TRADES_HALL_VENUE_SLUG || roomSlug === null || roomSlug === undefined) return;
+  if (isTradesHallRuntimeRoomSlug(roomSlug)) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [...path],
+    message: "Unsupported Trades Hall room slug.",
+  });
 }
 
 const R2ObjectKeySchema = z.string().trim().min(1).max(1024).superRefine((key, ctx) => {
@@ -266,7 +377,9 @@ export const RuntimePackageManifestJsonSchema = z.object({
   }).strict(),
   generatedAt: z.string().regex(ISO_DATE_TIME, "generatedAt must be an ISO datetime.").optional(),
   notes: z.string().trim().max(2000).optional(),
-}).strict();
+}).strict().superRefine((manifest, ctx) => {
+  validateSupportedTradesHallRoom(manifest.venueSlug, manifest.roomSlug, ctx, ["roomSlug"]);
+});
 export type RuntimePackageManifestJson = z.infer<typeof RuntimePackageManifestJsonSchema>;
 
 export const CaptureSessionSchema = z.object({
@@ -295,7 +408,9 @@ export const RegisterCaptureSessionInputSchema = z.object({
   sourceProjectName: z.string().trim().max(255).nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
   status: CaptureSessionStatusSchema.default("captured"),
-}).strict();
+}).strict().superRefine((body, ctx) => {
+  validateSupportedTradesHallRoom(body.venueSlug, body.roomSlug, ctx, ["roomSlug"]);
+});
 export type RegisterCaptureSessionInput = z.infer<typeof RegisterCaptureSessionInputSchema>;
 
 export const AssetVersionSchema = z.object({
@@ -352,6 +467,36 @@ export const RuntimePackageSchema = z.object({
 });
 export type RuntimePackage = z.infer<typeof RuntimePackageSchema>;
 
+export const PublicRoomRuntimeVisualSchema = z
+  .object({
+    venueSlug: RuntimeSlugSchema,
+    roomSlug: RuntimeSlugSchema,
+    runtimeVisualAvailable: z.boolean(),
+    visualUrl: z.string().url().nullable(),
+    visualLabel: z.string().min(1),
+    safeCopy: z.string().min(1),
+    humanReviewRequired: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.runtimeVisualAvailable && value.visualUrl === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["visualUrl"],
+        message: "visualUrl is required when a public runtime visual is available.",
+      });
+    }
+
+    if (!value.runtimeVisualAvailable && value.visualUrl !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["visualUrl"],
+        message: "visualUrl must be null when a public runtime visual is unavailable.",
+      });
+    }
+  });
+export type PublicRoomRuntimeVisual = z.infer<typeof PublicRoomRuntimeVisualSchema>;
+
 export const RegisterAssetVersionInputSchema = z.object({
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema.nullable().optional(),
@@ -369,6 +514,8 @@ export const RegisterAssetVersionInputSchema = z.object({
   runtimeStatus: AssetRuntimeStatusSchema.default("staged"),
   notes: z.string().trim().max(4000).nullable().optional(),
 }).strict().superRefine((body, ctx) => {
+  validateSupportedTradesHallRoom(body.venueSlug, body.roomSlug, ctx, ["roomSlug"]);
+
   const r2Key = body.r2Key ?? null;
   const externalUrl = body.externalUrl ?? null;
   if (r2Key === null && externalUrl === null) {
@@ -423,6 +570,8 @@ export const RegisterRuntimePackageInputSchema = z.object({
   evidenceStatus: AssetEvidenceStatusSchema.default("unverified"),
   runtimeStatus: RuntimePackageStatusSchema.default("draft"),
 }).strict().superRefine((body, ctx) => {
+  validateSupportedTradesHallRoom(body.venueSlug, body.roomSlug, ctx, ["roomSlug"]);
+
   if (body.manifestJson.venueSlug !== body.venueSlug) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -483,13 +632,17 @@ export type RegisterRuntimePackageInput = z.infer<typeof RegisterRuntimePackageI
 export const LatestRuntimePackageQuerySchema = z.object({
   venue: RuntimeSlugSchema,
   room: RuntimeSlugSchema,
-}).strict();
+}).strict().superRefine((query, ctx) => {
+  validateSupportedTradesHallRoom(query.venue, query.room, ctx, ["room"]);
+});
 export type LatestRuntimePackageQuery = z.infer<typeof LatestRuntimePackageQuerySchema>;
 
 export const RoomManifestQuerySchema = z.object({
   venue: RuntimeSlugSchema.optional(),
   room: RuntimeSlugSchema.optional(),
-}).strict();
+}).strict().superRefine((query, ctx) => {
+  validateSupportedTradesHallRoom(query.venue ?? "", query.room, ctx, ["room"]);
+});
 export type RoomManifestQuery = z.infer<typeof RoomManifestQuerySchema>;
 
 export const AdminRoomsQuerySchema = z.object({
@@ -501,13 +654,22 @@ export const RoomAssetStatusSchema = z.object({
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   displayName: z.string(),
+  roomGroup: TradesHallRoomGroupSchema,
+  defaultStatus: TradesHallRoomDefaultStatusSchema,
+  captureStatus: TradesHallRoomCaptureStatusSchema,
+  registryRuntimeStatus: TradesHallRoomRegistryRuntimeStatusSchema,
+  publicShowcaseEnabled: z.boolean(),
+  internalVisualEnabled: z.boolean(),
   primaryCaptureSource: z.string().nullable(),
   currentState: z.string(),
+  splatStatus: z.string(),
   splatExists: z.boolean(),
+  runtimePackageStatus: z.string(),
   runtimePackageExists: z.boolean(),
   evidenceStatus: AssetEvidenceStatusSchema.nullable(),
   runtimeStatus: RuntimePackageStatusSchema.nullable(),
   nextAction: z.string(),
+  safeCopy: z.string(),
 });
 export type RoomAssetStatus = z.infer<typeof RoomAssetStatusSchema>;
 

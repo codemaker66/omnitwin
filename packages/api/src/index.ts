@@ -25,6 +25,15 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
+import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
+import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
+import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
+import { opsHandoffRoutes } from "./routes/ops-handoff.js";
+import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
+import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
+import { proposalRoutes, publicProposalRoutes } from "./routes/proposals.js";
+import { quoteRoutes } from "./routes/quotes.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
@@ -72,7 +81,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //   keepAliveTimeout  —  5s. Faster LB cycle, lower chance of
   //                       dropped requests mid-roll.
   //
-  // trustProxy ON — we sit behind Fly.io's proxy; `request.ip`
+  // trustProxy ON — we sit behind Railway's proxy; `request.ip`
   // must read the X-Forwarded-For header for rate-limiting to key
   // on real client IPs.
   // ---------------------------------------------------------------------------
@@ -138,7 +147,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       return `ip:${request.ip}`;
     },
     // Never rate-limit the health / readiness / liveness probes —
-    // they're how orchestrators (Fly.io, K8s) decide whether the
+    // they're how orchestrators (Railway, K8s) decide whether the
     // instance is alive and ready. Rate-limiting them risks
     // recursive outages.
     allowList: (request) => {
@@ -148,7 +157,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
         u === "/health/live" ||
         u === "/health/ready" ||
         u === "/health/db" ||
-        u === "/health/version"
+        u === "/health/version" ||
+        u === "/health/observability"
       );
     },
     errorResponseBuilder: (_request, context) => ({
@@ -166,12 +176,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
 
   // --- Health check ---
-  // Returns 200 even if DB is down — Fly.io needs this for routing.
+  // Returns 200 even if DB is down — this is a process liveness probe.
   //
-  // `/health` is the canonical probe used by Fly.io's router. The two
-  // aliases below follow the Kubernetes / CNCF liveness-vs-readiness
-  // convention so the same container can be deployed to either
-  // platform without rewiring probes:
+  // `/health/ready` is the Railway healthcheck path in `railway.json`.
+  // The routes below follow the Kubernetes / CNCF liveness-vs-readiness
+  // convention so the same container can be deployed without rewiring probes:
   //   - `/health/live`  mirrors `/health` (process-alive, do not restart).
   //   - `/health/ready` mirrors `/health/db` (dependency-check, route
   //                     traffic only when green).
@@ -206,15 +215,48 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     };
   });
 
+  // --- Observability configuration probe ---
+  //
+  // Public-safe operational status only. This endpoint never returns DSNs,
+  // tokens, project IDs, or provider account details; it exists so on-call
+  // operators can tell whether error capture and metrics are deliberately
+  // configured or still waiting on external env setup.
+  server.get("/health/observability", async () => {
+    const sentryConfigured = env.SENTRY_DSN !== undefined && env.SENTRY_DSN.length > 0;
+    const metricsConfigured = env.METRICS_TOKEN !== undefined && env.METRICS_TOKEN.length > 0;
+
+    return {
+      status: "ok" as const,
+      generatedAt: new Date().toISOString(),
+      sentry: {
+        configured: sentryConfigured,
+        status: sentryConfigured ? "configured" as const : "missing_env" as const,
+        environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
+        tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+      },
+      metrics: {
+        configured: metricsConfigured,
+        status: metricsConfigured ? "configured" as const : "missing_env" as const,
+        endpoint: "/metrics",
+      },
+      uptime: {
+        status: "external_monitor_required" as const,
+        probes: ["/health/live", "/health/ready", "/health/observability"],
+      },
+    };
+  });
+
   // --- Database ---
   const db = createDb(env.DATABASE_URL);
 
   // --- DB-probe health check ---
-  // Separate from /health so Fly.io's routing liveness probe stays DB-
-  // independent. This endpoint is for ops/monitoring: alarms fire when
-  // the API is up but the DB is unreachable (a partial-outage state
-  // that /health cannot distinguish from "everything fine"). Returns
-  // 200 on success, 503 with a structured error code on failure.
+  // Separate from /health so process liveness stays DB-independent.
+  // Railway probes `/health/ready`, which points here, so deploy traffic
+  // only routes once the API can reach the database. This endpoint is also
+  // for ops/monitoring: alarms fire when the API is up but the DB is
+  // unreachable (a partial-outage state that /health cannot distinguish from
+  // "everything fine"). Returns 200 on success, 503 with a structured error
+  // code on failure.
   const dbProbe = async (_request: unknown, reply: { status: (n: number) => void }): Promise<
     | { status: "ok" }
     | { status: "degraded"; code: "DB_UNREACHABLE"; message: string }
@@ -264,6 +306,25 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
+  await server.register(integrationRoutes, { db, prefix: "/integrations" });
+  await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
+  await server.register(eventRoutes, { db, prefix: "/events" });
+  await server.register(eventDayEventRoutes, { db, prefix: "/events" });
+  await server.register(eventRevenueRoutes, { db, prefix: "/events" });
+  await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
+  await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });
+  await server.register(evidencePackRoutes, { db, prefix: "/evidence-packs" });
+  await server.register(evidenceItemRoutes, { db, prefix: "/evidence" });
+  await server.register(reviewGateRoutes, { db, prefix: "/review-gates" });
+  await server.register(truthModeRoutes, { db, prefix: "/truth-mode" });
+  await server.register(opsHandoffRoutes, { db, prefix: "/ops" });
+  await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
+  await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
+  await server.register(analyticsRoutes, { db, prefix: "/analytics" });
+  await server.register(aiAssistantRoutes, { env, prefix: "/ai" });
+  await server.register(proposalRoutes, { db, prefix: "/proposals" });
+  await server.register(quoteRoutes, { db, prefix: "/quotes" });
+  await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
   // --- WebSocket ---
   await server.register(websocket);
@@ -297,7 +358,7 @@ if (isDirectRun) {
   // ---------------------------------------------------------------------------
   // Graceful shutdown
   //
-  // Orchestrators (Fly.io, Kubernetes) deliver SIGTERM before SIGKILL to
+  // Orchestrators (Railway, Kubernetes) deliver SIGTERM before SIGKILL to
   // give the app a chance to finish in-flight work. Without an explicit
   // handler, Node terminates abruptly — requests are dropped, DB
   // connections are left dangling, and clients see sporadic 502s during

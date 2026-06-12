@@ -41,6 +41,7 @@ const EXPECTED_AUTH: Readonly<Record<string, AuthLevel>> = {
   "GET /health/ready": "public",
   "GET /health/db": "public",
   "GET /health/version": "public",
+  "GET /health/observability": "public",
   "GET /metrics": "token",
 };
 
@@ -119,15 +120,16 @@ describe("route inventory — sanity", () => {
     expect(actualRoutes.size).toBeGreaterThan(0);
   });
 
-  it("pins /health, /health/live, /health/ready, /health/db, /health/version, /metrics", () => {
+  it("pins /health, /health/live, /health/ready, /health/db, /health/version, /health/observability, /metrics", () => {
     // These are ops contracts — changing their path or auth level
-    // breaks Fly.io routing, K8s liveness/readiness, Prometheus
+    // breaks Railway health checks, K8s liveness/readiness, Prometheus
     // scraping, or release probes.
     expect(EXPECTED_AUTH["GET /health"]).toBe("public");
     expect(EXPECTED_AUTH["GET /health/live"]).toBe("public");
     expect(EXPECTED_AUTH["GET /health/ready"]).toBe("public");
     expect(EXPECTED_AUTH["GET /health/db"]).toBe("public");
     expect(EXPECTED_AUTH["GET /health/version"]).toBe("public");
+    expect(EXPECTED_AUTH["GET /health/observability"]).toBe("public");
     expect(EXPECTED_AUTH["GET /metrics"]).toBe("token");
   });
 });

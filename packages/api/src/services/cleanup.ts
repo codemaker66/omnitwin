@@ -12,7 +12,7 @@ import type { Database } from "../db/client.js";
  * - Not claimed (userId is null, isPublicPreview is true)
  * - Not linked to any enquiry
  *
- * To run on a cron: wire into a scheduled job (e.g. node-cron, Fly.io cron,
+ * To run on a cron: wire into a scheduled job (e.g. node-cron, platform cron,
  * or a GitHub Actions schedule) calling POST /admin/cleanup with an admin token.
  */
 export async function cleanupPreviewConfigurations(db: Database): Promise<number> {

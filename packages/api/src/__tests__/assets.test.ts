@@ -48,6 +48,7 @@ const validRuntimePackageBody = {
       primaryVisualAssetVersionId: ASSET_VERSION_ID,
       semanticMeshAssetVersionId: null,
       collisionAssetVersionId: null,
+      pointCloudAssetVersionId: null,
     },
   },
   runtimeStatus: "internal_ready",
@@ -77,6 +78,64 @@ describe("GET /assets/runtime-packages/latest", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ data: null });
+  });
+
+  it("rejects unsupported Trades Hall room slugs before lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/latest?venue=trades-hall&room=made-up-room",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("GET /assets/runtime-packages/public-room-visual", () => {
+  it("validates venue and room query params before querying", async () => {
+    const res = await server.inject({ method: "GET", url: "/assets/runtime-packages/public-room-visual" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns a client-safe fallback when no runtime visual can be read", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/public-room-visual?venue=trades-hall&room=grand-hall",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      data: {
+        venueSlug: "trades-hall",
+        roomSlug: "grand-hall",
+        runtimeVisualAvailable: false,
+        visualUrl: null,
+        visualLabel: "Visual preview",
+        safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
+        humanReviewRequired: true,
+      },
+    });
+  });
+
+  it("does not expose internal asset registry fields in the public fallback payload", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/public-room-visual?venue=trades-hall&room=robert-adam-room",
+    });
+    const bodyText = res.body;
+    const data = res.json<{ data: Record<string, unknown> }>().data;
+
+    expect(res.statusCode).toBe(200);
+    expect(data["id"]).toBeUndefined();
+    expect(data["primaryVisualAssetVersionId"]).toBeUndefined();
+    expect(data["primaryVisualAssetVersion"]).toBeUndefined();
+    expect(data["manifestJson"]).toBeUndefined();
+    expect(bodyText).not.toMatch(/r2Key|runtime_packages|primaryVisualAssetVersionId|manifestJson/u);
+  });
+
+  it("rejects unsupported Trades Hall room slugs before lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/public-room-visual?venue=trades-hall&room=made-up-room",
+    });
+    expect(res.statusCode).toBe(400);
   });
 });
 
@@ -139,6 +198,16 @@ describe("POST /admin/assets/register-version", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it("rejects unsupported Trades Hall room slugs with 400", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-version",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { ...validVersionBody, roomSlug: "made-up-room" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe("POST /admin/assets/register-runtime-package", () => {
@@ -192,6 +261,7 @@ describe("POST /admin/assets/register-runtime-package", () => {
             primaryVisualAssetVersionId: null,
             semanticMeshAssetVersionId: null,
             collisionAssetVersionId: null,
+            pointCloudAssetVersionId: null,
           },
         },
         runtimeStatus: "internal_ready",
@@ -211,6 +281,22 @@ describe("GET /admin/assets/room-manifests", () => {
     const res = await server.inject({
       method: "GET",
       url: "/admin/assets/room-manifests",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe("GET /admin/assets/rooms", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({ method: "GET", url: "/admin/assets/rooms?venue=trades-hall" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/admin/assets/rooms?venue=trades-hall",
       headers: { authorization: `Bearer ${plannerToken()}` },
     });
     expect(res.statusCode).toBe(403);

@@ -2,16 +2,23 @@ import { describe, it, expect } from "vitest";
 import {
   AssetVersionSchema,
   LatestRuntimePackageQuerySchema,
+  PublicRoomRuntimeVisualSchema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
   RoomManifestSchema,
   RuntimePackageManifestJsonSchema,
   RuntimePackageSchema,
+  TRADES_HALL_RUNTIME_ROOMS,
+  TRADES_HALL_RUNTIME_ROOM_SLUGS,
   assetKindAllowsExtension,
   isForbiddenAssetFixtureKey,
   isR2ObjectKeyShape,
+  isTradesHallRuntimeRoomSlug,
   runtimeFileExtensionForKey,
   splatExtensionForKey,
+  tradesHallRuntimeRoomForSlug,
+  trainingInputR2Prefix,
+  trainingOutputR2Prefix,
 } from "../asset-version.js";
 
 const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
@@ -45,6 +52,78 @@ const validVersionInput = {
   sha256: SHA,
   sizeBytes: 2_048,
 };
+
+describe("Trades Hall room registry", () => {
+  it("pins the seven supported room slugs and status metadata", () => {
+    expect(TRADES_HALL_RUNTIME_ROOM_SLUGS).toEqual([
+      "grand-hall",
+      "reception-room",
+      "robert-adam-room",
+      "saloon",
+      "lady-convenors-room",
+      "north-gallery",
+      "south-gallery",
+    ]);
+
+    for (const room of TRADES_HALL_RUNTIME_ROOMS) {
+      expect(room.slug).toBe(room.roomSlug);
+      expect(room.defaultStatus).toMatch(/needs_/u);
+      expect(room.registryRuntimeStatus).toBe("not_registered");
+      expect(room.internalVisualEnabled).toBe(true);
+      expect(room.publicShowcaseEnabled).toBe(false);
+      expect(room.safeCopy).not.toMatch(/approved|certified|production ready|survey-grade|photoreal/i);
+      expect(isTradesHallRuntimeRoomSlug(room.slug)).toBe(true);
+      expect(tradesHallRuntimeRoomForSlug(room.slug)?.displayName).toBe(room.displayName);
+    }
+  });
+
+  it("keeps off-repo splat rooms distinct from captured rooms", () => {
+    expect(tradesHallRuntimeRoomForSlug("lady-convenors-room")?.safeCopy).toBe(
+      "splat exists outside repo / needs registration",
+    );
+    expect(tradesHallRuntimeRoomForSlug("north-gallery")?.captureStatus).toBe(
+      "splat_exists_outside_repo_needs_registration",
+    );
+    expect(tradesHallRuntimeRoomForSlug("south-gallery")?.captureStatus).toBe(
+      "splat_exists_outside_repo_needs_registration",
+    );
+    expect(tradesHallRuntimeRoomForSlug("grand-hall")?.safeCopy).toBe("captured / needs processing");
+  });
+
+  it("encodes the R2 training path conventions", () => {
+    expect(trainingInputR2Prefix("trades-hall", "lady-convenors-room", "xgrids")).toBe(
+      "r2:venviewer-training-inputs/trades-hall/rooms/lady-convenors-room/xgrids/",
+    );
+    expect(trainingInputR2Prefix("trades-hall", "north-gallery", "matterport")).toBe(
+      "r2:venviewer-training-inputs/trades-hall/rooms/north-gallery/matterport/",
+    );
+    expect(trainingInputR2Prefix("trades-hall", "south-gallery", "raw")).toBe(
+      "r2:venviewer-training-inputs/trades-hall/rooms/south-gallery/raw/",
+    );
+    expect(trainingOutputR2Prefix("trades-hall", "lady-convenors-room", "runtime")).toBe(
+      "r2:venviewer-training-outputs/trades-hall/rooms/lady-convenors-room/runtime/",
+    );
+    expect(trainingOutputR2Prefix("trades-hall", "north-gallery", "xgrids")).toBe(
+      "r2:venviewer-training-outputs/trades-hall/rooms/north-gallery/xgrids/",
+    );
+    expect(trainingOutputR2Prefix("trades-hall", "south-gallery", "runpod")).toBe(
+      "r2:venviewer-training-outputs/trades-hall/rooms/south-gallery/runpod/",
+    );
+  });
+
+  it("rejects unsupported Trades Hall room slugs in registration contracts", () => {
+    expect(isTradesHallRuntimeRoomSlug("made-up-room")).toBe(false);
+    expect(RegisterAssetVersionInputSchema.safeParse({
+      ...validVersionInput,
+      roomSlug: "made-up-room",
+    }).success).toBe(false);
+    expect(RegisterAssetVersionInputSchema.safeParse({
+      ...validVersionInput,
+      venueSlug: "other-venue",
+      roomSlug: "made-up-room",
+    }).success).toBe(true);
+  });
+});
 
 describe("runtime file extension helpers", () => {
   it("returns the extension for supported runtime asset files", () => {
@@ -255,6 +334,29 @@ describe("response schemas", () => {
       venue: "trades-hall",
       room: "grand-hall",
     }).room).toBe("grand-hall");
+  });
+
+  it("keeps public room runtime visual payloads client-safe and internally opaque", () => {
+    const parsed = PublicRoomRuntimeVisualSchema.parse({
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      runtimeVisualAvailable: true,
+      visualUrl: "https://assets.example/rooms/grand-hall/scene.ply",
+      visualLabel: "Runtime visual preview",
+      safeCopy: "Runtime visual available for planning preview. Final details confirmed by venue team.",
+      humanReviewRequired: true,
+    });
+
+    expect(parsed.humanReviewRequired).toBe(true);
+    expect(PublicRoomRuntimeVisualSchema.safeParse({
+      ...parsed,
+      id: "runtime-package-1",
+      r2Key: "venues/trades-hall/rooms/grand-hall/runtime/scene.ply",
+    }).success).toBe(false);
+    expect(PublicRoomRuntimeVisualSchema.safeParse({
+      ...parsed,
+      runtimeVisualAvailable: false,
+    }).success).toBe(false);
   });
 
   it("pins semantic/collision ids in the manifest when present", () => {

@@ -5,6 +5,7 @@ import {
   AssetVersionSchema,
   CaptureSessionSchema,
   LatestRuntimePackageQuerySchema,
+  PublicRoomRuntimeVisualSchema,
   RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
@@ -19,6 +20,7 @@ import {
   splatExtensionForKey,
   type AssetVersion,
   type CaptureSession,
+  type PublicRoomRuntimeVisual,
   type RegisterRuntimePackageInput,
   type RoomManifest,
   type RoomAssetStatus,
@@ -41,6 +43,7 @@ import { authenticate, authorize } from "../middleware/auth.js";
 // Public:
 //   GET /assets
 //   GET /assets/runtime-packages/latest?venue=trades-hall&room=grand-hall
+//   GET /assets/runtime-packages/public-room-visual?venue=trades-hall&room=grand-hall
 //
 // Admin:
 //   POST /admin/assets/capture-session
@@ -183,6 +186,49 @@ function serializeRuntimePackage(
   });
 }
 
+function unavailablePublicRoomRuntimeVisual(venueSlug: string, roomSlug: string): PublicRoomRuntimeVisual {
+  return PublicRoomRuntimeVisualSchema.parse({
+    venueSlug,
+    roomSlug,
+    runtimeVisualAvailable: false,
+    visualUrl: null,
+    visualLabel: "Visual preview",
+    safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
+    humanReviewRequired: true,
+  });
+}
+
+function availablePublicRoomRuntimeVisual(
+  venueSlug: string,
+  roomSlug: string,
+  visualUrl: string,
+): PublicRoomRuntimeVisual {
+  return PublicRoomRuntimeVisualSchema.parse({
+    venueSlug,
+    roomSlug,
+    runtimeVisualAvailable: true,
+    visualUrl,
+    visualLabel: "Runtime visual preview",
+    safeCopy: "Runtime visual available for planning preview. Final details are confirmed by the venue team.",
+    humanReviewRequired: true,
+  });
+}
+
+function isClientSafeVisualUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    return !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolvePublicRoomVisualUrl(row: AssetVersionRow): string | null {
+  if (row.externalUrl === null) return null;
+  return isClientSafeVisualUrl(row.externalUrl) ? row.externalUrl : null;
+}
+
 async function findAssetVersion(db: Database, id: string | null | undefined): Promise<AssetVersionRow | null> {
   if (id === null || id === undefined) return null;
   const [row] = await db
@@ -242,6 +288,41 @@ function latestPackageByRoom(rows: readonly RuntimePackageRow[]): Map<string, Ru
   return byRoom;
 }
 
+function roomSplatStatus(defaultCopy: string, splatExists: boolean): string {
+  return splatExists ? "registered splat asset" : defaultCopy;
+}
+
+function runtimePackageStatusCopy(pkg: RuntimePackageRow | undefined): string {
+  if (pkg === undefined) return "no runtime package registered";
+  switch (pkg.runtimeStatus) {
+    case "draft":
+      return "runtime package draft";
+    case "internal_ready":
+      return "runtime package internal ready";
+    case "published":
+      return "runtime package published";
+    case "archived":
+      return "runtime package archived";
+  }
+  return "runtime package status unavailable";
+}
+
+function runtimePackageSafeCopy(defaultCopy: string, pkg: RuntimePackageRow | undefined): string {
+  if (pkg === undefined) return defaultCopy;
+  if (!runtimePackageCanLoad(pkg)) return "Runtime package registered, not ready to load";
+  switch (pkg.evidenceStatus) {
+    case "unverified":
+      return "Runtime asset loaded, not yet verified/signed";
+    case "machine_checked":
+      return "Runtime asset loaded, machine checked; human review required";
+    case "human_reviewed":
+      return "Runtime asset loaded, human reviewed";
+    case "rejected":
+      return "Runtime asset rejected in review - not loaded";
+  }
+  return "Runtime package registered, human review required";
+}
+
 function roomStatusNextAction(defaultAction: string, splatExists: boolean, pkg: RuntimePackageRow | undefined): string {
   if (!splatExists) return defaultAction;
   if (pkg === undefined) return "Register a runtime package for this room";
@@ -270,13 +351,22 @@ function buildRoomAssetStatuses(
       venueSlug,
       roomSlug: room.slug,
       displayName: manifest?.displayName ?? room.displayName,
+      roomGroup: room.roomGroup,
+      defaultStatus: room.defaultStatus,
+      captureStatus: room.captureStatus,
+      registryRuntimeStatus: room.registryRuntimeStatus,
+      publicShowcaseEnabled: room.publicShowcaseEnabled,
+      internalVisualEnabled: room.internalVisualEnabled,
       primaryCaptureSource: manifest?.primaryCaptureSource ?? room.primaryCaptureSource,
       currentState: room.currentState,
+      splatStatus: roomSplatStatus(room.safeCopy, splatExists),
       splatExists,
+      runtimePackageStatus: runtimePackageStatusCopy(pkg),
       runtimePackageExists: pkg !== undefined,
       evidenceStatus: pkg?.evidenceStatus ?? null,
       runtimeStatus: pkg?.runtimeStatus ?? null,
       nextAction: roomStatusNextAction(room.nextAction, splatExists, pkg),
+      safeCopy: runtimePackageSafeCopy(room.safeCopy, pkg),
     });
   });
 }
@@ -328,6 +418,54 @@ export async function assetRoutes(
         roomSlug: parsedQuery.data.room,
       }, "runtime package registry lookup unavailable; returning empty runtime package state");
       return { data: null };
+    }
+  });
+
+  server.get("/runtime-packages/public-room-visual", async (request, reply) => {
+    const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return validationError(reply, parsedQuery.error.issues);
+    }
+
+    const unavailable = unavailablePublicRoomRuntimeVisual(parsedQuery.data.venue, parsedQuery.data.room);
+
+    try {
+      const [row] = await db
+        .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
+        .from(runtimePackages)
+        .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
+        .where(and(
+          eq(runtimePackages.venueSlug, parsedQuery.data.venue),
+          eq(runtimePackages.roomSlug, parsedQuery.data.room),
+          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
+          eq(assetVersions.runtimeStatus, "usable"),
+        ))
+        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
+        .limit(1);
+
+      if (
+        row === undefined ||
+        !runtimePackageCanLoad(row.pkg) ||
+        !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
+      ) {
+        return { data: unavailable };
+      }
+
+      const visualUrl = resolvePublicRoomVisualUrl(row.primaryVisualAssetVersion);
+      if (visualUrl === null) {
+        return { data: unavailable };
+      }
+
+      return {
+        data: availablePublicRoomRuntimeVisual(parsedQuery.data.venue, parsedQuery.data.room, visualUrl),
+      };
+    } catch (error: unknown) {
+      request.log.warn({
+        err: error,
+        venueSlug: parsedQuery.data.venue,
+        roomSlug: parsedQuery.data.room,
+      }, "public room runtime visual lookup unavailable; returning safe fallback state");
+      return { data: unavailable };
     }
   });
 }

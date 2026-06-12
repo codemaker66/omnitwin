@@ -8,6 +8,9 @@ import type { FastifyInstance } from "fastify";
 // Mock env vars before importing buildServer
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
+delete process.env["SENTRY_DSN"];
+delete process.env["SENTRY_ENVIRONMENT"];
+delete process.env["METRICS_TOKEN"];
 
 const { buildServer } = await import("../index.js");
 
@@ -85,5 +88,35 @@ describe("GET /health/ready (K8s readiness alias)", () => {
     const body = JSON.parse(response.body) as { status: string; code: string };
     expect(body.status).toBe("degraded");
     expect(body.code).toBe("DB_UNREACHABLE");
+  });
+});
+
+describe("GET /health/observability", () => {
+  it("reports missing optional observability env without exposing secrets", async () => {
+    const response = await server.inject({ method: "GET", url: "/health/observability" });
+    expect(response.statusCode).toBe(200);
+
+    const body = JSON.parse(response.body) as {
+      status: string;
+      sentry: { configured: boolean; status: string; environment: string; tracesSampleRate: number };
+      metrics: { configured: boolean; status: string; endpoint: string };
+      uptime: { status: string; probes: readonly string[] };
+    };
+
+    expect(body.status).toBe("ok");
+    expect(body.sentry).toEqual({
+      configured: false,
+      status: "missing_env",
+      environment: "test",
+      tracesSampleRate: 0.1,
+    });
+    expect(body.metrics).toEqual({
+      configured: false,
+      status: "missing_env",
+      endpoint: "/metrics",
+    });
+    expect(body.uptime.probes).toContain("/health/ready");
+    expect(response.body).not.toContain("dsn");
+    expect(response.body).not.toContain("token");
   });
 });
