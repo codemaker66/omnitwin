@@ -654,6 +654,24 @@ function VenueOverlayLegend({
   );
 }
 
+function ReplayStatusStrip({
+  replay,
+  replayStatus,
+}: {
+  readonly replay: GuestFlowReplayArtifact;
+  readonly replayStatus: ReplayStatus;
+}): ReactElement {
+  return (
+    <section className="visual-replay-strip" aria-label="Guest flow replay status">
+      <span>Simulated guest flow</span>
+      <strong>{replayStatusLabel(replayStatus)}</strong>
+      <span>Planning evidence</span>
+      <span>Human review required</span>
+      <span>{replay.metrics.routeConflictCount} conflict marker(s) - simulated</span>
+    </section>
+  );
+}
+
 function ViewTool({ activeMode }: { readonly activeMode: VisualCommandMode }): ReactElement {
   return (
     <div className="visual-view-tool" aria-label="View shortcuts">
@@ -1279,6 +1297,7 @@ export function TradesHallVisualPage(): ReactElement {
           onSelectPhase={setSelectedPhaseId}
           loadStatus={phaseGraphStatus}
         />
+        <ReplayStatusStrip replay={guestFlowReplay} replayStatus={replayStatus} />
         <VisualInsightCards activeOverlay={activeOverlay} onInsightSelect={handleInsightSelect} />
       </footer>
     </main>

@@ -588,6 +588,34 @@
   accent-color: var(--cyan);
 }
 
+.visual-replay-strip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 9px 11px;
+  border: 1px solid rgba(107, 217, 232, 0.22);
+  border-radius: 8px;
+  background: rgba(10, 18, 22, 0.78);
+  color: #cfc4b5;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.visual-replay-strip strong {
+  color: #f5e3bd;
+  font-size: 12px;
+}
+
+.visual-replay-strip span {
+  white-space: nowrap;
+}
+
+.visual-replay-strip span:first-child {
+  color: #8fe7f1;
+  font-weight: 800;
+}
+
 .visual-view-tool {
   position: absolute;
   left: 24px;
@@ -1095,6 +1123,11 @@
     grid-column: 2;
     grid-template-columns: 1fr;
     overflow-y: auto;
+  }
+
+  .visual-replay-strip {
+    display: flex;
+    overflow-x: auto;
   }
 
   .visual-insight-grid {

@@ -407,7 +407,7 @@ describe("TradesHallVisualPage", () => {
   it("renders worker/fallback replay status and lets operators scrub playback", async () => {
     mount();
     await waitFor(() => {
-      expect(screen.getByText(/Deterministic fallback replay|Worker replay generated/i)).toBeTruthy();
+      expect(screen.getAllByText(/Deterministic fallback replay|Worker replay generated/i).length).toBeGreaterThan(0);
     });
 
     const slider = screen.getByLabelText("Replay progress");
