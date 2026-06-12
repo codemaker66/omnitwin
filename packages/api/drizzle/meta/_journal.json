@@ -225,6 +225,20 @@
       "when": 1781161200000,
       "tag": "0033_integration_layer",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781164800000,
+      "tag": "0034_commercial_spine",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781168400000,
+      "tag": "0035_guest_flow_navmesh_upgrade",
+      "breakpoints": true
     }
   ]
 }

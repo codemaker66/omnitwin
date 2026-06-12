@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EventPhaseIdSchema } from "./event-phase-graph.js";
-import { sha256Hex, stableCanonicalJson } from "./canonical-layout-snapshot.js";
+import { CanonicalJsonValueSchema, sha256Hex, stableCanonicalJson } from "./canonical-layout-snapshot.js";
 import { CrowdAgentProfileTypeSchema, CrowdFlowScenarioTypeSchema, CrowdSimulatorSourceNameSchema } from "./crowd-simulation-replay.js";
 
 // ---------------------------------------------------------------------------
@@ -168,6 +168,104 @@ export const StaffLaneSchema = z.object({
 }).strict();
 export type StaffLane = z.infer<typeof StaffLaneSchema>;
 
+export const NavmeshVersionIdSchema = UUID;
+export type NavmeshVersionId = z.infer<typeof NavmeshVersionIdSchema>;
+
+export const GuestFlowScenarioIdSchema = UUID;
+export type GuestFlowScenarioId = z.infer<typeof GuestFlowScenarioIdSchema>;
+
+export const GuestFlowScenarioSchema = z.object({
+  id: GuestFlowScenarioIdSchema,
+  eventId: UUID.nullable(),
+  phaseId: EventPhaseIdSchema.nullable(),
+  configurationId: UUID.nullable(),
+  name: z.string().trim().min(1).max(180),
+  scenarioType: CrowdFlowScenarioTypeSchema,
+  status: z.enum(["draft", "ready", "archived"]).default("draft"),
+  seed: z.number().int().nonnegative(),
+  assumptions: z.array(GuestFlowAssumptionSchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export type GuestFlowScenario = z.infer<typeof GuestFlowScenarioSchema>;
+
+export const GuestFlowBlockedZoneSchema = GuestFlowObstacleSchema.extend({
+  reason: z.string().trim().min(1).max(160).default("blocked zone"),
+}).strict();
+export type GuestFlowBlockedZone = z.infer<typeof GuestFlowBlockedZoneSchema>;
+
+export const GuestFlowNavmeshInputSchema = z.object({
+  roomPolygon: GuestFlowPolygonSchema,
+  obstacles: z.array(GuestFlowObstacleSchema).default([]),
+  blockedZones: z.array(GuestFlowBlockedZoneSchema).default([]),
+  agentRadiusM: z.number().finite().positive().default(0.35),
+  cellSizeM: z.number().finite().positive().default(1.25),
+}).strict();
+export type GuestFlowNavmeshInput = z.infer<typeof GuestFlowNavmeshInputSchema>;
+
+export const GuestFlowNavmeshCellSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  centre: GuestFlowPointSchema,
+  polygon: GuestFlowPolygonSchema,
+  row: z.number().int().nonnegative(),
+  col: z.number().int().nonnegative(),
+  neighbours: z.array(z.string().trim().min(1).max(80)),
+  blockedBy: z.array(z.string().trim().min(1).max(120)),
+}).strict();
+export type GuestFlowNavmeshCell = z.infer<typeof GuestFlowNavmeshCellSchema>;
+
+export const GuestFlowNavmeshEdgeSchema = z.object({
+  from: z.string().trim().min(1).max(80),
+  to: z.string().trim().min(1).max(80),
+  cost: z.number().finite().positive(),
+}).strict();
+export type GuestFlowNavmeshEdge = z.infer<typeof GuestFlowNavmeshEdgeSchema>;
+
+export const GuestFlowNavmeshTriangleSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  cellId: z.string().trim().min(1).max(80),
+  points: z.tuple([GuestFlowPointSchema, GuestFlowPointSchema, GuestFlowPointSchema]),
+}).strict();
+export type GuestFlowNavmeshTriangle = z.infer<typeof GuestFlowNavmeshTriangleSchema>;
+
+export const GuestFlowNavmeshArtifactSchema = z.object({
+  schemaVersion: z.literal("venviewer.guest-flow-navmesh.v0"),
+  navmeshHash: z.string().regex(SHA256_HEX),
+  algorithm: z.literal("grid_navmesh_fallback_v0"),
+  cellSizeM: z.number().finite().positive(),
+  agentRadiusM: z.number().finite().positive(),
+  roomBounds: z.object({
+    minX: z.number().finite(),
+    minY: z.number().finite(),
+    maxX: z.number().finite(),
+    maxY: z.number().finite(),
+  }).strict(),
+  cells: z.array(GuestFlowNavmeshCellSchema),
+  adjacency: z.array(GuestFlowNavmeshEdgeSchema),
+  triangles: z.array(GuestFlowNavmeshTriangleSchema),
+  walkableCellCount: z.number().int().nonnegative(),
+  blockedCellCount: z.number().int().nonnegative(),
+  limitations: z.array(z.string().trim().min(1).max(240)).min(1),
+}).strict();
+export type GuestFlowNavmeshArtifact = z.infer<typeof GuestFlowNavmeshArtifactSchema>;
+
+export const NavmeshVersionSchema = z.object({
+  id: NavmeshVersionIdSchema,
+  eventId: UUID.nullable(),
+  phaseId: EventPhaseIdSchema.nullable(),
+  configurationId: UUID.nullable(),
+  navmeshHash: z.string().regex(SHA256_HEX),
+  algorithm: z.literal("grid_navmesh_fallback_v0"),
+  inputHash: z.string().regex(SHA256_HEX),
+  cellSizeM: z.number().finite().positive(),
+  agentRadiusM: z.number().finite().positive(),
+  walkableCellCount: z.number().int().nonnegative(),
+  blockedCellCount: z.number().int().nonnegative(),
+  limitations: z.array(z.string().trim().min(1).max(240)),
+  createdAt: z.string().datetime(),
+}).strict();
+export type NavmeshVersion = z.infer<typeof NavmeshVersionSchema>;
+
 export const GuestFlowReplayMetricsSchema = z.object({
   agentCount: z.number().int().nonnegative(),
   averageTravelDistanceM: z.number().finite().nonnegative(),
@@ -176,6 +274,8 @@ export const GuestFlowReplayMetricsSchema = z.object({
   bottleneckScore: z.number().min(0).max(1),
   routeConflictCount: z.number().int().nonnegative(),
   densityHotspotCount: z.number().int().nonnegative(),
+  navmeshCellCount: z.number().int().nonnegative().optional(),
+  navmeshWalkableCellCount: z.number().int().nonnegative().optional(),
 }).strict();
 export type GuestFlowReplayMetrics = z.infer<typeof GuestFlowReplayMetricsSchema>;
 
@@ -195,9 +295,95 @@ export const GuestFlowReplayArtifactSchema = z.object({
   routeConflicts: z.array(RouteConflictSchema),
   queueZones: z.array(QueueZoneSchema),
   staffLanes: z.array(StaffLaneSchema),
+  navmesh: GuestFlowNavmeshArtifactSchema,
   metrics: GuestFlowReplayMetricsSchema,
 }).strict();
 export type GuestFlowReplayArtifact = z.infer<typeof GuestFlowReplayArtifactSchema>;
+
+export const CreateGuestFlowReplayScenarioSchema = z.object({
+  name: z.string().trim().min(1).max(180),
+  eventId: UUID.nullable().optional(),
+  phaseId: EventPhaseIdSchema.nullable().optional(),
+  configurationId: UUID.nullable().optional(),
+  input: GuestFlowReplayInputSchema,
+}).strict();
+export type CreateGuestFlowReplayScenario = z.infer<typeof CreateGuestFlowReplayScenarioSchema>;
+
+export const StoredGuestFlowScenarioSchema = z.object({
+  id: GuestFlowScenarioIdSchema,
+  eventId: UUID.nullable(),
+  phaseId: EventPhaseIdSchema.nullable(),
+  configurationId: UUID.nullable(),
+  name: z.string().trim().min(1).max(180),
+  scenarioType: CrowdFlowScenarioTypeSchema,
+  status: z.enum(["draft", "ready", "archived"]),
+  seed: z.number().int().nonnegative(),
+  assumptions: z.array(GuestFlowAssumptionSchema),
+  inputPayload: GuestFlowReplayInputSchema,
+  createdBy: UUID.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+export type StoredGuestFlowScenario = z.infer<typeof StoredGuestFlowScenarioSchema>;
+
+export const StoredNavmeshVersionSchema = z.object({
+  id: NavmeshVersionIdSchema,
+  eventId: UUID.nullable(),
+  phaseId: EventPhaseIdSchema.nullable(),
+  configurationId: UUID.nullable(),
+  scenarioId: GuestFlowScenarioIdSchema.nullable(),
+  navmeshHash: z.string().regex(SHA256_HEX),
+  inputHash: z.string().regex(SHA256_HEX),
+  algorithm: z.literal("grid_navmesh_fallback_v0"),
+  cellSizeM: z.number().finite().positive(),
+  agentRadiusM: z.number().finite().positive(),
+  walkableCellCount: z.number().int().nonnegative(),
+  blockedCellCount: z.number().int().nonnegative(),
+  payload: GuestFlowNavmeshArtifactSchema,
+  limitations: z.array(z.string().trim().min(1).max(240)).min(1),
+  createdBy: UUID.nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+export type StoredNavmeshVersion = z.infer<typeof StoredNavmeshVersionSchema>;
+
+export const StoredGuestFlowReplaySchema = z.object({
+  id: GuestFlowReplayIdSchema,
+  scenarioId: GuestFlowScenarioIdSchema.nullable(),
+  navmeshVersionId: NavmeshVersionIdSchema.nullable(),
+  eventId: UUID.nullable(),
+  phaseId: EventPhaseIdSchema.nullable(),
+  configurationId: UUID.nullable(),
+  scenarioType: CrowdFlowScenarioTypeSchema,
+  status: z.literal("simulated_planning_support"),
+  simulatorSource: CrowdSimulatorSourceNameSchema,
+  seed: z.number().int().nonnegative(),
+  inputHash: z.string().regex(SHA256_HEX),
+  artifactHash: z.string().regex(SHA256_HEX),
+  snapshotHash: z.string().regex(SHA256_HEX).nullable(),
+  assumptions: z.array(GuestFlowAssumptionSchema),
+  inputPayload: GuestFlowReplayInputSchema,
+  metrics: GuestFlowReplayMetricsSchema,
+  disclosureLabel: z.literal("Simulated guest flow - planning support"),
+  createdBy: UUID.nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+export type StoredGuestFlowReplay = z.infer<typeof StoredGuestFlowReplaySchema>;
+
+export const GuestFlowReplayPersistenceResultSchema = z.object({
+  created: z.boolean(),
+  scenario: StoredGuestFlowScenarioSchema.nullable(),
+  navmeshVersion: StoredNavmeshVersionSchema,
+  replay: StoredGuestFlowReplaySchema,
+  artifact: GuestFlowReplayArtifactSchema,
+}).strict();
+export type GuestFlowReplayPersistenceResult = z.infer<typeof GuestFlowReplayPersistenceResultSchema>;
+
+export const GuestFlowLatestReplayQuerySchema = z.object({
+  eventId: UUID.optional(),
+  phaseId: EventPhaseIdSchema.optional(),
+  configurationId: UUID.optional(),
+}).strict();
+export type GuestFlowLatestReplayQuery = z.infer<typeof GuestFlowLatestReplayQuerySchema>;
 
 interface Bounds {
   readonly minX: number;
@@ -246,6 +432,268 @@ function avoidanceWaypoint(obstacle: GuestFlowObstacle, room: Bounds, start: Gue
   const above = { x: (box.minX + box.maxX) / 2, y: Math.min(room.maxY - 0.5, box.maxY + 0.8) };
   const below = { x: (box.minX + box.maxX) / 2, y: Math.max(room.minY + 0.5, box.minY - 0.8) };
   return distance(start, above) + distance(above, end) <= distance(start, below) + distance(below, end) ? above : below;
+}
+
+function pointInPolygon(point: GuestFlowPoint, polygon: readonly GuestFlowPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const current = polygon[i];
+    const previous = polygon[j];
+    if (current === undefined || previous === undefined) continue;
+    const crosses = (current.y > point.y) !== (previous.y > point.y);
+    if (!crosses) continue;
+    const xAtY = ((previous.x - current.x) * (point.y - current.y)) / ((previous.y - current.y) || Number.EPSILON) + current.x;
+    if (point.x < xAtY) inside = !inside;
+  }
+  return inside;
+}
+
+function bufferedBounds(points: readonly GuestFlowPoint[], bufferM: number): Bounds {
+  const box = boundsFor(points);
+  return {
+    minX: box.minX - bufferM,
+    minY: box.minY - bufferM,
+    maxX: box.maxX + bufferM,
+    maxY: box.maxY + bufferM,
+  };
+}
+
+function pointInBounds(point: GuestFlowPoint, box: Bounds): boolean {
+  return point.x >= box.minX && point.x <= box.maxX && point.y >= box.minY && point.y <= box.maxY;
+}
+
+function cellKey(row: number, col: number): string {
+  return `cell-${String(row)}-${String(col)}`;
+}
+
+function cellPolygon(centre: GuestFlowPoint, size: number): GuestFlowPolygon {
+  const half = size / 2;
+  return [
+    { x: Number((centre.x - half).toFixed(3)), y: Number((centre.y - half).toFixed(3)) },
+    { x: Number((centre.x + half).toFixed(3)), y: Number((centre.y - half).toFixed(3)) },
+    { x: Number((centre.x + half).toFixed(3)), y: Number((centre.y + half).toFixed(3)) },
+    { x: Number((centre.x - half).toFixed(3)), y: Number((centre.y + half).toFixed(3)) },
+  ];
+}
+
+function cellTriangles(cell: GuestFlowNavmeshCell): readonly GuestFlowNavmeshTriangle[] {
+  const [a, b, c, d] = cell.polygon;
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return [];
+  return [
+    GuestFlowNavmeshTriangleSchema.parse({ id: `${cell.id}-tri-a`, cellId: cell.id, points: [a, b, c] }),
+    GuestFlowNavmeshTriangleSchema.parse({ id: `${cell.id}-tri-b`, cellId: cell.id, points: [a, c, d] }),
+  ];
+}
+
+export function buildGuestFlowNavmeshV0(input: GuestFlowNavmeshInput): GuestFlowNavmeshArtifact {
+  const parsed = GuestFlowNavmeshInputSchema.parse(input);
+  const roomBounds = boundsFor(parsed.roomPolygon);
+  const rows = Math.max(1, Math.ceil((roomBounds.maxY - roomBounds.minY) / parsed.cellSizeM));
+  const cols = Math.max(1, Math.ceil((roomBounds.maxX - roomBounds.minX) / parsed.cellSizeM));
+  const blockers = [
+    ...parsed.obstacles.map((obstacle) => ({
+      id: obstacle.id,
+      box: bufferedBounds(obstacle.polygon, parsed.agentRadiusM),
+    })),
+    ...parsed.blockedZones.map((zone) => ({
+      id: zone.id,
+      box: bufferedBounds(zone.polygon, parsed.agentRadiusM),
+    })),
+  ];
+  const cells: GuestFlowNavmeshCell[] = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const centre = {
+        x: Number((roomBounds.minX + (col + 0.5) * parsed.cellSizeM).toFixed(3)),
+        y: Number((roomBounds.minY + (row + 0.5) * parsed.cellSizeM).toFixed(3)),
+      };
+      const insideRoom = pointInPolygon(centre, parsed.roomPolygon);
+      const blockedBy = insideRoom
+        ? blockers.filter((blocker) => pointInBounds(centre, blocker.box)).map((blocker) => blocker.id)
+        : ["outside_room_polygon"];
+      cells.push(GuestFlowNavmeshCellSchema.parse({
+        id: cellKey(row, col),
+        centre,
+        polygon: cellPolygon(centre, parsed.cellSizeM),
+        row,
+        col,
+        neighbours: [],
+        blockedBy,
+      }));
+    }
+  }
+
+  const byRowCol = new Map(cells.map((cell) => [`${String(cell.row)}:${String(cell.col)}`, cell]));
+  const walkableCells = cells.filter((cell) => cell.blockedBy.length === 0);
+  const walkableIds = new Set(walkableCells.map((cell) => cell.id));
+  const adjacency: GuestFlowNavmeshEdge[] = [];
+  const neighbourOffsets = [
+    { row: -1, col: 0, cost: parsed.cellSizeM },
+    { row: 1, col: 0, cost: parsed.cellSizeM },
+    { row: 0, col: -1, cost: parsed.cellSizeM },
+    { row: 0, col: 1, cost: parsed.cellSizeM },
+    { row: -1, col: -1, cost: parsed.cellSizeM * Math.SQRT2 },
+    { row: -1, col: 1, cost: parsed.cellSizeM * Math.SQRT2 },
+    { row: 1, col: -1, cost: parsed.cellSizeM * Math.SQRT2 },
+    { row: 1, col: 1, cost: parsed.cellSizeM * Math.SQRT2 },
+  ] as const;
+
+  const cellsWithNeighbours = cells.map((cell) => {
+    if (!walkableIds.has(cell.id)) return cell;
+    const neighbours = neighbourOffsets.flatMap((offset) => {
+      const candidate = byRowCol.get(`${String(cell.row + offset.row)}:${String(cell.col + offset.col)}`);
+      if (candidate === undefined || !walkableIds.has(candidate.id)) return [];
+      adjacency.push(GuestFlowNavmeshEdgeSchema.parse({
+        from: cell.id,
+        to: candidate.id,
+        cost: Number(offset.cost.toFixed(3)),
+      }));
+      return [candidate.id];
+    });
+    return GuestFlowNavmeshCellSchema.parse({ ...cell, neighbours });
+  });
+
+  const triangles = cellsWithNeighbours
+    .filter((cell) => cell.blockedBy.length === 0)
+    .flatMap((cell) => cellTriangles(cell));
+  const artifactWithoutHash = {
+    schemaVersion: "venviewer.guest-flow-navmesh.v0",
+    algorithm: "grid_navmesh_fallback_v0",
+    cellSizeM: parsed.cellSizeM,
+    agentRadiusM: parsed.agentRadiusM,
+    roomBounds,
+    cells: cellsWithNeighbours,
+    adjacency,
+    triangles,
+    walkableCellCount: walkableCells.length,
+    blockedCellCount: cells.length - walkableCells.length,
+    limitations: [
+      "V0 uses a deterministic square navcell approximation, not full constructive polygon clipping.",
+      "Object buffers use axis-aligned footprint bounds; curved and rotated silhouettes are approximated.",
+      "A* routes and string-pulling are planning evidence only and require human review.",
+    ],
+  } as const;
+
+  return GuestFlowNavmeshArtifactSchema.parse({
+    ...artifactWithoutHash,
+    navmeshHash: sha256Hex(stableCanonicalJson(CanonicalJsonValueSchema.parse(artifactWithoutHash))),
+  });
+}
+
+function nearestWalkableCell(navmesh: GuestFlowNavmeshArtifact, point: GuestFlowPoint): GuestFlowNavmeshCell | null {
+  let nearest: GuestFlowNavmeshCell | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const cell of navmesh.cells) {
+    if (cell.blockedBy.length > 0) continue;
+    const candidateDistance = distance(point, cell.centre);
+    if (candidateDistance < bestDistance) {
+      bestDistance = candidateDistance;
+      nearest = cell;
+    }
+  }
+  return nearest;
+}
+
+function reconstructCellPath(cameFrom: ReadonlyMap<string, string>, currentId: string): readonly string[] {
+  const total = [currentId];
+  let cursor = currentId;
+  while (cameFrom.has(cursor)) {
+    const previous = cameFrom.get(cursor);
+    if (previous === undefined) break;
+    total.unshift(previous);
+    cursor = previous;
+  }
+  return total;
+}
+
+function routeCellIds(navmesh: GuestFlowNavmeshArtifact, start: GuestFlowPoint, end: GuestFlowPoint): readonly string[] {
+  const startCell = nearestWalkableCell(navmesh, start);
+  const endCell = nearestWalkableCell(navmesh, end);
+  if (startCell === null || endCell === null) return [];
+  if (startCell.id === endCell.id) return [startCell.id];
+
+  const cellsById = new Map(navmesh.cells.map((cell) => [cell.id, cell]));
+  const open = new Set<string>([startCell.id]);
+  const cameFrom = new Map<string, string>();
+  const gScore = new Map<string, number>([[startCell.id, 0]]);
+  const fScore = new Map<string, number>([[startCell.id, distance(startCell.centre, endCell.centre)]]);
+
+  while (open.size > 0) {
+    const currentId = Array.from(open).sort((a, b) => {
+      const delta = (fScore.get(a) ?? Number.POSITIVE_INFINITY) - (fScore.get(b) ?? Number.POSITIVE_INFINITY);
+      return delta !== 0 ? delta : a.localeCompare(b);
+    })[0];
+    if (currentId === undefined) break;
+    if (currentId === endCell.id) return reconstructCellPath(cameFrom, currentId);
+    open.delete(currentId);
+    const currentCell = cellsById.get(currentId);
+    if (currentCell === undefined) continue;
+    for (const neighbourId of currentCell.neighbours) {
+      const neighbour = cellsById.get(neighbourId);
+      if (neighbour === undefined) continue;
+      const tentative = (gScore.get(currentId) ?? Number.POSITIVE_INFINITY) + distance(currentCell.centre, neighbour.centre);
+      if (tentative >= (gScore.get(neighbourId) ?? Number.POSITIVE_INFINITY)) continue;
+      cameFrom.set(neighbourId, currentId);
+      gScore.set(neighbourId, tentative);
+      fScore.set(neighbourId, tentative + distance(neighbour.centre, endCell.centre));
+      open.add(neighbourId);
+    }
+  }
+  return [];
+}
+
+function pointFallsInWalkableCell(navmesh: GuestFlowNavmeshArtifact, point: GuestFlowPoint): boolean {
+  return navmesh.cells.some((cell) => cell.blockedBy.length === 0 && pointInBounds(point, boundsFor(cell.polygon)));
+}
+
+function segmentStaysInWalkableCells(navmesh: GuestFlowNavmeshArtifact, start: GuestFlowPoint, end: GuestFlowPoint): boolean {
+  const samples = Math.max(2, Math.ceil(distance(start, end) / Math.max(0.25, navmesh.cellSizeM / 2)));
+  for (let i = 0; i <= samples; i += 1) {
+    if (!pointFallsInWalkableCell(navmesh, interpolate(start, end, i / samples))) return false;
+  }
+  return true;
+}
+
+function smoothRoute(navmesh: GuestFlowNavmeshArtifact, route: readonly GuestFlowPoint[]): readonly GuestFlowPoint[] {
+  if (route.length <= 3) return route;
+  const smoothed: GuestFlowPoint[] = [];
+  let anchorIndex = 0;
+  smoothed.push(route[0] ?? { x: 0, y: 0 });
+  while (anchorIndex < route.length - 1) {
+    let nextIndex = route.length - 1;
+    const anchor = route[anchorIndex];
+    if (anchor === undefined) break;
+    while (nextIndex > anchorIndex + 1) {
+      const candidate = route[nextIndex];
+      if (candidate !== undefined && segmentStaysInWalkableCells(navmesh, anchor, candidate)) break;
+      nextIndex -= 1;
+    }
+    const next = route[nextIndex];
+    if (next === undefined) break;
+    smoothed.push(next);
+    anchorIndex = nextIndex;
+  }
+  return smoothed;
+}
+
+export function findGuestFlowRouteV0(
+  navmesh: GuestFlowNavmeshArtifact,
+  start: GuestFlowPoint,
+  end: GuestFlowPoint,
+): readonly GuestFlowPoint[] {
+  const cellsById = new Map(navmesh.cells.map((cell) => [cell.id, cell]));
+  const ids = routeCellIds(navmesh, start, end);
+  if (ids.length === 0) return [start, end];
+  const route = [
+    start,
+    ...ids.flatMap((id) => {
+      const cell = cellsById.get(id);
+      return cell === undefined ? [] : [cell.centre];
+    }),
+    end,
+  ];
+  return smoothRoute(navmesh, route);
 }
 
 function weightedDestination(destinations: readonly GuestFlowDestination[], random: () => number): GuestFlowDestination {
@@ -304,7 +752,7 @@ function buildDensity(trajectories: readonly AgentTrajectory[], cellSizeM: numbe
     for (const point of trajectory.points) {
       const cellX = Math.floor(point.x / cellSizeM) * cellSizeM;
       const cellY = Math.floor(point.y / cellSizeM) * cellSizeM;
-      const key = `${cellX}:${cellY}`;
+      const key = `${String(cellX)}:${String(cellY)}`;
       const existing = counts.get(key);
       counts.set(key, {
         x: cellX + cellSizeM / 2,
@@ -364,6 +812,48 @@ function detectRouteCrossings(trajectories: readonly AgentTrajectory[]): readonl
   return conflicts;
 }
 
+function distanceToSegment(point: GuestFlowPoint, start: GuestFlowPoint, end: GuestFlowPoint): number {
+  const lengthSquared = ((end.x - start.x) ** 2) + ((end.y - start.y) ** 2);
+  if (lengthSquared === 0) return distance(point, start);
+  const t = Math.max(0, Math.min(1, (((point.x - start.x) * (end.x - start.x)) + ((point.y - start.y) * (end.y - start.y))) / lengthSquared));
+  return distance(point, {
+    x: start.x + t * (end.x - start.x),
+    y: start.y + t * (end.y - start.y),
+  });
+}
+
+function detectStaffLaneOverlaps(
+  trajectories: readonly AgentTrajectory[],
+  lanes: readonly StaffLane[],
+): readonly RouteConflict[] {
+  const conflicts: RouteConflict[] = [];
+  for (const lane of lanes) {
+    for (const trajectory of trajectories.slice(0, 60)) {
+      const closePoint = trajectory.points.find((point) => {
+        for (let i = 1; i < lane.line.length; i += 1) {
+          const previous = lane.line[i - 1];
+          const current = lane.line[i];
+          if (previous !== undefined && current !== undefined && distanceToSegment(point, previous, current) < 0.55) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (closePoint === undefined) continue;
+      conflicts.push(RouteConflictSchema.parse({
+        id: `staff-lane-overlap-${String(conflicts.length + 1)}`,
+        conflictType: "staff_lane_overlap",
+        severity: "attention",
+        point: { x: Number(closePoint.x.toFixed(3)), y: Number(closePoint.y.toFixed(3)) },
+        involvedAgentIds: [trajectory.agentId],
+        message: `Simulated guest route overlaps ${lane.label}; review staffing assumptions.`,
+      }));
+      if (conflicts.length >= 4) return conflicts;
+    }
+  }
+  return conflicts;
+}
+
 function buildQueueZones(
   trajectories: readonly AgentTrajectory[],
   destinations: readonly GuestFlowDestination[],
@@ -385,6 +875,13 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
   const parsed = GuestFlowReplayInputSchema.parse(input);
   const random = prng(parsed.seed);
   const roomBounds = boundsFor(parsed.roomPolygon);
+  const navmesh = buildGuestFlowNavmeshV0({
+    roomPolygon: parsed.roomPolygon,
+    obstacles: parsed.obstacles,
+    blockedZones: [],
+    agentRadiusM: 0.35,
+    cellSizeM: 1.25,
+  });
   const trajectories: AgentTrajectory[] = [];
   const obstacleConflicts: RouteConflict[] = [];
   const totalSeconds = Math.max(30, Math.min(600, parsed.phase.durationMinutes * 60));
@@ -394,36 +891,39 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
     if (entrance === undefined) throw new Error("Guest Flow Replay requires at least one entrance.");
     const destination = weightedDestination(parsed.destinations, random);
     const spawn = jitter(entrance.point, random, Math.max(0.2, (entrance.widthM ?? 1) / 2));
-    const path: GuestFlowPoint[] = [spawn];
+    const path: GuestFlowPoint[] = [...findGuestFlowRouteV0(navmesh, spawn, destination.point)];
+    const directFallbackPath: GuestFlowPoint[] = [spawn];
     for (const obstacle of parsed.obstacles) {
       if (obstacleIntersectsSegment(obstacle, spawn, destination.point)) {
-        path.push(avoidanceWaypoint(obstacle, roomBounds, spawn, destination.point));
+        directFallbackPath.push(avoidanceWaypoint(obstacle, roomBounds, spawn, destination.point));
         if (obstacleConflicts.length < 6) {
           obstacleConflicts.push(RouteConflictSchema.parse({
             id: `obstacle-avoidance-${String(obstacleConflicts.length + 1)}`,
             conflictType: "obstacle_avoidance",
             severity: "info",
-            point: path[path.length - 1] ?? destination.point,
+            point: directFallbackPath[directFallbackPath.length - 1] ?? destination.point,
             involvedAgentIds: [`agent-${String(i + 1).padStart(3, "0")}`],
             message: `Simulated path detours around ${obstacle.label}.`,
           }));
         }
       }
     }
-    path.push(destination.point);
+    directFallbackPath.push(destination.point);
+    const routePath = path.length >= 2 ? path : directFallbackPath;
     const speedSeconds = totalSeconds * (0.45 + random() * 0.28);
     trajectories.push(AgentTrajectorySchema.parse({
       agentId: `agent-${String(i + 1).padStart(3, "0")}`,
       profile: "guest",
       spawnId: entrance.id,
       destinationId: destination.id,
-      points: trajectoryPoints(path, speedSeconds),
+      points: trajectoryPoints(routePath, speedSeconds),
     }));
   }
 
   const densityHeatmap = buildDensity(trajectories, 1.5);
   const routeConflicts = [
     ...detectRouteCrossings(trajectories),
+    ...detectStaffLaneOverlaps(trajectories, parsed.staffLanes),
     ...obstacleConflicts,
   ].slice(0, 12);
   const densityHotspots = densityHeatmap.cells.filter((cell) => cell.level === "high");
@@ -470,7 +970,10 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
       bottleneckScore: Number(bottleneckScore.toFixed(3)),
       routeConflictCount: routeConflicts.length,
       densityHotspotCount: densityHotspots.length,
+      navmeshCellCount: navmesh.cells.length,
+      navmeshWalkableCellCount: navmesh.walkableCellCount,
     }),
+    navmesh,
   } as const;
 
   return GuestFlowReplayArtifactSchema.parse({

@@ -51,6 +51,8 @@ import {
   taskAssignments,
   taskCompletionEvents,
   opsStatusUpdates,
+  guestFlowScenarios,
+  navmeshVersions,
   guestFlowReplays,
   agentTrajectories,
   densityHeatmaps,
@@ -322,7 +324,7 @@ describe("table count", () => {
     expect(migration).toContain("asset_versions_storage_ref_required");
   });
 
-  it("exports exactly 68 tables", () => {
+  it("exports exactly 70 core tables", () => {
     const tables = [
       venues, spaces, users, assetDefinitions, configurations,
       placedObjects, enquiries, enquiryStatusHistory, photoReferences,
@@ -337,14 +339,14 @@ describe("table count", () => {
       supplierInstructions, loadInSequences, breakdownSequences,
       roomFlipPlans, beoDocuments, snapshotDiffs, eventDayIssues,
       taskAssignments, taskCompletionEvents, opsStatusUpdates,
-      guestFlowReplays, agentTrajectories, densityHeatmaps,
+      guestFlowScenarios, navmeshVersions, guestFlowReplays, agentTrajectories, densityHeatmaps,
       routeConflicts, queueZones, staffLanes, revenueScenarios,
       pricingAssumptions, comfortConstraints, scenarioComparisons,
       analyticsSnapshots, integrationConnections, webhookEndpoints,
       externalCalendarLinks, websiteEmbedConfigs, emailTemplates,
       integrationEvents,
     ];
-    expect(tables).toHaveLength(68);
+    expect(tables).toHaveLength(70);
   });
 
   it("exports event phase graph foundation tables", () => {
@@ -519,7 +521,22 @@ describe("table count", () => {
   });
 
   it("exports guest flow replay tables", () => {
+    const scenarioCols = getTableColumns(guestFlowScenarios);
+    expect(scenarioCols.eventId).toBeDefined();
+    expect(scenarioCols.phaseId).toBeDefined();
+    expect(scenarioCols.scenarioType).toBeDefined();
+    expect(scenarioCols.seed).toBeDefined();
+    expect(scenarioCols.inputPayload).toBeDefined();
+
+    const navmeshCols = getTableColumns(navmeshVersions);
+    expect(navmeshCols.navmeshHash).toBeDefined();
+    expect(navmeshCols.algorithm).toBeDefined();
+    expect(navmeshCols.payload).toBeDefined();
+    expect(navmeshCols.limitations).toBeDefined();
+
     const replayCols = getTableColumns(guestFlowReplays);
+    expect(replayCols.scenarioId).toBeDefined();
+    expect(replayCols.navmeshVersionId).toBeDefined();
     expect(replayCols.eventId).toBeDefined();
     expect(replayCols.phaseId).toBeDefined();
     expect(replayCols.scenarioType).toBeDefined();
@@ -541,6 +558,7 @@ describe("table count", () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const migration = await fs.readFile(path.resolve("drizzle/0031_guest_flow_replay.sql"), "utf-8");
+    const upgradeMigration = await fs.readFile(path.resolve("drizzle/0035_guest_flow_navmesh_upgrade.sql"), "utf-8");
 
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "guest_flow_replays"');
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "agent_trajectories"');
@@ -550,6 +568,10 @@ describe("table count", () => {
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS "staff_lanes"');
     expect(migration).toContain("simulated_planning_support");
     expect(migration).toContain("guest_flow_replays_hash_shape");
+    expect(upgradeMigration).toContain('CREATE TABLE IF NOT EXISTS "guest_flow_scenarios"');
+    expect(upgradeMigration).toContain('CREATE TABLE IF NOT EXISTS "navmesh_versions"');
+    expect(upgradeMigration).toContain('ADD COLUMN IF NOT EXISTS "navmesh_version_id"');
+    expect(upgradeMigration).toContain("grid_navmesh_fallback_v0");
   });
 
   it("exports revenue analytics tables", () => {

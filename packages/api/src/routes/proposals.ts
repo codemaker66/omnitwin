@@ -1,20 +1,27 @@
+import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import {
+  CreateProposalCommentSchema,
   ProposalVersionPayloadSchema,
   proposalVersionPayloadDigest,
   isProposalEditable,
   ShortCodeSchema,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
+  type ProposalVersionPayload,
   type ProposalStatus,
 } from "@omnitwin/types";
 import {
   proposals,
+  proposalComments,
+  proposalShareTokens,
   proposalVersions,
   proposalStatusHistory,
+  packageSelections,
   enquiries,
   configurations,
+  opportunities,
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -46,6 +53,7 @@ const IdParam = z.object({ id: z.string().uuid() });
 
 const CreateProposalBody = z.object({
   venueId: z.string().uuid(),
+  opportunityId: z.string().uuid().nullable().optional(),
   enquiryId: z.string().uuid().nullable().optional(),
   configurationId: z.string().uuid().nullable().optional(),
   title: z.string().trim().min(1).max(200),
@@ -53,6 +61,7 @@ const CreateProposalBody = z.object({
 
 const UpdateProposalBody = z.object({
   title: z.string().trim().min(1).max(200).optional(),
+  opportunityId: z.string().uuid().nullable().optional(),
   enquiryId: z.string().uuid().nullable().optional(),
   configurationId: z.string().uuid().nullable().optional(),
 });
@@ -79,6 +88,42 @@ type AuthedUser = { id: string; role: string; venueId: string | null };
 function canManageVenueProposals(user: AuthedUser, venueId: string): boolean {
   if (user.role === "admin") return true;
   return user.role === "staff" && user.venueId === venueId;
+}
+
+function hashShareToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+function generateShareToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+async function opportunityBelongsToVenue(db: Database, opportunityId: string, venueId: string): Promise<"ok" | "missing" | "mismatch"> {
+  const [opportunity] = await db.select({ venueId: opportunities.venueId })
+    .from(opportunities)
+    .where(and(eq(opportunities.id, opportunityId), isNull(opportunities.deletedAt)))
+    .limit(1);
+  if (opportunity === undefined) return "missing";
+  return opportunity.venueId === venueId ? "ok" : "mismatch";
+}
+
+async function validateOptionalOpportunity(
+  db: Database,
+  opportunityId: string | null | undefined,
+  venueId: string,
+  reply: { status: (code: number) => { send: (body: unknown) => unknown } },
+): Promise<boolean> {
+  if (opportunityId === undefined || opportunityId === null) return true;
+  const status = await opportunityBelongsToVenue(db, opportunityId, venueId);
+  if (status === "missing") {
+    reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
+    return false;
+  }
+  if (status === "mismatch") {
+    reply.status(422).send({ error: "Opportunity belongs to a different venue", code: "VENUE_MISMATCH" });
+    return false;
+  }
+  return true;
 }
 
 export async function proposalRoutes(
@@ -138,6 +183,9 @@ export async function proposalRoutes(
     }
 
     // Linked records must exist and belong to the same venue.
+    const opportunityOk = await validateOptionalOpportunity(db, parsed.data.opportunityId, parsed.data.venueId, reply);
+    if (!opportunityOk) return;
+
     if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {
       const [enquiry] = await db.select({ venueId: enquiries.venueId })
         .from(enquiries)
@@ -166,6 +214,7 @@ export async function proposalRoutes(
 
     const [proposal] = await db.insert(proposals).values({
       venueId: parsed.data.venueId,
+      opportunityId: parsed.data.opportunityId ?? null,
       enquiryId: parsed.data.enquiryId ?? null,
       configurationId: parsed.data.configurationId ?? null,
       title: parsed.data.title,
@@ -222,6 +271,9 @@ export async function proposalRoutes(
     }
 
     // Linked records must stay venue-coherent.
+    const opportunityOk = await validateOptionalOpportunity(db, parsed.data.opportunityId, proposal.venueId, reply);
+    if (!opportunityOk) return;
+
     if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {
       const [enquiry] = await db.select({ venueId: enquiries.venueId })
         .from(enquiries).where(eq(enquiries.id, parsed.data.enquiryId)).limit(1);
@@ -247,6 +299,7 @@ export async function proposalRoutes(
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.title !== undefined) updateData["title"] = parsed.data.title;
+    if (parsed.data.opportunityId !== undefined) updateData["opportunityId"] = parsed.data.opportunityId;
     if (parsed.data.enquiryId !== undefined) updateData["enquiryId"] = parsed.data.enquiryId;
     if (parsed.data.configurationId !== undefined) updateData["configurationId"] = parsed.data.configurationId;
 
@@ -411,6 +464,97 @@ export async function proposalRoutes(
     return { data: getAvailableProposalTransitions(proposal.status, request.user.role) };
   });
 
+  // POST /proposals/:id/share-token — create a hashed client-share capability
+  server.post("/:id/share-token", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (proposal.currentVersion < 1) {
+      return reply.status(422).send({
+        error: "Create a proposal version before generating a client share link",
+        code: "PROPOSAL_HAS_NO_VERSION",
+      });
+    }
+
+    let token = generateShareToken();
+    let tokenHash = hashShareToken(token);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const [existing] = await db.select({ id: proposalShareTokens.id })
+        .from(proposalShareTokens)
+        .where(eq(proposalShareTokens.tokenHash, tokenHash))
+        .limit(1);
+      if (existing === undefined) break;
+      token = generateShareToken();
+      tokenHash = hashShareToken(token);
+    }
+
+    const now = new Date();
+    const result = await db.transaction(async (tx) => {
+      const [shareToken] = await tx.insert(proposalShareTokens).values({
+        proposalId: proposal.id,
+        tokenHash,
+        tokenPrefix: token.slice(0, 8),
+        createdBy: request.user.id,
+      }).returning();
+      if (shareToken === undefined) throw new Error("proposal share token insert returned no row");
+
+      const updateData: Record<string, unknown> = { updatedAt: now };
+      let toStatus = proposal.status;
+      if (proposal.status === "draft" || proposal.status === "changes_requested") {
+        toStatus = "sent";
+        updateData["status"] = "sent";
+        updateData["sentAt"] = proposal.sentAt ?? now;
+      }
+      if (proposal.shareCode === null) {
+        updateData["shareCode"] = await generateUniqueShortCode(async (candidate) => {
+          const [existing] = await tx.select({ id: proposals.id })
+            .from(proposals)
+            .where(eq(proposals.shareCode, candidate))
+            .limit(1);
+          return existing !== undefined;
+        });
+      }
+
+      const [updated] = await tx.update(proposals)
+        .set(updateData)
+        .where(eq(proposals.id, proposal.id))
+        .returning();
+      if (updated === undefined) throw new Error("proposal update returned no row");
+
+      if (toStatus !== proposal.status) {
+        await tx.insert(proposalStatusHistory).values({
+          proposalId: proposal.id,
+          fromStatus: proposal.status,
+          toStatus,
+          changedBy: request.user.id,
+          note: "Client share link generated",
+        });
+      }
+
+      return { shareToken, proposal: updated };
+    });
+
+    return reply.status(201).send({
+      data: {
+        token,
+        shareUrl: `/proposal-share/${token}`,
+        tokenPrefix: result.shareToken.tokenPrefix,
+        proposal: result.proposal,
+      },
+    });
+  });
+
   // POST /proposals/:id/versions — immutable content snapshot (claim-guarded)
   server.post("/:id/versions", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
@@ -538,6 +682,110 @@ const CLIENT_VISIBLE_STATUSES: readonly string[] = [
 ];
 
 const ShareCodeParam = z.object({ shareCode: ShortCodeSchema });
+const ShareTokenParam = z.object({
+  token: z.string().min(32).max(96).regex(/^[A-Za-z0-9_-]+$/),
+});
+
+type ShareTokenRecord = typeof proposalShareTokens.$inferSelect;
+type ProposalRecord = typeof proposals.$inferSelect;
+
+interface ClientSafeProposalPayload {
+  readonly title: string;
+  readonly status: string;
+  readonly sentAt: Date | null;
+  readonly venueName: string | null;
+  readonly clientMessage: string | null;
+  readonly capacityNote: string | null;
+  readonly roomSummary: string | null;
+  readonly layoutSummary: string | null;
+  readonly packageSummary: readonly string[];
+  readonly quote: ProposalVersionPayload["quote"];
+  readonly version: number;
+  readonly comments: readonly {
+    readonly kind: string;
+    readonly authorName: string | null;
+    readonly body: string;
+    readonly createdAt: Date;
+  }[];
+  readonly packages: readonly {
+    readonly label: string;
+    readonly quantity: number;
+    readonly totalMinor: number;
+    readonly status: string;
+  }[];
+}
+
+async function resolveProposalShareToken(
+  db: Database,
+  token: string,
+): Promise<{ shareToken: ShareTokenRecord; proposal: ProposalRecord } | null> {
+  const tokenHash = hashShareToken(token);
+  const [shareToken] = await db.select().from(proposalShareTokens)
+    .where(eq(proposalShareTokens.tokenHash, tokenHash))
+    .limit(1);
+  if (shareToken === undefined) return null;
+  if (shareToken.revokedAt !== null) return null;
+  if (shareToken.expiresAt !== null && shareToken.expiresAt < new Date()) return null;
+
+  const [proposal] = await db.select().from(proposals)
+    .where(and(eq(proposals.id, shareToken.proposalId), isNull(proposals.deletedAt)))
+    .limit(1);
+  if (proposal === undefined || !CLIENT_VISIBLE_STATUSES.includes(proposal.status)) return null;
+  return { shareToken, proposal };
+}
+
+async function buildClientSafeProposal(db: Database, proposal: ProposalRecord): Promise<ClientSafeProposalPayload | null> {
+  const [version] = await db.select().from(proposalVersions)
+    .where(and(
+      eq(proposalVersions.proposalId, proposal.id),
+      eq(proposalVersions.version, proposal.currentVersion),
+    ))
+    .limit(1);
+  if (version === undefined) return null;
+
+  const payload = ProposalVersionPayloadSchema.safeParse(version.payload);
+  if (!payload.success) return null;
+
+  const [venue] = await db.select({ name: venues.name }).from(venues)
+    .where(eq(venues.id, proposal.venueId))
+    .limit(1);
+
+  const comments = await db.select({
+    kind: proposalComments.kind,
+    authorName: proposalComments.authorName,
+    body: proposalComments.body,
+    createdAt: proposalComments.createdAt,
+  }).from(proposalComments)
+    .where(and(eq(proposalComments.proposalId, proposal.id), eq(proposalComments.isClientVisible, true)))
+    .orderBy(proposalComments.createdAt)
+    .limit(100);
+
+  const packages = await db.select({
+    label: packageSelections.label,
+    quantity: packageSelections.quantity,
+    totalMinor: packageSelections.totalMinor,
+    status: packageSelections.status,
+  }).from(packageSelections)
+    .where(and(eq(packageSelections.proposalId, proposal.id), eq(packageSelections.status, "included")))
+    .orderBy(packageSelections.createdAt)
+    .limit(50);
+
+  return {
+    title: payload.data.title,
+    status: proposal.status,
+    sentAt: proposal.sentAt,
+    venueName: venue?.name ?? null,
+    clientMessage: payload.data.clientMessage,
+    capacityNote: payload.data.capacityNote,
+    roomSummary: payload.data.roomSummary ?? null,
+    layoutSummary: payload.data.layoutSummary ?? null,
+    packageSummary: payload.data.packageSummary ?? [],
+    quote: payload.data.quote,
+    version: version.version,
+    comments,
+    packages,
+  };
+}
 
 export async function publicProposalRoutes(
   server: FastifyInstance,
@@ -589,6 +837,9 @@ export async function publicProposalRoutes(
         venueName: venue?.name ?? null,
         clientMessage: payload.data.clientMessage,
         capacityNote: payload.data.capacityNote,
+        roomSummary: payload.data.roomSummary ?? null,
+        layoutSummary: payload.data.layoutSummary ?? null,
+        packageSummary: payload.data.packageSummary ?? [],
         quote: payload.data.quote,
         version: version.version,
       },
@@ -642,6 +893,140 @@ export async function publicProposalRoutes(
     });
 
     return { data: { status: updated?.status ?? toStatus } };
+  });
+}
+
+export async function proposalShareRoutes(
+  server: FastifyInstance,
+  opts: { db: Database },
+): Promise<void> {
+  const { db } = opts;
+
+  server.get("/:token", async (request, reply) => {
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+
+    const clientSafe = await buildClientSafeProposal(db, resolved.proposal);
+    if (clientSafe === null) {
+      request.log.error({ proposalId: resolved.proposal.id }, "stored proposal payload failed client-safe build");
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+
+    await db.update(proposalShareTokens)
+      .set({ lastViewedAt: new Date() })
+      .where(eq(proposalShareTokens.id, resolved.shareToken.id));
+
+    return { data: clientSafe };
+  });
+
+  server.post("/:token/comment", async (request, reply) => {
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+    const parsed = CreateProposalCommentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (resolved.proposal.status !== "sent" && resolved.proposal.status !== "changes_requested") {
+      return reply.status(422).send({ error: "This proposal is not awaiting comments", code: "NOT_AWAITING_RESPONSE" });
+    }
+
+    const kind = parsed.data.kind;
+    const result = await db.transaction(async (tx) => {
+      const [comment] = await tx.insert(proposalComments).values({
+        proposalId: resolved.proposal.id,
+        shareTokenId: resolved.shareToken.id,
+        kind,
+        authorName: parsed.data.authorName ?? null,
+        authorEmail: parsed.data.authorEmail ?? null,
+        body: parsed.data.body,
+        isClientVisible: true,
+      }).returning();
+      if (comment === undefined) throw new Error("proposal comment insert returned no row");
+
+      if (kind === "request_changes" && resolved.proposal.status === "sent") {
+        await tx.update(proposals)
+          .set({ status: "changes_requested", updatedAt: new Date() })
+          .where(eq(proposals.id, resolved.proposal.id));
+        await tx.insert(proposalStatusHistory).values({
+          proposalId: resolved.proposal.id,
+          fromStatus: "sent",
+          toStatus: "changes_requested",
+          changedBy: null,
+          note: parsed.data.body,
+        });
+      }
+
+      return comment;
+    });
+
+    return reply.status(201).send({
+      data: {
+        kind: result.kind,
+        authorName: result.authorName,
+        body: result.body,
+        createdAt: result.createdAt,
+      },
+    });
+  });
+
+  server.post("/:token/approve", async (request, reply) => {
+    const params = ShareTokenParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid share token", code: "VALIDATION_ERROR" });
+    }
+    const parsed = CreateProposalCommentSchema.partial({ body: true, kind: true }).safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const resolved = await resolveProposalShareToken(db, params.data.token);
+    if (resolved === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (resolved.proposal.status === "accepted") {
+      return { data: { status: "accepted" } };
+    }
+    if (!canTransitionProposal(resolved.proposal.status, "accepted", "client")) {
+      return reply.status(422).send({ error: "This proposal is not awaiting approval", code: "NOT_AWAITING_RESPONSE" });
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.update(proposals)
+        .set({ status: "accepted", updatedAt: new Date() })
+        .where(eq(proposals.id, resolved.proposal.id));
+      await tx.insert(proposalStatusHistory).values({
+        proposalId: resolved.proposal.id,
+        fromStatus: resolved.proposal.status,
+        toStatus: "accepted",
+        changedBy: null,
+        note: parsed.data.body ?? "Client approved via share link",
+      });
+      await tx.insert(proposalComments).values({
+        proposalId: resolved.proposal.id,
+        shareTokenId: resolved.shareToken.id,
+        kind: "approval_note",
+        authorName: parsed.data.authorName ?? null,
+        authorEmail: parsed.data.authorEmail ?? null,
+        body: parsed.data.body ?? "Client approved the proposal.",
+        isClientVisible: true,
+      });
+    });
+
+    return { data: { status: "accepted" } };
   });
 }
 

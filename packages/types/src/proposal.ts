@@ -231,6 +231,7 @@ export type QuoteLineItem = z.infer<typeof QuoteLineItemSchema>;
 export const QuoteSchema = z.object({
   id: QuoteIdSchema,
   venueId: VenueIdSchema,
+  opportunityId: z.string().uuid().nullable(),
   proposalId: ProposalIdSchema.nullable(),
   enquiryId: EnquiryIdSchema.nullable(),
   spaceId: SpaceIdSchema.nullable(),
@@ -285,6 +286,7 @@ export type CreateQuoteLineItem = z.infer<typeof CreateQuoteLineItemSchema>;
 
 export const CreateQuoteSchema = z.object({
   venueId: VenueIdSchema,
+  opportunityId: z.string().uuid().nullable().optional(),
   proposalId: ProposalIdSchema.nullable().optional(),
   enquiryId: EnquiryIdSchema.nullable().optional(),
   spaceId: SpaceIdSchema.nullable().optional(),
@@ -350,12 +352,17 @@ export const ProposalVersionPayloadSchema = z
     layoutRevision: z.number().int().positive().nullable(),
     capacityNote: z.string().max(MAX_CAPACITY_NOTE_LENGTH).nullable(),
     quote: QuoteSnapshotSchema.nullable(),
+    roomSummary: z.string().max(1000).nullable().optional(),
+    layoutSummary: z.string().max(1000).nullable().optional(),
+    packageSummary: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
   })
   .superRefine((payload, ctx) => {
     const guarded: ReadonlyArray<readonly [string, string | null]> = [
       ["title", payload.title],
       ["clientMessage", payload.clientMessage],
       ["capacityNote", payload.capacityNote],
+      ["roomSummary", payload.roomSummary ?? null],
+      ["layoutSummary", payload.layoutSummary ?? null],
     ];
     for (const [field, text] of guarded) {
       if (text === null) continue;
@@ -386,6 +393,7 @@ export function proposalVersionPayloadDigest(payload: ProposalVersionPayload): s
 export const ProposalSchema = z.object({
   id: ProposalIdSchema,
   venueId: VenueIdSchema,
+  opportunityId: z.string().uuid().nullable(),
   enquiryId: EnquiryIdSchema.nullable(),
   configurationId: ConfigurationIdSchema.nullable(),
   title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
@@ -403,6 +411,7 @@ export type Proposal = z.infer<typeof ProposalSchema>;
 
 export const CreateProposalSchema = z.object({
   venueId: VenueIdSchema,
+  opportunityId: z.string().uuid().nullable().optional(),
   enquiryId: EnquiryIdSchema.nullable().optional(),
   configurationId: ConfigurationIdSchema.nullable().optional(),
   title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),

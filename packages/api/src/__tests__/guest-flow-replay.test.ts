@@ -42,6 +42,8 @@ describe("guest flow replay service", () => {
 
     expect(first.artifactHash).toBe(second.artifactHash);
     expect(first.evidenceStatus).toBe("simulated_planning_support");
+    expect(first.navmesh.algorithm).toBe("grid_navmesh_fallback_v0");
+    expect(first.navmesh.limitations.join(" ")).toMatch(/human review/i);
     expect(replayDisclosureSummary(first)).toContain("Human review required");
   });
 

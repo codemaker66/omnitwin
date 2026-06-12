@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { CreateQuoteSchema, MAX_MINOR_UNIT_AMOUNT } from "@omnitwin/types";
-import { quotes, quoteLineItems, proposals, enquiries, spaces } from "../db/schema.js";
+import { CreateQuoteLineItemSchema, CreateQuoteSchema, MAX_MINOR_UNIT_AMOUNT } from "@omnitwin/types";
+import { quotes, quoteLineItems, proposals, opportunities, enquiries, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
@@ -51,6 +51,16 @@ type AuthedUser = { id: string; role: string; venueId: string | null };
 function canManageVenueQuotes(user: AuthedUser, venueId: string): boolean {
   if (user.role === "admin") return true;
   return user.role === "staff" && user.venueId === venueId;
+}
+
+async function validateOpportunityLink(db: Database, opportunityId: string | null | undefined, venueId: string): Promise<"ok" | "missing" | "mismatch"> {
+  if (opportunityId === undefined || opportunityId === null) return "ok";
+  const [opportunity] = await db.select({ venueId: opportunities.venueId })
+    .from(opportunities)
+    .where(and(eq(opportunities.id, opportunityId), isNull(opportunities.deletedAt)))
+    .limit(1);
+  if (opportunity === undefined) return "missing";
+  return opportunity.venueId === venueId ? "ok" : "mismatch";
 }
 
 export async function quoteRoutes(
@@ -125,6 +135,14 @@ export async function quoteRoutes(
     }
 
     // Linked records must exist and belong to the same venue.
+    const opportunityStatus = await validateOpportunityLink(db, parsed.data.opportunityId, parsed.data.venueId);
+    if (opportunityStatus === "missing") {
+      return reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
+    }
+    if (opportunityStatus === "mismatch") {
+      return reply.status(422).send({ error: "Opportunity belongs to a different venue", code: "VENUE_MISMATCH" });
+    }
+
     if (parsed.data.proposalId !== undefined && parsed.data.proposalId !== null) {
       const [proposal] = await db.select({ venueId: proposals.venueId })
         .from(proposals)
@@ -164,6 +182,7 @@ export async function quoteRoutes(
     const created = await db.transaction(async (tx) => {
       const [quote] = await tx.insert(quotes).values({
         venueId: parsed.data.venueId,
+        opportunityId: parsed.data.opportunityId ?? null,
         proposalId: parsed.data.proposalId ?? null,
         enquiryId: parsed.data.enquiryId ?? null,
         spaceId: parsed.data.spaceId ?? null,
@@ -257,6 +276,69 @@ export async function quoteRoutes(
       .returning();
 
     return { data: updated };
+  });
+
+  // POST /quotes/:id/line-items — append a draft line and recompute exact totals
+  server.post("/:id/line-items", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const parsed = CreateQuoteLineItemSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const [quote] = await db.select().from(quotes)
+      .where(and(eq(quotes.id, params.data.id), isNull(quotes.deletedAt)))
+      .limit(1);
+    if (quote === undefined) {
+      return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
+    }
+    if (!canManageVenueQuotes(request.user, quote.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (request.user.role !== "admin" && quote.status !== "draft") {
+      return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
+    }
+
+    const created = await db.transaction(async (tx) => {
+      const existingLines = await tx.select().from(quoteLineItems)
+        .where(eq(quoteLineItems.quoteId, quote.id))
+        .orderBy(quoteLineItems.sortOrder);
+      const lineTotalMinor = multiplyMinor(parsed.data.unitAmountMinor, parsed.data.quantity);
+      const [lineItem] = await tx.insert(quoteLineItems).values({
+        quoteId: quote.id,
+        pricingRuleId: parsed.data.pricingRuleId ?? null,
+        description: parsed.data.description,
+        quantity: parsed.data.quantity,
+        unitAmountMinor: parsed.data.unitAmountMinor,
+        lineTotalMinor,
+        sortOrder: existingLines.length,
+      }).returning();
+      if (lineItem === undefined) throw new Error("quote line item insert returned no row");
+
+      const lineItems = [...existingLines, lineItem];
+      const subtotalMinor = sumMinor(lineItems.map((item) => item.lineTotalMinor));
+      if (subtotalMinor > MAX_MINOR_UNIT_AMOUNT) {
+        throw new Error("QUOTE_TOTAL_EXCEEDS_LIMIT");
+      }
+      const [updatedQuote] = await tx.update(quotes)
+        .set({ subtotalMinor, totalMinor: subtotalMinor, updatedAt: new Date() })
+        .where(eq(quotes.id, quote.id))
+        .returning();
+      if (updatedQuote === undefined) throw new Error("quote update returned no row");
+      return { quote: updatedQuote, lineItems };
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.message === "QUOTE_TOTAL_EXCEEDS_LIMIT") return "QUOTE_TOTAL_EXCEEDS_LIMIT" as const;
+      throw err;
+    });
+
+    if (created === "QUOTE_TOTAL_EXCEEDS_LIMIT") {
+      return reply.status(422).send({ error: "Quote total exceeds the supported ceiling", code: "QUOTE_TOTAL_EXCEEDS_LIMIT" });
+    }
+
+    return reply.status(201).send({ data: { ...created.quote, lineItems: created.lineItems } });
   });
 
   // DELETE /quotes/:id — soft delete drafts (admin may delete any)

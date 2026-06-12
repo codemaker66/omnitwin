@@ -32,7 +32,10 @@ import { opsHandoffRoutes } from "./routes/ops-handoff.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
-import { proposalRoutes, publicProposalRoutes } from "./routes/proposals.js";
+import { crmRoutes } from "./routes/crm.js";
+import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
+import { opportunityRoutes } from "./routes/opportunities.js";
+import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
@@ -308,6 +311,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
   await server.register(integrationRoutes, { db, prefix: "/integrations" });
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
+  await server.register(crmRoutes, { db, prefix: "/crm" });
+  await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
+  await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
@@ -324,6 +330,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(aiAssistantRoutes, { env, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
+  await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
   // --- WebSocket ---

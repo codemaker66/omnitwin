@@ -180,6 +180,7 @@ function validQuote(): Record<string, unknown> {
   return {
     id: UUID_B,
     venueId: UUID_C,
+    opportunityId: null,
     proposalId: null,
     enquiryId: null,
     spaceId: null,
@@ -360,6 +361,7 @@ describe("ProposalSchema / ProposalVersionSchema / history", () => {
   const proposal = {
     id: UUID_A,
     venueId: UUID_C,
+    opportunityId: null,
     enquiryId: null,
     configurationId: UUID_D,
     title: "Summer wedding proposal",
