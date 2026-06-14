@@ -25,7 +25,9 @@
 
 .cockpit-topbar { grid-area: topbar; }
 .cockpit-rail { grid-area: rail; }
-.cockpit-stage { grid-area: stage; position: relative; overflow: hidden; }
+/* transform makes the stage the containing block for the editor's fixed
+   chrome (toolbox, HUD, command deck) so it stays scoped to the stage. */
+.cockpit-stage { grid-area: stage; position: relative; overflow: hidden; transform: translateZ(0); }
 .cockpit-panel { grid-area: panel; overflow-y: auto; border-left: 1px solid rgba(201, 168, 76, 0.22); }
 .cockpit-bottom { grid-area: bottom; overflow: hidden; border-top: 1px solid rgba(201, 168, 76, 0.18); }
 
@@ -95,6 +97,14 @@
   padding-bottom: 0;
 }
 .cockpit-stage .planner-canvas-stage { padding-left: var(--cockpit-toolbox-width, 68px); }
+
+/* The editing toolbar belongs to the Design lens only; other lenses hide it. */
+.cockpit-stage:not([data-cockpit-mode="design"]) [data-testid="planner-toolbar"] {
+  display: none;
+}
+.cockpit-stage:not([data-cockpit-mode="design"]) .planner-canvas-stage {
+  padding-left: 0;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .cockpit-shell *,
