@@ -8,6 +8,7 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
 vi.mock("../CockpitTopBar.js", () => ({ CockpitTopBar: () => <header data-testid="cockpit-topbar-mock" /> }));
 vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <aside data-testid="cockpit-truth-mock" /> }));
+vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 

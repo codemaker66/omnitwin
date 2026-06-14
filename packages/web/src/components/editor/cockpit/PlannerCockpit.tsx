@@ -3,6 +3,7 @@ import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitTopBar } from "./CockpitTopBar.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
+import { CockpitBottom } from "./CockpitBottom.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -29,9 +30,7 @@ export function PlannerCockpit(): ReactElement {
         <Editor3D />
       </section>
       <CockpitTruthRail />
-      <footer className="cockpit-bottom cockpit-placeholder" aria-label="Event phase graph">
-        <span>Event Phase Graph</span>
-      </footer>
+      <CockpitBottom />
     </div>
   );
 }
