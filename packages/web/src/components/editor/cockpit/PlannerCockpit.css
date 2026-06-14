@@ -1,0 +1,106 @@
+.cockpit-shell {
+  --cockpit-rail-width: 92px;
+  --cockpit-topbar-height: 64px;
+  --cockpit-bottom-height: 232px;
+  --cockpit-right-width: 360px;
+  --cockpit-toolbox-width: 68px;
+  --cockpit-amber: #c9a84c;
+
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--cockpit-rail-width) minmax(0, 1fr) var(--cockpit-right-width);
+  grid-template-rows: var(--cockpit-topbar-height) minmax(0, 1fr) var(--cockpit-bottom-height);
+  grid-template-areas:
+    "topbar topbar topbar"
+    "rail   stage  panel"
+    "rail   bottom bottom";
+  overflow: hidden;
+  background: var(--vv-cinema-black, #090807);
+  color: #f4efe6;
+  font-family: "Inter", system-ui, sans-serif;
+  color-scheme: dark;
+  isolation: isolate;
+}
+
+.cockpit-topbar { grid-area: topbar; }
+.cockpit-rail { grid-area: rail; }
+.cockpit-stage { grid-area: stage; position: relative; overflow: hidden; }
+.cockpit-panel { grid-area: panel; overflow-y: auto; border-left: 1px solid rgba(201, 168, 76, 0.22); }
+.cockpit-bottom { grid-area: bottom; overflow: hidden; border-top: 1px solid rgba(201, 168, 76, 0.18); }
+
+.cockpit-topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(201, 168, 76, 0.22);
+  background: linear-gradient(90deg, rgba(3, 4, 5, 0.985), rgba(10, 10, 10, 0.97) 42%, rgba(7, 6, 5, 0.985));
+}
+
+.cockpit-rail {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 12px 0;
+  border-right: 1px solid rgba(201, 168, 76, 0.22);
+  background: linear-gradient(180deg, rgba(7, 7, 7, 0.99), rgba(18, 15, 12, 0.99) 48%, rgba(8, 8, 8, 0.99));
+}
+.cockpit-rail__list { display: grid; gap: 4px; align-content: start; justify-items: center; }
+.cockpit-rail__button {
+  width: 76px;
+  min-height: 60px;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.66);
+  cursor: pointer;
+  font: 700 9px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+.cockpit-rail__button:hover { color: #f3ddb0; background: rgba(201, 168, 76, 0.08); }
+.cockpit-rail__button:active { transform: scale(0.97); }
+.cockpit-rail__button.is-active {
+  color: #0e0e0e;
+  background: linear-gradient(145deg, #e0c66c 0%, var(--cockpit-amber) 44%, #9d7a23 100%);
+  border-color: rgba(255, 239, 177, 0.62);
+}
+.cockpit-rail__button:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+
+/* Phase 1 placeholder chrome — replaced with real regions in Phase 2. */
+.cockpit-placeholder {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 0 18px;
+  color: rgba(244, 239, 230, 0.5);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.cockpit-topbar.cockpit-placeholder { grid-auto-flow: column; justify-content: start; align-items: center; }
+
+/* The stage establishes its own containing context. The existing fixed
+   VerticalToolbox is re-anchored to the stage's left edge, and the canvas
+   fills the stage regardless of the legacy --toolbox-offset CSS var. */
+.cockpit-stage { --toolbox-offset: 0px; --toolbox-bottom: 0px; }
+.cockpit-stage .venviewer-planner-shell,
+.cockpit-stage .planner-canvas-stage {
+  position: absolute;
+  inset: 0;
+  padding-left: 0;
+  padding-bottom: 0;
+}
+.cockpit-stage .planner-canvas-stage { padding-left: var(--cockpit-toolbox-width, 68px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-shell *,
+  .cockpit-shell *::before,
+  .cockpit-shell *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
