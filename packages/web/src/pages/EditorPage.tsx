@@ -7,6 +7,7 @@ import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
+import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
@@ -17,10 +18,6 @@ import {
 } from "../lib/truth-mode-summary.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
-import {
-  copyForEditorSaveStatus,
-  deriveEditorSaveStatus,
-} from "../lib/editor-save-status.js";
 import {
   resolvePlannerVenue,
   type PlannerVenueAccessUser,
@@ -180,31 +177,28 @@ export function EditorPage(): React.ReactElement {
   if (autoCreateBlocker !== null && urlConfigId === undefined && storeConfigId === null) {
     const copy = plannerBootstrapBlockerCopy(autoCreateBlocker);
     return (
-      <div style={{
-        minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center",
-        justifyContent: "center", gap: 16, fontFamily: "'Inter', sans-serif",
-        color: "#333", background: "#f5f5f0", padding: 24, textAlign: "center",
-      }}>
-        <div style={{ fontSize: 20, fontWeight: 600 }}>{copy.title}</div>
-        <div style={{ fontSize: 14, color: "#666", maxWidth: 360 }}>
-          {copy.body}
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (autoCreateBlocker.kind === "not_found" || autoCreateBlocker.kind === "forbidden") {
-              void navigate("/plan", { replace: true });
-              return;
-            }
-            window.location.reload();
-          }}
-          style={{
-            marginTop: 8, padding: "10px 24px", background: "#7a1f2a", color: "#fff",
-            border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
-          }}
-        >
-          {copy.action}
-        </button>
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role={autoCreateBlocker.kind === "network" ? "alert" : "status"}>
+          <p className="vv-state-kicker">Planner start</p>
+          <h1>{copy.title}</h1>
+          <p>{copy.body}</p>
+          <span className="vv-status-chip" data-tone="review">Planning workspace not opened yet</span>
+          <div className="vv-state-actions">
+            <button
+              type="button"
+              className="vv-button primary"
+              onClick={() => {
+                if (autoCreateBlocker.kind === "not_found" || autoCreateBlocker.kind === "forbidden") {
+                  void navigate("/plan", { replace: true });
+                  return;
+                }
+                window.location.reload();
+              }}
+            >
+              {copy.action}
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
@@ -213,11 +207,12 @@ export function EditorPage(): React.ReactElement {
   // screen, not the SpacePicker splash.
   if (urlConfigId === undefined && storeConfigId === null) {
     return (
-      <div style={{
-        minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Inter', sans-serif", color: "#999", background: "#f5f5f0",
-      }}>
-        Opening the planner…
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role="status" aria-live="polite">
+          <p className="vv-state-kicker">Planner start</p>
+          <h1>Opening the Grand Hall planner</h1>
+          <p>Preparing a recoverable planning draft with room context and review-state controls.</p>
+        </section>
       </div>
     );
   }
@@ -225,11 +220,12 @@ export function EditorPage(): React.ReactElement {
   // Loading config
   if (isLoading) {
     return (
-      <div style={{
-        minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Inter', sans-serif", color: "#999", background: "#f5f5f0",
-      }}>
-        Loading layout...
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role="status" aria-live="polite">
+          <p className="vv-state-kicker">Planner layout</p>
+          <h1>Loading the saved layout</h1>
+          <p>Furniture, notes, venue context, and review controls are being restored.</p>
+        </section>
       </div>
     );
   }
@@ -237,24 +233,21 @@ export function EditorPage(): React.ReactElement {
   // Error loading config — show message with retry
   if (error !== null) {
     return (
-      <div style={{
-        minHeight: "100dvh", display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: 12,
-        fontFamily: "'Inter', sans-serif", color: "#333", background: "#f5f5f0",
-      }}>
-        <p style={{ fontSize: 16, fontWeight: 600 }}>Failed to load layout</p>
-        <p style={{ fontSize: 13, color: "#999" }}>{error}</p>
-        <button
-          type="button"
-          onClick={() => { void navigate("/plan", { replace: true }); }}
-          style={{
-            padding: "8px 20px", fontSize: 13, fontWeight: 600,
-            background: "#1a1a2e", color: "#fff", border: "none",
-            borderRadius: 6, cursor: "pointer", marginTop: 8,
-          }}
-        >
-          Start Fresh
-        </button>
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role="alert">
+          <p className="vv-state-kicker">Planner layout</p>
+          <h1>Layout could not be loaded</h1>
+          <p>{error}</p>
+          <div className="vv-state-actions">
+            <button
+              type="button"
+              className="vv-button primary"
+              onClick={() => { void navigate("/plan", { replace: true }); }}
+            >
+              Start a fresh planner draft
+            </button>
+          </div>
+        </section>
       </div>
     );
   }
@@ -322,15 +315,16 @@ function PlannerCommsLayer(): React.ReactElement {
           position: "relative",
         }}
       >
-        {viewMode === "3d" ? <Editor3D /> : <BlueprintPage source="editor-store" />}
+        {viewMode === "3d" ? (
+          mobile ? <Editor3D /> : <PlannerCockpit />
+        ) : (
+          <BlueprintPage source="editor-store" />
+        )}
       </div>
       {mobile ? (
         <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
       ) : (
-        <>
-          <PlannerStatusHeader viewMode={viewMode} />
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
-        </>
+        <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
       )}
       {canEditEventDetails && viewMode === "3d" && (
         <button
@@ -362,65 +356,6 @@ function PlannerCommsLayer(): React.ReactElement {
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
     </>
-  );
-}
-
-function PlannerStatusHeader({ viewMode }: { viewMode: "3d" | "2d" }): React.ReactElement {
-  const spaceName = useEditorStore((s) => s.space?.name ?? "Grand Hall");
-  const configId = useEditorStore((s) => s.configId);
-  const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
-  const objectCount = useEditorStore((s) => s.objects.length);
-  const isDirty = useEditorStore((s) => s.isDirty);
-  const isSaving = useEditorStore((s) => s.isSaving);
-  const saveError = useEditorStore((s) => s.saveError);
-  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
-  const status = deriveEditorSaveStatus({ isDirty, isSaving, saveError, lastSavedAt });
-  const saveCopy = copyForEditorSaveStatus(status);
-  const layoutMode = isPublicPreview ? "Guest draft" : "Team layout";
-  const formattedObjectCount = objectCount.toLocaleString("en-GB");
-  const furnitureCopy = objectCount === 1 ? "1 placed item" : `${formattedObjectCount} placed items`;
-  const viewLabel = viewMode === "3d" ? "3D planning" : "2D planning";
-  const configLabel = configId === null ? "Opening layout" : "Layout proposal";
-
-  return (
-    <section
-      className="planner-status-header"
-      data-testid="planner-status-header"
-      aria-label="Planner status"
-      data-save-status={status}
-    >
-      <div className="planner-status-header__brand">
-        <div className="planner-status-header__mark" aria-hidden="true">Vv</div>
-        <div className="planner-status-header__brand-copy">
-          <div className="planner-status-header__brand-title">Venviewer</div>
-          <div className="planner-status-header__brand-subtitle">{layoutMode}</div>
-        </div>
-      </div>
-      <div className="planner-status-header__cell">
-        <span>Venue</span>
-        <strong>{spaceName}</strong>
-      </div>
-      <div className="planner-status-header__cell planner-status-header__cell--phase">
-        <span>Planning phase</span>
-        <strong>Build layout - submit draft</strong>
-      </div>
-      <div className="planner-status-header__review">
-        Draft layout / venue review required
-      </div>
-      <div className="planner-status-header__cell planner-status-header__cell--save">
-        <span className="planner-status-header__dot" aria-hidden="true" />
-        <span>Save status</span>
-        <strong>{saveCopy.label}</strong>
-      </div>
-      <div className="planner-status-header__cell planner-status-header__cell--runtime">
-        <span>Visual layer</span>
-        <strong>Procedural layer / no signed capture</strong>
-      </div>
-      <div className="planner-status-header__cell planner-status-header__cell--summary">
-        <span>{viewLabel}</span>
-        <strong>{configLabel} / {furnitureCopy}</strong>
-      </div>
-    </section>
   );
 }
 
