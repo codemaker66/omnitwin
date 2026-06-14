@@ -15,16 +15,23 @@ function allOverlaysOn(): OverlayVisibility {
   }, {} as OverlayVisibility);
 }
 
+const DEFAULT_RUNTIME_ASSET_STATUS = "Procedural layer / no signed capture";
+
 interface CockpitState {
   readonly activeMode: CockpitMode;
   readonly layerMode: CockpitLayerMode;
   readonly overlayVisibility: OverlayVisibility;
   readonly selectedPhaseId: string | null;
+  readonly runtimeAssetStatus: string;
+  readonly layersOpen: boolean;
   readonly setMode: (mode: CockpitMode) => void;
   readonly setLayerMode: (mode: CockpitLayerMode) => void;
   readonly toggleOverlay: (key: CockpitOverlayKey) => void;
   readonly setOverlay: (key: CockpitOverlayKey, visible: boolean) => void;
   readonly selectPhase: (phaseId: string | null) => void;
+  readonly setRuntimeAssetStatus: (status: string) => void;
+  readonly toggleLayers: () => void;
+  readonly setLayersOpen: (open: boolean) => void;
   readonly reset: () => void;
 }
 
@@ -33,6 +40,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   layerMode: "hybrid",
   overlayVisibility: allOverlaysOn(),
   selectedPhaseId: null,
+  runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
+  layersOpen: false,
   setMode: (mode) => { set({ activeMode: mode }); },
   setLayerMode: (mode) => { set({ layerMode: mode }); },
   toggleOverlay: (key) => {
@@ -46,12 +55,17 @@ export const useCockpitStore = create<CockpitState>((set) => ({
     }));
   },
   selectPhase: (phaseId) => { set({ selectedPhaseId: phaseId }); },
+  setRuntimeAssetStatus: (status) => { set({ runtimeAssetStatus: status }); },
+  toggleLayers: () => { set((state) => ({ layersOpen: !state.layersOpen })); },
+  setLayersOpen: (open) => { set({ layersOpen: open }); },
   reset: () => {
     set({
       activeMode: "design",
       layerMode: "hybrid",
       overlayVisibility: allOverlaysOn(),
       selectedPhaseId: null,
+      runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
+      layersOpen: false,
     });
   },
 }));

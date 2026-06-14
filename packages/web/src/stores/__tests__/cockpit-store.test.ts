@@ -34,17 +34,38 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().selectedPhaseId).toBe("dinner");
   });
 
+  it("defaults runtimeAssetStatus to the SAFE procedural label and the layers menu closed", () => {
+    const s = useCockpitStore.getState();
+    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.layersOpen).toBe(false);
+  });
+
+  it("setRuntimeAssetStatus updates the runtime label", () => {
+    useCockpitStore.getState().setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
+    expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Captured visual layer loaded / not yet signed");
+  });
+
+  it("toggleLayers flips the layers menu open state", () => {
+    expect(useCockpitStore.getState().layersOpen).toBe(false);
+    useCockpitStore.getState().toggleLayers();
+    expect(useCockpitStore.getState().layersOpen).toBe(true);
+  });
+
   it("reset restores defaults", () => {
     const api = useCockpitStore.getState();
     api.setMode("ops");
     api.setLayerMode("mesh");
     api.toggleOverlay("guestFlow");
     api.selectPhase("ceremony");
+    api.setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
+    api.toggleLayers();
     api.reset();
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");
     expect(s.layerMode).toBe("hybrid");
     expect(s.overlayVisibility.guestFlow).toBe(true);
     expect(s.selectedPhaseId).toBeNull();
+    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.layersOpen).toBe(false);
   });
 });
