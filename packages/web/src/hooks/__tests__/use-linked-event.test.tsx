@@ -17,10 +17,29 @@ function wrapperFor(url: string) {
   };
 }
 
-const fakeGraph = {
-  event: { name: "Spring Wedding" },
-  phases: [{ id: "ceremony", name: "Ceremony" }],
-} as unknown as EventPhaseGraph;
+const now = "2026-06-11T10:00:00.000Z";
+const fakeGraph: EventPhaseGraph = {
+  event: {
+    id: "00000000-0000-4000-8000-000000000001",
+    venueId: "00000000-0000-4000-8000-000000000002",
+    createdBy: null,
+    name: "Spring Wedding",
+    eventType: "wedding",
+    status: "in_planning",
+    startsAt: now,
+    endsAt: null,
+    guestCount: 120,
+    clientName: null,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  },
+  phases: [],
+  scenarios: [],
+  layoutVariants: [],
+  configurationLinks: [],
+  phaseLayoutSnapshots: [],
+};
 
 describe("useLinkedEvent", () => {
   it("reports 'none' with no eventId param and never calls the API", () => {
