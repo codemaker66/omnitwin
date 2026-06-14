@@ -1,0 +1,40 @@
+.cockpit-layer-controls {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  border-radius: 12px;
+  background: rgba(12, 11, 10, 0.78);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px) saturate(1.1);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.cockpit-layer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(246, 238, 220, 0.7);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  transition: background 150ms ease, color 150ms ease;
+}
+.cockpit-layer-btn:hover { color: #f3ddb0; background: rgba(201, 168, 76, 0.1); }
+.cockpit-layer-btn:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+.cockpit-layer-btn.is-active {
+  color: #14110b;
+  background: linear-gradient(145deg, #e0c66c 0%, #c9a84c 44%, #9d7a23 100%);
+  border-color: rgba(255, 239, 177, 0.6);
+  box-shadow: 0 6px 16px rgba(201, 168, 76, 0.24);
+}
