@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
+import { CockpitTopBar } from "./CockpitTopBar.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -21,10 +22,7 @@ export function PlannerCockpit(): ReactElement {
   const activeMode = useCockpitStore((s) => s.activeMode);
   return (
     <div className="cockpit-shell" data-testid="cockpit-shell">
-      <header className="cockpit-topbar cockpit-placeholder" aria-label="Planner status">
-        <span>Venviewer — planner cockpit</span>
-        <span>Planning evidence / human review required</span>
-      </header>
+      <CockpitTopBar />
       <CockpitNavRail />
       <section className="cockpit-stage" data-cockpit-mode={activeMode} aria-label="Planner scene">
         <Editor3D />
