@@ -33,6 +33,11 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
 }));
 
+// PlannerScene now mounts CockpitSplatLayer, which imports @sparkjsdev/spark
+// (a WASM module that rejects at import under Node). The Canvas mock never
+// renders scene children, so stub the splat layer to keep Spark out of this test.
+vi.mock("../components/editor/CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+
 import { App } from "../App.js";
 
 /** Extract the props object from the first CanvasMock call. */

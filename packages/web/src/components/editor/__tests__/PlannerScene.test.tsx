@@ -9,6 +9,11 @@ vi.mock("@react-three/fiber", () => ({
   Canvas: () => <div data-testid="r3f-canvas" />,
 }));
 
+// CockpitSplatLayer pulls in @sparkjsdev/spark, which instantiates a WASM
+// module at import time and rejects under Node's test environment. Mock it so
+// the splat renderer is never imported into this structural smoke test.
+vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+
 const { PlannerScene } = await import("../PlannerScene.js");
 
 describe("PlannerScene", () => {

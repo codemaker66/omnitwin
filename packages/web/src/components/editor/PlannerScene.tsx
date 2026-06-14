@@ -22,7 +22,10 @@ import { MarkupLayer } from "../MarkupLayer.js";
 import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
+import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
+import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -56,6 +59,14 @@ export function PlannerScene(): ReactElement {
   const roomGeometry = space !== null ? resolveRoomGeometry(space) : null;
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
+  // Mesh ↔ Splat ↔ Hybrid: the procedural room stays visible unless a measured
+  // splat is mounted AND the user has switched to pure Splat. The splat fades
+  // in over the mesh (Hybrid / first load) — the captured room melting in.
+  const layerMode = useCockpitStore((s) => s.layerMode);
+  const { splatUrls, transform, hasAsset } = useRoomRuntimeSplat();
+  const meshVisible = !hasAsset || layerMode !== "splat";
+  const splatActive = hasAsset && layerMode !== "mesh";
+
   return (
     <PlannerCanvasBoundary>
       <Canvas
@@ -70,13 +81,16 @@ export function PlannerScene(): ReactElement {
         <SceneProvider />
         <SectionPlane />
         <InvalidateOnToggle />
-        {roomGeometry !== null ? (
+        {meshVisible && (roomGeometry !== null ? (
           <RoomMesh geometry={roomGeometry} variant={roomVariant} />
         ) : (
           <>
             <AutoWallSelector />
             <GrandHallRoom />
           </>
+        ))}
+        {hasAsset && (
+          <CockpitSplatLayer urls={splatUrls} transform={transform} active={splatActive} />
         )}
         <XrayToggle />
         <MeasurementTool />
