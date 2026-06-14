@@ -1,0 +1,147 @@
+.cockpit-truth {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 16px 16px;
+  overflow-y: auto;
+  border-left: 1px solid rgba(201, 168, 76, 0.22);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(201, 168, 76, 0.1), transparent 38%),
+    linear-gradient(180deg, rgba(10, 10, 10, 0.92), rgba(16, 14, 12, 0.96) 46%, rgba(8, 8, 8, 0.97));
+  color: #f4efe6;
+  font-family: "Inter", system-ui, sans-serif;
+  scrollbar-width: thin;
+}
+
+.cockpit-truth__head {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.cockpit-truth__head-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 168, 76, 0.32);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(201, 168, 76, 0.06));
+  color: #e7d49a;
+}
+.cockpit-truth__head-copy { display: grid; gap: 3px; min-width: 0; }
+.cockpit-truth__eyebrow {
+  color: #d7bd68;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cockpit-truth__title {
+  color: #fff6e9;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.05;
+}
+.cockpit-truth__source {
+  justify-self: end;
+  padding: 4px 9px;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  border-radius: 999px;
+  background: rgba(201, 168, 76, 0.08);
+  color: rgba(246, 238, 220, 0.78);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.cockpit-truth__rows { display: grid; gap: 8px; }
+.cockpit-truth__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 13px;
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+}
+.cockpit-truth__label {
+  grid-column: 1;
+  margin: 0;
+  color: rgba(244, 239, 230, 0.5);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.cockpit-truth__value {
+  grid-column: 1;
+  margin: 2px 0 0;
+  color: #f6efe0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cockpit-truth__chip {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cockpit-truth__chip--neutral {
+  border: 1px solid rgba(116, 208, 140, 0.4);
+  background: rgba(116, 208, 140, 0.12);
+  color: #a7e3b6;
+}
+.cockpit-truth__chip--warning {
+  border: 1px solid rgba(230, 196, 99, 0.42);
+  background: rgba(230, 196, 99, 0.12);
+  color: #f1ce78;
+}
+
+.cockpit-truth__counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 4px;
+}
+.cockpit-truth__count {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.cockpit-truth__count strong { color: #fff6e9; font-size: 18px; font-weight: 700; line-height: 1; }
+.cockpit-truth__count small {
+  color: rgba(244, 239, 230, 0.48);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cockpit-truth__footer {
+  margin: auto 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(241, 206, 120, 0.78);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}

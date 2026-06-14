@@ -7,6 +7,7 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 // router + store context of its own, so mock it too for this shell test.
 vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
 vi.mock("../CockpitTopBar.js", () => ({ CockpitTopBar: () => <header data-testid="cockpit-topbar-mock" /> }));
+vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <aside data-testid="cockpit-truth-mock" /> }));
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 

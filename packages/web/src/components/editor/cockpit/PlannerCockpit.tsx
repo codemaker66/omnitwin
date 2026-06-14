@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitTopBar } from "./CockpitTopBar.js";
+import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -27,10 +28,7 @@ export function PlannerCockpit(): ReactElement {
       <section className="cockpit-stage" data-cockpit-mode={activeMode} aria-label="Planner scene">
         <Editor3D />
       </section>
-      <aside className="cockpit-panel cockpit-placeholder" aria-label="Truth Mode">
-        <span>Truth Mode</span>
-        <span>Human review required</span>
-      </aside>
+      <CockpitTruthRail />
       <footer className="cockpit-bottom cockpit-placeholder" aria-label="Event phase graph">
         <span>Event Phase Graph</span>
       </footer>
