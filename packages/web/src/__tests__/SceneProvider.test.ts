@@ -8,7 +8,7 @@
 // These tests pin three structural properties:
 //   1. SceneProvider exists and calls useThree to get the scene
 //   2. SceneProvider writes to editor-store (setState)
-//   3. App.tsx mounts <SceneProvider /> inside the Canvas
+//   3. PlannerScene mounts <SceneProvider /> inside the Canvas
 //
 // Behavioural testing would require a real R3F Canvas context; happy-dom
 // has no WebGL. Source-grep is the established pattern.
@@ -45,8 +45,8 @@ describe("SceneProvider wiring (#24, part 2/3)", () => {
     expect(codeOnly).toMatch(/return\s*\(\)\s*=>\s*\{[\s\S]*?scene:\s*null/);
   });
 
-  it("App.tsx imports and mounts SceneProvider inside the Canvas", async () => {
-    const { codeOnly } = await readSource("src/App.tsx");
+  it("PlannerScene imports and mounts SceneProvider inside the Canvas", async () => {
+    const { codeOnly } = await readSource("src/components/editor/PlannerScene.tsx");
     expect(codeOnly).toContain("SceneProvider");
     expect(codeOnly).toContain("<SceneProvider");
   });
