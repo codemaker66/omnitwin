@@ -1,36 +1,17 @@
 import { useEffect, useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "./constants/scale.js";
 import type { SpaceDimensions } from "@omnitwin/types";
-import { PlannerCanvasBoundary } from "./components/PlannerCanvasBoundary.js";
-import { CameraRig } from "./components/CameraRig.js";
-import { GrandHallRoom } from "./components/GrandHallRoom.js";
-import { RoomMesh } from "./components/editor/RoomMesh.js";
-import { SectionPlane } from "./components/SectionPlane.js";
 import { SectionSlider } from "./components/SectionSlider.js";
-import { InvalidateOnToggle, AutoWallSelector } from "./components/WallTogglePanel.js";
-import { XrayToggle } from "./components/XrayToggle.js";
-import { MeasurementTool } from "./components/MeasurementTool.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
-import { TapeMeasure } from "./components/TapeMeasure.js";
 import { PlacementHint } from "./components/PlacementHint.js";
-import { PerfMonitor } from "./components/PerfMonitor.js";
 import { PerfOverlay } from "./components/PerfOverlay.js";
-import { PlacementGhost } from "./components/PlacementGhost.js";
-import { DiagramLabels } from "./components/DiagramLabels.js";
-import { PlacedFurniture } from "./components/PlacedFurniture.js";
-import { SelectionSystem } from "./components/SelectionSystem.js";
-import { MarqueeSelect } from "./components/MarqueeSelect.js";
-import { SnapGuides } from "./components/SnapGuides.js";
-import { CirculationOverlay } from "./components/CirculationOverlay.js";
-import { MarkupLayer } from "./components/MarkupLayer.js";
 import { MarkupPersistence } from "./components/MarkupPersistence.js";
-import { SceneProvider } from "./components/SceneProvider.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
 import { PlannerCommandDeck } from "./components/editor/PlannerCommandDeck.js";
 import { PlannerSpatialHud } from "./components/editor/PlannerSpatialHud.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
+import { PlannerScene } from "./components/editor/PlannerScene.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
@@ -79,7 +60,6 @@ function useRoomDimensions(): SpaceDimensions {
 
 export function App(): React.ReactElement {
   const chairRequest = useChairDialogStore((s) => s.pending);
-  const space = useEditorStore((s) => s.space);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
   const mobileChrome = isNarrow || isTouch;
@@ -91,13 +71,6 @@ export function App(): React.ReactElement {
     useBookmarkStore.getState().initialize({ width: dimW, length: dimL, height: dimH });
     useRoomDimensionsStore.getState().setDimensions({ width: dimW, length: dimL, height: dimH });
   }, [dimW, dimL, dimH]);
-
-  // Prefer the hand-authored Trades Hall geometry when the space name
-  // matches; fall back to the space's own polygon (any admin-authored or
-  // second-venue space); fall through to the GrandHallRoom stand-in when
-  // no space is loaded at all.
-  const roomGeometry = space !== null ? resolveRoomGeometry(space) : null;
-  const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
   return (
     <div className="venviewer-planner-shell">
@@ -119,44 +92,7 @@ export function App(): React.ReactElement {
           touchAction: "none",
         }}
       >
-      <PlannerCanvasBoundary>
-      <Canvas
-        frameloop="demand"
-        dpr={[1, 2]}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
-        camera={{ fov: 55, near: 0.1, far: 200 }}
-        style={{ width: "100%", height: "100%" }}
-      >
-        <color attach="background" args={["#eee9de"]} />
-        <fog attach="fog" args={["#efe9dc", 54, 138]} />
-        <SceneProvider />
-        <SectionPlane />
-        <InvalidateOnToggle />
-        {roomGeometry !== null ? (
-          /* RoomMesh has its own CameraWallDriver — no AutoWallSelector needed */
-          <RoomMesh geometry={roomGeometry} variant={roomVariant} />
-        ) : (
-          /* GrandHallRoom needs the standalone wall driver */
-          <>
-            <AutoWallSelector />
-            <GrandHallRoom />
-          </>
-        )}
-        <XrayToggle />
-        <MeasurementTool />
-        <TapeMeasure />
-        <PlacedFurniture />
-        <PlacementGhost />
-        <SelectionSystem />
-        <SnapGuides />
-        <CirculationOverlay />
-        <MarqueeSelect />
-        <MarkupLayer />
-        <DiagramLabels />
-        <CameraRig dimensions={dimensions} />
-        {import.meta.env.DEV && <PerfMonitor />}
-      </Canvas>
-      </PlannerCanvasBoundary>
+        <PlannerScene />
       </div>
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
