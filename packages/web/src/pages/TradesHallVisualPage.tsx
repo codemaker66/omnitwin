@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useSearchParams } from "react-router-dom";
+import { PerspectiveCamera, Vector3 } from "three";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
   Box,
   Boxes,
@@ -49,7 +51,12 @@ import {
 } from "../lib/trades-hall-visual-demo-state.js";
 import {
   decideRuntimeAsset,
+  runtimeAssetCameraViewForRoom,
+  runtimeAssetViewTransformForRoom,
   runtimeRoomTargetFromSearchParams,
+  type RuntimeAssetCameraBounds,
+  type RuntimeAssetCameraView,
+  type RuntimeAssetViewTransform,
   type RuntimeRoomTarget,
 } from "../lib/runtime-package-resolution.js";
 import {
@@ -84,6 +91,7 @@ interface VisualState {
 }
 
 type OverlayState = Readonly<Record<VisualOverlayKey, boolean>>;
+type RuntimeSplatBounds = NonNullable<SparkSplatLoadEvent["localBounds"]>;
 
 interface TruthModeTargetOption {
   readonly id: "table" | "route" | "room" | "runtimeAsset" | "reviewGate";
@@ -133,6 +141,14 @@ const INITIAL_OVERLAYS: OverlayState = {
   lightingProbes: true,
   agentReplay: true,
 };
+const RUNTIME_ASSET_DEFAULT_OVERLAYS: OverlayState = {
+  guestFlow: false,
+  routeClearance: false,
+  heritageBuffer: false,
+  densityHeatmap: false,
+  lightingProbes: false,
+  agentReplay: false,
+};
 
 const VISUAL_STAGE_ASPECT = 16 / 9;
 const VISUAL_CAMERA_BASE_POSITION = computeDefaultCameraPosition(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
@@ -144,6 +160,9 @@ const VISUAL_CAMERA_POSITION = [
 const VISUAL_CAMERA_TARGET = computeCameraTarget(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
 const VISUAL_CAMERA_DISTANCE_LIMITS = computeDistanceLimits(GRAND_HALL_RENDER_DIMENSIONS);
 const REPLAY_OVERLAY_BOUNDS = { width: 22, height: 12 } as const;
+const RUNTIME_SPLAT_FIT_MAX_DIMENSION = 42;
+const RUNTIME_SPLAT_MIN_SCALE = 0.2;
+const RUNTIME_SPLAT_MAX_SCALE = 4;
 
 function statusTone(status: LoadStatus): string {
   switch (status) {
@@ -181,6 +200,62 @@ function insightMode(insightId: VisualInsightCard["id"]): VisualCommandMode {
 
 function selectedModeLabel(mode: VisualCommandMode): string {
   return TRADES_HALL_VISUAL_DEMO_STATE.commandModes.find((item) => item.id === mode)?.label ?? "Design";
+}
+
+function mergeRuntimeSplatBounds(
+  urls: readonly string[],
+  boundsByUrl: Readonly<Record<string, RuntimeSplatBounds>>,
+): RuntimeSplatBounds | null {
+  let merged: RuntimeSplatBounds | null = null;
+  for (const url of urls) {
+    const bounds = boundsByUrl[url];
+    if (bounds === undefined) return null;
+    merged = merged === null
+      ? bounds
+      : {
+        min: [
+          Math.min(merged.min[0], bounds.min[0]),
+          Math.min(merged.min[1], bounds.min[1]),
+          Math.min(merged.min[2], bounds.min[2]),
+        ],
+        max: [
+          Math.max(merged.max[0], bounds.max[0]),
+          Math.max(merged.max[1], bounds.max[1]),
+          Math.max(merged.max[2], bounds.max[2]),
+        ],
+      };
+  }
+  return merged;
+}
+
+function fittedZUpRuntimeTransform(
+  bounds: RuntimeSplatBounds | null,
+  fallback: RuntimeAssetViewTransform,
+): RuntimeAssetViewTransform {
+  if (bounds === null) return fallback;
+
+  const widthX = bounds.max[0] - bounds.min[0];
+  const lengthY = bounds.max[1] - bounds.min[1];
+  const maxFloorDimension = Math.max(widthX, lengthY);
+  if (!Number.isFinite(maxFloorDimension) || maxFloorDimension <= 0) return fallback;
+
+  const scale = Math.min(
+    RUNTIME_SPLAT_MAX_SCALE,
+    Math.max(RUNTIME_SPLAT_MIN_SCALE, RUNTIME_SPLAT_FIT_MAX_DIMENSION / maxFloorDimension),
+  );
+  const centerX = (bounds.min[0] + bounds.max[0]) / 2;
+  const centerY = (bounds.min[1] + bounds.max[1]) / 2;
+
+  return {
+    position: [
+      Number((-centerX * scale).toFixed(3)),
+      Number((-bounds.min[2] * scale).toFixed(3)),
+      Number((centerY * scale).toFixed(3)),
+    ],
+    rotation: fallback.rotation,
+    scale: Number(scale.toFixed(4)),
+    note: "Auto-fitted from Spark-loaded SOG bounds for internal visual QA; signed room-local alignment still required.",
+  };
 }
 
 function replayStatusLabel(status: ReplayStatus): string {
@@ -345,14 +420,17 @@ function fallbackTruthModeSummary(input: {
   };
 }
 
-function truthSummaryStatusLabel(status: TruthSummaryStatus): string {
+function truthSummaryStatusLabel(
+  status: TruthSummaryStatus,
+  targetId?: TruthModeTargetOption["id"],
+): string {
   switch (status) {
     case "loaded":
       return "runtime data";
     case "loading":
       return "loading";
     case "fallback":
-      return "demo fallback";
+      return targetId === "runtimeAsset" ? "runtime package context" : "internal fixture context";
   }
 }
 
@@ -480,10 +558,12 @@ function VenueCanvasOverlays({
   overlays,
   replay,
   replayProgress,
+  planningCuesVisible,
 }: {
   readonly overlays: OverlayState;
   readonly replay: GuestFlowReplayArtifact;
   readonly replayProgress: number;
+  readonly planningCuesVisible: boolean;
 }): ReactElement {
   const flowTrajectories = replay.trajectories.slice(0, 4);
   const ghostTrajectories = replay.trajectories.slice(0, 8);
@@ -561,14 +641,18 @@ function VenueCanvasOverlays({
           ))}
         </>
       )}
-      <span className="visual-callout table">
-        <strong>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}</strong>
-        <span>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.guests} guests</span>
-        {TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.notes.map((note) => (
-          <span key={note}>{note}</span>
-        ))}
-      </span>
-      <span className="visual-selected-ring" />
+      {planningCuesVisible && (
+        <>
+          <span className="visual-callout table">
+            <strong>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}</strong>
+            <span>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.guests} guests</span>
+            {TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.notes.map((note) => (
+              <span key={note}>{note}</span>
+            ))}
+          </span>
+          <span className="visual-selected-ring" />
+        </>
+      )}
       {overlays.lightingProbes && (
         <>
           <span className="visual-probe probe-a" />
@@ -684,6 +768,173 @@ function ViewTool({ activeMode }: { readonly activeMode: VisualCommandMode }): R
   );
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampVectorToBounds(vector: Vector3, bounds: RuntimeAssetCameraBounds | null): boolean {
+  if (bounds === null) return false;
+  const x = clampNumber(vector.x, bounds.min[0], bounds.max[0]);
+  const y = clampNumber(vector.y, bounds.min[1], bounds.max[1]);
+  const z = clampNumber(vector.z, bounds.min[2], bounds.max[2]);
+  const changed = x !== vector.x || y !== vector.y || z !== vector.z;
+  if (changed) vector.set(x, y, z);
+  return changed;
+}
+
+function vectorFromTuple(vector: Vector3, tuple: readonly [number, number, number]): void {
+  vector.set(tuple[0], tuple[1], tuple[2]);
+}
+
+function smootherStep(value: number): number {
+  const t = clampNumber(value, 0, 1);
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function VisualCameraControls({
+  position,
+  target,
+  fov,
+  minDistance,
+  maxDistance,
+  runtimeCameraView,
+}: {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+  readonly fov: number;
+  readonly minDistance: number;
+  readonly maxDistance: number;
+  readonly runtimeCameraView: RuntimeAssetCameraView | null;
+}): ReactElement {
+  const { camera, invalidate } = useThree();
+  const controlsRef = useRef<OrbitControlsImpl>(null);
+  const arrivalElapsedMsRef = useRef(0);
+  const arrivalActiveRef = useRef(false);
+  const userControlStartedRef = useRef(false);
+  const arrivalPositionRef = useRef(new Vector3());
+  const arrivalTargetRef = useRef(new Vector3());
+  const settledPositionRef = useRef(new Vector3());
+  const settledTargetRef = useRef(new Vector3());
+  const animatedTargetRef = useRef(new Vector3());
+  const targetBounds = runtimeCameraView?.targetBounds ?? null;
+  const cameraBounds = runtimeCameraView?.cameraBounds ?? null;
+  const cameraArrivalPosition = runtimeCameraView?.arrivalPosition ?? null;
+  const cameraArrivalTarget = runtimeCameraView?.arrivalTarget ?? null;
+  const hasCameraArrival = cameraArrivalPosition !== null &&
+    cameraArrivalTarget !== null &&
+    (runtimeCameraView?.arrivalDurationMs ?? 0) > 0;
+
+  const clampRuntimeCamera = useCallback((): boolean => {
+    let changed = false;
+    const controls = controlsRef.current;
+    if (controls !== null) {
+      changed = clampVectorToBounds(controls.target, targetBounds) || changed;
+    }
+    changed = clampVectorToBounds(camera.position, cameraBounds) || changed;
+    if (changed) {
+      controls?.update();
+      invalidate();
+    }
+    return changed;
+  }, [camera, cameraBounds, invalidate, targetBounds]);
+
+  useEffect(() => {
+    if (camera instanceof PerspectiveCamera) {
+      camera.fov = fov;
+    }
+    vectorFromTuple(settledPositionRef.current, position);
+    vectorFromTuple(settledTargetRef.current, target);
+    const startPosition = hasCameraArrival ? cameraArrivalPosition : position;
+    const startTarget = hasCameraArrival ? cameraArrivalTarget : target;
+    vectorFromTuple(arrivalPositionRef.current, startPosition);
+    vectorFromTuple(arrivalTargetRef.current, startTarget);
+    camera.position.copy(arrivalPositionRef.current);
+    camera.lookAt(arrivalTargetRef.current);
+    camera.updateProjectionMatrix();
+    const controls = controlsRef.current;
+    if (controls !== null) {
+      controls.target.copy(arrivalTargetRef.current);
+      clampRuntimeCamera();
+      controls.update();
+    }
+    arrivalElapsedMsRef.current = 0;
+    arrivalActiveRef.current = hasCameraArrival;
+    userControlStartedRef.current = false;
+    invalidate();
+  }, [
+    camera,
+    cameraArrivalPosition,
+    cameraArrivalTarget,
+    clampRuntimeCamera,
+    fov,
+    hasCameraArrival,
+    invalidate,
+    position,
+    target,
+  ]);
+
+  useFrame((_state, delta) => {
+    if (runtimeCameraView === null) return;
+    const controls = controlsRef.current;
+    if (arrivalActiveRef.current && !userControlStartedRef.current) {
+      arrivalElapsedMsRef.current += delta * 1000;
+      const progress = runtimeCameraView.arrivalDurationMs <= 0
+        ? 1
+        : arrivalElapsedMsRef.current / runtimeCameraView.arrivalDurationMs;
+      const easedProgress = smootherStep(progress);
+      camera.position.lerpVectors(arrivalPositionRef.current, settledPositionRef.current, easedProgress);
+      if (controls !== null) {
+        controls.target.lerpVectors(arrivalTargetRef.current, settledTargetRef.current, easedProgress);
+        controls.update();
+      } else {
+        animatedTargetRef.current.lerpVectors(arrivalTargetRef.current, settledTargetRef.current, easedProgress);
+        camera.lookAt(animatedTargetRef.current);
+      }
+      clampRuntimeCamera();
+      invalidate();
+      if (progress >= 1) {
+        arrivalActiveRef.current = false;
+      }
+      return;
+    }
+    if (arrivalActiveRef.current && userControlStartedRef.current) {
+      arrivalActiveRef.current = false;
+    }
+    clampRuntimeCamera();
+  });
+
+  const handleControlsStart = useCallback((): void => {
+    userControlStartedRef.current = true;
+    arrivalActiveRef.current = false;
+  }, []);
+
+  const handleControlsChange = useCallback((): void => {
+    if (runtimeCameraView !== null) {
+      clampRuntimeCamera();
+    }
+    invalidate();
+  }, [clampRuntimeCamera, invalidate, runtimeCameraView]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enableDamping
+      dampingFactor={runtimeCameraView?.dampingFactor ?? 0.08}
+      target={target}
+      minDistance={minDistance}
+      maxDistance={maxDistance}
+      panSpeed={runtimeCameraView?.panSpeed}
+      rotateSpeed={runtimeCameraView?.rotateSpeed}
+      zoomSpeed={runtimeCameraView?.zoomSpeed}
+      minPolarAngle={runtimeCameraView?.minPolarAngle ?? 0}
+      maxPolarAngle={runtimeCameraView?.maxPolarAngle ?? Math.PI * 0.49}
+      onStart={handleControlsStart}
+      onChange={handleControlsChange}
+    />
+  );
+}
+
 function RuntimeAssetPackagePanel({
   runtimeTarget,
   packageId,
@@ -787,7 +1038,7 @@ function TruthModePanel({
             ))}
           </div>
           <p className="visual-row-copy visual-truth-context">
-            {truthSummaryStatusLabel(truthSummaryStatus)} for {selectedModeLabel(activeMode)} / {phase.label}
+            {truthSummaryStatusLabel(truthSummaryStatus, selectedTruthTarget?.id)} for {selectedModeLabel(activeMode)} / {phase.label}
           </p>
           <div className="visual-truth-row">
             <span className="visual-truth-icon"><Box size={17} aria-hidden="true" /></span>
@@ -795,7 +1046,9 @@ function TruthModePanel({
               <p className="visual-row-title">Source</p>
               <p className="visual-row-copy">{truthSummary.source}</p>
             </div>
-            <span className={`visual-state-chip ${truthSummaryStatus}`}>{truthSummaryStatusLabel(truthSummaryStatus)}</span>
+            <span className={`visual-state-chip ${truthSummaryStatus}`}>
+              {truthSummaryStatusLabel(truthSummaryStatus, selectedTruthTarget?.id)}
+            </span>
           </div>
           <div className="visual-truth-row">
             <span className="visual-truth-icon"><ChartNoAxesCombined size={17} aria-hidden="true" /></span>
@@ -1019,6 +1272,8 @@ export function TradesHallVisualPage(): ReactElement {
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("fixture");
   const [replayProgress, setReplayProgress] = useState(0.42);
   const [replayRunning, setReplayRunning] = useState(false);
+  const [splatLoadCounts, setSplatLoadCounts] = useState<Record<string, number>>({});
+  const [splatLoadBounds, setSplatLoadBounds] = useState<Record<string, RuntimeSplatBounds>>({});
   const [visualState, setVisualState] = useState<VisualState>(() => {
     if (runtimeTarget.error !== null) {
       return { status: "invalid", message: runtimeTarget.error, splatCount: null };
@@ -1029,6 +1284,27 @@ export function TradesHallVisualPage(): ReactElement {
   const assetDecision = useMemo(
     () => decideRuntimeAsset(null, publishedPackage),
     [publishedPackage],
+  );
+  const activeSplatUrls = assetDecision.splatUrls;
+  const activeSplatUrlKey = activeSplatUrls.join("|");
+  const hasRegisteredRuntimeAsset = assetDecision.source === "package" && activeSplatUrls.length > 0;
+  const baseRuntimeAssetViewTransform = useMemo(
+    () => runtimeAssetViewTransformForRoom(runtimeTarget.room),
+    [runtimeTarget.room],
+  );
+  const runtimeAssetCameraView = useMemo(
+    () => runtimeAssetCameraViewForRoom(runtimeTarget.room),
+    [runtimeTarget.room],
+  );
+  const mergedSplatBounds = useMemo(
+    () => runtimeTarget.room === "reception-room"
+      ? mergeRuntimeSplatBounds(activeSplatUrls, splatLoadBounds)
+      : null,
+    [activeSplatUrls, runtimeTarget.room, splatLoadBounds],
+  );
+  const runtimeAssetViewTransform = useMemo(
+    () => fittedZUpRuntimeTransform(mergedSplatBounds, baseRuntimeAssetViewTransform),
+    [baseRuntimeAssetViewTransform, mergedSplatBounds],
   );
   const eventPhases = useMemo(
     () => phaseGraph === null
@@ -1060,8 +1336,21 @@ export function TradesHallVisualPage(): ReactElement {
     [activeMode, selectedPhase, selectedTruthTarget, visualState],
   );
   const displayedTruthSummary = truthSummary ?? fallbackTruthSummary;
-  const meshVisible = layerMode === "hybrid" || layerMode === "mesh";
-  const splatVisible = layerMode === "hybrid" || layerMode === "splat";
+  const meshVisible = !hasRegisteredRuntimeAsset && (layerMode === "hybrid" || layerMode === "mesh");
+  const splatVisible = activeSplatUrls.length > 0 && (
+    hasRegisteredRuntimeAsset || layerMode === "hybrid" || layerMode === "splat"
+  );
+  const visualCameraPosition = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.position : VISUAL_CAMERA_POSITION;
+  const visualCameraTarget = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.target : VISUAL_CAMERA_TARGET;
+  const visualCameraDistanceLimits = hasRegisteredRuntimeAsset
+    ? {
+      minDistance: runtimeAssetCameraView.minDistance,
+      maxDistance: runtimeAssetCameraView.maxDistance,
+    }
+    : VISUAL_CAMERA_DISTANCE_LIMITS;
+  const visualRuntimeCameraView = hasRegisteredRuntimeAsset ? runtimeAssetCameraView : null;
+  const visualCameraFov = visualRuntimeCameraView?.fov ?? 42;
+  const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
 
   useEffect(() => {
     let cancelled = false;
@@ -1192,18 +1481,55 @@ export function TradesHallVisualPage(): ReactElement {
   // When a package asset becomes the active decision,
   // show a loading line until Spark resolves it; onLoad/onError refine it.
   useEffect(() => {
-    if (assetDecision.source === "package" && assetDecision.splatUrl !== null) {
-      setVisualState({ status: "loading", message: "Loading runtime asset", splatCount: null });
+    if (assetDecision.source === "package" && activeSplatUrls.length > 0) {
+      setSplatLoadCounts({});
+      setSplatLoadBounds({});
+      setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
+      setOpacity(1);
+      setSelectedTruthTargetId("runtimeAsset");
+      setVisualState({
+        status: "loading",
+        message: `Loading runtime asset chunks (0/${activeSplatUrls.length.toLocaleString("en-GB")})`,
+        splatCount: null,
+      });
+      setLayerMode("splat");
     }
-  }, [assetDecision.source, assetDecision.splatUrl]);
+  }, [activeSplatUrlKey, activeSplatUrls.length, assetDecision.source]);
 
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
+    setSplatLoadCounts((current) => ({
+      ...current,
+      [event.url]: event.splatCount,
+    }));
+    if (event.localBounds !== null) {
+      const bounds = event.localBounds;
+      setSplatLoadBounds((current) => ({
+        ...current,
+        [event.url]: bounds,
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (assetDecision.source !== "package" || activeSplatUrls.length === 0) return;
+    const loadedCount = activeSplatUrls.filter((url) => splatLoadCounts[url] !== undefined).length;
+    if (loadedCount === 0) return;
+    const totalSplats = activeSplatUrls.reduce((sum, url) => sum + (splatLoadCounts[url] ?? 0), 0);
+    const allLoaded = loadedCount === activeSplatUrls.length;
     setVisualState({
-      status: "loaded",
-      message: assetDecision.evidenceLabel,
-      splatCount: event.splatCount,
+      status: allLoaded ? "loaded" : "loading",
+      message: allLoaded
+        ? assetDecision.evidenceLabel
+        : `Loading runtime asset chunks (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")})`,
+      splatCount: totalSplats,
     });
-  }, [assetDecision.evidenceLabel]);
+  }, [
+    activeSplatUrlKey,
+    activeSplatUrls,
+    assetDecision.evidenceLabel,
+    assetDecision.source,
+    splatLoadCounts,
+  ]);
 
   const handleError = useCallback((event: SparkSplatErrorEvent) => {
     setVisualState({
@@ -1232,33 +1558,45 @@ export function TradesHallVisualPage(): ReactElement {
         <div className="visual-canvas-frame">
           <Canvas
             dpr={[1, 2]}
-            camera={{ fov: 42, near: 0.1, far: 180, position: VISUAL_CAMERA_POSITION }}
+            camera={{ fov: visualCameraFov, near: 0.1, far: 180, position: visualCameraPosition }}
             gl={{ antialias: true, powerPreference: "high-performance" }}
           >
+            <VisualCameraControls
+              key={visualCameraKey}
+              position={visualCameraPosition}
+              target={visualCameraTarget}
+              fov={visualCameraFov}
+              minDistance={visualCameraDistanceLimits.minDistance}
+              maxDistance={visualCameraDistanceLimits.maxDistance}
+              runtimeCameraView={visualRuntimeCameraView}
+            />
             <color attach="background" args={["#111415"]} />
             <ambientLight intensity={0.75} />
             <directionalLight position={[6, 9, 6]} intensity={0.65} />
             {meshVisible && <GrandHallRoom />}
-            {assetDecision.splatUrl !== null && (
+            {activeSplatUrls.map((splatUrl, index) => (
               <SparkSplatLayer
-                url={assetDecision.splatUrl}
+                key={splatUrl}
+                url={splatUrl}
                 visible={splatVisible}
                 opacity={opacity}
+                position={runtimeAssetViewTransform.position}
+                rotation={runtimeAssetViewTransform.rotation}
+                scale={runtimeAssetViewTransform.scale}
+                includeRendererHost={index === 0}
                 onLoad={handleLoad}
                 onError={handleError}
               />
-            )}
-            <OrbitControls
-              makeDefault
-              target={VISUAL_CAMERA_TARGET}
-              minDistance={VISUAL_CAMERA_DISTANCE_LIMITS.minDistance}
-              maxDistance={VISUAL_CAMERA_DISTANCE_LIMITS.maxDistance}
-              maxPolarAngle={Math.PI * 0.49}
-            />
+            ))}
           </Canvas>
         </div>
         <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
-        <VenueCanvasOverlays overlays={overlays} replay={guestFlowReplay} replayProgress={replayProgress} />
+        <VenueCanvasOverlays
+          overlays={overlays}
+          replay={guestFlowReplay}
+          replayProgress={replayProgress}
+          planningCuesVisible={!hasRegisteredRuntimeAsset}
+        />
         <VenueOverlayLegend
           overlays={overlays}
           onToggleOverlay={toggleOverlay}

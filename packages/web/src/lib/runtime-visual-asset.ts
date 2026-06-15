@@ -5,6 +5,7 @@ export const RUNTIME_SPLAT_EXTENSIONS = [
   ".spz",
   ".splat",
   ".ksplat",
+  ".sog",
   ".rad",
   ".radc",
 ] as const;
@@ -64,7 +65,7 @@ export function parseRuntimeSplatUrl(rawUrl: string | null | undefined): Runtime
 
   const extension = extensionForPath(parsed.pathname);
   if (extension === null) {
-    return result(false, null, null, "Asset URL must end in .ply, .spz, .splat, .ksplat, .rad, or .radc.");
+    return result(false, null, null, "Asset URL must end in .ply, .spz, .splat, .ksplat, .sog, .rad, or .radc.");
   }
 
   return result(true, trimmed, extension, null);

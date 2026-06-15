@@ -57,7 +57,7 @@ export const ROOM_ALIGNMENT_STATUSES = ["unaligned", "approximate", "aligned", "
 export const RoomAlignmentStatusSchema = z.enum(ROOM_ALIGNMENT_STATUSES);
 export type RoomAlignmentStatus = z.infer<typeof RoomAlignmentStatusSchema>;
 
-export const RUNTIME_SPLAT_EXTENSIONS = [".ply", ".spz", ".splat", ".ksplat", ".rad", ".radc"] as const;
+export const RUNTIME_SPLAT_EXTENSIONS = [".ply", ".spz", ".splat", ".ksplat", ".sog", ".rad", ".radc"] as const;
 export type RuntimeSplatExtension = (typeof RUNTIME_SPLAT_EXTENSIONS)[number];
 
 export const RUNTIME_FILE_EXTENSIONS = [
@@ -65,6 +65,7 @@ export const RUNTIME_FILE_EXTENSIONS = [
   ".spz",
   ".splat",
   ".ksplat",
+  ".sog",
   ".rad",
   ".radc",
   ".glb",
@@ -75,6 +76,7 @@ export const RUNTIME_FILE_EXTENSIONS = [
   ".laz",
   ".zip",
   ".json",
+  ".lcc2",
   ".jpg",
   ".jpeg",
   ".png",
@@ -91,12 +93,12 @@ const ASSET_KIND_EXTENSIONS: Readonly<Record<AssetKind, readonly RuntimeFileExte
   point_cloud: [".ply", ".e57", ".las", ".laz"],
   image_set: [".zip", ".json", ".jpg", ".jpeg", ".png", ".webp"],
   video: [".mp4", ".mov"],
-  manifest: [".json"],
+  manifest: [".json", ".lcc2"],
   preview: [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov"],
   other: RUNTIME_FILE_EXTENSIONS,
 };
 
-export const TRADES_HALL_VENUE_SLUG = "trades-hall" as const;
+export const TRADES_HALL_VENUE_SLUG = "trades-hall";
 export const TRADES_HALL_RUNTIME_ROOM_SLUGS = [
   "grand-hall",
   "reception-room",
@@ -119,6 +121,7 @@ export type TradesHallRoomDefaultStatus = z.infer<typeof TradesHallRoomDefaultSt
 
 export const TRADES_HALL_ROOM_CAPTURE_STATUSES = [
   "captured_needs_processing",
+  "processed_needs_registration",
   "splat_exists_outside_repo_needs_registration",
 ] as const;
 export const TradesHallRoomCaptureStatusSchema = z.enum(TRADES_HALL_ROOM_CAPTURE_STATUSES);
@@ -149,15 +152,15 @@ export const TRADES_HALL_RUNTIME_ROOMS = [
     roomSlug: "reception-room",
     displayName: "Reception Room",
     roomGroup: "support-room",
-    defaultStatus: "needs_processing",
-    captureStatus: "captured_needs_processing",
+    defaultStatus: "needs_registration",
+    captureStatus: "processed_needs_registration",
     registryRuntimeStatus: "not_registered",
     publicShowcaseEnabled: false,
     internalVisualEnabled: true,
     primaryCaptureSource: "xgrids",
-    currentState: "captured_needs_processing",
-    safeCopy: "captured / needs processing",
-    nextAction: "Process captured room into a runtime splat",
+    currentState: "processed_output_found",
+    safeCopy: "processed output found / needs registration",
+    nextAction: "Upload/register XGRIDS SOG bundle and verify internal runtime load",
   },
   {
     slug: "robert-adam-room",
@@ -464,6 +467,7 @@ export const RuntimePackageSchema = z.object({
   updatedAt: z.string(),
   primaryVisualAssetVersion: AssetVersionSchema.nullable(),
   primaryVisualAssetUrl: z.string().nullable(),
+  visualAssetUrls: z.array(z.string().url()),
 });
 export type RuntimePackage = z.infer<typeof RuntimePackageSchema>;
 

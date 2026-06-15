@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
-import { SplatMesh } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 
 type Vector3Tuple = readonly [number, number, number];
 type ScaleValue = number | Vector3Tuple;
@@ -16,6 +16,10 @@ const DEFAULT_SCALE = 1;
 export interface SparkSplatLoadEvent {
   readonly url: string;
   readonly splatCount: number;
+  readonly localBounds: {
+    readonly min: Vector3Tuple;
+    readonly max: Vector3Tuple;
+  } | null;
 }
 
 export interface SparkSplatErrorEvent {
@@ -30,6 +34,7 @@ export interface SparkSplatLayerProps {
   readonly position?: Vector3Tuple;
   readonly rotation?: Vector3Tuple;
   readonly scale?: ScaleValue;
+  readonly includeRendererHost?: boolean;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
 }
@@ -41,6 +46,15 @@ function asError(value: unknown): Error {
 function splatCount(mesh: SplatMesh): number {
   const count = mesh.numSplats;
   return typeof count === "number" && Number.isFinite(count) ? count : 0;
+}
+
+function splatLocalBounds(mesh: SplatMesh): SparkSplatLoadEvent["localBounds"] {
+  const bounds = mesh.getBoundingBox(true);
+  if (bounds.isEmpty()) return null;
+  return {
+    min: [bounds.min.x, bounds.min.y, bounds.min.z],
+    max: [bounds.max.x, bounds.max.y, bounds.max.z],
+  };
 }
 
 function applyLayerProps(
@@ -59,6 +73,28 @@ function applyLayerProps(
   }
 }
 
+function SparkRendererHost(): ReactElement {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const sparkRenderer = useMemo(
+    () => new SparkRenderer({
+      renderer: gl,
+      onDirty: invalidate,
+      transparent: true,
+      depthWrite: false,
+    }),
+    [gl, invalidate],
+  );
+
+  useEffect(() => {
+    return () => {
+      sparkRenderer.dispose();
+    };
+  }, [sparkRenderer]);
+
+  return <primitive object={sparkRenderer} />;
+}
+
 export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | null {
   const {
     url,
@@ -69,6 +105,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     position = DEFAULT_POSITION,
     rotation = DEFAULT_ROTATION,
     scale = DEFAULT_SCALE,
+    includeRendererHost = true,
   } = props;
   const invalidate = useThree((state) => state.invalidate);
   const [mesh, setMesh] = useState<SplatMesh | null>(null);
@@ -107,7 +144,11 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
       .then((loadedMesh) => {
         if (disposed) return;
         applyLayerProps(loadedMesh, latestLayerPropsRef.current);
-        onLoad?.({ url, splatCount: splatCount(loadedMesh) });
+        onLoad?.({
+          url,
+          splatCount: splatCount(loadedMesh),
+          localBounds: splatLocalBounds(loadedMesh),
+        });
         invalidate();
       })
       .catch((reason: unknown) => {
@@ -132,9 +173,10 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     };
   }, [invalidate, onError, onLoad, url]);
 
-  if (mesh === null) {
-    return null;
-  }
-
-  return <primitive object={mesh} />;
+  return (
+    <>
+      {includeRendererHost && <SparkRendererHost />}
+      {mesh !== null && <primitive object={mesh} />}
+    </>
+  );
 }

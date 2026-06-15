@@ -49,6 +49,7 @@ describe("T-087 Spark renderer dependency unit", () => {
     const routeSource = await fs.readFile(path.resolve("src/pages/TradesHallVisualPage.tsx"), "utf-8");
 
     expect(componentSource).toContain("@sparkjsdev/spark");
+    expect(componentSource).toContain("SparkRenderer");
     expect(componentSource).toContain("SplatMesh");
     expect(componentSource).not.toContain("textSplats");
     expect(routeSource).not.toContain("textSplats");

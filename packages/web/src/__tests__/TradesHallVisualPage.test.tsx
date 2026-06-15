@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 
+type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
+
 const { getLatestRuntimePackageMock } = vi.hoisted(() => ({
   getLatestRuntimePackageMock: vi.fn(),
 }));
@@ -20,6 +22,10 @@ const { getLatestGuestFlowReplayMock } = vi.hoisted(() => ({
   getLatestGuestFlowReplayMock: vi.fn(),
 }));
 
+const { orbitControlsMock } = vi.hoisted(() => ({
+  orbitControlsMock: vi.fn<(props: OrbitControlsMockProps) => void>(),
+}));
+
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { readonly children?: React.ReactNode }) => {
     const renderableChildren = React.Children.toArray(children).filter((child) => {
@@ -29,11 +35,57 @@ vi.mock("@react-three/fiber", () => ({
     return <div data-testid="visual-canvas">{renderableChildren}</div>;
   },
   useFrame: vi.fn(),
+  useThree: () => {
+    const position = {
+      x: 0,
+      y: 0,
+      z: 0,
+      set: vi.fn((x: number, y: number, z: number) => {
+        position.x = x;
+        position.y = y;
+        position.z = z;
+        return position;
+      }),
+      copy: vi.fn((source: { readonly x: number; readonly y: number; readonly z: number }) => {
+        position.x = source.x;
+        position.y = source.y;
+        position.z = source.z;
+        return position;
+      }),
+      lerpVectors: vi.fn((
+        start: { readonly x: number; readonly y: number; readonly z: number },
+        end: { readonly x: number; readonly y: number; readonly z: number },
+        alpha: number,
+      ) => {
+        position.x = start.x + (end.x - start.x) * alpha;
+        position.y = start.y + (end.y - start.y) * alpha;
+        position.z = start.z + (end.z - start.z) * alpha;
+        return position;
+      }),
+    };
+    return {
+      camera: {
+        position,
+        lookAt: vi.fn(),
+        updateProjectionMatrix: vi.fn(),
+      },
+      invalidate: vi.fn(),
+    };
+  },
 }));
 
-vi.mock("@react-three/drei", () => ({
-  OrbitControls: vi.fn(() => null),
-}));
+vi.mock("@react-three/drei", async () => {
+  const ReactModule = await import("react");
+  return {
+    OrbitControls: ReactModule.forwardRef<unknown, OrbitControlsMockProps>(function MockOrbitControls(
+      props,
+      _ref,
+    ) {
+      orbitControlsMock(props);
+      return null;
+    }),
+  };
+});
 
 vi.mock("../components/GrandHallRoom.js", () => ({
   GrandHallRoom: () => <div data-testid="grand-hall-room" />,
@@ -85,6 +137,7 @@ afterEach(() => {
   getEventPhaseGraphMock.mockReset();
   getLatestGuestFlowReplayMock.mockReset();
   getTruthModeSummaryMock.mockReset();
+  orbitControlsMock.mockReset();
 });
 
 function mount(initialEntry = "/dev/trades-hall-visual"): void {
@@ -149,6 +202,7 @@ function makeRuntimePackage(roomSlug = "robert-adam-room"): RuntimePackage {
     createdAt: "2026-06-06T10:00:00.000Z",
     updatedAt: "2026-06-06T10:00:00.000Z",
     primaryVisualAssetUrl: `https://assets.example/${roomSlug}/scene.ply`,
+    visualAssetUrls: [`https://assets.example/${roomSlug}/scene.ply`],
     primaryVisualAssetVersion: {
       id: assetVersionId,
       venueSlug: "trades-hall",
@@ -380,6 +434,38 @@ describe("TradesHallVisualPage", () => {
         "https://assets.example/robert-adam-room/scene.ply",
       );
     });
+  });
+
+  it("does not mount the procedural Grand Hall room when a registered runtime package is active", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeRuntimePackage("reception-room"));
+    render(
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual?venue=trades-hall&room=reception-room"]}>
+        <TradesHallVisualPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spark-splat-layer").textContent).toBe(
+        "https://assets.example/reception-room/scene.ply",
+      );
+    });
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+    expect(orbitControlsMock).toHaveBeenCalledWith(expect.objectContaining({
+      enableDamping: true,
+      dampingFactor: 0.065,
+      target: [0, 0.9, -4.15],
+      minDistance: 1.2,
+      maxDistance: 13.5,
+      panSpeed: 0.08,
+      rotateSpeed: 0.18,
+      zoomSpeed: 0.16,
+      minPolarAngle: Math.PI * 0.14,
+      maxPolarAngle: Math.PI * 0.48,
+    }));
+    const runtimeControlsProps = orbitControlsMock.mock.calls
+      .map(([props]) => props)
+      .find((props) => Array.isArray(props["target"]) && props["target"][2] === -4.15);
+    expect(runtimeControlsProps?.["onStart"]).toEqual(expect.any(Function));
   });
 
   it("ignores manual splatUrl query params and keeps the procedural fallback", () => {

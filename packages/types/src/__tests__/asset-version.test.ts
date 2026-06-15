@@ -88,6 +88,12 @@ describe("Trades Hall room registry", () => {
       "splat_exists_outside_repo_needs_registration",
     );
     expect(tradesHallRuntimeRoomForSlug("grand-hall")?.safeCopy).toBe("captured / needs processing");
+    expect(tradesHallRuntimeRoomForSlug("reception-room")?.captureStatus).toBe(
+      "processed_needs_registration",
+    );
+    expect(tradesHallRuntimeRoomForSlug("reception-room")?.safeCopy).toBe(
+      "processed output found / needs registration",
+    );
   });
 
   it("encodes the R2 training path conventions", () => {
@@ -130,21 +136,27 @@ describe("runtime file extension helpers", () => {
     expect(runtimeFileExtensionForKey("a/b/scene.ply")).toBe(".ply");
     expect(runtimeFileExtensionForKey("a/b/scene.spz")).toBe(".spz");
     expect(runtimeFileExtensionForKey("a/SCENE.SPLAT")).toBe(".splat");
+    expect(runtimeFileExtensionForKey("a/tiles/0_1_0.sog")).toBe(".sog");
     expect(runtimeFileExtensionForKey("a/scene.glb")).toBe(".glb");
     expect(runtimeFileExtensionForKey("a/cloud.e57")).toBe(".e57");
     expect(runtimeFileExtensionForKey("a/manifest.json")).toBe(".json");
+    expect(runtimeFileExtensionForKey("a/Reception%20Room.lcc2")).toBe(".lcc2");
   });
 
   it("separates Spark splat extensions from broader registry formats", () => {
     expect(splatExtensionForKey("a/b/scene.ply")).toBe(".ply");
     expect(splatExtensionForKey("a/b/scene.spz?signature=abc")).toBe(".spz");
+    expect(splatExtensionForKey("a/b/0_1_0.sog")).toBe(".sog");
     expect(splatExtensionForKey("a/b/scene.glb")).toBeNull();
   });
 
   it("pins asset kind to allowed file formats", () => {
     expect(assetKindAllowsExtension("splat", ".ply")).toBe(true);
+    expect(assetKindAllowsExtension("splat", ".sog")).toBe(true);
     expect(assetKindAllowsExtension("mesh", ".glb")).toBe(true);
     expect(assetKindAllowsExtension("mesh", ".ply")).toBe(false);
+    expect(assetKindAllowsExtension("manifest", ".lcc2")).toBe(true);
+    expect(assetKindAllowsExtension("splat", ".lcc2")).toBe(false);
     expect(assetKindAllowsExtension("video", ".json")).toBe(false);
   });
 });
@@ -173,6 +185,40 @@ describe("RegisterAssetVersionInputSchema", () => {
     expect(parsed.roomSlug).toBe("robert-adam-room");
     expect(parsed.evidenceStatus).toBe("unverified");
     expect(parsed.runtimeStatus).toBe("staged");
+  });
+
+  it("accepts a Reception Room XGRIDS SOG splat candidate", () => {
+    const parsed = RegisterAssetVersionInputSchema.parse({
+      ...validVersionInput,
+      roomSlug: "reception-room",
+      r2Key: "venues/trades-hall/rooms/reception-room/xgrids/2026-06-08/lcc2-result/data/3dgs/0_1_0.sog",
+      fileName: "0_1_0.sog",
+      fileExt: ".sog",
+      sha256: "08c928b2556e2ba38cdf1777c806bb6b7ece249d5e7c442d20c0232ca703005c",
+      sizeBytes: 9845814,
+      notes: "Candidate XGRIDS/LCC2 SOG chunk; verify whether it represents a tile or whole-room visual before making a runtime package loadable.",
+    });
+    expect(parsed.roomSlug).toBe("reception-room");
+    expect(parsed.fileExt).toBe(".sog");
+    expect(parsed.runtimeStatus).toBe("staged");
+    expect(parsed.evidenceStatus).toBe("unverified");
+  });
+
+  it("accepts the Reception Room XGRIDS LCC2 manifest as provenance, not a splat", () => {
+    const parsed = RegisterAssetVersionInputSchema.parse({
+      ...validVersionInput,
+      roomSlug: "reception-room",
+      assetKind: "manifest",
+      r2Key: "venues/trades-hall/rooms/reception-room/xgrids/2026-06-08/lcc2-result/Reception Room.lcc2",
+      fileName: "Reception Room.lcc2",
+      fileExt: ".lcc2",
+      sha256: "f0a4c782cc0f031830404d409f5c0accdc30ed501fa562169206962ceee64f3e",
+      sizeBytes: 80065,
+      notes: "Canonical XGRIDS LCC2 manifest for the Reception Room processed output; Spark loads SOG chunks, not this manifest directly.",
+    });
+    expect(parsed.assetKind).toBe("manifest");
+    expect(parsed.fileExt).toBe(".lcc2");
+    expect(assetKindAllowsExtension("splat", parsed.fileExt)).toBe(false);
   });
 
   it("accepts a master scan with a nullable room slug", () => {
@@ -325,6 +371,7 @@ describe("response schemas", () => {
       updatedAt: "2026-06-06T10:00:00.000Z",
       primaryVisualAssetVersion: assetVersion,
       primaryVisualAssetUrl: "https://assets.example/scene.ply",
+      visualAssetUrls: ["https://assets.example/scene.ply"],
     });
     expect(pkg.primaryVisualAssetVersion?.sourceType).toBe("xgrids");
   });

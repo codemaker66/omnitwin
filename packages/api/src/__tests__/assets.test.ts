@@ -89,6 +89,28 @@ describe("GET /assets/runtime-packages/latest", () => {
   });
 });
 
+describe("GET /assets/runtime-assets/:assetVersionId", () => {
+  it("rejects malformed asset version IDs before storage lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-assets/not-a-runtime-asset-id",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects unsupported range headers before runtime lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/assets/runtime-assets/${ASSET_VERSION_ID}`,
+      headers: { range: "items=0-10" },
+    });
+    expect(res.statusCode).toBe(416);
+    expect(res.json()).toMatchObject({
+      code: "UNSUPPORTED_RANGE",
+    });
+  });
+});
+
 describe("GET /assets/runtime-packages/public-room-visual", () => {
   it("validates venue and room query params before querying", async () => {
     const res = await server.inject({ method: "GET", url: "/assets/runtime-packages/public-room-visual" });

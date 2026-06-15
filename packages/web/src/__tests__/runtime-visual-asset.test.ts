@@ -10,6 +10,7 @@ describe("runtime visual asset URL parsing", () => {
     expect(parseRuntimeSplatUrl("https://assets.venviewer.test/scene.spz?signature=abc").extension).toBe(".spz");
     expect(parseRuntimeSplatUrl("/dev-assets/trades-hall/scene.splat").ok).toBe(true);
     expect(parseRuntimeSplatUrl("/dev-assets/trades-hall/scene.ksplat").ok).toBe(true);
+    expect(parseRuntimeSplatUrl("/dev-assets/trades-hall/reception-room/0_1_0.sog").extension).toBe(".sog");
     expect(parseRuntimeSplatUrl("/dev-assets/trades-hall/scene.rad").ok).toBe(true);
     expect(parseRuntimeSplatUrl("/dev-assets/trades-hall/scene.radc").ok).toBe(true);
   });

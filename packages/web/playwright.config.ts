@@ -16,6 +16,7 @@ const IS_PREVIEW_MODE = WEB_SERVER_MODE === "preview";
 const BASE_URL = process.env["E2E_BASE_URL"] ??
   (IS_PREVIEW_MODE ? "http://127.0.0.1:4176" : "http://localhost:5173");
 const START_SERVER = process.env["E2E_START_SERVER"] !== "false";
+const BROWSER_CHANNEL = process.env["E2E_BROWSER_CHANNEL"];
 
 function webServerCommand(): string {
   if (IS_PREVIEW_MODE) {
@@ -42,7 +43,10 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(BROWSER_CHANNEL === undefined ? {} : { channel: BROWSER_CHANNEL }),
+      },
     },
   ],
 

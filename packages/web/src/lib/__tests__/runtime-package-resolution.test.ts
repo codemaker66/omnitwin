@@ -7,6 +7,8 @@ import {
 import {
   decideRuntimeAsset,
   evidenceStatusLabel,
+  runtimeAssetCameraViewForRoom,
+  runtimeAssetViewTransformForRoom,
   runtimeRoomTargetFromSearchParams,
 } from "../runtime-package-resolution.js";
 
@@ -50,6 +52,7 @@ function makePackage(overrides: {
     primaryVisualAssetUrl: overrides.assetUrl === undefined
       ? "https://assets.example/robert-adam-room/scene.ply"
       : overrides.assetUrl,
+    visualAssetUrls: [],
     primaryVisualAssetVersion: {
       id: ASSET_VERSION_ID,
       venueSlug: "trades-hall",
@@ -145,6 +148,7 @@ describe("decideRuntimeAsset", () => {
     const decision = decideRuntimeAsset("https://manual.example/scene.ply", makePackage());
     expect(decision.source).toBe("package");
     expect(decision.splatUrl).toBe("https://assets.example/robert-adam-room/scene.ply");
+    expect(decision.splatUrls).toEqual(["https://assets.example/robert-adam-room/scene.ply"]);
     expect(decision.isProceduralFallback).toBe(false);
     expect(decision.evidenceStatus).toBe("machine_checked");
   });
@@ -153,14 +157,44 @@ describe("decideRuntimeAsset", () => {
     const decision = decideRuntimeAsset(null, makePackage({ evidenceStatus: "human_reviewed" }));
     expect(decision.source).toBe("package");
     expect(decision.splatUrl).toBe("https://assets.example/robert-adam-room/scene.ply");
+    expect(decision.splatUrls).toEqual(["https://assets.example/robert-adam-room/scene.ply"]);
     expect(decision.evidenceStatus).toBe("human_reviewed");
     expect(decision.isProceduralFallback).toBe(false);
+  });
+
+  it("allows a registered SOG runtime package for XGRIDS output", () => {
+    const decision = decideRuntimeAsset(null, makePackage({
+      assetUrl: "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+    }));
+    expect(decision.source).toBe("package");
+    expect(decision.splatUrl).toBe("https://assets.example/reception-room/data/3dgs/0_1_0.sog");
+    expect(decision.evidenceLabel).toMatch(/runtime asset loaded/i);
+  });
+
+  it("prefers a validated SOG chunk set over the primary visual URL", () => {
+    const decision = decideRuntimeAsset(null, {
+      ...makePackage({
+        assetUrl: "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+      }),
+      visualAssetUrls: [
+        "https://assets.example/reception-room/data/3dgs/0_0.sog",
+        "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+        "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+        "https://assets.example/dev/text-splats/0_2.sog",
+      ],
+    });
+
+    expect(decision.splatUrls).toEqual([
+      "https://assets.example/reception-room/data/3dgs/0_0.sog",
+      "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+    ]);
   });
 
   it("falls back when no runtime package exists", () => {
     const decision = decideRuntimeAsset(null, null);
     expect(decision.source).toBe("none");
     expect(decision.splatUrl).toBeNull();
+    expect(decision.splatUrls).toEqual([]);
     expect(decision.isProceduralFallback).toBe(true);
     expect(decision.evidenceLabel).toBe("No real asset loaded yet");
   });
@@ -224,5 +258,100 @@ describe("evidenceStatusLabel", () => {
         expect(lower).not.toContain(phrase);
       }
     }
+  });
+});
+
+describe("runtimeAssetViewTransformForRoom", () => {
+  it("uses an approximate Z-up to Y-up transform for the Reception Room SOG runtime package", () => {
+    const transform = runtimeAssetViewTransformForRoom("reception-room");
+    expect(transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
+    expect(transform.scale).toBeCloseTo(0.63);
+    expect(transform.note).toMatch(/visual QA/i);
+  });
+
+  it("does not invent transforms for rooms without registered visual alignment", () => {
+    const transform = runtimeAssetViewTransformForRoom("grand-hall");
+    expect(transform).toMatchObject({
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: 1,
+    });
+  });
+});
+
+describe("runtimeAssetCameraViewForRoom", () => {
+  it("starts the Reception Room from a bounded cinematic interior inspection camera", () => {
+    const cameraView = runtimeAssetCameraViewForRoom("reception-room");
+    expect(cameraView.position[1]).toBeLessThan(20);
+    expect(cameraView.position[2]).toBeLessThan(22);
+    expect(cameraView.target[2]).toBeLessThan(0);
+    expect(cameraView.arrivalPosition).toEqual([0.25, 7.15, 14.1]);
+    expect(cameraView.arrivalTarget).toEqual([0, 1.2, -4]);
+    expect(cameraView.arrivalDurationMs).toBe(1400);
+    expect(cameraView.fov).toBeGreaterThanOrEqual(46);
+    expect(cameraView.minDistance).toBeLessThanOrEqual(1.25);
+    expect(cameraView.maxDistance).toBeLessThanOrEqual(14);
+    expect(cameraView.panSpeed).toBeLessThan(1);
+    expect(cameraView.rotateSpeed).toBeLessThan(1);
+    expect(cameraView.zoomSpeed).toBeLessThan(1);
+    expect(cameraView.dampingFactor).toBeGreaterThan(0);
+    expect(cameraView.dampingFactor).toBeLessThanOrEqual(0.08);
+    expect(cameraView.minPolarAngle).toBeGreaterThan(0);
+    expect(cameraView.maxPolarAngle).toBeLessThan(Math.PI / 2);
+    expect(cameraView.targetBounds).not.toBeNull();
+    expect(cameraView.cameraBounds).not.toBeNull();
+    if (cameraView.targetBounds === null || cameraView.cameraBounds === null) {
+      throw new Error("Reception Room camera tuning must include runtime bounds.");
+    }
+    expect(cameraView.position[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
+    expect(cameraView.position[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
+    expect(cameraView.position[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
+    expect(cameraView.position[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
+    expect(cameraView.position[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
+    expect(cameraView.position[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
+    expect(cameraView.target[0]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[0]);
+    expect(cameraView.target[0]).toBeLessThanOrEqual(cameraView.targetBounds.max[0]);
+    expect(cameraView.target[1]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[1]);
+    expect(cameraView.target[1]).toBeLessThanOrEqual(cameraView.targetBounds.max[1]);
+    expect(cameraView.target[2]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[2]);
+    expect(cameraView.target[2]).toBeLessThanOrEqual(cameraView.targetBounds.max[2]);
+    if (cameraView.arrivalPosition === null || cameraView.arrivalTarget === null) {
+      throw new Error("Reception Room camera tuning must include a cinematic arrival pose.");
+    }
+    expect(cameraView.arrivalPosition[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
+    expect(cameraView.arrivalPosition[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
+    expect(cameraView.arrivalPosition[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
+    expect(cameraView.arrivalPosition[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
+    expect(cameraView.arrivalPosition[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
+    expect(cameraView.arrivalPosition[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
+    expect(cameraView.arrivalTarget[0]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[0]);
+    expect(cameraView.arrivalTarget[0]).toBeLessThanOrEqual(cameraView.targetBounds.max[0]);
+    expect(cameraView.arrivalTarget[1]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[1]);
+    expect(cameraView.arrivalTarget[1]).toBeLessThanOrEqual(cameraView.targetBounds.max[1]);
+    expect(cameraView.arrivalTarget[2]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[2]);
+    expect(cameraView.arrivalTarget[2]).toBeLessThanOrEqual(cameraView.targetBounds.max[2]);
+    expect(cameraView.note).toMatch(/interior/i);
+  });
+
+  it("keeps an overview camera for rooms without registered runtime camera tuning", () => {
+    const cameraView = runtimeAssetCameraViewForRoom("grand-hall");
+    expect(cameraView).toMatchObject({
+      position: [0, 20, 22],
+      target: [0, 1.8, 0],
+      arrivalPosition: null,
+      arrivalTarget: null,
+      arrivalDurationMs: 0,
+      fov: 42,
+      minDistance: 1.5,
+      maxDistance: 34,
+      panSpeed: 0.8,
+      rotateSpeed: 1,
+      zoomSpeed: 1,
+      dampingFactor: 0.08,
+      minPolarAngle: 0,
+      maxPolarAngle: Math.PI * 0.49,
+      targetBounds: null,
+      cameraBounds: null,
+    });
   });
 });

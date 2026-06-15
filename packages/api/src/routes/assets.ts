@@ -1,5 +1,6 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { z } from "zod";
 import {
   AdminRoomsQuerySchema,
   AssetVersionSchema,
@@ -44,6 +45,7 @@ import { authenticate, authorize } from "../middleware/auth.js";
 //   GET /assets
 //   GET /assets/runtime-packages/latest?venue=trades-hall&room=grand-hall
 //   GET /assets/runtime-packages/public-room-visual?venue=trades-hall&room=grand-hall
+//   GET /assets/runtime-assets/:assetVersionId
 //
 // Admin:
 //   POST /admin/assets/capture-session
@@ -58,6 +60,34 @@ type CaptureSessionRow = typeof captureSessions.$inferSelect;
 type RoomManifestRow = typeof roomManifests.$inferSelect;
 type RuntimePackageRow = typeof runtimePackages.$inferSelect;
 
+const RuntimeAssetParamsSchema = z.object({
+  assetVersionId: z.string().uuid(),
+  fileName: z.string().min(1).max(255).optional(),
+}).strict();
+const HTTP_RANGE_HEADER_PATTERN = /^bytes=\d*-\d*$/u;
+
+type S3ClientType = import("@aws-sdk/client-s3").S3Client;
+
+let cachedS3: S3ClientType | null = null;
+
+async function getS3Client(env: Env): Promise<S3ClientType> {
+  if (cachedS3 !== null) return cachedS3;
+
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  cachedS3 = new S3Client({
+    region: "auto",
+    endpoint: `https://${env.R2_ACCOUNT_ID ?? ""}.r2.cloudflarestorage.com`,
+    forcePathStyle: true,
+    maxAttempts: 3,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    credentials: {
+      accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
+    },
+  });
+  return cachedS3;
+}
+
 function dateToIso(value: Date): string {
   return value.toISOString();
 }
@@ -66,11 +96,29 @@ function r2PublicPath(r2Key: string): string {
   return r2Key.replace(/^r2:/, "").replace(/^\/+/, "");
 }
 
-function resolveAssetUrl(env: Env, row: AssetVersionRow): string | null {
+function runtimeAssetOrigin(request: FastifyRequest): string | null {
+  const forwardedHost = request.headers["x-forwarded-host"];
+  const hostHeader = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? request.headers.host;
+  if (hostHeader === undefined || !/^[a-z0-9.-]+(?::\d+)?$/iu.test(hostHeader)) return null;
+
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  const protocolHeader = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  const protocol = protocolHeader === "https" || protocolHeader === "http" ? protocolHeader : request.protocol;
+  return `${protocol}://${hostHeader}`;
+}
+
+function resolveAssetUrl(row: AssetVersionRow, requestOrigin: string | null): string | null {
   if (row.externalUrl !== null) return row.externalUrl;
   if (row.r2Key === null) return null;
-  if (env.R2_PUBLIC_URL === undefined) return null;
-  return `${env.R2_PUBLIC_URL.replace(/\/+$/, "")}/${r2PublicPath(row.r2Key)}`;
+  if (requestOrigin === null) return null;
+  return `${requestOrigin}/assets/runtime-assets/${row.id}/${encodeURIComponent(row.fileName)}`;
+}
+
+function r2IsConfigured(env: Env): boolean {
+  return env.R2_ACCOUNT_ID !== undefined &&
+    env.R2_ACCESS_KEY_ID !== undefined &&
+    env.R2_SECRET_ACCESS_KEY !== undefined &&
+    env.R2_BUCKET_NAME !== undefined;
 }
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
@@ -162,10 +210,31 @@ function runtimePackageCanLoad(pkg: RuntimePackageRow): boolean {
   return pkg.runtimeStatus === "internal_ready" || pkg.runtimeStatus === "published";
 }
 
+async function listUsableRuntimeVisualAssets(
+  db: Database,
+  pkg: RuntimePackageRow,
+): Promise<readonly AssetVersionRow[]> {
+  if (!runtimePackageCanLoad(pkg)) return [];
+  return db
+    .select()
+    .from(assetVersions)
+    .where(and(
+      eq(assetVersions.venueSlug, pkg.venueSlug),
+      eq(assetVersions.roomSlug, pkg.roomSlug),
+      eq(assetVersions.assetKind, "splat"),
+      eq(assetVersions.fileExt, ".sog"),
+      eq(assetVersions.runtimeStatus, "usable"),
+      ne(assetVersions.evidenceStatus, "rejected"),
+      ne(assetVersions.fileName, "env.sog"),
+    ))
+    .orderBy(asc(assetVersions.fileName), asc(assetVersions.id));
+}
+
 function serializeRuntimePackage(
-  env: Env,
   pkg: RuntimePackageRow,
   primaryVisualAssetVersion: AssetVersionRow | null,
+  requestOrigin: string | null,
+  visualAssetVersions: readonly AssetVersionRow[] = [],
 ): RuntimePackage {
   const serializedAsset = primaryVisualAssetVersion === null ? null : serializeAssetVersion(primaryVisualAssetVersion);
   return RuntimePackageSchema.parse({
@@ -182,7 +251,12 @@ function serializeRuntimePackage(
     createdAt: dateToIso(pkg.createdAt),
     updatedAt: dateToIso(pkg.updatedAt),
     primaryVisualAssetVersion: serializedAsset,
-    primaryVisualAssetUrl: primaryVisualAssetVersion === null ? null : resolveAssetUrl(env, primaryVisualAssetVersion),
+    primaryVisualAssetUrl: primaryVisualAssetVersion === null
+      ? null
+      : resolveAssetUrl(primaryVisualAssetVersion, requestOrigin),
+    visualAssetUrls: visualAssetVersions
+      .map((asset) => resolveAssetUrl(asset, requestOrigin))
+      .filter((url): url is string => url !== null),
   });
 }
 
@@ -410,7 +484,15 @@ export async function assetRoutes(
         return { data: null };
       }
 
-      return { data: serializeRuntimePackage(env, row.pkg, row.primaryVisualAssetVersion) };
+      const visualAssetVersions = await listUsableRuntimeVisualAssets(db, row.pkg);
+      return {
+        data: serializeRuntimePackage(
+          row.pkg,
+          row.primaryVisualAssetVersion,
+          runtimeAssetOrigin(request),
+          visualAssetVersions,
+        ),
+      };
     } catch (error: unknown) {
       request.log.warn({
         err: error,
@@ -468,13 +550,103 @@ export async function assetRoutes(
       return { data: unavailable };
     }
   });
+
+  async function streamRuntimeAsset(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+    const parsedParams = RuntimeAssetParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return validationError(reply, parsedParams.error.issues);
+    }
+    if (!r2IsConfigured(env)) {
+      return reply.status(503).send({
+        error: "Runtime asset storage is not configured",
+        code: "RUNTIME_ASSET_STORAGE_DISABLED",
+      });
+    }
+
+    const rangeHeader = request.headers.range;
+    const range = typeof rangeHeader === "string" ? rangeHeader : undefined;
+    if (range !== undefined && !HTTP_RANGE_HEADER_PATTERN.test(range)) {
+      return reply.status(416).send({
+        error: "Unsupported range request",
+        code: "UNSUPPORTED_RANGE",
+      });
+    }
+
+    try {
+      const [row] = await db
+        .select({ asset: assetVersions, pkg: runtimePackages })
+        .from(assetVersions)
+        .innerJoin(runtimePackages, and(
+          eq(runtimePackages.venueSlug, assetVersions.venueSlug),
+          eq(runtimePackages.roomSlug, assetVersions.roomSlug),
+        ))
+        .where(and(
+          eq(assetVersions.id, parsedParams.data.assetVersionId),
+          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
+          eq(assetVersions.runtimeStatus, "usable"),
+        ))
+        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
+        .limit(1);
+
+      if (
+        row === undefined ||
+        !runtimePackageCanLoad(row.pkg) ||
+        !isServablePrimaryVisualAsset(row.asset) ||
+        row.asset.r2Key === null ||
+        (parsedParams.data.fileName !== undefined && parsedParams.data.fileName !== row.asset.fileName)
+      ) {
+        return reply.status(404).send({
+          error: "Runtime asset is not available",
+          code: "RUNTIME_ASSET_NOT_AVAILABLE",
+        });
+      }
+
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const s3 = await getS3Client(env);
+      const object = await s3.send(new GetObjectCommand({
+        Bucket: env.R2_BUCKET_NAME,
+        Key: r2PublicPath(row.asset.r2Key),
+        Range: range,
+      }));
+      if (object.Body === undefined) {
+        return reply.status(502).send({
+          error: "Runtime asset object was empty",
+          code: "RUNTIME_ASSET_EMPTY",
+        });
+      }
+
+      const bytes = await object.Body.transformToByteArray();
+      const responseStatus = object.ContentRange === undefined ? 200 : 206;
+      reply
+        .status(responseStatus)
+        .header("accept-ranges", object.AcceptRanges ?? "bytes")
+        .header("content-type", row.asset.mimeType ?? object.ContentType ?? "application/octet-stream")
+        .header("cache-control", "private, max-age=300")
+        .header("content-length", String(bytes.byteLength));
+      if (object.ContentRange !== undefined) reply.header("content-range", object.ContentRange);
+      if (object.ETag !== undefined) reply.header("etag", object.ETag);
+      return reply.send(Buffer.from(bytes));
+    } catch (error: unknown) {
+      request.log.warn({
+        err: error,
+        assetVersionId: parsedParams.data.assetVersionId,
+      }, "runtime asset stream failed");
+      return reply.status(502).send({
+        error: "Runtime asset could not be streamed",
+        code: "RUNTIME_ASSET_STREAM_FAILED",
+      });
+    }
+  }
+
+  server.get("/runtime-assets/:assetVersionId", streamRuntimeAsset);
+  server.get("/runtime-assets/:assetVersionId/:fileName", streamRuntimeAsset);
 }
 
 export async function adminAssetRoutes(
   server: FastifyInstance,
   opts: { db: Database; env: Env },
 ): Promise<void> {
-  const { db, env } = opts;
+  const { db } = opts;
 
   server.post(
     "/capture-session",
@@ -659,7 +831,7 @@ export async function adminAssetRoutes(
         runtimeStatus: pkg.runtimeStatus,
       }, "runtime package registered");
 
-      return reply.status(201).send({ data: serializeRuntimePackage(env, pkg, primaryVisualAsset) });
+      return reply.status(201).send({ data: serializeRuntimePackage(pkg, primaryVisualAsset, runtimeAssetOrigin(request)) });
     },
   );
 
