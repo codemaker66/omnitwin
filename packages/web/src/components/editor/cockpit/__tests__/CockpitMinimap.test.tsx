@@ -1,18 +1,49 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  GuestFlowReplayArtifactSchema,
+  runGuestFlowReplayV0,
+  type GuestFlowReplayArtifact,
+  type RouteConflict,
+} from "@omnitwin/types";
 import { getCatalogueItemBySlug } from "../../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } from "../../../../lib/trades-hall-visual-demo-state.js";
+import { useCockpitReplay } from "../../../../hooks/use-cockpit-replay.js";
 import { CockpitMinimap } from "../CockpitMinimap.js";
+
+vi.mock("../../../../hooks/use-cockpit-replay.js", () => ({ useCockpitReplay: vi.fn() }));
+
+const mockReplay = vi.mocked(useCockpitReplay);
+
+const REAL_ARTIFACT: GuestFlowReplayArtifact = GuestFlowReplayArtifactSchema.parse(
+  runGuestFlowReplayV0(TRADES_HALL_GUEST_FLOW_REPLAY_INPUT),
+);
+
+function reviewConflict(): RouteConflict {
+  const { minX, minY, maxX, maxY } = REAL_ARTIFACT.navmesh.roomBounds;
+  return {
+    id: "conflict-review-1",
+    conflictType: "route_crossing",
+    severity: "review",
+    point: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+    involvedAgentIds: ["a", "b"],
+    message: "Simulated route crossing — human review required.",
+  };
+}
 
 function resetStores(): void {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
 }
 
-beforeEach(resetStores);
-afterEach(() => { cleanup(); resetStores(); });
+beforeEach(() => {
+  resetStores();
+  mockReplay.mockReturnValue({ artifact: null, bounds: null, status: "idle" });
+});
+afterEach(() => { cleanup(); resetStores(); vi.clearAllMocks(); });
 
 describe("CockpitMinimap", () => {
   it("renders the plan-view inset with the SAFE planning-overview note", () => {
@@ -40,5 +71,22 @@ describe("CockpitMinimap", () => {
     expect(focus?.nonce).toBe(1);
     expect(Number.isFinite(focus?.x ?? NaN)).toBe(true);
     expect(Number.isFinite(focus?.z ?? NaN)).toBe(true);
+  });
+
+  it("shows no review markers in the Design lens", () => {
+    const { container } = render(<CockpitMinimap />);
+    expect(container.querySelectorAll(".cockpit-minimap__conflict")).toHaveLength(0);
+  });
+
+  it("plots simulated review markers as an evidence radar in the Evidence lens", () => {
+    mockReplay.mockReturnValue({
+      artifact: { ...REAL_ARTIFACT, routeConflicts: [reviewConflict()] },
+      bounds: REAL_ARTIFACT.navmesh.roomBounds,
+      status: "ready",
+    });
+    useCockpitStore.getState().setMode("evidence");
+    const { container } = render(<CockpitMinimap />);
+    expect(container.querySelectorAll(".cockpit-minimap__conflict")).toHaveLength(1);
+    expect(screen.getByText(/1 simulated review marker · click to recentre/)).toBeTruthy();
   });
 });

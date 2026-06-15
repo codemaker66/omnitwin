@@ -2,25 +2,38 @@ import { useMemo, type MouseEvent, type ReactElement } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
 import {
   minimapLayout,
   minimapProject,
   minimapToWorld,
 } from "../../../lib/cockpit-minimap-model.js";
+import { projectReplayPointToFloor } from "../../../lib/cockpit-overlay-projection.js";
+import {
+  cockpitOverlayLayers,
+  conflictSeverityColor,
+  selectRouteConflicts,
+  shouldLoadReplay,
+} from "../../../lib/cockpit-scene-overlay-model.js";
 import "./CockpitMinimap.css";
 
 // ---------------------------------------------------------------------------
 // CockpitMinimap — a live top-down plan inset of the editable scene.
 //
 // Reflects the real placed furniture and the room footprint (planning
-// overview, not a survey). Doubles as navigation: clicking a point eases the
-// planner camera to recentre there via the cockpit-store focus request, which
-// the in-canvas CockpitCameraFocus consumes.
+// overview, not a survey). In the Flow / Evidence lenses it doubles as a
+// review radar: the simulated route-conflict markers are projected onto the
+// plan so spatial review evidence reads at a glance. Clicking anywhere eases
+// the planner camera to recentre there via the cockpit-store focus request.
+//
+// SAFE: conflict markers are *simulated* planning evidence requiring human
+// review — never measured or certified.
 // ---------------------------------------------------------------------------
 
 const MINIMAP_MAX_PX = 132;
 const HERITAGE_INSET_M = 1.2;
+const MAX_MINIMAP_CONFLICTS = 4;
 
 function dotColor(category: string | undefined): string {
   switch (category) {
@@ -35,12 +48,47 @@ function dotColor(category: string | undefined): string {
   }
 }
 
+interface MinimapConflictMarker {
+  readonly id: string;
+  readonly left: number;
+  readonly top: number;
+  readonly color: string;
+  readonly message: string;
+}
+
 export function CockpitMinimap(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const requestFocus = useCockpitStore((state) => state.requestFocus);
+  const activeMode = useCockpitStore((state) => state.activeMode);
+  const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
 
   const layout = useMemo(() => minimapLayout(dimensions, MINIMAP_MAX_PX), [dimensions]);
+  const layers = useMemo(
+    () => cockpitOverlayLayers(overlayVisibility, activeMode),
+    [overlayVisibility, activeMode],
+  );
+  const replayNeeded = useMemo(
+    () => shouldLoadReplay(overlayVisibility, activeMode),
+    [overlayVisibility, activeMode],
+  );
+  const { artifact, bounds } = useCockpitReplay(replayNeeded);
+
+  const conflictMarkers = useMemo<readonly MinimapConflictMarker[]>(() => {
+    if (!layers.routeConflicts || artifact === null || bounds === null) return [];
+    return selectRouteConflicts(artifact.routeConflicts, MAX_MINIMAP_CONFLICTS).map((conflict) => {
+      const [x, , z] = projectReplayPointToFloor(conflict.point, bounds, dimensions, 0);
+      const pixel = minimapProject(x, z, layout);
+      return {
+        id: conflict.id,
+        left: pixel.left,
+        top: pixel.top,
+        color: conflictSeverityColor(conflict.severity),
+        message: conflict.message,
+      };
+    });
+  }, [layers.routeConflicts, artifact, bounds, dimensions, layout]);
+
   const heritageInset = Math.min(
     HERITAGE_INSET_M * layout.scale,
     layout.width / 2 - 2,
@@ -52,6 +100,10 @@ export function CockpitMinimap(): ReactElement {
     const { x, z } = minimapToWorld(event.clientX - rect.left, event.clientY - rect.top, layout);
     requestFocus(x, z);
   };
+
+  const note = conflictMarkers.length > 0
+    ? `${String(conflictMarkers.length)} simulated review marker${conflictMarkers.length === 1 ? "" : "s"} · click to recentre`
+    : "Planning overview · click to recentre";
 
   return (
     <aside className="cockpit-minimap" aria-label="Plan view minimap">
@@ -82,8 +134,22 @@ export function CockpitMinimap(): ReactElement {
             />
           );
         })}
+        {conflictMarkers.map((marker) => (
+          <span
+            key={marker.id}
+            className="cockpit-minimap__conflict"
+            style={{
+              left: `${String(marker.left)}px`,
+              top: `${String(marker.top)}px`,
+              background: marker.color,
+              color: marker.color,
+            }}
+            title={marker.message}
+            aria-hidden="true"
+          />
+        ))}
       </button>
-      <p className="cockpit-minimap__note">Planning overview · click to recentre</p>
+      <p className="cockpit-minimap__note">{note}</p>
     </aside>
   );
 }

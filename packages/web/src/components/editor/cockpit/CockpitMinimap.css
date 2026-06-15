@@ -60,6 +60,22 @@
   pointer-events: none;
 }
 
+.cockpit-minimap__conflict {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 6px 1px currentColor;
+  pointer-events: none;
+  animation: cockpit-minimap-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cockpit-minimap-pulse {
+  0%, 100% { opacity: 0.55; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 3px 0 currentColor; }
+  50% { opacity: 1; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 8px 2px currentColor; }
+}
+
 .cockpit-minimap__note {
   margin: 0;
   font-size: 9.5px;
@@ -70,4 +86,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cockpit-minimap { backdrop-filter: none; }
+  .cockpit-minimap__conflict { animation: none; }
 }
