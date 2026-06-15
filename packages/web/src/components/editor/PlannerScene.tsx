@@ -26,6 +26,9 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
+import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
+import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
+import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -92,6 +95,9 @@ export function PlannerScene(): ReactElement {
         {hasAsset && (
           <CockpitSplatLayer urls={splatUrls} transform={transform} active={splatActive} />
         )}
+        <CockpitSceneOverlays />
+        <CockpitEvidenceBeam />
+        <CockpitCameraFocus />
         <XrayToggle />
         <MeasurementTool />
         <TapeMeasure />

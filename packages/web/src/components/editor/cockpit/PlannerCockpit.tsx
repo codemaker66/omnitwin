@@ -5,6 +5,7 @@ import { CockpitTopBar } from "./CockpitTopBar.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
+import { CockpitMinimap } from "./CockpitMinimap.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -30,6 +31,7 @@ export function PlannerCockpit(): ReactElement {
       <section className="cockpit-stage" data-cockpit-mode={activeMode} aria-label="Planner scene">
         <Editor3D />
         <CanvasLayerControls />
+        <CockpitMinimap />
       </section>
       <CockpitTruthRail />
       <CockpitBottom />

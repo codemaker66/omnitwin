@@ -51,6 +51,31 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().layersOpen).toBe(true);
   });
 
+  it("defaults to no evidence beam and no camera focus request", () => {
+    const s = useCockpitStore.getState();
+    expect(s.beam).toBeNull();
+    expect(s.focusRequest).toBeNull();
+  });
+
+  it("setBeam / clearBeam raise and dismiss the world-anchored evidence beam", () => {
+    useCockpitStore.getState().setBeam({
+      anchor: [1, 0.05, -2],
+      label: "Simulated route crossing — human review required",
+      tone: "review",
+    });
+    expect(useCockpitStore.getState().beam?.tone).toBe("review");
+    useCockpitStore.getState().clearBeam();
+    expect(useCockpitStore.getState().beam).toBeNull();
+  });
+
+  it("requestFocus records the floor point and bumps the nonce each call", () => {
+    useCockpitStore.getState().requestFocus(3, -4);
+    const first = useCockpitStore.getState().focusRequest;
+    expect(first).toEqual({ x: 3, z: -4, nonce: 1 });
+    useCockpitStore.getState().requestFocus(3, -4);
+    expect(useCockpitStore.getState().focusRequest?.nonce).toBe(2);
+  });
+
   it("reset restores defaults", () => {
     const api = useCockpitStore.getState();
     api.setMode("ops");
@@ -59,6 +84,8 @@ describe("cockpit-store", () => {
     api.selectPhase("ceremony");
     api.setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
     api.toggleLayers();
+    api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
+    api.requestFocus(1, 1);
     api.reset();
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");
@@ -67,5 +94,7 @@ describe("cockpit-store", () => {
     expect(s.selectedPhaseId).toBeNull();
     expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
     expect(s.layersOpen).toBe(false);
+    expect(s.beam).toBeNull();
+    expect(s.focusRequest).toBeNull();
   });
 });
