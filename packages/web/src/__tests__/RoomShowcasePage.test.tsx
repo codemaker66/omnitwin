@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { PublicRoomRuntimeVisual, RuntimeSlug } from "@omnitwin/types";
 import {
   getRoomShowcaseProfile,
+  publicRoomSelectionCards,
   roomShowcaseRoutes,
 } from "../lib/trades-hall-room-showcase.js";
 
@@ -95,6 +96,24 @@ describe("RoomShowcasePage", () => {
     expect(screen.getByText(/Human review is required/i)).toBeTruthy();
     expect(screen.getByText(/Final details are confirmed by the venue team/i)).toBeTruthy();
     expect(screen.queryByTestId("public-runtime-canvas")).toBeNull();
+  });
+
+  it("offers an engaging full-room selector without inventing a Deacon Convener runtime route", async () => {
+    mount("/venues/trades-hall/rooms/grand-hall");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Grand Hall" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: /Eight room experiences/i })).toBeTruthy();
+
+    for (const room of publicRoomSelectionCards) {
+      expect(document.body.textContent).toContain(room.name);
+    }
+
+    expect(screen.getByRole("link", { name: /Open The Grand Hall room preview/i }).getAttribute("href"))
+      .toBe("/venues/trades-hall/rooms/grand-hall");
+    expect(screen.getByRole("link", { name: /Open The North Gallery room preview/i }).getAttribute("href"))
+      .toBe("/venues/trades-hall/rooms/north-gallery");
+    expect(screen.getByRole("link", { name: /Enquire about Deacon Convener's Room/i }).getAttribute("href"))
+      .toBe("/?room=deacon-convener-room#contact");
   });
 
   it("renders the runtime visual state through the client-safe visual payload", async () => {

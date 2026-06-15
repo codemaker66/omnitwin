@@ -1,7 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
+import { RENDER_SCALE } from "../../constants/scale.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
+import { inferSeatingStyle } from "../../lib/layout-capacity.js";
+import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
+import { buildCapacityGuidance } from "../../lib/proposal-capacity-note.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 
@@ -113,6 +118,21 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
 
   const emailValid = isValidEmail(email);
   const showEmailHint = emailTouched && email.trim().length > 0 && !emailValid;
+
+  // Planning-grade capacity guidance (T-429) keyed to the typed guest count.
+  // Floor area + inferred seating style come from the SAME basis as the
+  // planner HUD (room-dimensions store ÷ RENDER_SCALE, shared seating counts),
+  // so the enquiry estimate and the planner estimate can never disagree.
+  const dimensions = useRoomDimensionsStore((s) => s.dimensions);
+  const placedItems = usePlacementStore((s) => s.placedItems);
+  const guestCountNum = /^\d+$/.test(guestCount.trim()) ? Number(guestCount.trim()) : 0;
+  const capacityGuidance = useMemo(() => {
+    const floorAreaM2 = (dimensions.width / RENDER_SCALE) * (dimensions.length / RENDER_SCALE);
+    if (floorAreaM2 <= 0) return null;
+    const style = inferSeatingStyle(seatingCountsFromPlacedItems(placedItems));
+    return buildCapacityGuidance(floorAreaM2, guestCountNum, style);
+  }, [dimensions.width, dimensions.length, placedItems, guestCountNum]);
+  const showCapacityGuidance = guestCountNum > 0 && capacityGuidance !== null;
 
   const handleSubmit = useCallback(async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -327,7 +347,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <div style={{
-            fontSize: 10, fontWeight: 600, textTransform: "uppercase" as const,
+            fontSize: 12, fontWeight: 600, textTransform: "uppercase" as const,
             letterSpacing: 2.5, color: GOLD, marginBottom: 6,
           }}>
             Almost there
@@ -392,7 +412,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             />
             {showEmailHint && (
               <div style={{
-                fontSize: 11, color: "#fbbf24", marginTop: 5, lineHeight: 1.3,
+                fontSize: 12, color: "#fbbf24", marginTop: 5, lineHeight: 1.3,
                 transition: "opacity 0.2s",
               }}>
                 Almost — just needs a valid email address
@@ -424,7 +444,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
                 display: "block", fontSize: 12, fontWeight: 600,
                 color: "rgba(255,255,255,0.5)", marginBottom: 6, letterSpacing: 0.3,
               }}>
-                Phone <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontWeight: 400 }}>recommended</span>
+                Phone <span style={{ fontSize: 12, color: "rgba(255,255,255,0.38)", fontWeight: 400 }}>recommended</span>
               </label>
               <input
                 id="ge-phone"
@@ -473,6 +493,26 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               />
             </div>
           </div>
+
+          {/* Planning-grade capacity guidance — SAFE, human-review-required */}
+          {showCapacityGuidance && (
+            <div
+              data-testid="enquiry-capacity-guidance"
+              style={{
+                padding: "10px 14px", borderRadius: 10, marginBottom: 16,
+                background: "rgba(201,168,76,0.05)", border: "1px solid rgba(201,168,76,0.1)",
+                fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5,
+              }}
+            >
+              <span style={{ color: "rgba(201,168,76,0.7)", fontWeight: 600 }}>
+                For {guestCountNum} guests:
+              </span>{" "}
+              {capacityGuidance.fit} — this room is comfortable for {capacityGuidance.summary}.
+              <div style={{ marginTop: 4, fontSize: 12, color: "rgba(255,255,255,0.42)" }}>
+                {capacityGuidance.disclosure}
+              </div>
+            </div>
+          )}
 
           {/* Event type */}
           <div style={{ marginBottom: 16 }}>
@@ -539,7 +579,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
 
           {/* Trust signal */}
           <p style={{
-            textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.2)",
+            textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.36)",
             marginTop: 14, lineHeight: 1.4,
           }}>
             Your details are shared only with the Trades Hall events team. No spam, ever.

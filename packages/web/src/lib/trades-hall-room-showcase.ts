@@ -18,6 +18,23 @@ export interface RoomShowcaseProfile {
   readonly enquiryHref: string;
 }
 
+export interface PublicRoomSelectionCard {
+  readonly id: string;
+  readonly canonicalRoomSlug: TradesHallRuntimeRoomSlug | null;
+  readonly name: string;
+  readonly shortName: string;
+  readonly image: string;
+  readonly imageAlt: string;
+  readonly tone: string;
+  readonly mood: string;
+  readonly bestFor: readonly string[];
+  readonly planningNote: string;
+  readonly statusCopy: string;
+  readonly routeHref: string | null;
+  readonly requestLayoutHref: string | null;
+  readonly enquiryHref: string;
+}
+
 const venueContextImage = "/images/venue/grand-hall-facade-3.jpg";
 
 export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
@@ -152,6 +169,141 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
 export const roomShowcaseRoutes = TRADES_HALL_RUNTIME_ROOM_SLUGS.map((roomSlug) => (
   `/venues/trades-hall/rooms/${roomSlug}`
 ));
+
+function roomShowcaseRoute(roomSlug: TradesHallRuntimeRoomSlug): string {
+  return `/venues/trades-hall/rooms/${roomSlug}`;
+}
+
+export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
+  {
+    id: "grand-hall",
+    canonicalRoomSlug: "grand-hall",
+    name: "The Grand Hall",
+    shortName: "Grand Hall",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].heroImageAlt,
+    tone: "Flagship scale",
+    mood: "Grand dinner, gala, ceremony, and ceilidh planning.",
+    bestFor: ["Wedding dinner", "Gala", "Conference"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].guestGuidance,
+    statusCopy: "Client-safe preview. Human review required before final room details.",
+    routeHref: roomShowcaseRoute("grand-hall"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].enquiryHref,
+  },
+  {
+    id: "deacon-convener-room",
+    canonicalRoomSlug: null,
+    name: "Deacon Convener's Room",
+    shortName: "Deacon Convener's",
+    image: venueContextImage,
+    imageAlt: "Trades Hall exterior used as venue context for the Deacon Convener's Room enquiry",
+    tone: "Private host room",
+    mood: "A venue-team conversation for hosted moments and private support use.",
+    bestFor: ["VIP welcome", "Hosted meeting", "Support room"],
+    planningNote: "Planning-grade guidance: room details should be confirmed by the venue team before it is used in a layout.",
+    statusCopy: "Enquiry-only room selection. No public runtime package is exposed.",
+    routeHref: null,
+    requestLayoutHref: null,
+    enquiryHref: "/?room=deacon-convener-room#contact",
+  },
+  {
+    id: "lady-conveners-room",
+    canonicalRoomSlug: "lady-convenors-room",
+    name: "Lady Convener's Room",
+    shortName: "Lady Convener's",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].heroImageAlt,
+    tone: "Private support",
+    mood: "A quieter room for private dining, VIP reception, or event preparation.",
+    bestFor: ["Private dining", "VIP reception", "Green room"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].guestGuidance,
+    statusCopy: "Client-safe venue context until a public room visual is available.",
+    routeHref: roomShowcaseRoute("lady-convenors-room"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].enquiryHref,
+  },
+  {
+    id: "reception-room",
+    canonicalRoomSlug: "reception-room",
+    name: "The Reception Room",
+    shortName: "Reception",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].heroImageAlt,
+    tone: "Arrival warmth",
+    mood: "Ceremony, drinks reception, photography, and arrival planning.",
+    bestFor: ["Ceremony", "Drinks reception", "Photography"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].guestGuidance,
+    statusCopy: "Planning-grade guidance. Final arrangements confirmed by the venue team.",
+    routeHref: roomShowcaseRoute("reception-room"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].enquiryHref,
+  },
+  {
+    id: "robert-adam-room",
+    canonicalRoomSlug: "robert-adam-room",
+    name: "The Robert Adam Room",
+    shortName: "Robert Adam",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].heroImageAlt,
+    tone: "Period detail",
+    mood: "Intimate ceremonies, private dining, boardroom use, and talks.",
+    bestFor: ["Ceremony", "Private dining", "Boardroom"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].guestGuidance,
+    statusCopy: "Planning-grade guidance. Human review required before final details.",
+    routeHref: roomShowcaseRoute("robert-adam-room"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].enquiryHref,
+  },
+  {
+    id: "saloon",
+    canonicalRoomSlug: "saloon",
+    name: "The Saloon",
+    shortName: "Saloon",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.heroImageAlt,
+    tone: "Elegant mid-scale",
+    mood: "Ceremony, dinner, reception, speeches, and multi-phase planning.",
+    bestFor: ["Ceremony", "Dinner", "Speeches"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.guestGuidance,
+    statusCopy: "Planning-grade guidance. Final details confirmed by the venue team.",
+    routeHref: roomShowcaseRoute("saloon"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.enquiryHref,
+  },
+  {
+    id: "north-gallery",
+    canonicalRoomSlug: "north-gallery",
+    name: "The North Gallery",
+    shortName: "North Gallery",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].heroImageAlt,
+    tone: "Movement and pause",
+    mood: "Arrival, drinks, exhibition, photography, and overflow planning.",
+    bestFor: ["Arrival", "Drinks", "Exhibition"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].guestGuidance,
+    statusCopy: "Venue context shown until room-specific public visual is available.",
+    routeHref: roomShowcaseRoute("north-gallery"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].enquiryHref,
+  },
+  {
+    id: "south-gallery",
+    canonicalRoomSlug: "south-gallery",
+    name: "The South Gallery",
+    shortName: "South Gallery",
+    image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].heroImage,
+    imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].heroImageAlt,
+    tone: "Route support",
+    mood: "Arrival, drinks, exhibition, photography, and overflow planning.",
+    bestFor: ["Arrival", "Drinks", "Overflow"],
+    planningNote: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].guestGuidance,
+    statusCopy: "Venue context shown until room-specific public visual is available.",
+    routeHref: roomShowcaseRoute("south-gallery"),
+    requestLayoutHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].requestLayoutHref,
+    enquiryHref: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].enquiryHref,
+  },
+] as const;
 
 export function getRoomShowcaseProfile(roomSlug: string): RoomShowcaseProfile | null {
   if (!TRADES_HALL_RUNTIME_ROOM_SLUGS.includes(roomSlug as TradesHallRuntimeRoomSlug)) {

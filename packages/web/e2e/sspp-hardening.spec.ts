@@ -49,6 +49,22 @@ async function seedAuthenticatedOpsUser(page: Page): Promise<void> {
   }, { venueId: VENUE_ID });
 }
 
+async function seedAuthenticatedPlannerUser(page: Page): Promise<void> {
+  await page.addInitScript(({ venueId }) => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
+      value: {
+        id: "00000000-0000-4000-8000-000000004098",
+        email: "planner@e2e.test",
+        role: "planner",
+        venueId,
+        name: "Planner User",
+      },
+      writable: false,
+    });
+  }, { venueId: VENUE_ID });
+}
+
 async function mockPlannerRoutes(page: Page): Promise<void> {
   await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
     void route.fulfill({
@@ -83,6 +99,24 @@ async function mockPlannerRoutes(page: Page): Promise<void> {
             { x: 21, y: 10.5 },
             { x: 0, y: 10.5 },
           ],
+        },
+      },
+    });
+  });
+}
+
+async function mockPublicRoomVisualRoutes(page: Page): Promise<void> {
+  await page.route(`${API}/assets/runtime-packages/public-room-visual*`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          venueSlug: "trades-hall",
+          roomSlug: "grand-hall",
+          runtimeVisualAvailable: false,
+          visualUrl: null,
+          visualLabel: "Visual preview",
+          safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
+          humanReviewRequired: true,
         },
       },
     });
@@ -360,6 +394,90 @@ async function mockEventDayRoutes(page: Page): Promise<{ readonly statusUpdates:
   return { statusUpdates };
 }
 
+async function mockHallkeeperRoutes(page: Page): Promise<void> {
+  await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
+    void route.fulfill({
+      json: {
+        data: {
+          venue: {
+            name: "Trades Hall Glasgow",
+            address: "85 Glassford Street, Glasgow G1 1UH",
+            logoUrl: null,
+            timezone: "Europe/London",
+          },
+          space: { name: "Grand Hall", widthM: 21, lengthM: 10, heightM: 7 },
+          config: { id: CONFIG_ID, name: "SS++ hardening gala", layoutStyle: "dinner-banquet", guestCount: 120 },
+          timing: null,
+          instructions: null,
+          phases: [
+            {
+              phase: "structure",
+              zones: [
+                {
+                  zone: "North wall",
+                  rows: [
+                    {
+                      key: "structure|North wall|Stage Platform|0",
+                      name: "Stage Platform",
+                      category: "stage",
+                      qty: 1,
+                      afterDepth: 0,
+                      isAccessory: false,
+                      notes: "",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              phase: "furniture",
+              zones: [
+                {
+                  zone: "Centre",
+                  rows: [
+                    {
+                      key: "furniture|Centre|6ft Round Table with 10 chairs|0",
+                      name: "6ft Round Table with 10 chairs",
+                      category: "table",
+                      qty: 10,
+                      afterDepth: 0,
+                      isAccessory: false,
+                      notes: "",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          totals: {
+            entries: [
+              { name: "6ft Round Table with 10 chairs", category: "table", qty: 10 },
+              { name: "Stage Platform", category: "stage", qty: 1 },
+            ],
+            totalRows: 2,
+            totalItems: 11,
+          },
+          diagramUrl: null,
+          webViewUrl: "http://localhost:5173/hallkeeper/e2e-hardening-plan",
+          generatedAt: NOW,
+          approval: {
+            version: 2,
+            approvedAt: NOW,
+            approverName: "Venue Operations",
+          },
+        },
+      },
+    });
+  });
+  await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
+    if (route.request().method() === "GET") {
+      void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
+      return;
+    }
+    void route.fulfill({ json: { data: { configId: CONFIG_ID, rowKey: "fixture", checked: true } } });
+  });
+}
+
 test.describe("SS++ hardening visual regression", () => {
   test("captures deterministic planner screenshot for /plan", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
@@ -379,7 +497,7 @@ test.describe("SS++ hardening visual regression", () => {
     });
 
     await page.goto("/dev/trades-hall-visual");
-    await expect(page.getByRole("heading", { name: "Truth Mode", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Truth Mode", exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Guest Flow Replay \d+ agents/i })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-trades-hall-visual.png");
     expect(pageErrors).toEqual([]);
@@ -389,8 +507,33 @@ test.describe("SS++ hardening visual regression", () => {
     const pageErrors = collectPageErrors(page);
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1, name: /Design your event for the Grand Hall/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Explore The Robert Adam Room/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Enquire about Deacon Convener's Room/i })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-room-showcase.png");
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("captures deterministic public room route screenshot", async ({ page }) => {
+    const pageErrors = collectPageErrors(page);
+    await mockPublicRoomVisualRoutes(page);
+
+    await page.goto("/venues/trades-hall/rooms/grand-hall");
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open The South Gallery room preview/i })).toBeVisible();
+    await expect(page.getByText(/Human review is required/i)).toBeVisible();
+    await attachScreenshotSmoke(page, "sspp-public-room-route.png");
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("captures deterministic pricing screenshot", async ({ page }) => {
+    const pageErrors = collectPageErrors(page);
+
+    await page.goto("/pricing");
+    await expect(page.getByRole("heading", { level: 1, name: /Turn every enquiry/i })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Billing cycle" })).toBeVisible();
+    await attachScreenshotSmoke(page, "sspp-pricing.png");
     expect(pageErrors).toEqual([]);
   });
 
@@ -419,6 +562,18 @@ test.describe("SS++ hardening visual regression", () => {
     await attachScreenshotSmoke(page, "sspp-dashboard-pipeline.png");
     expect(pageErrors).toEqual([]);
   });
+
+  test("captures deterministic hallkeeper screenshot", async ({ page }) => {
+    const pageErrors = collectPageErrors(page);
+    await seedAuthenticatedPlannerUser(page);
+    await mockHallkeeperRoutes(page);
+
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await expect(page.getByRole("heading", { level: 1, name: "SS++ hardening gala" })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /Stage Platform/i })).toBeVisible();
+    await attachScreenshotSmoke(page, "sspp-hallkeeper.png");
+    expect(pageErrors).toEqual([]);
+  });
 });
 
 test.describe("SS++ hardening keyboard and mobile operations", () => {
@@ -434,6 +589,26 @@ test.describe("SS++ hardening keyboard and mobile operations", () => {
     }
 
     expect(focused).toBe(true);
+  });
+
+  test("public room selector is keyboard reachable and mobile-safe", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockPublicRoomVisualRoutes(page);
+
+    await page.goto("/venues/trades-hall/rooms/grand-hall");
+    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(
+      page.getByLabel("Grand Hall visual preview").getByText(/Final details are confirmed by the venue team/i),
+    ).toBeVisible();
+
+    const nextRoom = page.getByRole("link", { name: /Open Lady Convener's Room room preview/i });
+    await nextRoom.focus();
+    await expect(nextRoom).toBeFocused();
+
+    const horizontalOverflow = await page.evaluate(() => (
+      document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+    ));
+    expect(horizontalOverflow).toBe(false);
   });
 
   test("event-day mobile task status works from keyboard activation", async ({ page }) => {

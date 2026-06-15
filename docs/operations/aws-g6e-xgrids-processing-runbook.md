@@ -20,7 +20,7 @@ credentials, certify output quality, or mark T-091/T-091A done.
 | Room | Current status | Processing action |
 | --- | --- | --- |
 | Grand Hall | Captured | Needs processing |
-| Reception Room | Captured | Needs processing |
+| Reception Room | Local processed output found | Needs upload/register/load workflow; see `docs/operations/reception-room-runtime-intake-2026-06-13.md` |
 | Robert Adam Room | Captured | Needs processing |
 | Saloon | Captured | Needs processing |
 | Lady Convenor's Room | Splat done outside repo | Needs register/load workflow |

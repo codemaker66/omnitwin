@@ -9,6 +9,7 @@ import {
   inferSeatingStyle,
   comfortBandLabel,
 } from "../../lib/layout-capacity.js";
+import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
@@ -24,9 +25,10 @@ interface HudStats {
 function computeHudStats(
   placedItems: readonly PlacedItem[],
 ): HudStats {
-  let roundTables = 0;
-  let banquetTables = 0;
-  let chairs = 0;
+  // Seating counts (round/banquet/chair) come from the shared helper so the
+  // HUD, enquiry modal, and capacity engine can never disagree. The HUD also
+  // needs stage + dressing tallies, which are HUD-only and computed here.
+  const { roundTables, banquetTables, chairs } = seatingCountsFromPlacedItems(placedItems);
   let stagedObjects = 0;
   let dressedTables = 0;
 
@@ -34,12 +36,9 @@ function computeHudStats(
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
 
-    if (item.category === "chair") chairs += 1;
     if (item.category === "stage") stagedObjects += 1;
-    if (item.category === "table") {
-      if (item.tableShape === "round") roundTables += 1;
-      if (item.tableShape === "rectangular") banquetTables += 1;
-      if (placed.clothed || placed.tableSetting !== null) dressedTables += 1;
+    if (item.category === "table" && (placed.clothed || placed.tableSetting !== null)) {
+      dressedTables += 1;
     }
   }
 
@@ -153,14 +152,14 @@ export function PlannerSpatialHud(): React.ReactElement {
           <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <strong style={{ fontSize: 18, lineHeight: 1, color: gradeColor }}>
               {grade.score}
-              <span style={{ fontSize: 11, opacity: 0.55, fontWeight: 600 }}>/100</span>
+              <span style={{ fontSize: 12, opacity: 0.55, fontWeight: 600 }}>/100</span>
             </strong>
-            <span style={{ fontSize: 11, opacity: 0.82 }}>{grade.headline}</span>
+            <span style={{ fontSize: 12, opacity: 0.82 }}>{grade.headline}</span>
           </span>
         </div>
         {topRecommendation !== undefined && (
           <div
-            style={{ marginTop: 9, fontSize: 11, lineHeight: 1.35, color: recommendationColor(topRecommendation.severity) }}
+            style={{ marginTop: 9, fontSize: 12, lineHeight: 1.35, color: recommendationColor(topRecommendation.severity) }}
           >
             {topRecommendation.message}
           </div>
@@ -223,8 +222,8 @@ export function PlannerSpatialHud(): React.ReactElement {
         <div className="planner-spatial-hud__subcaption">
           {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
         </div>
-        <div className="planner-spatial-hud__subcaption" style={{ opacity: 0.66, fontSize: "0.7em" }}>
-          Planning-grade estimate · not a legal or fire capacity · human review required
+        <div className="planner-spatial-hud__subcaption" style={{ opacity: 0.66, fontSize: 12 }}>
+          Planning-grade estimate · human review required · final capacity confirmed by venue team
         </div>
       </section>
 
@@ -239,7 +238,7 @@ export function PlannerSpatialHud(): React.ReactElement {
               ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
               : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
           </span>
-          <span style={{ color: "#b8ad92", fontSize: 11, lineHeight: 1.35 }}>
+          <span style={{ color: "#b8ad92", fontSize: 12, lineHeight: 1.35 }}>
             Comfort status {capacity.band}; review constraints remain visible before commercial recommendations.
           </span>
         </div>

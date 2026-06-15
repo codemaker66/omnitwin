@@ -9,6 +9,7 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
+import "./global.css";
 
 // ---------------------------------------------------------------------------
 // E2E auth seeding — dev/test-only bypass for Clerk

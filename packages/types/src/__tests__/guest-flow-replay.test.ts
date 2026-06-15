@@ -93,7 +93,8 @@ describe("Guest Flow Replay v0", () => {
     expect(first.blockedCellCount).toBeGreaterThan(0);
     expect(first.adjacency.length).toBeGreaterThan(0);
     expect(first.triangles.length).toBe(first.walkableCellCount * 2);
-    expect(first.limitations.join(" ")).toMatch(/not full constructive polygon clipping/i);
+    expect(first.limitations.join(" ")).toMatch(/not full constructive solid geometry/i);
+    expect(first.limitations.join(" ")).toMatch(/expanded footprint polygons/i);
   });
 
   it("finds a route through navcells and keeps route endpoints", () => {
@@ -135,6 +136,7 @@ describe("Guest Flow Replay v0", () => {
     expect(replay.metrics.routeConflictCount).toBe(replay.routeConflicts.length);
     expect(replay.navmesh.walkableCellCount).toBeGreaterThan(0);
     expect(replay.metrics.navmeshWalkableCellCount).toBe(replay.navmesh.walkableCellCount);
+    expect(replay.metrics.averageWalkingSpeedMps).toBeGreaterThan(0.7);
   });
 
   it("labels the artifact as simulated planning support", () => {
@@ -149,6 +151,11 @@ describe("Guest Flow Replay v0", () => {
     const replay = runGuestFlowReplayV0(INPUT);
 
     expect(replay.queueZones[0]?.destinationId).toBe("dinner-tables");
+    expect(replay.queueZones[0]?.peakAgents).toBeGreaterThan(0);
+    expect(replay.queueZones[0]?.estimatedWaitSeconds).toBeGreaterThanOrEqual(0);
+    expect(replay.queueZones[0]?.serviceRatePerMinute).toBe(24);
+    expect(replay.metrics.queueZoneCount).toBe(replay.queueZones.length);
+    expect(replay.metrics.maxQueueWaitSeconds).toBeGreaterThanOrEqual(0);
     expect(replay.staffLanes[0]?.id).toBe("service-lane");
   });
 

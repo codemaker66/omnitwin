@@ -203,9 +203,15 @@ test.describe("Trades Hall landing page redesign", () => {
       await expect(plannerTools.getByRole("button", { name: /Camera/i })).toBeVisible();
       await plannerTools.getByRole("button", { name: /Camera/i }).click();
       await expect(page.locator(".planner-embedded .camera-point")).toHaveCount(2);
+      await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Explore The Grand Hall/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Enquire about Deacon Convener's Room/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Explore Lady Convener's Room/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Explore The North Gallery/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Explore The South Gallery/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open The Saloon in the planner/i })).toBeVisible();
-      await expect(page.getByRole("link", { name: /Open Robert Adam Room in the planner/i })).toBeVisible();
-      await expect(page.getByRole("link", { name: /Open Reception Room in the planner/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Open The Robert Adam Room in the planner/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: /Open The Reception Room in the planner/i })).toBeVisible();
       await page.getByLabel("Choose room").selectOption("robert-adam-room");
       await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/rooms/robert-adam-wedding-opt.jpg");
       await expect(page.locator(".planner-embedded .chrome .title")).toContainText("Robert Adam Room");

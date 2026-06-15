@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   getLatestProposalVersion: vi.fn(),
   createQuote: vi.fn(),
   createProposalShareToken: vi.fn(),
+  getProposalComments: vi.fn(),
+  postProposalComment: vi.fn(),
   listSpaces: vi.fn(),
 }));
 
@@ -59,6 +61,16 @@ beforeEach(() => {
   mocks.listProposals.mockResolvedValue([]);
   mocks.listSpaces.mockResolvedValue([]);
   mocks.getProposalHistory.mockResolvedValue([]);
+  mocks.getProposalComments.mockResolvedValue([]);
+  mocks.postProposalComment.mockResolvedValue({
+    id: "comment-staff",
+    kind: "comment",
+    authorType: "staff",
+    authorName: "Venue team",
+    body: "Thanks, we will review this with the team.",
+    isClientVisible: true,
+    createdAt: NOW,
+  });
   mocks.getLatestProposalVersion.mockRejectedValue(new Error("404"));
 });
 
@@ -126,6 +138,49 @@ describe("ProposalsView", () => {
       expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1");
     });
     expect(await screen.findByTestId("share-link")).toBeTruthy();
+  });
+
+  it("loads client comments and posts a claim-guarded venue-team reply", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    mocks.getProposalComments.mockResolvedValue([{
+      id: "comment-client",
+      kind: "comment",
+      authorType: "client",
+      authorName: "Elaine",
+      body: "Could we review a later finish time?",
+      isClientVisible: true,
+      createdAt: NOW,
+    }]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    expect(await screen.findByTestId("comment-client")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("reply-input"), {
+      target: { value: "Thanks Elaine - we will review this with the venue team." },
+    });
+    fireEvent.click(screen.getByTestId("reply-submit"));
+
+    await waitFor(() => {
+      expect(mocks.postProposalComment).toHaveBeenCalledWith(
+        "p1",
+        "Thanks Elaine - we will review this with the venue team.",
+      );
+    });
+  });
+
+  it("blocks unsupported certainty claims in venue-team replies", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    fireEvent.change(screen.getByTestId("reply-input"), {
+      target: { value: "This layout is certified safe for the event." },
+    });
+    fireEvent.click(screen.getByTestId("reply-submit"));
+
+    const error = await screen.findByTestId("reply-error");
+    expect(error.textContent).toContain("certified safe");
+    expect(mocks.postProposalComment).not.toHaveBeenCalled();
   });
 
   it("surfaces the claim guard inline and refuses to save unsupported wording", async () => {
@@ -273,7 +328,7 @@ describe("ProposalsView", () => {
     const note = screen.getByTestId<HTMLInputElement>("composer-capacity");
     expect(note.value).toContain("Grand Hall: comfortable for around 140 guests");
     expect(note.value).toContain("for 120 guests");
-    expect(note.value).toContain("not a legal occupancy or fire-capacity figure");
+    expect(note.value).toContain("final capacity confirmed by the venue team");
   });
 
   it("keeps capacity guidance hidden when no rooms load", async () => {

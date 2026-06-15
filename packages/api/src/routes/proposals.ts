@@ -34,6 +34,7 @@ import {
   getAvailableProposalTransitions,
 } from "../state-machines/proposal.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
+import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -81,6 +82,46 @@ const VersionParam = z.object({
   id: z.string().uuid(),
   version: z.coerce.number().int().positive(),
 });
+
+// Staff reply body reuses the claim-guarded comment-body schema from
+// @omnitwin/types, so staff-to-client replies are SAFE by construction.
+const StaffCommentBody = z.object({ body: CreateProposalCommentSchema.shape.body });
+
+// Client-facing label for venue-team replies. The comment table has no
+// authorUserId; staff comments are distinguished structurally by a null
+// share_token_id, and present to the client under a single team identity.
+const STAFF_REPLY_AUTHOR_NAME = "Venue team";
+
+/** Project a stored comment row into the staff timeline shape, deriving the
+ *  author type from the structural share-token link (client posts carry one;
+ *  staff replies do not). */
+function toStaffCommentView(row: {
+  id: string;
+  kind: string;
+  authorName: string | null;
+  body: string;
+  isClientVisible: boolean;
+  shareTokenId: string | null;
+  createdAt: Date;
+}): {
+  id: string;
+  kind: string;
+  authorType: "client" | "staff";
+  authorName: string | null;
+  body: string;
+  isClientVisible: boolean;
+  createdAt: Date;
+} {
+  return {
+    id: row.id,
+    kind: row.kind,
+    authorType: row.shareTokenId === null ? "staff" : "client",
+    authorName: row.authorName,
+    body: row.body,
+    isClientVisible: row.isClientVisible,
+    createdAt: row.createdAt,
+  };
+}
 
 type AuthedUser = { id: string; role: string; venueId: string | null };
 
@@ -444,6 +485,85 @@ export async function proposalRoutes(
     return { data: history };
   });
 
+  // GET /proposals/:id/comments — full conversation thread (staff view).
+  //
+  // Returns BOTH client posts (made through the share link) and staff
+  // replies, in chronological order, so the dashboard timeline shows the
+  // whole conversation. Author type is derived structurally from the
+  // share-token link, not a stored flag.
+  server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const rows = await db.select({
+      id: proposalComments.id,
+      kind: proposalComments.kind,
+      authorName: proposalComments.authorName,
+      body: proposalComments.body,
+      isClientVisible: proposalComments.isClientVisible,
+      shareTokenId: proposalComments.shareTokenId,
+      createdAt: proposalComments.createdAt,
+    }).from(proposalComments)
+      .where(eq(proposalComments.proposalId, params.data.id))
+      .orderBy(proposalComments.createdAt)
+      .limit(200);
+
+    return { data: rows.map(toStaffCommentView) };
+  });
+
+  // POST /proposals/:id/comments — staff reply to the client conversation.
+  //
+  // Claim-guarded (CreateProposalCommentSchema.shape.body) because the reply
+  // is shown to the client. Stored with a null share_token_id (staff origin)
+  // and client-visible so it appears on the share-link page.
+  server.post("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const parsed = StaffCommentBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const [comment] = await db.insert(proposalComments).values({
+      proposalId: proposal.id,
+      shareTokenId: null,
+      kind: "comment",
+      authorName: STAFF_REPLY_AUTHOR_NAME,
+      authorEmail: null,
+      body: parsed.data.body,
+      isClientVisible: true,
+    }).returning();
+    if (comment === undefined) {
+      throw new Error("proposal comment insert returned no row");
+    }
+
+    return reply.status(201).send({ data: toStaffCommentView(comment) });
+  });
+
   // GET /proposals/:id/available-transitions — role-aware next statuses
   server.get("/:id/available-transitions", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
@@ -579,7 +699,17 @@ export async function proposalRoutes(
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
 
-    const sourceHash = proposalVersionPayloadDigest(parsed.data);
+    // Capture an immutable, client-safe layout snapshot from the linked
+    // configuration (T-427 phase 7). Server-authoritative geometry — any
+    // client-supplied layoutSnapshot is ignored. Hashed with the rest of the
+    // payload so the snapshot is part of the immutable version.
+    let payload = parsed.data;
+    if (proposal.configurationId !== null) {
+      const snapshot = await resolveProposalLayoutSnapshot(db, proposal.configurationId);
+      payload = { ...parsed.data, layoutSnapshot: snapshot };
+    }
+
+    const sourceHash = proposalVersionPayloadDigest(payload);
 
     // Atomically claim the next version number, then write the snapshot.
     // The unique (proposal_id, version) constraint backstops any race.
@@ -594,7 +724,7 @@ export async function proposalRoutes(
     const [version] = await db.insert(proposalVersions).values({
       proposalId: params.data.id,
       version: claimed.version,
-      payload: parsed.data,
+      payload,
       sourceHash,
       createdBy: request.user.id,
     }).returning();
@@ -700,6 +830,7 @@ interface ClientSafeProposalPayload {
   readonly layoutSummary: string | null;
   readonly packageSummary: readonly string[];
   readonly quote: ProposalVersionPayload["quote"];
+  readonly layoutSnapshot: ProposalVersionPayload["layoutSnapshot"];
   readonly version: number;
   readonly comments: readonly {
     readonly kind: string;
@@ -781,6 +912,7 @@ async function buildClientSafeProposal(db: Database, proposal: ProposalRecord): 
     layoutSummary: payload.data.layoutSummary ?? null,
     packageSummary: payload.data.packageSummary ?? [],
     quote: payload.data.quote,
+    layoutSnapshot: payload.data.layoutSnapshot ?? null,
     version: version.version,
     comments,
     packages,
@@ -841,6 +973,7 @@ export async function publicProposalRoutes(
         layoutSummary: payload.data.layoutSummary ?? null,
         packageSummary: payload.data.packageSummary ?? [],
         quote: payload.data.quote,
+        layoutSnapshot: payload.data.layoutSnapshot ?? null,
         version: version.version,
       },
     };

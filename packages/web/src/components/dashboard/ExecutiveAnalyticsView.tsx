@@ -8,16 +8,16 @@ type LoadState =
   | { readonly status: "error"; readonly message: string };
 
 const cardStyle: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
+  border: "1px solid rgba(92, 69, 38, 0.18)",
   borderRadius: 8,
-  background: "#fff",
+  background: "linear-gradient(180deg, #fffdf8 0%, #f8f1e5 100%)",
   padding: 18,
-  boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
+  boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
 };
 
 const metricValueStyle: React.CSSProperties = {
   margin: "8px 0 0",
-  color: "#111827",
+  color: "#21190f",
   fontSize: 28,
   lineHeight: 1,
   fontWeight: 800,
@@ -25,7 +25,7 @@ const metricValueStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   margin: 0,
-  color: "#64748b",
+  color: "#715f42",
   fontSize: 12,
   fontWeight: 700,
   letterSpacing: 0,
@@ -38,10 +38,10 @@ function statusCount(data: VenueDashboardAnalytics, status: string): number {
 
 function warningList(items: readonly string[], empty: string): React.ReactElement {
   if (items.length === 0) {
-    return <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>{empty}</p>;
+    return <p style={{ margin: 0, color: "#75644c", fontSize: 13 }}>{empty}</p>;
   }
   return (
-    <ul style={{ margin: 0, paddingLeft: 18, color: "#334155", fontSize: 13, lineHeight: 1.55 }}>
+    <ul style={{ margin: 0, paddingLeft: 18, color: "#3b2c1b", fontSize: 13, lineHeight: 1.55 }}>
       {items.map((item) => <li key={item}>{item}</li>)}
     </ul>
   );
@@ -69,8 +69,8 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
       return (
         <section style={cardStyle} aria-live="polite">
           <p style={labelStyle}>Executive analytics</p>
-          <h2 style={{ margin: "8px 0", fontSize: 22, color: "#111827" }}>Loading commercial planning data</h2>
-          <p style={{ margin: 0, color: "#64748b" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
+          <h2 style={{ margin: "8px 0", fontSize: 22, color: "#21190f" }}>Loading commercial planning data</h2>
+          <p style={{ margin: 0, color: "#75644c" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
         </section>
       );
     }
@@ -80,7 +80,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
         <section style={cardStyle} role="alert">
           <p style={labelStyle}>Executive analytics</p>
           <h2 style={{ margin: "8px 0", fontSize: 22, color: "#991b1b" }}>Analytics unavailable</h2>
-          <p style={{ margin: "0 0 14px", color: "#64748b" }}>{loadState.message}</p>
+          <p style={{ margin: "0 0 14px", color: "#75644c" }}>{loadState.message}</p>
           <button type="button" onClick={load} style={primaryButtonStyle}>Retry</button>
         </section>
       );
@@ -93,8 +93,8 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
         <section style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
             <p style={labelStyle}>Executive analytics</p>
-            <h2 style={{ margin: "6px 0", color: "#111827", fontSize: 28 }}>Commercial planning dashboard</h2>
-            <p style={{ margin: 0, maxWidth: 760, color: "#64748b", lineHeight: 1.5 }}>
+            <h2 style={{ margin: "6px 0", color: "#21190f", fontSize: 28 }}>Commercial planning dashboard</h2>
+            <p style={{ margin: 0, maxWidth: 760, color: "#75644c", lineHeight: 1.5 }}>
               {data.disclosure}. Values are planning indicators and keep comfort floors and review gates visible.
             </p>
           </div>
@@ -113,14 +113,14 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Proposal status</p>
             <p style={metricValueStyle}>{statusCount(data, "sent")} sent</p>
-            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 12 }}>
+            <p style={{ margin: "8px 0 0", color: "#75644c", fontSize: 12 }}>
               {statusCount(data, "accepted")} accepted · {statusCount(data, "changes_requested")} changes requested
             </p>
           </div>
           <div style={cardStyle}>
             <p style={labelStyle}>Review bottlenecks</p>
             <p style={metricValueStyle}>{data.reviewBottlenecks.length}</p>
-            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 12 }}>Visible before recommendations are used</p>
+            <p style={{ margin: "8px 0 0", color: "#75644c", fontSize: 12 }}>Visible before recommendations are used</p>
           </div>
         </section>
 
@@ -128,19 +128,19 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Room utilisation</p>
             {data.roomUtilisation.length === 0 ? (
-              <p style={{ margin: "12px 0 0", color: "#64748b" }}>No room utilisation data yet. Link quotes or events to rooms to populate this view.</p>
+              <p style={{ margin: "12px 0 0", color: "#75644c" }}>No room utilisation data yet. Link quotes or events to rooms to populate this view.</p>
             ) : (
               <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
                 {data.roomUtilisation.map((room) => (
                   <div key={`${room.spaceId ?? "unassigned"}:${room.roomName}`} style={{ display: "grid", gap: 5 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#334155", fontSize: 13, fontWeight: 700 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#3b2c1b", fontSize: 13, fontWeight: 700 }}>
                       <span>{room.roomName}</span>
                       <span>{room.utilisationPercent}%</span>
                     </div>
-                    <div style={{ height: 8, borderRadius: 999, background: "#e2e8f0", overflow: "hidden" }}>
+                    <div style={{ height: 8, borderRadius: 999, background: "#efe0bf", overflow: "hidden" }}>
                       <span style={{ display: "block", width: `${String(room.utilisationPercent)}%`, height: "100%", background: "#0f766e" }} />
                     </div>
-                    <p style={{ margin: 0, color: "#64748b", fontSize: 12 }}>
+                    <p style={{ margin: 0, color: "#75644c", fontSize: 12 }}>
                       {room.bookedEvents} booked · {room.proposedEvents} proposed · {room.reviewBottlenecks} review bottlenecks
                     </p>
                   </div>
@@ -152,11 +152,11 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Revenue scenario</p>
             {scenario === undefined ? (
-              <p style={{ margin: "12px 0 0", color: "#64748b" }}>No revenue scenarios yet. Create one from an event, quote, or planner layout.</p>
+              <p style={{ margin: "12px 0 0", color: "#75644c" }}>No revenue scenarios yet. Create one from an event, quote, or planner layout.</p>
             ) : (
               <div style={{ marginTop: 12 }}>
-                <h3 style={{ margin: "0 0 8px", color: "#111827", fontSize: 18 }}>{scenario.name}</h3>
-                <p style={{ margin: "0 0 8px", color: "#334155", fontWeight: 700 }}>
+                <h3 style={{ margin: "0 0 8px", color: "#21190f", fontSize: 18 }}>{scenario.name}</h3>
+                <p style={{ margin: "0 0 8px", color: "#3b2c1b", fontWeight: 700 }}>
                   {formatMinorUnitMoney(scenario.estimatedRevenueMinor, scenario.currency)} revenue · {formatMinorUnitMoney(scenario.estimatedMarginMinor, scenario.currency)} margin
                 </p>
                 <p style={{ margin: 0, color: "#b45309", fontSize: 13 }}>
@@ -189,22 +189,22 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
 }
 
 const primaryButtonStyle: React.CSSProperties = {
-  minHeight: 38,
+  minHeight: 40,
   border: 0,
   borderRadius: 8,
-  background: "#111827",
-  color: "#fff",
+  background: "#21190f",
+  color: "#fff7e8",
   padding: "0 14px",
   fontWeight: 700,
   cursor: "pointer",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-  minHeight: 38,
-  border: "1px solid #cbd5e1",
+  minHeight: 40,
+  border: "1px solid rgba(92, 69, 38, 0.24)",
   borderRadius: 8,
-  background: "#fff",
-  color: "#111827",
+  background: "#fffaf1",
+  color: "#21190f",
   padding: "0 14px",
   fontWeight: 700,
   cursor: "pointer",

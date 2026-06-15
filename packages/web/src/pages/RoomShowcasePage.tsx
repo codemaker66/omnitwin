@@ -7,6 +7,7 @@ import { recordRoomShowcaseEvent } from "../lib/public-room-analytics.js";
 import { safePublicCopy } from "../lib/safe-public-copy.js";
 import {
   getRoomShowcaseProfile,
+  publicRoomSelectionCards,
   roomShowcaseRoutes,
   type RoomShowcaseProfile,
 } from "../lib/trades-hall-room-showcase.js";
@@ -95,12 +96,67 @@ function RoomNotFound(): ReactElement {
           This room route is not available for the public preview. Choose one of the prepared Trades Hall room pages.
         </p>
         <div className="room-showcase-missing-links" aria-label="Available room routes">
-          {roomShowcaseRoutes.map((route) => (
-            <Link key={route} to={route}>{route.split("/").at(-1)?.replaceAll("-", " ")}</Link>
-          ))}
+          {publicRoomSelectionCards
+            .filter((room) => room.routeHref !== null)
+            .map((room) => (
+              <Link key={room.id} to={room.routeHref ?? "/"}>{room.name}</Link>
+            ))}
+          {roomShowcaseRoutes.length === 0 ? (
+            <Link to="/?room=trades-hall#contact">Enquire with the venue team</Link>
+          ) : null}
         </div>
       </section>
     </main>
+  );
+}
+
+interface RoomSelectionRailProps {
+  readonly currentRoomSlug: RoomShowcaseProfile["slug"];
+}
+
+function RoomSelectionRail({ currentRoomSlug }: RoomSelectionRailProps): ReactElement {
+  return (
+    <section className="room-showcase-selector" aria-labelledby="room-showcase-selector-title">
+      <div className="room-showcase-selector-head">
+        <p className="room-showcase-kicker">Choose another room</p>
+        <h2 id="room-showcase-selector-title">Eight room experiences, one planning conversation.</h2>
+        <p>
+          Move between room previews, request a layout, or enquire where room-specific runtime data is not yet exposed.
+        </p>
+      </div>
+      <div className="room-showcase-selector-grid">
+        {publicRoomSelectionCards.map((room) => {
+          const isActive = room.canonicalRoomSlug === currentRoomSlug;
+          const href = room.routeHref ?? room.enquiryHref;
+          const label = room.routeHref === null
+            ? `Enquire about ${room.name}`
+            : `Open ${room.name} room preview`;
+          return (
+            <Link
+              key={room.id}
+              to={href}
+              className={isActive ? "room-showcase-selector-card active" : "room-showcase-selector-card"}
+              aria-current={isActive ? "page" : undefined}
+              aria-label={label}
+            >
+              <span className="room-showcase-selector-image" aria-hidden="true">
+                <img src={room.image} alt="" loading="lazy" />
+              </span>
+              <span className="room-showcase-selector-copy">
+                <span className="room-showcase-selector-tone">{room.tone}</span>
+                <strong>{room.name}</strong>
+                <span>{room.mood}</span>
+              </span>
+              <span className="room-showcase-selector-status">{room.statusCopy}</span>
+              <span className="room-showcase-selector-cta">
+                {room.routeHref === null ? "Enquire" : "Preview"}
+                <ArrowRight aria-hidden="true" size={15} />
+              </span>
+            </Link>
+          );
+        })}
+        </div>
+      </section>
   );
 }
 
@@ -231,6 +287,8 @@ export function RoomShowcasePage(): ReactElement {
           onRuntimeFailed={handleRuntimeFailed}
         />
       </section>
+
+      <RoomSelectionRail currentRoomSlug={profile.slug} />
 
       <section className="room-showcase-details" aria-label={`${profile.name} planning guidance`}>
         <div className="room-showcase-guidance">

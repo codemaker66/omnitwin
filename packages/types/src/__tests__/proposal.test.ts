@@ -7,7 +7,9 @@ import {
   isValidProposalTransition,
   isValidQuoteTransition,
   MAX_MINOR_UNIT_AMOUNT,
+  MAX_PROPOSAL_LAYOUT_ITEMS,
   MinorUnitAmountSchema,
+  ProposalLayoutSnapshotSchema,
   PROPOSAL_STATUSES,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
   PROPOSAL_UNSUPPORTED_CLAIM_PHRASES,
@@ -354,6 +356,66 @@ describe("proposalVersionPayloadDigest", () => {
       Object.fromEntries(reorderedEntries),
     );
     expect(proposalVersionPayloadDigest(reordered)).toBe(proposalVersionPayloadDigest(payload));
+  });
+
+  it("covers the layout snapshot in the immutable digest", () => {
+    const base = proposalVersionPayloadDigest(validPayload());
+    const withSnapshot = proposalVersionPayloadDigest({
+      ...validPayload(),
+      layoutSnapshot: {
+        roomWidthM: 20,
+        roomLengthM: 10,
+        items: [{ shape: "round", kind: "table", xM: 4, zM: 3, widthM: 1.8, depthM: 1.8, rotationDeg: 0 }],
+      },
+    });
+    expect(withSnapshot).not.toBe(base);
+  });
+});
+
+describe("ProposalLayoutSnapshotSchema (T-427 phase 7)", () => {
+  function validSnapshot(): unknown {
+    return {
+      roomWidthM: 20,
+      roomLengthM: 10,
+      items: [
+        { shape: "round", kind: "table", xM: 4, zM: 3, widthM: 1.8, depthM: 1.8, rotationDeg: 0 },
+        { shape: "rect", kind: "chair", xM: 4, zM: 4.5, widthM: 0.45, depthM: 0.45, rotationDeg: 90 },
+      ],
+    };
+  }
+
+  it("accepts a valid client-safe snapshot", () => {
+    expect(ProposalLayoutSnapshotSchema.safeParse(validSnapshot()).success).toBe(true);
+  });
+
+  it("rejects non-positive room dimensions and negative coordinates", () => {
+    expect(ProposalLayoutSnapshotSchema.safeParse({ ...(validSnapshot() as object), roomWidthM: 0 }).success).toBe(false);
+    expect(
+      ProposalLayoutSnapshotSchema.safeParse({
+        roomWidthM: 20,
+        roomLengthM: 10,
+        items: [{ shape: "rect", kind: "chair", xM: -1, zM: 3, widthM: 0.45, depthM: 0.45, rotationDeg: 0 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown shapes/kinds and over-cap item arrays", () => {
+    expect(
+      ProposalLayoutSnapshotSchema.safeParse({
+        roomWidthM: 20,
+        roomLengthM: 10,
+        items: [{ shape: "triangle", kind: "table", xM: 1, zM: 1, widthM: 1, depthM: 1, rotationDeg: 0 }],
+      }).success,
+    ).toBe(false);
+
+    const tooMany = {
+      roomWidthM: 20,
+      roomLengthM: 10,
+      items: Array.from({ length: MAX_PROPOSAL_LAYOUT_ITEMS + 1 }, () => ({
+        shape: "rect", kind: "chair", xM: 1, zM: 1, widthM: 0.45, depthM: 0.45, rotationDeg: 0,
+      })),
+    };
+    expect(ProposalLayoutSnapshotSchema.safeParse(tooMany).success).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ProposalLayoutSnapshotSchema,
   ProposalStatusSchema,
   ProposalVersionPayloadSchema,
   QuoteSnapshotSchema,
@@ -41,6 +42,7 @@ export const PublicProposalSchema = z.object({
     totalMinor: z.number().int(),
     status: z.string(),
   })).optional(),
+  layoutSnapshot: ProposalLayoutSnapshotSchema.nullable().optional(),
 });
 
 export type PublicProposal = z.infer<typeof PublicProposalSchema>;
@@ -130,6 +132,21 @@ export const ProposalHistoryEntrySchema = z.object({
 });
 
 export type ProposalHistoryEntry = z.infer<typeof ProposalHistoryEntrySchema>;
+
+// Conversation thread (T-427 phase 6). `authorType` is derived server-side
+// from the structural share-token link: "client" for share-link posts,
+// "staff" for venue-team replies.
+export const ProposalCommentRowSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  authorType: z.string(),
+  authorName: z.string().nullable(),
+  body: z.string(),
+  isClientVisible: z.boolean(),
+  createdAt: z.string(),
+});
+
+export type ProposalCommentRow = z.infer<typeof ProposalCommentRowSchema>;
 
 export const StaffProposalVersionSchema = z.object({
   id: z.string(),
@@ -225,6 +242,14 @@ export async function createProposalShareToken(id: string): Promise<ShareTokenRe
 
 export async function getProposalHistory(id: string): Promise<ProposalHistoryEntry[]> {
   return api.get(`/proposals/${id}/history`, z.array(ProposalHistoryEntrySchema));
+}
+
+export async function getProposalComments(id: string): Promise<ProposalCommentRow[]> {
+  return api.get(`/proposals/${id}/comments`, z.array(ProposalCommentRowSchema));
+}
+
+export async function postProposalComment(id: string, body: string): Promise<ProposalCommentRow> {
+  return api.post(`/proposals/${id}/comments`, { body }, undefined, ProposalCommentRowSchema);
 }
 
 export async function createProposalVersion(

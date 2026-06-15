@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { findUnsupportedProposalClaim, LAYOUT_STYLES } from "@omnitwin/types";
 import {
+  buildCapacityGuidance,
   buildProposalCapacityGuidance,
   buildProposalCapacityNote,
+  CAPACITY_GUIDANCE_DISCLOSURE,
   CAPACITY_STYLE_LABELS,
 } from "../proposal-capacity-note.js";
 
@@ -32,8 +34,8 @@ describe("buildProposalCapacityNote", () => {
     expect(note).toContain("Grand Hall: comfortable for around 140 guests");
     expect(note).toContain("seated dinner on round tables");
     expect(note).toContain("for 120 guests");
-    expect(note).toContain("Planning estimate only, human review required");
-    expect(note).toContain("not a legal occupancy or fire-capacity figure");
+    expect(note).toContain("Planning estimate only; human review required");
+    expect(note).toContain("final capacity confirmed by the venue team");
   });
 
   it("omits the fit segment when no guest count is given", () => {
@@ -63,5 +65,46 @@ describe("buildProposalCapacityNote", () => {
     for (const style of LAYOUT_STYLES) {
       expect(CAPACITY_STYLE_LABELS[style].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("buildCapacityGuidance — shared public/client surface guidance (T-429)", () => {
+  it("produces a comfortable summary and the standing SAFE disclosure", () => {
+    const guidance = buildCapacityGuidance(GRAND_HALL_AREA, 120, "dinner-rounds");
+    expect(guidance.intel.comfortableCapacity).toBe(140);
+    expect(guidance.styleLabel).toBe("seated dinner on round tables");
+    expect(guidance.summary).toBe("around 140 guests as seated dinner on round tables");
+    expect(guidance.disclosure).toBe(CAPACITY_GUIDANCE_DISCLOSURE);
+  });
+
+  it("includes a comfort-band fit phrase only when a guest count is given", () => {
+    const withGuests = buildCapacityGuidance(GRAND_HALL_AREA, 120, "dinner-rounds");
+    expect(withGuests.fit).toContain("Comfortable");
+
+    const noGuests = buildCapacityGuidance(GRAND_HALL_AREA, 0, "dinner-rounds");
+    expect(noGuests.fit).toBeNull();
+  });
+
+  it("reflects an over-capacity request with a review (non-legal) fit phrase", () => {
+    const guidance = buildCapacityGuidance(GRAND_HALL_AREA, 900, "dinner-rounds");
+    expect(guidance.fit).toContain("review");
+    expect(guidance.fit).not.toBeNull();
+  });
+
+  it("is claim-guard safe for every layout style and guest count", () => {
+    for (const style of LAYOUT_STYLES) {
+      for (const guests of [0, 120, 900]) {
+        const guidance = buildCapacityGuidance(GRAND_HALL_AREA, guests, style);
+        const rendered = `${guidance.summary} ${guidance.fit ?? ""} ${guidance.disclosure}`;
+        expect(findUnsupportedProposalClaim(rendered)).toBeNull();
+      }
+    }
+  });
+
+  it("the disclosure carries no certainty claim and names the planning-estimate posture", () => {
+    expect(findUnsupportedProposalClaim(CAPACITY_GUIDANCE_DISCLOSURE)).toBeNull();
+    expect(CAPACITY_GUIDANCE_DISCLOSURE).toContain("Planning estimate");
+    expect(CAPACITY_GUIDANCE_DISCLOSURE).toContain("human review required");
+    expect(CAPACITY_GUIDANCE_DISCLOSURE).toContain("final capacity confirmed by the venue team");
   });
 });

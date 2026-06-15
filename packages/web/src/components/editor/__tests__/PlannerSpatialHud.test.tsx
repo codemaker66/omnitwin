@@ -104,7 +104,7 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByText(comfortBandLabel(cap.band))).toBeDefined();
     expect(screen.getByText((content) => content.includes("m²/guest"))).toBeDefined();
     expect(
-      screen.getByText("Planning-grade estimate · not a legal or fire capacity · human review required"),
+      screen.getByText("Planning-grade estimate · human review required · final capacity confirmed by venue team"),
     ).toBeDefined();
   });
 

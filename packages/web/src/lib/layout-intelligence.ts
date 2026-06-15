@@ -129,7 +129,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       id: "circulation-blocked",
       severity: "critical",
       message:
-        "Tables are too close to pass between — widen the aisles. Planning-grade only, not a legal egress check.",
+        "Tables are too close to pass between — widen the aisles. Planning-grade only; venue review required.",
     });
   }
   if (capacity.band === "over-capacity") {
@@ -137,7 +137,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       id: "capacity-over",
       severity: "critical",
       message:
-        "Seating is past the comfortable planning capacity — review. Not a legal or fire limit; human review required.",
+        "Seating is past the comfortable planning capacity — venue review required before use.",
     });
   }
 

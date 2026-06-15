@@ -11,18 +11,17 @@ interface ProtectedRouteProps {
   readonly allowedRoles?: readonly string[];
 }
 
-const forbiddenStyle: React.CSSProperties = {
-  minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-  flexDirection: "column", fontFamily: "'Inter', sans-serif", color: "#666",
-};
-
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps): React.ReactElement {
   const { isAuthenticated, isLoading, user } = useAuthStore();
 
   if (isLoading) {
     return (
-      <div style={{ ...forbiddenStyle, color: "#999" }}>
-        <p>Loading…</p>
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role="status" aria-live="polite">
+          <p className="vv-state-kicker">Checking access</p>
+          <h1>Opening your workspace</h1>
+          <p>We are confirming your Venviewer session before loading this internal route.</p>
+        </section>
       </div>
     );
   }
@@ -33,10 +32,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps):
 
   if (allowedRoles !== undefined && user !== null && !allowedRoles.includes(user.role)) {
     return (
-      <div style={forbiddenStyle}>
-        <h1 style={{ fontSize: 48, fontWeight: 700, color: "#dc2626", margin: 0 }}>403</h1>
-        <p style={{ fontSize: 16, marginTop: 8 }}>You don&apos;t have permission to access this page.</p>
-        <p style={{ fontSize: 13, marginTop: 4 }}>Your role: {user.role}</p>
+      <div className="vv-route-state">
+        <section className="vv-state-panel" role="alert">
+          <p className="vv-state-kicker">Permission needed</p>
+          <h1>This workspace is not available to your role</h1>
+          <p>You are signed in as {user.role}. Ask an admin to update access if you need this route for venue work.</p>
+          <span className="vv-status-chip">Access not granted</span>
+        </section>
       </div>
     );
   }

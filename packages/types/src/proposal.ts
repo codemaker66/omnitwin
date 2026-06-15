@@ -343,6 +343,45 @@ export const QuoteSnapshotSchema = z
 
 export type QuoteSnapshot = z.infer<typeof QuoteSnapshotSchema>;
 
+// ---------------------------------------------------------------------------
+// Proposal layout snapshot — an immutable, client-safe top-down geometry of
+// the proposed layout (T-427 phase 7). Captured server-side at version-create
+// from the linked configuration's placed objects, so it carries NO internal
+// IDs: room dimensions in metres plus furniture footprints positioned
+// relative to the room origin. Pure numbers/enums — no free text, so no claim
+// guard applies. The page renders it as a read-only SVG.
+// ---------------------------------------------------------------------------
+
+export const PROPOSAL_LAYOUT_ITEM_KINDS = ["table", "chair", "stage", "other"] as const;
+export const ProposalLayoutItemKindSchema = z.enum(PROPOSAL_LAYOUT_ITEM_KINDS);
+export type ProposalLayoutItemKind = z.infer<typeof ProposalLayoutItemKindSchema>;
+
+export const PROPOSAL_LAYOUT_ITEM_SHAPES = ["round", "rect"] as const;
+export const ProposalLayoutItemShapeSchema = z.enum(PROPOSAL_LAYOUT_ITEM_SHAPES);
+export type ProposalLayoutItemShape = z.infer<typeof ProposalLayoutItemShapeSchema>;
+
+export const MAX_PROPOSAL_LAYOUT_ITEMS = 800;
+
+export const ProposalLayoutItemSchema = z.object({
+  shape: ProposalLayoutItemShapeSchema,
+  kind: ProposalLayoutItemKindSchema,
+  /** Footprint centre relative to the room origin (0 ≤ xM ≤ roomWidthM). */
+  xM: z.number().finite().nonnegative(),
+  /** Footprint centre relative to the room origin (0 ≤ zM ≤ roomLengthM). */
+  zM: z.number().finite().nonnegative(),
+  widthM: z.number().finite().positive(),
+  depthM: z.number().finite().positive(),
+  rotationDeg: z.number().finite(),
+});
+export type ProposalLayoutItem = z.infer<typeof ProposalLayoutItemSchema>;
+
+export const ProposalLayoutSnapshotSchema = z.object({
+  roomWidthM: z.number().finite().positive(),
+  roomLengthM: z.number().finite().positive(),
+  items: z.array(ProposalLayoutItemSchema).max(MAX_PROPOSAL_LAYOUT_ITEMS),
+});
+export type ProposalLayoutSnapshot = z.infer<typeof ProposalLayoutSnapshotSchema>;
+
 export const ProposalVersionPayloadSchema = z
   .object({
     schemaVersion: z.literal(PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION),
@@ -355,6 +394,7 @@ export const ProposalVersionPayloadSchema = z
     roomSummary: z.string().max(1000).nullable().optional(),
     layoutSummary: z.string().max(1000).nullable().optional(),
     packageSummary: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
+    layoutSnapshot: ProposalLayoutSnapshotSchema.nullable().optional(),
   })
   .superRefine((payload, ctx) => {
     const guarded: ReadonlyArray<readonly [string, string | null]> = [

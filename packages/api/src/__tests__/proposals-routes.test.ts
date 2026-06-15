@@ -357,6 +357,61 @@ describe("public proposal share route", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Staff comment thread (T-427 phase 6)
+// ---------------------------------------------------------------------------
+
+describe("proposal comment routes", () => {
+  it("requires auth to read or post staff comments", async () => {
+    const get = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL_ID}/comments` });
+    expect(get.statusCode).toBe(401);
+    const post = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL_ID}/comments`, payload: { body: "Hi" } });
+    expect(post.statusCode).toBe(401);
+  });
+
+  it("rejects an empty reply body at the validation boundary", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/proposals/${PROPOSAL_ID}/comments`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { body: "   " },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("claim-guards staff replies - unsupported certainty wording is rejected", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/proposals/${PROPOSAL_ID}/comments`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { body: "Yes, the Grand Hall is fire approved for 300 guests." },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("accepts a SAFE staff reply shape before hitting the database", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/proposals/${PROPOSAL_ID}/comments`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { body: "Happy to move the bar - I'll send an updated version shortly." },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
+  it("authenticates the comments read before hitting the database", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/proposals/${PROPOSAL_ID}/comments`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Source-grep guards — money discipline and share-code provenance
 // ---------------------------------------------------------------------------
 
@@ -375,5 +430,11 @@ describe("proposal/quote source guards", () => {
     expect(source).toContain("proposalVersionPayloadDigest");
     expect(source).toContain("canTransitionProposal");
     expect(source).toContain("proposalStatusHistory");
+  });
+
+  it("staff comment route reuses the claim-guarded comment-body schema", async () => {
+    const source = await readFile(resolve("src/routes/proposals.ts"), "utf-8");
+    expect(source).toContain("CreateProposalCommentSchema.shape.body");
+    expect(source).toContain("proposalComments");
   });
 });

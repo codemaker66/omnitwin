@@ -49,25 +49,29 @@ const STAGE_NEXT: Record<string, string> = {
 };
 
 const card: React.CSSProperties = {
-  background: "#fff",
-  border: "1px solid #e5e7eb",
+  background: "linear-gradient(180deg, #fffdf8 0%, #f8f1e5 100%)",
+  border: "1px solid rgba(92, 69, 38, 0.18)",
   borderRadius: 8,
   padding: 16,
+  boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
 };
 
 const label: React.CSSProperties = {
   display: "block",
   fontSize: 12,
   fontWeight: 700,
-  color: "#4b5563",
+  color: "#715f42",
   marginBottom: 4,
 };
 
 const input: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid #d1d5db",
+  minHeight: 40,
+  border: "1px solid rgba(92, 69, 38, 0.22)",
   borderRadius: 6,
+  background: "#fffaf1",
+  color: "#21190f",
   padding: "8px 10px",
   fontSize: 13,
   fontFamily: "inherit",
@@ -76,8 +80,9 @@ const input: React.CSSProperties = {
 const primaryButton: React.CSSProperties = {
   border: "none",
   borderRadius: 6,
-  background: "#1a1a2e",
-  color: "#fff",
+  background: "#21190f",
+  color: "#fff7e8",
+  minHeight: 40,
   padding: "8px 14px",
   fontSize: 13,
   fontWeight: 700,
@@ -85,10 +90,11 @@ const primaryButton: React.CSSProperties = {
 };
 
 const secondaryButton: React.CSSProperties = {
-  border: "1px solid #d1d5db",
+  border: "1px solid rgba(92, 69, 38, 0.24)",
   borderRadius: 6,
-  background: "#fff",
-  color: "#1f2937",
+  background: "#fffaf1",
+  color: "#21190f",
+  minHeight: 40,
   padding: "8px 14px",
   fontSize: 13,
   fontWeight: 600,
@@ -287,14 +293,14 @@ export function CommercialPipelineView(): ReactElement {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20, color: "#111827" }}>Commercial pipeline</h2>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#6b7280" }}>
+            <h2 style={{ margin: 0, fontSize: 20, color: "#21190f" }}>Commercial pipeline</h2>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#75644c" }}>
               Enquiries become opportunities, proposals, quotes, and client share links. Planning assumptions stay visible.
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>Pipeline value</div>
-            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#1a1a2e" }}>
+            <div style={{ fontSize: 12, color: "#715f42", fontWeight: 700 }}>Pipeline value</div>
+            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#21190f" }}>
               {formatMoney(pipelineValue, "GBP")}
             </div>
           </div>
@@ -328,7 +334,7 @@ export function CommercialPipelineView(): ReactElement {
         {!loading && error === null && opportunities.length === 0 && (
           <section style={card}>
             <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>No opportunities yet</h3>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>
               Create one from an enquiry, then build the proposal and quote from the same record.
             </p>
           </section>
@@ -338,13 +344,13 @@ export function CommercialPipelineView(): ReactElement {
           {stageGroups.map(({ stage, rows }) => (
             <section key={stage} style={{ ...card, minHeight: 150 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#4b5563" }}>
+                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#715f42" }}>
                   {stageLabel(stage)}
                 </h3>
-                <span style={{ fontSize: 12, color: "#6b7280" }}>{rows.length}</span>
+                <span style={{ fontSize: 12, color: "#75644c" }}>{rows.length}</span>
               </div>
               {rows.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#9ca3af" }}>{STAGE_NEXT[stage]}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "#8b7b62" }}>{STAGE_NEXT[stage]}</p>
               ) : rows.map((opportunity) => (
                 <button
                   key={opportunity.id}
@@ -355,19 +361,19 @@ export function CommercialPipelineView(): ReactElement {
                     display: "block",
                     width: "100%",
                     textAlign: "left",
-                    border: "1px solid #edf0f3",
+                    border: "1px solid rgba(92, 69, 38, 0.16)",
                     borderRadius: 6,
-                    background: selected?.opportunity.id === opportunity.id ? "#f1f5f9" : "#fbfbfc",
+                    background: selected?.opportunity.id === opportunity.id ? "#efe0bf" : "#fffaf1",
                     padding: 10,
                     marginBottom: 8,
                     cursor: "pointer",
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{opportunity.title}</div>
-                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#21190f" }}>{opportunity.title}</div>
+                  <div style={{ fontSize: 12, color: "#75644c", marginTop: 4 }}>
                     {formatMoney(opportunity.estimatedValueMinor, opportunity.currency)} · {opportunity.guestCount ?? "Guest count pending"} guests
                   </div>
-                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>{opportunity.nextAction}</div>
+                  <div style={{ fontSize: 12, color: "#75644c", marginTop: 6 }}>{opportunity.nextAction}</div>
                 </button>
               ))}
             </section>
@@ -379,11 +385,11 @@ export function CommercialPipelineView(): ReactElement {
         <section style={card}>
           <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Today's follow-ups</h3>
           {tasks.length === 0 ? (
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>No open follow-ups loaded.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>No open follow-ups loaded.</p>
           ) : tasks.map((task) => (
-            <div key={task.id} style={{ borderTop: "1px solid #f1f1f1", padding: "10px 0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{task.title}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{formatDateTime(task.dueAt)}</div>
+            <div key={task.id} style={{ borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "10px 0" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#21190f" }}>{task.title}</div>
+              <div style={{ fontSize: 12, color: "#75644c", marginTop: 2 }}>{formatDateTime(task.dueAt)}</div>
             </div>
           ))}
         </section>
@@ -391,7 +397,7 @@ export function CommercialPipelineView(): ReactElement {
         {selected === null ? (
           <section style={card}>
             <h3 style={{ margin: "0 0 6px", fontSize: 15 }}>Select an opportunity</h3>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>
               The detail panel shows next action, proposal status, follow-ups, and client-safe notes.
             </p>
           </section>
@@ -399,8 +405,8 @@ export function CommercialPipelineView(): ReactElement {
           <section style={card} aria-label="Opportunity detail">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 17 }}>{selected.opportunity.title}</h3>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                <h3 style={{ margin: 0, fontSize: 17, color: "#21190f" }}>{selected.opportunity.title}</h3>
+                <div style={{ fontSize: 12, color: "#75644c", marginTop: 4 }}>
                   {formatMoney(selected.opportunity.estimatedValueMinor, selected.opportunity.currency)}
                 </div>
               </div>
@@ -415,9 +421,9 @@ export function CommercialPipelineView(): ReactElement {
               </select>
             </div>
 
-            <div style={{ marginTop: 14, padding: 12, background: "#f8fafc", borderRadius: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#4b5563" }}>Next action</div>
-              <div style={{ fontSize: 13, color: "#111827", marginTop: 4 }}>{selected.opportunity.nextAction}</div>
+            <div style={{ marginTop: 14, padding: 12, background: "#fff7e8", border: "1px solid rgba(92, 69, 38, 0.14)", borderRadius: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#715f42" }}>Next action</div>
+              <div style={{ fontSize: 13, color: "#21190f", marginTop: 4 }}>{selected.opportunity.nextAction}</div>
             </div>
 
             <button type="button" style={{ ...primaryButton, width: "100%", marginTop: 14 }} disabled={busy} onClick={handleCreateProposal}>
@@ -427,9 +433,9 @@ export function CommercialPipelineView(): ReactElement {
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Proposal status</h4>
               {selected.proposals.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>No proposal draft yet.</p>
+                <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No proposal draft yet.</p>
               ) : selected.proposals.map((proposal) => (
-                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid #f1f1f1" }}>
+                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid rgba(92, 69, 38, 0.14)" }}>
                   <strong>{proposal.title}</strong> · {proposal.status.replace(/_/g, " ")}
                 </div>
               ))}
@@ -437,15 +443,15 @@ export function CommercialPipelineView(): ReactElement {
 
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Tasks</h4>
-              {selected.tasks.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>No tasks on this opportunity.</p>}
+              {selected.tasks.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No tasks on this opportunity.</p>}
               {selected.tasks.map((task) => (
-                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid #f1f1f1", padding: "7px 0" }}>
+                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "7px 0" }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{task.title}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>{task.status} · {formatDateTime(task.dueAt)}</div>
+                    <div style={{ fontSize: 12, color: "#75644c" }}>{task.status} · {formatDateTime(task.dueAt)}</div>
                   </div>
                   {task.status === "open" && (
-                    <button type="button" style={{ ...secondaryButton, padding: "5px 8px", fontSize: 11 }} disabled={busy} onClick={() => { handleCompleteTask(task); }}>
+                    <button type="button" style={{ ...secondaryButton, padding: "5px 8px", fontSize: 12 }} disabled={busy} onClick={() => { handleCompleteTask(task); }}>
                       Done
                     </button>
                   )}
@@ -459,9 +465,9 @@ export function CommercialPipelineView(): ReactElement {
 
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Activity</h4>
-              {selected.activities.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>No notes yet.</p>}
+              {selected.activities.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No notes yet.</p>}
               {selected.activities.slice(-4).map((activity) => (
-                <div key={activity.id} style={{ borderTop: "1px solid #f1f1f1", padding: "7px 0", fontSize: 12, color: "#374151" }}>
+                <div key={activity.id} style={{ borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "7px 0", fontSize: 12, color: "#3b2c1b" }}>
                   {activity.body}
                 </div>
               ))}

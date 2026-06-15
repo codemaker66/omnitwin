@@ -168,7 +168,7 @@ export const UpdateEventDayIssueInputSchema = z.object({
   detail: EventDaySafeTextSchema.optional(),
   assignedTo: UserIdSchema.nullable().optional(),
   escalationNote: EventDaySafeTextSchema.nullable().optional(),
-}).strict().refine((input) => Object.values(input).some((value) => value !== undefined), {
+}).strict().refine((input) => Object.keys(input).length > 0, {
   message: "At least one issue field must be provided.",
 });
 export type UpdateEventDayIssueInput = z.infer<typeof UpdateEventDayIssueInputSchema>;

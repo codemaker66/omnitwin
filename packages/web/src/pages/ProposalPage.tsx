@@ -9,6 +9,7 @@ import {
   type ProposalResponseAction,
   type PublicProposal,
 } from "../api/proposals.js";
+import { ProposalLayoutVisual } from "../components/proposal/ProposalLayoutVisual.js";
 
 // ---------------------------------------------------------------------------
 // ProposalPage — the client-facing share-link surface (T-427 phase 3).
@@ -73,6 +74,9 @@ export function ProposalPage(): ReactElement {
   const [changesNote, setChangesNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState("");
+  const [commentPosting, setCommentPosting] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +122,25 @@ export function ProposalPage(): ReactElement {
     [shareCode, state, submitting, token],
   );
 
+  // Standalone comment (token share only) — posts a message into the thread
+  // without changing the proposal status, then re-fetches so the new comment
+  // (and any staff reply) shows immediately.
+  const postComment = useCallback(() => {
+    if (token === undefined || token.length === 0 || state.kind !== "ready" || commentPosting || commentText.trim().length === 0) return;
+    setCommentPosting(true);
+    setCommentError(null);
+    commentOnProposalShare(token, { body: commentText.trim(), kind: "comment" })
+      .then(() => getProposalShare(token))
+      .then((proposal) => {
+        setState({ kind: "ready", proposal });
+        setCommentText("");
+      })
+      .catch(() => {
+        setCommentError("We couldn't post your comment. Please try again, or contact the venue team directly.");
+      })
+      .finally(() => { setCommentPosting(false); });
+  }, [token, state, commentPosting, commentText]);
+
   if (state.kind === "loading") {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}>
@@ -146,6 +169,10 @@ export function ProposalPage(): ReactElement {
   const banner = STATUS_BANNERS[proposal.status];
   const sentDate = formatSentDate(proposal.sentAt);
   const canRespond = proposal.status === "sent";
+  // Comments need the token share (the legacy shortcode endpoint has no
+  // comment route) and a status the venue is still acting on.
+  const canComment = token !== undefined && token.length > 0
+    && (proposal.status === "sent" || proposal.status === "changes_requested");
 
   return (
     <div style={{ minHeight: "100vh", background: GRAPHITE, fontFamily: SANS, color: CREAM, padding: "48px 20px 80px" }}>
@@ -176,6 +203,18 @@ export function ProposalPage(): ReactElement {
             <p style={{ fontSize: 16, lineHeight: 1.75, color: CREAM, whiteSpace: "pre-wrap", margin: 0 }}>
               {proposal.clientMessage}
             </p>
+          </section>
+        )}
+
+        {proposal.layoutSnapshot !== null && proposal.layoutSnapshot !== undefined && (
+          <section aria-label="Proposed layout" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 12, padding: "20px 22px", marginBottom: 28 }}>
+            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 12 }}>
+              Proposed layout — to scale
+            </div>
+            <ProposalLayoutVisual snapshot={proposal.layoutSnapshot} />
+            <div style={{ color: CREAM_MUT, fontSize: 12.5, marginTop: 10, lineHeight: 1.5 }}>
+              Top-down plan of the layout prepared for you. A planning draft for discussion — final details are confirmed by the venue team.
+            </div>
           </section>
         )}
 
@@ -311,17 +350,46 @@ export function ProposalPage(): ReactElement {
           </section>
         )}
 
-        {proposal.comments !== undefined && proposal.comments.length > 0 && (
-          <section aria-label="Client comments" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
-            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 8 }}>Comments</div>
-            {proposal.comments.map((comment, index) => (
+        {((proposal.comments !== undefined && proposal.comments.length > 0) || canComment) && (
+          <section aria-label="Conversation" data-testid="proposal-comments" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "16px 22px", marginBottom: 28 }}>
+            <div style={{ color: GOLD, fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 8 }}>Conversation</div>
+            {proposal.comments !== undefined && proposal.comments.map((comment, index) => (
               <div key={index} style={{ borderTop: index === 0 ? "none" : `1px solid ${HAIRLINE}`, padding: "8px 0" }}>
-                <div style={{ color: CREAM, fontSize: 14 }}>{comment.body}</div>
+                <div style={{ color: CREAM, fontSize: 14, whiteSpace: "pre-wrap" }}>{comment.body}</div>
                 <div style={{ color: CREAM_MUT, fontSize: 12, marginTop: 2 }}>
                   {comment.authorName ?? "Client"} · {new Date(comment.createdAt).toLocaleDateString("en-GB")}
                 </div>
               </div>
             ))}
+
+            {canComment && (
+              <div style={{ marginTop: (proposal.comments !== undefined && proposal.comments.length > 0) ? 14 : 0 }}>
+                <label htmlFor="proposal-comment" style={{ display: "block", color: CREAM_MUT, fontSize: 13, marginBottom: 8 }}>
+                  Leave a comment for the venue team
+                </label>
+                <textarea
+                  id="proposal-comment"
+                  data-testid="comment-input"
+                  value={commentText}
+                  onChange={(event) => { setCommentText(event.target.value); }}
+                  maxLength={4000}
+                  rows={3}
+                  style={{ width: "100%", boxSizing: "border-box", background: GRAPHITE, color: CREAM, border: `1px solid ${HAIRLINE}`, borderRadius: 8, padding: 12, fontSize: 14, fontFamily: SANS, resize: "vertical" }}
+                />
+                <button
+                  type="button"
+                  data-testid="comment-submit"
+                  onClick={postComment}
+                  disabled={commentPosting || commentText.trim().length === 0}
+                  style={{ marginTop: 10, background: "transparent", color: GOLD, border: `1px solid ${GOLD}`, borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: SANS, opacity: commentPosting || commentText.trim().length === 0 ? 0.5 : 1 }}
+                >
+                  Send comment
+                </button>
+                {commentError !== null && (
+                  <div role="alert" style={{ marginTop: 10, color: "#e0a8a0", fontSize: 14 }}>{commentError}</div>
+                )}
+              </div>
+            )}
           </section>
         )}
 

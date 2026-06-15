@@ -28,3 +28,7 @@ packages/api/src/scripts/customers.json
 
 # One-off `tree` scratchpads — regenerate locally as needed.
 web-structure.txt
+
+# Local scratch + Playwright extension session artifacts (never committed).
+tmp/
+.playwright-cli/

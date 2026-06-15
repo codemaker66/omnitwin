@@ -158,6 +158,9 @@ export const QueueZoneSchema = z.object({
   label: z.string().trim().min(1).max(160),
   centre: GuestFlowPointSchema,
   estimatedAgents: z.number().int().nonnegative(),
+  peakAgents: z.number().int().nonnegative().default(0),
+  estimatedWaitSeconds: z.number().finite().nonnegative().default(0),
+  serviceRatePerMinute: z.number().finite().positive().default(18),
 }).strict();
 export type QueueZone = z.infer<typeof QueueZoneSchema>;
 
@@ -276,6 +279,9 @@ export const GuestFlowReplayMetricsSchema = z.object({
   densityHotspotCount: z.number().int().nonnegative(),
   navmeshCellCount: z.number().int().nonnegative().optional(),
   navmeshWalkableCellCount: z.number().int().nonnegative().optional(),
+  averageWalkingSpeedMps: z.number().finite().positive().optional(),
+  queueZoneCount: z.number().int().nonnegative().optional(),
+  maxQueueWaitSeconds: z.number().finite().nonnegative().optional(),
 }).strict();
 export type GuestFlowReplayMetrics = z.infer<typeof GuestFlowReplayMetricsSchema>;
 
@@ -392,6 +398,25 @@ interface Bounds {
   readonly maxY: number;
 }
 
+interface BufferedBlocker {
+  readonly id: string;
+  readonly polygon: readonly GuestFlowPoint[];
+  readonly bounds: Bounds;
+}
+
+interface QueueAccumulator {
+  readonly destinationId: string;
+  readonly estimatedAgents: number;
+  readonly peakAgents: number;
+  readonly maxWaitSeconds: number;
+  readonly serviceRatePerMinute: number;
+}
+
+const DEFAULT_GUEST_WALKING_SPEED_MPS = 1.15;
+const MIN_GUEST_WALKING_SPEED_MPS = 0.75;
+const MAX_GUEST_WALKING_SPEED_MPS = 1.55;
+const DEFAULT_DESTINATION_SERVICE_RATE_PER_MINUTE = 18;
+
 function prng(seed: number): () => number {
   let state = seed === 0 ? 1 : seed >>> 0;
   return () => {
@@ -409,6 +434,15 @@ function boundsFor(points: readonly GuestFlowPoint[]): Bounds {
   }), { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY });
 }
 
+function centroidFor(points: readonly GuestFlowPoint[]): GuestFlowPoint {
+  const count = Math.max(1, points.length);
+  const sum = points.reduce((acc, point) => ({
+    x: acc.x + point.x,
+    y: acc.y + point.y,
+  }), { x: 0, y: 0 });
+  return { x: sum.x / count, y: sum.y / count };
+}
+
 function distance(a: GuestFlowPoint, b: GuestFlowPoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -418,11 +452,11 @@ function interpolate(a: GuestFlowPoint, b: GuestFlowPoint, t: number): GuestFlow
 }
 
 function obstacleIntersectsSegment(obstacle: GuestFlowObstacle, start: GuestFlowPoint, end: GuestFlowPoint): boolean {
-  const box = boundsFor(obstacle.polygon);
+  const bufferedPolygon = bufferPolygonRadially(obstacle.polygon, 0.35);
   const samples = 12;
   for (let i = 1; i < samples; i += 1) {
     const point = interpolate(start, end, i / samples);
-    if (point.x >= box.minX && point.x <= box.maxX && point.y >= box.minY && point.y <= box.maxY) return true;
+    if (pointInPolygon(point, bufferedPolygon)) return true;
   }
   return false;
 }
@@ -458,8 +492,41 @@ function bufferedBounds(points: readonly GuestFlowPoint[], bufferM: number): Bou
   };
 }
 
+function boundsPolygon(bounds: Bounds): GuestFlowPolygon {
+  return [
+    { x: bounds.minX, y: bounds.minY },
+    { x: bounds.maxX, y: bounds.minY },
+    { x: bounds.maxX, y: bounds.maxY },
+    { x: bounds.minX, y: bounds.maxY },
+  ];
+}
+
+function bufferPolygonRadially(points: readonly GuestFlowPoint[], bufferM: number): GuestFlowPolygon {
+  if (points.length < 3) return boundsPolygon(bufferedBounds(points, bufferM));
+  const centre = centroidFor(points);
+  return points.map((point) => {
+    const dx = point.x - centre.x;
+    const dy = point.y - centre.y;
+    const length = Math.hypot(dx, dy);
+    if (length < Number.EPSILON) return point;
+    return {
+      x: Number((point.x + (dx / length) * bufferM).toFixed(3)),
+      y: Number((point.y + (dy / length) * bufferM).toFixed(3)),
+    };
+  });
+}
+
 function pointInBounds(point: GuestFlowPoint, box: Bounds): boolean {
   return point.x >= box.minX && point.x <= box.maxX && point.y >= box.minY && point.y <= box.maxY;
+}
+
+function blockerContainsCell(blocker: BufferedBlocker, centre: GuestFlowPoint, polygon: readonly GuestFlowPoint[]): boolean {
+  if (!pointInBounds(centre, blocker.bounds) && !polygon.some((point) => pointInBounds(point, blocker.bounds))) {
+    return false;
+  }
+  if (pointInPolygon(centre, blocker.polygon)) return true;
+  if (polygon.some((point) => pointInPolygon(point, blocker.polygon))) return true;
+  return blocker.polygon.some((point) => pointInPolygon(point, polygon));
 }
 
 function cellKey(row: number, col: number): string {
@@ -490,15 +557,23 @@ export function buildGuestFlowNavmeshV0(input: GuestFlowNavmeshInput): GuestFlow
   const roomBounds = boundsFor(parsed.roomPolygon);
   const rows = Math.max(1, Math.ceil((roomBounds.maxY - roomBounds.minY) / parsed.cellSizeM));
   const cols = Math.max(1, Math.ceil((roomBounds.maxX - roomBounds.minX) / parsed.cellSizeM));
-  const blockers = [
-    ...parsed.obstacles.map((obstacle) => ({
-      id: obstacle.id,
-      box: bufferedBounds(obstacle.polygon, parsed.agentRadiusM),
-    })),
-    ...parsed.blockedZones.map((zone) => ({
-      id: zone.id,
-      box: bufferedBounds(zone.polygon, parsed.agentRadiusM),
-    })),
+  const blockers: readonly BufferedBlocker[] = [
+    ...parsed.obstacles.map((obstacle) => {
+      const polygon = bufferPolygonRadially(obstacle.polygon, parsed.agentRadiusM);
+      return {
+        id: obstacle.id,
+        polygon,
+        bounds: boundsFor(polygon),
+      };
+    }),
+    ...parsed.blockedZones.map((zone) => {
+      const polygon = bufferPolygonRadially(zone.polygon, parsed.agentRadiusM);
+      return {
+        id: zone.id,
+        polygon,
+        bounds: boundsFor(polygon),
+      };
+    }),
   ];
   const cells: GuestFlowNavmeshCell[] = [];
 
@@ -508,14 +583,15 @@ export function buildGuestFlowNavmeshV0(input: GuestFlowNavmeshInput): GuestFlow
         x: Number((roomBounds.minX + (col + 0.5) * parsed.cellSizeM).toFixed(3)),
         y: Number((roomBounds.minY + (row + 0.5) * parsed.cellSizeM).toFixed(3)),
       };
+      const polygon = cellPolygon(centre, parsed.cellSizeM);
       const insideRoom = pointInPolygon(centre, parsed.roomPolygon);
       const blockedBy = insideRoom
-        ? blockers.filter((blocker) => pointInBounds(centre, blocker.box)).map((blocker) => blocker.id)
+        ? blockers.filter((blocker) => blockerContainsCell(blocker, centre, polygon)).map((blocker) => blocker.id)
         : ["outside_room_polygon"];
       cells.push(GuestFlowNavmeshCellSchema.parse({
         id: cellKey(row, col),
         centre,
-        polygon: cellPolygon(centre, parsed.cellSizeM),
+        polygon,
         row,
         col,
         neighbours: [],
@@ -569,9 +645,9 @@ export function buildGuestFlowNavmeshV0(input: GuestFlowNavmeshInput): GuestFlow
     walkableCellCount: walkableCells.length,
     blockedCellCount: cells.length - walkableCells.length,
     limitations: [
-      "V0 uses a deterministic square navcell approximation, not full constructive polygon clipping.",
-      "Object buffers use axis-aligned footprint bounds; curved and rotated silhouettes are approximated.",
-      "A* routes and string-pulling are planning evidence only and require human review.",
+      "V0 uses deterministic square navcells clipped by centre/corner sampling, not full constructive solid geometry.",
+      "Object buffers use expanded footprint polygons; curved silhouettes and complex concave offsets are approximated.",
+      "A* routes, simple funnel smoothing, density, and queue estimates are planning evidence only and require human review.",
     ],
   } as const;
 
@@ -674,7 +750,31 @@ function smoothRoute(navmesh: GuestFlowNavmeshArtifact, route: readonly GuestFlo
     smoothed.push(next);
     anchorIndex = nextIndex;
   }
-  return smoothed;
+  return removeNearCollinearTurns(navmesh, smoothed);
+}
+
+function turnArea(a: GuestFlowPoint, b: GuestFlowPoint, c: GuestFlowPoint): number {
+  return Math.abs(((b.x - a.x) * (c.y - a.y)) - ((b.y - a.y) * (c.x - a.x)));
+}
+
+function removeNearCollinearTurns(navmesh: GuestFlowNavmeshArtifact, route: readonly GuestFlowPoint[]): readonly GuestFlowPoint[] {
+  if (route.length <= 3) return route;
+  const simplified: GuestFlowPoint[] = [];
+  for (let i = 0; i < route.length; i += 1) {
+    const previous = simplified[simplified.length - 1];
+    const current = route[i];
+    const next = route[i + 1];
+    if (current === undefined) continue;
+    if (previous === undefined || next === undefined) {
+      simplified.push(current);
+      continue;
+    }
+    const baseline = Math.max(0.001, distance(previous, next));
+    const deviation = turnArea(previous, current, next) / baseline;
+    if (deviation < 0.18 && segmentStaysInWalkableCells(navmesh, previous, next)) continue;
+    simplified.push(current);
+  }
+  return simplified;
 }
 
 export function findGuestFlowRouteV0(
@@ -727,7 +827,7 @@ function pathDistance(points: readonly GuestFlowPoint[]): number {
   return total;
 }
 
-function trajectoryPoints(path: readonly GuestFlowPoint[], totalSeconds: number): readonly GuestFlowTimedPoint[] {
+function trajectoryPoints(path: readonly GuestFlowPoint[], totalSeconds: number, startSeconds = 0): readonly GuestFlowTimedPoint[] {
   const totalDistance = Math.max(pathDistance(path), 0.001);
   let elapsedDistance = 0;
   const points: GuestFlowTimedPoint[] = [];
@@ -740,10 +840,54 @@ function trajectoryPoints(path: readonly GuestFlowPoint[], totalSeconds: number)
     }
     points.push({
       ...current,
-      t: Math.round((elapsedDistance / totalDistance) * totalSeconds),
+      t: Math.round(startSeconds + ((elapsedDistance / totalDistance) * totalSeconds)),
     });
   }
   return points;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function calibratedWalkingSpeedMps(random: () => number): number {
+  const variation = (random() - 0.5) * 0.42;
+  return Number(clamp(DEFAULT_GUEST_WALKING_SPEED_MPS + variation, MIN_GUEST_WALKING_SPEED_MPS, MAX_GUEST_WALKING_SPEED_MPS).toFixed(3));
+}
+
+function numericAssumptionValue(assumptions: readonly GuestFlowAssumption[], key: string): number | null {
+  const assumption = assumptions.find((candidate) => candidate.key === key);
+  return typeof assumption?.value === "number" && Number.isFinite(assumption.value) ? assumption.value : null;
+}
+
+function serviceRateForDestination(
+  destination: GuestFlowDestination,
+  assumptions: readonly GuestFlowAssumption[],
+): number {
+  const scoped = numericAssumptionValue(assumptions, `service_rate_per_minute:${destination.id}`);
+  if (scoped !== null && scoped > 0) return scoped;
+  const global = numericAssumptionValue(assumptions, "service_rate_per_minute");
+  if (global !== null && global > 0) return global;
+  if (/bar|drink|queue/iu.test(destination.label)) return 10;
+  if (/dinner|table|seat/iu.test(destination.label)) return 24;
+  return DEFAULT_DESTINATION_SERVICE_RATE_PER_MINUTE;
+}
+
+function updateQueueAccumulator(
+  existing: QueueAccumulator | undefined,
+  destinationId: string,
+  serviceRatePerMinute: number,
+  waitSeconds: number,
+): QueueAccumulator {
+  const estimatedAgents = (existing?.estimatedAgents ?? 0) + 1;
+  const peakAgents = Math.max(existing?.peakAgents ?? 0, Math.ceil(waitSeconds / Math.max(1, 60 / serviceRatePerMinute)));
+  return {
+    destinationId,
+    estimatedAgents,
+    peakAgents,
+    maxWaitSeconds: Math.max(existing?.maxWaitSeconds ?? 0, waitSeconds),
+    serviceRatePerMinute,
+  };
 }
 
 function buildDensity(trajectories: readonly AgentTrajectory[], cellSizeM: number): DensityHeatmap {
@@ -786,7 +930,8 @@ function nearestTrajectoryPoint(trajectory: AgentTrajectory, t: number): GuestFl
 
 function detectRouteCrossings(trajectories: readonly AgentTrajectory[]): readonly RouteConflict[] {
   const conflicts: RouteConflict[] = [];
-  const sampleTime = 30;
+  const maxTime = Math.max(...trajectories.map((trajectory) => trajectory.points[trajectory.points.length - 1]?.t ?? 0), 60);
+  const sampleTimes = [0.2, 0.4, 0.6, 0.8].map((ratio) => Math.round(maxTime * ratio));
   const limit = Math.min(trajectories.length, 28);
   for (let i = 0; i < limit; i += 1) {
     const a = trajectories[i];
@@ -794,17 +939,20 @@ function detectRouteCrossings(trajectories: readonly AgentTrajectory[]): readonl
     for (let j = i + 1; j < limit; j += 1) {
       const b = trajectories[j];
       if (b === undefined) continue;
-      const pa = nearestTrajectoryPoint(a, sampleTime);
-      const pb = nearestTrajectoryPoint(b, sampleTime);
-      if (distance(pa, pb) < 0.65) {
-        conflicts.push(RouteConflictSchema.parse({
-          id: `route-crossing-${String(conflicts.length + 1)}`,
-          conflictType: "route_crossing",
-          severity: "attention",
-          point: { x: Number(((pa.x + pb.x) / 2).toFixed(3)), y: Number(((pa.y + pb.y) / 2).toFixed(3)) },
-          involvedAgentIds: [a.agentId, b.agentId],
-          message: "Simulated routes converge within a close planning threshold.",
-        }));
+      for (const sampleTime of sampleTimes) {
+        const pa = nearestTrajectoryPoint(a, sampleTime);
+        const pb = nearestTrajectoryPoint(b, sampleTime);
+        if (distance(pa, pb) < 0.65) {
+          conflicts.push(RouteConflictSchema.parse({
+            id: `route-crossing-${String(conflicts.length + 1)}`,
+            conflictType: "route_crossing",
+            severity: "attention",
+            point: { x: Number(((pa.x + pb.x) / 2).toFixed(3)), y: Number(((pa.y + pb.y) / 2).toFixed(3)) },
+            involvedAgentIds: [a.agentId, b.agentId],
+            message: "Simulated routes converge within a close planning threshold.",
+          }));
+          break;
+        }
       }
       if (conflicts.length >= 6) return conflicts;
     }
@@ -855,11 +1003,12 @@ function detectStaffLaneOverlaps(
 }
 
 function buildQueueZones(
-  trajectories: readonly AgentTrajectory[],
+  queueAccumulators: ReadonlyMap<string, QueueAccumulator>,
   destinations: readonly GuestFlowDestination[],
 ): readonly QueueZone[] {
   return destinations.flatMap((destination) => {
-    const estimatedAgents = trajectories.filter((trajectory) => trajectory.destinationId === destination.id).length;
+    const accumulator = queueAccumulators.get(destination.id);
+    const estimatedAgents = accumulator?.estimatedAgents ?? 0;
     if (estimatedAgents < 5) return [];
     return [QueueZoneSchema.parse({
       id: `queue-${destination.id}`,
@@ -867,6 +1016,9 @@ function buildQueueZones(
       label: `${destination.label} queue zone`,
       centre: destination.point,
       estimatedAgents,
+      peakAgents: accumulator?.peakAgents ?? 0,
+      estimatedWaitSeconds: Number((accumulator?.maxWaitSeconds ?? 0).toFixed(1)),
+      serviceRatePerMinute: accumulator?.serviceRatePerMinute ?? DEFAULT_DESTINATION_SERVICE_RATE_PER_MINUTE,
     })];
   });
 }
@@ -884,7 +1036,10 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
   });
   const trajectories: AgentTrajectory[] = [];
   const obstacleConflicts: RouteConflict[] = [];
+  const queueAccumulators = new Map<string, QueueAccumulator>();
+  const walkingSpeeds: number[] = [];
   const totalSeconds = Math.max(30, Math.min(600, parsed.phase.durationMinutes * 60));
+  const arrivalSpreadSeconds = Math.min(totalSeconds * 0.35, 300);
 
   for (let i = 0; i < parsed.agentCount; i += 1) {
     const entrance = parsed.entrances[i % parsed.entrances.length];
@@ -910,13 +1065,24 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
     }
     directFallbackPath.push(destination.point);
     const routePath = path.length >= 2 ? path : directFallbackPath;
-    const speedSeconds = totalSeconds * (0.45 + random() * 0.28);
+    const walkingSpeedMps = calibratedWalkingSpeedMps(random);
+    walkingSpeeds.push(walkingSpeedMps);
+    const serviceRatePerMinute = serviceRateForDestination(destination, parsed.assumptions);
+    const priorDestinationAgents = queueAccumulators.get(destination.id)?.estimatedAgents ?? 0;
+    const queuePosition = priorDestinationAgents + 1;
+    const queueWaitSeconds = Math.max(0, ((queuePosition - serviceRatePerMinute) / serviceRatePerMinute) * 60);
+    queueAccumulators.set(
+      destination.id,
+      updateQueueAccumulator(queueAccumulators.get(destination.id), destination.id, serviceRatePerMinute, queueWaitSeconds),
+    );
+    const travelSeconds = Math.max(8, pathDistance(routePath) / walkingSpeedMps);
+    const startSeconds = Math.round((i / Math.max(1, parsed.agentCount - 1)) * arrivalSpreadSeconds);
     trajectories.push(AgentTrajectorySchema.parse({
       agentId: `agent-${String(i + 1).padStart(3, "0")}`,
       profile: "guest",
       spawnId: entrance.id,
       destinationId: destination.id,
-      points: trajectoryPoints(routePath, speedSeconds),
+      points: trajectoryPoints(routePath, travelSeconds + queueWaitSeconds, startSeconds),
     }));
   }
 
@@ -945,6 +1111,9 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
   const travelTimes = trajectories.map((trajectory) => trajectory.points[trajectory.points.length - 1]?.t ?? 0);
   const avgDistance = travelDistances.reduce((sum, value) => sum + value, 0) / Math.max(1, travelDistances.length);
   const avgTime = travelTimes.reduce((sum, value) => sum + value, 0) / Math.max(1, travelTimes.length);
+  const avgWalkingSpeed = walkingSpeeds.reduce((sum, value) => sum + value, 0) / Math.max(1, walkingSpeeds.length);
+  const queueZones = buildQueueZones(queueAccumulators, parsed.destinations);
+  const maxQueueWaitSeconds = Math.max(0, ...queueZones.map((zone) => zone.estimatedWaitSeconds));
   const bottleneckScore = Math.min(1, (densityHotspots.length * 0.14) + (routeConflicts.length * 0.035));
   const inputHash = sha256Hex(stableCanonicalJson(parsed));
   const artifactWithoutHash = {
@@ -960,7 +1129,7 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
     trajectories,
     densityHeatmap,
     routeConflicts,
-    queueZones: buildQueueZones(trajectories, parsed.destinations),
+    queueZones,
     staffLanes: parsed.staffLanes,
     metrics: GuestFlowReplayMetricsSchema.parse({
       agentCount: trajectories.length,
@@ -972,6 +1141,9 @@ export function runGuestFlowReplayV0(input: GuestFlowReplayInput): GuestFlowRepl
       densityHotspotCount: densityHotspots.length,
       navmeshCellCount: navmesh.cells.length,
       navmeshWalkableCellCount: navmesh.walkableCellCount,
+      averageWalkingSpeedMps: Number(avgWalkingSpeed.toFixed(3)),
+      queueZoneCount: queueZones.length,
+      maxQueueWaitSeconds: Number(maxQueueWaitSeconds.toFixed(1)),
     }),
     navmesh,
   } as const;

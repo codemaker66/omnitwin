@@ -64,6 +64,30 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
     .pricing-faq-item[open] summary {
       color: ${GOLD};
     }
+    .pricing-cta-primary:focus-visible,
+    .pricing-founder-cta:focus-visible,
+    .pricing-nav-sign-in:focus-visible,
+    .pricing-footer-inner a:focus-visible,
+    .pricing-faq-item summary:focus-visible {
+      outline: 3px solid #87e7f0;
+      outline-offset: 4px;
+      box-shadow: 0 0 0 7px rgba(135,231,240,0.16);
+    }
+    .pricing-cycle-button:focus-visible {
+      outline: 3px solid #87e7f0;
+      outline-offset: 3px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pricing-cta-primary,
+      .pricing-addon-card,
+      .pricing-scan-card,
+      .pricing-founder-card,
+      .pricing-hero,
+      .pricing-section {
+        animation: none !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
 
     /* ---- Mobile (<= 768px) ---- */
     @media (max-width: 768px) {
@@ -136,6 +160,8 @@ interface BillingCycleToggleProps {
 function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React.ReactElement {
   return (
     <div
+      role="group"
+      aria-label="Billing cycle"
       style={{
         display: "inline-flex",
         background: "rgba(255,255,255,0.04)",
@@ -151,8 +177,11 @@ function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React
           <button
             key={c}
             type="button"
+            className="pricing-cycle-button"
+            aria-pressed={active}
             onClick={() => { onChange(c); }}
             style={{
+              minHeight: 44,
               padding: "10px 22px",
               borderRadius: 999,
               border: "none",

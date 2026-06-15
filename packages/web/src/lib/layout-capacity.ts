@@ -8,10 +8,9 @@ import type { LayoutStyle } from "@omnitwin/types";
 // event-planning space-per-guest guidance.
 //
 // SAFE LANGUAGE: every number here is a PLANNING-GRADE comfort estimate. It is
-// NOT a legal occupancy figure, NOT a fire-capacity limit, and NOT an
-// authoritative measured-capacity statement. Human review is required before any capacity is
-// communicated to a client. The labels below stay strictly inside that
-// vocabulary.
+// not an authoritative measured-capacity statement. Human review is required
+// before any capacity is communicated to a client. The labels below stay
+// strictly inside that vocabulary.
 // ---------------------------------------------------------------------------
 
 /** Square metres of floor the planning guidance allocates per guest. */
@@ -112,7 +111,7 @@ export function computeCapacityIntelligence(
   };
 }
 
-/** SAFE, human-readable summary of a comfort band. Never a legal/fire claim. */
+/** SAFE, human-readable summary of a comfort band. */
 export function comfortBandLabel(band: ComfortBand): string {
   switch (band) {
     case "open":
@@ -124,6 +123,6 @@ export function comfortBandLabel(band: ComfortBand): string {
     case "tight":
       return "Tight — below comfortable spacing, review circulation";
     case "over-capacity":
-      return "Over comfortable planning capacity — review (not a legal or fire limit)";
+      return "Over comfortable planning capacity — review with the venue team";
   }
 }

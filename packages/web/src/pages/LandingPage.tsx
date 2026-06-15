@@ -25,6 +25,11 @@ import {
   roomGeometries,
   type RoomGeometry,
 } from "../data/room-geometries.js";
+import {
+  publicRoomSelectionCards,
+  type PublicRoomSelectionCard,
+} from "../lib/trades-hall-room-showcase.js";
+import { buildCapacityGuidance } from "../lib/proposal-capacity-note.js";
 import "./LandingPage.css";
 
 // -----------------------------------------------------------------------------
@@ -145,6 +150,13 @@ function plannerPathForRoom(room: VenueRoom): string {
   return `/plan?space=${room.slug}`;
 }
 
+function plannerHrefForSelection(room: PublicRoomSelectionCard): string | null {
+  if (room.canonicalRoomSlug !== null && isRoomSlug(room.canonicalRoomSlug)) {
+    return `/plan?space=${room.canonicalRoomSlug}`;
+  }
+  return null;
+}
+
 function geometryForRoom(room: VenueRoom): RoomGeometry {
   const geometry = roomGeometries[room.geometryName];
   if (geometry === undefined) {
@@ -249,6 +261,15 @@ function Hero(): ReactElement {
   const selectedRoom = roomBySlug(selectedRoomSlug);
   const selectedPlannerPath = plannerPathForRoom(selectedRoom);
 
+  // Planning-grade capacity guidance (T-429) for the selected room, from its
+  // real bounding-box floor area via the shared SAFE generator. Seated-dinner
+  // is the representative reference layout for these heritage rooms; no guest
+  // count here, so this shows the comfortable estimate only.
+  const heroCapacity = useMemo(() => {
+    const metrics = buildRoomPlanMetrics(selectedRoom);
+    return buildCapacityGuidance(metrics.widthM * metrics.lengthM, 0, "dinner-rounds");
+  }, [selectedRoom]);
+
   useEffect(() => {
     if (!mobilePlannerOpen) return;
     const previousBodyOverflow = document.body.style.overflow;
@@ -301,6 +322,10 @@ function Hero(): ReactElement {
               <span>Draft layout</span>
               <span>Sent to Events Team</span>
             </div>
+            <p className="hero-capacity" data-testid="hero-capacity-guidance">
+              {selectedRoom.shortTitle} is comfortable for {heroCapacity.summary}.{" "}
+              <span className="hero-capacity-note">{heroCapacity.disclosure}</span>
+            </p>
             <div className="powered-by">Powered by Venviewer</div>
           </div>
 
@@ -1622,34 +1647,67 @@ function Rooms(): ReactElement {
         <div className="rooms-head rise">
           <div className="kicker">The rooms</div>
           <h2 id="rooms-title">
-            Four rooms, one Robert Adam building. Start with whichever <em>fits the feeling</em>.
+            Eight room experiences, one Robert Adam building. Start with whichever <em>fits the feeling</em>.
           </h2>
+          <p>
+            Public previews stay client-safe: visual preview, planning-grade guidance, and final details confirmed by
+            the venue team.
+          </p>
         </div>
 
         <div className="rooms-grid">
-          {VENUE_ROOMS.map((room) => (
-            <Link
-              key={room.slug}
-              className={`room-card size-${room.size}`}
-              to={plannerPathForRoom(room)}
-              aria-label={`Open ${room.title} in the planner`}
-            >
+          {publicRoomSelectionCards.map((room, index) => {
+            const plannerHref = plannerHrefForSelection(room);
+            const previewHref = room.routeHref ?? room.enquiryHref;
+            const primaryLabel = room.routeHref === null ? `Enquire about ${room.name}` : `Explore ${room.name}`;
+            return (
+              <article
+                key={room.id}
+                className={index === 0 ? "room-card size-lg" : "room-card size-md"}
+                aria-label={`${room.name} room selection`}
+              >
               <div className="image">
-                <img src={room.image} alt={room.alt} loading="lazy" />
-                {room.tag !== undefined ? <div className="tag">{room.tag}</div> : null}
+                <img src={room.image} alt={room.imageAlt} loading="lazy" />
+                <div className="tag">{room.tone}</div>
               </div>
               <div className="meta">
                 <div>
-                  <h3>{room.title}</h3>
-                  <div className="sub">{room.sub}</div>
+                  <h3>{room.name}</h3>
+                  <div className="sub">{room.mood}</div>
                 </div>
-                <div className="capacity">
-                  <b>{String(room.standing)}</b>standing<br />
-                  {String(room.banquet)} banquet
+                <div className="capacity" aria-label={`${room.name} guidance`}>
+                  <b>{room.bestFor[0] ?? "Planning"}</b>
+                  {room.bestFor.slice(1, 3).join(" / ")}
                 </div>
               </div>
-            </Link>
-          ))}
+              <p className="room-card-note">{room.planningNote}</p>
+              <div className="room-card-status">{room.statusCopy}</div>
+              <div className="room-card-actions">
+                <Link to={previewHref} className="room-card-action primary" aria-label={primaryLabel}>
+                  {room.routeHref === null ? "Enquire" : "Explore room"}
+                  <span aria-hidden>→</span>
+                </Link>
+                {plannerHref !== null ? (
+                  <Link
+                    to={plannerHref}
+                    className="room-card-action"
+                    aria-label={`Open ${room.name} in the planner`}
+                  >
+                    Open planner
+                  </Link>
+                ) : room.requestLayoutHref !== null ? (
+                  <Link
+                    to={room.requestLayoutHref}
+                    className="room-card-action"
+                    aria-label={`Request a layout for ${room.name}`}
+                  >
+                    Request layout
+                  </Link>
+                ) : null}
+              </div>
+            </article>
+            );
+          })}
         </div>
 
         <div className="rooms-actions">

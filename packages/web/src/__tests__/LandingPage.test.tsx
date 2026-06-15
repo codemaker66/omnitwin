@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { LandingPage } from "../pages/LandingPage.js";
 
 afterEach(() => {
@@ -55,6 +56,28 @@ describe("LandingPage — Grand Hall module", () => {
     expect(screen.getByText("Sent to Events Team")).toBeTruthy();
     expect(screen.queryByText(/to the centimetre/i)).toBeNull();
     expect(screen.queryByText(/events@tradeshall\.example/i)).toBeNull();
+  });
+
+  it("surfaces planning-grade hero capacity guidance with SAFE wording (T-429)", () => {
+    mount();
+    const guidance = screen.getByTestId("hero-capacity-guidance");
+    expect(guidance.textContent).toMatch(/Grand Hall is comfortable for around \d+ guests as seated dinner on round tables/);
+    expect(guidance.textContent).toContain("Planning estimate");
+    expect(guidance.textContent).toContain("human review required");
+    expect(guidance.textContent).toContain("final capacity confirmed by the venue team");
+    expect(findUnsupportedProposalClaim(guidance.textContent ?? "")).toBeNull();
+  });
+
+  it("recomputes hero capacity guidance when the room changes", () => {
+    mount();
+    const before = screen.getByTestId("hero-capacity-guidance").textContent ?? "";
+    expect(before).toContain("Grand Hall is comfortable");
+
+    fireEvent.change(screen.getByLabelText("Choose room"), { target: { value: "reception-room" } });
+
+    const after = screen.getByTestId("hero-capacity-guidance").textContent ?? "";
+    expect(after).toContain("Reception Room is comfortable");
+    expect(after).not.toBe(before);
   });
 
   it("renders the animated planning sequence instead of static feature cards", () => {
@@ -113,17 +136,27 @@ describe("LandingPage — Grand Hall module", () => {
     expect(screen.getAllByRole("button", { name: /Delete item/i }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("restores the Trades Hall room picker with real room photography", () => {
+  it("renders the full Trades Hall room selection with client-safe preview links", () => {
     mount();
-    const rooms = screen.getByRole("heading", { level: 2, name: /Four rooms/i });
+    const rooms = screen.getByRole("heading", { level: 2, name: /Eight room experiences/i });
     expect(rooms).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Explore The Grand Hall/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/grand-hall");
+    expect(screen.getByRole("link", { name: /Enquire about Deacon Convener's Room/i }).getAttribute("href")).toBe("/?room=deacon-convener-room#contact");
+    expect(screen.getByRole("link", { name: /Explore Lady Convener's Room/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/lady-convenors-room");
+    expect(screen.getByRole("link", { name: /Explore The Reception Room/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/reception-room");
+    expect(screen.getByRole("link", { name: /Explore The Robert Adam Room/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/robert-adam-room");
+    expect(screen.getByRole("link", { name: /Explore The Saloon/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/saloon");
+    expect(screen.getByRole("link", { name: /Explore The North Gallery/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/north-gallery");
+    expect(screen.getByRole("link", { name: /Explore The South Gallery/i }).getAttribute("href")).toBe("/venues/trades-hall/rooms/south-gallery");
     expect(screen.getByRole("link", { name: /Open The Grand Hall in the planner/i }).getAttribute("href")).toBe("/plan?space=grand-hall");
     expect(screen.getByRole("link", { name: /Open The Saloon in the planner/i }).getAttribute("href")).toBe("/plan?space=saloon");
-    expect(screen.getByRole("link", { name: /Open Robert Adam Room in the planner/i }).getAttribute("href")).toBe("/plan?space=robert-adam-room");
-    expect(screen.getByRole("link", { name: /Open Reception Room in the planner/i }).getAttribute("href")).toBe("/plan?space=reception-room");
-    expect(screen.getByAltText(/Saloon with panelled walls/i).getAttribute("src")).toBe("/rooms/saloon_TH_use.png");
-    expect(screen.getByAltText(/Robert Adam Room with neoclassical/i).getAttribute("src")).toBe("/rooms/robert-adam-wedding-opt.jpg");
-    expect(screen.getByAltText(/Reception Room dressed/i).getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+    expect(screen.getByRole("link", { name: /Open The Robert Adam Room in the planner/i }).getAttribute("href")).toBe("/plan?space=robert-adam-room");
+    expect(screen.getByRole("link", { name: /Open The Reception Room in the planner/i }).getAttribute("href")).toBe("/plan?space=reception-room");
+    expect(screen.getByAltText(/Saloon prepared for a venue event/i).getAttribute("src")).toBe("/rooms/saloon_TH_use.png");
+    expect(screen.getByAltText(/Robert Adam Room prepared for a ceremony/i).getAttribute("src")).toBe("/rooms/robert-adam-wedding-opt.jpg");
+    expect(screen.getByAltText(/Reception Room arranged for an event/i).getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+    expect(document.body.textContent).toContain("Human review required");
+    expect(document.body.textContent).toContain("No public runtime package is exposed");
   });
 
   it("wires the embedded 2D room selector to the same room slug as the 3D planner", () => {

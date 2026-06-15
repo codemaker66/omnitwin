@@ -191,6 +191,63 @@ describe("ProposalPage", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve proposal" })).toBeTruthy();
   });
+
+  it("lets the client post a standalone comment on the token share and shows it (T-427 phase 6)", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({
+        comments: [{ kind: "comment", authorName: "Elaine", body: "Can we add a cheese table?", createdAt: "2026-06-11T11:00:00.000Z" }],
+      }));
+    mockCommentOnProposalShare.mockResolvedValue({
+      kind: "comment", authorName: "Elaine", body: "Can we add a cheese table?", createdAt: "2026-06-11T11:00:00.000Z",
+    });
+    renderTokenPage();
+
+    const input = await screen.findByTestId("comment-input");
+    fireEvent.change(input, { target: { value: "Can we add a cheese table?" } });
+    fireEvent.click(screen.getByTestId("comment-submit"));
+
+    await waitFor(() => {
+      expect(mockCommentOnProposalShare).toHaveBeenCalledWith("client-token", {
+        body: "Can we add a cheese table?",
+        kind: "comment",
+      });
+    });
+    expect(await screen.findByText("Can we add a cheese table?")).toBeTruthy();
+  });
+
+  it("does not offer a standalone comment box on the legacy shareCode path", async () => {
+    mockGetPublicProposal.mockResolvedValue(fixtureProposal());
+    renderPage();
+
+    await screen.findByText("Summer wedding — Grand Hall");
+    expect(screen.queryByTestId("comment-input")).toBeNull();
+  });
+
+  it("renders the read-only layout visual when a snapshot is present (T-427 phase 7)", async () => {
+    mockGetPublicProposal.mockResolvedValue(fixtureProposal({
+      layoutSnapshot: {
+        roomWidthM: 20,
+        roomLengthM: 10,
+        items: [
+          { shape: "round", kind: "table", xM: 4, zM: 3, widthM: 1.8, depthM: 1.8, rotationDeg: 0 },
+          { shape: "rect", kind: "chair", xM: 4, zM: 4.5, widthM: 0.45, depthM: 0.45, rotationDeg: 0 },
+        ],
+      },
+    }));
+    renderPage();
+
+    expect(await screen.findByTestId("proposal-layout-visual")).toBeTruthy();
+    expect(screen.getByText(/Proposed layout — to scale/)).toBeTruthy();
+  });
+
+  it("omits the layout visual when there is no snapshot", async () => {
+    mockGetPublicProposal.mockResolvedValue(fixtureProposal());
+    renderPage();
+
+    await screen.findByText("Summer wedding — Grand Hall");
+    expect(screen.queryByTestId("proposal-layout-visual")).toBeNull();
+  });
 });
 
 describe("PublicProposalSchema boundary validation", () => {

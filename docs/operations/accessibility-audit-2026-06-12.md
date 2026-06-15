@@ -10,7 +10,7 @@ This audit records the current accessibility posture and test coverage added dur
 
 | Route | Current posture | Follow-up |
 |---|---|---|
-| Landing `/` | Semantic hero CTA, room picker label, responsive no-overflow E2E coverage. | Keep keyboard CTA regression. |
+| Landing `/` | Semantic hero CTA, room picker label, responsive no-overflow E2E coverage, and keyboard-focused room entry points. | Keep keyboard CTA regression. |
 | Planner `/plan` | Canvas route has visible chrome, loading/error states, no-overflow mobile tests, and performance smoke. | Manual screen-reader pass still needed for dense planner controls. |
 | Dashboard `/dashboard` | Sidebar buttons are keyboard-focusable; analytics view has loading/error/empty states. | Add a fuller keyboard workflow once dashboard forms stabilize. |
 | Proposal `/proposal/:shareCode` | Client-safe page has loading, unavailable, status, quote, response, and error states. | Add manual screen-reader review of quote table and response form. |
@@ -21,6 +21,7 @@ This audit records the current accessibility posture and test coverage added dur
 
 - Playwright hardening spec captures deterministic screenshots for `/plan`, `/dev/trades-hall-visual`, landing room showcase, client proposal, and dashboard analytics.
 - Keyboard checks cover landing CTA focus and event-day task status activation.
+- Public room selector coverage checks keyboard focus, mobile overflow, and client-safe venue-team confirmation wording.
 - Existing Hallkeeper tests cover checkbox ARIA state and route protection.
 
 ## Remaining Manual Checks

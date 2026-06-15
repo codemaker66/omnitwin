@@ -22,7 +22,7 @@ const SENT_PROPOSAL = {
     clientMessage:
       "Planning-grade draft for your review. Human review required before anything is finalised.",
     capacityNote:
-      "Grand Hall: comfortable for around 140 guests as seated dinner on round tables — for 120 guests: Comfortable — within planning guidance. Planning estimate only, human review required — not a legal occupancy or fire-capacity figure.",
+      "Grand Hall: comfortable for around 140 guests as seated dinner on round tables — for 120 guests: Comfortable — within planning guidance. Planning estimate only; human review required; final capacity confirmed by the venue team.",
     quote: {
       quoteId: null,
       currency: "GBP",
@@ -61,7 +61,7 @@ test.describe("proposal share link", () => {
     // Planning-grade capacity guidance (T-429) under its SAFE label.
     await expect(page.getByText("Capacity guidance — planning estimate")).toBeVisible();
     await expect(page.getByText(/comfortable for around 140 guests/)).toBeVisible();
-    await expect(page.getByText(/not a legal occupancy or fire-capacity figure/)).toBeVisible();
+    await expect(page.getByText(/final capacity confirmed by the venue team/)).toBeVisible();
 
     // Standing footer disclosure.
     await expect(page.getByText(/reviewed by a human before anything/)).toBeVisible();

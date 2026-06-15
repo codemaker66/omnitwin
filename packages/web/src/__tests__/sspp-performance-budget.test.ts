@@ -34,7 +34,10 @@ describe("SS++ performance and visual hardening guardrails", () => {
     expect(spec).toContain("/plan/${CONFIG_ID}");
     expect(spec).toContain("/dev/trades-hall-visual");
     expect(spec).toContain("sspp-room-showcase.png");
+    expect(spec).toContain("sspp-public-room-route.png");
     expect(spec).toContain("/proposal/hardening-share");
     expect(spec).toContain("sspp-dashboard-pipeline.png");
+    expect(spec).toContain("sspp-pricing.png");
+    expect(spec).toContain("sspp-hallkeeper.png");
   });
 });

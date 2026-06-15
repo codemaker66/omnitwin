@@ -15,6 +15,9 @@ These budgets are guardrails for planner and operations quality. They are not gu
 | Trades Hall visual `/dev/trades-hall-visual` | Shell and canvas visible under 15 s with no real asset required. | Trades Hall visual E2E and hardening screenshot smoke. |
 | Client proposal `/proposal/:shareCode` | Proposal content visible under 5 s with mocked API. | Hardening screenshot smoke. |
 | Dashboard analytics `/dashboard` | Analytics view visible under 5 s with mocked API. | Hardening screenshot smoke. |
+| Public room route `/venues/:venueSlug/rooms/:roomSlug` | Client-safe room preview visible under 5 s with mocked runtime visual state. | Hardening screenshot smoke. |
+| Pricing `/pricing` | Offer and billing controls visible under 5 s. | Hardening screenshot smoke. |
+| Hallkeeper `/hallkeeper/:configId` | Authenticated sheet header and first checklist row visible under 8 s with mocked API. | Hardening screenshot smoke. |
 
 ## Bundle Budgets
 
