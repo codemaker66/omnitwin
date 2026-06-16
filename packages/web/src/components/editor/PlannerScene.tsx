@@ -29,6 +29,7 @@ import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
 import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
+import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -98,6 +99,7 @@ export function PlannerScene(): ReactElement {
         <CockpitSceneOverlays />
         <CockpitEvidenceBeam />
         <CockpitCameraFocus />
+        <CockpitPlanningCamera />
         <XrayToggle />
         <MeasurementTool />
         <TapeMeasure />
