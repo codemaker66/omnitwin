@@ -144,3 +144,145 @@ export function densityPatchExtent(
     : dimensions.length * DEGENERATE_PATCH_FRACTION;
   return { sizeX, sizeZ };
 }
+
+// ---------------------------------------------------------------------------
+// Flow ribbon geometry — turn a floor polyline into a smooth glowing band.
+//
+// A guest-flow trajectory is a thin polyline; a single 1px line reads as a
+// hairline and disappears under the photoreal render. To match the reference
+// look (a luminous cyan ribbon flowing along the floor) we extrude the polyline
+// into a flat triangle strip of constant half-width, carrying:
+//   • a `uv` per vertex (u = normalised progress along the path 0→1, v = across
+//     the band 0=left edge, 1=right edge) so the shader can soften the edges
+//     and fade the ends, and
+//   • an `aDist` per vertex (arc length in scene units) so a travelling glow
+//     pulse keeps a constant wavelength regardless of how the replay sampled
+//     the path.
+// Pure data only — the caller uploads it to a BufferGeometry. The mapping is
+// proportional planning evidence, never a surveyed route.
+// ---------------------------------------------------------------------------
+
+export interface FlowRibbonGeometry {
+  /** xyz per vertex; two vertices (left, right) per polyline point. */
+  readonly positions: Float32Array;
+  /** uv per vertex: u = progress 0→1 along the path, v = 0 (left) / 1 (right). */
+  readonly uv: Float32Array;
+  /** Arc length in scene units per vertex, for a constant-wavelength flow pulse. */
+  readonly dist: Float32Array;
+  /** Triangle indices, two triangles per segment. */
+  readonly index: Uint16Array;
+  /** Total arc length of the centreline, in scene units. */
+  readonly length: number;
+}
+
+const EMPTY_RIBBON: FlowRibbonGeometry = {
+  positions: new Float32Array(0),
+  uv: new Float32Array(0),
+  dist: new Float32Array(0),
+  index: new Uint16Array(0),
+  length: 0,
+};
+
+const RIBBON_EPSILON = 1e-6;
+
+/** Extrude a projected floor polyline into a constant-width ribbon strip. The
+ *  ribbon lies in the XZ plane at each point's Y; the band is offset along the
+ *  XZ perpendicular of the (averaged) path tangent so corners mitre cleanly. */
+export function buildFlowRibbonGeometry(
+  points: readonly WorldPoint[],
+  halfWidth: number,
+): FlowRibbonGeometry {
+  const n = points.length;
+  if (n < 2) return EMPTY_RIBBON;
+
+  // Cumulative arc length (XZ) per point.
+  const cum = new Array<number>(n).fill(0);
+  for (let i = 1; i < n; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    const prev = cum[i - 1] ?? 0;
+    if (a === undefined || b === undefined) {
+      cum[i] = prev;
+      continue;
+    }
+    cum[i] = prev + Math.hypot(b[0] - a[0], b[2] - a[2]);
+  }
+  const total = cum[n - 1] ?? 0;
+  const invTotal = total > RIBBON_EPSILON ? 1 / total : 0;
+
+  const positions: number[] = [];
+  const uv: number[] = [];
+  const dist: number[] = [];
+
+  // Last valid perpendicular, reused across degenerate (zero-length) segments.
+  let lastPerpX = 0;
+  let lastPerpZ = 1;
+
+  for (let i = 0; i < n; i += 1) {
+    const p = points[i];
+    if (p === undefined) continue;
+
+    // Tangent = normalised sum of adjacent segment directions (XZ only).
+    let tx = 0;
+    let tz = 0;
+    const prev = points[i - 1];
+    const next = points[i + 1];
+    if (prev !== undefined) {
+      const dx = p[0] - prev[0];
+      const dz = p[2] - prev[2];
+      const l = Math.hypot(dx, dz);
+      if (l > RIBBON_EPSILON) {
+        tx += dx / l;
+        tz += dz / l;
+      }
+    }
+    if (next !== undefined) {
+      const dx = next[0] - p[0];
+      const dz = next[2] - p[2];
+      const l = Math.hypot(dx, dz);
+      if (l > RIBBON_EPSILON) {
+        tx += dx / l;
+        tz += dz / l;
+      }
+    }
+
+    // Perpendicular in XZ: rotate the tangent 90°; reuse last when degenerate.
+    let perpX = -tz;
+    let perpZ = tx;
+    const pl = Math.hypot(perpX, perpZ);
+    if (pl > RIBBON_EPSILON) {
+      perpX /= pl;
+      perpZ /= pl;
+      lastPerpX = perpX;
+      lastPerpZ = perpZ;
+    } else {
+      perpX = lastPerpX;
+      perpZ = lastPerpZ;
+    }
+
+    const arc = cum[i] ?? 0;
+    const u = arc * invTotal;
+    // Left vertex (+perp) then right vertex (−perp).
+    positions.push(p[0] + perpX * halfWidth, p[1], p[2] + perpZ * halfWidth);
+    positions.push(p[0] - perpX * halfWidth, p[1], p[2] - perpZ * halfWidth);
+    uv.push(u, 0, u, 1);
+    dist.push(arc, arc);
+  }
+
+  const index: number[] = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    const left = i * 2;
+    const right = i * 2 + 1;
+    const nextLeft = i * 2 + 2;
+    const nextRight = i * 2 + 3;
+    index.push(left, right, nextRight, left, nextRight, nextLeft);
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    uv: new Float32Array(uv),
+    dist: new Float32Array(dist),
+    index: new Uint16Array(index),
+    length: total,
+  };
+}

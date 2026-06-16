@@ -2,17 +2,20 @@ import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import {
-  AdditiveBlending,
+  BufferAttribute,
   BufferGeometry,
   DoubleSide,
   Float32BufferAttribute,
+  NormalBlending,
   type Group,
+  type ShaderMaterial,
 } from "three";
 import type { AgentTrajectory, DensityHeatmapCell, RouteConflict, SpaceDimensions } from "@omnitwin/types";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useCockpitReplay } from "../../hooks/use-cockpit-replay.js";
 import {
+  buildFlowRibbonGeometry,
   densityPatchExtent,
   projectReplayPointToFloor,
   sampleTrajectoryAtProgress,
@@ -20,6 +23,11 @@ import {
   type ReplayRoomBounds,
   type WorldPoint,
 } from "../../lib/cockpit-overlay-projection.js";
+import {
+  advanceFlowRibbonTime,
+  getFlowRibbonMaterial,
+  getRadialGlowTexture,
+} from "../../lib/cockpit-overlay-materials.js";
 import {
   cockpitOverlayLayers,
   conflictSeverityColor,
@@ -62,7 +70,10 @@ const DEFAULT_DENSITY_CELL_SIZE_M = 1.5;
 const MOTE_SPEED = 0.12; // cycles per second
 const MOTE_PHASE = 0.13; // per-mote offset so they don't move in lockstep
 
-const FLOW_COLOR = "#6bd9e8";
+const FLOW_RIBBON_HALF_WIDTH = 0.34; // scene units → ~0.68 unit band, soft edges
+const DENSITY_PATCH_SCALE = 2.2; // enlarge soft blobs so they pool into a field
+const MOTE_SIZE = 0.9; // sprite scale for the firefly glow
+
 const MOTE_COLOR = "#d7f0ff";
 const HERITAGE_COLOR = "#c9a84c";
 const PROBE_COLOR = "#c9b06b";
@@ -89,21 +100,6 @@ function labelStyle(color: string): React.CSSProperties {
   };
 }
 
-/** Build a line-segment-pair geometry from a world polyline (matches the
- *  repo's lineSegments idiom in CirculationOverlay). */
-function polylineSegmentGeometry(points: readonly WorldPoint[]): BufferGeometry {
-  const verts: number[] = [];
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a === undefined || b === undefined) continue;
-    verts.push(a[0], a[1], a[2], b[0], b[1], b[2]);
-  }
-  const geo = new BufferGeometry();
-  geo.setAttribute("position", new Float32BufferAttribute(verts, 3));
-  return geo;
-}
-
 function rectOutlineGeometry(halfWidth: number, halfLength: number, y: number): BufferGeometry {
   const corners: WorldPoint[] = [
     [-halfWidth, y, -halfLength],
@@ -123,14 +119,26 @@ function rectOutlineGeometry(halfWidth: number, halfLength: number, y: number): 
   return geo;
 }
 
-function FlowPath({ points }: { readonly points: readonly WorldPoint[] }): ReactElement {
-  const geometry = useMemo(() => polylineSegmentGeometry(points), [points]);
-  useEffect(() => () => { geometry.dispose(); }, [geometry]);
-  return (
-    <lineSegments geometry={geometry} renderOrder={3}>
-      <lineBasicMaterial color={FLOW_COLOR} transparent opacity={0.55} depthTest={false} />
-    </lineSegments>
-  );
+function FlowRibbon({
+  points,
+  material,
+}: {
+  readonly points: readonly WorldPoint[];
+  readonly material: ShaderMaterial;
+}): ReactElement | null {
+  const geometry = useMemo(() => {
+    const data = buildFlowRibbonGeometry(points, FLOW_RIBBON_HALF_WIDTH);
+    if (data.length === 0) return null;
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new Float32BufferAttribute(data.positions, 3));
+    geo.setAttribute("uv", new Float32BufferAttribute(data.uv, 2));
+    geo.setAttribute("aDist", new Float32BufferAttribute(data.dist, 1));
+    geo.setIndex(new BufferAttribute(data.index, 1));
+    return geo;
+  }, [points]);
+  useEffect(() => () => { geometry?.dispose(); }, [geometry]);
+  if (geometry === null) return null;
+  return <mesh geometry={geometry} material={material} renderOrder={3} />;
 }
 
 function FlowPaths({
@@ -142,13 +150,31 @@ function FlowPaths({
   readonly bounds: ReplayRoomBounds;
   readonly dimensions: SpaceDimensions;
 }): ReactElement {
+  const invalidate = useThree((state) => state.invalidate);
+  const material = getFlowRibbonMaterial();
+  const reduced = prefersReducedMotion();
+
+  // One shared uniform animates every ribbon; the geometry never changes per
+  // frame, so the whole flow field costs a single uniform write + one redraw.
+  useFrame((_state, delta) => {
+    if (reduced) return;
+    advanceFlowRibbonTime(material, delta);
+    invalidate();
+  });
+
+  const polylines = useMemo(
+    () =>
+      trajectories.map((trajectory) => ({
+        id: trajectory.agentId,
+        points: trajectoryFloorPolyline(trajectory.points, bounds, dimensions, FLOW_Y),
+      })),
+    [trajectories, bounds, dimensions],
+  );
+
   return (
     <group name="cockpit-flow-paths" renderOrder={3}>
-      {trajectories.map((trajectory) => (
-        <FlowPath
-          key={trajectory.agentId}
-          points={trajectoryFloorPolyline(trajectory.points, bounds, dimensions, FLOW_Y)}
-        />
+      {polylines.map((polyline) => (
+        <FlowRibbon key={polyline.id} points={polyline.points} material={material} />
       ))}
     </group>
   );
@@ -164,6 +190,7 @@ function AgentMotes({
   readonly dimensions: SpaceDimensions;
 }): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
+  const texture = getRadialGlowTexture();
   const groupRef = useRef<Group>(null);
   const progress = useRef(0);
   const reduced = prefersReducedMotion();
@@ -189,16 +216,22 @@ function AgentMotes({
         const t0 = reduced ? index / Math.max(1, trajectories.length) : (index * MOTE_PHASE) % 1;
         const p = sampleTrajectoryAtProgress(trajectory.points, t0, bounds, dimensions, MOTE_Y);
         return (
-          <mesh key={trajectory.agentId} position={[p[0], p[1], p[2]]} renderOrder={4}>
-            <sphereGeometry args={[0.17, 12, 12]} />
-            <meshBasicMaterial
+          <sprite
+            key={trajectory.agentId}
+            position={[p[0], p[1], p[2]]}
+            scale={[MOTE_SIZE, MOTE_SIZE, MOTE_SIZE]}
+            renderOrder={4}
+          >
+            <spriteMaterial
+              map={texture}
               color={MOTE_COLOR}
               transparent
-              opacity={0.92}
-              blending={AdditiveBlending}
+              opacity={0.95}
+              blending={NormalBlending}
               depthWrite={false}
+              depthTest={false}
             />
-          </mesh>
+          </sprite>
         );
       })}
     </group>
@@ -216,7 +249,12 @@ function DensityPatches({
   readonly bounds: ReplayRoomBounds;
   readonly dimensions: SpaceDimensions;
 }): ReactElement {
+  const texture = getRadialGlowTexture();
   const { sizeX, sizeZ } = densityPatchExtent(cellSizeM, bounds, dimensions);
+  // Enlarge each soft radial blob so neighbouring cells overlap into one
+  // continuous field of warm light instead of reading as discrete tiles.
+  const patchX = sizeX * DENSITY_PATCH_SCALE;
+  const patchZ = sizeZ * DENSITY_PATCH_SCALE;
   return (
     <group name="cockpit-density" renderOrder={2}>
       {cells.map((cell) => {
@@ -228,12 +266,13 @@ function DensityPatches({
             rotation={[-Math.PI / 2, 0, 0]}
             renderOrder={2}
           >
-            <planeGeometry args={[sizeX, sizeZ]} />
+            <planeGeometry args={[patchX, patchZ]} />
             <meshBasicMaterial
+              map={texture}
               color={densityLevelColor(cell.level)}
               transparent
-              opacity={cell.level === "high" ? 0.36 : 0.22}
-              blending={AdditiveBlending}
+              opacity={cell.level === "high" ? 0.62 : 0.42}
+              blending={NormalBlending}
               depthWrite={false}
               side={DoubleSide}
             />

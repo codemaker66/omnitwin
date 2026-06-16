@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SpaceDimensions } from "@omnitwin/types";
 import {
   DEFAULT_OVERLAY_FLOOR_Y,
+  buildFlowRibbonGeometry,
   densityPatchExtent,
   normaliseReplayPoint,
   projectReplayPointToFloor,
@@ -9,6 +10,7 @@ import {
   sceneFootprint,
   trajectoryFloorPolyline,
   type ReplayRoomBounds,
+  type WorldPoint,
 } from "../cockpit-overlay-projection.js";
 
 // Render-space room: 40 (X) × 60 (Z) × 7 (height). Replay metre-frame bounds:
@@ -111,5 +113,60 @@ describe("densityPatchExtent", () => {
     const extent = densityPatchExtent(1.5, degenerate, DIMS);
     expect(extent.sizeX).toBeCloseTo(2, 5);
     expect(extent.sizeZ).toBeCloseTo(3, 5);
+  });
+});
+
+describe("buildFlowRibbonGeometry", () => {
+  it("returns an empty ribbon for a degenerate (<2 point) path", () => {
+    expect(buildFlowRibbonGeometry([], 0.5).positions).toHaveLength(0);
+    const single = buildFlowRibbonGeometry([[0, 0, 0]], 0.5);
+    expect(single.positions).toHaveLength(0);
+    expect(single.index).toHaveLength(0);
+    expect(single.length).toBe(0);
+  });
+
+  it("extrudes a straight path into a constant-width strip with exact UVs and arc length", () => {
+    const path: WorldPoint[] = [
+      [-2, 0, 0],
+      [0, 0, 0],
+      [2, 0, 0],
+    ];
+    const ribbon = buildFlowRibbonGeometry(path, 0.5);
+
+    // Two vertices (left +Z, right −Z) per point.
+    expect(Array.from(ribbon.positions)).toEqual([
+      -2, 0, 0.5, -2, 0, -0.5,
+      0, 0, 0.5, 0, 0, -0.5,
+      2, 0, 0.5, 2, 0, -0.5,
+    ]);
+    // u runs 0 → 1 along the path; v is 0 (left) / 1 (right).
+    expect(Array.from(ribbon.uv)).toEqual([0, 0, 0, 1, 0.5, 0, 0.5, 1, 1, 0, 1, 1]);
+    // Arc length in scene units, per vertex.
+    expect(Array.from(ribbon.dist)).toEqual([0, 0, 2, 2, 4, 4]);
+    // Two triangles per segment.
+    expect(Array.from(ribbon.index)).toEqual([0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4]);
+    expect(ribbon.length).toBe(4);
+  });
+
+  it("keeps every edge exactly halfWidth from the centreline through a corner mitre", () => {
+    const halfWidth = 0.5;
+    const path: WorldPoint[] = [
+      [0, 0, 0],
+      [0, 0, 4],
+      [4, 0, 4],
+    ];
+    const ribbon = buildFlowRibbonGeometry(path, halfWidth);
+
+    // The mitred middle point (index 1) sits at the corner (0, 0, 4); both of
+    // its band vertices stay exactly halfWidth from it (a unit perpendicular,
+    // not a scaled one).
+    const corner: WorldPoint = [0, 0, 4];
+    const left: WorldPoint = [ribbon.positions[6] ?? 0, ribbon.positions[7] ?? 0, ribbon.positions[8] ?? 0];
+    const right: WorldPoint = [ribbon.positions[9] ?? 0, ribbon.positions[10] ?? 0, ribbon.positions[11] ?? 0];
+    const dist = (a: WorldPoint, b: WorldPoint): number =>
+      Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    expect(dist(left, corner)).toBeCloseTo(halfWidth, 5);
+    expect(dist(right, corner)).toBeCloseTo(halfWidth, 5);
+    expect(ribbon.length).toBeCloseTo(8, 5);
   });
 });
