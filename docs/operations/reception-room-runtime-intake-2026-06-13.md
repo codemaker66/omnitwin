@@ -158,6 +158,30 @@ This transform rotates the XGRIDS/LCC2 Z-up SOG chunks into the Three.js Y-up sc
 
 2026-06-15 camera arrival continuation: the registered Reception Room camera profile now includes a bounded 1400ms arrival pose that settles into the same reviewed QA camera target and cancels as soon as OrbitControls receives user input. Focused tests assert the arrival pose and final pose remain inside the declared camera/target bounds. Playwright Edge at 1280 x 900 loaded the registered package with no blocking responses, request failures, page errors, or unexpected console output. Current evidence: `output/playwright/reception-room-camera-arrival-settled.png` and `output/playwright/reception-room-camera-arrival-after-drag.png`. This remains presentation/QA motion only, not transform evidence.
 
+2026-06-17 SPZ re-export swapped in as the primary visual: the same PortalCam
+capture was re-exported by XGRIDS to `.spz` (bundle
+`reception-room_xgrids_lcc2_spz_visual`, manifest `Reception Room Mobile.lcc2`,
+scanDuration `908.0854752063751` matching the original SOG intake). The seven
+manifest room `.spz` chunks (`0_0`, `0_2_0`, `0_3_0`, `0_3_0_0`, `0_7_0_1`,
+`0_8_0_0`, `0_13_0_0`) were uploaded to controlled object storage under
+`venues/trades-hall/rooms/reception-room/xgrids/2026-06-15/lcc2-result-spz/data/3dgs`,
+registered as `usable` / `unverified` splat asset versions, and the existing
+runtime package `71687e9e-c23d-4f51-b3dd-a6a82c97978d` was upserted to point its
+primary visual at `0_0.spz` while staying `internal_ready` / `unverified`.
+`env.spz` is excluded as an environment chunk. The runtime API now serves the
+manifest room chunks that match the package primary's extension (so a SOG
+package still serves `.sog`, this SPZ package serves `.spz`); no SOG/SPZ
+double-serving. Internal browser recheck at
+`/dev/trades-hall-visual?venue=trades-hall&room=reception-room`: Spark loaded the
+seven SPZ chunks (`3,455,732` splats) into the framed runtime view with the
+status copy `Runtime asset loaded, not yet verified/signed` and no splat-asset
+load failures (only the expected unauthenticated adjunct-API `401`s). This is an
+internal visual runtime smoke of the SPZ re-export. It does not add signed
+room-local alignment, metric scale, floor/wall alignment, camera-pose truth,
+exposure approval, or any public/customer-facing claim, and it does not complete
+T-091 or T-091A. The prior SOG asset versions remain registered as provenance;
+the package pointer can be reverted to the SOG primary if required.
+
 Known limitations:
 
 - The transform is derived from source bounds and visual framing, not from a reviewed venue control network, E57/Matterport alignment, or measured fixture anchors.

@@ -213,8 +213,16 @@ function runtimePackageCanLoad(pkg: RuntimePackageRow): boolean {
 async function listUsableRuntimeVisualAssets(
   db: Database,
   pkg: RuntimePackageRow,
+  primaryVisualAsset: AssetVersionRow,
 ): Promise<readonly AssetVersionRow[]> {
   if (!runtimePackageCanLoad(pkg)) return [];
+  // Serve the manifest room chunks that match the package's primary visual
+  // asset format (e.g. all `.sog` chunks for a SOG package, all `.spz` chunks
+  // for an SPZ package), so a room can be re-exported to a new splat format by
+  // re-registering its primary without serving two formats at once. The matching
+  // environment chunk (`env.<ext>`) is excluded — it is not part of the room
+  // splat total.
+  const fileExt = primaryVisualAsset.fileExt;
   return db
     .select()
     .from(assetVersions)
@@ -222,10 +230,10 @@ async function listUsableRuntimeVisualAssets(
       eq(assetVersions.venueSlug, pkg.venueSlug),
       eq(assetVersions.roomSlug, pkg.roomSlug),
       eq(assetVersions.assetKind, "splat"),
-      eq(assetVersions.fileExt, ".sog"),
+      eq(assetVersions.fileExt, fileExt),
       eq(assetVersions.runtimeStatus, "usable"),
       ne(assetVersions.evidenceStatus, "rejected"),
-      ne(assetVersions.fileName, "env.sog"),
+      ne(assetVersions.fileName, `env${fileExt}`),
     ))
     .orderBy(asc(assetVersions.fileName), asc(assetVersions.id));
 }
@@ -484,7 +492,7 @@ export async function assetRoutes(
         return { data: null };
       }
 
-      const visualAssetVersions = await listUsableRuntimeVisualAssets(db, row.pkg);
+      const visualAssetVersions = await listUsableRuntimeVisualAssets(db, row.pkg, row.primaryVisualAssetVersion);
       return {
         data: serializeRuntimePackage(
           row.pkg,
