@@ -90,4 +90,44 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("TABLE_CLOTH_COLORS");
     expect(codeOnly).toContain("placed.tableSetting === \"dinner\"");
   });
+
+  it("does not animate persisted clothed tables on initial scene load", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("useRef<ReadonlyMap<string, string> | null>(null)");
+    expect(codeOnly).toContain("prev !== null && prev.get(item.id) !== key");
+    expect(codeOnly).toContain("if (prev !== null && newlyClothed !== null)");
+  });
+
+  it("uses a lean instanced furniture layer for mobile and tablet planner canvases", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("shouldUseLeanPlannerFurniture");
+    expect(codeOnly).toContain("LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH");
+    expect(codeOnly).toContain("function LeanFurnitureLayer");
+    expect(codeOnly).toContain("<LeanFurnitureLayer items={placedItems} />");
+    expect(codeOnly).toContain("renderModel={!useLeanFurniture && !instancedIds.has(placed.id)}");
+  });
+
+  it("keeps the lean mobile/tablet furniture path on unlit materials", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("new MeshBasicMaterial");
+    expect(codeOnly).not.toContain("new MeshStandardMaterial");
+  });
+
+  it("limits lean mobile/tablet detail layers and nameplates to focused items", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("canRenderLeanItemDetail");
+    expect(codeOnly).toContain("!useLeanFurniture || selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId)");
+    expect(codeOnly).toContain("renderDetailLayers={canRenderLeanItemDetail(placed.id)}");
+    expect(codeOnly).toContain("renderNamePlate={canRenderLeanItemDetail(placed.id)}");
+  });
+
+  it("caps mobile/tablet constraint warning skins while preserving selected warnings first", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("MAX_LEAN_CONSTRAINT_VIOLATION_SKINS");
+    expect(codeOnly).toContain("visibleConstraintViolationIds");
+    expect(codeOnly).toContain("renderedConstraintViolationIds");
+    expect(codeOnly).toContain("useLeanFurniture && MAX_LEAN_CONSTRAINT_VIOLATION_SKINS <= 0");
+    expect(codeOnly).toContain("selectedIds");
+    expect(codeOnly).toContain("hasConstraintViolation={renderedConstraintViolationIds.has(placed.id)}");
+  });
 });

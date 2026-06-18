@@ -102,6 +102,7 @@ function onBlur(): void {
 
 export interface CameraRigProps {
   readonly dimensions: SpaceDimensions;
+  readonly smoothControls?: boolean;
 }
 
 interface PlannerCameraPose {
@@ -133,7 +134,7 @@ interface HumanPovDragState {
  * Pan speed scales with zoom distance (closer = slower, further = faster).
  * Camera target is clamped to room bounds with a small margin.
  */
-export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const humanPovActiveRef = useRef(false);
@@ -317,9 +318,9 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
   const dampingFrames = useRef(0);
 
   const onControlsChange = useCallback(() => {
-    dampingFrames.current = DAMPING_SETTLE_FRAMES;
+    dampingFrames.current = smoothControls ? DAMPING_SETTLE_FRAMES : 0;
     invalidate();
-  }, [invalidate]);
+  }, [invalidate, smoothControls]);
 
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
@@ -356,7 +357,6 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     const canvas = gl.domElement;
 
     function onContextMenu(event: MouseEvent): void {
-      if (!humanPovActiveRef.current) return;
       event.preventDefault();
     }
 
@@ -522,7 +522,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     }
 
     // Keep rendering while damping settles after orbit/pan
-    if (dampingFrames.current > 0) {
+    if (smoothControls && dampingFrames.current > 0) {
       dampingFrames.current--;
       controls.update();
       invalidate();
@@ -603,7 +603,8 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      enableDamping
+      regress={smoothControls}
+      enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
       enableZoom={isTouchDevice}
       minPolarAngle={MIN_POLAR_ANGLE}
@@ -616,7 +617,7 @@ export function CameraRig({ dimensions }: CameraRigProps): React.ReactElement {
       mouseButtons={{
         LEFT: -1 as number, // Disabled — reserved for object selection
         MIDDLE: 2, // THREE.MOUSE.PAN
-        RIGHT: 0, // THREE.MOUSE.ROTATE (orbit)
+        RIGHT: (smoothControls ? 0 : -1) as number, // THREE.MOUSE.ROTATE (desktop orbit)
       }}
       onChange={onControlsChange}
     />

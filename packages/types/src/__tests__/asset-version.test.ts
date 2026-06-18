@@ -5,9 +5,22 @@ import {
   PublicRoomRuntimeVisualSchema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
+  RegisterRuntimeTransformArtifactInputSchema,
   RoomManifestSchema,
+  RoomAssetStatusSchema,
+  RUNTIME_TRANSFORM_ARTIFACT_REGISTRATION_REPORT_INSPECTION_STATUSES,
+  RuntimeTransformArtifactRegistrationReportInspectionSchema,
+  RuntimeTransformArtifactRegistrationReportSchema,
+  RuntimeTransformArtifactSchema,
   RuntimePackageManifestJsonSchema,
   RuntimePackageSchema,
+  CAPTURE_CONTROL_FRESHNESS_STATUSES,
+  ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUSES,
+  REVIEWED_CAPTURE_CONTROL_STATUSES,
+  REVIEWED_RUNTIME_TRANSFORM_STATUSES,
+  REVIEWED_RUNTIME_QA_STATUSES,
+  SIGNED_RUNTIME_TRANSFORM_ALIGNMENT_METHODS,
+  SIGNED_RUNTIME_TRANSFORM_EVIDENCE_REF_TYPES,
   TRADES_HALL_RUNTIME_ROOMS,
   TRADES_HALL_RUNTIME_ROOM_SLUGS,
   assetKindAllowsExtension,
@@ -19,13 +32,22 @@ import {
   tradesHallRuntimeRoomForSlug,
   trainingInputR2Prefix,
   trainingOutputR2Prefix,
+  type RuntimeTransformArtifactRegistrationReport,
+  type RuntimeTransformArtifactRegistrationReportInspection,
 } from "../asset-version.js";
 
 const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
 const SEMANTIC_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000002";
 const COLLISION_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
+const RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
 const SHA = "a".repeat(64);
 const R2_KEY = "venues/trades-hall/rooms/robert-adam-room/xgrids/2026-06-06/scene.ply";
+const TRANSFORM_ARTIFACT_ID = "reception-room-landmark-solve-v0";
+const transformEvidenceRef = {
+  refType: "landmark_set",
+  ref: "docs/operations/reception-room-landmarks-v0.json",
+  role: "source_landmarks",
+} as const;
 
 const manifestJson = {
   schemaVersion: "venviewer.runtime-package.v1" as const,
@@ -52,6 +74,124 @@ const validVersionInput = {
   sha256: SHA,
   sizeBytes: 2_048,
 };
+
+const validTransformArtifact = {
+  id: TRANSFORM_ARTIFACT_ID,
+  sourceFrame: "COLMAP_RDF",
+  targetFrame: "CVF",
+  units: "meters",
+  matrix: [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ],
+  alignmentMethod: "landmark_solve",
+  residualRmseM: 0.012,
+  landmarks: [
+    {
+      id: "corner-01",
+      label: "Control corner 01",
+      source: [0, 0, 0],
+      target: [0, 0, 0],
+      residualM: 0.01,
+      provenanceRefs: [transformEvidenceRef],
+    },
+  ],
+  provenance: {
+    state: "measured",
+    refs: [transformEvidenceRef],
+  },
+  creator: {
+    actorType: "human",
+    id: "ops/blake",
+    displayName: "Runtime operator",
+    role: "runtime_operator",
+  },
+  reviewer: {
+    actorType: "human",
+    id: "ops/runtime-reviewer",
+    displayName: "Runtime reviewer",
+    role: "runtime_reviewer",
+  },
+  date: "2026-06-15T10:00:00.000Z",
+} as const;
+
+function validRuntimeTransformReport(
+  overrides: Partial<RuntimeTransformArtifactRegistrationReport> = {},
+): RuntimeTransformArtifactRegistrationReport {
+  return {
+    schemaVersion: "venviewer.runtime-transform-artifact-registration-report.v0",
+    generatedAt: "2026-06-16T12:00:00.000Z",
+    mode: "registered",
+    apiUrl: "http://localhost:3001",
+    payloadFile: "docs/operations/reception-room-transform-artifact.json",
+    payload: {
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      transformArtifactId: validTransformArtifact.id,
+      sourceFrame: validTransformArtifact.sourceFrame,
+      targetFrame: validTransformArtifact.targetFrame,
+      alignmentMethod: validTransformArtifact.alignmentMethod,
+      provenanceState: validTransformArtifact.provenance.state,
+      residualRmseM: validTransformArtifact.residualRmseM,
+      landmarkCount: validTransformArtifact.landmarks.length,
+      reviewerId: validTransformArtifact.reviewer.id,
+      reviewerRole: validTransformArtifact.reviewer.role,
+    },
+    preflight: {
+      payloadRuntimePackageId: RUNTIME_PACKAGE_ID,
+      latestRuntimePackageId: RUNTIME_PACKAGE_ID,
+      latestRuntimePackageRuntimeStatus: "internal_ready",
+      latestRuntimePackageEvidenceStatus: "machine_checked",
+      runtimePackageMatchesLatest: true,
+      runtimePackageDriftAllowed: false,
+    },
+    registration: {
+      runtimeTransformArtifactRowId: "10000000-0000-4000-8000-000000000021",
+      transformArtifactId: validTransformArtifact.id,
+      registeredBy: "10000000-0000-4000-8000-000000000007",
+      createdAt: "2026-06-16T12:00:00.000Z",
+      updatedAt: "2026-06-16T12:00:00.000Z",
+    },
+    guardrails: {
+      runtimePackageDriftAllowed: false,
+      runtimeQaRecordChanged: false,
+      captureControlSourceChanged: false,
+      publicExposureChanged: false,
+    },
+    ...overrides,
+  };
+}
+
+function validRuntimeTransformInspection(
+  overrides: Partial<RuntimeTransformArtifactRegistrationReportInspection> = {},
+): RuntimeTransformArtifactRegistrationReportInspection {
+  return {
+    schemaVersion: "venviewer.runtime-transform-artifact-registration-report-inspection.v0",
+    generatedAt: "2026-06-16T12:05:00.000Z",
+    inspectedReportFile: "docs/operations/reception-room-transform-report.json",
+    inspectedReportGeneratedAt: "2026-06-16T12:00:00.000Z",
+    status: "ready_for_live_transform_registration",
+    liveTransformRegistrationReady: true,
+    mode: "dry_run",
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    transformArtifactId: validTransformArtifact.id,
+    reportRuntimePackageId: RUNTIME_PACKAGE_ID,
+    reportLatestRuntimePackageId: RUNTIME_PACKAGE_ID,
+    reportRuntimePackageMatchesLatest: true,
+    reportRuntimePackageDriftAllowed: false,
+    blockers: [],
+    messages: [
+      "Report schema is valid for reception-room-landmark-solve-v0 in trades-hall/reception-room.",
+      "Report records no runtime QA record, capture-control source, or public exposure change.",
+      "Dry-run report is current for live signed-transform registration preflight.",
+    ],
+    ...overrides,
+  };
+}
 
 describe("Trades Hall room registry", () => {
   it("pins the seven supported room slugs and status metadata", () => {
@@ -318,6 +458,265 @@ describe("runtime package manifest schemas", () => {
   });
 });
 
+describe("runtime transform artifact registration schemas", () => {
+  it("pins the signed transform method and evidence vocabularies", () => {
+    expect(SIGNED_RUNTIME_TRANSFORM_ALIGNMENT_METHODS).toEqual([
+      "manual_alignment",
+      "icp",
+      "landmark_solve",
+      "matterport_e57_extraction",
+      "blender_authored_placement",
+      "known_pose_colmap",
+    ]);
+    expect(SIGNED_RUNTIME_TRANSFORM_EVIDENCE_REF_TYPES).toEqual([
+      "control_network",
+      "landmark_set",
+      "artifact",
+    ]);
+  });
+
+  it("accepts a reviewed landmark-solve transform for a runtime package", () => {
+    const parsed = RegisterRuntimeTransformArtifactInputSchema.parse({
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      transformArtifact: validTransformArtifact,
+      reviewNote: "Contract test only; not a live Reception Room signed transform.",
+    });
+
+    expect(parsed.transformArtifact.id).toBe(TRANSFORM_ARTIFACT_ID);
+    expect(parsed.transformArtifact.alignmentMethod).toBe("landmark_solve");
+  });
+
+  it("rejects visual-only transforms from the signed registration endpoint", () => {
+    const result = RegisterRuntimeTransformArtifactInputSchema.safeParse({
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      transformArtifact: {
+        ...validTransformArtifact,
+        alignmentMethod: "visual_alignment",
+        residualRmseM: null,
+        landmarks: [],
+        provenance: {
+          state: "inferred",
+          refs: [
+            {
+              refType: "artifact",
+              ref: "docs/operations/reception-room-visual-review.md",
+              role: "visual_review",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects operator-note-only transform provenance", () => {
+    const result = RegisterRuntimeTransformArtifactInputSchema.safeParse({
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      transformArtifact: {
+        ...validTransformArtifact,
+        alignmentMethod: "manual_alignment",
+        provenance: {
+          state: "inferred",
+          refs: [
+            {
+              refType: "operator_note",
+              ref: "docs/operations/reception-room-operator-note.md",
+              role: "operator_note",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("keeps persisted transform artifact ids coherent with the embedded artifact", () => {
+    expect(RuntimeTransformArtifactSchema.parse({
+      id: "row-1",
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      transformArtifactId: TRANSFORM_ARTIFACT_ID,
+      transformArtifact: validTransformArtifact,
+      reviewNote: null,
+      registeredBy: "user-1",
+      createdAt: "2026-06-15T10:00:00.000Z",
+      updatedAt: "2026-06-15T10:00:00.000Z",
+    }).transformArtifactId).toBe(TRANSFORM_ARTIFACT_ID);
+
+    expect(RuntimeTransformArtifactSchema.safeParse({
+      id: "row-1",
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      transformArtifactId: "different-transform",
+      transformArtifact: validTransformArtifact,
+      reviewNote: null,
+      registeredBy: "user-1",
+      createdAt: "2026-06-15T10:00:00.000Z",
+      updatedAt: "2026-06-15T10:00:00.000Z",
+    }).success).toBe(false);
+  });
+
+  it("parses machine-readable runtime transform registration reports", () => {
+    const parsed = RuntimeTransformArtifactRegistrationReportSchema.parse(
+      validRuntimeTransformReport(),
+    );
+
+    expect(parsed.schemaVersion).toBe("venviewer.runtime-transform-artifact-registration-report.v0");
+    expect(parsed.payload.transformArtifactId).toBe(TRANSFORM_ARTIFACT_ID);
+    expect(parsed.preflight.runtimePackageMatchesLatest).toBe(true);
+    expect(parsed.guardrails.runtimeQaRecordChanged).toBe(false);
+    expect(parsed.guardrails.captureControlSourceChanged).toBe(false);
+    expect(parsed.guardrails.publicExposureChanged).toBe(false);
+  });
+
+  it("keeps dry-run runtime transform reports non-mutating", () => {
+    const report = validRuntimeTransformReport({
+      mode: "dry_run",
+      registration: null,
+    });
+
+    expect(RuntimeTransformArtifactRegistrationReportSchema.parse(report).mode).toBe("dry_run");
+    expect(RuntimeTransformArtifactRegistrationReportSchema.safeParse({
+      ...report,
+      registration: validRuntimeTransformReport().registration,
+    }).success).toBe(false);
+  });
+
+  it("rejects inconsistent runtime transform registration reports", () => {
+    const validReport = validRuntimeTransformReport();
+    const registration = validReport.registration;
+
+    if (registration === null) {
+      throw new Error("Expected valid transform registration report helper to include registration.");
+    }
+
+    expect(RuntimeTransformArtifactRegistrationReportSchema.safeParse({
+      ...validReport,
+      preflight: {
+        ...validReport.preflight,
+        latestRuntimePackageId: "10000000-0000-4000-8000-000000000099",
+        runtimePackageMatchesLatest: false,
+      },
+    }).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportSchema.safeParse({
+      ...validReport,
+      preflight: {
+        ...validReport.preflight,
+        payloadRuntimePackageId: "10000000-0000-4000-8000-000000000099",
+        latestRuntimePackageId: "10000000-0000-4000-8000-000000000099",
+      },
+    }).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportSchema.safeParse({
+      ...validReport,
+      registration: {
+        ...registration,
+        transformArtifactId: "different-transform",
+      },
+    }).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportSchema.safeParse({
+      ...validReport,
+      guardrails: {
+        ...validReport.guardrails,
+        publicExposureChanged: true,
+      },
+    }).success).toBe(false);
+  });
+
+  it("parses machine-readable runtime transform report inspections", () => {
+    const parsed = RuntimeTransformArtifactRegistrationReportInspectionSchema.parse(
+      validRuntimeTransformInspection(),
+    );
+
+    expect(RUNTIME_TRANSFORM_ARTIFACT_REGISTRATION_REPORT_INSPECTION_STATUSES).toEqual([
+      "ready_for_live_transform_registration",
+      "not_ready_for_live_transform_registration",
+      "registered_transform_report_verified",
+      "invalid_report",
+    ]);
+    expect(parsed.liveTransformRegistrationReady).toBe(true);
+    expect(parsed.mode).toBe("dry_run");
+    expect(parsed.blockers).toEqual([]);
+  });
+
+  it("rejects inconsistent ready runtime transform report inspections", () => {
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.safeParse(
+      validRuntimeTransformInspection({
+        mode: "registered",
+      }),
+    ).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.safeParse(
+      validRuntimeTransformInspection({
+        blockers: ["operator override was enabled"],
+      }),
+    ).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.safeParse(
+      validRuntimeTransformInspection({
+        reportLatestRuntimePackageId: "10000000-0000-4000-8000-000000000099",
+      }),
+    ).success).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.safeParse(
+      validRuntimeTransformInspection({
+        reportRuntimePackageDriftAllowed: true,
+      }),
+    ).success).toBe(false);
+  });
+
+  it("keeps registered and invalid transform report inspections out of readiness", () => {
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.parse(
+      validRuntimeTransformInspection({
+        status: "registered_transform_report_verified",
+        liveTransformRegistrationReady: false,
+        mode: "registered",
+        blockers: [
+          "Report already records a live signed-transform registration; use it as audit evidence, not authorization for another POST.",
+        ],
+      }),
+    ).liveTransformRegistrationReady).toBe(false);
+
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.parse(
+      validRuntimeTransformInspection({
+        status: "invalid_report",
+        liveTransformRegistrationReady: false,
+        inspectedReportGeneratedAt: null,
+        mode: null,
+        venueSlug: null,
+        roomSlug: null,
+        transformArtifactId: null,
+        reportRuntimePackageId: null,
+        reportLatestRuntimePackageId: null,
+        reportRuntimePackageMatchesLatest: null,
+        reportRuntimePackageDriftAllowed: null,
+        blockers: ["generatedAt: Required"],
+        messages: ["Report failed RuntimeTransformArtifactRegistrationReportSchema validation."],
+      }),
+    ).status).toBe("invalid_report");
+
+    expect(RuntimeTransformArtifactRegistrationReportInspectionSchema.safeParse(
+      validRuntimeTransformInspection({
+        status: "invalid_report",
+        liveTransformRegistrationReady: true,
+        blockers: ["generatedAt: Required"],
+      }),
+    ).success).toBe(false);
+  });
+});
+
 describe("response schemas", () => {
   const assetVersion = {
     id: ASSET_VERSION_ID,
@@ -374,6 +773,102 @@ describe("response schemas", () => {
       visualAssetUrls: ["https://assets.example/scene.ply"],
     });
     expect(pkg.primaryVisualAssetVersion?.sourceType).toBe("xgrids");
+  });
+
+  it("parses room asset status transform-review posture", () => {
+    expect(REVIEWED_RUNTIME_TRANSFORM_STATUSES).toEqual(["missing", "registered"]);
+    expect(REVIEWED_RUNTIME_QA_STATUSES).toEqual([
+      "missing",
+      "blocked_internal_only",
+      "approved_internal_preview",
+      "approved_public",
+    ]);
+    expect(REVIEWED_CAPTURE_CONTROL_STATUSES).toEqual([
+      "missing",
+      "source_registered",
+      "linked_to_transform",
+    ]);
+    expect(CAPTURE_CONTROL_FRESHNESS_STATUSES).toEqual([
+      "missing",
+      "not_checked",
+      "current_for_runtime_package",
+      "stale_for_runtime_package",
+    ]);
+    expect(ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUSES).toEqual([
+      "not_recorded",
+      "blocked_insufficient_landmark_candidates",
+      "blocked_missing_coordinate_pair_intake",
+      "blocked_invalid_coordinate_pair_intake",
+      "blocked_incompatible_coordinate_pair_intake",
+      "blocked_packet_build",
+      "blocked_capture_control_payload",
+      "capture_control_payload_ready",
+      "chain_inconsistent",
+    ]);
+
+    const status = RoomAssetStatusSchema.parse({
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      displayName: "Reception Room",
+      roomGroup: "support-room",
+      defaultStatus: "needs_registration",
+      captureStatus: "processed_needs_registration",
+      registryRuntimeStatus: "not_registered",
+      publicShowcaseEnabled: false,
+      internalVisualEnabled: true,
+      primaryCaptureSource: "xgrids",
+      currentState: "processed_output_found",
+      splatStatus: "registered splat asset",
+      splatExists: true,
+      runtimePackageStatus: "runtime package internal ready",
+      runtimePackageExists: true,
+      reviewedTransformStatus: "missing",
+      reviewedTransformArtifactCount: 0,
+      latestTransformArtifactId: null,
+      reviewedTransformSafeCopy: "no reviewed runtime transform registered",
+      reviewedQaStatus: "missing",
+      latestQaRecordId: null,
+      qaSignedTransformArtifactId: null,
+      qaSignedTransformLinked: false,
+      reviewedQaSafeCopy: "no runtime QA record registered",
+      captureControlStatus: "missing",
+      captureControlSourceCount: 0,
+      latestCaptureControlSourceRecordId: null,
+      latestCaptureControlSourceId: null,
+      latestCaptureControlSourceClass: null,
+      latestCaptureControlPoseAuthorityLevel: null,
+      latestCaptureControlAlignmentMethods: [],
+      latestCaptureControlStalenessTriggers: [],
+      latestCaptureControlActiveStalenessTriggers: [],
+      captureControlFreshnessStatus: "missing",
+      latestCaptureControlQaStatus: null,
+      captureControlLinkedTransformArtifactId: null,
+      captureControlTransformLinked: false,
+      captureControlAuthoritySafeCopy: "no capture-control authority recorded",
+      captureControlStalenessSafeCopy: "no capture-control staleness policy recorded",
+      captureControlSafeCopy: "no capture-control source registered",
+      runtimeControlEvidenceChainStatus: "blocked_missing_coordinate_pair_intake",
+      runtimeControlEvidenceChainRef: "docs/operations/reception-room-runtime-control-evidence-chain-status-2026-06-16.json",
+      runtimeControlRequiredCoordinatePairCount: 4,
+      runtimeControlReviewedCoordinatePairCount: 0,
+      runtimeControlEvidenceChainSafeCopy: "runtime-control chain blocked because reviewed coordinate-pair intake is missing",
+      runtimeControlEvidenceChainNextAction: "Collect the four reviewed ARF to CVF landmark measurements",
+      evidenceStatus: "machine_checked",
+      runtimeStatus: "internal_ready",
+      nextAction: "Open the internal runtime view",
+      safeCopy: "Runtime asset loaded, machine checked; human review required.",
+    });
+
+    expect(status.reviewedTransformStatus).toBe("missing");
+    expect(status.reviewedTransformArtifactCount).toBe(0);
+    expect(status.reviewedQaStatus).toBe("missing");
+    expect(status.captureControlStatus).toBe("missing");
+    expect(status.captureControlFreshnessStatus).toBe("missing");
+    expect(status.latestCaptureControlActiveStalenessTriggers).toEqual([]);
+    expect(status.captureControlAuthoritySafeCopy).toBe("no capture-control authority recorded");
+    expect(status.captureControlStalenessSafeCopy).toBe("no capture-control staleness policy recorded");
+    expect(status.runtimeControlEvidenceChainStatus).toBe("blocked_missing_coordinate_pair_intake");
+    expect(status.runtimeControlReviewedCoordinatePairCount).toBe(0);
   });
 
   it("parses the latest runtime package room query", () => {

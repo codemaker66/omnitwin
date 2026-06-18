@@ -244,8 +244,8 @@
 }
 
 .visual-layer-controls button,
-.visual-view-tool button,
-.visual-overlay-button {
+.visual-overlay-button,
+.visual-view-tool__item {
   min-height: 34px;
   border: 0;
   border-radius: 7px;
@@ -254,6 +254,10 @@
   font: inherit;
   font-size: 13px;
   font-weight: 720;
+}
+
+.visual-layer-controls button,
+.visual-overlay-button {
   cursor: pointer;
 }
 
@@ -630,15 +634,25 @@
   backdrop-filter: blur(12px);
 }
 
-.visual-view-tool button {
-  width: 42px;
+.visual-view-tool__item {
+  min-width: 42px;
+  box-sizing: border-box;
   display: grid;
   place-items: center;
+  cursor: default;
+  user-select: none;
 }
 
-.visual-view-tool button.is-active {
+.visual-view-tool__item.is-active {
   background: rgba(107, 217, 232, 0.14);
   color: var(--cyan);
+}
+
+.visual-view-tool__item--mode {
+  max-width: 72px;
+  padding: 0 8px;
+  color: #ddd4c4;
+  font-size: 11px;
 }
 
 .visual-panel {

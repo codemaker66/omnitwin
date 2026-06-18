@@ -21,6 +21,24 @@ import {
 // ---------------------------------------------------------------------------
 
 const GRID_Y = 0.002;
+export const GRAND_HALL_ORNAMENT_MIN_VIEWPORT_WIDTH = 1100;
+export const DETAILED_ROOM_SHELL_MIN_VIEWPORT_WIDTH = 1100;
+
+interface GrandHallOrnamentBudgetInput {
+  readonly isGrandHall: boolean;
+  readonly viewportWidth: number;
+}
+
+export function shouldRenderGrandHallOrnaments({
+  isGrandHall,
+  viewportWidth,
+}: GrandHallOrnamentBudgetInput): boolean {
+  return isGrandHall && viewportWidth >= GRAND_HALL_ORNAMENT_MIN_VIEWPORT_WIDTH;
+}
+
+export function shouldUseLeanPlannerRoomShell(viewportWidth: number): boolean {
+  return viewportWidth < DETAILED_ROOM_SHELL_MIN_VIEWPORT_WIDTH;
+}
 
 function polygonToShape(polygon: readonly (readonly [number, number])[]): Shape {
   const shape = new Shape();
@@ -153,6 +171,32 @@ function FeatureMesh({ feature }: { readonly feature: RoomFeature }): React.Reac
   );
 }
 
+function LeanWall({
+  segment,
+  wallHeight,
+  color,
+}: {
+  readonly segment: WallSegment;
+  readonly wallHeight: number;
+  readonly color: string;
+}): React.ReactElement {
+  return (
+    <mesh
+      name={segment.wallKey}
+      position={[segment.cx, wallHeight / 2, segment.cz]}
+      rotation={[0, segment.rotY, 0]}
+    >
+      <boxGeometry args={[segment.width, wallHeight, 0.08]} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={0.86}
+        clippingPlanes={sectionClipPlanes}
+      />
+    </mesh>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Floor grid
 // ---------------------------------------------------------------------------
@@ -195,20 +239,35 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
 // RoomMesh — main component
 // ---------------------------------------------------------------------------
 
+export type RoomMeshDetail = "auto" | "lean" | "detailed";
+
 interface RoomMeshProps {
   readonly geometry: RoomGeometry;
   readonly variant?: "grand-hall" | "generic";
+  readonly detail?: RoomMeshDetail;
 }
 
-export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): React.ReactElement {
+export function shouldUseRoomMeshLeanShell(detail: RoomMeshDetail, viewportWidth: number): boolean {
+  if (detail === "lean") return true;
+  if (detail === "detailed") return false;
+  return shouldUseLeanPlannerRoomShell(viewportWidth);
+}
+
+export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: RoomMeshProps): React.ReactElement {
+  const { size } = useThree();
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
   const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
   const bounds = useMemo(() => computeRenderBounds(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
   const isGrandHall = variant === "grand-hall";
+  const useLeanRoomShell = shouldUseRoomMeshLeanShell(detail, size.width);
+  const renderGrandHallOrnaments = shouldRenderGrandHallOrnaments({
+    isGrandHall,
+    viewportWidth: size.width,
+  });
 
   const surfaceTextures = useMemo(() => {
-    if (!isGrandHall || typeof document === "undefined") return null;
+    if (!isGrandHall || useLeanRoomShell || typeof document === "undefined") return null;
     try {
       return {
         floor: createParquetFloorTexture(),
@@ -217,7 +276,7 @@ export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): Reac
     } catch {
       return null;
     }
-  }, [isGrandHall]);
+  }, [isGrandHall, useLeanRoomShell]);
 
   useEffect(() => {
     return () => {
@@ -229,26 +288,41 @@ export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): Reac
   return (
     <group name="room-mesh">
       {/* Lighting */}
-      <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
-      <ambientLight intensity={0.3} />
+      {!useLeanRoomShell && (
+        <>
+          <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
+          <ambientLight intensity={0.3} />
+        </>
+      )}
 
       {/* Camera-driven wall auto-fade */}
-      <CameraWallDriver />
+      {!useLeanRoomShell && <CameraWallDriver />}
 
       {/* Floor */}
       <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <shapeGeometry args={[floorShape]} />
-        <meshStandardMaterial
-          color={FLOOR_COLOR}
-          map={surfaceTextures?.floor ?? null}
-          side={DoubleSide}
-          roughness={isGrandHall ? 0.62 : 0.95}
-          metalness={isGrandHall ? 0.05 : 0}
-          polygonOffset
-          polygonOffsetFactor={1}
-          polygonOffsetUnits={1}
-          clippingPlanes={noClipPlanes}
-        />
+        {useLeanRoomShell ? (
+          <meshBasicMaterial
+            color={FLOOR_COLOR}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={1}
+            polygonOffsetUnits={1}
+            clippingPlanes={noClipPlanes}
+          />
+        ) : (
+          <meshStandardMaterial
+            color={FLOOR_COLOR}
+            map={surfaceTextures?.floor ?? null}
+            side={DoubleSide}
+            roughness={isGrandHall ? 0.62 : 0.95}
+            metalness={isGrandHall ? 0.05 : 0}
+            polygonOffset
+            polygonOffsetFactor={1}
+            polygonOffsetUnits={1}
+            clippingPlanes={noClipPlanes}
+          />
+        )}
       </mesh>
 
       {/* Floor grid */}
@@ -258,24 +332,33 @@ export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): Reac
           Each segment maps to a cardinal WallKey so the visibility store
           drives auto-fade from camera position AND click toggles. */}
       {walls.map((w, i) => (
-        <BrickWall
-          key={`wall-${String(i)}`}
-          name={w.wallKey}
-          wallWidth={w.width}
-          wallHeight={ceilingHeight}
-          position={[w.cx, ceilingHeight / 2, w.cz]}
-          rotation={[0, w.rotY, 0]}
-          color={WALL_COLOR}
-        />
+        useLeanRoomShell ? (
+          <LeanWall
+            key={`wall-${String(i)}`}
+            segment={w}
+            wallHeight={ceilingHeight}
+            color={WALL_COLOR}
+          />
+        ) : (
+          <BrickWall
+            key={`wall-${String(i)}`}
+            name={w.wallKey}
+            wallWidth={w.width}
+            wallHeight={ceilingHeight}
+            position={[w.cx, ceilingHeight / 2, w.cz]}
+            rotation={[0, w.rotY, 0]}
+            color={WALL_COLOR}
+          />
+        )
       ))}
 
       {/* Features (balconies, platforms) */}
-      {geometry.features.map((f, i) => (
+      {!useLeanRoomShell && geometry.features.map((f, i) => (
         <FeatureMesh key={`feature-${String(i)}`} feature={f} />
       ))}
 
       {/* Dome */}
-      {geometry.hasDome && geometry.domeRadius > 0 && (
+      {!useLeanRoomShell && geometry.hasDome && geometry.domeRadius > 0 && (
         <GrandHallDome
           radius={geometry.domeRadius}
           ceilingHeight={ceilingHeight}
@@ -285,7 +368,7 @@ export function RoomMesh({ geometry, variant = "generic" }: RoomMeshProps): Reac
         />
       )}
 
-      {isGrandHall && (
+      {renderGrandHallOrnaments && (
         <GrandHallOrnaments width={bounds.width} length={bounds.length} height={ceilingHeight} />
       )}
     </group>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
@@ -20,7 +20,6 @@ import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js"
 import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
-import { AuthModal } from "./AuthModal.js";
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
@@ -40,6 +39,13 @@ import {
 } from "../../lib/catalogue.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
 
+const LazyAuthModal = lazy(() =>
+  import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
+);
+
+const LazyClerkRouteProvider = lazy(() =>
+  import("../auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider })),
+);
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -2222,7 +2228,13 @@ export function VerticalToolbox(): React.ReactElement {
           ))}
         </div>
       )}
-      {showAuth && <AuthModal onClose={() => { setShowAuth(false); }} />}
+      {showAuth ? (
+        <Suspense fallback={null}>
+          <LazyClerkRouteProvider>
+            <LazyAuthModal onClose={() => { setShowAuth(false); }} />
+          </LazyClerkRouteProvider>
+        </Suspense>
+      ) : null}
     </>
   );
 }

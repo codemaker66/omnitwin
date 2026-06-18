@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "runtime-composition-decision.v0",
+  "decisionId": "reception-room-runtime-composition-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "decidedAt": "2026-06-16T11:45:00.000Z",
+  "decidedBy": "runtime-review-operator",
+  "decision": "serve_manifest_room_sog_chunks",
+  "lcc2Manifest": {
+    "fileName": "Reception Room.lcc2",
+    "sha256": "f0a4c782cc0f031830404d409f5c0accdc30ed501fa562169206962ceee64f3e",
+    "sourceBundleHash": "11f567ac16d46ac20e4565de704ac088c93b22febd02d91b4b275f297a576217",
+    "totalSplats": 3491322,
+    "authority": "not_runtime_authoritative",
+    "role": "source_manifest_provenance",
+    "evidenceRefs": [
+      {
+        "label": "Reception Room runtime intake",
+        "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+      }
+    ]
+  },
+  "runtimeLoading": {
+    "renderer": "@sparkjsdev/spark",
+    "servedChunkStrategy": "manifest_room_sog_chunks",
+    "chunkOrdering": "api_file_name_ascending",
+    "visualAssetUrlsExpectedCount": 7,
+    "loadedSplatsExpected": 3491322,
+    "servedRoomChunks": [
+      {
+        "fileName": "0_0.sog",
+        "sha256": "0a5b8c21327be7c747087baab237d1907e0a0277b0d019300e0d6b2e7eba0a16",
+        "sizeBytes": 9017864,
+        "loadedSplats": 496034,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_15_0_0.sog",
+        "sha256": "111a47f7470fc83d1dc7f0bf2e1d3aa96943dd5a453005b840597e8c491d2368",
+        "sizeBytes": 10279160,
+        "loadedSplats": 602409,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_1_0.sog",
+        "sha256": "08c928b2556e2ba38cdf1777c806bb6b7ece249d5e7c442d20c0232ca703005c",
+        "sizeBytes": 9845814,
+        "loadedSplats": 561053,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_1_0_5.sog",
+        "sha256": "559dd375950966f8d1aa088a391b7105e364abc5013e7d29ea573728ab208fe1",
+        "sizeBytes": 10047085,
+        "loadedSplats": 577816,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_20_0.sog",
+        "sha256": "72664ef164df58e88e018ab455f67de8c985de4e5f799fc6b45041aa804af2e4",
+        "sizeBytes": 8106037,
+        "loadedSplats": 432226,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_6_0_0.sog",
+        "sha256": "182525354cd14fa6bc8f6a54c0cbe0e39b5d5c216dd27e2cc4d44d1458ba8238",
+        "sizeBytes": 10368228,
+        "loadedSplats": 599740,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      },
+      {
+        "fileName": "0_7_0_0.sog",
+        "sha256": "3b68d24538523a559730e14d5ed1733f67d9894354e26322e20cf5f4458ccebf",
+        "sizeBytes": 5040628,
+        "loadedSplats": 222044,
+        "role": "room_chunk",
+        "reason": "Manifest-listed room chunk served through visualAssetUrls for internal runtime QA."
+      }
+    ],
+    "excludedChunks": [
+      {
+        "fileName": "env.sog",
+        "sha256": "1b6927a6d883634d93cc59294c77f2acc02b55da1092bdd6bd637765e8b3f7f8",
+        "sizeBytes": 129565,
+        "loadedSplats": 3604,
+        "role": "environment_chunk",
+        "reason": "Environment chunk excluded because it is not included in the LCC2 room splat total."
+      }
+    ]
+  },
+  "guardrails": {
+    "lcc2DirectLoaderEnabled": false,
+    "signedTransformCreated": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  },
+  "limitations": [
+    "The LCC2 file is provenance for this package, not the runtime loader authority.",
+    "The served SOG chunks are visual runtime assets for internal QA only.",
+    "This decision does not create operational geometry or signed room-local alignment.",
+    "A future LCC2-aware loader or conversion lane must create a new decision record before replacing direct chunk serving."
+  ],
+  "reviewTriggers": [
+    "runtime_package_changed",
+    "chunk_hash_changed",
+    "lcc2_loader_implemented",
+    "lcc2_conversion_lane_implemented",
+    "signed_transform_registered",
+    "public_exposure_requested"
+  ],
+  "evidenceRefs": [
+    {
+      "label": "Reception Room runtime intake",
+      "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+    },
+    {
+      "label": "API direct SOG chunk selection",
+      "ref": "packages/api/src/routes/assets.ts"
+    },
+    {
+      "label": "Web runtime chunk decision",
+      "ref": "packages/web/src/lib/runtime-package-resolution.ts"
+    }
+  ]
+}

@@ -16,6 +16,7 @@
 
 import { useMemo } from "react";
 import { DoubleSide } from "three";
+import { Instances, Instance } from "@react-three/drei";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import {
   TRIM_COLOR,
@@ -771,42 +772,6 @@ interface CeilingBeamProps {
   readonly height: number;
 }
 
-function CeilingDiamondCoffer({
-  x,
-  z,
-  y,
-  size,
-}: {
-  readonly x: number;
-  readonly z: number;
-  readonly y: number;
-  readonly size: number;
-}): React.ReactElement {
-  const side = size * 0.74;
-  const offset = size * 0.26;
-  const strip = 0.045;
-
-  return (
-    <group position={[x, y, z]} name="diamond-ceiling-coffer">
-      {[
-        { px: -offset, pz: -offset, ry: Math.PI / 4 },
-        { px: offset, pz: -offset, ry: -Math.PI / 4 },
-        { px: offset, pz: offset, ry: Math.PI / 4 },
-        { px: -offset, pz: offset, ry: -Math.PI / 4 },
-      ].map((edge, i) => (
-        <mesh key={`diamond-edge-${String(i)}`} position={[edge.px, 0, edge.pz]} rotation={[0, edge.ry, 0]}>
-          <boxGeometry args={[side, 0.035, strip]} />
-          <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
-        </mesh>
-      ))}
-      <mesh position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[size * 0.09, 8]} />
-        <meshStandardMaterial color={AVODIRE_HIGHLIGHT} roughness={0.46} metalness={0.22} side={DoubleSide} />
-      </mesh>
-    </group>
-  );
-}
-
 function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): React.ReactElement {
   const halfW = width / 2;
   const halfL = length / 2;
@@ -814,6 +779,18 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
   const opening = DOME_RADIUS + 0.72;
   const sidePanelWidth = Math.max(0.1, (width - opening * 2) / 2);
   const endPanelLength = Math.max(0.1, (length - opening * 2) / 2);
+
+  // Each diamond coffer is four short avodire edge battens plus a bright centre
+  // disc. Rendered as individual meshes that was ~5 draw calls per coffer; the
+  // edges all share one geometry/material and so do the centres, so we instance
+  // them — every coffer's edges collapse into a single InstancedMesh draw and
+  // every coffer's centre into another, independent of coffer count.
+  const cofferSize = Math.min(width / 10, length / 3.8);
+  const cofferY = y - 0.028;
+  const cofferEdgeSide = cofferSize * 0.74;
+  const cofferEdgeOffset = cofferSize * 0.26;
+  const cofferEdgeStrip = 0.045;
+  const cofferCircleRadius = cofferSize * 0.09;
   const cofferCenters = useMemo(
     () => {
       const xs = Array.from({ length: 9 }, (_, i) => -halfW + (width / 10) * (i + 1));
@@ -825,6 +802,21 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
       );
     },
     [halfW, halfL, width, opening],
+  );
+  const cofferEdges = useMemo(
+    () =>
+      cofferCenters.flatMap((c) =>
+        [
+          { dx: -cofferEdgeOffset, dz: -cofferEdgeOffset, ry: Math.PI / 4 },
+          { dx: cofferEdgeOffset, dz: -cofferEdgeOffset, ry: -Math.PI / 4 },
+          { dx: cofferEdgeOffset, dz: cofferEdgeOffset, ry: Math.PI / 4 },
+          { dx: -cofferEdgeOffset, dz: cofferEdgeOffset, ry: -Math.PI / 4 },
+        ].map((edge) => ({
+          position: [c.x + edge.dx, cofferY, c.z + edge.dz] as [number, number, number],
+          rotationY: edge.ry,
+        })),
+      ),
+    [cofferCenters, cofferEdgeOffset, cofferY],
   );
 
   return (
@@ -872,9 +864,24 @@ function CofferedAvodireCeiling({ width, length, height }: CeilingBeamProps): Re
           <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
         </mesh>
       ))}
-      {cofferCenters.map((c, i) => (
-        <CeilingDiamondCoffer key={`ceiling-diamond-${String(i)}`} x={c.x} z={c.z} y={y - 0.028} size={Math.min(width / 10, length / 3.8)} />
-      ))}
+      {cofferEdges.length > 0 && (
+        <Instances limit={cofferEdges.length} range={cofferEdges.length} name="ceiling-diamond-edges">
+          <boxGeometry args={[cofferEdgeSide, 0.035, cofferEdgeStrip]} />
+          <meshStandardMaterial color={AVODIRE_BEAM} roughness={0.68} metalness={0.02} />
+          {cofferEdges.map((edge, i) => (
+            <Instance key={`ceiling-diamond-edge-${String(i)}`} position={edge.position} rotation={[0, edge.rotationY, 0]} />
+          ))}
+        </Instances>
+      )}
+      {cofferCenters.length > 0 && (
+        <Instances limit={cofferCenters.length} range={cofferCenters.length} name="ceiling-diamond-centres">
+          <circleGeometry args={[cofferCircleRadius, 8]} />
+          <meshStandardMaterial color={AVODIRE_HIGHLIGHT} roughness={0.46} metalness={0.22} side={DoubleSide} />
+          {cofferCenters.map((c, i) => (
+            <Instance key={`ceiling-diamond-centre-${String(i)}`} position={[c.x, cofferY + 0.004, c.z]} rotation={[-Math.PI / 2, 0, 0]} />
+          ))}
+        </Instances>
+      )}
       <mesh position={[0, y - 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[DOME_RADIUS + 0.7, 0.075, 12, 80]} />
         <meshStandardMaterial color={AVODIRE_HIGHLIGHT} roughness={0.46} metalness={0.22} />
@@ -1114,37 +1121,26 @@ function Chandelier({ anchorY, dropLength, x = 0, z = 0, scale = 1 }: Chandelier
         <torusGeometry args={[ringRadius * 0.55, 0.035, 10, 36]} />
         <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.7} />
       </mesh>
-      {/* Warm candle bulbs — emissive material only, no runtime PointLight. */}
-      {Array.from({ length: 8 }).map((_, i) => {
-        const a = (i / 8) * Math.PI * 2;
-        return (
-          <mesh key={`candle-${String(i)}`} position={[Math.cos(a) * ringRadius * 0.78, ringY + 0.08, Math.sin(a) * ringRadius * 0.78]}>
-            <sphereGeometry args={[0.07, 12, 12]} />
-            <meshStandardMaterial
-              color="#ffe0a3"
-              emissive="#f7c16b"
-              emissiveIntensity={0.95}
-              roughness={0.18}
-              metalness={0}
-            />
-          </mesh>
-        );
-      })}
-      {/* Crystal drops — emissive spheres */}
-      {drops.map((d, i) => (
-        <mesh key={`drop-${String(i)}`} position={[d.x, ringY + d.y, d.z]}>
-          <sphereGeometry args={[0.06, 12, 12]} />
-          <meshStandardMaterial
-            color={CRYSTAL}
-            emissive={CRYSTAL}
-            emissiveIntensity={0.85}
-            roughness={0.15}
-            metalness={0}
-            transparent
-            opacity={0.95}
-          />
-        </mesh>
-      ))}
+      {/* Warm candle bulbs — emissive material only, no runtime PointLight.
+          Eight identical spheres per chandelier → one instanced draw. */}
+      <Instances limit={8} range={8} name="chandelier-candles">
+        <sphereGeometry args={[0.07, 12, 12]} />
+        <meshStandardMaterial color="#ffe0a3" emissive="#f7c16b" emissiveIntensity={0.95} roughness={0.18} metalness={0} />
+        {Array.from({ length: 8 }).map((_, i) => {
+          const a = (i / 8) * Math.PI * 2;
+          return (
+            <Instance key={`candle-${String(i)}`} position={[Math.cos(a) * ringRadius * 0.78, ringY + 0.08, Math.sin(a) * ringRadius * 0.78]} />
+          );
+        })}
+      </Instances>
+      {/* Crystal drops — emissive spheres; identical geometry → one instanced draw. */}
+      <Instances limit={drops.length} range={drops.length} name="chandelier-drops">
+        <sphereGeometry args={[0.06, 12, 12]} />
+        <meshStandardMaterial color={CRYSTAL} emissive={CRYSTAL} emissiveIntensity={0.85} roughness={0.15} metalness={0} transparent opacity={0.95} />
+        {drops.map((d, i) => (
+          <Instance key={`drop-${String(i)}`} position={[d.x, ringY + d.y, d.z]} />
+        ))}
+      </Instances>
       {/* Central larger glow drop */}
       <mesh position={[0, ringY - 0.4, 0]}>
         <sphereGeometry args={[0.12, 16, 16]} />
@@ -1158,20 +1154,21 @@ function Chandelier({ anchorY, dropLength, x = 0, z = 0, scale = 1 }: Chandelier
           opacity={0.9}
         />
       </mesh>
-      {/* Brass arms — 6 arms holding the inner ring */}
-      {Array.from({ length: 6 }).map((_, i) => {
-        const a = (i / 6) * Math.PI * 2;
-        return (
-          <mesh
-            key={`arm-${String(i)}`}
-            position={[Math.cos(a) * ringRadius * 0.75, ringY + 0.09, Math.sin(a) * ringRadius * 0.75]}
-            rotation={[0, -a, Math.PI / 2]}
-          >
-            <cylinderGeometry args={[0.015, 0.015, ringRadius * 0.5, 8]} />
-            <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.7} />
-          </mesh>
-        );
-      })}
+      {/* Brass arms — 6 arms holding the inner ring; identical → one instanced draw. */}
+      <Instances limit={6} range={6} name="chandelier-arms">
+        <cylinderGeometry args={[0.015, 0.015, ringRadius * 0.5, 8]} />
+        <meshStandardMaterial color={BRASS_GOLD} roughness={0.35} metalness={0.7} />
+        {Array.from({ length: 6 }).map((_, i) => {
+          const a = (i / 6) * Math.PI * 2;
+          return (
+            <Instance
+              key={`arm-${String(i)}`}
+              position={[Math.cos(a) * ringRadius * 0.75, ringY + 0.09, Math.sin(a) * ringRadius * 0.75]}
+              rotation={[0, -a, Math.PI / 2]}
+            />
+          );
+        })}
+      </Instances>
     </group>
   );
 }

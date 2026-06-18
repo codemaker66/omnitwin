@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   CreateEventDayIssueInputSchema,
   EventDayChangesSinceLastHandoffSchema,
+  EventPlanAudienceRoleSchema,
   EventDayIssueSchema,
   EventDayOpsBoardSchema,
   OpsTaskSchema,
@@ -23,6 +24,7 @@ import {
   updateEventDayIssue,
   updateOpsTaskStatus,
 } from "../services/event-day-ops.js";
+import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 const EventIdParam = z.object({ id: z.string().uuid() });
 const IssueParam = z.object({ id: z.string().uuid(), issueId: z.string().uuid() });
@@ -30,6 +32,12 @@ const OpsTaskIdParam = z.object({ id: z.string().uuid() });
 
 type FastifyRequestUser = Parameters<typeof canAccessResource>[0];
 type EventRow = typeof events.$inferSelect;
+
+function boundedLifecycleSummary(summary: string): string {
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) return "Event-day operation changed.";
+  return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
+}
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
@@ -148,6 +156,24 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
       eventId: eventRow.id,
       actorUserId: request.user.id,
     });
+
+    await recordEventPlanChange(db, {
+      eventId: eventRow.id,
+      venueId: eventRow.venueId,
+      actorUserId: request.user.id,
+      actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+      actorLabel: request.user.email,
+      sourceKind: "ops_issue",
+      sourceId: issue.id,
+      title: "Event-day issue logged",
+      summary: boundedLifecycleSummary(`${issue.title}: ${issue.detail}`),
+      affectedSurfaces: ["ops_tasks", "service_notes"],
+      audienceRoles: ["staff", "hallkeeper"],
+      riskLevel: issue.severity === "urgent" ? "blocker" : issue.severity,
+      requiresHallkeeperAcknowledgement: false,
+      actionPath: `/ops/events/${eventRow.id}`,
+    });
+
     return reply.status(201).send({ data: EventDayIssueSchema.parse(issue) });
   });
 
@@ -202,6 +228,30 @@ export async function eventDayOpsTaskRoutes(server: FastifyInstance, opts: { db:
         opsTaskId: params.data.id,
         actorUserId: request.user.id,
       });
+
+      if (result.completionEvent !== null && !result.idempotentReplay) {
+        const eventRow = await loadEventForOpsBoard(db, result.completionEvent.eventId);
+        if (eventRow !== null) {
+          await recordEventPlanChange(db, {
+            eventId: eventRow.id,
+            venueId: eventRow.venueId,
+            handoffPackId: result.task.handoffPackId,
+            actorUserId: request.user.id,
+            actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+            actorLabel: request.user.email,
+            sourceKind: "ops_task",
+            sourceId: result.completionEvent.id,
+            title: "Hallkeeper task updated",
+            summary: boundedLifecycleSummary(`Task "${result.task.title}" moved from ${result.completionEvent.fromStatus} to ${result.completionEvent.toStatus}.`),
+            affectedSurfaces: ["ops_tasks"],
+            audienceRoles: ["staff", "hallkeeper"],
+            riskLevel: result.completionEvent.toStatus === "blocked" ? "blocker" : "info",
+            requiresHallkeeperAcknowledgement: false,
+            actionPath: `/ops/events/${eventRow.id}`,
+          });
+        }
+      }
+
       return { data: OpsTaskSchema.parse(result.task) };
     } catch (err) {
       if (err instanceof EventDayTaskNotFoundError) {

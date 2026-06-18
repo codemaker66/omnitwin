@@ -18,6 +18,8 @@ import {
   assetVersions,
   roomManifests,
   runtimePackages,
+  runtimeTransformArtifacts,
+  runtimeQaRecords,
   configurationLayoutRevisions,
   processingJobs,
   events,
@@ -292,6 +294,27 @@ describe("table count", () => {
     expect(packageCols.evidenceStatus).toBeDefined();
     expect(packageCols.runtimeStatus).toBeDefined();
 
+    const transformCols = getTableColumns(runtimeTransformArtifacts);
+    expect(transformCols.runtimePackageId).toBeDefined();
+    expect(transformCols.venueSlug).toBeDefined();
+    expect(transformCols.roomSlug).toBeDefined();
+    expect(transformCols.transformArtifactId).toBeDefined();
+    expect(transformCols.transformArtifact).toBeDefined();
+    expect(transformCols.reviewNote).toBeDefined();
+    expect(transformCols.registeredBy).toBeDefined();
+
+    const qaCols = getTableColumns(runtimeQaRecords);
+    expect(qaCols.runtimePackageId).toBeDefined();
+    expect(qaCols.venueSlug).toBeDefined();
+    expect(qaCols.roomSlug).toBeDefined();
+    expect(qaCols.recordId).toBeDefined();
+    expect(qaCols.recordJson).toBeDefined();
+    expect(qaCols.signedTransformArtifactId).toBeDefined();
+    expect(qaCols.publicExposureDecision).toBeDefined();
+    expect(qaCols.assetEvidenceStatus).toBeDefined();
+    expect(qaCols.runtimeStatus).toBeDefined();
+    expect(qaCols.reviewedBy).toBeDefined();
+
     const jobCols = getTableColumns(processingJobs);
     expect(jobCols.venueSlug).toBeDefined();
     expect(jobCols.roomSlug).toBeDefined();
@@ -324,13 +347,13 @@ describe("table count", () => {
     expect(migration).toContain("asset_versions_storage_ref_required");
   });
 
-  it("exports exactly 70 core tables", () => {
+  it("exports exactly 72 core tables", () => {
     const tables = [
       venues, spaces, users, assetDefinitions, configurations,
       placedObjects, enquiries, enquiryStatusHistory, photoReferences,
       pricingRules, files, referenceLoadouts, referencePhotos, guestLeads,
       captureSessions, assetVersions, roomManifests, runtimePackages,
-      configurationLayoutRevisions, processingJobs, events, eventPhases,
+      runtimeTransformArtifacts, runtimeQaRecords, configurationLayoutRevisions, processingJobs, events, eventPhases,
       eventScenarios, layoutVariants, eventConfigurationLinks,
       phaseLayoutSnapshots, evidenceItems, checkResults, assumptionRecords,
       reviewGates, claimStates, evidencePacks, evidencePackItems,
@@ -346,7 +369,7 @@ describe("table count", () => {
       externalCalendarLinks, websiteEmbedConfigs, emailTemplates,
       integrationEvents,
     ];
-    expect(tables).toHaveLength(70);
+    expect(tables).toHaveLength(72);
   });
 
   it("exports event phase graph foundation tables", () => {

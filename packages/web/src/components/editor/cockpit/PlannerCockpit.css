@@ -23,6 +23,27 @@
   isolation: isolate;
 }
 
+.cockpit-shell,
+.cockpit-shell * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cockpit-shell *,
+.cockpit-shell *::before,
+.cockpit-shell *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+
+.cockpit-shell ::selection {
+  background: transparent;
+  color: inherit;
+}
+
 .cockpit-topbar { grid-area: topbar; }
 .cockpit-rail { grid-area: rail; }
 /* transform makes the stage the containing block for the editor's fixed

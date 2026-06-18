@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  RuntimeTransformAlignmentMethodSchema,
+  RuntimeTransformFrameSchema,
+  RuntimeManifestKeySchema,
+  RuntimeTransformProvenanceStateSchema,
+  TransformArtifactV0Schema,
+  type RuntimeTransformAlignmentMethod,
+  type RuntimeTransformReferenceType,
+} from "./runtime-venue-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Room-agnostic runtime asset registry contracts
@@ -46,6 +55,30 @@ export type AssetRuntimeStatus = z.infer<typeof AssetRuntimeStatusSchema>;
 export const RUNTIME_PACKAGE_STATUSES = ["draft", "internal_ready", "published", "archived"] as const;
 export const RuntimePackageStatusSchema = z.enum(RUNTIME_PACKAGE_STATUSES);
 export type RuntimePackageStatus = z.infer<typeof RuntimePackageStatusSchema>;
+
+export const SIGNED_RUNTIME_TRANSFORM_ALIGNMENT_METHODS = [
+  "manual_alignment",
+  "icp",
+  "landmark_solve",
+  "matterport_e57_extraction",
+  "blender_authored_placement",
+  "known_pose_colmap",
+] as const satisfies readonly RuntimeTransformAlignmentMethod[];
+export type SignedRuntimeTransformAlignmentMethod = (typeof SIGNED_RUNTIME_TRANSFORM_ALIGNMENT_METHODS)[number];
+
+export const SIGNED_RUNTIME_TRANSFORM_EVIDENCE_REF_TYPES = [
+  "control_network",
+  "landmark_set",
+  "artifact",
+] as const satisfies readonly RuntimeTransformReferenceType[];
+export type SignedRuntimeTransformEvidenceRefType = (typeof SIGNED_RUNTIME_TRANSFORM_EVIDENCE_REF_TYPES)[number];
+
+const signedRuntimeTransformAlignmentMethods = new Set<RuntimeTransformAlignmentMethod>(
+  SIGNED_RUNTIME_TRANSFORM_ALIGNMENT_METHODS,
+);
+const signedRuntimeTransformEvidenceRefTypes = new Set<RuntimeTransformReferenceType>(
+  SIGNED_RUNTIME_TRANSFORM_EVIDENCE_REF_TYPES,
+);
 
 // Backward-compatible export for older local call sites while this foundation
 // lands. New code should use AssetRuntimeStatusSchema or RuntimePackageStatusSchema.
@@ -130,6 +163,54 @@ export type TradesHallRoomCaptureStatus = z.infer<typeof TradesHallRoomCaptureSt
 export const TRADES_HALL_ROOM_REGISTRY_RUNTIME_STATUSES = ["not_registered"] as const;
 export const TradesHallRoomRegistryRuntimeStatusSchema = z.enum(TRADES_HALL_ROOM_REGISTRY_RUNTIME_STATUSES);
 export type TradesHallRoomRegistryRuntimeStatus = z.infer<typeof TradesHallRoomRegistryRuntimeStatusSchema>;
+
+export const REVIEWED_RUNTIME_TRANSFORM_STATUSES = ["missing", "registered"] as const;
+export const ReviewedRuntimeTransformStatusSchema = z.enum(REVIEWED_RUNTIME_TRANSFORM_STATUSES);
+export type ReviewedRuntimeTransformStatus = z.infer<typeof ReviewedRuntimeTransformStatusSchema>;
+
+export const REVIEWED_RUNTIME_QA_STATUSES = [
+  "missing",
+  "blocked_internal_only",
+  "approved_internal_preview",
+  "approved_public",
+] as const;
+export const ReviewedRuntimeQaStatusSchema = z.enum(REVIEWED_RUNTIME_QA_STATUSES);
+export type ReviewedRuntimeQaStatus = z.infer<typeof ReviewedRuntimeQaStatusSchema>;
+
+export const REVIEWED_CAPTURE_CONTROL_STATUSES = [
+  "missing",
+  "source_registered",
+  "linked_to_transform",
+] as const;
+export const ReviewedCaptureControlStatusSchema = z.enum(REVIEWED_CAPTURE_CONTROL_STATUSES);
+export type ReviewedCaptureControlStatus = z.infer<typeof ReviewedCaptureControlStatusSchema>;
+
+export const CAPTURE_CONTROL_FRESHNESS_STATUSES = [
+  "missing",
+  "not_checked",
+  "current_for_runtime_package",
+  "stale_for_runtime_package",
+] as const;
+export const CaptureControlFreshnessStatusSchema = z.enum(CAPTURE_CONTROL_FRESHNESS_STATUSES);
+export type CaptureControlFreshnessStatus = z.infer<typeof CaptureControlFreshnessStatusSchema>;
+
+export const ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUSES = [
+  "not_recorded",
+  "blocked_insufficient_landmark_candidates",
+  "blocked_missing_coordinate_pair_intake",
+  "blocked_invalid_coordinate_pair_intake",
+  "blocked_incompatible_coordinate_pair_intake",
+  "blocked_packet_build",
+  "blocked_capture_control_payload",
+  "capture_control_payload_ready",
+  "chain_inconsistent",
+] as const;
+export const RoomRuntimeControlEvidenceChainStatusSchema = z.enum(
+  ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUSES,
+);
+export type RoomRuntimeControlEvidenceChainStatus = z.infer<
+  typeof RoomRuntimeControlEvidenceChainStatusSchema
+>;
 
 export const TRADES_HALL_RUNTIME_ROOMS = [
   {
@@ -471,6 +552,328 @@ export const RuntimePackageSchema = z.object({
 });
 export type RuntimePackage = z.infer<typeof RuntimePackageSchema>;
 
+export const RuntimeTransformArtifactSchema = z.object({
+  id: z.string(),
+  runtimePackageId: z.string().uuid(),
+  venueSlug: RuntimeSlugSchema,
+  roomSlug: RuntimeSlugSchema,
+  transformArtifactId: RuntimeManifestKeySchema,
+  transformArtifact: TransformArtifactV0Schema,
+  reviewNote: z.string().nullable(),
+  registeredBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}).strict().superRefine((row, ctx) => {
+  if (row.transformArtifact.id !== row.transformArtifactId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["transformArtifactId"],
+      message: "transformArtifactId must match transformArtifact.id.",
+    });
+  }
+});
+export type RuntimeTransformArtifact = z.infer<typeof RuntimeTransformArtifactSchema>;
+
+export const RegisterRuntimeTransformArtifactInputSchema = z.object({
+  runtimePackageId: z.string().uuid(),
+  venueSlug: RuntimeSlugSchema,
+  roomSlug: RuntimeSlugSchema,
+  transformArtifact: TransformArtifactV0Schema,
+  reviewNote: z.string().trim().max(2000).nullable().optional(),
+}).strict().superRefine((body, ctx) => {
+  validateSupportedTradesHallRoom(body.venueSlug, body.roomSlug, ctx, ["roomSlug"]);
+
+  if (!signedRuntimeTransformAlignmentMethods.has(body.transformArtifact.alignmentMethod)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["transformArtifact", "alignmentMethod"],
+      message: "Signed runtime transforms cannot use visual-only or unconstrained alignment methods.",
+    });
+  }
+
+  const hasReviewableEvidenceRef = body.transformArtifact.provenance.refs.some((ref) =>
+    signedRuntimeTransformEvidenceRefTypes.has(ref.refType),
+  );
+  if (!hasReviewableEvidenceRef) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["transformArtifact", "provenance", "refs"],
+      message: "Signed runtime transforms need a control network, landmark set, or review artifact reference.",
+    });
+  }
+});
+export type RegisterRuntimeTransformArtifactInput = z.infer<typeof RegisterRuntimeTransformArtifactInputSchema>;
+
+export const RuntimeTransformArtifactQuerySchema = z.object({
+  runtimePackageId: z.string().uuid(),
+}).strict();
+export type RuntimeTransformArtifactQuery = z.infer<typeof RuntimeTransformArtifactQuerySchema>;
+
+export const RuntimeTransformArtifactRegistrationReportSchema = z
+  .object({
+    schemaVersion: z.literal("venviewer.runtime-transform-artifact-registration-report.v0"),
+    generatedAt: z.string().datetime(),
+    mode: z.enum(["dry_run", "registered"]),
+    apiUrl: z.string().url(),
+    payloadFile: z.string().trim().min(1),
+    payload: z.object({
+      venueSlug: RuntimeSlugSchema,
+      roomSlug: RuntimeSlugSchema,
+      runtimePackageId: z.string().uuid(),
+      transformArtifactId: RuntimeManifestKeySchema,
+      sourceFrame: RuntimeTransformFrameSchema,
+      targetFrame: RuntimeTransformFrameSchema,
+      alignmentMethod: RuntimeTransformAlignmentMethodSchema,
+      provenanceState: RuntimeTransformProvenanceStateSchema,
+      residualRmseM: z.number().finite().nonnegative().nullable(),
+      landmarkCount: z.number().int().nonnegative(),
+      reviewerId: z.string().trim().min(1).max(160),
+      reviewerRole: z.string().trim().min(1).max(80),
+    }).strict(),
+    preflight: z.object({
+      payloadRuntimePackageId: z.string().uuid(),
+      latestRuntimePackageId: z.string().uuid().nullable(),
+      latestRuntimePackageRuntimeStatus: RuntimePackageStatusSchema.nullable(),
+      latestRuntimePackageEvidenceStatus: AssetEvidenceStatusSchema.nullable(),
+      runtimePackageMatchesLatest: z.boolean(),
+      runtimePackageDriftAllowed: z.boolean(),
+    }).strict(),
+    registration: z.object({
+      runtimeTransformArtifactRowId: z.string().min(1),
+      transformArtifactId: RuntimeManifestKeySchema,
+      registeredBy: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }).strict().nullable(),
+    guardrails: z.object({
+      runtimePackageDriftAllowed: z.boolean(),
+      runtimeQaRecordChanged: z.literal(false),
+      captureControlSourceChanged: z.literal(false),
+      publicExposureChanged: z.literal(false),
+    }).strict(),
+  })
+  .strict()
+  .superRefine((report, ctx) => {
+    if (report.mode === "dry_run" && report.registration !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["registration"],
+        message: "Dry-run reports cannot include a registration row.",
+      });
+    }
+    if (report.mode === "registered" && report.registration === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["registration"],
+        message: "Registered reports must include the persisted runtime transform artifact row.",
+      });
+    }
+    if (report.payload.runtimePackageId !== report.preflight.payloadRuntimePackageId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["preflight", "payloadRuntimePackageId"],
+        message: "Preflight payload runtime package id must match the report payload.",
+      });
+    }
+    const expectedMatch = report.preflight.latestRuntimePackageId !== null &&
+      report.preflight.latestRuntimePackageId === report.preflight.payloadRuntimePackageId;
+    if (report.preflight.runtimePackageMatchesLatest !== expectedMatch) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["preflight", "runtimePackageMatchesLatest"],
+        message: "runtimePackageMatchesLatest must reflect payload/latest runtime package identity.",
+      });
+    }
+    if (!expectedMatch && !report.preflight.runtimePackageDriftAllowed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["preflight", "runtimePackageDriftAllowed"],
+        message: "Runtime package drift reports require the explicit drift override.",
+      });
+    }
+    if (report.guardrails.runtimePackageDriftAllowed !== report.preflight.runtimePackageDriftAllowed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["guardrails", "runtimePackageDriftAllowed"],
+        message: "Guardrail drift override must match preflight drift override.",
+      });
+    }
+    if (
+      report.registration !== null &&
+      report.registration.transformArtifactId !== report.payload.transformArtifactId
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["registration", "transformArtifactId"],
+        message: "Registered transform artifact id must match the report payload transform artifact id.",
+      });
+    }
+  });
+export type RuntimeTransformArtifactRegistrationReport = z.infer<
+  typeof RuntimeTransformArtifactRegistrationReportSchema
+>;
+
+export const RUNTIME_TRANSFORM_ARTIFACT_REGISTRATION_REPORT_INSPECTION_STATUSES = [
+  "ready_for_live_transform_registration",
+  "not_ready_for_live_transform_registration",
+  "registered_transform_report_verified",
+  "invalid_report",
+] as const;
+export const RuntimeTransformArtifactRegistrationReportInspectionStatusSchema = z.enum(
+  RUNTIME_TRANSFORM_ARTIFACT_REGISTRATION_REPORT_INSPECTION_STATUSES,
+);
+export type RuntimeTransformArtifactRegistrationReportInspectionStatus = z.infer<
+  typeof RuntimeTransformArtifactRegistrationReportInspectionStatusSchema
+>;
+
+export const RuntimeTransformArtifactRegistrationReportInspectionSchema = z
+  .object({
+    schemaVersion: z.literal("venviewer.runtime-transform-artifact-registration-report-inspection.v0"),
+    generatedAt: z.string().datetime(),
+    inspectedReportFile: z.string().trim().min(1),
+    inspectedReportGeneratedAt: z.string().datetime().nullable(),
+    status: RuntimeTransformArtifactRegistrationReportInspectionStatusSchema,
+    liveTransformRegistrationReady: z.boolean(),
+    mode: z.enum(["dry_run", "registered"]).nullable(),
+    venueSlug: RuntimeSlugSchema.nullable(),
+    roomSlug: RuntimeSlugSchema.nullable(),
+    transformArtifactId: RuntimeManifestKeySchema.nullable(),
+    reportRuntimePackageId: z.string().uuid().nullable(),
+    reportLatestRuntimePackageId: z.string().uuid().nullable(),
+    reportRuntimePackageMatchesLatest: z.boolean().nullable(),
+    reportRuntimePackageDriftAllowed: z.boolean().nullable(),
+    blockers: z.array(z.string().trim().min(1)),
+    messages: z.array(z.string().trim().min(1)),
+  })
+  .strict()
+  .superRefine((inspection, ctx) => {
+    if (
+      inspection.liveTransformRegistrationReady &&
+      inspection.status !== "ready_for_live_transform_registration"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["status"],
+        message: "Only ready_for_live_transform_registration inspections may set liveTransformRegistrationReady.",
+      });
+    }
+    if (inspection.status === "ready_for_live_transform_registration") {
+      if (!inspection.liveTransformRegistrationReady) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["liveTransformRegistrationReady"],
+          message: "Ready inspections must set liveTransformRegistrationReady.",
+        });
+      }
+      if (inspection.mode !== "dry_run") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["mode"],
+          message: "Ready inspections must come from dry-run reports.",
+        });
+      }
+      if (
+        inspection.venueSlug === null ||
+        inspection.roomSlug === null ||
+        inspection.transformArtifactId === null ||
+        inspection.inspectedReportGeneratedAt === null
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["status"],
+          message: "Ready inspections must include report target identity.",
+        });
+      }
+      if (inspection.blockers.length !== 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["blockers"],
+          message: "Ready inspections cannot include blockers.",
+        });
+      }
+      if (inspection.reportRuntimePackageId === null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["reportRuntimePackageId"],
+          message: "Ready inspections must be scoped to a runtime package.",
+        });
+      }
+      if (inspection.reportLatestRuntimePackageId !== inspection.reportRuntimePackageId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["reportLatestRuntimePackageId"],
+          message: "Ready inspections require the payload runtime package to match latest loadable package.",
+        });
+      }
+      if (inspection.reportRuntimePackageMatchesLatest !== true) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["reportRuntimePackageMatchesLatest"],
+          message: "Ready inspections require runtimePackageMatchesLatest true.",
+        });
+      }
+      if (inspection.reportRuntimePackageDriftAllowed !== false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["reportRuntimePackageDriftAllowed"],
+          message: "Ready inspections cannot use runtime-package drift override.",
+        });
+      }
+    }
+    if (
+      inspection.status === "not_ready_for_live_transform_registration" &&
+      inspection.blockers.length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["blockers"],
+        message: "Not-ready inspections must include at least one blocker.",
+      });
+    }
+    if (inspection.status === "registered_transform_report_verified") {
+      if (inspection.liveTransformRegistrationReady) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["liveTransformRegistrationReady"],
+          message: "Registered transform reports are audit evidence, not live-registration authorization.",
+        });
+      }
+      if (inspection.mode !== "registered") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["mode"],
+          message: "Registered transform report inspections must cite registered mode.",
+        });
+      }
+      if (inspection.blockers.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["blockers"],
+          message: "Registered transform report inspections must state why they are not live-registration-ready.",
+        });
+      }
+    }
+    if (inspection.status === "invalid_report") {
+      if (inspection.liveTransformRegistrationReady) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["liveTransformRegistrationReady"],
+          message: "Invalid reports cannot be live-registration-ready.",
+        });
+      }
+      if (inspection.blockers.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["blockers"],
+          message: "Invalid report inspections must include validation blockers.",
+        });
+      }
+    }
+  });
+export type RuntimeTransformArtifactRegistrationReportInspection = z.infer<
+  typeof RuntimeTransformArtifactRegistrationReportInspectionSchema
+>;
+
 export const PublicRoomRuntimeVisualSchema = z
   .object({
     venueSlug: RuntimeSlugSchema,
@@ -670,6 +1073,37 @@ export const RoomAssetStatusSchema = z.object({
   splatExists: z.boolean(),
   runtimePackageStatus: z.string(),
   runtimePackageExists: z.boolean(),
+  reviewedTransformStatus: ReviewedRuntimeTransformStatusSchema,
+  reviewedTransformArtifactCount: z.number().int().nonnegative(),
+  latestTransformArtifactId: RuntimeManifestKeySchema.nullable(),
+  reviewedTransformSafeCopy: z.string().min(1),
+  reviewedQaStatus: ReviewedRuntimeQaStatusSchema,
+  latestQaRecordId: z.string().nullable(),
+  qaSignedTransformArtifactId: RuntimeManifestKeySchema.nullable(),
+  qaSignedTransformLinked: z.boolean(),
+  reviewedQaSafeCopy: z.string().min(1),
+  captureControlStatus: ReviewedCaptureControlStatusSchema,
+  captureControlSourceCount: z.number().int().nonnegative(),
+  latestCaptureControlSourceRecordId: z.string().uuid().nullable(),
+  latestCaptureControlSourceId: z.string().nullable(),
+  latestCaptureControlSourceClass: z.string().nullable(),
+  latestCaptureControlPoseAuthorityLevel: z.string().nullable(),
+  latestCaptureControlAlignmentMethods: z.array(z.string()),
+  latestCaptureControlStalenessTriggers: z.array(z.string()),
+  latestCaptureControlActiveStalenessTriggers: z.array(z.string()),
+  captureControlFreshnessStatus: CaptureControlFreshnessStatusSchema,
+  latestCaptureControlQaStatus: z.string().nullable(),
+  captureControlLinkedTransformArtifactId: RuntimeManifestKeySchema.nullable(),
+  captureControlTransformLinked: z.boolean(),
+  captureControlAuthoritySafeCopy: z.string().min(1),
+  captureControlStalenessSafeCopy: z.string().min(1),
+  captureControlSafeCopy: z.string().min(1),
+  runtimeControlEvidenceChainStatus: RoomRuntimeControlEvidenceChainStatusSchema,
+  runtimeControlEvidenceChainRef: z.string().min(1).nullable(),
+  runtimeControlRequiredCoordinatePairCount: z.number().int().nonnegative().nullable(),
+  runtimeControlReviewedCoordinatePairCount: z.number().int().nonnegative().nullable(),
+  runtimeControlEvidenceChainSafeCopy: z.string().min(1),
+  runtimeControlEvidenceChainNextAction: z.string().min(1),
   evidenceStatus: AssetEvidenceStatusSchema.nullable(),
   runtimeStatus: RuntimePackageStatusSchema.nullable(),
   nextAction: z.string(),

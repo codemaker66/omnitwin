@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "venviewer.runtime-qa-registration-report-inspection.v0",
+  "generatedAt": "2026-06-16T10:25:33.970Z",
+  "inspectedReportFile": "C:\\Users\\blake\\omnitwin2\\docs\\operations\\reception-room-runtime-qa-dry-run-report-2026-06-16.json",
+  "inspectedReportGeneratedAt": "2026-06-16T10:25:19.109Z",
+  "status": "ready_for_live_qa_registration",
+  "liveQaRegistrationReady": true,
+  "mode": "dry_run",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "recordId": "reception-room-runtime-qa-2026-06-15",
+  "publicExposureDecision": "blocked_internal_only",
+  "reportRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "reportLatestRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "reportRuntimePackageMatchesLatest": true,
+  "reportRuntimePackageDriftAllowed": false,
+  "reportSignedTransformRequired": false,
+  "reportSignedTransformRegistered": null,
+  "reportPublicExposureAllowed": false,
+  "reportPublicExposureChanged": false,
+  "blockers": [],
+  "messages": [
+    "Report schema is valid for reception-room-runtime-qa-2026-06-15 in trades-hall/reception-room.",
+    "Report public exposure decision is blocked_internal_only.",
+    "Report does not cite a signed transform artifact.",
+    "Report records no public exposure approval change.",
+    "Dry-run report is current for live runtime QA registration preflight."
+  ]
+}

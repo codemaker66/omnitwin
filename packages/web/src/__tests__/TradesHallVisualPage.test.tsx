@@ -5,6 +5,13 @@ import { MemoryRouter } from "react-router-dom";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
+type CanvasMockProps = Readonly<{
+  children?: React.ReactNode;
+  frameloop?: unknown;
+  dpr?: unknown;
+  gl?: unknown;
+  performance?: unknown;
+}>;
 
 const { getLatestRuntimePackageMock } = vi.hoisted(() => ({
   getLatestRuntimePackageMock: vi.fn(),
@@ -27,52 +34,80 @@ const { orbitControlsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ children }: { readonly children?: React.ReactNode }) => {
+  Canvas: ({ children, frameloop, dpr, gl, performance: perfOptions }: CanvasMockProps) => {
     const renderableChildren = React.Children.toArray(children).filter((child) => {
       if (!React.isValidElement(child)) return true;
       return typeof child.type !== "string" || child.type === "div";
     });
-    return <div data-testid="visual-canvas">{renderableChildren}</div>;
+    const glRecord = typeof gl === "object" && gl !== null ? gl as Record<string, unknown> : {};
+    const perfRecord = typeof perfOptions === "object" && perfOptions !== null
+      ? perfOptions as Record<string, unknown>
+      : {};
+    const powerPreference = glRecord["powerPreference"];
+    const antialias = glRecord["antialias"];
+    const performanceMin = perfRecord["min"];
+    const performanceDebounce = perfRecord["debounce"];
+    return (
+      <div
+        data-testid="visual-canvas"
+        data-frameloop={typeof frameloop === "string" ? frameloop : ""}
+        data-dpr={JSON.stringify(dpr)}
+        data-antialias={typeof antialias === "boolean" ? String(antialias) : ""}
+        data-power-preference={typeof powerPreference === "string" ? powerPreference : ""}
+        data-performance-min={typeof performanceMin === "number" ? String(performanceMin) : ""}
+        data-performance-debounce={typeof performanceDebounce === "number" ? String(performanceDebounce) : ""}
+      >
+        {renderableChildren}
+      </div>
+    );
   },
   useFrame: vi.fn(),
-  useThree: () => {
-    const position = {
-      x: 0,
-      y: 0,
-      z: 0,
-      set: vi.fn((x: number, y: number, z: number) => {
-        position.x = x;
-        position.y = y;
-        position.z = z;
-        return position;
-      }),
-      copy: vi.fn((source: { readonly x: number; readonly y: number; readonly z: number }) => {
-        position.x = source.x;
-        position.y = source.y;
-        position.z = source.z;
-        return position;
-      }),
-      lerpVectors: vi.fn((
-        start: { readonly x: number; readonly y: number; readonly z: number },
-        end: { readonly x: number; readonly y: number; readonly z: number },
-        alpha: number,
-      ) => {
-        position.x = start.x + (end.x - start.x) * alpha;
-        position.y = start.y + (end.y - start.y) * alpha;
-        position.z = start.z + (end.z - start.z) * alpha;
-        return position;
-      }),
-    };
-    return {
-      camera: {
-        position,
-        lookAt: vi.fn(),
-        updateProjectionMatrix: vi.fn(),
-      },
-      invalidate: vi.fn(),
-    };
+  useThree: (selector?: (state: ReturnType<typeof makeR3fState>) => unknown) => {
+    const state = makeR3fState();
+    return selector === undefined ? state : selector(state);
   },
 }));
+
+function makeR3fState() {
+  const position = {
+    x: 0,
+    y: 0,
+    z: 0,
+    set: vi.fn((x: number, y: number, z: number) => {
+      position.x = x;
+      position.y = y;
+      position.z = z;
+      return position;
+    }),
+    copy: vi.fn((source: { readonly x: number; readonly y: number; readonly z: number }) => {
+      position.x = source.x;
+      position.y = source.y;
+      position.z = source.z;
+      return position;
+    }),
+    lerpVectors: vi.fn((
+      start: { readonly x: number; readonly y: number; readonly z: number },
+      end: { readonly x: number; readonly y: number; readonly z: number },
+      alpha: number,
+    ) => {
+      position.x = start.x + (end.x - start.x) * alpha;
+      position.y = start.y + (end.y - start.y) * alpha;
+      position.z = start.z + (end.z - start.z) * alpha;
+      return position;
+    }),
+  };
+  return {
+    camera: {
+      position,
+      lookAt: vi.fn(),
+      updateProjectionMatrix: vi.fn(),
+    },
+    invalidate: vi.fn(),
+    performance: { current: 1 },
+    viewport: { initialDpr: 2 },
+    setDpr: vi.fn(),
+  };
+}
 
 vi.mock("@react-three/drei", async () => {
   const ReactModule = await import("react");
@@ -89,6 +124,12 @@ vi.mock("@react-three/drei", async () => {
 
 vi.mock("../components/GrandHallRoom.js", () => ({
   GrandHallRoom: () => <div data-testid="grand-hall-room" />,
+}));
+
+vi.mock("../components/editor/RoomMesh.js", () => ({
+  RoomMesh: ({ detail, variant }: { readonly detail?: string; readonly variant?: string }) => (
+    <div data-testid="visual-room-mesh" data-detail={detail ?? ""} data-variant={variant ?? ""} />
+  ),
 }));
 
 vi.mock("../components/scene/SparkSplatLayer.js", () => ({
@@ -119,9 +160,22 @@ vi.mock("../components/ai/AIDraftPanel.js", () => ({
   ),
 }));
 
-import { TradesHallVisualPage } from "../pages/TradesHallVisualPage.js";
+import {
+  TradesHallVisualPage,
+  shouldUseLeanVisualMesh,
+  shouldUseSmoothVisualControls,
+  visualAdaptiveResolutionForViewportWidth,
+  visualCanvasDprForViewportWidth,
+  visualCanvasGlForViewportWidth,
+  visualMouseButtonsForViewportWidth,
+} from "../pages/TradesHallVisualPage.js";
 
 beforeEach(() => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: 1440,
+  });
   getLatestRuntimePackageMock.mockResolvedValue(null);
   getEventPhaseGraphMock.mockResolvedValue(makePhaseGraph());
   getLatestGuestFlowReplayMock.mockRejectedValue(new Error("No stored replay in component test."));
@@ -294,6 +348,67 @@ function makePhaseGraph(): EventPhaseGraph {
 }
 
 describe("TradesHallVisualPage", () => {
+  it("uses the lean visual scene and capped DPR for mobile and tablet viewports", () => {
+    expect(visualCanvasDprForViewportWidth(390)).toEqual([1, 1]);
+    expect(visualCanvasDprForViewportWidth(768)).toEqual([0.75, 0.75]);
+    expect(visualCanvasDprForViewportWidth(1024)).toEqual([0.75, 0.75]);
+    expect(visualCanvasDprForViewportWidth(1440)).toEqual([1, 2]);
+    expect(visualCanvasGlForViewportWidth(390)).toEqual({
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    expect(visualCanvasGlForViewportWidth(768)).toEqual({
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    expect(visualCanvasGlForViewportWidth(1024)).toEqual({
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    expect(visualCanvasGlForViewportWidth(1440)).toEqual({
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+    expect(shouldUseSmoothVisualControls(390)).toBe(false);
+    expect(shouldUseSmoothVisualControls(768)).toBe(false);
+    expect(shouldUseSmoothVisualControls(1024)).toBe(false);
+    expect(shouldUseSmoothVisualControls(1440)).toBe(true);
+    expect(visualMouseButtonsForViewportWidth(768)).toEqual({ LEFT: -1, MIDDLE: -1, RIGHT: -1 });
+    expect(visualMouseButtonsForViewportWidth(1440)).toBeUndefined();
+    expect(shouldUseLeanVisualMesh(768)).toBe(true);
+    expect(shouldUseLeanVisualMesh(1440)).toBe(false);
+    expect(visualAdaptiveResolutionForViewportWidth(390)).toEqual({
+      enabled: false,
+      minDpr: 1,
+      maxDpr: 1,
+    });
+    expect(visualAdaptiveResolutionForViewportWidth(768)).toEqual({
+      enabled: false,
+      minDpr: 0.75,
+      maxDpr: 0.75,
+    });
+    expect(visualAdaptiveResolutionForViewportWidth(1440)).toEqual({
+      enabled: true,
+      minDpr: 0.5,
+      maxDpr: 2,
+    });
+  });
+
+  it("demand-renders the runtime canvas with capped DPR and high-performance GPU preference", () => {
+    mount();
+    const canvas = screen.getByTestId("visual-canvas");
+    expect(canvas.getAttribute("data-frameloop")).toBe("demand");
+    expect(canvas.getAttribute("data-dpr")).toBe("[1,2]");
+    expect(canvas.getAttribute("data-antialias")).toBe("true");
+    expect(canvas.getAttribute("data-power-preference")).toBe("high-performance");
+    expect(canvas.getAttribute("data-performance-min")).toBe("0.25");
+    expect(canvas.getAttribute("data-performance-debounce")).toBe("180");
+    expect(orbitControlsMock).toHaveBeenCalledWith(expect.objectContaining({
+      enableDamping: false,
+      mouseButtons: { LEFT: -1, MIDDLE: -1, RIGHT: -1 },
+    }));
+  });
+
   it("renders the internal command shell empty state without mounting a Spark asset", () => {
     mount();
     expect(screen.getByText("Venviewer")).toBeTruthy();
@@ -301,6 +416,11 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getByText("Event Phase Graph")).toBeTruthy();
     expect(screen.getByText("Guest Flow Replay")).toBeTruthy();
     expect(screen.getByText("Overlays")).toBeTruthy();
+    expect(screen.getByLabelText("Visual view status")).toBeTruthy();
+    expect(screen.getByLabelText("Current visual view: 3D")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "3D view" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2D view" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Current mode/i })).toBeNull();
     expect(screen.getByText(/Simulated guest flow .* planning evidence/i)).toBeTruthy();
     expect(screen.getByText("Simulated guest flow - planning support")).toBeTruthy();
     expect(screen.getByText(/Bottleneck score/i)).toBeTruthy();
@@ -313,7 +433,9 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getAllByText(/Density not checked/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Staff conflicts not checked/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("grand-hall-room")).toBeTruthy();
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall");
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
   });
 
@@ -449,6 +571,7 @@ describe("TradesHallVisualPage", () => {
         "https://assets.example/reception-room/scene.ply",
       );
     });
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(orbitControlsMock).toHaveBeenCalledWith(expect.objectContaining({
       enableDamping: true,
@@ -471,6 +594,7 @@ describe("TradesHallVisualPage", () => {
   it("ignores manual splatUrl query params and keeps the procedural fallback", () => {
     mount("/dev/trades-hall-visual?splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
     expect(screen.getByText(/Manual runtime URLs are disabled/i)).toBeTruthy();
   });
@@ -515,11 +639,13 @@ describe("TradesHallVisualPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Splat/i }));
     expect(screen.getByRole("button", { name: /Splat/i }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Mesh/i }));
     expect(screen.getByRole("button", { name: /Mesh/i }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("grand-hall-room")).toBeTruthy();
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
   });
 
   it("allows the event phase graph to select a phase", () => {

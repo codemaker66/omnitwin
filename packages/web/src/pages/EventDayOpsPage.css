@@ -221,6 +221,7 @@
 }
 
 .event-day-task-list,
+.event-day-change-feed,
 .event-day-arrivals,
 .event-day-escalations {
   display: grid;
@@ -228,6 +229,7 @@
 }
 
 .event-day-task,
+.event-day-change-feed article,
 .event-day-arrivals article {
   background: rgba(255, 255, 255, 0.075);
   border: 1px solid rgba(255, 255, 255, 0.11);
@@ -235,15 +237,49 @@
   padding: 14px;
 }
 
+.event-day-change-feed article {
+  display: grid;
+  gap: 12px;
+}
+
+.event-day-change-feed article[data-risk="attention"] {
+  border-color: rgba(232, 184, 95, 0.45);
+}
+
+.event-day-change-feed article[data-risk="blocker"] {
+  border-color: rgba(255, 105, 82, 0.5);
+}
+
 .event-day-task h3,
+.event-day-change-feed h3,
 .event-day-arrivals h3 {
   font-size: 1rem;
   margin: 5px 0 4px;
 }
 
 .event-day-task p,
+.event-day-change-feed p,
 .event-day-arrivals p {
   margin: 0;
+}
+
+.event-day-change-feed span {
+  color: #f2cf83;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.event-day-change-feed article[data-risk="blocker"] span {
+  color: #ff9b82;
+}
+
+.event-day-change-feed small {
+  color: #8fd8d2;
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-top: 8px;
 }
 
 .event-day-task-actions {
@@ -266,6 +302,7 @@
 .event-day-task-actions button:focus-visible,
 .event-day-button:focus-visible,
 .event-day-icon-button:focus-visible,
+.event-day-change-feed button:focus-visible,
 .event-day-issue-form input:focus-visible,
 .event-day-issue-form textarea:focus-visible,
 .event-day-issue-form select:focus-visible {
@@ -365,7 +402,13 @@
   }
 
   .event-day-task-list,
+  .event-day-change-feed,
   .event-day-arrivals {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .event-day-change-feed article {
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

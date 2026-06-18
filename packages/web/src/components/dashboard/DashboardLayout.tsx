@@ -3,12 +3,13 @@ import { useClerk } from "@clerk/react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
+import { NotificationCenter } from "./NotificationCenter.js";
 
 // ---------------------------------------------------------------------------
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
 
 const sidebarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
@@ -35,17 +36,17 @@ const mainStyle: React.CSSProperties = {
   marginLeft: 220,
   minHeight: "100vh",
   background:
-    "linear-gradient(180deg, #f5efe3 0%, #ece2d3 100%)",
+    "radial-gradient(circle at 72% 0%, rgba(143,216,210,0.12), transparent 30%), linear-gradient(180deg, #101617 0%, #070807 100%)",
   fontFamily: "'Inter', sans-serif",
 };
 
 const topBarStyle: React.CSSProperties = {
   minHeight: 62,
-  background: "rgba(255,250,240,0.92)",
-  borderBottom: "1px solid rgba(99,74,35,0.16)",
+  background: "rgba(6,8,8,0.92)",
+  borderBottom: "1px solid rgba(215,181,109,0.22)",
   display: "flex", alignItems: "center", justifyContent: "space-between",
   padding: "0 24px",
-  boxShadow: "0 12px 38px rgba(80,55,22,0.08)",
+  boxShadow: "0 14px 42px rgba(0,0,0,0.24)",
 };
 
 interface DashboardLayoutProps {
@@ -66,6 +67,7 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "search", label: "Client Search" },
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
+  { view: "onboarding", label: "Onboarding", adminOnly: true },
   { view: "admin", label: "Admin", adminOnly: true },
 ];
 
@@ -140,10 +142,13 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
 
       <div style={mainStyle}>
         <header style={topBarStyle}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: "#1a140f", margin: 0, letterSpacing: 0 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: "#fff7e8", margin: 0, letterSpacing: 0 }}>
             {venueName}
           </h1>
-          <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
+          <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
+            <NotificationCenter />
+            <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
+          </div>
         </header>
         <main style={{ padding: 24 }} id="dashboard-main">
           {children}

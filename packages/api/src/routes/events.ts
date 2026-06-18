@@ -9,6 +9,7 @@ import {
   EventPhaseGraphSchema,
   EventPhaseSchema,
   EventScenarioSchema,
+  EventPlanAudienceRoleSchema,
   EventSchema,
   LayoutVariantSchema,
   PhaseLayoutSnapshotSchema,
@@ -19,6 +20,7 @@ import {
   type EventConfigurationLink,
   type EventPhase,
   type EventPhaseGraph,
+  type EventPlanChangeSurface,
   type EventScenario,
   type LayoutVariant,
   type PhaseLayoutSnapshot,
@@ -36,6 +38,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
+import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 type EventRow = typeof events.$inferSelect;
 type EventPhaseRow = typeof eventPhases.$inferSelect;
@@ -213,6 +216,42 @@ async function requireEventAccess(
   return eventRow;
 }
 
+function changedSurfacesForEventPatch(input: z.infer<typeof UpdateEventSchema>): EventPlanChangeSurface[] {
+  const surfaces = new Set<EventPlanChangeSurface>();
+  if (input.guestCount !== undefined) surfaces.add("guest_count");
+  if (input.startsAt !== undefined || input.endsAt !== undefined) surfaces.add("timings");
+  if (input.name !== undefined || input.eventType !== undefined || input.clientName !== undefined || input.notes !== undefined) {
+    surfaces.add("service_notes");
+  }
+  if (input.status !== undefined) surfaces.add("evidence");
+  return [...surfaces];
+}
+
+function requiresHallkeeperAcknowledgement(surfaces: readonly EventPlanChangeSurface[]): boolean {
+  return surfaces.some((surface) => (
+    surface === "guest_count" ||
+    surface === "timings" ||
+    surface === "furniture" ||
+    surface === "suppliers" ||
+    surface === "accessibility" ||
+    surface === "service_notes" ||
+    surface === "ops_tasks" ||
+    surface === "room_flip"
+  ));
+}
+
+function changedSurfacesForPhasePatch(input: z.infer<typeof UpdateEventPhaseSchema>): EventPlanChangeSurface[] {
+  const surfaces = new Set<EventPlanChangeSurface>();
+  if (input.startsAt !== undefined || input.durationMinutes !== undefined) surfaces.add("timings");
+  if (input.guestCount !== undefined) surfaces.add("guest_count");
+  if (input.opsTasksCount !== undefined) surfaces.add("ops_tasks");
+  if (input.reviewGatesCount !== undefined) surfaces.add("evidence");
+  if (input.densityStatus !== undefined || input.densityLabel !== undefined) surfaces.add("guest_flow");
+  if (input.staffConflictsStatus !== undefined || input.staffConflictsLabel !== undefined) surfaces.add("ops_tasks");
+  if (input.name !== undefined || input.notes !== undefined) surfaces.add("service_notes");
+  return [...surfaces];
+}
+
 export async function eventRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;
 
@@ -293,6 +332,28 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
 
     if (updated === undefined) {
       return reply.status(500).send({ error: "Failed to update event", code: "EVENT_UPDATE_FAILED" });
+    }
+    const affectedSurfaces = changedSurfacesForEventPatch(parsed.data);
+    if (affectedSurfaces.length > 0) {
+      const actorRole = EventPlanAudienceRoleSchema.parse(request.user.role);
+      await recordEventPlanChange(db, {
+        eventId: updated.id,
+        venueId: updated.venueId,
+        actorUserId: request.user.id,
+        actorRole,
+        actorLabel: request.user.email,
+        sourceKind: "event",
+        sourceId: updated.id,
+        title: "Event plan updated",
+        summary: `${updated.name} changed: ${affectedSurfaces.join(", ").replace(/_/g, " ")}.`,
+        beforeSummary: `${String(eventRow.guestCount)} guests`,
+        afterSummary: `${String(updated.guestCount)} guests`,
+        affectedSurfaces,
+        audienceRoles: ["staff", "hallkeeper"],
+        riskLevel: requiresHallkeeperAcknowledgement(affectedSurfaces) ? "attention" : "info",
+        requiresHallkeeperAcknowledgement: requiresHallkeeperAcknowledgement(affectedSurfaces),
+        actionPath: `/ops/events/${updated.id}`,
+      });
     }
     return { data: serializeEvent(updated) };
   });
@@ -455,6 +516,28 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
 
     if (updated === undefined) {
       return reply.status(500).send({ error: "Failed to update event phase", code: "EVENT_PHASE_UPDATE_FAILED" });
+    }
+    const affectedSurfaces = changedSurfacesForPhasePatch(parsed.data);
+    if (affectedSurfaces.length > 0) {
+      const actorRole = EventPlanAudienceRoleSchema.parse(request.user.role);
+      await recordEventPlanChange(db, {
+        eventId: joined.event.id,
+        venueId: joined.event.venueId,
+        actorUserId: request.user.id,
+        actorRole,
+        actorLabel: request.user.email,
+        sourceKind: "event",
+        sourceId: updated.id,
+        title: "Event phase updated",
+        summary: `${updated.name} phase changed: ${affectedSurfaces.join(", ").replace(/_/g, " ")}.`,
+        beforeSummary: `${joined.phase.name}, ${String(joined.phase.durationMinutes)} min`,
+        afterSummary: `${updated.name}, ${String(updated.durationMinutes)} min`,
+        affectedSurfaces,
+        audienceRoles: ["staff", "hallkeeper"],
+        riskLevel: requiresHallkeeperAcknowledgement(affectedSurfaces) ? "attention" : "info",
+        requiresHallkeeperAcknowledgement: requiresHallkeeperAcknowledgement(affectedSurfaces),
+        actionPath: `/ops/events/${joined.event.id}`,
+      });
     }
     return { data: serializePhase(updated) };
   });

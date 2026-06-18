@@ -30,6 +30,13 @@ function hasUnsafeClaim(rooms: readonly RoomAssetStatus[]): boolean {
       room.nextAction,
       room.splatStatus,
       room.runtimePackageStatus,
+      room.reviewedTransformSafeCopy,
+      room.reviewedQaSafeCopy,
+      room.captureControlAuthoritySafeCopy,
+      room.captureControlStalenessSafeCopy,
+      room.captureControlSafeCopy,
+      room.runtimeControlEvidenceChainSafeCopy,
+      room.runtimeControlEvidenceChainNextAction,
     ])
     .join(" ")
     .toLowerCase();
@@ -62,6 +69,124 @@ function RoomStatusRow({ room }: { readonly room: RoomAssetStatus }): ReactEleme
         <div>
           <dt>Evidence status</dt>
           <dd>{statusLabel(room.evidenceStatus)}</dd>
+        </div>
+        <div>
+          <dt>Runtime transform</dt>
+          <dd>
+            {room.reviewedTransformSafeCopy}
+            {room.latestTransformArtifactId !== null ? (
+              <span className="asset-status-transform-id">{room.latestTransformArtifactId}</span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Runtime QA / exposure</dt>
+          <dd>
+            <span className="asset-status-qa-status" data-status={room.reviewedQaStatus}>
+              {statusLabel(room.reviewedQaStatus)}
+            </span>
+            <span className="asset-status-qa-copy">{room.reviewedQaSafeCopy}</span>
+            {room.latestQaRecordId !== null ? (
+              <span className="asset-status-qa-id">QA {room.latestQaRecordId}</span>
+            ) : null}
+            {room.qaSignedTransformArtifactId !== null ? (
+              <span className="asset-status-qa-link">
+                {room.qaSignedTransformLinked ? "transform link current: " : "transform link not current: "}
+                {room.qaSignedTransformArtifactId}
+              </span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Capture control</dt>
+          <dd>
+            <span className="asset-status-capture-control-status" data-status={room.captureControlStatus}>
+              {statusLabel(room.captureControlStatus)}
+            </span>
+            <span className="asset-status-capture-control-copy">{room.captureControlSafeCopy}</span>
+            <span className="asset-status-capture-control-authority">{room.captureControlAuthoritySafeCopy}</span>
+            <span
+              className="asset-status-capture-control-freshness"
+              data-status={room.captureControlFreshnessStatus}
+            >
+              {statusLabel(room.captureControlFreshnessStatus)}
+            </span>
+            <span className="asset-status-capture-control-staleness">{room.captureControlStalenessSafeCopy}</span>
+            {room.latestCaptureControlSourceRecordId !== null ? (
+              <span className="asset-status-capture-control-id">
+                Record {room.latestCaptureControlSourceRecordId}
+              </span>
+            ) : null}
+            {room.latestCaptureControlSourceId !== null ? (
+              <span className="asset-status-capture-control-id">
+                Source {room.latestCaptureControlSourceId}
+              </span>
+            ) : null}
+            {room.latestCaptureControlSourceClass !== null ? (
+              <span className="asset-status-capture-control-id">
+                Class {statusLabel(room.latestCaptureControlSourceClass)}
+              </span>
+            ) : null}
+            {room.latestCaptureControlPoseAuthorityLevel !== null ? (
+              <span className="asset-status-capture-control-id">
+                Authority {statusLabel(room.latestCaptureControlPoseAuthorityLevel)}
+              </span>
+            ) : null}
+            {room.latestCaptureControlAlignmentMethods.length > 0 ? (
+              <span className="asset-status-capture-control-id">
+                Methods {room.latestCaptureControlAlignmentMethods.map(statusLabel).join(", ")}
+              </span>
+            ) : null}
+            {room.latestCaptureControlStalenessTriggers.length > 0 ? (
+              <span className="asset-status-capture-control-stale-list">
+                Stale when {room.latestCaptureControlStalenessTriggers.map(statusLabel).join(", ")}
+              </span>
+            ) : null}
+            {room.latestCaptureControlActiveStalenessTriggers.length > 0 ? (
+              <span className="asset-status-capture-control-active-stale-list">
+                Active stale trigger {room.latestCaptureControlActiveStalenessTriggers.map(statusLabel).join(", ")}
+              </span>
+            ) : null}
+            {room.latestCaptureControlQaStatus !== null ? (
+              <span className="asset-status-capture-control-id">
+                QA {statusLabel(room.latestCaptureControlQaStatus)}
+              </span>
+            ) : null}
+            {room.captureControlLinkedTransformArtifactId !== null ? (
+              <span className="asset-status-capture-control-link">
+                {room.captureControlTransformLinked ? "transform link current: " : "transform link not current: "}
+                {room.captureControlLinkedTransformArtifactId}
+              </span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Runtime-control chain</dt>
+          <dd>
+            <span
+              className="asset-status-runtime-control-status"
+              data-status={room.runtimeControlEvidenceChainStatus}
+            >
+              {statusLabel(room.runtimeControlEvidenceChainStatus)}
+            </span>
+            <span className="asset-status-runtime-control-copy">
+              {room.runtimeControlEvidenceChainSafeCopy}
+            </span>
+            {room.runtimeControlRequiredCoordinatePairCount !== null &&
+            room.runtimeControlReviewedCoordinatePairCount !== null ? (
+              <span className="asset-status-runtime-control-counts">
+                Coordinate pairs {room.runtimeControlReviewedCoordinatePairCount} / {room.runtimeControlRequiredCoordinatePairCount}
+              </span>
+            ) : null}
+            {room.runtimeControlEvidenceChainRef !== null ? (
+              <span className="asset-status-runtime-control-ref">
+                Evidence {room.runtimeControlEvidenceChainRef}
+              </span>
+            ) : null}
+            <span className="asset-status-runtime-control-next">
+              {room.runtimeControlEvidenceChainNextAction}
+            </span>
+          </dd>
         </div>
         <div>
           <dt>Safe copy</dt>

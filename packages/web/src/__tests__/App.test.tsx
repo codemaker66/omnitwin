@@ -50,7 +50,14 @@ function getCanvasProps(): Record<string, unknown> {
 }
 
 describe("App", () => {
-  beforeEach(() => { vi.useFakeTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    });
+  });
   afterEach(() => { cleanup(); vi.runOnlyPendingTimers(); vi.useRealTimers(); });
 
   it("renders without crashing", () => {
@@ -71,11 +78,21 @@ describe("App", () => {
     expect(props["frameloop"]).toBe("demand");
   });
 
-  it("caps DPR at [1, 2] to prevent Retina overdraw", () => {
+  it("caps DPR at [1, 1] to preserve the 60fps desktop frame budget", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();
-    expect(props["dpr"]).toEqual([1, 2]);
+    expect(props["dpr"]).toEqual([1, 1]);
+  });
+
+  it("enables DPR regression during camera motion (performance.min < 1)", () => {
+    CanvasMock.mockClear();
+    render(<App />);
+    const props = getCanvasProps();
+    const performance = props["performance"] as Record<string, unknown>;
+    expect(typeof performance["min"]).toBe("number");
+    expect(performance["min"] as number).toBeGreaterThan(0);
+    expect(performance["min"] as number).toBeLessThan(1);
   });
 
   it("requests high-performance GPU preference", () => {

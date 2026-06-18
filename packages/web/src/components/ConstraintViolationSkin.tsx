@@ -40,13 +40,6 @@ export function ConstraintViolationSkin({ item, y }: ConstraintViolationSkinProp
               clippingPlanes={sectionClipPlanes}
             />
           </mesh>
-          <pointLight
-            color="#ff365c"
-            intensity={0.04}
-            distance={0.75}
-            decay={2}
-            position={[0, 0.1, 0]}
-          />
         </group>
       ))}
     </group>

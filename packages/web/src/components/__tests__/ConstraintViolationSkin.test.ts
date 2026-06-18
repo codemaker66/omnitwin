@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+import { createElement } from "react";
+import { ConstraintViolationSkin } from "../ConstraintViolationSkin.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { buildViolationCrossMarks } from "../../lib/constraint-violation-skin.js";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("buildViolationCrossMarks", () => {
   it("spreads holographic warning marks across a furniture footprint", () => {
@@ -24,5 +31,18 @@ describe("buildViolationCrossMarks", () => {
     const marks = buildViolationCrossMarks(platform, 5);
 
     expect(marks).toHaveLength(5);
+  });
+});
+
+describe("ConstraintViolationSkin", () => {
+  it("renders collision warnings without per-marker runtime lights", () => {
+    const chair = getCatalogueItemBySlug("banquet-chair");
+    expect(chair).toBeDefined();
+    if (chair === undefined) throw new Error("banquet-chair catalogue item missing");
+
+    const { container } = render(createElement(ConstraintViolationSkin, { item: chair, y: 0 }));
+
+    expect(container.querySelector("pointlight")).toBeNull();
+    expect(container.querySelectorAll("meshbasicmaterial").length).toBeGreaterThan(0);
   });
 });

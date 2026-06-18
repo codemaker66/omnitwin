@@ -1,0 +1,148 @@
+{
+  "schemaVersion": "runtime-control-coordinate-pair-intake-request.v0",
+  "generatedAt": "2026-06-16T19:03:03.495Z",
+  "sourcePacketRef": "docs/operations/reception-room-landmark-control-intake-2026-06-16.json",
+  "sourcePacketId": "reception-room-landmark-control-intake-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "status": "coordinate_pairs_required",
+  "sourceFrame": "ARF",
+  "targetFrame": "CVF",
+  "landmarkSetSummary": {
+    "totalLandmarks": 4,
+    "nonRejectedLandmarks": 4,
+    "reviewedLandmarks": 0,
+    "sourceFrame": "ARF",
+    "targetFrame": "CVF",
+    "residualRmseM": null,
+    "maxResidualM": null,
+    "allNonRejectedLandmarksReviewed": false
+  },
+  "requiredCoordinatePairCount": 4,
+  "landmarkRequests": [
+    {
+      "landmarkId": "reception-door-left-jamb-base",
+      "label": "Reception room door left jamb base candidate",
+      "featureClass": "door_jamb",
+      "sourcePacketStatus": "candidate_visible_only",
+      "sourceFrame": "ARF",
+      "targetFrame": "CVF",
+      "required": true,
+      "requiredObservations": [
+        "source_point_coordinate",
+        "target_point_coordinate",
+        "per_landmark_residual_m",
+        "reviewer_role",
+        "measurement_evidence_ref"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ],
+      "note": "Record reviewed ARF and CVF coordinate observations, residual, reviewer role, and measurement evidence for reception-door-left-jamb-base."
+    },
+    {
+      "landmarkId": "reception-door-right-jamb-base",
+      "label": "Reception room door right jamb base candidate",
+      "featureClass": "door_jamb",
+      "sourcePacketStatus": "candidate_visible_only",
+      "sourceFrame": "ARF",
+      "targetFrame": "CVF",
+      "required": true,
+      "requiredObservations": [
+        "source_point_coordinate",
+        "target_point_coordinate",
+        "per_landmark_residual_m",
+        "reviewer_role",
+        "measurement_evidence_ref"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ],
+      "note": "Record reviewed ARF and CVF coordinate observations, residual, reviewer role, and measurement evidence for reception-door-right-jamb-base."
+    },
+    {
+      "landmarkId": "reception-column-plinth-front-corner",
+      "label": "Reception room column plinth front corner candidate",
+      "featureClass": "column_plinth",
+      "sourcePacketStatus": "candidate_visible_only",
+      "sourceFrame": "ARF",
+      "targetFrame": "CVF",
+      "required": true,
+      "requiredObservations": [
+        "source_point_coordinate",
+        "target_point_coordinate",
+        "per_landmark_residual_m",
+        "reviewer_role",
+        "measurement_evidence_ref"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        },
+        {
+          "kind": "playwright_screenshot",
+          "label": "After-drag camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+        }
+      ],
+      "note": "Record reviewed ARF and CVF coordinate observations, residual, reviewer role, and measurement evidence for reception-column-plinth-front-corner."
+    },
+    {
+      "landmarkId": "reception-skirting-floor-corner-left",
+      "label": "Reception room skirting and floor corner candidate",
+      "featureClass": "wall_floor_corner",
+      "sourcePacketStatus": "candidate_visible_only",
+      "sourceFrame": "ARF",
+      "targetFrame": "CVF",
+      "required": true,
+      "requiredObservations": [
+        "source_point_coordinate",
+        "target_point_coordinate",
+        "per_landmark_residual_m",
+        "reviewer_role",
+        "measurement_evidence_ref"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "After-drag camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+        }
+      ],
+      "note": "Record reviewed ARF and CVF coordinate observations, residual, reviewer role, and measurement evidence for reception-skirting-floor-corner-left."
+    }
+  ],
+  "acceptanceCriteria": [
+    "Create a separate runtime-control-coordinate-pair-intake.v0 file; do not edit the source packet.",
+    "Include every required landmark id exactly once with source and target coordinates in the requested frames.",
+    "Include per-landmark residuals, residual RMSE, max residual, reviewer role, and measurement evidence refs.",
+    "Keep all coordinate-pair intake guardrails false until a later command builds downstream artifacts."
+  ],
+  "blockers": [],
+  "messages": [
+    "Coordinate-pair intake measurements are required before a reviewed runtime-control packet can be built.",
+    "This request created no coordinate-pair intake, reviewed packet, capture-control source, signed transform, public exposure change, or operational geometry."
+  ],
+  "guardrails": {
+    "sourcePacketMutated": false,
+    "coordinatePairIntakeCreated": false,
+    "reviewedPacketCreated": false,
+    "captureControlSourceCreated": false,
+    "transformPayloadCreated": false,
+    "signedTransformCreated": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

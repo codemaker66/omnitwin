@@ -22,7 +22,14 @@ const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", 
 const plannerToken = (): string => signToken({ id: "u2", email: "planner@test.com", role: "planner", venueId: "v1" });
 
 const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
+const RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
 const SHA = "a".repeat(64);
+const TRANSFORM_ARTIFACT_ID = "reception-room-landmark-solve-v0";
+const transformEvidenceRef = {
+  refType: "landmark_set",
+  ref: "docs/operations/reception-room-landmarks-v0.json",
+  role: "source_landmarks",
+} as const;
 
 const validVersionBody = {
   venueSlug: "trades-hall",
@@ -52,6 +59,230 @@ const validRuntimePackageBody = {
     },
   },
   runtimeStatus: "internal_ready",
+};
+
+const validTransformArtifactBody = {
+  runtimePackageId: RUNTIME_PACKAGE_ID,
+  venueSlug: "trades-hall",
+  roomSlug: "reception-room",
+  transformArtifact: {
+    id: TRANSFORM_ARTIFACT_ID,
+    sourceFrame: "COLMAP_RDF",
+    targetFrame: "CVF",
+    units: "meters",
+    matrix: [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ],
+    alignmentMethod: "landmark_solve",
+    residualRmseM: 0.012,
+    landmarks: [
+      {
+        id: "corner-01",
+        label: "Control corner 01",
+        source: [0, 0, 0],
+        target: [0, 0, 0],
+        residualM: 0.01,
+        provenanceRefs: [transformEvidenceRef],
+      },
+    ],
+    provenance: {
+      state: "measured",
+      refs: [transformEvidenceRef],
+    },
+    creator: {
+      actorType: "human",
+      id: "ops/blake",
+      displayName: "Runtime operator",
+      role: "runtime_operator",
+    },
+    reviewer: {
+      actorType: "human",
+      id: "ops/runtime-reviewer",
+      displayName: "Runtime reviewer",
+      role: "runtime_reviewer",
+    },
+    date: "2026-06-15T10:00:00.000Z",
+  },
+  reviewNote: "Route contract test only; not a live Reception Room signed transform.",
+};
+
+const qaEvidenceRef = {
+  label: "Playwright evidence",
+  ref: "output/playwright/reception-room-camera-arrival-settled.png",
+};
+
+const validRuntimeQaRecord = {
+  schemaVersion: "runtime-qa-record.v0",
+  recordId: "reception-room-runtime-qa-2026-06-16",
+  venueSlug: "trades-hall",
+  roomSlug: "reception-room",
+  runtimePackageId: RUNTIME_PACKAGE_ID,
+  recordedAt: "2026-06-16T00:00:00.000Z",
+  recordedBy: "runtime-qa-operator",
+  assetEvidenceStatus: "unverified",
+  runtimeStatus: "internal_ready",
+  sourceBundle: {
+    sourceLabel: "Reception Room XGRIDS LCC2 source bundle",
+    sourceBundleHash: SHA,
+    totalSourceFiles: 48,
+    totalSourceBytes: 64_323_846,
+    totalSplats: 3_491_322,
+  },
+  sparkLoad: {
+    renderer: "@sparkjsdev/spark",
+    route: "/dev/trades-hall-visual?venue=trades-hall&room=reception-room",
+    loadStatus: "loaded",
+    visualChunkCount: 7,
+    excludedChunkCount: 1,
+    loadedSplats: 3_491_322,
+    evidenceRefs: [qaEvidenceRef],
+  },
+  viewTransform: {
+    posture: "approximate_view_transform",
+    position: [1.11, 2.57, 2.77],
+    rotation: [-Math.PI / 2, 0, 0],
+    scale: 0.63,
+    signedTransformArtifactId: null,
+    note: "Approximate XGRIDS SOG view transform; not signed for operational alignment.",
+  },
+  cameraProfile: {
+    position: [0.2, 6.2, 13.4],
+    target: [0, 0.9, -4.15],
+    arrivalPosition: [0.25, 7.15, 14.1],
+    arrivalTarget: [0, 1.2, -4],
+    arrivalDurationMs: 1400,
+    fov: 48,
+    targetBounds: {
+      min: [-5.8, 0.7, -9.2],
+      max: [5.8, 2.35, 4.8],
+    },
+    cameraBounds: {
+      min: [-6.8, 1.4, -11.8],
+      max: [6.8, 7.4, 14.2],
+    },
+    note: "Bounded interior inspection camera for runtime QA only.",
+  },
+  checks: [
+    {
+      checkKey: "runtime_package_resolves",
+      status: "passed",
+      summary: "Runtime package resolves through the internal route.",
+      evidenceRefs: [qaEvidenceRef],
+    },
+    {
+      checkKey: "served_chunk_count",
+      status: "passed",
+      summary: "Seven room SOG chunks are served; one environment chunk is excluded.",
+      evidenceRefs: [{ label: "Intake note", ref: "docs/operations/reception-room-runtime-intake-2026-06-13.md" }],
+    },
+    {
+      checkKey: "spark_payload_loads",
+      status: "passed",
+      summary: "Spark loads the served SOG payloads for internal runtime QA.",
+      evidenceRefs: [qaEvidenceRef],
+    },
+    {
+      checkKey: "camera_framing",
+      status: "passed",
+      summary: "The start view frames the Reception Room for internal inspection.",
+      evidenceRefs: [qaEvidenceRef],
+    },
+    {
+      checkKey: "user_orbit_bounds",
+      status: "passed",
+      summary: "A small user orbit remains inside the bounded QA camera region.",
+      evidenceRefs: [{ label: "After-drag evidence", ref: "output/playwright/reception-room-camera-arrival-after-drag.png" }],
+    },
+    {
+      checkKey: "approximate_view_transform_documented",
+      status: "passed",
+      summary: "The approximate transform is explicitly documented as not signed.",
+      evidenceRefs: [{ label: "Runtime intake note", ref: "docs/operations/reception-room-runtime-intake-2026-06-13.md" }],
+    },
+    {
+      checkKey: "signed_transform_artifact",
+      status: "requires_human_review",
+      summary: "No signed room-local transform artifact is recorded.",
+      evidenceRefs: [],
+    },
+    {
+      checkKey: "metric_scale_alignment",
+      status: "not_checked",
+      summary: "Metric scale alignment has not been checked against measured room anchors.",
+      evidenceRefs: [],
+    },
+    {
+      checkKey: "floor_wall_alignment",
+      status: "not_checked",
+      summary: "Floor and wall alignment have not been checked against reviewed room geometry.",
+      evidenceRefs: [],
+    },
+    {
+      checkKey: "lcc2_lod_graph",
+      status: "requires_human_review",
+      summary: "The LCC2 bundle graph is not yet the authoritative runtime package loader.",
+      evidenceRefs: [],
+    },
+    {
+      checkKey: "public_exposure_review",
+      status: "blocked",
+      summary: "Public exposure remains blocked until review and signed transform evidence exist.",
+      evidenceRefs: [],
+    },
+  ],
+  limitations: [
+    "The transform is visual framing only, not operational alignment.",
+    "The package remains internal and unverified.",
+    "Public room showcase copy must stay in fallback mode.",
+  ],
+  publicExposure: {
+    decision: "blocked_internal_only",
+    reason: "Public exposure is blocked until human review and signed transform evidence exist.",
+    requiredBeforeApproval: [
+      "Signed room-local transform artifact.",
+      "Human visual QA review.",
+      "Exposure approval record.",
+    ],
+  },
+};
+
+const validRuntimeQaRecordBody = {
+  runtimePackageId: RUNTIME_PACKAGE_ID,
+  venueSlug: "trades-hall",
+  roomSlug: "reception-room",
+  record: validRuntimeQaRecord,
+};
+
+const validCaptureControlSource = {
+  sourceId: "reception-room-manual-landmarks-v0",
+  sourceClass: "manual_landmarks",
+  poseAuthorityLevel: "manual_landmark_control",
+  alignmentMethods: ["landmark_solve"],
+  qaStatus: "requires_human_review",
+  sourceRefs: [
+    {
+      refType: "landmark_set",
+      ref: "docs/operations/reception-room-landmarks-v0.json",
+      role: "source_landmarks",
+    },
+  ],
+  transformArtifactRefs: [],
+  residualMetricRefs: [],
+  staleWhen: ["landmark_set_changed", "runtime_package_changed"],
+  reviewerRole: "runtime_reviewer",
+  notes: "Candidate Reception Room landmark set; not yet a signed transform.",
+};
+
+const validCaptureControlSourceBody = {
+  venueSlug: "trades-hall",
+  roomSlug: "reception-room",
+  runtimePackageId: null,
+  transformArtifactId: null,
+  source: validCaptureControlSource,
+  reviewNote: "Route contract test only; not live Reception Room control evidence.",
 };
 
 describe("GET /assets", () => {
@@ -288,6 +519,277 @@ describe("POST /admin/assets/register-runtime-package", () => {
         },
         runtimeStatus: "internal_ready",
       },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("POST /admin/assets/register-runtime-transform-artifact", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-transform-artifact",
+      payload: validTransformArtifactBody,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-transform-artifact",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+      payload: validTransformArtifactBody,
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("rejects visual-only transforms before runtime package lookup", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-transform-artifact",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validTransformArtifactBody,
+        transformArtifact: {
+          ...validTransformArtifactBody.transformArtifact,
+          alignmentMethod: "visual_alignment",
+          residualRmseM: null,
+          landmarks: [],
+          provenance: {
+            state: "inferred",
+            refs: [
+              {
+                refType: "artifact",
+                ref: "docs/operations/reception-room-visual-review.md",
+                role: "visual_review",
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("passes a reviewed transform contract through validation before DB lookup", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-transform-artifact",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: validTransformArtifactBody,
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+});
+
+describe("GET /admin/assets/runtime-transform-artifacts", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-transform-artifacts?runtimePackageId=${RUNTIME_PACKAGE_ID}`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-transform-artifacts?runtimePackageId=${RUNTIME_PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("validates runtimePackageId before querying", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/admin/assets/runtime-transform-artifacts?runtimePackageId=not-a-runtime-package-id",
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("POST /admin/assets/register-capture-control-source", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-capture-control-source",
+      payload: validCaptureControlSourceBody,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-capture-control-source",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+      payload: validCaptureControlSourceBody,
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("rejects a transform link without a matching source reference", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-capture-control-source",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validCaptureControlSourceBody,
+        runtimePackageId: RUNTIME_PACKAGE_ID,
+        transformArtifactId: TRANSFORM_ARTIFACT_ID,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects unsupported Trades Hall rooms before DB lookup", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-capture-control-source",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validCaptureControlSourceBody,
+        roomSlug: "unsupported-room",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("passes a pre-transform control source through validation before DB lookup", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-capture-control-source",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: validCaptureControlSourceBody,
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+});
+
+describe("GET /admin/assets/capture-control-sources", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/admin/assets/capture-control-sources?venue=trades-hall&room=reception-room",
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/admin/assets/capture-control-sources?venue=trades-hall&room=reception-room",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("validates transform filters before querying", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/admin/assets/capture-control-sources?venue=trades-hall&room=reception-room&transformArtifactId=${TRANSFORM_ARTIFACT_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("POST /admin/assets/register-runtime-qa-record", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-qa-record",
+      payload: validRuntimeQaRecordBody,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-qa-record",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+      payload: validRuntimeQaRecordBody,
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("rejects public approval without human-reviewed evidence and a signed transform", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-qa-record",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validRuntimeQaRecordBody,
+        record: {
+          ...validRuntimeQaRecord,
+          publicExposure: {
+            decision: "approved_public",
+            reason: "Human review has approved public exposure.",
+            requiredBeforeApproval: ["No remaining approval blockers."],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects QA records whose embedded package id does not match the request", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-qa-record",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validRuntimeQaRecordBody,
+        runtimePackageId: "10000000-0000-4000-8000-000000000099",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("passes a blocked internal QA record through validation before DB lookup", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-runtime-qa-record",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: validRuntimeQaRecordBody,
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+});
+
+describe("GET /admin/assets/runtime-qa-records", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-qa-records?runtimePackageId=${RUNTIME_PACKAGE_ID}`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-qa-records?runtimePackageId=${RUNTIME_PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("validates runtimePackageId before querying", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/admin/assets/runtime-qa-records?runtimePackageId=not-a-runtime-package-id",
+      headers: { authorization: `Bearer ${adminToken()}` },
     });
     expect(res.statusCode).toBe(400);
   });

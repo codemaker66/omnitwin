@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "runtime-control-evidence-packet.v0",
+  "packetId": "reception-room-landmark-control-intake-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "recordedAt": "2026-06-16T14:55:00.000Z",
+  "recordedBy": "runtime-review-operator",
+  "disposition": "candidate_landmarks_recorded",
+  "sourceFrame": "ARF",
+  "targetFrame": "CVF",
+  "intendedCaptureControl": {
+    "sourceClass": "manual_landmarks",
+    "poseAuthorityLevel": "manual_landmark_control",
+    "alignmentMethods": [
+      "landmark_solve"
+    ],
+    "qaStatus": "requires_human_review"
+  },
+  "targetTransformArtifactId": null,
+  "landmarks": [
+    {
+      "landmarkId": "reception-door-left-jamb-base",
+      "label": "Reception room door left jamb base candidate",
+      "featureClass": "door_jamb",
+      "status": "candidate_visible_only",
+      "sourcePoint": null,
+      "targetPoint": null,
+      "residualM": null,
+      "reviewerRole": null,
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ],
+      "note": "Visible architectural landmark candidate only; no source or target coordinate is recorded."
+    },
+    {
+      "landmarkId": "reception-door-right-jamb-base",
+      "label": "Reception room door right jamb base candidate",
+      "featureClass": "door_jamb",
+      "status": "candidate_visible_only",
+      "sourcePoint": null,
+      "targetPoint": null,
+      "residualM": null,
+      "reviewerRole": null,
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ],
+      "note": "Visible architectural landmark candidate only; no source or target coordinate is recorded."
+    },
+    {
+      "landmarkId": "reception-column-plinth-front-corner",
+      "label": "Reception room column plinth front corner candidate",
+      "featureClass": "column_plinth",
+      "status": "candidate_visible_only",
+      "sourcePoint": null,
+      "targetPoint": null,
+      "residualM": null,
+      "reviewerRole": null,
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        },
+        {
+          "kind": "playwright_screenshot",
+          "label": "After-drag camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+        }
+      ],
+      "note": "Visible architectural landmark candidate only; no source or target coordinate is recorded."
+    },
+    {
+      "landmarkId": "reception-skirting-floor-corner-left",
+      "label": "Reception room skirting and floor corner candidate",
+      "featureClass": "wall_floor_corner",
+      "status": "candidate_visible_only",
+      "sourcePoint": null,
+      "targetPoint": null,
+      "residualM": null,
+      "reviewerRole": null,
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "After-drag camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+        }
+      ],
+      "note": "Visible architectural landmark candidate only; no source or target coordinate is recorded."
+    }
+  ],
+  "evidenceRefs": [
+    {
+      "kind": "runtime_package",
+      "label": "Reception Room runtime package",
+      "ref": "71687e9e-c23d-4f51-b3dd-a6a82c97978d"
+    },
+    {
+      "kind": "runtime_visual_qa_review",
+      "label": "Blocked visual QA review",
+      "ref": "docs/operations/reception-room-visual-qa-review-2026-06-16.json"
+    },
+    {
+      "kind": "runtime_qa_record",
+      "label": "Runtime QA record",
+      "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md"
+    },
+    {
+      "kind": "source_intake",
+      "label": "Runtime source intake",
+      "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+    },
+    {
+      "kind": "architecture_decision",
+      "label": "TransformArtifactV0 architecture requirement",
+      "ref": "docs/architecture/adr/D-024.md"
+    }
+  ],
+  "blockers": [
+    "Candidate landmarks are visible only; no ARF source coordinates are recorded.",
+    "No CVF measured or reviewed target coordinates are recorded.",
+    "No per-landmark residuals or aggregate residual RMSE exist.",
+    "No human review has accepted this landmark set.",
+    "No capture-control source was created from this packet."
+  ],
+  "requiredBeforeRegistration": [
+    "Select stable non-collinear landmarks in the source SOG or derived inspection tool and record ARF coordinates.",
+    "Record matching CVF target coordinates from measured control, reviewed room geometry, fiducials, or another accepted source.",
+    "Compute per-landmark residuals and an aggregate residual RMSE.",
+    "Record human review for the landmark set before capture-control registration.",
+    "Create and dry-run a manual_landmarks capture-control source payload after coordinates and review evidence exist."
+  ],
+  "guardrails": {
+    "captureControlSourceCreated": false,
+    "transformPayloadCreated": false,
+    "signedTransformCreated": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

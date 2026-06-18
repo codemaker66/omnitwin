@@ -20,11 +20,15 @@ function makePackage(overrides: {
   runtimeStatus?: "draft" | "internal_ready" | "published" | "archived";
   assetRuntimeStatus?: "staged" | "usable" | "rejected" | "archived";
   assetKind?: "splat" | "mesh";
+  assetFileExt?: ".ply" | ".spz" | ".sog";
+  assetFileName?: string;
 } = {}): RuntimePackage {
   const evidenceStatus = overrides.evidenceStatus ?? "machine_checked";
   const runtimeStatus = overrides.runtimeStatus ?? "published";
   const assetRuntimeStatus = overrides.assetRuntimeStatus ?? "usable";
   const assetKind = overrides.assetKind ?? "splat";
+  const assetFileExt = overrides.assetFileExt ?? ".ply";
+  const assetFileName = overrides.assetFileName ?? "scene.ply";
   return {
     id: "rp1",
     venueSlug: "trades-hall",
@@ -60,9 +64,9 @@ function makePackage(overrides: {
       captureSessionId: null,
       assetKind,
       sourceType: "xgrids",
-      r2Key: "venues/trades-hall/rooms/robert-adam-room/xgrids/scene.ply",
-      fileName: "scene.ply",
-      fileExt: ".ply",
+      r2Key: `venues/trades-hall/rooms/robert-adam-room/xgrids/${assetFileName}`,
+      fileName: assetFileName,
+      fileExt: assetFileExt,
       externalUrl: null,
       mimeType: "application/octet-stream",
       sha256: "a".repeat(64),
@@ -190,6 +194,32 @@ describe("decideRuntimeAsset", () => {
     ]);
   });
 
+  it("uses the registered Reception Room SPZ visual chunks with unverified copy", () => {
+    const decision = decideRuntimeAsset(null, {
+      ...makePackage({
+        assetUrl: "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
+        evidenceStatus: "unverified",
+        assetFileExt: ".spz",
+        assetFileName: "0_0.spz",
+      }),
+      roomSlug: "reception-room",
+      visualAssetUrls: [
+        "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
+        "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_13_0_0.spz",
+      ],
+    });
+
+    expect(decision.source).toBe("package");
+    expect(decision.splatUrl).toBe("https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz");
+    expect(decision.splatUrls).toEqual([
+      "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
+      "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_13_0_0.spz",
+    ]);
+    expect(decision.splatUrls.every((url) => url.endsWith(".spz"))).toBe(true);
+    expect(decision.evidenceStatus).toBe("unverified");
+    expect(decision.evidenceLabel).toBe("Runtime asset loaded, not yet verified/signed.");
+  });
+
   it("falls back when no runtime package exists", () => {
     const decision = decideRuntimeAsset(null, null);
     expect(decision.source).toBe("none");
@@ -236,7 +266,9 @@ describe("decideRuntimeAsset", () => {
 
 describe("evidenceStatusLabel", () => {
   it("returns an honest label for each status", () => {
-    expect(evidenceStatusLabel("unverified")).toBe("Runtime asset loaded, not yet verified/signed");
+    expect(evidenceStatusLabel("unverified")).toBe("Runtime asset loaded, not yet verified/signed.");
+    expect(evidenceStatusLabel("machine_checked")).toBe("Runtime asset loaded, machine checked; human review required.");
+    expect(evidenceStatusLabel("human_reviewed")).toBe("Runtime asset loaded, human reviewed.");
     expect(evidenceStatusLabel("machine_checked")).toMatch(/machine checked/i);
     expect(evidenceStatusLabel("human_reviewed")).toMatch(/human reviewed/i);
   });
@@ -262,7 +294,7 @@ describe("evidenceStatusLabel", () => {
 });
 
 describe("runtimeAssetViewTransformForRoom", () => {
-  it("uses an approximate Z-up to Y-up transform for the Reception Room SOG runtime package", () => {
+  it("uses an approximate Z-up to Y-up transform for the Reception Room XGRIDS runtime package", () => {
     const transform = runtimeAssetViewTransformForRoom("reception-room");
     expect(transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
     expect(transform.scale).toBeCloseTo(0.63);

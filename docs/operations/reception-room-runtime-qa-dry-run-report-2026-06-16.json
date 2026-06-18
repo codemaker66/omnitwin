@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "venviewer.runtime-qa-registration-report.v0",
+  "generatedAt": "2026-06-16T10:25:19.109Z",
+  "mode": "dry_run",
+  "apiUrl": "http://127.0.0.1:3001",
+  "payloadFile": "C:\\Users\\blake\\omnitwin2\\docs\\operations\\reception-room-runtime-qa-record-payload-2026-06-16.json",
+  "payload": {
+    "venueSlug": "trades-hall",
+    "roomSlug": "reception-room",
+    "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "recordId": "reception-room-runtime-qa-2026-06-15",
+    "assetEvidenceStatus": "unverified",
+    "runtimeStatus": "internal_ready",
+    "transformPosture": "approximate_view_transform",
+    "signedTransformArtifactId": null,
+    "publicExposureDecision": "blocked_internal_only"
+  },
+  "preflight": {
+    "payloadRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "latestRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "latestRuntimePackageRuntimeStatus": "internal_ready",
+    "latestRuntimePackageEvidenceStatus": "unverified",
+    "runtimePackageMatchesLatest": true,
+    "runtimePackageDriftAllowed": false,
+    "signedTransformRequired": false,
+    "signedTransformRegistered": null
+  },
+  "registration": null,
+  "guardrails": {
+    "runtimePackageDriftAllowed": false,
+    "publicExposureAllowed": false,
+    "publicExposureChanged": false
+  }
+}

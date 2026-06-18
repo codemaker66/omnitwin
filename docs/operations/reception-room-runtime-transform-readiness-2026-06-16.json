@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "runtime-transform-readiness.v0",
+  "readinessId": "reception-room-runtime-transform-readiness-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "recordedAt": "2026-06-16T14:10:00.000Z",
+  "recordedBy": "runtime-review-operator",
+  "assetEvidenceStatus": "unverified",
+  "runtimeStatus": "internal_ready",
+  "readinessDisposition": "blocked_visual_alignment_only",
+  "captureControlPosture": {
+    "sourceId": "reception-room-approximate-view-transform-v0",
+    "sourceClass": "artist_blender_alignment_refs",
+    "poseAuthorityLevel": "visual_alignment_only",
+    "alignmentMethods": [
+      "visual_alignment"
+    ],
+    "qaStatus": "requires_human_review",
+    "linkedTransformArtifactId": null,
+    "evidenceRefs": [
+      {
+        "kind": "capture_control_source",
+        "label": "Visual-alignment capture-control payload",
+        "ref": "docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json"
+      },
+      {
+        "kind": "capture_control_report",
+        "label": "Capture-control dry-run report",
+        "ref": "docs/operations/reception-room-capture-control-dry-run-report-2026-06-16.json"
+      },
+      {
+        "kind": "capture_control_inspection",
+        "label": "Capture-control report inspection",
+        "ref": "docs/operations/reception-room-capture-control-inspection-2026-06-16.json"
+      }
+    ]
+  },
+  "candidateTransformArtifact": null,
+  "requiredTransformChain": [
+    {
+      "sourceFrame": "ARF",
+      "targetFrame": "CVF",
+      "purpose": "room_local_metric_alignment",
+      "status": "missing",
+      "reason": "Candidate landmarks are recorded, but no measured control network, reviewed coordinate pair set, or accepted room-local solve is recorded for the Reception Room SOG asset.",
+      "evidenceRefs": [
+        {
+          "kind": "control_evidence_intake",
+          "label": "Visible-only landmark control intake packet",
+          "ref": "docs/operations/reception-room-landmark-control-intake-2026-06-16.json"
+        },
+        {
+          "kind": "control_coordinate_pair_intake_request",
+          "label": "Coordinate-pair intake request",
+          "ref": "docs/operations/reception-room-coordinate-pair-intake-request-2026-06-16.json"
+        },
+        {
+          "kind": "control_coordinate_pair_intake_inspection",
+          "label": "Coordinate-pair intake inspection",
+          "ref": "docs/operations/reception-room-coordinate-pair-intake-inspection-2026-06-16.json"
+        },
+        {
+          "kind": "control_coordinate_pair_packet_build_report",
+          "label": "Coordinate-pair packet build report",
+          "ref": "docs/operations/reception-room-coordinate-pair-packet-build-report-2026-06-16.json"
+        },
+        {
+          "kind": "capture_control_payload_build_report",
+          "label": "Manual-landmarks payload build report",
+          "ref": "docs/operations/reception-room-manual-landmarks-capture-control-build-report-2026-06-16.json"
+        },
+        {
+          "kind": "runtime_control_evidence_chain_status",
+          "label": "Runtime-control evidence chain status",
+          "ref": "docs/operations/reception-room-runtime-control-evidence-chain-status-2026-06-16.json"
+        },
+        {
+          "kind": "architecture_decision",
+          "label": "TransformArtifactV0 architecture requirement",
+          "ref": "docs/architecture/adr/D-024.md"
+        },
+        {
+          "kind": "runtime_visual_qa_review",
+          "label": "Blocked visual QA review",
+          "ref": "docs/operations/reception-room-visual-qa-review-2026-06-16.json"
+        }
+      ]
+    },
+    {
+      "sourceFrame": "CVF",
+      "targetFrame": "RRF",
+      "purpose": "renderer_frame_mapping",
+      "status": "candidate_needed",
+      "reason": "The current code-local view transform has not been reviewed as a TransformArtifactV0 matrix.",
+      "evidenceRefs": [
+        {
+          "kind": "code_reference",
+          "label": "Approximate runtime transform source",
+          "ref": "packages/web/src/lib/runtime-package-resolution.ts"
+        },
+        {
+          "kind": "runtime_qa_record",
+          "label": "Runtime QA record",
+          "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md"
+        }
+      ]
+    }
+  ],
+  "evidenceRefs": [
+    {
+      "kind": "control_evidence_intake",
+      "label": "Visible-only landmark control intake packet",
+      "ref": "docs/operations/reception-room-landmark-control-intake-2026-06-16.json"
+    },
+    {
+      "kind": "control_coordinate_pair_intake_request",
+      "label": "Coordinate-pair intake request",
+      "ref": "docs/operations/reception-room-coordinate-pair-intake-request-2026-06-16.json"
+    },
+    {
+      "kind": "control_coordinate_pair_intake_inspection",
+      "label": "Coordinate-pair intake inspection",
+      "ref": "docs/operations/reception-room-coordinate-pair-intake-inspection-2026-06-16.json"
+    },
+    {
+      "kind": "control_coordinate_pair_packet_build_report",
+      "label": "Coordinate-pair packet build report",
+      "ref": "docs/operations/reception-room-coordinate-pair-packet-build-report-2026-06-16.json"
+    },
+    {
+      "kind": "capture_control_payload_build_report",
+      "label": "Manual-landmarks payload build report",
+      "ref": "docs/operations/reception-room-manual-landmarks-capture-control-build-report-2026-06-16.json"
+    },
+    {
+      "kind": "runtime_control_evidence_chain_status",
+      "label": "Runtime-control evidence chain status",
+      "ref": "docs/operations/reception-room-runtime-control-evidence-chain-status-2026-06-16.json"
+    },
+    {
+      "kind": "capture_control_source",
+      "label": "Visual-alignment capture-control payload",
+      "ref": "docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json"
+    },
+    {
+      "kind": "runtime_visual_qa_review",
+      "label": "Blocked visual QA review",
+      "ref": "docs/operations/reception-room-visual-qa-review-2026-06-16.json"
+    },
+    {
+      "kind": "runtime_qa_record",
+      "label": "Runtime QA record",
+      "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md"
+    },
+    {
+      "kind": "runtime_composition_decision",
+      "label": "Runtime composition decision",
+      "ref": "docs/operations/reception-room-runtime-composition-decision-2026-06-16.json"
+    },
+    {
+      "kind": "architecture_decision",
+      "label": "Scene authority map and transform artifacts ADR",
+      "ref": "docs/architecture/adr/D-024.md"
+    }
+  ],
+  "blockers": [
+    "The only registered capture-control posture is visual-alignment-only and still requires human review.",
+    "The landmark control intake packet contains visible candidates only, with no source or target coordinates.",
+    "The coordinate-pair intake request lists four required ARF to CVF landmark measurements, but no reviewed coordinate-pair intake file exists.",
+    "The coordinate-pair intake inspection is missing_intake_file.",
+    "The coordinate-pair packet build report is blocked because no reviewed coordinate-pair intake file exists.",
+    "The manual-landmarks capture-control payload build report is blocked and wrote no payload.",
+    "No reviewed landmark coordinate pair set, control network, or measured control distance set is recorded.",
+    "No TransformArtifactV0 payload exists for this runtime package.",
+    "No dry-run report exists for a signed transform payload.",
+    "The runtime package evidence status is still unverified."
+  ],
+  "requiredBeforeSignedRegistration": [
+    "Record reviewed capture-control evidence with manual landmarks, measured control, fiducial control, known-pose COLMAP, or another signed-transform-eligible source class.",
+    "Use the coordinate-pair intake request to collect reviewed ARF and CVF coordinate observations for the four required landmark candidates.",
+    "Create a reviewed coordinate-pair intake file and build a reviewed runtime-control packet from it.",
+    "Build a manual_landmarks capture-control source payload from the reviewed landmark packet and run the capture-control registration script in dry-run mode.",
+    "Create a TransformArtifactV0 candidate with different source and target frames, a signed-transform-eligible alignment method, and reviewable provenance.",
+    "For a landmark solve, include landmark pairs with per-landmark residuals and an aggregate residual RMSE.",
+    "Run the transform registration script in dry-run mode and inspect the report before any live POST.",
+    "Keep public exposure blocked until signed transform and runtime QA approval records are both registered."
+  ],
+  "guardrails": {
+    "transformPayloadCreated": false,
+    "signedTransformCreated": false,
+    "captureControlSourceChanged": false,
+    "runtimeQaRecordChanged": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
-import { SparkSplatLayer } from "../scene/SparkSplatLayer.js";
 import type { RuntimeAssetViewTransform } from "../../lib/runtime-package-resolution.js";
 
 export interface CockpitSplatLayerProps {
@@ -12,6 +11,11 @@ export interface CockpitSplatLayerProps {
 
 const DISSOLVE_EASE = 0.16;
 const DISSOLVE_SNAP = 0.012;
+
+const LazySparkSplatLayer = lazy(async () => {
+  const module = await import("../scene/SparkSplatLayer.js");
+  return { default: module.SparkSplatLayer };
+});
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined"
@@ -61,9 +65,9 @@ export function CockpitSplatLayer({ urls, transform, active }: CockpitSplatLayer
 
   if (urls.length === 0) return null;
   return (
-    <>
+    <Suspense fallback={null}>
       {urls.map((url, index) => (
-        <SparkSplatLayer
+        <LazySparkSplatLayer
           key={url}
           url={url}
           visible={opacity > 0.002}
@@ -74,6 +78,6 @@ export function CockpitSplatLayer({ urls, transform, active }: CockpitSplatLayer
           includeRendererHost={index === 0}
         />
       ))}
-    </>
+    </Suspense>
   );
 }

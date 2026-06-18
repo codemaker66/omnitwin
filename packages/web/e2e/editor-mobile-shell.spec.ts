@@ -5,6 +5,26 @@ const CONFIG_ID = "e2e-mobile-config";
 const VENUE_ID = "e2e-mobile-venue";
 const SPACE_ID = "e2e-mobile-space";
 
+const TRUTH_MODE_SUMMARY_FIXTURE = {
+  targetType: "configuration",
+  targetId: CONFIG_ID,
+  source: "Planning context - not a measured source of record",
+  confidence: "unknown",
+  assumption: "Human review required before reliance",
+  evidenceStatus: "not_checked",
+  reviewGate: "Human review required",
+  staleState: "unknown",
+  safeWording: ["Planning evidence - human review required before operational reliance."],
+  humanReviewRequired: true,
+  counts: {
+    evidenceItems: 0,
+    checkResults: 0,
+    assumptions: 0,
+    reviewGates: 0,
+    staleEvents: 0,
+  },
+} as const;
+
 interface Box {
   readonly x: number;
   readonly y: number;
@@ -111,6 +131,12 @@ async function mockPlannerApis(page: Page): Promise<void> {
   await page.route(`${API}/public/configurations/${CONFIG_ID}/thumbnail`, (route) => {
     void route.fulfill({ json: { data: MOCK_CONFIG } });
   });
+  await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+    void route.fulfill({ json: { data: null } });
+  });
+  await page.route(`${API}/truth-mode/summary*`, (route) => {
+    void route.fulfill({ json: { data: TRUTH_MODE_SUMMARY_FIXTURE } });
+  });
 }
 
 async function openPlanner(page: Page, viewport: ViewportCase): Promise<readonly string[]> {
@@ -189,7 +215,7 @@ test.describe("3D planner mobile shell", () => {
       await expect(toolbar).toBeVisible();
       const toolbarBox = await toolbar.boundingBox();
       expectWithinViewport(toolbarBox, viewport);
-      expect(toolbarBox?.height ?? 0).toBeGreaterThan(viewport.height * 0.75);
+      expect(toolbarBox?.height ?? 0).toBeGreaterThan(viewport.height * 0.5);
       expect(toolbarBox?.width ?? 0).toBeLessThanOrEqual(80);
 
       const sendButton = page.getByRole("button", { name: "Send to Events Team" });

@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Configuration } from "../api/configurations.js";
 import type { Space, Venue } from "../api/spaces.js";
 
@@ -142,6 +142,10 @@ beforeEach(() => {
   );
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 describe("EditorPage venue-scoped bootstrap", () => {
   it("creates the first layout in the explicitly requested venue", async () => {
     spacesMock.listVenues.mockResolvedValue([tradesHall, cityRooms]);
@@ -157,6 +161,30 @@ describe("EditorPage venue-scoped bootstrap", () => {
       expect(configMock.createPublicConfig).toHaveBeenCalledWith(ballroom.id);
     });
     expect(configMock.createPublicConfig).not.toHaveBeenCalledWith(grandHall.id);
+    await screen.findByTestId("created-route");
+  });
+
+  it("reuses a recent anonymous public config for the requested space", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall, cityRooms]);
+    spacesMock.listSpaces.mockImplementation((venueId: string) =>
+      Promise.resolve(venueId === cityRooms.id ? [ballroom] : [grandHall]),
+    );
+    localStorage.setItem("omnitwin_my_configs", JSON.stringify([
+      { configId: "cfg-grand-old", createdAt: "2026-06-17T08:00:00.000Z" },
+      { configId: "cfg-city-existing", createdAt: "2026-06-17T09:00:00.000Z" },
+    ]));
+    configMock.getPublicConfig.mockImplementation((configId: string) =>
+      Promise.resolve(configId === "cfg-city-existing"
+        ? publicConfigFor(ballroom, configId)
+        : publicConfigFor(grandHall, configId)),
+    );
+
+    renderEditor("/v/city-rooms/plan?space=ballroom");
+
+    await waitFor(() => {
+      expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-city-existing");
+    });
+    expect(configMock.createPublicConfig).not.toHaveBeenCalled();
     await screen.findByTestId("created-route");
   });
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
 import { BufferGeometry, Float32BufferAttribute, LineDashedMaterial } from "three";
 import { Html } from "@react-three/drei";
 import { usePlacementStore } from "../stores/placement-store.js";
@@ -8,6 +9,13 @@ import {
   circulationOverlaySegments,
   type CirculationOverlaySegment,
 } from "../lib/circulation-scene.js";
+
+export const MAX_RENDERED_CIRCULATION_SEGMENTS = 8;
+export const CIRCULATION_OVERLAY_MIN_VIEWPORT_WIDTH = 1100;
+
+export function shouldRenderCirculationOverlay(viewportWidth: number): boolean {
+  return viewportWidth >= CIRCULATION_OVERLAY_MIN_VIEWPORT_WIDTH;
+}
 
 // ---------------------------------------------------------------------------
 // CirculationOverlay — draws the table aisles in the 3D scene.
@@ -80,7 +88,13 @@ function EndDot({
 }
 
 /** One aisle annotation. Primary (tightest) is prominent; secondaries are subtle. */
-function CirculationSegment({ segment }: { readonly segment: CirculationOverlaySegment }): React.ReactElement {
+function CirculationSegment({
+  segment,
+  showLabel,
+}: {
+  readonly segment: CirculationOverlaySegment;
+  readonly showLabel: boolean;
+}): React.ReactElement {
   const { primary } = segment;
 
   const geometry = useMemo(() => lineGeometry(segment), [segment]);
@@ -118,52 +132,62 @@ function CirculationSegment({ segment }: { readonly segment: CirculationOverlayS
       <lineSegments geometry={geometry} material={material} renderOrder={3} />
       <EndDot position={segment.from} color={segment.color} radius={dotRadius} />
       <EndDot position={segment.to} color={segment.color} radius={dotRadius} />
-      <group position={[segment.mid[0], segment.mid[1] + (primary ? 0.45 : 0.32), segment.mid[2]]}>
-        <Html center>
-          <div
-            style={{
-              ...basePill,
-              fontSize: primary ? 11 : 10,
-              padding: primary ? "3px 9px" : "2px 7px",
-              opacity: primary ? 1 : 0.82,
-            }}
-            title={bandLabel}
-            aria-label={ariaLabel}
-          >
-            <span
-              aria-hidden="true"
+      {showLabel && (
+        <group position={[segment.mid[0], segment.mid[1] + (primary ? 0.45 : 0.32), segment.mid[2]]}>
+          <Html center>
+            <div
               style={{
-                width: dotSize,
-                height: dotSize,
-                borderRadius: "50%",
-                background: segment.color,
-                flexShrink: 0,
+                ...basePill,
+                fontSize: primary ? 11 : 10,
+                padding: primary ? "3px 9px" : "2px 7px",
+                opacity: primary ? 1 : 0.82,
               }}
-            />
-            {gapText}
-          </div>
-        </Html>
-      </group>
+              title={bandLabel}
+              aria-label={ariaLabel}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: dotSize,
+                  height: dotSize,
+                  borderRadius: "50%",
+                  background: segment.color,
+                  flexShrink: 0,
+                }}
+              />
+              {gapText}
+            </div>
+          </Html>
+        </group>
+      )}
     </group>
   );
 }
 
 export function CirculationOverlay(): React.ReactElement | null {
+  const viewportWidth = useThree((state) => state.size.width);
   const placedItems = usePlacementStore((s) => s.placedItems);
+  const renderOverlay = shouldRenderCirculationOverlay(viewportWidth);
 
   const segments = useMemo(
-    () => circulationOverlaySegments(placedItemsCirculation(placedItems)),
-    [placedItems],
+    () => (
+      renderOverlay
+        ? circulationOverlaySegments(placedItemsCirculation(placedItems))
+          .slice(0, MAX_RENDERED_CIRCULATION_SEGMENTS)
+        : []
+    ),
+    [placedItems, renderOverlay],
   );
 
-  if (segments.length === 0) return null;
+  if (!renderOverlay || segments.length === 0) return null;
 
   return (
     <group name="circulation-overlay" renderOrder={3}>
-      {segments.map((seg) => (
+      {segments.map((seg, index) => (
         <CirculationSegment
           key={`${String(seg.from[0])},${String(seg.from[2])}-${String(seg.to[0])},${String(seg.to[2])}`}
           segment={seg}
+          showLabel={index === 0}
         />
       ))}
     </group>

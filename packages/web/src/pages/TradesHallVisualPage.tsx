@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useSearchParams } from "react-router-dom";
@@ -21,24 +31,22 @@ import {
   Route,
   Share2,
   ShieldQuestion,
-  SlidersHorizontal,
   Sparkles,
   Users,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { GrandHallRoom } from "../components/GrandHallRoom.js";
+import { AdaptiveResolution, type AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
+import { RoomMesh } from "../components/editor/RoomMesh.js";
 import {
   computeCameraTarget,
   computeDefaultCameraPosition,
   computeDistanceLimits,
 } from "../components/CameraRig.js";
-import {
-  SparkSplatLayer,
-  type SparkSplatErrorEvent,
-  type SparkSplatLoadEvent,
-} from "../components/scene/SparkSplatLayer.js";
+import type { SparkSplatErrorEvent, SparkSplatLoadEvent } from "../components/scene/SparkSplatLayer.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
+import { roomGeometries } from "../data/room-geometries.js";
 import {
   TRADES_HALL_GUEST_FLOW_REPLAY_INPUT,
   TRADES_HALL_VISUAL_DEMO_STATE,
@@ -70,6 +78,11 @@ import { getTruthModeSummary } from "../api/truth-mode.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
 import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
+
+const LazySparkSplatLayer = lazy(async () => {
+  const module = await import("../components/scene/SparkSplatLayer.js");
+  return { default: module.SparkSplatLayer };
+});
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
 type LoadStatus = "empty" | "invalid" | "loading" | "loaded" | "error";
@@ -163,6 +176,85 @@ const REPLAY_OVERLAY_BOUNDS = { width: 22, height: 12 } as const;
 const RUNTIME_SPLAT_FIT_MAX_DIMENSION = 42;
 const RUNTIME_SPLAT_MIN_SCALE = 0.2;
 const RUNTIME_SPLAT_MAX_SCALE = 4;
+export const LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH = 1099;
+export const TABLET_VISUAL_DPR = 0.75;
+export const DESKTOP_VISUAL_INTERACTION_MIN_DPR = 0.5;
+export const VISUAL_CANVAS_PERFORMANCE = {
+  min: 0.25,
+  debounce: 180,
+} as const;
+const GRAND_HALL_ROOM_GEOMETRY = roomGeometries["Grand Hall"];
+
+export interface VisualCanvasGlOptions {
+  readonly antialias: boolean;
+  readonly powerPreference: "high-performance";
+}
+
+interface VisualMouseButtons {
+  readonly LEFT: number;
+  readonly MIDDLE: number;
+  readonly RIGHT: number;
+}
+
+const LEAN_VISUAL_MOUSE_BUTTONS: VisualMouseButtons = {
+  LEFT: -1,
+  MIDDLE: -1,
+  RIGHT: -1,
+};
+
+export function visualCanvasDprForViewportWidth(viewportWidth: number): [number, number] {
+  if (viewportWidth > 480 && viewportWidth <= LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH) {
+    return [TABLET_VISUAL_DPR, TABLET_VISUAL_DPR];
+  }
+  return viewportWidth <= LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH ? [1, 1] : [1, 2];
+}
+
+export function visualCanvasGlForViewportWidth(viewportWidth: number): VisualCanvasGlOptions {
+  return {
+    antialias: viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH,
+    powerPreference: "high-performance",
+  };
+}
+
+export function visualAdaptiveResolutionForViewportWidth(viewportWidth: number): AdaptiveResolutionOptions {
+  const [minDpr, maxDpr] = visualCanvasDprForViewportWidth(viewportWidth);
+  return {
+    enabled: viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH,
+    minDpr: viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH
+      ? DESKTOP_VISUAL_INTERACTION_MIN_DPR
+      : minDpr,
+    maxDpr,
+  };
+}
+
+export function shouldUseSmoothVisualControls(viewportWidth: number): boolean {
+  return viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH;
+}
+
+export function visualMouseButtonsForViewportWidth(viewportWidth: number): VisualMouseButtons | undefined {
+  return shouldUseSmoothVisualControls(viewportWidth) ? undefined : LEAN_VISUAL_MOUSE_BUTTONS;
+}
+
+export function shouldUseLeanVisualMesh(viewportWidth: number): boolean {
+  return viewportWidth <= LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH;
+}
+
+function readVisualViewportWidth(): number {
+  return typeof window === "undefined" ? 1440 : window.innerWidth;
+}
+
+function useVisualViewportWidth(): number {
+  const [viewportWidth, setViewportWidth] = useState(readVisualViewportWidth);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = (): void => { setViewportWidth(window.innerWidth); };
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); };
+  }, []);
+
+  return viewportWidth;
+}
 
 function statusTone(status: LoadStatus): string {
   switch (status) {
@@ -757,13 +849,13 @@ function ReplayStatusStrip({
 }
 
 function ViewTool({ activeMode }: { readonly activeMode: VisualCommandMode }): ReactElement {
+  const activeModeLabel = selectedModeLabel(activeMode);
   return (
-    <div className="visual-view-tool" aria-label="View shortcuts">
-      <button type="button" className="is-active" aria-label="3D view">3D</button>
-      <button type="button" aria-label="2D view">2D</button>
-      <button type="button" aria-label={`Current mode ${selectedModeLabel(activeMode)}`}>
-        <SlidersHorizontal size={17} aria-hidden="true" />
-      </button>
+    <div className="visual-view-tool" aria-label="Visual view status">
+      <span className="visual-view-tool__item is-active" aria-label="Current visual view: 3D">3D</span>
+      <span className="visual-view-tool__item visual-view-tool__item--mode" aria-label={`Active command mode: ${activeModeLabel}`}>
+        {activeModeLabel}
+      </span>
     </div>
   );
 }
@@ -798,6 +890,8 @@ function VisualCameraControls({
   minDistance,
   maxDistance,
   runtimeCameraView,
+  smoothControls,
+  mouseButtons,
 }: {
   readonly position: readonly [number, number, number];
   readonly target: readonly [number, number, number];
@@ -805,6 +899,8 @@ function VisualCameraControls({
   readonly minDistance: number;
   readonly maxDistance: number;
   readonly runtimeCameraView: RuntimeAssetCameraView | null;
+  readonly smoothControls: boolean;
+  readonly mouseButtons: VisualMouseButtons | undefined;
 }): ReactElement {
   const { camera, invalidate } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
@@ -919,14 +1015,16 @@ function VisualCameraControls({
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      enableDamping
-      dampingFactor={runtimeCameraView?.dampingFactor ?? 0.08}
+      regress={smoothControls}
+      enableDamping={smoothControls}
+      dampingFactor={smoothControls ? runtimeCameraView?.dampingFactor ?? 0.08 : 0}
       target={target}
       minDistance={minDistance}
       maxDistance={maxDistance}
       panSpeed={runtimeCameraView?.panSpeed}
       rotateSpeed={runtimeCameraView?.rotateSpeed}
       zoomSpeed={runtimeCameraView?.zoomSpeed}
+      mouseButtons={mouseButtons}
       minPolarAngle={runtimeCameraView?.minPolarAngle ?? 0}
       maxPolarAngle={runtimeCameraView?.maxPolarAngle ?? Math.PI * 0.49}
       onStart={handleControlsStart}
@@ -1254,6 +1352,7 @@ function VisualInsightCards({
 
 export function TradesHallVisualPage(): ReactElement {
   const [searchParams] = useSearchParams();
+  const viewportWidth = useVisualViewportWidth();
   const eventId = searchParams.get("eventId");
   const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
   const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");
@@ -1351,6 +1450,15 @@ export function TradesHallVisualPage(): ReactElement {
   const visualRuntimeCameraView = hasRegisteredRuntimeAsset ? runtimeAssetCameraView : null;
   const visualCameraFov = visualRuntimeCameraView?.fov ?? 42;
   const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
+  const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
+  const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
+  const visualAdaptiveResolution = visualAdaptiveResolutionForViewportWidth(viewportWidth);
+  const smoothVisualControls = hasRegisteredRuntimeAsset && shouldUseSmoothVisualControls(viewportWidth);
+  const visualMouseButtons = hasRegisteredRuntimeAsset
+    ? visualMouseButtonsForViewportWidth(viewportWidth)
+    : LEAN_VISUAL_MOUSE_BUTTONS;
+  const visualFallbackRoomGeometry = roomGeometries[runtimeTarget.roomLabel] ?? GRAND_HALL_ROOM_GEOMETRY;
+  const visualFallbackRoomVariant = runtimeTarget.room === "grand-hall" ? "grand-hall" : "generic";
 
   useEffect(() => {
     let cancelled = false;
@@ -1557,9 +1665,11 @@ export function TradesHallVisualPage(): ReactElement {
       <section className="visual-stage" aria-label="Trades Hall visual command canvas">
         <div className="visual-canvas-frame">
           <Canvas
-            dpr={[1, 2]}
+            frameloop="demand"
+            dpr={visualCanvasDpr}
+            performance={VISUAL_CANVAS_PERFORMANCE}
             camera={{ fov: visualCameraFov, near: 0.1, far: 180, position: visualCameraPosition }}
-            gl={{ antialias: true, powerPreference: "high-performance" }}
+            gl={visualCanvasGl}
           >
             <VisualCameraControls
               key={visualCameraKey}
@@ -1569,25 +1679,47 @@ export function TradesHallVisualPage(): ReactElement {
               minDistance={visualCameraDistanceLimits.minDistance}
               maxDistance={visualCameraDistanceLimits.maxDistance}
               runtimeCameraView={visualRuntimeCameraView}
+              smoothControls={smoothVisualControls}
+              mouseButtons={visualMouseButtons}
             />
             <color attach="background" args={["#111415"]} />
             <ambientLight intensity={0.75} />
             <directionalLight position={[6, 9, 6]} intensity={0.65} />
-            {meshVisible && <GrandHallRoom />}
-            {activeSplatUrls.map((splatUrl, index) => (
-              <SparkSplatLayer
-                key={splatUrl}
-                url={splatUrl}
-                visible={splatVisible}
-                opacity={opacity}
-                position={runtimeAssetViewTransform.position}
-                rotation={runtimeAssetViewTransform.rotation}
-                scale={runtimeAssetViewTransform.scale}
-                includeRendererHost={index === 0}
-                onLoad={handleLoad}
-                onError={handleError}
+            {meshVisible && (
+              visualFallbackRoomGeometry !== undefined ? (
+                <RoomMesh
+                  geometry={visualFallbackRoomGeometry}
+                  variant={visualFallbackRoomVariant}
+                  detail="lean"
+                />
+              ) : (
+                <GrandHallRoom />
+              )
+            )}
+            {activeSplatUrls.length > 0 ? (
+              <Suspense fallback={null}>
+                {activeSplatUrls.map((splatUrl, index) => (
+                  <LazySparkSplatLayer
+                    key={splatUrl}
+                    url={splatUrl}
+                    visible={splatVisible}
+                    opacity={opacity}
+                    position={runtimeAssetViewTransform.position}
+                    rotation={runtimeAssetViewTransform.rotation}
+                    scale={runtimeAssetViewTransform.scale}
+                    includeRendererHost={index === 0}
+                    onLoad={handleLoad}
+                    onError={handleError}
+                  />
+                ))}
+              </Suspense>
+            ) : null}
+            {visualAdaptiveResolution.enabled === true && (
+              <AdaptiveResolution
+                minDpr={visualAdaptiveResolution.minDpr}
+                maxDpr={visualAdaptiveResolution.maxDpr}
               />
-            ))}
+            )}
           </Canvas>
         </div>
         <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />

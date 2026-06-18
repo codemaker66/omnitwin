@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
-import { AlertCircle, Check, CircleDashed, Clock, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
-import type { EventDayIssueSeverity, EventDayOpsBoard, OpsTask, OpsTaskStatus } from "@omnitwin/types";
+import { AlertCircle, Bell, Check, CircleDashed, Clock, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
+import type { ChangeFeedItem, EventDayIssueSeverity, EventDayOpsBoard, OpsTask, OpsTaskStatus } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { createEventDayIssue, getEventDayOpsBoard, updateOpsTaskStatus } from "../api/event-day-ops.js";
+import { acknowledgeEventPlanChange, getEventChangeFeed } from "../api/notifications.js";
 import {
   ackEventDayOp,
   enqueueEventDayIssueCreate,
@@ -45,6 +46,17 @@ function formatTime(iso: string | null): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "--:--";
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatChangeTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Time unknown";
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function isRetriableError(err: unknown): boolean {
@@ -121,6 +133,9 @@ export function EventDayOpsPage(): ReactElement {
   const [syncing, setSyncing] = useState(false);
   const [issueDraft, setIssueDraft] = useState<IssueDraft>(EMPTY_ISSUE_DRAFT);
   const [notice, setNotice] = useState<string | null>(null);
+  const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
+  const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
+  const [ackBusyId, setAckBusyId] = useState<string | null>(null);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -134,8 +149,12 @@ export function EventDayOpsPage(): ReactElement {
       return;
     }
     setState({ kind: "loading" });
-    getEventDayOpsBoard(eventId)
-      .then((board) => { setState({ kind: "ready", board }); })
+    void (async () => {
+      const board = await getEventDayOpsBoard(eventId);
+      const changes = await getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []);
+      setState({ kind: "ready", board });
+      setChangeFeed(changes);
+    })()
       .catch(() => {
         setState({
           kind: "error",
@@ -165,8 +184,12 @@ export function EventDayOpsPage(): ReactElement {
       }
       refreshPendingCount();
       if (eventId !== undefined) {
-        const board = await getEventDayOpsBoard(eventId);
+        const [board, changes] = await Promise.all([
+          getEventDayOpsBoard(eventId),
+          getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+        ]);
         setState({ kind: "ready", board });
+        setChangeFeed(changes);
       }
       setSyncing(false);
     })().catch(() => {
@@ -192,6 +215,12 @@ export function EventDayOpsPage(): ReactElement {
   const taskList = useMemo(() => [...setupTasks, ...roomFlipTasks], [setupTasks, roomFlipTasks]);
   const openIssues = useMemo(() => board?.issues.filter((issue) => issue.status !== "closed") ?? [], [board]);
   const syncLabel = pendingCount === 0 ? "Synced" : `${String(pendingCount)} pending sync`;
+  const requiredAcknowledgements = useMemo(
+    () => changeFeed
+      .filter((change) => change.requiresHallkeeperAcknowledgement)
+      .filter((change) => !acknowledgedChanges.has(change.id)),
+    [acknowledgedChanges, changeFeed],
+  );
 
   const setTaskStatus = useCallback((task: OpsTask, status: OpsTaskStatus) => {
     if (status === task.status) return;
@@ -247,6 +276,18 @@ export function EventDayOpsPage(): ReactElement {
       });
   }, [eventId, issueDraft, refreshPendingCount]);
 
+  const acknowledgeChange = useCallback((change: ChangeFeedItem) => {
+    if (eventId === undefined || ackBusyId !== null) return;
+    setAckBusyId(change.id);
+    void acknowledgeEventPlanChange(eventId, { changeId: change.id })
+      .then(() => {
+        setAcknowledgedChanges((prev) => new Set([...prev, change.id]));
+        setNotice("Change acknowledged.");
+      })
+      .catch(() => { setNotice("Change acknowledgement could not be saved."); })
+      .finally(() => { setAckBusyId(null); });
+  }, [ackBusyId, eventId]);
+
   if (state.kind === "loading") {
     return (
       <main className="event-day-page event-day-centered">
@@ -297,6 +338,38 @@ export function EventDayOpsPage(): ReactElement {
           <p>Compile an internal ops handoff from an approved snapshot before using the live board.</p>
         </section>
       )}
+
+      <Section
+        title="Required acknowledgements"
+        subtitle={`${String(requiredAcknowledgements.length)} live change(s) need hallkeeper acknowledgement.`}
+        icon={<Bell aria-hidden="true" />}
+      >
+        {requiredAcknowledgements.length === 0 ? (
+          <p className="event-day-muted">No unacknowledged planner or client changes are open for this event.</p>
+        ) : (
+          <div className="event-day-change-feed">
+            {requiredAcknowledgements.map((change) => (
+              <article key={change.id} data-risk={change.riskLevel}>
+                <div>
+                  <span>{change.riskLevel}</span>
+                  <h3>{change.title}</h3>
+                  <p>{change.summary}</p>
+                  <small>{formatChangeTime(change.createdAt)} · {change.affectedSurfaces.join(", ")}</small>
+                </div>
+                <button
+                  type="button"
+                  className="event-day-button secondary"
+                  disabled={ackBusyId === change.id}
+                  onClick={() => { acknowledgeChange(change); }}
+                >
+                  <Check aria-hidden="true" />
+                  Acknowledge change
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </Section>
 
       <Section
         title="Phase timeline"

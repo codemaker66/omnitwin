@@ -1,9 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ClerkProvider } from "@clerk/react";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router.js";
-import { ClerkAuthBridge } from "./components/auth/ClerkAuthBridge.js";
 import { JackieLarkinHeart } from "./components/JackieLarkinHeart.js";
 import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
@@ -45,32 +43,20 @@ if (E2E_ENABLED) {
   })));
 }
 
-// ---------------------------------------------------------------------------
-// Clerk publishable key — fail fast if missing in production builds
-// ---------------------------------------------------------------------------
-
-const CLERK_KEY = import.meta.env["VITE_CLERK_PUBLISHABLE_KEY"];
-
-if ((CLERK_KEY === undefined || CLERK_KEY === "") && import.meta.env.PROD) {
-  throw new Error(
-    "VITE_CLERK_PUBLISHABLE_KEY is required in production builds. " +
-    "Set it in your .env or deployment environment.",
-  );
-}
-
 await initBrowserSentry();
 
 // ---------------------------------------------------------------------------
-// AppRoot — Clerk provider wraps the entire app
+// AppRoot — public routes stay auth-provider-free. Routes that need Clerk are
+// wrapped lazily in router.tsx so client-facing planning surfaces do not pay
+// the Clerk script/long-task cost.
 // ---------------------------------------------------------------------------
 
 function AppRoot(): React.ReactElement {
   return (
-    <ClerkProvider publishableKey={CLERK_KEY ?? ""} afterSignOutUrl="/">
-      {E2E_ENABLED ? null : <ClerkAuthBridge />}
+    <>
       <RouterProvider router={router} />
       <JackieLarkinHeart />
-    </ClerkProvider>
+    </>
   );
 }
 

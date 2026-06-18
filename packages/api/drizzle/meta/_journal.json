@@ -246,6 +246,48 @@
       "when": 1781172000000,
       "tag": "0036_runtime_asset_sog_lcc2_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781175600000,
+      "tag": "0037_onboarding_entitlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781179200000,
+      "tag": "0038_supplier_coordination",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781182800000,
+      "tag": "0039_runtime_transform_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781186400000,
+      "tag": "0040_runtime_qa_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781190000000,
+      "tag": "0041_capture_control_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1781193600000,
+      "tag": "0042_event_plan_lifecycle",
+      "breakpoints": true
     }
   ]
 }

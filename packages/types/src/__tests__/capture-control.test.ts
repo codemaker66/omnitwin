@@ -1,21 +1,31 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   CAPTURE_CONTROL_ALIGNMENT_METHODS,
   CAPTURE_CONTROL_QA_STATUSES,
   CAPTURE_CONTROL_REFERENCE_TYPES,
+  CAPTURE_CONTROL_REGISTRATION_REPORT_INSPECTION_STATUSES,
   CAPTURE_CONTROL_SOURCE_CLASSES,
   CAPTURE_CONTROL_STALENESS_TRIGGERS,
   CAPTURE_POSE_AUTHORITY_LEVELS,
   CaptureControlAlignmentMethodSchema,
   CaptureControlQaStatusSchema,
+  CaptureControlRegistrationReportInspectionSchema,
   CaptureControlReferenceTypeSchema,
+  CaptureControlRegistrationReportSchema,
   CaptureControlSourceClassSchema,
+  CaptureControlSourceRegistrationSchema,
   CaptureControlSourceRecordSchema,
+  CaptureControlSourceRecordQuerySchema,
   CaptureControlStalenessTriggerSchema,
   CapturePoseAuthorityLevelSchema,
+  RegisterCaptureControlSourceRecordInputSchema,
   captureControlAlignmentMethodsForSource,
   captureControlAuthorityLevelsForSource,
   type CaptureControlSourceRecord,
+  type CaptureControlRegistrationReportInspection,
+  type CaptureControlRegistrationReport,
 } from "../capture-control.js";
 import {
   TRUTH_CONFIDENCE_TIERS,
@@ -48,6 +58,121 @@ function validRecord(
     staleWhen: ["capture_session_superseded"],
     reviewerRole: null,
     notes: null,
+    ...overrides,
+  };
+}
+
+function loadDocsArtifact(relativePath: string): unknown {
+  const fixturePath = fileURLToPath(
+    new URL(
+      relativePath,
+      import.meta.url,
+    ),
+  );
+  return JSON.parse(readFileSync(fixturePath, "utf-8")) as unknown;
+}
+
+function loadReceptionRoomVisualAlignmentPayload(): unknown {
+  return loadDocsArtifact(
+    "../../../../docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json",
+  );
+}
+
+function loadReceptionRoomCaptureControlDryRunReport(): unknown {
+  return loadDocsArtifact(
+    "../../../../docs/operations/reception-room-capture-control-dry-run-report-2026-06-16.json",
+  );
+}
+
+function loadReceptionRoomCaptureControlInspection(): unknown {
+  return loadDocsArtifact(
+    "../../../../docs/operations/reception-room-capture-control-inspection-2026-06-16.json",
+  );
+}
+
+function validRegistrationReport(
+  overrides: Partial<CaptureControlRegistrationReport> = {},
+): CaptureControlRegistrationReport {
+  return {
+    schemaVersion: "venviewer.capture-control-registration-report.v0",
+    generatedAt: "2026-06-16T12:00:00.000Z",
+    mode: "registered",
+    apiUrl: "http://localhost:3001",
+    payloadFile: "docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json",
+    payload: {
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      sourceId: "reception-room-approximate-view-transform-v0",
+      sourceClass: "artist_blender_alignment_refs",
+      poseAuthorityLevel: "visual_alignment_only",
+      qaStatus: "requires_human_review",
+      runtimePackageId: "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+      transformArtifactId: null,
+      staleWhen: ["runtime_package_changed", "scene_authority_map_changed"],
+    },
+    preflight: {
+      payloadRuntimePackageId: "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+      latestRuntimePackageId: "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+      latestRuntimePackageRuntimeStatus: "internal_ready",
+      latestRuntimePackageEvidenceStatus: "machine_checked",
+      runtimePackageMatchesLatest: true,
+      runtimePackageDriftAllowed: false,
+    },
+    registration: {
+      captureControlSourceId: "10000000-0000-4000-8000-000000000009",
+      sourceId: "reception-room-approximate-view-transform-v0",
+      qaStatus: "requires_human_review",
+      registeredBy: "10000000-0000-4000-8000-000000000007",
+      createdAt: "2026-06-16T12:00:00.000Z",
+      updatedAt: "2026-06-16T12:00:00.000Z",
+    },
+    roomStatus: {
+      latestCaptureControlSourceRecordId: "10000000-0000-4000-8000-000000000009",
+      latestCaptureControlSourceId: "reception-room-approximate-view-transform-v0",
+      latestCaptureControlSourceClass: "artist_blender_alignment_refs",
+      latestCaptureControlPoseAuthorityLevel: "visual_alignment_only",
+      latestCaptureControlQaStatus: "requires_human_review",
+      captureControlStatus: "source_registered",
+      captureControlFreshnessStatus: "current_for_runtime_package",
+      activeStalenessTriggers: [],
+      captureControlSafeCopy: "capture-control source registered; signed transform still required",
+      captureControlAuthoritySafeCopy: "visual-only alignment source recorded; not measurement control",
+    },
+    guardrails: {
+      runtimePackageDriftAllowed: false,
+      staleReadbackAllowed: false,
+      signedTransformCreated: false,
+      publicExposureChanged: false,
+    },
+    ...overrides,
+  };
+}
+
+function validRegistrationReportInspection(
+  overrides: Partial<CaptureControlRegistrationReportInspection> = {},
+): CaptureControlRegistrationReportInspection {
+  return {
+    schemaVersion: "venviewer.capture-control-registration-report-inspection.v0",
+    generatedAt: "2026-06-16T12:05:00.000Z",
+    inspectedReportFile: "docs/operations/reception-room-capture-control-dry-run-report.json",
+    inspectedReportGeneratedAt: "2026-06-16T12:00:00.000Z",
+    status: "ready_for_live_registration",
+    liveRegistrationReady: true,
+    mode: "dry_run",
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    sourceId: "reception-room-approximate-view-transform-v0",
+    reportRuntimePackageId: "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    reportLatestRuntimePackageId: "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    reportRuntimePackageMatchesLatest: true,
+    reportRuntimePackageDriftAllowed: false,
+    reportStaleReadbackAllowed: false,
+    blockers: [],
+    messages: [
+      "Report schema is valid for reception-room-approximate-view-transform-v0 in trades-hall/reception-room.",
+      "Report records no signed transform creation and no public exposure change.",
+      "Dry-run report is current for live capture-control registration preflight.",
+    ],
     ...overrides,
   };
 }
@@ -240,5 +365,431 @@ describe("Capture Control Network vocabulary", () => {
     );
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a pre-transform Reception Room manual-landmark source record", () => {
+    const source = validRecord({
+      sourceId: "reception-room-manual-landmarks-v0",
+      sourceClass: "manual_landmarks",
+      poseAuthorityLevel: "manual_landmark_control",
+      alignmentMethods: ["landmark_solve"],
+      qaStatus: "requires_human_review",
+      sourceRefs: [
+        {
+          refType: "landmark_set",
+          ref: "docs/operations/reception-room-landmarks-v0.json",
+          role: "source_landmarks",
+        },
+      ],
+      staleWhen: ["landmark_set_changed", "runtime_package_changed"],
+      reviewerRole: "runtime_reviewer",
+      notes: "Candidate landmark set; not yet a signed transform.",
+    });
+
+    const parsed = RegisterCaptureControlSourceRecordInputSchema.parse({
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      runtimePackageId: null,
+      transformArtifactId: null,
+      source,
+      reviewNote: "Manual landmarks are registered as evidence intake only.",
+    });
+
+    expect(parsed.source.poseAuthorityLevel).toBe("manual_landmark_control");
+  });
+
+  it("validates the Reception Room visual-alignment-only registration payload", () => {
+    const parsed = RegisterCaptureControlSourceRecordInputSchema.parse(
+      loadReceptionRoomVisualAlignmentPayload(),
+    );
+
+    expect(parsed.venueSlug).toBe("trades-hall");
+    expect(parsed.roomSlug).toBe("reception-room");
+    expect(parsed.runtimePackageId).toBe("71687e9e-c23d-4f51-b3dd-a6a82c97978d");
+    expect(parsed.transformArtifactId).toBeNull();
+    expect(parsed.source.sourceId).toBe("reception-room-approximate-view-transform-v0");
+    expect(parsed.source.sourceClass).toBe("artist_blender_alignment_refs");
+    expect(parsed.source.poseAuthorityLevel).toBe("visual_alignment_only");
+    expect(parsed.source.alignmentMethods).toEqual(["visual_alignment"]);
+    expect(parsed.source.qaStatus).toBe("requires_human_review");
+    expect(parsed.source.transformArtifactRefs).toEqual([]);
+    expect(parsed.source.notes).toContain("not a signed room-local transform");
+  });
+
+  it("validates the Reception Room capture-control dry-run report and inspection artifacts", () => {
+    const report = CaptureControlRegistrationReportSchema.parse(
+      loadReceptionRoomCaptureControlDryRunReport(),
+    );
+    const inspection = CaptureControlRegistrationReportInspectionSchema.parse(
+      loadReceptionRoomCaptureControlInspection(),
+    );
+
+    expect(report.mode).toBe("dry_run");
+    expect(report.payloadFile).toContain(
+      "reception-room-visual-alignment-capture-control-source-2026-06-16.json",
+    );
+    expect(report.payload.sourceId).toBe("reception-room-approximate-view-transform-v0");
+    expect(report.payload.poseAuthorityLevel).toBe("visual_alignment_only");
+    expect(report.preflight.runtimePackageMatchesLatest).toBe(true);
+    expect(report.preflight.runtimePackageDriftAllowed).toBe(false);
+    expect(report.registration).toBeNull();
+    expect(report.roomStatus).toBeNull();
+    expect(report.guardrails.signedTransformCreated).toBe(false);
+    expect(report.guardrails.publicExposureChanged).toBe(false);
+
+    expect(inspection.inspectedReportFile).toContain(
+      "reception-room-capture-control-dry-run-report-2026-06-16.json",
+    );
+    expect(inspection.status).toBe("ready_for_live_registration");
+    expect(inspection.liveRegistrationReady).toBe(true);
+    expect(inspection.mode).toBe("dry_run");
+    expect(inspection.reportRuntimePackageId).toBe(report.payload.runtimePackageId);
+    expect(inspection.reportLatestRuntimePackageId).toBe(
+      report.preflight.latestRuntimePackageId,
+    );
+    expect(inspection.reportRuntimePackageDriftAllowed).toBe(false);
+    expect(inspection.reportStaleReadbackAllowed).toBe(false);
+    expect(inspection.blockers).toEqual([]);
+  });
+
+  it("requires transform-linked control sources to cite the transform artifact", () => {
+    const result = RegisterCaptureControlSourceRecordInputSchema.safeParse({
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      runtimePackageId: "10000000-0000-4000-8000-000000000004",
+      transformArtifactId: "reception-room-landmark-solve-v0",
+      source: validRecord({
+        sourceId: "reception-room-manual-landmarks-v0",
+        sourceClass: "manual_landmarks",
+        poseAuthorityLevel: "manual_landmark_control",
+        alignmentMethods: ["landmark_solve"],
+        sourceRefs: [
+          {
+            refType: "landmark_set",
+            ref: "docs/operations/reception-room-landmarks-v0.json",
+            role: "source_landmarks",
+          },
+        ],
+      }),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("parses a persisted transform-linked capture control source", () => {
+    const source = validRecord({
+      sourceId: "reception-room-control-network-v0",
+      sourceClass: "manual_landmarks",
+      poseAuthorityLevel: "manual_landmark_control",
+      alignmentMethods: ["landmark_solve"],
+      qaStatus: "human_reviewed",
+      sourceRefs: [
+        {
+          refType: "landmark_set",
+          ref: "docs/operations/reception-room-landmarks-v0.json",
+          role: "source_landmarks",
+        },
+      ],
+      transformArtifactRefs: [
+        {
+          refType: "transform_artifact",
+          ref: "reception-room-landmark-solve-v0",
+          role: "signed_transform",
+        },
+      ],
+      reviewerRole: "runtime_reviewer",
+    });
+
+    const parsed = CaptureControlSourceRegistrationSchema.parse({
+      id: "row-1",
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      runtimePackageId: "10000000-0000-4000-8000-000000000004",
+      transformArtifactId: "reception-room-landmark-solve-v0",
+      sourceId: source.sourceId,
+      sourceClass: source.sourceClass,
+      poseAuthorityLevel: source.poseAuthorityLevel,
+      qaStatus: source.qaStatus,
+      source,
+      reviewNote: null,
+      registeredBy: "10000000-0000-4000-8000-000000000005",
+      createdAt: "2026-06-16T00:00:00.000Z",
+      updatedAt: "2026-06-16T00:00:00.000Z",
+    });
+
+    expect(parsed.transformArtifactId).toBe("reception-room-landmark-solve-v0");
+  });
+
+  it("validates capture control source queries before listing evidence", () => {
+    expect(CaptureControlSourceRecordQuerySchema.parse({
+      venue: "trades-hall",
+      room: "reception-room",
+    }).room).toBe("reception-room");
+
+    expect(CaptureControlSourceRecordQuerySchema.safeParse({
+      venue: "trades-hall",
+      room: "unsupported-room",
+    }).success).toBe(false);
+
+    expect(CaptureControlSourceRecordQuerySchema.safeParse({
+      venue: "trades-hall",
+      transformArtifactId: "reception-room-landmark-solve-v0",
+    }).success).toBe(false);
+  });
+
+  it("parses machine-readable capture-control registration reports", () => {
+    const parsed = CaptureControlRegistrationReportSchema.parse(validRegistrationReport());
+
+    expect(parsed.schemaVersion).toBe("venviewer.capture-control-registration-report.v0");
+    expect(parsed.preflight.runtimePackageMatchesLatest).toBe(true);
+    expect(parsed.guardrails.signedTransformCreated).toBe(false);
+    expect(parsed.guardrails.publicExposureChanged).toBe(false);
+  });
+
+  it("keeps dry-run registration reports non-mutating", () => {
+    const report = validRegistrationReport({
+      mode: "dry_run",
+      registration: null,
+      roomStatus: null,
+    });
+
+    expect(CaptureControlRegistrationReportSchema.parse(report).mode).toBe("dry_run");
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...report,
+      registration: validRegistrationReport().registration,
+    }).success).toBe(false);
+  });
+
+  it("rejects drift and exposure changes in capture-control reports", () => {
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validRegistrationReport(),
+      preflight: {
+        ...validRegistrationReport().preflight,
+        latestRuntimePackageId: "10000000-0000-4000-8000-000000000011",
+        runtimePackageMatchesLatest: false,
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validRegistrationReport(),
+      guardrails: {
+        ...validRegistrationReport().guardrails,
+        publicExposureChanged: true,
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects internally inconsistent capture-control registration reports", () => {
+    const validReport = validRegistrationReport();
+    const registration = validReport.registration;
+    const roomStatus = validReport.roomStatus;
+
+    if (registration === null || roomStatus === null) {
+      throw new Error("Expected valid registration report helper to include registered readback.");
+    }
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      preflight: {
+        ...validReport.preflight,
+        payloadRuntimePackageId: "10000000-0000-4000-8000-000000000011",
+        latestRuntimePackageId: "10000000-0000-4000-8000-000000000011",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      registration: {
+        ...registration,
+        sourceId: "reception-room-other-source-v0",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      registration: {
+        ...registration,
+        qaStatus: "accepted",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        latestCaptureControlSourceRecordId: "10000000-0000-4000-8000-000000000011",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        latestCaptureControlSourceId: "reception-room-other-source-v0",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        latestCaptureControlSourceClass: "manual_landmarks",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        latestCaptureControlPoseAuthorityLevel: "manual_landmark_control",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        latestCaptureControlQaStatus: "accepted",
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.safeParse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        captureControlFreshnessStatus: "stale_for_runtime_package",
+        activeStalenessTriggers: ["runtime_package_changed"],
+      },
+      guardrails: {
+        ...validReport.guardrails,
+        staleReadbackAllowed: false,
+      },
+    }).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportSchema.parse({
+      ...validReport,
+      roomStatus: {
+        ...roomStatus,
+        captureControlFreshnessStatus: "stale_for_runtime_package",
+        activeStalenessTriggers: ["runtime_package_changed"],
+      },
+      guardrails: {
+        ...validReport.guardrails,
+        staleReadbackAllowed: true,
+      },
+    }).guardrails.staleReadbackAllowed).toBe(true);
+  });
+
+  it("parses machine-readable capture-control report inspection artifacts", () => {
+    const parsed = CaptureControlRegistrationReportInspectionSchema.parse(
+      validRegistrationReportInspection(),
+    );
+
+    expect(CAPTURE_CONTROL_REGISTRATION_REPORT_INSPECTION_STATUSES).toEqual([
+      "ready_for_live_registration",
+      "not_ready_for_live_registration",
+      "registered_report_verified",
+      "invalid_report",
+    ]);
+    expect(parsed.schemaVersion).toBe("venviewer.capture-control-registration-report-inspection.v0");
+    expect(parsed.liveRegistrationReady).toBe(true);
+    expect(parsed.mode).toBe("dry_run");
+    expect(parsed.blockers).toEqual([]);
+  });
+
+  it("rejects inconsistent ready capture-control report inspection artifacts", () => {
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        mode: "registered",
+      }),
+    ).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        blockers: ["operator override was enabled"],
+      }),
+    ).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        reportLatestRuntimePackageId: "10000000-0000-4000-8000-000000000011",
+      }),
+    ).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        reportRuntimePackageDriftAllowed: true,
+      }),
+    ).success).toBe(false);
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        reportStaleReadbackAllowed: true,
+      }),
+    ).success).toBe(false);
+  });
+
+  it("pins non-ready capture-control report inspection artifacts to explicit blockers", () => {
+    expect(CaptureControlRegistrationReportInspectionSchema.parse(
+      validRegistrationReportInspection({
+        status: "not_ready_for_live_registration",
+        liveRegistrationReady: false,
+        reportLatestRuntimePackageId: "10000000-0000-4000-8000-000000000011",
+        reportRuntimePackageMatchesLatest: false,
+        reportRuntimePackageDriftAllowed: true,
+        blockers: [
+          "Payload runtime package is not the latest loadable runtime package.",
+          "Runtime-package drift override was enabled; rerun a normal dry-run before live registration.",
+        ],
+      }),
+    ).status).toBe("not_ready_for_live_registration");
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        status: "not_ready_for_live_registration",
+        liveRegistrationReady: false,
+        blockers: [],
+      }),
+    ).success).toBe(false);
+  });
+
+  it("keeps registered and invalid report inspections out of live-registration readiness", () => {
+    expect(CaptureControlRegistrationReportInspectionSchema.parse(
+      validRegistrationReportInspection({
+        status: "registered_report_verified",
+        liveRegistrationReady: false,
+        mode: "registered",
+        blockers: [
+          "Report already records a live registration; use it as audit evidence, not authorization for another POST.",
+        ],
+      }),
+    ).liveRegistrationReady).toBe(false);
+
+    expect(CaptureControlRegistrationReportInspectionSchema.parse(
+      validRegistrationReportInspection({
+        status: "invalid_report",
+        liveRegistrationReady: false,
+        inspectedReportGeneratedAt: null,
+        mode: null,
+        venueSlug: null,
+        roomSlug: null,
+        sourceId: null,
+        reportRuntimePackageId: null,
+        reportLatestRuntimePackageId: null,
+        reportRuntimePackageMatchesLatest: null,
+        reportRuntimePackageDriftAllowed: null,
+        reportStaleReadbackAllowed: null,
+        blockers: ["generatedAt: Required"],
+        messages: ["Report failed CaptureControlRegistrationReportSchema validation."],
+      }),
+    ).status).toBe("invalid_report");
+
+    expect(CaptureControlRegistrationReportInspectionSchema.safeParse(
+      validRegistrationReportInspection({
+        status: "invalid_report",
+        liveRegistrationReady: true,
+        blockers: ["generatedAt: Required"],
+      }),
+    ).success).toBe(false);
   });
 });

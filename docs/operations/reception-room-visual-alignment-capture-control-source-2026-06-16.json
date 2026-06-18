@@ -1,0 +1,48 @@
+{
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "transformArtifactId": null,
+  "source": {
+    "sourceId": "reception-room-approximate-view-transform-v0",
+    "sourceClass": "artist_blender_alignment_refs",
+    "poseAuthorityLevel": "visual_alignment_only",
+    "alignmentMethods": [
+      "visual_alignment"
+    ],
+    "qaStatus": "requires_human_review",
+    "sourceRefs": [
+      {
+        "refType": "runtime_package",
+        "ref": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+        "role": "runtime_package"
+      },
+      {
+        "refType": "operator_note",
+        "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md",
+        "role": "approximate_view_transform"
+      },
+      {
+        "refType": "qa_report",
+        "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md",
+        "role": "runtime_qa_record"
+      },
+      {
+        "refType": "source_asset",
+        "ref": "packages/web/src/lib/runtime-package-resolution.ts",
+        "role": "view_transform_source"
+      }
+    ],
+    "transformArtifactRefs": [],
+    "residualMetricRefs": [],
+    "staleWhen": [
+      "runtime_package_changed",
+      "scene_authority_map_changed",
+      "review_expired",
+      "manual_contestation"
+    ],
+    "reviewerRole": "runtime_reviewer",
+    "notes": "Current Reception Room XGRIDS runtime uses a code-local approximate visual framing transform: position [1.11, 2.57, 2.77], rotation [-PI/2, 0, 0], scale 0.63. This source is visual-alignment evidence only and is not a signed room-local transform."
+  },
+  "reviewNote": "Registers the current approximate view transform as package-scoped visual-alignment evidence only. It must not be used for public exposure or operational measurement without a later signed TransformArtifact."
+}

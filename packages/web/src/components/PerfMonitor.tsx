@@ -1,7 +1,15 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
+import type { Camera, Scene, WebGLRenderer } from "three";
 import { useDeviceStore } from "../stores/device-store.js";
 import { usePerfStore } from "../stores/perf-store.js";
+
+declare global {
+  interface Window {
+    /** DEV-only perf bridge published by {@link PerfMonitor}; absent in production. */
+    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
+  }
+}
 import {
   getPerfBudget,
   frameTimeToFps,
@@ -21,9 +29,18 @@ import {
  * Renders nothing — this is a side-effect-only component.
  */
 export function PerfMonitor(): null {
-  const { gl } = useThree();
+  const { gl, scene, camera } = useThree();
   const samplesRef = useRef<readonly number[]>([]);
   const frameCountRef = useRef(0);
+
+  // DEV-only debug bridge: publish the live renderer/scene/camera so perf
+  // experiments (frame-timing, draw-call inspection) can run from the browser
+  // console. This component only mounts under import.meta.env.DEV, so the
+  // bridge never exists in production builds.
+  useEffect(() => {
+    window.__venPerf = { gl, scene, camera };
+    return () => { delete window.__venPerf; };
+  }, [gl, scene, camera]);
 
   useFrame((_state, delta) => {
     const frameTimeMs = clampFrameTime(delta * 1000);

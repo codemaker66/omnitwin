@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "runtime-control-capture-control-payload-build-report.v0",
+  "generatedAt": "2026-06-16T12:48:22.346Z",
+  "packetRef": "docs/operations/reception-room-landmark-control-intake-2026-06-16.json",
+  "packetId": "reception-room-landmark-control-intake-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "landmarkSetSummary": {
+    "totalLandmarks": 4,
+    "nonRejectedLandmarks": 4,
+    "reviewedLandmarks": 0,
+    "sourceFrame": "ARF",
+    "targetFrame": "CVF",
+    "residualRmseM": null,
+    "maxResidualM": null,
+    "allNonRejectedLandmarksReviewed": false
+  },
+  "status": "blocked_current_packet",
+  "payloadFile": null,
+  "payload": null,
+  "blockers": [
+    "Packet disposition is not ready for capture-control registration.",
+    "Packet QA status is not human_reviewed or accepted.",
+    "Packet still lists open blockers.",
+    "Packet still lists requirements before capture-control registration.",
+    "Fewer than three reviewed landmark coordinate pairs are present.",
+    "Every non-rejected landmark must be reviewed before payload build."
+  ],
+  "messages": [
+    "Runtime control packet is not ready to build a manual_landmarks capture-control payload.",
+    "No capture-control source, signed transform, public exposure change, or operational geometry was created."
+  ],
+  "guardrails": {
+    "captureControlSourceCreated": false,
+    "liveRegistrationAttempted": false,
+    "signedTransformCreated": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

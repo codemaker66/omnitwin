@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "runtime-visual-qa-review.v0",
+  "reviewId": "reception-room-visual-qa-review-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "reviewedAt": "2026-06-16T13:20:00.000Z",
+  "recordedBy": "runtime-review-operator",
+  "reviewerKind": "operator_evidence_record",
+  "reviewerRole": "runtime_visual_qa_operator",
+  "assetEvidenceStatus": "unverified",
+  "runtimeStatus": "internal_ready",
+  "reviewDisposition": "blocked_needs_human_review",
+  "transformDisposition": "approximate_view_transform_only",
+  "signedTransformArtifactId": null,
+  "publicExposureDisposition": "blocked_internal_only",
+  "evidenceRefs": [
+    {
+      "kind": "runtime_qa_record",
+      "label": "Reception Room runtime QA record",
+      "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md"
+    },
+    {
+      "kind": "runtime_qa_report",
+      "label": "Runtime QA dry-run report",
+      "ref": "docs/operations/reception-room-runtime-qa-dry-run-report-2026-06-16.json"
+    },
+    {
+      "kind": "runtime_qa_inspection",
+      "label": "Runtime QA report inspection",
+      "ref": "docs/operations/reception-room-runtime-qa-inspection-2026-06-16.json"
+    },
+    {
+      "kind": "capture_control_source",
+      "label": "Visual-alignment capture-control payload",
+      "ref": "docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json"
+    },
+    {
+      "kind": "capture_control_report",
+      "label": "Capture-control dry-run report",
+      "ref": "docs/operations/reception-room-capture-control-dry-run-report-2026-06-16.json"
+    },
+    {
+      "kind": "capture_control_inspection",
+      "label": "Capture-control report inspection",
+      "ref": "docs/operations/reception-room-capture-control-inspection-2026-06-16.json"
+    },
+    {
+      "kind": "composition_decision",
+      "label": "Runtime composition decision",
+      "ref": "docs/operations/reception-room-runtime-composition-decision-2026-06-16.json"
+    },
+    {
+      "kind": "source_intake",
+      "label": "Runtime source intake",
+      "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+    },
+    {
+      "kind": "playwright_screenshot",
+      "label": "Settled camera screenshot",
+      "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+    },
+    {
+      "kind": "playwright_screenshot",
+      "label": "After-drag camera screenshot",
+      "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+    }
+  ],
+  "checks": [
+    {
+      "checkKey": "runtime_package_resolves",
+      "status": "passed",
+      "summary": "The latest Reception Room package resolves through the internal route and dry-run preflight.",
+      "evidenceRefs": [
+        {
+          "kind": "runtime_qa_report",
+          "label": "Runtime QA dry-run report",
+          "ref": "docs/operations/reception-room-runtime-qa-dry-run-report-2026-06-16.json"
+        },
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ]
+    },
+    {
+      "checkKey": "all_room_chunks_load",
+      "status": "passed",
+      "summary": "Seven manifest room SOG chunks are served and recorded for internal visual smoke.",
+      "evidenceRefs": [
+        {
+          "kind": "runtime_qa_record",
+          "label": "Reception Room runtime QA record",
+          "ref": "docs/operations/reception-room-runtime-qa-record-2026-06-15.md"
+        },
+        {
+          "kind": "composition_decision",
+          "label": "Runtime composition decision",
+          "ref": "docs/operations/reception-room-runtime-composition-decision-2026-06-16.json"
+        }
+      ]
+    },
+    {
+      "checkKey": "camera_start_framed",
+      "status": "passed",
+      "summary": "The settled internal camera frames the Reception Room preview for operator inspection.",
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "Settled camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ]
+    },
+    {
+      "checkKey": "bounded_orbit_smoke",
+      "status": "passed",
+      "summary": "A small pointer orbit remains inside the bounded runtime camera region.",
+      "evidenceRefs": [
+        {
+          "kind": "playwright_screenshot",
+          "label": "After-drag camera screenshot",
+          "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+        }
+      ]
+    },
+    {
+      "checkKey": "env_chunk_excluded",
+      "status": "passed",
+      "summary": "The environment SOG chunk is excluded from the served room visual package.",
+      "evidenceRefs": [
+        {
+          "kind": "composition_decision",
+          "label": "Runtime composition decision",
+          "ref": "docs/operations/reception-room-runtime-composition-decision-2026-06-16.json"
+        }
+      ]
+    },
+    {
+      "checkKey": "composition_decision_recorded",
+      "status": "passed",
+      "summary": "The direct room-chunk serving decision is recorded with LCC2 kept as provenance.",
+      "evidenceRefs": [
+        {
+          "kind": "composition_decision",
+          "label": "Runtime composition decision",
+          "ref": "docs/operations/reception-room-runtime-composition-decision-2026-06-16.json"
+        }
+      ]
+    },
+    {
+      "checkKey": "signed_transform_present",
+      "status": "blocked",
+      "summary": "No signed room-local transform artifact is registered for this runtime package.",
+      "evidenceRefs": []
+    },
+    {
+      "checkKey": "metric_scale_checked",
+      "status": "not_checked",
+      "summary": "Metric scale has not been checked against measured room anchors.",
+      "evidenceRefs": []
+    },
+    {
+      "checkKey": "floor_wall_alignment_checked",
+      "status": "not_checked",
+      "summary": "Floor and wall alignment have not been checked against reviewed room geometry.",
+      "evidenceRefs": []
+    },
+    {
+      "checkKey": "human_visual_review_recorded",
+      "status": "requires_human_review",
+      "summary": "No human visual QA review overlay is recorded for this runtime package.",
+      "evidenceRefs": []
+    },
+    {
+      "checkKey": "public_exposure_approved",
+      "status": "blocked",
+      "summary": "Public exposure remains blocked until review and signed transform evidence exist.",
+      "evidenceRefs": []
+    }
+  ],
+  "limitations": [
+    "This artifact records internal visual smoke only and is not a human visual approval.",
+    "The current transform is an approximate view transform for framing, not signed room-local alignment.",
+    "The runtime package remains internal_ready with unverified evidence.",
+    "The current record does not create operational geometry or public room visual exposure."
+  ],
+  "blockers": [
+    "A signed room-local transform artifact is not registered.",
+    "Human visual QA notes for scale, floor alignment, wall alignment, and cropping are not recorded.",
+    "The asset evidence status is still unverified.",
+    "Public exposure approval is not recorded."
+  ],
+  "requiredBeforeApproval": [
+    "Register a reviewed signed room-local transform artifact for this runtime package.",
+    "Record human visual QA notes covering scale, floor alignment, wall alignment, and cropping.",
+    "Promote asset evidence only after the review evidence supports that change.",
+    "Record an explicit public exposure approval before returning a client-facing room visual URL."
+  ],
+  "guardrails": {
+    "signedTransformCreated": false,
+    "runtimeQaRecordChanged": false,
+    "captureControlSourceChanged": false,
+    "humanReviewOverlayCreated": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

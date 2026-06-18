@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "venviewer.capture-control-registration-report-inspection.v0",
+  "generatedAt": "2026-06-16T10:33:59.177Z",
+  "inspectedReportFile": "C:\\Users\\blake\\omnitwin2\\docs\\operations\\reception-room-capture-control-dry-run-report-2026-06-16.json",
+  "inspectedReportGeneratedAt": "2026-06-16T10:33:46.930Z",
+  "status": "ready_for_live_registration",
+  "liveRegistrationReady": true,
+  "mode": "dry_run",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "sourceId": "reception-room-approximate-view-transform-v0",
+  "reportRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "reportLatestRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "reportRuntimePackageMatchesLatest": true,
+  "reportRuntimePackageDriftAllowed": false,
+  "reportStaleReadbackAllowed": false,
+  "blockers": [],
+  "messages": [
+    "Report schema is valid for reception-room-approximate-view-transform-v0 in trades-hall/reception-room.",
+    "Report records no signed transform creation and no public exposure change.",
+    "Dry-run report is current for live capture-control registration preflight."
+  ]
+}

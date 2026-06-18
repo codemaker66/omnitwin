@@ -66,11 +66,38 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 5_500,
       rollupOptions: {
         output: {
-          manualChunks: {
-            "react-vendor": ["react", "react-dom", "react-router-dom"],
-            "three": ["three", "@react-three/fiber", "@react-three/drei", "three-stdlib"],
-            "spark": ["@sparkjsdev/spark"],
-            "clerk": ["@clerk/react"],
+          manualChunks(id) {
+            const normalizedId = id.replace(/\\/g, "/");
+
+            if (
+              normalizedId.includes("vite/preload-helper") ||
+              normalizedId.includes("/node_modules/react/") ||
+              normalizedId.includes("/node_modules/react-dom/") ||
+              normalizedId.includes("/node_modules/react-router-dom/") ||
+              normalizedId.includes("/node_modules/scheduler/") ||
+              normalizedId.includes("/node_modules/zustand/")
+            ) {
+              return "react-vendor";
+            }
+
+            if (
+              normalizedId.includes("/node_modules/three/") ||
+              normalizedId.includes("/node_modules/@react-three/fiber/") ||
+              normalizedId.includes("/node_modules/@react-three/drei/") ||
+              normalizedId.includes("/node_modules/three-stdlib/")
+            ) {
+              return "three";
+            }
+
+            if (normalizedId.includes("/node_modules/@sparkjsdev/spark/")) {
+              return "spark";
+            }
+
+            if (normalizedId.includes("/node_modules/@clerk/")) {
+              return "clerk";
+            }
+
+            return undefined;
           },
         },
       },

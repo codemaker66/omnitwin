@@ -1,0 +1,214 @@
+{
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "record": {
+    "schemaVersion": "runtime-qa-record.v0",
+    "recordId": "reception-room-runtime-qa-2026-06-15",
+    "venueSlug": "trades-hall",
+    "roomSlug": "reception-room",
+    "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "recordedAt": "2026-06-15T00:00:00.000Z",
+    "recordedBy": "runtime-qa-operator",
+    "assetEvidenceStatus": "unverified",
+    "runtimeStatus": "internal_ready",
+    "sourceBundle": {
+      "sourceLabel": "Reception Room XGRIDS LCC2 source bundle",
+      "sourceBundleHash": "11f567ac16d46ac20e4565de704ac088c93b22febd02d91b4b275f297a576217",
+      "totalSourceFiles": 48,
+      "totalSourceBytes": 64323846,
+      "totalSplats": 3491322
+    },
+    "sparkLoad": {
+      "renderer": "@sparkjsdev/spark",
+      "route": "/dev/trades-hall-visual?venue=trades-hall&room=reception-room",
+      "loadStatus": "loaded",
+      "visualChunkCount": 7,
+      "excludedChunkCount": 1,
+      "loadedSplats": 3491322,
+      "evidenceRefs": [
+        {
+          "label": "Playwright evidence",
+          "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+        }
+      ]
+    },
+    "viewTransform": {
+      "posture": "approximate_view_transform",
+      "position": [
+        1.11,
+        2.57,
+        2.77
+      ],
+      "rotation": [
+        -1.5707963267948966,
+        0,
+        0
+      ],
+      "scale": 0.63,
+      "signedTransformArtifactId": null,
+      "note": "Approximate XGRIDS SOG view transform; not signed for operational alignment."
+    },
+    "cameraProfile": {
+      "position": [
+        0.2,
+        6.2,
+        13.4
+      ],
+      "target": [
+        0,
+        0.9,
+        -4.15
+      ],
+      "arrivalPosition": [
+        0.25,
+        7.15,
+        14.1
+      ],
+      "arrivalTarget": [
+        0,
+        1.2,
+        -4
+      ],
+      "arrivalDurationMs": 1400,
+      "fov": 48,
+      "targetBounds": {
+        "min": [
+          -5.8,
+          0.7,
+          -9.2
+        ],
+        "max": [
+          5.8,
+          2.35,
+          4.8
+        ]
+      },
+      "cameraBounds": {
+        "min": [
+          -6.8,
+          1.4,
+          -11.8
+        ],
+        "max": [
+          6.8,
+          7.4,
+          14.2
+        ]
+      },
+      "note": "Bounded interior inspection camera for runtime QA only."
+    },
+    "checks": [
+      {
+        "checkKey": "runtime_package_resolves",
+        "status": "passed",
+        "summary": "Runtime package resolves through the internal route.",
+        "evidenceRefs": [
+          {
+            "label": "Playwright evidence",
+            "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+          }
+        ]
+      },
+      {
+        "checkKey": "served_chunk_count",
+        "status": "passed",
+        "summary": "Seven room SOG chunks are served; one environment chunk is excluded.",
+        "evidenceRefs": [
+          {
+            "label": "Intake note",
+            "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+          }
+        ]
+      },
+      {
+        "checkKey": "spark_payload_loads",
+        "status": "passed",
+        "summary": "Spark loads the served SOG payloads for internal runtime QA.",
+        "evidenceRefs": [
+          {
+            "label": "Playwright evidence",
+            "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+          }
+        ]
+      },
+      {
+        "checkKey": "camera_framing",
+        "status": "passed",
+        "summary": "The start view frames the Reception Room for internal inspection.",
+        "evidenceRefs": [
+          {
+            "label": "Playwright evidence",
+            "ref": "output/playwright/reception-room-camera-arrival-settled.png"
+          }
+        ]
+      },
+      {
+        "checkKey": "user_orbit_bounds",
+        "status": "passed",
+        "summary": "A small user orbit remains inside the bounded QA camera region.",
+        "evidenceRefs": [
+          {
+            "label": "After-drag evidence",
+            "ref": "output/playwright/reception-room-camera-arrival-after-drag.png"
+          }
+        ]
+      },
+      {
+        "checkKey": "approximate_view_transform_documented",
+        "status": "passed",
+        "summary": "The approximate transform is explicitly documented as not signed.",
+        "evidenceRefs": [
+          {
+            "label": "Runtime intake note",
+            "ref": "docs/operations/reception-room-runtime-intake-2026-06-13.md"
+          }
+        ]
+      },
+      {
+        "checkKey": "signed_transform_artifact",
+        "status": "requires_human_review",
+        "summary": "No signed room-local transform artifact is recorded.",
+        "evidenceRefs": []
+      },
+      {
+        "checkKey": "metric_scale_alignment",
+        "status": "not_checked",
+        "summary": "Metric scale alignment has not been checked against measured room anchors.",
+        "evidenceRefs": []
+      },
+      {
+        "checkKey": "floor_wall_alignment",
+        "status": "not_checked",
+        "summary": "Floor and wall alignment have not been checked against reviewed room geometry.",
+        "evidenceRefs": []
+      },
+      {
+        "checkKey": "lcc2_lod_graph",
+        "status": "requires_human_review",
+        "summary": "The LCC2 bundle graph is not yet the authoritative runtime package loader.",
+        "evidenceRefs": []
+      },
+      {
+        "checkKey": "public_exposure_review",
+        "status": "blocked",
+        "summary": "Public exposure remains blocked until review and signed transform evidence exist.",
+        "evidenceRefs": []
+      }
+    ],
+    "limitations": [
+      "The transform is visual framing only, not operational alignment.",
+      "The package remains internal and unverified.",
+      "Public room showcase copy must stay in fallback mode."
+    ],
+    "publicExposure": {
+      "decision": "blocked_internal_only",
+      "reason": "Public exposure is blocked until human review and signed transform evidence exist.",
+      "requiredBeforeApproval": [
+        "Signed room-local transform artifact.",
+        "Human visual QA review.",
+        "Exposure approval record."
+      ]
+    }
+  }
+}

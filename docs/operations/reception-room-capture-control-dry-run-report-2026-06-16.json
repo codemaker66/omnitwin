@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "venviewer.capture-control-registration-report.v0",
+  "generatedAt": "2026-06-16T10:33:46.930Z",
+  "mode": "dry_run",
+  "apiUrl": "http://127.0.0.1:3001",
+  "payloadFile": "C:\\Users\\blake\\omnitwin2\\docs\\operations\\reception-room-visual-alignment-capture-control-source-2026-06-16.json",
+  "payload": {
+    "venueSlug": "trades-hall",
+    "roomSlug": "reception-room",
+    "sourceId": "reception-room-approximate-view-transform-v0",
+    "sourceClass": "artist_blender_alignment_refs",
+    "poseAuthorityLevel": "visual_alignment_only",
+    "qaStatus": "requires_human_review",
+    "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "transformArtifactId": null,
+    "staleWhen": [
+      "runtime_package_changed",
+      "scene_authority_map_changed",
+      "review_expired",
+      "manual_contestation"
+    ]
+  },
+  "preflight": {
+    "payloadRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "latestRuntimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+    "latestRuntimePackageRuntimeStatus": "internal_ready",
+    "latestRuntimePackageEvidenceStatus": "unverified",
+    "runtimePackageMatchesLatest": true,
+    "runtimePackageDriftAllowed": false
+  },
+  "registration": null,
+  "roomStatus": null,
+  "guardrails": {
+    "runtimePackageDriftAllowed": false,
+    "staleReadbackAllowed": false,
+    "signedTransformCreated": false,
+    "publicExposureChanged": false
+  }
+}

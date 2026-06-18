@@ -1,14 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
+  EventPlanAudienceRoleSchema,
   ProposalVersionPayloadSchema,
   proposalVersionPayloadDigest,
   isProposalEditable,
   ShortCodeSchema,
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
+  type EventPlanAudienceRole,
+  type EventPlanChangeSurface,
   type ProposalVersionPayload,
   type ProposalStatus,
 } from "@omnitwin/types";
@@ -19,8 +22,11 @@ import {
   proposalVersions,
   proposalStatusHistory,
   packageSelections,
+  eventConfigurationLinks,
   enquiries,
   configurations,
+  events,
+  handoffPacks,
   opportunities,
   venues,
 } from "../db/schema.js";
@@ -35,6 +41,7 @@ import {
 } from "../state-machines/proposal.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
+import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -92,6 +99,12 @@ const StaffCommentBody = z.object({ body: CreateProposalCommentSchema.shape.body
 // share_token_id, and present to the client under a single team identity.
 const STAFF_REPLY_AUTHOR_NAME = "Venue team";
 
+function boundedLifecycleSummary(summary: string): string {
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) return "Proposal changed.";
+  return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
+}
+
 /** Project a stored comment row into the staff timeline shape, deriving the
  *  author type from the structural share-token link (client posts carry one;
  *  staff replies do not). */
@@ -124,11 +137,88 @@ function toStaffCommentView(row: {
 }
 
 type AuthedUser = { id: string; role: string; venueId: string | null };
+type ProposalRow = typeof proposals.$inferSelect;
+
+interface ProposalEventContext {
+  readonly eventId: string;
+  readonly venueId: string;
+  readonly handoffPackId: string | null;
+}
 
 /** Create/mutate policy: admin anywhere, staff within their own venue. */
 function canManageVenueProposals(user: AuthedUser, venueId: string): boolean {
   if (user.role === "admin") return true;
   return user.role === "staff" && user.venueId === venueId;
+}
+
+async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
+  if (proposal.configurationId === null) return null;
+
+  const [linkedEvent] = await db
+    .select({ eventId: events.id, venueId: events.venueId })
+    .from(eventConfigurationLinks)
+    .innerJoin(events, eq(eventConfigurationLinks.eventId, events.id))
+    .where(and(
+      eq(eventConfigurationLinks.configurationId, proposal.configurationId),
+      eq(events.venueId, proposal.venueId),
+      isNull(events.deletedAt),
+    ))
+    .limit(1);
+
+  if (linkedEvent === undefined) return null;
+
+  const [pack] = await db
+    .select({ id: handoffPacks.id })
+    .from(handoffPacks)
+    .where(eq(handoffPacks.eventId, linkedEvent.eventId))
+    .orderBy(desc(handoffPacks.compiledAt))
+    .limit(1);
+
+  return {
+    eventId: linkedEvent.eventId,
+    venueId: linkedEvent.venueId,
+    handoffPackId: pack?.id ?? null,
+  };
+}
+
+async function recordProposalLifecycleChange(
+  db: Database,
+  proposal: ProposalRow,
+  input: {
+    readonly actorUserId: string | null;
+    readonly actorRole: EventPlanAudienceRole;
+    readonly actorLabel: string;
+    readonly sourceKind: "proposal" | "proposal_comment" | "proposal_response";
+    readonly sourceId: string;
+    readonly title: string;
+    readonly summary: string;
+    readonly affectedSurfaces: readonly EventPlanChangeSurface[];
+    readonly includeHallkeeperWhenHandoffExists: boolean;
+  },
+): Promise<void> {
+  const context = await loadProposalEventContext(db, proposal);
+  if (context === null) return;
+
+  const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
+  await recordEventPlanChange(db, {
+    eventId: context.eventId,
+    venueId: context.venueId,
+    configurationId: proposal.configurationId,
+    proposalId: proposal.id,
+    handoffPackId: context.handoffPackId,
+    actorUserId: input.actorUserId,
+    actorRole: input.actorRole,
+    actorLabel: input.actorLabel,
+    sourceKind: input.sourceKind,
+    sourceId: input.sourceId,
+    title: input.title,
+    summary: input.summary,
+    affectedSurfaces: [...input.affectedSurfaces],
+    audienceRoles: notifyHallkeeper ? ["staff", "hallkeeper"] : ["staff"],
+    riskLevel: notifyHallkeeper ? "attention" : "info",
+    requiresHallkeeperAcknowledgement: notifyHallkeeper,
+    actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
+  });
 }
 
 function hashShareToken(token: string): string {
@@ -349,6 +439,24 @@ export async function proposalRoutes(
       .where(eq(proposals.id, params.data.id))
       .returning();
 
+    if (updated === undefined) {
+      return reply.status(500).send({ error: "Failed to update proposal", code: "PROPOSAL_UPDATE_FAILED" });
+    }
+
+    const affectedSurfaces = new Set<EventPlanChangeSurface>(["proposal"]);
+    if (parsed.data.configurationId !== undefined) affectedSurfaces.add("layout");
+    await recordProposalLifecycleChange(db, updated, {
+      actorUserId: request.user.id,
+      actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+      actorLabel: request.user.email,
+      sourceKind: "proposal",
+      sourceId: updated.id,
+      title: "Proposal updated",
+      summary: `${updated.title} was updated by the venue team.`,
+      affectedSurfaces: [...affectedSurfaces],
+      includeHallkeeperWhenHandoffExists: parsed.data.configurationId !== undefined,
+    });
+
     return { data: updated };
   });
 
@@ -456,6 +564,20 @@ export async function proposalRoutes(
       changedBy: request.user.id,
       note: parsed.data.note ?? null,
     });
+
+    if (updated !== undefined) {
+      await recordProposalLifecycleChange(db, updated, {
+        actorUserId: request.user.id,
+        actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+        actorLabel: request.user.email,
+        sourceKind: "proposal",
+        sourceId: updated.id,
+        title: "Proposal status changed",
+        summary: `${updated.title} moved from ${fromStatus} to ${parsed.data.status}.`,
+        affectedSurfaces: ["proposal"],
+        includeHallkeeperWhenHandoffExists: parsed.data.status === "changes_requested",
+      });
+    }
 
     return { data: updated };
   });
@@ -728,6 +850,22 @@ export async function proposalRoutes(
       sourceHash,
       createdBy: request.user.id,
     }).returning();
+
+    if (version !== undefined) {
+      await recordProposalLifecycleChange(db, proposal, {
+        actorUserId: request.user.id,
+        actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+        actorLabel: request.user.email,
+        sourceKind: "proposal",
+        sourceId: version.id,
+        title: "Proposal version created",
+        summary: `Version ${String(version.version)} of ${proposal.title} was created for client review.`,
+        affectedSurfaces: payload.layoutSnapshot === undefined || payload.layoutSnapshot === null
+          ? ["proposal", "pricing"]
+          : ["proposal", "pricing", "layout"],
+        includeHallkeeperWhenHandoffExists: false,
+      });
+    }
 
     return reply.status(201).send({ data: version });
   });
@@ -1025,6 +1163,22 @@ export async function publicProposalRoutes(
       note: parsed.data.note ?? null,
     });
 
+    await recordProposalLifecycleChange(db, proposal, {
+      actorUserId: null,
+      actorRole: "client",
+      actorLabel: "Client",
+      sourceKind: "proposal_response",
+      sourceId: proposal.id,
+      title: toStatus === "accepted" ? "Client approved proposal" : "Client requested proposal changes",
+      summary: boundedLifecycleSummary(parsed.data.note ?? (
+        toStatus === "accepted"
+          ? "Client approved the proposal."
+          : "Client requested changes to the proposal."
+      )),
+      affectedSurfaces: toStatus === "accepted" ? ["proposal"] : ["proposal", "comments"],
+      includeHallkeeperWhenHandoffExists: toStatus === "changes_requested",
+    });
+
     return { data: { status: updated?.status ?? toStatus } };
   });
 }
@@ -1106,6 +1260,18 @@ export async function proposalShareRoutes(
       return comment;
     });
 
+    await recordProposalLifecycleChange(db, resolved.proposal, {
+      actorUserId: null,
+      actorRole: "client",
+      actorLabel: result.authorName ?? "Client",
+      sourceKind: "proposal_comment",
+      sourceId: result.id,
+      title: kind === "request_changes" ? "Client requested proposal changes" : "Client commented on proposal",
+      summary: boundedLifecycleSummary(result.body),
+      affectedSurfaces: kind === "request_changes" ? ["proposal", "comments"] : ["comments"],
+      includeHallkeeperWhenHandoffExists: kind === "request_changes",
+    });
+
     return reply.status(201).send({
       data: {
         kind: result.kind,
@@ -1157,6 +1323,18 @@ export async function proposalShareRoutes(
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
       });
+    });
+
+    await recordProposalLifecycleChange(db, resolved.proposal, {
+      actorUserId: null,
+      actorRole: "client",
+      actorLabel: parsed.data.authorName ?? "Client",
+      sourceKind: "proposal_response",
+      sourceId: resolved.proposal.id,
+      title: "Client approved proposal",
+      summary: boundedLifecycleSummary(parsed.data.body ?? "Client approved the proposal."),
+      affectedSurfaces: ["proposal"],
+      includeHallkeeperWhenHandoffExists: false,
     });
 
     return { data: { status: "accepted" } };

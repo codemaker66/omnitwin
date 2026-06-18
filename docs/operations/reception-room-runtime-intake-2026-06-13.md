@@ -158,6 +158,118 @@ This transform rotates the XGRIDS/LCC2 Z-up SOG chunks into the Three.js Y-up sc
 
 2026-06-15 camera arrival continuation: the registered Reception Room camera profile now includes a bounded 1400ms arrival pose that settles into the same reviewed QA camera target and cancels as soon as OrbitControls receives user input. Focused tests assert the arrival pose and final pose remain inside the declared camera/target bounds. Playwright Edge at 1280 x 900 loaded the registered package with no blocking responses, request failures, page errors, or unexpected console output. Current evidence: `output/playwright/reception-room-camera-arrival-settled.png` and `output/playwright/reception-room-camera-arrival-after-drag.png`. This remains presentation/QA motion only, not transform evidence.
 
+2026-06-15 runtime QA record: added
+`docs/operations/reception-room-runtime-qa-record-2026-06-15.md`, backed by
+`RuntimeQaRecordV0Schema`, to capture the current internal package, served chunk
+count, approximate view transform, bounded camera profile, passed QA checks, and
+blocked review gates without converting the approximate view transform into a
+signed room-local transform.
+
+2026-06-16 transform registration path: added the admin storage/API path for
+reviewed `TransformArtifactV0` records (`runtime_transform_artifacts`,
+`/admin/assets/register-runtime-transform-artifact`, and
+`/admin/assets/runtime-transform-artifacts`). This enables a future signed
+Reception Room transform to be registered against package
+`71687e9e-c23d-4f51-b3dd-a6a82c97978d`; it does not register or imply that
+such a transform exists today.
+
+2026-06-16 capture-control payload: the current approximate view transform now
+has a ready-to-register capture-control source payload at
+`docs/operations/reception-room-visual-alignment-capture-control-source-2026-06-16.json`.
+It is explicitly visual-alignment-only evidence requiring human review, not a
+signed TransformArtifact.
+
+2026-06-16 visual QA review artifact: the current internal screenshot-backed
+visual smoke evidence is recorded at
+`docs/operations/reception-room-visual-qa-review-2026-06-16.json`, validated by
+`RuntimeVisualQaReviewV0Schema`. The artifact is intentionally blocked for
+approval: it records internal package loading, framing, bounded camera motion,
+environment-chunk exclusion, and the composition decision, while keeping signed
+transform, metric scale, floor/wall alignment, human visual review, evidence
+promotion, and public exposure open.
+
+2026-06-16 transform readiness artifact: the current path toward a signed
+TransformArtifactV0 is recorded at
+`docs/operations/reception-room-runtime-transform-readiness-2026-06-16.json`,
+validated by `RuntimeTransformReadinessV0Schema`. The artifact is blocked as
+`blocked_visual_alignment_only` because the current capture-control source is
+`artist_blender_alignment_refs` with `visual_alignment_only` authority. It
+lists the missing reviewed control evidence, transform candidate payload,
+residual metrics, dry-run report, and inspection gates before any live signed
+transform registration can be attempted.
+
+2026-06-16 landmark-control intake packet: the first manual-landmark intake
+packet is recorded at
+`docs/operations/reception-room-landmark-control-intake-2026-06-16.json`,
+validated by `RuntimeControlEvidencePacketV0Schema`. The packet names visible
+candidate landmarks from the current runtime QA screenshots but records no ARF
+source coordinates, CVF target coordinates, residuals, or human acceptance. It
+is therefore evidence of what to collect next, not capture-control evidence that
+can unlock a signed transform.
+
+2026-06-16 manual-landmarks capture-control payload build report: added
+`assets:build-capture-control-source-from-runtime-control` and ran it against
+the current landmark-control packet. The generated report at
+`docs/operations/reception-room-manual-landmarks-capture-control-build-report-2026-06-16.json`
+is `blocked_current_packet` and confirms no capture-control source payload was
+written because the packet still lacks reviewed coordinate pairs, accepted QA,
+and closed blockers.
+
+2026-06-16 coordinate-pair packet build report: added
+`assets:build-runtime-control-packet-from-coordinate-pairs` and ran it against
+the current visible-only landmark-control packet without a coordinate-pair
+intake file. The generated report at
+`docs/operations/reception-room-coordinate-pair-packet-build-report-2026-06-16.json`
+is `blocked_missing_coordinate_pair_intake`, records four non-rejected
+landmarks, zero reviewed landmarks, and no residual metrics, and writes no
+reviewed runtime-control packet.
+
+2026-06-16 coordinate-pair intake request: added
+`assets:build-runtime-control-coordinate-pair-intake-request` and ran it
+against the current visible-only landmark-control packet. The generated request
+at
+`docs/operations/reception-room-coordinate-pair-intake-request-2026-06-16.json`
+lists the four required ARF to CVF landmark measurements to collect and confirms
+it created no coordinate-pair intake file, reviewed packet, capture-control
+source, signed transform, public exposure change, or operational geometry.
+
+2026-06-16 coordinate-pair collection pack: added
+`assets:build-runtime-control-coordinate-pair-collection-pack` and generated
+`docs/operations/reception-room-coordinate-pair-collection-pack-2026-06-16.md`
+from the typed intake request. This is the human-readable checklist for
+collecting the four requested landmark measurements; it leaves measurement
+fields blank and records no reviewed coordinate-pair intake or downstream
+evidence.
+
+2026-06-16 coordinate-pair intake inspection: added
+`assets:inspect-runtime-control-coordinate-pair-intake` and ran it against the
+current visible-only packet without a coordinate-pair intake file. The generated
+inspection at
+`docs/operations/reception-room-coordinate-pair-intake-inspection-2026-06-16.json`
+is `missing_intake_file`, not ready for reviewed packet build, and records no
+reviewed packet, capture-control source, signed transform, public exposure
+change, or operational geometry.
+
+2026-06-16 runtime-control evidence chain status: added
+`assets:build-runtime-control-evidence-chain-status` and ran it against the
+current source packet, coordinate-pair request, missing-intake inspection,
+blocked packet-build report, blocked payload-build report, and transform
+readiness artifact. The generated report at
+`docs/operations/reception-room-runtime-control-evidence-chain-status-2026-06-16.json`
+is `blocked_missing_coordinate_pair_intake`, records four required coordinate
+pairs, zero reviewed coordinate pairs, and confirms no coordinate-pair intake,
+reviewed packet, capture-control source, signed transform, public exposure
+change, or operational geometry was created.
+
+2026-06-16 runtime-control dashboard posture: `/admin/assets/rooms` and
+`/dev/assets/rooms` now surface the same chain status for the current
+Reception Room runtime package `71687e9e-c23d-4f51-b3dd-a6a82c97978d`. The
+dashboard displays the blocked status, evidence ref, `0 / 4` reviewed
+coordinate-pair count, and next action, while deliberately keeping newer or
+different packages at `not_recorded` until their own chain status is generated.
+This is an internal operator review signal only and does not promote the
+current visual alignment into measurement control.
+
 2026-06-17 SPZ re-export swapped in as the primary visual: the same PortalCam
 capture was re-exported by XGRIDS to `.spz` (bundle
 `reception-room_xgrids_lcc2_spz_visual`, manifest `Reception Room Mobile.lcc2`,
@@ -174,7 +286,7 @@ package still serves `.sog`, this SPZ package serves `.spz`); no SOG/SPZ
 double-serving. Internal browser recheck at
 `/dev/trades-hall-visual?venue=trades-hall&room=reception-room`: Spark loaded the
 seven SPZ chunks (`3,455,732` splats) into the framed runtime view with the
-status copy `Runtime asset loaded, not yet verified/signed` and no splat-asset
+status copy `Runtime asset loaded, not yet verified/signed.` and no splat-asset
 load failures (only the expected unauthenticated adjunct-API `401`s). This is an
 internal visual runtime smoke of the SPZ re-export. It does not add signed
 room-local alignment, metric scale, floor/wall alignment, camera-pose truth,
@@ -185,7 +297,7 @@ the package pointer can be reverted to the SOG primary if required.
 Known limitations:
 
 - The transform is derived from source bounds and visual framing, not from a reviewed venue control network, E57/Matterport alignment, or measured fixture anchors.
-- The seven served SOG chunks are loaded directly as Spark runtime assets; Venviewer is not yet reading the LCC2 bundle/LOD graph as the authoritative runtime package.
+- The current package serves the seven SPZ room chunks directly as Spark runtime assets. The earlier SOG package remains provenance/backup; as of the 2026-06-17 SPZ swap, the LCC2 file is provenance for this package, not the runtime loader authority.
 - The route proves renderer compatibility and registered package loading, not scale fidelity, floor-plane alignment, wall alignment, camera pose truth, or operational geometry. The current scale/camera tuning fixes the prior tiny outside-room spawn for QA and constrains normal camera movement, but it is still approximate.
 - The procedural Grand Hall shell is intentionally suppressed when the registered package is active, so Mesh/Splat/Hybrid layer controls are not proof of mesh-to-splat alignment for Reception Room.
 - The package evidence status remains `unverified`; exposure tier and human review must be completed before any public room showcase or customer-facing claim.
@@ -198,12 +310,18 @@ QA hardening added after the first browser smoke:
 
 ## Remaining Operator Steps
 
-1. Decide whether the Reception Room runtime should load the LCC2 bundle/LOD graph directly or continue using the seven manifest `.sog` room chunks until an LCC2-aware loader or conversion lane is implemented.
+1. Revisit the runtime composition decision only when an LCC2-aware loader or conversion lane exists. The current package serves the seven manifest room `.spz` chunks directly, excludes `env.spz`, and keeps the LCC2 file as source-manifest provenance.
 
-2. Add room-local transform, orientation, bounds, and visual QA notes for the Reception Room.
+2. Add a signed room-local transform, orientation, bounds, and human visual QA notes for the Reception Room. The 2026-06-15 QA record documents the current approximate view transform only.
 
-3. Run visual QA against the served runtime package and record any alignment/cropping/scale limitations.
+3. Complete human visual QA sign-off against the served runtime package and record alignment, cropping, scale, floor, and wall limitations. The 2026-06-16 visual QA review artifact is an internal blocked record, not approval.
 
-4. Keep public room showcase fallback copy until exposure tier and human review are explicitly approved.
+4. Promote the transform readiness artifact only after reviewed control evidence and a dry-run signed-transform payload exist.
 
-5. Do not mark T-091 or T-091A complete until the required real-room scope, runtime switching behavior, and review records are satisfied.
+5. Use `docs/operations/reception-room-coordinate-pair-intake-request-2026-06-16.json` to collect the four required reviewed ARF to CVF landmark measurements, create a reviewed coordinate-pair intake file, then run `assets:inspect-runtime-control-coordinate-pair-intake` until it reports `ready_for_reviewed_packet_build`.
+
+6. Rerun `assets:build-runtime-control-packet-from-coordinate-pairs` to produce a reviewed runtime-control packet, then rerun `assets:build-capture-control-source-from-runtime-control` against the reviewed packet to produce a manual-landmarks capture-control source payload before registration dry-run.
+
+7. Keep public room showcase fallback copy until exposure tier and human review are explicitly approved.
+
+8. Do not mark T-091 or T-091A complete until the required real-room scope, runtime switching behavior, and review records are satisfied.

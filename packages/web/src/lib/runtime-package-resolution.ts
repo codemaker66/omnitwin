@@ -192,11 +192,11 @@ export function runtimeRoomTargetFromSearchParams(searchParams: URLSearchParams)
 export function evidenceStatusLabel(status: AssetEvidenceStatus): string {
   switch (status) {
     case "unverified":
-      return "Runtime asset loaded, not yet verified/signed";
+      return "Runtime asset loaded, not yet verified/signed.";
     case "machine_checked":
-      return "Runtime asset loaded, machine checked; human review required";
+      return "Runtime asset loaded, machine checked; human review required.";
     case "human_reviewed":
-      return "Runtime asset loaded, human reviewed";
+      return "Runtime asset loaded, human reviewed.";
     case "rejected":
       return "Runtime asset rejected in review — not loaded";
   }

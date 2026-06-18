@@ -19,6 +19,7 @@ import type {
   AgentTrajectory,
   AnalyticsSnapshotPayload,
   ComfortConstraintInput,
+  CaptureControlSourceRecord,
   DensityHeatmapCell,
   GuestFlowAssumption,
   GuestFlowNavmeshArtifact,
@@ -26,9 +27,16 @@ import type {
   GuestFlowReplayInput,
   GuestFlowReplayMetrics,
   IntegrationConfig,
+  EventPlanAudienceRole,
+  EventPlanChangeSurface,
+  EventPlanRiskLevel,
+  EventPlanSourceKind,
+  EventPlanNotificationSeverity,
   PricingAssumptionInput,
   ProposalVersionPayload,
   RuntimePackageManifestJson,
+  RuntimeQaRecordV0,
+  TransformArtifactV0,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -152,6 +160,117 @@ export const userInvitations = pgTable("user_invitations", {
   index("user_invitations_email_status_idx").on(table.email, table.status),
   index("user_invitations_domain_status_idx").on(table.domain, table.status),
   index("user_invitations_venue_status_idx").on(table.venueId, table.status),
+]);
+
+// ---------------------------------------------------------------------------
+// 3c. onboarding foundation — organisation/workspace shell around venues.
+//
+// Venue remains the v1 authorization boundary. These tables model the sales
+// handoff and managed rollout state around a venue: organisation, workspace,
+// invited owner/staff membership, entitlement provider verification, and
+// operator review gates. Access enforcement is coherence-checked in migration
+// 0037 so billing/invoice state cannot gate access until provider verified.
+// ---------------------------------------------------------------------------
+
+export const organisations = pgTable("organisations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 200 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("onboarding"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  index("organisations_status_idx").on(table.status),
+  index("organisations_name_idx").on(table.name),
+]);
+
+export const workspaces = pgTable("workspaces", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organisationId: uuid("organisation_id").notNull().references(() => organisations.id, { onDelete: "cascade" }),
+  primaryVenueId: uuid("primary_venue_id").notNull().references(() => venues.id),
+  name: varchar("name", { length: 200 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("onboarding"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  index("workspaces_org_status_idx").on(table.organisationId, table.status),
+  index("workspaces_primary_venue_idx").on(table.primaryVenueId),
+  unique("workspaces_org_name_unique").on(table.organisationId, table.name),
+]);
+
+export const workspaceMemberships = pgTable("workspace_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  invitationId: uuid("invitation_id").references(() => userInvitations.id, { onDelete: "set null" }),
+  email: varchar("email", { length: 255 }).notNull(),
+  role: varchar("role", { length: 30 }).notNull(),
+  venueRole: varchar("venue_role", { length: 20 }).notNull(),
+  status: varchar("status", { length: 30 }).notNull().default("invited"),
+  invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("workspace_memberships_workspace_email_unique").on(table.workspaceId, table.email),
+  index("workspace_memberships_workspace_status_idx").on(table.workspaceId, table.status),
+  index("workspace_memberships_invitation_idx").on(table.invitationId),
+  index("workspace_memberships_user_idx").on(table.userId),
+]);
+
+export const onboardingProjects = pgTable("onboarding_projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  status: varchar("status", { length: 40 }).notNull().default("admin_invite"),
+  currentStep: varchar("current_step", { length: 240 }).notNull(),
+  operatorReviewState: varchar("operator_review_state", { length: 40 }).notNull().default("pending_review"),
+  evidenceNote: text("evidence_note"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  index("onboarding_projects_workspace_status_idx").on(table.workspaceId, table.status),
+  index("onboarding_projects_venue_idx").on(table.venueId),
+  index("onboarding_projects_operator_review_idx").on(table.operatorReviewState),
+]);
+
+export const workspaceEntitlements = pgTable("workspace_entitlements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  planKey: varchar("plan_key", { length: 80 }).notNull(),
+  status: varchar("status", { length: 40 }).notNull().default("pending_provider_verification"),
+  billingProvider: varchar("billing_provider", { length: 40 }).notNull().default("none"),
+  providerCustomerRef: varchar("provider_customer_ref", { length: 240 }),
+  providerEntitlementRef: varchar("provider_entitlement_ref", { length: 240 }),
+  providerEvidenceRef: varchar("provider_evidence_ref", { length: 240 }),
+  providerVerificationStatus: varchar("provider_verification_status", { length: 40 }).notNull().default("pending"),
+  providerVerifiedAt: timestamp("provider_verified_at", { withTimezone: true }),
+  accessEnforced: boolean("access_enforced").notNull().default(false),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("workspace_entitlements_workspace_unique").on(table.workspaceId),
+  index("workspace_entitlements_status_idx").on(table.status),
+  index("workspace_entitlements_provider_status_idx").on(table.billingProvider, table.providerVerificationStatus),
+]);
+
+export const onboardingAuditEvents = pgTable("onboarding_audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => onboardingProjects.id, { onDelete: "set null" }),
+  eventType: varchar("event_type", { length: 60 }).notNull(),
+  summary: varchar("summary", { length: 500 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("onboarding_audit_events_workspace_created_idx").on(table.workspaceId, table.createdAt),
+  index("onboarding_audit_events_project_idx").on(table.projectId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -875,7 +994,81 @@ export const runtimePackages = pgTable("runtime_packages", {
 ]);
 
 // ---------------------------------------------------------------------------
-// 21. processing_jobs — optional lineage/processing tracker for capture assets.
+// 21. runtime_transform_artifacts — reviewed metric transforms for packages.
+// ---------------------------------------------------------------------------
+
+export const runtimeTransformArtifacts = pgTable("runtime_transform_artifacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runtimePackageId: uuid("runtime_package_id").notNull().references(() => runtimePackages.id, { onDelete: "cascade" }),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  transformArtifactId: varchar("transform_artifact_id", { length: 120 }).notNull(),
+  transformArtifact: jsonb("transform_artifact").$type<TransformArtifactV0>().notNull(),
+  reviewNote: text("review_note"),
+  registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("runtime_transform_artifacts_package_artifact_unique").on(table.runtimePackageId, table.transformArtifactId),
+  index("runtime_transform_artifacts_package_idx").on(table.runtimePackageId),
+  index("runtime_transform_artifacts_venue_room_idx").on(table.venueSlug, table.roomSlug),
+]);
+
+// ---------------------------------------------------------------------------
+// 22. runtime_qa_records — reviewed QA/exposure records for runtime packages.
+// ---------------------------------------------------------------------------
+
+export const runtimeQaRecords = pgTable("runtime_qa_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runtimePackageId: uuid("runtime_package_id").notNull().references(() => runtimePackages.id, { onDelete: "cascade" }),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  recordId: varchar("record_id", { length: 120 }).notNull(),
+  recordJson: jsonb("record_json").$type<RuntimeQaRecordV0>().notNull(),
+  signedTransformArtifactId: varchar("signed_transform_artifact_id", { length: 120 }),
+  publicExposureDecision: varchar("public_exposure_decision", { length: 40 }).notNull(),
+  assetEvidenceStatus: varchar("asset_evidence_status", { length: 20 }).notNull(),
+  runtimeStatus: varchar("runtime_status", { length: 20 }).notNull(),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("runtime_qa_records_package_record_unique").on(table.runtimePackageId, table.recordId),
+  index("runtime_qa_records_package_idx").on(table.runtimePackageId),
+  index("runtime_qa_records_venue_room_idx").on(table.venueSlug, table.roomSlug),
+  index("runtime_qa_records_signed_transform_idx").on(table.runtimePackageId, table.signedTransformArtifactId),
+  index("runtime_qa_records_public_exposure_idx").on(table.publicExposureDecision),
+]);
+
+// ---------------------------------------------------------------------------
+// 23. capture_control_source_records — pose/control evidence for transforms.
+// ---------------------------------------------------------------------------
+
+export const captureControlSourceRecords = pgTable("capture_control_source_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  runtimePackageId: uuid("runtime_package_id").references(() => runtimePackages.id, { onDelete: "set null" }),
+  transformArtifactId: varchar("transform_artifact_id", { length: 120 }),
+  sourceId: varchar("source_id", { length: 160 }).notNull(),
+  sourceClass: varchar("source_class", { length: 50 }).notNull(),
+  poseAuthorityLevel: varchar("pose_authority_level", { length: 50 }).notNull(),
+  qaStatus: varchar("qa_status", { length: 40 }).notNull(),
+  sourceRecord: jsonb("source_record").$type<CaptureControlSourceRecord>().notNull(),
+  reviewNote: text("review_note"),
+  registeredBy: uuid("registered_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("capture_control_sources_venue_room_source_unique").on(table.venueSlug, table.roomSlug, table.sourceId),
+  index("capture_control_sources_venue_room_idx").on(table.venueSlug, table.roomSlug),
+  index("capture_control_sources_runtime_package_idx").on(table.runtimePackageId),
+  index("capture_control_sources_transform_idx").on(table.runtimePackageId, table.transformArtifactId),
+  index("capture_control_sources_qa_status_idx").on(table.qaStatus),
+]);
+
+// ---------------------------------------------------------------------------
+// 24. processing_jobs — optional lineage/processing tracker for capture assets.
 // ---------------------------------------------------------------------------
 
 export const processingJobs = pgTable("processing_jobs", {
@@ -1312,6 +1505,87 @@ export const supplierInstructions = pgTable("supplier_instructions", {
 }, (table) => [
   index("supplier_instructions_pack_order_idx").on(table.handoffPackId, table.sortOrder),
   index("supplier_instructions_supplier_idx").on(table.supplierId),
+]);
+
+// ---------------------------------------------------------------------------
+// 22a. supplier_coordination_* — supplier-safe external handoff packs.
+//
+// These rows are capability-shareable extracts from frozen ops handoff packs.
+// Public supplier views resolve through hashed bearer tokens and expose only
+// supplier-scoped instructions, contact fields, and source provenance.
+// ---------------------------------------------------------------------------
+
+export const supplierCoordinationPacks = pgTable("supplier_coordination_packs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  supplierId: uuid("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 200 }).notNull(),
+  contactName: varchar("contact_name", { length: 160 }),
+  contactEmail: varchar("contact_email", { length: 255 }),
+  contactPhone: varchar("contact_phone", { length: 40 }),
+  status: varchar("status", { length: 30 }).notNull().default("draft"),
+  sourceSnapshotHash: varchar("source_snapshot_hash", { length: 64 }).notNull(),
+  sourceDigest: varchar("source_digest", { length: 64 }).notNull(),
+  sourceLabel: varchar("source_label", { length: 200 }).notNull(),
+  safeStatus: varchar("safe_status", { length: 80 }).notNull().default("supplier_safe_operations_handoff"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  issuedAt: timestamp("issued_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("supplier_coordination_packs_venue_status_idx").on(table.venueId, table.status),
+  index("supplier_coordination_packs_handoff_idx").on(table.handoffPackId),
+  index("supplier_coordination_packs_supplier_idx").on(table.supplierId),
+]);
+
+export const supplierCoordinationPackItems = pgTable("supplier_coordination_pack_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  supplierInstructionId: uuid("supplier_instruction_id").references(() => supplierInstructions.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 30 }).notNull().default("requirement"),
+  title: varchar("title", { length: 200 }).notNull(),
+  detail: text("detail").notNull(),
+  arrivalWindow: varchar("arrival_window", { length: 120 }),
+  sourceRef: varchar("source_ref", { length: 300 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("supplier_coordination_items_pack_order_idx").on(table.packId, table.sortOrder),
+  index("supplier_coordination_items_instruction_idx").on(table.supplierInstructionId),
+]);
+
+export const supplierCoordinationShareTokens = pgTable("supplier_coordination_share_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+}, (table) => [
+  index("supplier_coordination_tokens_pack_idx").on(table.packId),
+  index("supplier_coordination_tokens_hash_idx").on(table.tokenHash),
+]);
+
+export const supplierAcknowledgements = pgTable("supplier_acknowledgements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  packId: uuid("pack_id").notNull().references(() => supplierCoordinationPacks.id, { onDelete: "cascade" }),
+  shareTokenId: uuid("share_token_id").references(() => supplierCoordinationShareTokens.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 30 }).notNull().default("acknowledged"),
+  acknowledgedByName: varchar("acknowledged_by_name", { length: 160 }),
+  acknowledgedByEmail: varchar("acknowledged_by_email", { length: 255 }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("supplier_acknowledgements_pack_created_idx").on(table.packId, table.createdAt),
+  index("supplier_acknowledgements_share_token_idx").on(table.shareTokenId),
 ]);
 
 export const loadInSequences = pgTable("load_in_sequences", {
@@ -1790,6 +2064,85 @@ export const packageSelections = pgTable("package_selections", {
   index("package_selections_opportunity_idx").on(table.opportunityId),
   index("package_selections_proposal_idx").on(table.proposalId),
   index("package_selections_quote_idx").on(table.quoteId),
+]);
+
+// ---------------------------------------------------------------------------
+// 23d. event-plan lifecycle — cross-role change feed and notifications.
+//
+// These rows connect client proposal activity, planner edits, ops handoff
+// changes, and event-day acknowledgement state. They are planning operations
+// records only and do not imply safety, legal, accessibility, or occupancy
+// approval.
+// ---------------------------------------------------------------------------
+
+export const eventPlanChanges = pgTable("event_plan_changes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  configurationId: uuid("configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  proposalId: uuid("proposal_id").references(() => proposals.id, { onDelete: "set null" }),
+  handoffPackId: uuid("handoff_pack_id").references(() => handoffPacks.id, { onDelete: "set null" }),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorRole: varchar("actor_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  actorLabel: varchar("actor_label", { length: 160 }).notNull(),
+  sourceKind: varchar("source_kind", { length: 40 }).$type<EventPlanSourceKind>().notNull(),
+  sourceId: varchar("source_id", { length: 160 }).notNull(),
+  title: varchar("title", { length: 180 }).notNull(),
+  summary: text("summary").notNull(),
+  beforeSummary: text("before_summary"),
+  afterSummary: text("after_summary"),
+  affectedSurfaces: jsonb("affected_surfaces").$type<EventPlanChangeSurface[]>().notNull(),
+  audienceRoles: jsonb("audience_roles").$type<EventPlanAudienceRole[]>().notNull(),
+  riskLevel: varchar("risk_level", { length: 20 }).$type<EventPlanRiskLevel>().notNull().default("attention"),
+  requiresHallkeeperAcknowledgement: boolean("requires_hallkeeper_acknowledgement").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("event_plan_changes_event_created_idx").on(table.eventId, table.createdAt),
+  index("event_plan_changes_venue_created_idx").on(table.venueId, table.createdAt),
+  index("event_plan_changes_config_idx").on(table.configurationId),
+  index("event_plan_changes_proposal_idx").on(table.proposalId),
+  index("event_plan_changes_handoff_idx").on(table.handoffPackId),
+]);
+
+export const eventPlanNotifications = pgTable("event_plan_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  changeId: uuid("change_id").references(() => eventPlanChanges.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").references(() => venues.id, { onDelete: "cascade" }),
+  audienceRole: varchar("audience_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  recipientUserId: uuid("recipient_user_id").references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 180 }).notNull(),
+  body: text("body").notNull(),
+  severity: varchar("severity", { length: 20 }).$type<EventPlanNotificationSeverity>().notNull().default("attention"),
+  actionPath: varchar("action_path", { length: 500 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("event_plan_notifications_change_idx").on(table.changeId),
+  index("event_plan_notifications_venue_role_created_idx").on(table.venueId, table.audienceRole, table.createdAt),
+  index("event_plan_notifications_recipient_created_idx").on(table.recipientUserId, table.createdAt),
+]);
+
+export const eventPlanNotificationReads = pgTable("event_plan_notification_reads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  notificationId: uuid("notification_id").notNull().references(() => eventPlanNotifications.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  readAt: timestamp("read_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_plan_notification_reads_unique").on(table.notificationId, table.userId),
+  index("event_plan_notification_reads_user_idx").on(table.userId),
+]);
+
+export const eventPlanChangeAcknowledgements = pgTable("event_plan_change_acknowledgements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  changeId: uuid("change_id").notNull().references(() => eventPlanChanges.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  acknowledgedBy: uuid("acknowledged_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  acknowledgedByRole: varchar("acknowledged_by_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_plan_change_ack_user_unique").on(table.changeId, table.acknowledgedBy),
+  index("event_plan_change_ack_event_idx").on(table.eventId, table.createdAt),
 ]);
 
 // ---------------------------------------------------------------------------

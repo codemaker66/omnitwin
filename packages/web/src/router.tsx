@@ -21,6 +21,9 @@ const LoginPage = lazy(() =>
 const RegisterPage = lazy(() =>
   import("./pages/RegisterPage.js").then((m) => ({ default: m.RegisterPage })),
 );
+const ClerkRouteProvider = lazy(() =>
+  import("./components/auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider })),
+);
 const EditorPage = lazy(() =>
   import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage })),
 );
@@ -60,6 +63,9 @@ const TradesHallAssetStatusPage = lazy(() =>
 const ProposalPage = lazy(() =>
   import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage })),
 );
+const SupplierPortalPage = lazy(() =>
+  import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage })),
+);
 const OpsHandoffPage = lazy(() =>
   import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage })),
 );
@@ -87,6 +93,10 @@ function withSuspense(node: ReactElement): ReactElement {
   return <Suspense fallback={<LoadingFallback />}>{node}</Suspense>;
 }
 
+function withClerk(node: ReactElement): ReactElement {
+  return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
+}
+
 function OnboardRedirect(): ReactElement {
   const location = useLocation();
   return <Navigate to={`/register${location.search}`} replace />;
@@ -102,11 +112,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/login",
-    element: withSuspense(<LoginPage />),
+    element: withClerk(<LoginPage />),
   },
   {
     path: "/register",
-    element: withSuspense(<RegisterPage />),
+    element: withClerk(<RegisterPage />),
   },
   {
     // Temporary acquisition path until a dedicated billing/onboarding flow lands.
@@ -169,34 +179,34 @@ export const router = createBrowserRouter([
     // route guard matches that policy — unauthenticated users redirect to
     // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
-    element: (
+    element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
-        {withSuspense(<HallkeeperPage />)}
-      </ProtectedRoute>
+        <HallkeeperPage />
+      </ProtectedRoute>,
     ),
   },
   {
     path: "/dashboard",
-    element: (
+    element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
-        {withSuspense(<DashboardPage />)}
-      </ProtectedRoute>
+        <DashboardPage />
+      </ProtectedRoute>,
     ),
   },
   {
     path: "/ops/handoff/:handoffPackId",
-    element: (
+    element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
-        {withSuspense(<OpsHandoffPage />)}
-      </ProtectedRoute>
+        <OpsHandoffPage />
+      </ProtectedRoute>,
     ),
   },
   {
     path: "/ops/events/:eventId",
-    element: (
+    element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
-        {withSuspense(<EventDayOpsPage />)}
-      </ProtectedRoute>
+        <EventDayOpsPage />
+      </ProtectedRoute>,
     ),
   },
   {
@@ -221,10 +231,10 @@ export const router = createBrowserRouter([
     // Internal operator asset status view. Protected because it reflects
     // capture/package registration state and links into dev runtime routes.
     path: "/dev/assets/rooms",
-    element: (
+    element: withClerk(
       <ProtectedRoute allowedRoles={["admin"]}>
-        {withSuspense(<TradesHallAssetStatusPage />)}
-      </ProtectedRoute>
+        <TradesHallAssetStatusPage />
+      </ProtectedRoute>,
     ),
   },
   {
@@ -244,6 +254,12 @@ export const router = createBrowserRouter([
     // the API through a stored hash and returns only client-safe proposal data.
     path: "/proposal-share/:token",
     element: withSuspense(<ProposalPage />),
+  },
+  {
+    // Supplier coordination share token route. Public — the token is resolved
+    // by the API through a stored hash and returns only supplier-scoped data.
+    path: "/supplier-share/:token",
+    element: withSuspense(<SupplierPortalPage />),
   },
   {
     path: "/privacy",
@@ -283,7 +299,7 @@ export const router = createBrowserRouter([
     // planners on /editor. Kept off `/` so the public landing isn't
     // bypassed for unauthenticated visitors.
     path: "/app",
-    element: <RoleAwareRedirect />,
+    element: withClerk(<RoleAwareRedirect />),
   },
   {
     path: "*",

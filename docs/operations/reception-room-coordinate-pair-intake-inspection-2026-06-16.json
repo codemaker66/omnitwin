@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "runtime-control-coordinate-pair-intake-inspection.v0",
+  "generatedAt": "2026-06-16T16:49:46.889Z",
+  "sourcePacketRef": "docs/operations/reception-room-landmark-control-intake-2026-06-16.json",
+  "coordinatePairIntakeRef": null,
+  "sourcePacketId": "reception-room-landmark-control-intake-2026-06-16",
+  "venueSlug": "trades-hall",
+  "roomSlug": "reception-room",
+  "runtimePackageId": "71687e9e-c23d-4f51-b3dd-a6a82c97978d",
+  "status": "missing_intake_file",
+  "readyForReviewedPacketBuild": false,
+  "sourcePacketSummary": {
+    "totalLandmarks": 4,
+    "nonRejectedLandmarks": 4,
+    "reviewedLandmarks": 0,
+    "sourceFrame": "ARF",
+    "targetFrame": "CVF",
+    "residualRmseM": null,
+    "maxResidualM": null,
+    "allNonRejectedLandmarksReviewed": false
+  },
+  "coordinatePairIntakeSummary": null,
+  "blockers": [
+    "No reviewed coordinate-pair intake file was provided."
+  ],
+  "messages": [
+    "Coordinate-pair intake is not ready to build a reviewed runtime-control packet.",
+    "No reviewed packet, capture-control source, signed transform, public exposure change, or operational geometry was created by this inspection."
+  ],
+  "guardrails": {
+    "sourcePacketMutated": false,
+    "reviewedPacketCreated": false,
+    "captureControlSourceCreated": false,
+    "transformPayloadCreated": false,
+    "signedTransformCreated": false,
+    "assetEvidencePromoted": false,
+    "publicExposureChanged": false,
+    "operationalGeometryCreated": false
+  }
+}

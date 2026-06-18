@@ -18,13 +18,31 @@ describe("SS++ performance and visual hardening guardrails", () => {
   });
 
   it("keeps Spark isolated from normal editor sources", async () => {
+    const mainSource = await read("src/main.tsx");
     const appSource = await read("src/App.tsx");
     const editorSource = await read("src/pages/EditorPage.tsx");
+    const cockpitSplatLayerSource = await read("src/components/editor/CockpitSplatLayer.tsx");
+    const tradesHallVisualSource = await read("src/pages/TradesHallVisualPage.tsx");
+    const verticalToolboxSource = await read("src/components/editor/VerticalToolbox.tsx");
+    const clerkRouteProviderSource = await read("src/components/auth/ClerkRouteProvider.tsx");
     const viteConfig = await read("vite.config.ts");
 
+    expect(mainSource).not.toContain("@clerk/react");
+    expect(clerkRouteProviderSource).toContain("@clerk/react");
+    expect(verticalToolboxSource).not.toMatch(/import\s+\{[^}]*AuthModal[^}]*\}\s+from\s+["']\.\/AuthModal\.js["']/u);
+    expect(verticalToolboxSource).toContain('import("./AuthModal.js")');
+    expect(verticalToolboxSource).toContain('import("../auth/ClerkRouteProvider.js")');
     expect(appSource).not.toContain("@sparkjsdev/spark");
     expect(editorSource).not.toContain("@sparkjsdev/spark");
-    expect(viteConfig).toContain('"spark": ["@sparkjsdev/spark"]');
+    expect(cockpitSplatLayerSource).not.toMatch(/import\s+\{[^}]*SparkSplatLayer[^}]*\}\s+from\s+["']\.\.\/scene\/SparkSplatLayer\.js["']/u);
+    expect(tradesHallVisualSource).not.toMatch(/import\s+\{[^}]*SparkSplatLayer[^}]*\}\s+from\s+["']\.\.\/components\/scene\/SparkSplatLayer\.js["']/u);
+    expect(cockpitSplatLayerSource).toContain('import("../scene/SparkSplatLayer.js")');
+    expect(tradesHallVisualSource).toContain('import("../components/scene/SparkSplatLayer.js")');
+    expect(viteConfig).toContain('"/node_modules/react/"');
+    expect(viteConfig).toContain('"/node_modules/react-dom/"');
+    expect(viteConfig).toContain('"/node_modules/zustand/"');
+    expect(viteConfig).toContain('"vite/preload-helper"');
+    expect(viteConfig).toContain('"/node_modules/@sparkjsdev/spark/"');
     expect(viteConfig).toMatch(/chunkSizeWarningLimit:\s*5_500/u);
   });
 
@@ -39,5 +57,14 @@ describe("SS++ performance and visual hardening guardrails", () => {
     expect(spec).toContain("sspp-dashboard-pipeline.png");
     expect(spec).toContain("sspp-pricing.png");
     expect(spec).toContain("sspp-hallkeeper.png");
+  });
+
+  it("keeps compositor-heavy cockpit filters disabled on the planner shell", async () => {
+    const cockpitCss = await read("src/components/editor/cockpit/PlannerCockpit.css");
+
+    expect(cockpitCss).toContain(".cockpit-shell *::before");
+    expect(cockpitCss).toContain("-webkit-backdrop-filter: none !important");
+    expect(cockpitCss).toContain("backdrop-filter: none !important");
+    expect(cockpitCss).toContain("filter: none !important");
   });
 });

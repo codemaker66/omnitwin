@@ -1,38 +1,59 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   AdminRoomsQuerySchema,
   AssetVersionSchema,
+  CaptureControlSourceRecordQuerySchema,
+  CaptureControlSourceRegistrationSchema,
   CaptureSessionSchema,
   LatestRuntimePackageQuerySchema,
   PublicRoomRuntimeVisualSchema,
+  RegisterCaptureControlSourceRecordInputSchema,
   RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
+  RegisterRuntimeQaRecordInputSchema,
+  RegisterRuntimeTransformArtifactInputSchema,
   RoomManifestQuerySchema,
   RoomManifestSchema,
   RoomAssetStatusSchema,
   RuntimeFileExtensionSchema,
+  RuntimeQaRecordQuerySchema,
+  RuntimeQaRecordRegistrationSchema,
   RuntimePackageSchema,
+  RuntimeTransformArtifactQuerySchema,
+  RuntimeTransformArtifactSchema,
   TRADES_HALL_RUNTIME_ROOMS,
   assetKindAllowsExtension,
   isForbiddenAssetFixtureKey,
   splatExtensionForKey,
+  runtimeQaRecordAllowsPublicExposure,
+  runtimeQaRecordSignedTransformArtifactId,
   type AssetVersion,
+  type CaptureControlSourceRegistration,
   type CaptureSession,
+  type CaptureControlFreshnessStatus,
   type PublicRoomRuntimeVisual,
+  type RuntimeQaRecordRegistration,
   type RegisterRuntimePackageInput,
+  type ReviewedCaptureControlStatus,
+  type ReviewedRuntimeQaStatus,
+  type RoomRuntimeControlEvidenceChainStatus,
   type RoomManifest,
   type RoomAssetStatus,
   type RuntimePackage,
+  type RuntimeTransformArtifact,
 } from "@omnitwin/types";
 import {
   assetDefinitions,
   assetVersions,
+  captureControlSourceRecords,
   captureSessions,
   roomManifests,
   runtimePackages,
+  runtimeQaRecords,
+  runtimeTransformArtifacts,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
@@ -51,14 +72,23 @@ import { authenticate, authorize } from "../middleware/auth.js";
 //   POST /admin/assets/capture-session
 //   POST /admin/assets/register-version
 //   POST /admin/assets/register-runtime-package
+//   POST /admin/assets/register-runtime-transform-artifact
+//   GET  /admin/assets/runtime-transform-artifacts?runtimePackageId=...
+//   POST /admin/assets/register-runtime-qa-record
+//   GET  /admin/assets/runtime-qa-records?runtimePackageId=...
+//   POST /admin/assets/register-capture-control-source
+//   GET  /admin/assets/capture-control-sources?venue=trades-hall
 //   GET  /admin/assets/rooms?venue=trades-hall
 //   GET  /admin/assets/room-manifests
 // ---------------------------------------------------------------------------
 
-type AssetVersionRow = typeof assetVersions.$inferSelect;
-type CaptureSessionRow = typeof captureSessions.$inferSelect;
-type RoomManifestRow = typeof roomManifests.$inferSelect;
-type RuntimePackageRow = typeof runtimePackages.$inferSelect;
+export type AssetVersionRow = typeof assetVersions.$inferSelect;
+export type CaptureSessionRow = typeof captureSessions.$inferSelect;
+export type CaptureControlSourceRecordRow = typeof captureControlSourceRecords.$inferSelect;
+export type RoomManifestRow = typeof roomManifests.$inferSelect;
+export type RuntimePackageRow = typeof runtimePackages.$inferSelect;
+export type RuntimeQaRecordRow = typeof runtimeQaRecords.$inferSelect;
+export type RuntimeTransformArtifactRow = typeof runtimeTransformArtifacts.$inferSelect;
 
 const RuntimeAssetParamsSchema = z.object({
   assetVersionId: z.string().uuid(),
@@ -67,6 +97,19 @@ const RuntimeAssetParamsSchema = z.object({
 const HTTP_RANGE_HEADER_PATTERN = /^bytes=\d*-\d*$/u;
 
 type S3ClientType = import("@aws-sdk/client-s3").S3Client;
+
+const RECEPTION_ROOM_RUNTIME_PACKAGE_ID = "71687e9e-c23d-4f51-b3dd-a6a82c97978d";
+const RECEPTION_ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_REF =
+  "docs/operations/reception-room-runtime-control-evidence-chain-status-2026-06-16.json";
+
+interface RuntimeControlEvidenceChainDashboardSummary {
+  readonly status: RoomRuntimeControlEvidenceChainStatus;
+  readonly ref: string | null;
+  readonly requiredCoordinatePairCount: number | null;
+  readonly reviewedCoordinatePairCount: number | null;
+  readonly safeCopy: string;
+  readonly nextAction: string;
+}
 
 let cachedS3: S3ClientType | null = null;
 
@@ -268,6 +311,60 @@ function serializeRuntimePackage(
   });
 }
 
+function serializeRuntimeQaRecord(row: RuntimeQaRecordRow): RuntimeQaRecordRegistration {
+  return RuntimeQaRecordRegistrationSchema.parse({
+    id: row.id,
+    runtimePackageId: row.runtimePackageId,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    recordId: row.recordId,
+    record: row.recordJson,
+    signedTransformArtifactId: row.signedTransformArtifactId,
+    publicExposureDecision: row.publicExposureDecision,
+    assetEvidenceStatus: row.assetEvidenceStatus,
+    runtimeStatus: row.runtimeStatus,
+    reviewedBy: row.reviewedBy,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
+function serializeRuntimeTransformArtifact(row: RuntimeTransformArtifactRow): RuntimeTransformArtifact {
+  return RuntimeTransformArtifactSchema.parse({
+    id: row.id,
+    runtimePackageId: row.runtimePackageId,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    transformArtifactId: row.transformArtifactId,
+    transformArtifact: row.transformArtifact,
+    reviewNote: row.reviewNote,
+    registeredBy: row.registeredBy,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
+function serializeCaptureControlSourceRecord(
+  row: CaptureControlSourceRecordRow,
+): CaptureControlSourceRegistration {
+  return CaptureControlSourceRegistrationSchema.parse({
+    id: row.id,
+    venueSlug: row.venueSlug,
+    roomSlug: row.roomSlug,
+    runtimePackageId: row.runtimePackageId,
+    transformArtifactId: row.transformArtifactId,
+    sourceId: row.sourceId,
+    sourceClass: row.sourceClass,
+    poseAuthorityLevel: row.poseAuthorityLevel,
+    qaStatus: row.qaStatus,
+    source: row.sourceRecord,
+    reviewNote: row.reviewNote,
+    registeredBy: row.registeredBy,
+    createdAt: dateToIso(row.createdAt),
+    updatedAt: dateToIso(row.updatedAt),
+  });
+}
+
 function unavailablePublicRoomRuntimeVisual(venueSlug: string, roomSlug: string): PublicRoomRuntimeVisual {
   return PublicRoomRuntimeVisualSchema.parse({
     venueSlug,
@@ -311,6 +408,55 @@ function resolvePublicRoomVisualUrl(row: AssetVersionRow): string | null {
   return isClientSafeVisualUrl(row.externalUrl) ? row.externalUrl : null;
 }
 
+export function runtimeQaRecordAllowsPublicRoomVisual(
+  row: RuntimeQaRecordRow | null | undefined,
+  transformArtifact: RuntimeTransformArtifactRow | null | undefined,
+): boolean {
+  if (row === null || row === undefined) return false;
+  if (!runtimeQaRecordAllowsPublicExposure(row.recordJson)) return false;
+
+  const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(row.recordJson);
+  if (signedTransformArtifactId === null) return false;
+
+  return transformArtifact !== null &&
+    transformArtifact !== undefined &&
+    transformArtifact.runtimePackageId === row.runtimePackageId &&
+    transformArtifact.venueSlug === row.venueSlug &&
+    transformArtifact.roomSlug === row.roomSlug &&
+    transformArtifact.transformArtifactId === signedTransformArtifactId;
+}
+
+async function findRuntimeTransformArtifact(
+  db: Database,
+  runtimePackageId: string,
+  transformArtifactId: string | null,
+): Promise<RuntimeTransformArtifactRow | null> {
+  if (transformArtifactId === null) return null;
+  const [row] = await db
+    .select()
+    .from(runtimeTransformArtifacts)
+    .where(and(
+      eq(runtimeTransformArtifacts.runtimePackageId, runtimePackageId),
+      eq(runtimeTransformArtifacts.transformArtifactId, transformArtifactId),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
+async function findRuntimeTransformArtifactForQaRecord(
+  db: Database,
+  row: RuntimeQaRecordRow | null,
+): Promise<RuntimeTransformArtifactRow | null> {
+  return row !== null &&
+    row !== undefined
+    ? findRuntimeTransformArtifact(
+      db,
+      row.runtimePackageId,
+      runtimeQaRecordSignedTransformArtifactId(row.recordJson),
+    )
+    : null;
+}
+
 async function findAssetVersion(db: Database, id: string | null | undefined): Promise<AssetVersionRow | null> {
   if (id === null || id === undefined) return null;
   const [row] = await db
@@ -319,6 +465,111 @@ async function findAssetVersion(db: Database, id: string | null | undefined): Pr
     .where(eq(assetVersions.id, id))
     .limit(1);
   return row ?? null;
+}
+
+async function latestRuntimeQaRecord(db: Database, runtimePackageId: string): Promise<RuntimeQaRecordRow | null> {
+  const [row] = await db
+    .select()
+    .from(runtimeQaRecords)
+    .where(eq(runtimeQaRecords.runtimePackageId, runtimePackageId))
+    .orderBy(desc(runtimeQaRecords.updatedAt), desc(runtimeQaRecords.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+async function findRuntimePackage(db: Database, id: string): Promise<RuntimePackageRow | null> {
+  const [row] = await db
+    .select()
+    .from(runtimePackages)
+    .where(eq(runtimePackages.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+function validateRuntimeTransformPackageLink(
+  input: { venueSlug: string; roomSlug: string },
+  pkg: RuntimePackageRow,
+): string | null {
+  if (pkg.venueSlug !== input.venueSlug || pkg.roomSlug !== input.roomSlug) {
+    return "Runtime transform artifact must target the same venue and room as the runtime package.";
+  }
+  if (pkg.runtimeStatus === "archived" || pkg.evidenceStatus === "rejected") {
+    return "Runtime transform artifacts cannot be registered against rejected or archived runtime packages.";
+  }
+  return null;
+}
+
+function validateRuntimeQaPackageLink(
+  input: { venueSlug: string; roomSlug: string; record: { assetEvidenceStatus: string; runtimeStatus: string } },
+  pkg: RuntimePackageRow,
+): string | null {
+  if (pkg.venueSlug !== input.venueSlug || pkg.roomSlug !== input.roomSlug) {
+    return "Runtime QA record must target the same venue and room as the runtime package.";
+  }
+  if (pkg.evidenceStatus !== input.record.assetEvidenceStatus) {
+    return "Runtime QA asset evidence status must match the runtime package evidence status.";
+  }
+  if (pkg.runtimeStatus !== input.record.runtimeStatus) {
+    return "Runtime QA runtime status must match the runtime package runtime status.";
+  }
+  return null;
+}
+
+function validateRuntimeQaSignedTransformLink(
+  input: { venueSlug: string; roomSlug: string; runtimePackageId: string; record: { viewTransform: { signedTransformArtifactId: string | null } } },
+  transformArtifact: RuntimeTransformArtifactRow | null,
+): string | null {
+  const signedTransformArtifactId = input.record.viewTransform.signedTransformArtifactId;
+  if (signedTransformArtifactId === null) return null;
+  if (transformArtifact === null) {
+    return "Runtime QA signed transform artifact must be registered for the same runtime package.";
+  }
+  if (
+    transformArtifact.runtimePackageId !== input.runtimePackageId ||
+    transformArtifact.venueSlug !== input.venueSlug ||
+    transformArtifact.roomSlug !== input.roomSlug ||
+    transformArtifact.transformArtifactId !== signedTransformArtifactId
+  ) {
+    return "Runtime QA signed transform artifact must target the same runtime package, venue, and room.";
+  }
+  return null;
+}
+
+function validateCaptureControlRuntimePackageLink(
+  input: { venueSlug: string; roomSlug: string; runtimePackageId?: string | null },
+  pkg: RuntimePackageRow | null,
+): string | null {
+  const runtimePackageId = input.runtimePackageId ?? null;
+  if (runtimePackageId === null) return null;
+  if (pkg === null) return "Capture control runtime package not found.";
+  if (pkg.venueSlug !== input.venueSlug || pkg.roomSlug !== input.roomSlug) {
+    return "Capture control source must target the same venue and room as the runtime package.";
+  }
+  return null;
+}
+
+function validateCaptureControlTransformLink(
+  input: { venueSlug: string; roomSlug: string; runtimePackageId?: string | null; transformArtifactId?: string | null },
+  transformArtifact: RuntimeTransformArtifactRow | null,
+): string | null {
+  const transformArtifactId = input.transformArtifactId ?? null;
+  if (transformArtifactId === null) return null;
+  const runtimePackageId = input.runtimePackageId ?? null;
+  if (runtimePackageId === null) {
+    return "Capture control transform links require a runtime package id.";
+  }
+  if (transformArtifact === null) {
+    return "Capture control transform artifact must be registered for the same runtime package.";
+  }
+  if (
+    transformArtifact.runtimePackageId !== runtimePackageId ||
+    transformArtifact.venueSlug !== input.venueSlug ||
+    transformArtifact.roomSlug !== input.roomSlug ||
+    transformArtifact.transformArtifactId !== transformArtifactId
+  ) {
+    return "Capture control transform artifact must target the same runtime package, venue, and room.";
+  }
+  return null;
 }
 
 function validateAssetReference(
@@ -394,11 +645,11 @@ function runtimePackageSafeCopy(defaultCopy: string, pkg: RuntimePackageRow | un
   if (!runtimePackageCanLoad(pkg)) return "Runtime package registered, not ready to load";
   switch (pkg.evidenceStatus) {
     case "unverified":
-      return "Runtime asset loaded, not yet verified/signed";
+      return "Runtime asset loaded, not yet verified/signed.";
     case "machine_checked":
-      return "Runtime asset loaded, machine checked; human review required";
+      return "Runtime asset loaded, machine checked; human review required.";
     case "human_reviewed":
-      return "Runtime asset loaded, human reviewed";
+      return "Runtime asset loaded, human reviewed.";
     case "rejected":
       return "Runtime asset rejected in review - not loaded";
   }
@@ -412,23 +663,305 @@ function roomStatusNextAction(defaultAction: string, splatExists: boolean, pkg: 
   return "Open the internal runtime view";
 }
 
-function buildRoomAssetStatuses(
+function transformArtifactCountsByPackage(
+  rows: readonly RuntimeTransformArtifactRow[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.runtimePackageId, (counts.get(row.runtimePackageId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function latestTransformArtifactIdByPackage(
+  rows: readonly RuntimeTransformArtifactRow[],
+): Map<string, string> {
+  const byPackage = new Map<string, string>();
+  for (const row of rows) {
+    if (!byPackage.has(row.runtimePackageId)) {
+      byPackage.set(row.runtimePackageId, row.transformArtifactId);
+    }
+  }
+  return byPackage;
+}
+
+function latestQaRecordByPackage(
+  rows: readonly RuntimeQaRecordRow[],
+): Map<string, RuntimeQaRecordRow> {
+  const byPackage = new Map<string, RuntimeQaRecordRow>();
+  for (const row of rows) {
+    if (!byPackage.has(row.runtimePackageId)) {
+      byPackage.set(row.runtimePackageId, row);
+    }
+  }
+  return byPackage;
+}
+
+function captureControlSourcesForRoom(
+  rows: readonly CaptureControlSourceRecordRow[],
+  roomSlug: string,
+): readonly CaptureControlSourceRecordRow[] {
+  return rows.filter((row) => row.roomSlug === roomSlug);
+}
+
+function captureControlTransformLinked(
+  source: CaptureControlSourceRecordRow | undefined,
+  pkg: RuntimePackageRow | undefined,
+  latestTransformArtifactId: string | null,
+): boolean {
+  return source !== undefined &&
+    pkg !== undefined &&
+    source.runtimePackageId === pkg.id &&
+    source.transformArtifactId !== null &&
+    source.transformArtifactId === latestTransformArtifactId;
+}
+
+function reviewedTransformSafeCopy(pkg: RuntimePackageRow | undefined, count: number): string {
+  if (pkg === undefined) return "runtime package required before transform review";
+  if (count === 0) return "no reviewed runtime transform registered";
+  return count === 1
+    ? "reviewed runtime transform artifact registered"
+    : `${String(count)} reviewed runtime transform artifacts registered`;
+}
+
+function reviewedQaStatus(
+  pkg: RuntimePackageRow | undefined,
+  qaRecord: RuntimeQaRecordRow | undefined,
+): ReviewedRuntimeQaStatus {
+  if (pkg === undefined || qaRecord === undefined) return "missing";
+  switch (qaRecord.publicExposureDecision) {
+    case "blocked_internal_only":
+    case "approved_internal_preview":
+    case "approved_public":
+      return qaRecord.publicExposureDecision;
+    default:
+      return "missing";
+  }
+}
+
+function qaSignedTransformLinked(
+  qaRecord: RuntimeQaRecordRow | undefined,
+  latestTransformArtifactId: string | null,
+): boolean {
+  return qaRecord !== undefined &&
+    qaRecord.signedTransformArtifactId !== null &&
+    qaRecord.signedTransformArtifactId === latestTransformArtifactId;
+}
+
+function reviewedQaSafeCopy(
+  pkg: RuntimePackageRow | undefined,
+  qaRecord: RuntimeQaRecordRow | undefined,
+  signedTransformLinked: boolean,
+): string {
+  if (pkg === undefined) return "runtime package required before runtime QA review";
+  if (qaRecord === undefined) return "no runtime QA record registered";
+
+  switch (qaRecord.publicExposureDecision) {
+    case "blocked_internal_only":
+      return "runtime QA recorded; public exposure blocked";
+    case "approved_internal_preview":
+      return "runtime QA approved for internal preview only";
+    case "approved_public":
+      return signedTransformLinked
+        ? "runtime QA approved for public exposure with linked transform artifact"
+        : "runtime QA approval missing its registered transform artifact link";
+    default:
+      return "runtime QA record has unsupported public exposure state";
+  }
+}
+
+function captureControlStatus(
+  sourceCount: number,
+  transformLinked: boolean,
+): ReviewedCaptureControlStatus {
+  if (sourceCount === 0) return "missing";
+  if (transformLinked) return "linked_to_transform";
+  return "source_registered";
+}
+
+function captureControlSafeCopy(
+  sourceCount: number,
+  source: CaptureControlSourceRecordRow | undefined,
+  transformLinked: boolean,
+  freshnessStatus: CaptureControlFreshnessStatus,
+): string {
+  if (sourceCount === 0 || source === undefined) return "no capture-control source registered";
+  if (freshnessStatus === "stale_for_runtime_package") {
+    return "capture-control source registered; stale evidence review required";
+  }
+  if (transformLinked) return "capture-control source linked to latest transform artifact";
+  if (source.transformArtifactId !== null) return "capture-control source linked to a non-current transform artifact";
+  return "capture-control source registered; signed transform still required";
+}
+
+function captureControlAuthoritySafeCopy(source: CaptureControlSourceRecordRow | undefined): string {
+  if (source === undefined) return "no capture-control authority recorded";
+  switch (source.poseAuthorityLevel) {
+    case "measured_control":
+      return "measured control source recorded; review before operational reliance";
+    case "validated_fiducial_control":
+      return "fiducial control source recorded; review before operational reliance";
+    case "manual_landmark_control":
+      return "manual landmark control source recorded; reviewer confirmation required";
+    case "known_pose_colmap":
+      return "known-pose COLMAP source recorded; review before operational reliance";
+    case "colmap_reconstructed":
+      return "COLMAP reconstructed source recorded; metric scale still requires external control";
+    case "visual_alignment_only":
+      return "visual-only alignment source recorded; not measurement control";
+    default:
+      return "capture-control authority source recorded; review required";
+  }
+}
+
+function captureControlStalenessSafeCopy(source: CaptureControlSourceRecordRow | undefined): string {
+  if (source === undefined) return "no capture-control staleness policy recorded";
+  const count = source.sourceRecord.staleWhen.length;
+  if (count === 0) return "capture-control source has no staleness triggers recorded";
+  return count === 1
+    ? "capture-control source has 1 staleness trigger recorded"
+    : `capture-control source has ${String(count)} staleness triggers recorded`;
+}
+
+function captureControlActiveStalenessTriggers(
+  source: CaptureControlSourceRecordRow | undefined,
+  pkg: RuntimePackageRow | undefined,
+): readonly string[] {
+  if (source === undefined) return [];
+  const activeTriggers: string[] = [];
+  const staleWhen = new Set<string>(source.sourceRecord.staleWhen);
+
+  if (
+    staleWhen.has("runtime_package_changed") &&
+    source.runtimePackageId !== null &&
+    (pkg === undefined || source.runtimePackageId !== pkg.id)
+  ) {
+    activeTriggers.push("runtime_package_changed");
+  }
+  if (staleWhen.has("source_pose_rejected") && source.qaStatus === "rejected") {
+    activeTriggers.push("source_pose_rejected");
+  }
+  if (staleWhen.has("manual_contestation") && source.qaStatus === "contested") {
+    activeTriggers.push("manual_contestation");
+  }
+  if (staleWhen.has("review_expired") && source.qaStatus === "stale") {
+    activeTriggers.push("review_expired");
+  }
+  if (staleWhen.has("capture_session_superseded") && source.qaStatus === "superseded") {
+    activeTriggers.push("capture_session_superseded");
+  }
+
+  return activeTriggers;
+}
+
+function captureControlFreshnessStatus(
+  source: CaptureControlSourceRecordRow | undefined,
+  pkg: RuntimePackageRow | undefined,
+  activeStalenessTriggers: readonly string[],
+): CaptureControlFreshnessStatus {
+  if (source === undefined) return "missing";
+  if (activeStalenessTriggers.length > 0) return "stale_for_runtime_package";
+  if (source.runtimePackageId !== null && pkg !== undefined && source.runtimePackageId === pkg.id) {
+    return "current_for_runtime_package";
+  }
+  return "not_checked";
+}
+
+function runtimeControlEvidenceChainSummary(
+  venueSlug: string,
+  roomSlug: string,
+  pkg: RuntimePackageRow | undefined,
+): RuntimeControlEvidenceChainDashboardSummary {
+  if (pkg === undefined) {
+    return {
+      status: "not_recorded",
+      ref: null,
+      requiredCoordinatePairCount: null,
+      reviewedCoordinatePairCount: null,
+      safeCopy: "runtime package required before runtime-control chain review",
+      nextAction: "Register a runtime package before reviewing coordinate-pair evidence",
+    };
+  }
+
+  if (venueSlug !== "trades-hall" || roomSlug !== "reception-room") {
+    return {
+      status: "not_recorded",
+      ref: null,
+      requiredCoordinatePairCount: null,
+      reviewedCoordinatePairCount: null,
+      safeCopy: "runtime-control evidence chain not recorded for this room",
+      nextAction: "Create runtime-control source evidence before signed-transform review",
+    };
+  }
+
+  if (pkg.id !== RECEPTION_ROOM_RUNTIME_PACKAGE_ID) {
+    return {
+      status: "not_recorded",
+      ref: null,
+      requiredCoordinatePairCount: null,
+      reviewedCoordinatePairCount: null,
+      safeCopy: "runtime-control evidence chain is not recorded for the latest runtime package",
+      nextAction: "Regenerate runtime-control chain status for the latest runtime package",
+    };
+  }
+
+  return {
+    status: "blocked_missing_coordinate_pair_intake",
+    ref: RECEPTION_ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_REF,
+    requiredCoordinatePairCount: 4,
+    reviewedCoordinatePairCount: 0,
+    safeCopy: "runtime-control chain blocked because reviewed coordinate-pair intake is missing",
+    nextAction: "Collect the four reviewed ARF to CVF landmark measurements",
+  };
+}
+
+export function buildRoomAssetStatuses(
   venueSlug: string,
   manifests: readonly RoomManifestRow[],
   splatRows: readonly AssetVersionRow[],
   packageRows: readonly RuntimePackageRow[],
+  transformArtifactRows: readonly RuntimeTransformArtifactRow[] = [],
+  qaRecordRows: readonly RuntimeQaRecordRow[] = [],
+  captureControlRows: readonly CaptureControlSourceRecordRow[] = [],
 ): readonly RoomAssetStatus[] {
   const manifestByRoom = new Map(manifests.map((manifest) => [manifest.roomSlug, manifest]));
   const splatRooms = new Set(splatRows
     .filter((row) => row.assetKind === "splat" && row.roomSlug !== null && row.runtimeStatus !== "archived")
     .map((row) => row.roomSlug as string));
   const packageByRoom = latestPackageByRoom(packageRows);
+  const transformCountsByPackage = transformArtifactCountsByPackage(transformArtifactRows);
+  const latestTransformByPackage = latestTransformArtifactIdByPackage(transformArtifactRows);
+  const latestQaByPackage = latestQaRecordByPackage(qaRecordRows);
   const defaults = venueSlug === "trades-hall" ? TRADES_HALL_RUNTIME_ROOMS : [];
 
   return defaults.map((room) => {
     const manifest = manifestByRoom.get(room.slug);
     const pkg = packageByRoom.get(room.slug);
     const splatExists = splatRooms.has(room.slug);
+    const reviewedTransformArtifactCount = pkg === undefined
+      ? 0
+      : transformCountsByPackage.get(pkg.id) ?? 0;
+    const latestTransformArtifactId = pkg === undefined ? null : latestTransformByPackage.get(pkg.id) ?? null;
+    const qaRecord = pkg === undefined ? undefined : latestQaByPackage.get(pkg.id);
+    const linkedSignedTransform = qaSignedTransformLinked(qaRecord, latestTransformArtifactId);
+    const captureSources = captureControlSourcesForRoom(captureControlRows, room.slug);
+    const latestCaptureSource = captureSources[0];
+    const linkedCaptureControlTransform = captureControlTransformLinked(
+      latestCaptureSource,
+      pkg,
+      latestTransformArtifactId,
+    );
+    const activeCaptureControlStalenessTriggers = captureControlActiveStalenessTriggers(latestCaptureSource, pkg);
+    const captureControlFreshness = captureControlFreshnessStatus(
+      latestCaptureSource,
+      pkg,
+      activeCaptureControlStalenessTriggers,
+    );
+    const runtimeControlEvidenceChain = runtimeControlEvidenceChainSummary(
+      venueSlug,
+      room.slug,
+      pkg,
+    );
     return RoomAssetStatusSchema.parse({
       venueSlug,
       roomSlug: room.slug,
@@ -445,6 +978,42 @@ function buildRoomAssetStatuses(
       splatExists,
       runtimePackageStatus: runtimePackageStatusCopy(pkg),
       runtimePackageExists: pkg !== undefined,
+      reviewedTransformStatus: reviewedTransformArtifactCount > 0 ? "registered" : "missing",
+      reviewedTransformArtifactCount,
+      latestTransformArtifactId,
+      reviewedTransformSafeCopy: reviewedTransformSafeCopy(pkg, reviewedTransformArtifactCount),
+      reviewedQaStatus: reviewedQaStatus(pkg, qaRecord),
+      latestQaRecordId: qaRecord?.recordId ?? null,
+      qaSignedTransformArtifactId: qaRecord?.signedTransformArtifactId ?? null,
+      qaSignedTransformLinked: linkedSignedTransform,
+      reviewedQaSafeCopy: reviewedQaSafeCopy(pkg, qaRecord, linkedSignedTransform),
+      captureControlStatus: captureControlStatus(captureSources.length, linkedCaptureControlTransform),
+      captureControlSourceCount: captureSources.length,
+      latestCaptureControlSourceRecordId: latestCaptureSource?.id ?? null,
+      latestCaptureControlSourceId: latestCaptureSource?.sourceId ?? null,
+      latestCaptureControlSourceClass: latestCaptureSource?.sourceClass ?? null,
+      latestCaptureControlPoseAuthorityLevel: latestCaptureSource?.poseAuthorityLevel ?? null,
+      latestCaptureControlAlignmentMethods: latestCaptureSource?.sourceRecord.alignmentMethods ?? [],
+      latestCaptureControlStalenessTriggers: latestCaptureSource?.sourceRecord.staleWhen ?? [],
+      latestCaptureControlActiveStalenessTriggers: activeCaptureControlStalenessTriggers,
+      captureControlFreshnessStatus: captureControlFreshness,
+      latestCaptureControlQaStatus: latestCaptureSource?.qaStatus ?? null,
+      captureControlLinkedTransformArtifactId: latestCaptureSource?.transformArtifactId ?? null,
+      captureControlTransformLinked: linkedCaptureControlTransform,
+      captureControlAuthoritySafeCopy: captureControlAuthoritySafeCopy(latestCaptureSource),
+      captureControlStalenessSafeCopy: captureControlStalenessSafeCopy(latestCaptureSource),
+      captureControlSafeCopy: captureControlSafeCopy(
+        captureSources.length,
+        latestCaptureSource,
+        linkedCaptureControlTransform,
+        captureControlFreshness,
+      ),
+      runtimeControlEvidenceChainStatus: runtimeControlEvidenceChain.status,
+      runtimeControlEvidenceChainRef: runtimeControlEvidenceChain.ref,
+      runtimeControlRequiredCoordinatePairCount: runtimeControlEvidenceChain.requiredCoordinatePairCount,
+      runtimeControlReviewedCoordinatePairCount: runtimeControlEvidenceChain.reviewedCoordinatePairCount,
+      runtimeControlEvidenceChainSafeCopy: runtimeControlEvidenceChain.safeCopy,
+      runtimeControlEvidenceChainNextAction: runtimeControlEvidenceChain.nextAction,
       evidenceStatus: pkg?.evidenceStatus ?? null,
       runtimeStatus: pkg?.runtimeStatus ?? null,
       nextAction: roomStatusNextAction(room.nextAction, splatExists, pkg),
@@ -538,6 +1107,12 @@ export async function assetRoutes(
         !runtimePackageCanLoad(row.pkg) ||
         !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
       ) {
+        return { data: unavailable };
+      }
+
+      const qaRecord = await latestRuntimeQaRecord(db, row.pkg.id);
+      const transformArtifact = await findRuntimeTransformArtifactForQaRecord(db, qaRecord);
+      if (!runtimeQaRecordAllowsPublicRoomVisual(qaRecord, transformArtifact)) {
         return { data: unavailable };
       }
 
@@ -705,7 +1280,14 @@ export async function adminAssetRoutes(
       }
 
       const venueSlug = parsedQuery.data.venue;
-      const [manifestRows, splatRows, packageRows] = await Promise.all([
+      const [
+        manifestRows,
+        splatRows,
+        packageRows,
+        transformArtifactRows,
+        qaRecordRows,
+        captureControlRows,
+      ] = await Promise.all([
         db
           .select()
           .from(roomManifests)
@@ -721,9 +1303,32 @@ export async function adminAssetRoutes(
           .from(runtimePackages)
           .where(eq(runtimePackages.venueSlug, venueSlug))
           .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt)),
+        db
+          .select()
+          .from(runtimeTransformArtifacts)
+          .where(eq(runtimeTransformArtifacts.venueSlug, venueSlug))
+          .orderBy(desc(runtimeTransformArtifacts.updatedAt), desc(runtimeTransformArtifacts.createdAt)),
+        db
+          .select()
+          .from(runtimeQaRecords)
+          .where(eq(runtimeQaRecords.venueSlug, venueSlug))
+          .orderBy(desc(runtimeQaRecords.updatedAt), desc(runtimeQaRecords.createdAt)),
+        db
+          .select()
+          .from(captureControlSourceRecords)
+          .where(eq(captureControlSourceRecords.venueSlug, venueSlug))
+          .orderBy(desc(captureControlSourceRecords.updatedAt), desc(captureControlSourceRecords.createdAt)),
       ]);
 
-      return { data: buildRoomAssetStatuses(venueSlug, manifestRows, splatRows, packageRows) };
+      return { data: buildRoomAssetStatuses(
+        venueSlug,
+        manifestRows,
+        splatRows,
+        packageRows,
+        transformArtifactRows,
+        qaRecordRows,
+        captureControlRows,
+      ) };
     },
   );
 
@@ -840,6 +1445,313 @@ export async function adminAssetRoutes(
       }, "runtime package registered");
 
       return reply.status(201).send({ data: serializeRuntimePackage(pkg, primaryVisualAsset, runtimeAssetOrigin(request)) });
+    },
+  );
+
+  server.post(
+    "/register-runtime-transform-artifact",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsed = RegisterRuntimeTransformArtifactInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return validationError(reply, parsed.error.issues);
+      }
+
+      const input = parsed.data;
+      const runtimePackage = await findRuntimePackage(db, input.runtimePackageId);
+      if (runtimePackage === null) {
+        return reply.status(404).send({ error: "Runtime package not found", code: "RUNTIME_PACKAGE_NOT_FOUND" });
+      }
+
+      const linkError = validateRuntimeTransformPackageLink(input, runtimePackage);
+      if (linkError !== null) {
+        return validationError(reply, linkError);
+      }
+
+      const values = {
+        runtimePackageId: input.runtimePackageId,
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug,
+        transformArtifactId: input.transformArtifact.id,
+        transformArtifact: input.transformArtifact,
+        reviewNote: input.reviewNote ?? null,
+        registeredBy: request.user.id,
+        updatedAt: new Date(),
+      };
+
+      const [existingArtifact] = await db
+        .select()
+        .from(runtimeTransformArtifacts)
+        .where(and(
+          eq(runtimeTransformArtifacts.runtimePackageId, input.runtimePackageId),
+          eq(runtimeTransformArtifacts.transformArtifactId, input.transformArtifact.id),
+        ))
+        .limit(1);
+
+      const [artifact] = existingArtifact === undefined
+        ? await db.insert(runtimeTransformArtifacts).values(values).returning()
+        : await db
+          .update(runtimeTransformArtifacts)
+          .set(values)
+          .where(eq(runtimeTransformArtifacts.id, existingArtifact.id))
+          .returning();
+
+      if (artifact === undefined) {
+        return reply.status(500).send({
+          error: "Failed to register runtime transform artifact",
+          code: "RUNTIME_TRANSFORM_ARTIFACT_REGISTER_FAILED",
+        });
+      }
+
+      request.log.info({
+        userId: request.user.id,
+        runtimePackageId: artifact.runtimePackageId,
+        runtimeTransformArtifactId: artifact.id,
+        transformArtifactId: artifact.transformArtifactId,
+        venueSlug: artifact.venueSlug,
+        roomSlug: artifact.roomSlug,
+      }, "runtime transform artifact registered");
+
+      return reply.status(201).send({ data: serializeRuntimeTransformArtifact(artifact) });
+    },
+  );
+
+  server.get(
+    "/runtime-transform-artifacts",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsedQuery = RuntimeTransformArtifactQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      const rows = await db
+        .select()
+        .from(runtimeTransformArtifacts)
+        .where(eq(runtimeTransformArtifacts.runtimePackageId, parsedQuery.data.runtimePackageId))
+        .orderBy(desc(runtimeTransformArtifacts.updatedAt), desc(runtimeTransformArtifacts.createdAt));
+
+      return { data: rows.map(serializeRuntimeTransformArtifact) };
+    },
+  );
+
+  server.post(
+    "/register-capture-control-source",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsed = RegisterCaptureControlSourceRecordInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return validationError(reply, parsed.error.issues);
+      }
+
+      const input = parsed.data;
+      const runtimePackageId = input.runtimePackageId ?? null;
+      const transformArtifactId = input.transformArtifactId ?? null;
+      const runtimePackage = runtimePackageId === null ? null : await findRuntimePackage(db, runtimePackageId);
+      if (runtimePackageId !== null && runtimePackage === null) {
+        return reply.status(404).send({
+          error: "Runtime package not found",
+          code: "RUNTIME_PACKAGE_NOT_FOUND",
+        });
+      }
+
+      const runtimePackageError = validateCaptureControlRuntimePackageLink(input, runtimePackage);
+      if (runtimePackageError !== null) {
+        return validationError(reply, runtimePackageError);
+      }
+
+      const transformArtifact = transformArtifactId === null || runtimePackageId === null
+        ? null
+        : await findRuntimeTransformArtifact(db, runtimePackageId, transformArtifactId);
+      const transformArtifactError = validateCaptureControlTransformLink(input, transformArtifact);
+      if (transformArtifactError !== null) {
+        return validationError(reply, transformArtifactError);
+      }
+
+      const values = {
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug,
+        runtimePackageId,
+        transformArtifactId,
+        sourceId: input.source.sourceId,
+        sourceClass: input.source.sourceClass,
+        poseAuthorityLevel: input.source.poseAuthorityLevel,
+        qaStatus: input.source.qaStatus,
+        sourceRecord: input.source,
+        reviewNote: input.reviewNote ?? null,
+        registeredBy: request.user.id,
+        updatedAt: new Date(),
+      };
+
+      const [existingSource] = await db
+        .select()
+        .from(captureControlSourceRecords)
+        .where(and(
+          eq(captureControlSourceRecords.venueSlug, input.venueSlug),
+          eq(captureControlSourceRecords.roomSlug, input.roomSlug),
+          eq(captureControlSourceRecords.sourceId, input.source.sourceId),
+        ))
+        .limit(1);
+
+      const [source] = existingSource === undefined
+        ? await db.insert(captureControlSourceRecords).values(values).returning()
+        : await db
+          .update(captureControlSourceRecords)
+          .set(values)
+          .where(eq(captureControlSourceRecords.id, existingSource.id))
+          .returning();
+
+      if (source === undefined) {
+        return reply.status(500).send({
+          error: "Failed to register capture control source",
+          code: "CAPTURE_CONTROL_SOURCE_REGISTER_FAILED",
+        });
+      }
+
+      request.log.info({
+        userId: request.user.id,
+        captureControlSourceId: source.id,
+        sourceId: source.sourceId,
+        venueSlug: source.venueSlug,
+        roomSlug: source.roomSlug,
+        runtimePackageId: source.runtimePackageId,
+        transformArtifactId: source.transformArtifactId,
+        qaStatus: source.qaStatus,
+      }, "capture control source registered");
+
+      return reply.status(201).send({ data: serializeCaptureControlSourceRecord(source) });
+    },
+  );
+
+  server.get(
+    "/capture-control-sources",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsedQuery = CaptureControlSourceRecordQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      const query = parsedQuery.data;
+      const filters: SQL[] = [eq(captureControlSourceRecords.venueSlug, query.venue)];
+      if (query.room !== undefined) {
+        filters.push(eq(captureControlSourceRecords.roomSlug, query.room));
+      }
+      if (query.runtimePackageId !== undefined) {
+        filters.push(eq(captureControlSourceRecords.runtimePackageId, query.runtimePackageId));
+      }
+      if (query.transformArtifactId !== undefined) {
+        filters.push(eq(captureControlSourceRecords.transformArtifactId, query.transformArtifactId));
+      }
+
+      const rows = await db
+        .select()
+        .from(captureControlSourceRecords)
+        .where(and(...filters))
+        .orderBy(desc(captureControlSourceRecords.updatedAt), desc(captureControlSourceRecords.createdAt));
+
+      return { data: rows.map(serializeCaptureControlSourceRecord) };
+    },
+  );
+
+  server.post(
+    "/register-runtime-qa-record",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsed = RegisterRuntimeQaRecordInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return validationError(reply, parsed.error.issues);
+      }
+
+      const input = parsed.data;
+      const runtimePackage = await findRuntimePackage(db, input.runtimePackageId);
+      if (runtimePackage === null) {
+        return reply.status(404).send({ error: "Runtime package not found", code: "RUNTIME_PACKAGE_NOT_FOUND" });
+      }
+
+      const linkError = validateRuntimeQaPackageLink(input, runtimePackage);
+      if (linkError !== null) {
+        return validationError(reply, linkError);
+      }
+
+      const signedTransformArtifact = await findRuntimeTransformArtifact(
+        db,
+        input.runtimePackageId,
+        runtimeQaRecordSignedTransformArtifactId(input.record),
+      );
+      const transformLinkError = validateRuntimeQaSignedTransformLink(input, signedTransformArtifact);
+      if (transformLinkError !== null) {
+        return validationError(reply, transformLinkError);
+      }
+
+      const values = {
+        runtimePackageId: input.runtimePackageId,
+        venueSlug: input.venueSlug,
+        roomSlug: input.roomSlug,
+        recordId: input.record.recordId,
+        recordJson: input.record,
+        signedTransformArtifactId: runtimeQaRecordSignedTransformArtifactId(input.record),
+        publicExposureDecision: input.record.publicExposure.decision,
+        assetEvidenceStatus: input.record.assetEvidenceStatus,
+        runtimeStatus: input.record.runtimeStatus,
+        reviewedBy: request.user.id,
+        updatedAt: new Date(),
+      };
+
+      const [existingRecord] = await db
+        .select()
+        .from(runtimeQaRecords)
+        .where(and(
+          eq(runtimeQaRecords.runtimePackageId, input.runtimePackageId),
+          eq(runtimeQaRecords.recordId, input.record.recordId),
+        ))
+        .limit(1);
+
+      const [record] = existingRecord === undefined
+        ? await db.insert(runtimeQaRecords).values(values).returning()
+        : await db
+          .update(runtimeQaRecords)
+          .set(values)
+          .where(eq(runtimeQaRecords.id, existingRecord.id))
+          .returning();
+
+      if (record === undefined) {
+        return reply.status(500).send({
+          error: "Failed to register runtime QA record",
+          code: "RUNTIME_QA_RECORD_REGISTER_FAILED",
+        });
+      }
+
+      request.log.info({
+        userId: request.user.id,
+        runtimePackageId: record.runtimePackageId,
+        runtimeQaRecordId: record.id,
+        recordId: record.recordId,
+        venueSlug: record.venueSlug,
+        roomSlug: record.roomSlug,
+        publicExposureDecision: record.publicExposureDecision,
+      }, "runtime QA record registered");
+
+      return reply.status(201).send({ data: serializeRuntimeQaRecord(record) });
+    },
+  );
+
+  server.get(
+    "/runtime-qa-records",
+    { preHandler: [authenticate, authorize("admin")] },
+    async (request, reply) => {
+      const parsedQuery = RuntimeQaRecordQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      const rows = await db
+        .select()
+        .from(runtimeQaRecords)
+        .where(eq(runtimeQaRecords.runtimePackageId, parsedQuery.data.runtimePackageId))
+        .orderBy(desc(runtimeQaRecords.updatedAt), desc(runtimeQaRecords.createdAt));
+
+      return { data: rows.map(serializeRuntimeQaRecord) };
     },
   );
 

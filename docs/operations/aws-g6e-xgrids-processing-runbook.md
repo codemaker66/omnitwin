@@ -3,7 +3,10 @@
 Status: operator runbook. This document does not prove that any room asset has
 been processed, reviewed, signed, or loaded in Venviewer.
 
-Last updated: 2026-06-06
+Last updated: 2026-06-15
+
+Latest dry-run record:
+`docs/operations/aws-g6e-xgrids-dry-run-2026-06-15.md`.
 
 ## Purpose
 

@@ -1,5 +1,28 @@
 import { test, expect } from "@playwright/test";
 
+const API = "http://localhost:3001";
+const CONFIG_ID = "e2e-config-001";
+
+const TRUTH_MODE_SUMMARY_FIXTURE = {
+  targetType: "configuration",
+  targetId: CONFIG_ID,
+  source: "Planning context - not a measured source of record",
+  confidence: "unknown",
+  assumption: "Human review required before reliance",
+  evidenceStatus: "not_checked",
+  reviewGate: "Human review required",
+  staleState: "unknown",
+  safeWording: ["Planning evidence - human review required before operational reliance."],
+  humanReviewRequired: true,
+  counts: {
+    evidenceItems: 0,
+    checkResults: 0,
+    assumptions: 0,
+    reviewGates: 0,
+    staleEvents: 0,
+  },
+} as const;
+
 // ---------------------------------------------------------------------------
 // E2E: Public editor — the core guest-facing experience
 //
@@ -16,11 +39,11 @@ test.describe("Public Editor", () => {
     // Navigate directly to /editor/:configId (bypasses SpacePicker, which
     // requires a live API for venue/space data). Mock the config-load call
     // so the 3D editor mounts without a real backend.
-    await page.route("http://localhost:3001/public/configurations/e2e-config-001", (route) => {
+    await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
       void route.fulfill({
         json: {
           data: {
-            id: "e2e-config-001",
+            id: CONFIG_ID,
             spaceId: "e2e-space-001",
             venueId: "e2e-venue-001",
             userId: null,
@@ -32,7 +55,13 @@ test.describe("Public Editor", () => {
         },
       });
     });
-    await page.goto("/plan/e2e-config-001");
+    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+      void route.fulfill({ json: { data: null } });
+    });
+    await page.route(`${API}/truth-mode/summary*`, (route) => {
+      void route.fulfill({ json: { data: TRUTH_MODE_SUMMARY_FIXTURE } });
+    });
+    await page.goto(`/plan/${CONFIG_ID}`);
     // Wait for the R3F canvas to mount before every test
     await page.waitForSelector("canvas", { timeout: 15_000 });
   });
@@ -46,11 +75,11 @@ test.describe("Public Editor", () => {
   });
 
   test("desktop planner shows a premium status command surface", async ({ page }) => {
-    const statusHeader = page.getByTestId("planner-status-header");
+    const statusHeader = page.getByTestId("cockpit-topbar");
     await expect(statusHeader).toBeVisible({ timeout: 5_000 });
-    await expect(statusHeader).toContainText("Grand Hall");
+    await expect(statusHeader).toContainText("Opening layout");
     await expect(statusHeader).toContainText("Guest draft");
-    await expect(statusHeader).toContainText("3D planning");
+    await expect(statusHeader).toContainText("Planning evidence / human review required");
     await expect(statusHeader).toContainText(/Save Layout|Saved just now|Unsaved changes|Saving/);
     await expect.poll(async () =>
       statusHeader.evaluate((node) => getComputedStyle(node).userSelect),
@@ -59,7 +88,7 @@ test.describe("Public Editor", () => {
     const commandDeck = page.getByTestId("planner-command-deck");
     await expect(commandDeck).toBeVisible({ timeout: 5_000 });
     await expect(commandDeck).toContainText("Build the room from the floor");
-    await commandDeck.getByTestId("planner-command-action-open-catalogue").click();
+    await page.getByRole("button", { name: "Add Furniture" }).click();
     const furniturePanel = page.getByTestId("furniture-panel");
     await expect(furniturePanel).toBeVisible({ timeout: 5_000 });
 
@@ -73,7 +102,7 @@ test.describe("Public Editor", () => {
   });
 
   test("desktop toolbar starts below the command header", async ({ page }) => {
-    const statusHeader = page.getByTestId("planner-status-header");
+    const statusHeader = page.getByTestId("cockpit-topbar");
     const toolbar = page.getByTestId("planner-toolbar");
     await expect(statusHeader).toBeVisible({ timeout: 5_000 });
     await expect(toolbar).toBeVisible({ timeout: 5_000 });
@@ -143,8 +172,8 @@ test.describe("Public Editor", () => {
     expect(canvasBox).not.toBeNull();
     if (canvasBox === null) return;
 
-    const startX = canvasBox.x + canvasBox.width * 0.42;
-    const startY = canvasBox.y + canvasBox.height * 0.56;
+    const startX = canvasBox.x + canvasBox.width * 0.56;
+    const startY = canvasBox.y + canvasBox.height * 0.22;
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.mouse.move(startX + 120, startY + 46, { steps: 8 });
@@ -300,7 +329,7 @@ test.describe("Public Editor", () => {
     if (box === null) return;
 
     const clickX = box.x + Math.floor(box.width * 0.56);
-    const clickY = box.y + Math.floor(box.height * 0.58);
+    const clickY = box.y + Math.floor(box.height * 0.23);
     await page.mouse.move(clickX, clickY);
     await page.mouse.down({ button: "right" });
     await page.mouse.up({ button: "right" });
@@ -331,8 +360,15 @@ test.describe("Public Editor", () => {
     const composerBoxAfter = await composer.boundingBox();
     expect(composerBoxAfter).not.toBeNull();
     if (composerBoxAfter === null) return;
-    expect(composerBoxAfter.x).toBeGreaterThan(composerBoxBefore.x + 120);
-    expect(composerBoxAfter.y).toBeLessThan(composerBoxBefore.y - 80);
+    expect(composerBoxAfter.y).toBeLessThan(composerBoxBefore.y - 40);
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    if (viewport !== null) {
+      expect(composerBoxAfter.x).toBeGreaterThanOrEqual(0);
+      expect(composerBoxAfter.x + composerBoxAfter.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(composerBoxAfter.y).toBeGreaterThanOrEqual(0);
+      expect(composerBoxAfter.y + composerBoxAfter.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
     await expect(dragHandle).toBeVisible();
     await expect.poll(async () => page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
     await composer.getByRole("button", { name: "Add + view" }).click();

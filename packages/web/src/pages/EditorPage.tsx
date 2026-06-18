@@ -16,6 +16,7 @@ import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
+import { getPublicConfig } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
 import {
@@ -25,6 +26,13 @@ import {
 import * as spacesApi from "../api/spaces.js";
 
 const DEFAULT_SPACE_SLUG = "grand-hall";
+const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
+const MAX_REUSABLE_CONFIG_PROBES = 5;
+
+interface TrackedPlannerConfig {
+  readonly configId: string;
+  readonly createdAt: string;
+}
 
 type PlannerBootstrapBlocker =
   | { readonly kind: "network" }
@@ -65,6 +73,51 @@ function plannerBootstrapBlockerCopy(blocker: PlannerBootstrapBlocker): PlannerB
         action: "Retry",
       };
   }
+}
+
+function isTrackedPlannerConfig(value: unknown): value is TrackedPlannerConfig {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate["configId"] === "string"
+    && typeof candidate["createdAt"] === "string";
+}
+
+function readReusableConfigCandidates(): readonly string[] {
+  if (typeof window === "undefined") return [];
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(TRACKED_CONFIGS_KEY);
+  } catch {
+    return [];
+  }
+  if (raw === null) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter(isTrackedPlannerConfig)
+    .slice(-MAX_REUSABLE_CONFIG_PROBES)
+    .reverse()
+    .map((entry) => entry.configId);
+}
+
+async function findReusablePublicConfigId(spaceId: string): Promise<string | null> {
+  const candidates = readReusableConfigCandidates();
+  for (const configId of candidates) {
+    try {
+      const config = await getPublicConfig(configId);
+      if (config.isPublicPreview && config.spaceId === spaceId) return config.id;
+    } catch {
+      // Ignore stale, claimed, or unreachable local entries.
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +203,11 @@ export function EditorPage(): React.ReactElement {
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
+        const reusableConfigId = await findReusablePublicConfigId(space.id);
+        if (reusableConfigId !== null) {
+          void navigate(`/plan/${reusableConfigId}`, { replace: true });
+          return;
+        }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
         void navigate(`/plan/${newConfigId}`, { replace: true });
       } catch {

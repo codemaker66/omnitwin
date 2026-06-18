@@ -9,7 +9,7 @@
 //    or /hallkeeper/:configId. The `then(m => ({ default: m.X }))` form
 //    lets pages keep their existing named exports.
 //
-// 2. vite.config.ts uses manualChunks to split three vendor groups out of
+// 2. vite.config.ts uses manualChunks to split four vendor groups out of
 //    the route chunks: react-vendor (cacheable across deploys), three
 //    (only loaded for 3D routes), spark (only loaded for splat routes),
 //    and clerk (only loaded for auth
@@ -97,9 +97,15 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`"spark"`);
   });
 
-  it("react-vendor chunk includes react, react-dom, and react-router-dom", async () => {
+  it("react-vendor chunk includes shared app runtime modules", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toMatch(/"react-vendor":\s*\[[^\]]*"react"[^\]]*"react-dom"[^\]]*"react-router-dom"[^\]]*\]/);
+    expect(codeOnly).toContain(`"vite/preload-helper"`);
+    expect(codeOnly).toContain(`"/node_modules/react/"`);
+    expect(codeOnly).toContain(`"/node_modules/react-dom/"`);
+    expect(codeOnly).toContain(`"/node_modules/react-router-dom/"`);
+    expect(codeOnly).toContain(`"/node_modules/scheduler/"`);
+    expect(codeOnly).toContain(`"/node_modules/zustand/"`);
+    expect(codeOnly).toContain(`return "react-vendor"`);
   });
 
   it("three chunk groups three.js with R3F, drei, and stdlib", async () => {
@@ -107,17 +113,23 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     // The shared 3D stack must be in the same chunk so 3D routes
     // download them as one cacheable unit and other routes don't
     // accidentally pull a fragment of the stack.
-    expect(codeOnly).toMatch(/"three":\s*\[[^\]]*"three"[^\]]*"@react-three\/fiber"[^\]]*"@react-three\/drei"[^\]]*"three-stdlib"[^\]]*\]/);
+    expect(codeOnly).toContain(`"/node_modules/three/"`);
+    expect(codeOnly).toContain(`"/node_modules/@react-three/fiber/"`);
+    expect(codeOnly).toContain(`"/node_modules/@react-three/drei/"`);
+    expect(codeOnly).toContain(`"/node_modules/three-stdlib/"`);
+    expect(codeOnly).toContain(`return "three"`);
   });
 
   it("spark chunk isolates the Spark renderer from normal editor loads", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toMatch(/"spark":\s*\[[^\]]*"@sparkjsdev\/spark"[^\]]*\]/);
+    expect(codeOnly).toContain(`"/node_modules/@sparkjsdev/spark/"`);
+    expect(codeOnly).toContain(`return "spark"`);
   });
 
   it("clerk chunk isolates @clerk/react", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toMatch(/"clerk":\s*\[[^\]]*"@clerk\/react"[^\]]*\]/);
+    expect(codeOnly).toContain(`"/node_modules/@clerk/"`);
+    expect(codeOnly).toContain(`return "clerk"`);
   });
 
   it("keeps Spark out of the normal app and editor route sources", async () => {

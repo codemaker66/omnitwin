@@ -9,10 +9,19 @@ vi.mock("@react-three/drei", () => ({
   Html: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 }));
 
+vi.mock("@react-three/fiber", () => ({
+  useThree: <T,>(selector: (state: { readonly size: { readonly width: number; readonly height: number } }) => T): T =>
+    selector({ size: { width: 1440, height: 900 } }),
+}));
+
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { createPlacedItem } from "../../lib/placement.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
-import { CirculationOverlay } from "../CirculationOverlay.js";
+import {
+  CirculationOverlay,
+  MAX_RENDERED_CIRCULATION_SEGMENTS,
+  shouldRenderCirculationOverlay,
+} from "../CirculationOverlay.js";
 
 function resetStore(): void {
   usePlacementStore.setState({
@@ -92,11 +101,36 @@ describe("CirculationOverlay", () => {
       ],
     });
 
-    render(<CirculationOverlay />);
+    const { container } = render(<CirculationOverlay />);
 
     const primaries = screen.getAllByLabelText(/Tightest table aisle/);
-    const secondaries = screen.getAllByLabelText(/Secondary table aisle/);
     expect(primaries).toHaveLength(1); // exactly one headline aisle
-    expect(secondaries.length).toBeGreaterThanOrEqual(1); // the rest marked subtly
+    expect(screen.queryByLabelText(/Secondary table aisle/)).toBeNull();
+    expect(container.querySelectorAll("linesegments").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("caps rendered aisle markers so dense invalid layouts do not mount unbounded Html projections", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    if (roundTable === undefined) throw new Error("fixture round table missing");
+    usePlacementStore.setState({
+      placedItems: Array.from({ length: 14 }, (_, index) =>
+        createPlacedItem(roundTable.id, index * 1.6, 0, 0),
+      ),
+    });
+
+    const { container } = render(<CirculationOverlay />);
+
+    expect(container.querySelectorAll("linesegments").length).toBeLessThanOrEqual(
+      MAX_RENDERED_CIRCULATION_SEGMENTS,
+    );
+    expect(screen.getAllByLabelText(/Tightest table aisle/)).toHaveLength(1);
+    expect(screen.queryByLabelText(/Secondary table aisle/)).toBeNull();
+  });
+
+  it("does not mount 3D circulation annotations on mobile and tablet planner canvases", () => {
+    expect(shouldRenderCirculationOverlay(390)).toBe(false);
+    expect(shouldRenderCirculationOverlay(768)).toBe(false);
+    expect(shouldRenderCirculationOverlay(1024)).toBe(false);
+    expect(shouldRenderCirculationOverlay(1440)).toBe(true);
   });
 });

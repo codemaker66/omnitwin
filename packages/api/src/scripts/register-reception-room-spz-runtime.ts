@@ -52,6 +52,15 @@ interface RegisteredChunk {
   readonly fileName: string;
 }
 
+function writeInfo(message: string): void {
+  process.stdout.write(`${message}\n`);
+}
+
+function writeError(error: unknown): void {
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  process.stderr.write(`${message}\n`);
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.trim() === "") {
@@ -90,7 +99,7 @@ async function uploadAndRegisterChunk(
     .where(and(eq(assetVersions.r2Key, r2Key), eq(assetVersions.venueSlug, VENUE_SLUG)))
     .limit(1);
   if (existing !== undefined) {
-    console.log(`  reuse  ${fileName} -> ${existing.id} (already registered at ${r2Key})`);
+    writeInfo(`  reuse  ${fileName} -> ${existing.id} (already registered at ${r2Key})`);
     return { id: existing.id, fileName };
   }
 
@@ -124,7 +133,7 @@ async function uploadAndRegisterChunk(
   }).returning();
   if (version === undefined) throw new Error(`Failed to register asset version for ${fileName}`);
 
-  console.log(`  upload ${fileName} -> ${version.id} (${String(body.byteLength)} bytes, sha256 ${sha256.slice(0, 12)}…)`);
+  writeInfo(`  upload ${fileName} -> ${version.id} (${String(body.byteLength)} bytes, sha256 ${sha256.slice(0, 12)}...)`);
   return { id: version.id, fileName };
 }
 
@@ -181,8 +190,8 @@ async function main(): Promise<void> {
   const db = createDb(databaseUrl);
   const s3 = await makeS3Client();
 
-  console.log(`Registering Reception Room SPZ runtime from ${bundleDir}`);
-  console.log(`Bundle dir: ${basename(bundleDir)}`);
+  writeInfo(`Registering Reception Room SPZ runtime from ${bundleDir}`);
+  writeInfo(`Bundle dir: ${basename(bundleDir)}`);
 
   const registered: RegisteredChunk[] = [];
   for (const fileName of ROOM_CHUNK_FILES) {
@@ -194,17 +203,18 @@ async function main(): Promise<void> {
 
   const packageId = await upsertRuntimePackage(db, primary.id);
 
-  console.log(`\nRuntime package ${packageId} upserted.`);
-  console.log(`  venue/room: ${VENUE_SLUG}/${ROOM_SLUG}`);
-  console.log(`  primary visual: ${primary.id} (${PRIMARY_FILE})`);
-  console.log(`  served room chunks: ${String(registered.length)} (env.spz excluded)`);
-  console.log("  status: internal_ready / unverified");
+  writeInfo("");
+  writeInfo(`Runtime package ${packageId} upserted.`);
+  writeInfo(`  venue/room: ${VENUE_SLUG}/${ROOM_SLUG}`);
+  writeInfo(`  primary visual: ${primary.id} (${PRIMARY_FILE})`);
+  writeInfo(`  served room chunks: ${String(registered.length)} (env.spz excluded)`);
+  writeInfo("  status: internal_ready / unverified");
 }
 
 main().then(
   () => { process.exit(0); },
   (error: unknown) => {
-    console.error(error);
+    writeError(error);
     process.exit(1);
   },
 );

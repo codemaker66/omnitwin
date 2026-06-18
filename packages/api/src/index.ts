@@ -26,14 +26,17 @@ import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
+import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
 import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
 import { opsHandoffRoutes } from "./routes/ops-handoff.js";
+import { supplierCoordinationRoutes, supplierShareRoutes } from "./routes/supplier-coordination.js";
 import { analyticsRoutes, eventRevenueRoutes, revenueScenarioRoutes } from "./routes/revenue-analytics.js";
 import { aiAssistantRoutes } from "./routes/ai-assistant.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
+import { onboardingRoutes } from "./routes/onboarding.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
@@ -313,8 +316,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
   await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
+  await server.register(onboardingRoutes, { db, prefix: "/onboarding" });
   await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
   await server.register(eventRoutes, { db, prefix: "/events" });
+  await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
+  await server.register(notificationRoutes, { db, prefix: "/notifications" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
@@ -324,6 +330,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(reviewGateRoutes, { db, prefix: "/review-gates" });
   await server.register(truthModeRoutes, { db, prefix: "/truth-mode" });
   await server.register(opsHandoffRoutes, { db, prefix: "/ops" });
+  await server.register(supplierCoordinationRoutes, { db, prefix: "/supplier-coordination" });
   await server.register(webhookOutboundRoutes, { db, prefix: "/webhooks" });
   await server.register(revenueScenarioRoutes, { db, prefix: "/revenue-scenarios" });
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
@@ -331,6 +338,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+  await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
   // --- WebSocket ---

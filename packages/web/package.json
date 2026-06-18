@@ -14,6 +14,7 @@
     "lint": "eslint src/",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
+    "frame-budget": "node scripts/frame-budget-pass.mjs",
     "clean": "rm -rf dist"
   },
   "dependencies": {
