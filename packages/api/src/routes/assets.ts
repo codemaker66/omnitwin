@@ -417,6 +417,10 @@ export function runtimeQaRecordAllowsPublicRoomVisual(
 
   const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(row.recordJson);
   if (signedTransformArtifactId === null) return false;
+  if (row.signedTransformArtifactId !== signedTransformArtifactId) return false;
+  if (row.publicExposureDecision !== "approved_public") return false;
+  if (row.assetEvidenceStatus !== "human_reviewed") return false;
+  if (row.runtimeStatus !== "published") return false;
 
   return transformArtifact !== null &&
     transformArtifact !== undefined &&

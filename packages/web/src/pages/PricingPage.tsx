@@ -64,6 +64,12 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
     .pricing-faq-item[open] summary {
       color: ${GOLD};
     }
+    .pricing-nav-links a,
+    .pricing-footer-inner a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+    }
     .pricing-cta-primary:focus-visible,
     .pricing-founder-cta:focus-visible,
     .pricing-nav-sign-in:focus-visible,

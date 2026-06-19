@@ -8,8 +8,8 @@
 
 .room-showcase-hero {
   display: grid;
-  grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.18fr);
-  gap: clamp(24px, 4vw, 56px);
+  grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
+  gap: clamp(24px, 3vw, 48px);
   align-items: center;
   width: min(1180px, calc(100% - 40px));
   min-height: min(760px, calc(100vh - 56px));
@@ -19,6 +19,7 @@
 
 .room-showcase-copy {
   display: grid;
+  min-width: 0;
   gap: 18px;
   align-content: center;
 }
@@ -33,10 +34,10 @@
 }
 
 .room-showcase h1 {
-  max-width: 10ch;
+  max-width: min(9.5ch, 100%);
   margin: 0;
   color: #fff9ef;
-  font-size: clamp(3rem, 8vw, 7.2rem);
+  font-size: clamp(3rem, 6vw, 6rem);
   line-height: 0.9;
   letter-spacing: 0;
 }
@@ -92,6 +93,7 @@
 
 .room-showcase-visual {
   display: grid;
+  min-width: 0;
   gap: 12px;
 }
 

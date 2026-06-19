@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
-import { BadgeCheck, Building2, CircleAlert, ClipboardCheck, RefreshCw, Send, ShieldCheck, UserPlus } from "lucide-react";
-import type { BillingProvider, OnboardingSummary, WorkspaceEntitlement } from "@omnitwin/types";
-import { createManagedOnboarding, getOnboardingSummary } from "../../api/onboarding.js";
+import { BadgeCheck, Building2, CircleAlert, ClipboardCheck, RefreshCw, Save, Send, ShieldCheck, UserPlus } from "lucide-react";
+import type {
+  BillingProvider,
+  OnboardingProject,
+  OnboardingProjectStatus,
+  OnboardingSummary,
+  OperatorReviewState,
+  ProviderVerificationStatus,
+  WorkspaceEntitlement,
+} from "@omnitwin/types";
+import {
+  createManagedOnboarding,
+  getOnboardingSummary,
+  inviteWorkspaceMembers,
+  updateOnboardingProject,
+  verifyWorkspaceEntitlement,
+} from "../../api/onboarding.js";
 import { useToastStore } from "../../stores/toast-store.js";
 
 type LoadState =
@@ -26,6 +40,26 @@ interface FormState {
   readonly accessEnforced: boolean;
 }
 
+interface WorkspaceActionState {
+  readonly inviteEmails: string;
+  readonly inviteBusy: boolean;
+  readonly inviteError: string | null;
+  readonly projectBusy: boolean;
+  readonly projectError: string | null;
+  readonly projectStatus?: OnboardingProjectStatus;
+  readonly projectReviewState?: OperatorReviewState;
+  readonly projectCurrentStep?: string;
+  readonly projectEvidenceNote?: string;
+  readonly entitlementBusy: boolean;
+  readonly entitlementError: string | null;
+  readonly billingProvider?: BillingProvider;
+  readonly providerVerificationStatus?: ProviderVerificationStatus;
+  readonly providerCustomerRef?: string;
+  readonly providerEntitlementRef?: string;
+  readonly providerEvidenceRef?: string;
+  readonly accessEnforced?: boolean;
+}
+
 const initialForm: FormState = {
   organisationName: "",
   workspaceName: "",
@@ -42,6 +76,38 @@ const initialForm: FormState = {
   providerVerified: false,
   accessEnforced: false,
 };
+
+const ONBOARDING_PROJECT_STATUS_OPTIONS: readonly OnboardingProjectStatus[] = [
+  "intake",
+  "venue_record",
+  "admin_invite",
+  "staff_invites",
+  "entitlement_review",
+  "ready",
+  "blocked",
+  "cancelled",
+];
+
+const OPERATOR_REVIEW_STATE_OPTIONS: readonly OperatorReviewState[] = [
+  "pending_review",
+  "approved",
+  "blocked",
+];
+
+const PROVIDER_VERIFICATION_STATUS_OPTIONS: readonly ProviderVerificationStatus[] = [
+  "not_required",
+  "pending",
+  "provider_verified",
+  "operator_review_required",
+  "rejected",
+];
+
+const BILLING_PROVIDER_OPTIONS: readonly BillingProvider[] = [
+  "none",
+  "stripe",
+  "manual_invoice",
+  "external_procurement",
+];
 
 const shellStyle: CSSProperties = {
   display: "grid",
@@ -125,6 +191,46 @@ const mutedTextStyle: CSSProperties = {
   lineHeight: 1.5,
 };
 
+const compactPanelStyle: CSSProperties = {
+  border: "1px solid rgba(92, 69, 38, 0.14)",
+  borderRadius: 8,
+  background: "#fffaf1",
+  padding: 14,
+};
+
+const actionErrorStyle: CSSProperties = {
+  margin: "8px 0 0",
+  color: "#991b1b",
+  fontSize: 13,
+  fontWeight: 750,
+};
+
+const responsiveMetricGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: 14,
+};
+
+const responsiveFormShellStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
+  gap: 18,
+  alignItems: "start",
+};
+
+const responsiveFieldGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+  gap: 12,
+};
+
+const responsiveActionGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+  gap: 12,
+  marginTop: 14,
+};
+
 function slugify(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -132,6 +238,10 @@ function slugify(value: string): string {
 function nullableText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+function labelize(value: string): string {
+  return value.replace(/_/g, " ");
 }
 
 function parseStaffEmails(raw: string): readonly string[] {
@@ -148,6 +258,26 @@ function entitlementTone(entitlement: WorkspaceEntitlement): "ready" | "review" 
   if (entitlement.accessEnforced && entitlement.providerVerificationStatus === "provider_verified") return "ready";
   if (entitlement.providerVerificationStatus === "provider_verified") return "review";
   return "blocked";
+}
+
+function actionError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function providerGateIsSaveable(input: {
+  readonly billingProvider: BillingProvider;
+  readonly providerVerificationStatus: ProviderVerificationStatus;
+  readonly providerCustomerRef: string;
+  readonly providerEntitlementRef: string;
+  readonly providerEvidenceRef: string;
+}): boolean {
+  if (input.providerVerificationStatus !== "provider_verified") return true;
+  if (input.billingProvider === "none") return false;
+  return [
+    input.providerCustomerRef,
+    input.providerEntitlementRef,
+    input.providerEvidenceRef,
+  ].some((value) => value.trim().length > 0);
 }
 
 function statusChip(label: string, tone: "ready" | "review" | "blocked"): ReactElement {
@@ -195,6 +325,7 @@ export function OnboardingView(): ReactElement {
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [form, setForm] = useState<FormState>(initialForm);
   const [submitting, setSubmitting] = useState(false);
+  const [workspaceActions, setWorkspaceActions] = useState<Record<string, WorkspaceActionState>>({});
 
   const load = useCallback((): void => {
     setLoadState({ status: "loading" });
@@ -218,6 +349,36 @@ export function OnboardingView(): ReactElement {
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]): void => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const actionForWorkspace = (workspaceId: string): WorkspaceActionState => (
+    workspaceActions[workspaceId] ?? {
+      inviteEmails: "",
+      inviteBusy: false,
+      inviteError: null,
+      projectBusy: false,
+      projectError: null,
+      entitlementBusy: false,
+      entitlementError: null,
+    }
+  );
+
+  const setWorkspaceAction = (workspaceId: string, patch: Partial<WorkspaceActionState>): void => {
+    setWorkspaceActions((current) => ({
+      ...current,
+      [workspaceId]: {
+        ...(current[workspaceId] ?? {
+          inviteEmails: "",
+          inviteBusy: false,
+          inviteError: null,
+          projectBusy: false,
+          projectError: null,
+          entitlementBusy: false,
+          entitlementError: null,
+        }),
+        ...patch,
+      },
+    }));
   };
 
   const handleVenueNameChange = (value: string): void => {
@@ -286,6 +447,100 @@ export function OnboardingView(): ReactElement {
     }
   };
 
+  const handleInviteStaff = async (workspaceId: string): Promise<void> => {
+    const action = actionForWorkspace(workspaceId);
+    const emails = parseStaffEmails(action.inviteEmails);
+    if (emails.length === 0 || action.inviteBusy) return;
+
+    setWorkspaceAction(workspaceId, { inviteBusy: true, inviteError: null });
+    try {
+      await inviteWorkspaceMembers(workspaceId, {
+        staffInvites: emails.map((email) => ({
+          email,
+          workspaceRole: "staff",
+          venueRole: "staff",
+        })),
+      });
+      addToast(`${String(emails.length)} staff invitation(s) recorded`, "success");
+      setWorkspaceAction(workspaceId, { inviteEmails: "", inviteBusy: false, inviteError: null });
+      load();
+    } catch (error) {
+      setWorkspaceAction(workspaceId, {
+        inviteBusy: false,
+        inviteError: actionError(error, "Failed to invite staff"),
+      });
+    }
+  };
+
+  const handleSaveProjectGate = async (workspaceId: string, project: OnboardingProject): Promise<void> => {
+    const action = actionForWorkspace(workspaceId);
+    const currentStep = action.projectCurrentStep ?? project.currentStep;
+    if (currentStep.trim().length === 0 || action.projectBusy) return;
+
+    setWorkspaceAction(workspaceId, { projectBusy: true, projectError: null });
+    try {
+      await updateOnboardingProject(project.id, {
+        status: action.projectStatus ?? project.status,
+        operatorReviewState: action.projectReviewState ?? project.operatorReviewState,
+        currentStep,
+        evidenceNote: nullableText(action.projectEvidenceNote ?? project.evidenceNote ?? ""),
+      });
+      addToast("Deployment review gate updated", "success");
+      setWorkspaceAction(workspaceId, { projectBusy: false, projectError: null });
+      load();
+    } catch (error) {
+      setWorkspaceAction(workspaceId, {
+        projectBusy: false,
+        projectError: actionError(error, "Failed to update deployment review gate"),
+      });
+    }
+  };
+
+  const handleSaveEntitlementGate = async (workspaceId: string, entitlement: WorkspaceEntitlement): Promise<void> => {
+    const action = actionForWorkspace(workspaceId);
+    const billingProvider = action.billingProvider ?? entitlement.billingProvider;
+    const providerVerificationStatus = action.providerVerificationStatus ?? entitlement.providerVerificationStatus;
+    const providerCustomerRef = action.providerCustomerRef ?? entitlement.providerCustomerRef ?? "";
+    const providerEntitlementRef = action.providerEntitlementRef ?? entitlement.providerEntitlementRef ?? "";
+    const providerEvidenceRef = action.providerEvidenceRef ?? entitlement.providerEvidenceRef ?? "";
+    const accessEnforced = providerVerificationStatus === "provider_verified"
+      ? action.accessEnforced ?? entitlement.accessEnforced
+      : false;
+    if (action.entitlementBusy) return;
+    if (!providerGateIsSaveable({
+      billingProvider,
+      providerVerificationStatus,
+      providerCustomerRef,
+      providerEntitlementRef,
+      providerEvidenceRef,
+    })) {
+      setWorkspaceAction(workspaceId, {
+        entitlementError: "Provider verification needs a billing provider and a customer, entitlement, or evidence reference.",
+      });
+      return;
+    }
+
+    setWorkspaceAction(workspaceId, { entitlementBusy: true, entitlementError: null });
+    try {
+      await verifyWorkspaceEntitlement(entitlement.id, {
+        billingProvider,
+        providerVerificationStatus,
+        providerCustomerRef: nullableText(providerCustomerRef),
+        providerEntitlementRef: nullableText(providerEntitlementRef),
+        providerEvidenceRef: nullableText(providerEvidenceRef),
+        accessEnforced,
+      });
+      addToast("Provider verification gate updated", "success");
+      setWorkspaceAction(workspaceId, { entitlementBusy: false, entitlementError: null });
+      load();
+    } catch (error) {
+      setWorkspaceAction(workspaceId, {
+        entitlementBusy: false,
+        entitlementError: actionError(error, "Failed to update provider verification gate"),
+      });
+    }
+  };
+
   if (loadState.status === "loading") {
     return (
       <section style={panelStyle} aria-live="polite">
@@ -332,14 +587,14 @@ export function OnboardingView(): ReactElement {
         </div>
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 14 }}>
+      <section style={responsiveMetricGridStyle}>
         {metricPanel(<Building2 size={18} aria-hidden="true" />, "Workspaces", String(data.workspaces.length), "Managed rollout records")}
         {metricPanel(<UserPlus size={18} aria-hidden="true" />, "Pending invites", String(data.memberships.filter((member) => member.status === "invited").length), "Owner and staff access")}
         {metricPanel(<ShieldCheck size={18} aria-hidden="true" />, "Access enforced", String(enforcedAccessCount), "Provider-verified only")}
         {metricPanel(<ClipboardCheck size={18} aria-hidden="true" />, "Review queue", String(reviewQueueCount), "Operator gates not approved")}
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 18, alignItems: "start" }}>
+      <section style={responsiveFormShellStyle}>
         <form style={panelStyle} onSubmit={(event) => { void handleSubmit(event); }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
             <div>
@@ -351,7 +606,7 @@ export function OnboardingView(): ReactElement {
             </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+          <div style={responsiveFieldGridStyle}>
             <label>
               <span style={labelStyle}>Organisation</span>
               <input
@@ -570,6 +825,291 @@ export function OnboardingView(): ReactElement {
           </div>
         )}
       </section>
+
+      {data.workspaces.length > 0 ? (
+        <section style={panelStyle} aria-labelledby="deployment-operator-controls">
+          <div>
+            <p style={labelStyle}>Deployment controls</p>
+            <h3 id="deployment-operator-controls" style={{ margin: 0, color: "#21190f", fontSize: 20 }}>
+              Operator action board
+            </h3>
+            <p style={{ ...mutedTextStyle, marginTop: 6 }}>
+              Keep rollout work explicit: staff invites, project review gates, provider verification, and access enforcement are separate auditable actions.
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
+            {data.workspaces.map((workspace) => {
+              const venue = data.venues.find((item) => item.id === workspace.primaryVenueId);
+              const project = data.projects.find((item) => item.workspaceId === workspace.id);
+              const entitlement = data.entitlements.find((item) => item.workspaceId === workspace.id);
+              const members = data.memberships.filter((member) => member.workspaceId === workspace.id);
+              const action = actionForWorkspace(workspace.id);
+              const inviteCount = parseStaffEmails(action.inviteEmails).length;
+
+              const projectStatus = action.projectStatus ?? project?.status ?? "intake";
+              const projectReviewState = action.projectReviewState ?? project?.operatorReviewState ?? "pending_review";
+              const projectCurrentStep = action.projectCurrentStep ?? project?.currentStep ?? "";
+              const projectEvidenceNote = action.projectEvidenceNote ?? project?.evidenceNote ?? "";
+
+              const billingProvider = action.billingProvider ?? entitlement?.billingProvider ?? "none";
+              const providerVerificationStatus = action.providerVerificationStatus ?? entitlement?.providerVerificationStatus ?? "not_required";
+              const providerCustomerRef = action.providerCustomerRef ?? entitlement?.providerCustomerRef ?? "";
+              const providerEntitlementRef = action.providerEntitlementRef ?? entitlement?.providerEntitlementRef ?? "";
+              const providerEvidenceRef = action.providerEvidenceRef ?? entitlement?.providerEvidenceRef ?? "";
+              const providerAccessEnforced = providerVerificationStatus === "provider_verified"
+                ? action.accessEnforced ?? entitlement?.accessEnforced ?? false
+                : false;
+              const providerGateSaveable = providerGateIsSaveable({
+                billingProvider,
+                providerVerificationStatus,
+                providerCustomerRef,
+                providerEntitlementRef,
+                providerEvidenceRef,
+              });
+
+              return (
+                <article
+                  key={workspace.id}
+                  style={{
+                    border: "1px solid rgba(92, 69, 38, 0.16)",
+                    borderRadius: 8,
+                    background: "linear-gradient(180deg, #fffaf1 0%, #f9f1e4 100%)",
+                    padding: 16,
+                  }}
+                  aria-label={`${workspace.name} deployment actions`}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
+                    <div>
+                      <h4 style={{ margin: 0, color: "#21190f", fontSize: 18 }}>{workspace.name}</h4>
+                      <p style={{ ...mutedTextStyle, marginTop: 4 }}>
+                        {venue?.name ?? "Venue pending"} · {String(members.length)} member record(s)
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {project === undefined
+                        ? statusChip("project missing", "blocked")
+                        : statusChip(labelize(project.operatorReviewState), project.operatorReviewState === "approved" ? "ready" : "review")}
+                      {entitlement === undefined
+                        ? statusChip("entitlement missing", "blocked")
+                        : statusChip(labelize(entitlement.providerVerificationStatus), entitlementTone(entitlement))}
+                    </div>
+                  </div>
+
+                  <div style={responsiveActionGridStyle}>
+                    <div style={compactPanelStyle}>
+                      <p style={labelStyle}>Staff access</p>
+                      <textarea
+                        value={action.inviteEmails}
+                        onChange={(event) => {
+                          setWorkspaceAction(workspace.id, { inviteEmails: event.target.value, inviteError: null });
+                        }}
+                        style={{ ...inputStyle, minHeight: 96, resize: "vertical" }}
+                        aria-label={`Invite staff for ${workspace.name}`}
+                        placeholder="planner@venue.example&#10;hallkeeper@venue.example"
+                        data-testid={`invite-staff-${workspace.id}`}
+                      />
+                      <button
+                        type="button"
+                        style={{ ...primaryButtonStyle, marginTop: 10, width: "100%" }}
+                        disabled={action.inviteBusy || inviteCount === 0}
+                        onClick={() => { void handleInviteStaff(workspace.id); }}
+                      >
+                        <UserPlus size={16} aria-hidden="true" />
+                        {action.inviteBusy ? "Sending invites" : `Send ${String(inviteCount)} invite(s)`}
+                      </button>
+                      {action.inviteError === null ? (
+                        <p style={{ ...mutedTextStyle, marginTop: 8 }}>Duplicates are de-duplicated before the request.</p>
+                      ) : (
+                        <p role="alert" style={actionErrorStyle}>{action.inviteError}</p>
+                      )}
+                    </div>
+
+                    <div style={compactPanelStyle}>
+                      <p style={labelStyle}>Project review gate</p>
+                      {project === undefined ? (
+                        <p role="alert" style={{ ...actionErrorStyle, marginTop: 0 }}>No onboarding project is registered for this workspace.</p>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <label>
+                            <span style={labelStyle}>Project status</span>
+                            <select
+                              value={projectStatus}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { projectStatus: event.target.value as OnboardingProjectStatus, projectError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Project status for ${workspace.name}`}
+                            >
+                              {ONBOARDING_PROJECT_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>{labelize(status)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Operator review</span>
+                            <select
+                              value={projectReviewState}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { projectReviewState: event.target.value as OperatorReviewState, projectError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Operator review for ${workspace.name}`}
+                            >
+                              {OPERATOR_REVIEW_STATE_OPTIONS.map((state) => (
+                                <option key={state} value={state}>{labelize(state)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Current step</span>
+                            <input
+                              value={projectCurrentStep}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { projectCurrentStep: event.target.value, projectError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Current step for ${workspace.name}`}
+                            />
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Evidence note</span>
+                            <textarea
+                              value={projectEvidenceNote}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { projectEvidenceNote: event.target.value, projectError: null });
+                              }}
+                              style={{ ...inputStyle, minHeight: 74, resize: "vertical" }}
+                              aria-label={`Evidence note for ${workspace.name}`}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            style={primaryButtonStyle}
+                            disabled={action.projectBusy || projectCurrentStep.trim().length === 0}
+                            onClick={() => { void handleSaveProjectGate(workspace.id, project); }}
+                            aria-label={`Save project gate for ${workspace.name}`}
+                          >
+                            <Save size={16} aria-hidden="true" />
+                            {action.projectBusy ? "Saving gate" : "Save project gate"}
+                          </button>
+                          {action.projectError !== null ? <p role="alert" style={actionErrorStyle}>{action.projectError}</p> : null}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={compactPanelStyle}>
+                      <p style={labelStyle}>Provider gate</p>
+                      {entitlement === undefined ? (
+                        <p role="alert" style={{ ...actionErrorStyle, marginTop: 0 }}>No entitlement record is registered for this workspace.</p>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <label>
+                            <span style={labelStyle}>Billing provider</span>
+                            <select
+                              value={billingProvider}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { billingProvider: event.target.value as BillingProvider, entitlementError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Billing provider for ${workspace.name}`}
+                            >
+                              {BILLING_PROVIDER_OPTIONS.map((provider) => (
+                                <option key={provider} value={provider}>{labelize(provider)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Provider status</span>
+                            <select
+                              value={providerVerificationStatus}
+                              onChange={(event) => {
+                                const nextStatus = event.target.value as ProviderVerificationStatus;
+                                setWorkspaceAction(workspace.id, {
+                                  providerVerificationStatus: nextStatus,
+                                  accessEnforced: nextStatus === "provider_verified" ? action.accessEnforced : false,
+                                  entitlementError: null,
+                                });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Provider status for ${workspace.name}`}
+                            >
+                              {PROVIDER_VERIFICATION_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>{labelize(status)}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Customer ref</span>
+                            <input
+                              value={providerCustomerRef}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { providerCustomerRef: event.target.value, entitlementError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Customer reference for ${workspace.name}`}
+                            />
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Entitlement ref</span>
+                            <input
+                              value={providerEntitlementRef}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { providerEntitlementRef: event.target.value, entitlementError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Entitlement reference for ${workspace.name}`}
+                            />
+                          </label>
+                          <label>
+                            <span style={labelStyle}>Evidence ref</span>
+                            <input
+                              value={providerEvidenceRef}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { providerEvidenceRef: event.target.value, entitlementError: null });
+                              }}
+                              style={inputStyle}
+                              aria-label={`Provider evidence reference for ${workspace.name}`}
+                            />
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: 10, color: "#21190f", fontSize: 13, fontWeight: 800 }}>
+                            <input
+                              type="checkbox"
+                              checked={providerAccessEnforced}
+                              disabled={providerVerificationStatus !== "provider_verified"}
+                              onChange={(event) => {
+                                setWorkspaceAction(workspace.id, { accessEnforced: event.target.checked, entitlementError: null });
+                              }}
+                              aria-label={`Enforce managed access for ${workspace.name}`}
+                            />
+                            Enforce managed access
+                          </label>
+                          {!providerGateSaveable ? (
+                            <p role="status" style={{ ...mutedTextStyle, color: "#8a5a00" }}>
+                              Verified provider state requires a real provider plus at least one evidence reference.
+                            </p>
+                          ) : null}
+                          <button
+                            type="button"
+                            style={primaryButtonStyle}
+                            disabled={action.entitlementBusy || !providerGateSaveable}
+                            onClick={() => { void handleSaveEntitlementGate(workspace.id, entitlement); }}
+                            aria-label={`Save provider gate for ${workspace.name}`}
+                          >
+                            <ShieldCheck size={16} aria-hidden="true" />
+                            {action.entitlementBusy ? "Saving provider gate" : "Save provider gate"}
+                          </button>
+                          {action.entitlementError !== null ? <p role="alert" style={actionErrorStyle}>{action.entitlementError}</p> : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section style={{ ...panelStyle, display: "flex", alignItems: "center", gap: 10 }}>
         <BadgeCheck size={18} aria-hidden="true" />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
 import {
   approveLayout,
@@ -39,40 +39,67 @@ const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, {
   readonly background: string;
   readonly color: string;
 }>> = {
-  draft:             { label: "Draft",              background: "#f7f5f0", color: "#666" },
-  submitted:         { label: "Submitted",          background: "#fef9e6", color: "#8a6a00" },
-  under_review:      { label: "Under Review",       background: "#e6f1fd", color: "#1f4e9b" },
-  approved:          { label: "Approved",           background: "#e8f7ec", color: "#0b6b2c" },
-  rejected:          { label: "Rejected",           background: "#fdecec", color: "#a02020" },
-  changes_requested: { label: "Changes Requested",  background: "#fff4e0", color: "#8c5a00" },
-  withdrawn:         { label: "Withdrawn",          background: "#f5f5f5", color: "#777" },
-  archived:          { label: "Archived",           background: "#eeeeee", color: "#666" },
+  draft:             { label: "Draft",              background: "rgba(246, 241, 232, 0.09)", color: "rgba(246, 241, 232, 0.72)" },
+  submitted:         { label: "Submitted",          background: "rgba(215, 181, 109, 0.14)", color: "#f1c978" },
+  under_review:      { label: "Under Review",       background: "rgba(104, 216, 210, 0.13)", color: "#68d8d2" },
+  approved:          { label: "Approved",           background: "rgba(143, 209, 158, 0.13)", color: "#9ff2cb" },
+  rejected:          { label: "Rejected",           background: "rgba(255, 91, 71, 0.13)", color: "#ffb59a" },
+  changes_requested: { label: "Changes Requested",  background: "rgba(242, 179, 94, 0.14)", color: "#f2b35e" },
+  withdrawn:         { label: "Withdrawn",          background: "rgba(246, 241, 232, 0.07)", color: "rgba(246, 241, 232, 0.58)" },
+  archived:          { label: "Archived",           background: "rgba(246, 241, 232, 0.07)", color: "rgba(246, 241, 232, 0.58)" },
 };
 
 const cardStyle: React.CSSProperties = {
-  background: "#fff", borderRadius: 8, padding: 16, marginBottom: 8,
-  border: "1px solid #e5e7eb", cursor: "pointer", transition: "box-shadow 0.15s",
+  background: "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
+  borderRadius: 8, padding: 16, marginBottom: 8,
+  border: "1px solid rgba(215, 181, 109, 0.22)", cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
+  textAlign: "left", width: "100%", fontFamily: "inherit",
 };
 
 const buttonPrimary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "#0b6b2c", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",
+  background: "linear-gradient(135deg, #d7b56d, #f0cf84)", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonSecondary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "#fff", color: "#333", border: "1px solid #d0c8b0", borderRadius: 6, cursor: "pointer",
+  background: "rgba(255,247,232,0.07)", color: "#fff7e8", border: "1px solid rgba(215,181,109,0.25)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonDanger: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "#a02020", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",
+  background: "rgba(255,91,71,0.16)", color: "#ffd2bd", border: "1px solid rgba(255,125,91,0.44)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonWarning: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "#8c5a00", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",
+  background: "rgba(242,179,94,0.18)", color: "#f2b35e", border: "1px solid rgba(242,179,94,0.42)", borderRadius: 8, cursor: "pointer",
 };
+
+const panelStyle: React.CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
+  borderRadius: 12,
+  padding: 24,
+  border: "1px solid rgba(215, 181, 109, 0.24)",
+  color: "#f6f1e8",
+  boxShadow: "0 22px 70px rgba(0,0,0,0.28)",
+};
+
+const alertStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 8,
+  border: "1px solid rgba(255, 181, 82, 0.38)",
+  background: "rgba(255, 181, 82, 0.09)",
+  color: "#ffd89a",
+  fontSize: 13,
+  lineHeight: 1.45,
+};
+
+type ReviewContextState =
+  | { readonly status: "loading" }
+  | { readonly status: "ready" }
+  | { readonly status: "error"; readonly message: string };
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -130,9 +157,9 @@ function PresenceBadge({
         fontSize: 11,
         fontWeight: 500,
         color: "#1f4e9b",
-        background: "#e6f1fd",
+        background: "rgba(104,216,210,0.13)",
         borderRadius: 999,
-        border: "1px solid #bcd3ef",
+        border: "1px solid rgba(104,216,210,0.32)",
       }}
     >
       <span
@@ -141,7 +168,7 @@ function PresenceBadge({
           width: 6,
           height: 6,
           borderRadius: "50%",
-          background: "#3b82f6",
+          background: "#68d8d2",
         }}
       />
       {label}
@@ -162,6 +189,7 @@ interface NoteModalProps {
   readonly onConfirm: (note: string) => void;
   readonly onCancel: () => void;
   readonly inFlight: boolean;
+  readonly errorMessage: string | null;
 }
 
 function NoteModal(props: NoteModalProps): React.ReactElement {
@@ -173,21 +201,32 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby="review-note-modal-title"
+      aria-describedby="review-note-modal-description"
       style={{
         position: "fixed", inset: 0, zIndex: 100,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.5)",
+        background: "rgba(0,0,0,0.68)",
+        backdropFilter: "blur(14px)",
       }}
     >
       <div style={{
-        background: "#fff", borderRadius: 8, padding: 24, maxWidth: 520, width: "90%",
+        background: "linear-gradient(150deg, rgba(22,19,15,0.98), rgba(10,10,9,0.95))",
+        border: "1px solid rgba(215,181,109,0.28)",
+        borderRadius: 8, padding: 24, maxWidth: 520, width: "90%",
         boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
       }}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 18, color: "#1a1a2e" }}>{props.title}</h3>
-        <p style={{ margin: "0 0 16px", fontSize: 14, color: "#555", lineHeight: 1.5 }}>
+        <h3 id="review-note-modal-title" style={{ margin: "0 0 8px", fontSize: 18, color: "#fff7e8" }}>{props.title}</h3>
+        <p id="review-note-modal-description" style={{ margin: "0 0 16px", fontSize: 14, color: "rgba(246,241,232,0.72)", lineHeight: 1.5 }}>
           {props.description}
         </p>
+        {props.errorMessage !== null && (
+          <div role="alert" style={{ ...alertStyle, marginBottom: 12 }}>
+            {props.errorMessage}
+          </div>
+        )}
         <textarea
+          aria-label="Review note"
           value={note}
           onChange={(e) => { setNote(e.target.value); }}
           placeholder="Explain what needs to change…"
@@ -195,7 +234,9 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
           maxLength={2000}
           style={{
             width: "100%", padding: 10, fontSize: 14, fontFamily: "inherit",
-            border: "1px solid #d0d0d0", borderRadius: 6, resize: "vertical",
+            border: "1px solid rgba(215,181,109,0.28)", borderRadius: 8, resize: "vertical",
+            color: "#fff7e8",
+            background: "rgba(255,247,232,0.08)",
             boxSizing: "border-box",
           }}
         />
@@ -231,47 +272,54 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   const addToast = useToastStore((s) => s.addToast);
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
   const [availableTransitions, setAvailableTransitions] = useState<readonly ConfigurationReviewStatus[]>([]);
+  const [contextState, setContextState] = useState<ReviewContextState>({ status: "loading" });
   const [inFlight, setInFlight] = useState(false);
   const [modal, setModal] = useState<null | "reject" | "changes">(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Presence — who else is viewing this same review. Heartbeats + polls
   // while mounted; fires an explicit leave on unmount so other viewers
   // drop the badge within a couple of seconds.
   const { viewers } = useReviewViewers(entry.id);
 
-  useEffect(() => {
-    // Typed explicitly so the lint rule doesn't flag post-cleanup mutation
-    // checks as dead branches.
-    let cancelled: boolean = false;
+  const loadContext = useCallback((): void => {
+    setContextState({ status: "loading" });
+    setActionError(null);
     void (async () => {
       try {
         const [hist, trans] = await Promise.all([
           getReviewHistory(entry.id),
           getAvailableTransitions(entry.id),
         ]);
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure
-        if (!cancelled) {
-          setHistory([...hist]);
-          setAvailableTransitions(trans.availableTransitions);
-        }
-      } catch {
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure
-        if (!cancelled) addToast("Failed to load review context", "error");
+        setHistory([...hist]);
+        setAvailableTransitions(trans.availableTransitions);
+        setContextState({ status: "ready" });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Review context unavailable.";
+        setHistory([]);
+        setAvailableTransitions([]);
+        setContextState({ status: "error", message });
+        addToast("Failed to load review context", "error");
       }
     })();
-    return () => { cancelled = true; };
   }, [entry.id, addToast]);
+
+  useEffect(() => {
+    loadContext();
+  }, [loadContext]);
 
   const can = (status: ConfigurationReviewStatus): boolean =>
     availableTransitions.includes(status);
 
   const handleStartReview = (): void => {
     setInFlight(true);
+    setActionError(null);
     void (async () => {
       try {
         const next = await startReview(entry.id);
         addToast("Review started", "success");
         onStatusChange(entry.id, next);
       } catch {
+        setActionError("Could not start this review. Check your role and retry before making a decision.");
         addToast("Failed to start review", "error");
       } finally {
         setInFlight(false);
@@ -281,12 +329,14 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   const handleApprove = (): void => {
     setInFlight(true);
+    setActionError(null);
     void (async () => {
       try {
         const { reviewStatus } = await approveLayout(entry.id);
         addToast("Layout approved — planner + hallkeepers notified", "success");
         onStatusChange(entry.id, reviewStatus);
       } catch {
+        setActionError("Approval did not save. The layout has not been approved.");
         addToast("Failed to approve", "error");
       } finally {
         setInFlight(false);
@@ -296,6 +346,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   const handleReject = (note: string): void => {
     setInFlight(true);
+    setActionError(null);
     void (async () => {
       try {
         const next = await rejectLayout(entry.id, note);
@@ -303,6 +354,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         setModal(null);
         onStatusChange(entry.id, next);
       } catch {
+        setActionError("Rejection did not save. The planner has not been notified.");
         addToast("Failed to reject", "error");
       } finally {
         setInFlight(false);
@@ -312,6 +364,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   const handleRequestChanges = (note: string): void => {
     setInFlight(true);
+    setActionError(null);
     void (async () => {
       try {
         const next = await requestChanges(entry.id, note);
@@ -319,6 +372,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         setModal(null);
         onStatusChange(entry.id, next);
       } catch {
+        setActionError("Change request did not save. The planner has not been notified.");
         addToast("Failed to request changes", "error");
       } finally {
         setInFlight(false);
@@ -328,12 +382,14 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   const handleWithdraw = (): void => {
     setInFlight(true);
+    setActionError(null);
     void (async () => {
       try {
         const next = await withdrawReview(entry.id);
         addToast("Review withdrawn", "success");
         onStatusChange(entry.id, next);
       } catch {
+        setActionError("Withdraw did not save. This review is still active.");
         addToast("Failed to withdraw", "error");
       } finally {
         setInFlight(false);
@@ -347,14 +403,14 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         type="button"
         onClick={onBack}
         style={{
-          background: "none", border: "none", color: "#3b82f6",
+          background: "none", border: "none", color: "#68d8d2",
           cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0,
         }}
       >
         &larr; Back to pending reviews
       </button>
 
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: "1px solid #e5e7eb" }}>
+      <div style={panelStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{entry.name}</h2>
           <ReviewStatusBadge status={entry.reviewStatus} />
@@ -362,14 +418,14 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         </div>
 
         <div style={{
-          display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12,
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12,
           fontSize: 13, color: "#666", marginBottom: 20,
         }}>
-          <div>Guests: {String(entry.guestCount)}</div>
+          <div style={{ color: "rgba(246,241,232,0.72)" }}>Guests: {String(entry.guestCount)}</div>
           {entry.submittedAt !== null && (
-            <div>Submitted: {new Date(entry.submittedAt).toLocaleString()}</div>
+            <div style={{ color: "rgba(246,241,232,0.72)" }}>Submitted: {new Date(entry.submittedAt).toLocaleString()}</div>
           )}
-          <div>Last updated: {new Date(entry.updatedAt).toLocaleString()}</div>
+          <div style={{ color: "rgba(246,241,232,0.72)" }}>Last updated: {new Date(entry.updatedAt).toLocaleString()}</div>
         </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
@@ -383,8 +439,27 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           </a>
         </div>
 
-        <div style={{ borderTop: "1px solid #eee", paddingTop: 16, marginBottom: 16 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#444", margin: "0 0 8px" }}>Actions</h3>
+        <div style={{ borderTop: "1px solid rgba(215,181,109,0.16)", paddingTop: 16, marginBottom: 16 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Actions</h3>
+          {contextState.status === "loading" && (
+            <div role="status" aria-live="polite" style={{ ...alertStyle, color: "rgba(246,241,232,0.72)" }}>
+              Loading review gates, transitions, and decision history...
+            </div>
+          )}
+          {contextState.status === "error" && (
+            <div role="alert" data-testid="review-context-error" style={alertStyle}>
+              <div style={{ marginBottom: 10 }}>Could not load the review context: {contextState.message}</div>
+              <button type="button" style={buttonSecondary} onClick={loadContext}>
+                Retry review context
+              </button>
+            </div>
+          )}
+          {actionError !== null && (
+            <div role="alert" data-testid="review-action-error" style={{ ...alertStyle, marginBottom: 10 }}>
+              {actionError}
+            </div>
+          )}
+          {contextState.status === "ready" && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {can("under_review") && (
               <button type="button" style={buttonSecondary} onClick={handleStartReview} disabled={inFlight}>
@@ -412,20 +487,21 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
               </button>
             )}
             {availableTransitions.length === 0 && (
-              <span style={{ fontSize: 12, color: "#999" }}>
+              <span style={{ fontSize: 12, color: "rgba(246,241,232,0.58)" }}>
                 No actions available for your role in state &lsquo;{entry.reviewStatus}&rsquo;.
               </span>
             )}
           </div>
+          )}
         </div>
 
-        {history.length > 0 && (
-          <div style={{ borderTop: "1px solid #eee", paddingTop: 16 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#444", margin: "0 0 8px" }}>Timeline</h3>
+        {contextState.status === "ready" && history.length > 0 && (
+          <div style={{ borderTop: "1px solid rgba(215,181,109,0.16)", paddingTop: 16 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Timeline</h3>
             {history.map((h) => (
               <div key={h.id} style={{
-                fontSize: 12, color: "#666", padding: "6px 0",
-                borderLeft: "2px solid #e5e7eb", paddingLeft: 12, marginLeft: 4,
+                fontSize: 12, color: "rgba(246,241,232,0.66)", padding: "6px 0",
+                borderLeft: "2px solid rgba(215,181,109,0.22)", paddingLeft: 12, marginLeft: 4,
               }}>
                 <ReviewStatusBadge status={h.fromStatus} /> &rarr; <ReviewStatusBadge status={h.toStatus} />
                 <div style={{ fontSize: 11, marginTop: 2 }}>
@@ -439,8 +515,8 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
                 </div>
                 {h.note !== null && h.note !== "" && (
                   <div style={{
-                    fontSize: 12, color: "#333", marginTop: 4,
-                    padding: "6px 10px", background: "#f9f9f6", borderRadius: 4,
+                    fontSize: 12, color: "#fff7e8", marginTop: 4,
+                    padding: "6px 10px", background: "rgba(255,247,232,0.07)", borderRadius: 4,
                   }}>
                     {h.note}
                   </div>
@@ -460,6 +536,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           onConfirm={handleReject}
           onCancel={() => { setModal(null); }}
           inFlight={inFlight}
+          errorMessage={actionError}
         />
       )}
       {modal === "changes" && (
@@ -471,6 +548,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           onConfirm={handleRequestChanges}
           onCancel={() => { setModal(null); }}
           inFlight={inFlight}
+          errorMessage={actionError}
         />
       )}
     </div>
@@ -485,22 +563,25 @@ export function ReviewsView(): React.ReactElement {
   const addToast = useToastStore((s) => s.addToast);
   const [entries, setEntries] = useState<PendingReviewEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const refresh = (): void => {
+  const refresh = useCallback((): void => {
     setLoading(true);
+    setLoadError(null);
     void listPendingReviews()
       .then((list) => { setEntries([...list]); })
-      .catch(() => { addToast("Failed to load pending reviews", "error"); })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Pending reviews are unavailable.";
+        setLoadError(message);
+        addToast("Failed to load pending reviews", "error");
+      })
       .finally(() => { setLoading(false); });
-  };
+  }, [addToast]);
 
   useEffect(() => {
     refresh();
-    // `refresh` is declared inline per render and reads only setters
-    // (stable references), so running it once on mount is correct.
-    // Intentionally empty dep array.
-  }, []);
+  }, [refresh]);
 
   const handleStatusChange = (id: string, next: ConfigurationReviewStatus): void => {
     // If the entry transitioned out of the "pending" set, drop it from
@@ -530,11 +611,11 @@ export function ReviewsView(): React.ReactElement {
   }
 
   return (
-    <div>
+    <div style={{ display: "grid", gap: 16, color: "#fff7e8" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 18, color: "#1a1a2e" }}>
+        <h2 style={{ margin: 0, fontSize: 24, color: "#fff7e8", fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>
           Pending Reviews {entries.length > 0 && (
-            <span style={{ color: "#999", fontWeight: 400 }}>({String(entries.length)})</span>
+            <span style={{ color: "rgba(246,241,232,0.56)", fontWeight: 400 }}>({String(entries.length)})</span>
           )}
         </h2>
         <button type="button" style={buttonSecondary} onClick={refresh} disabled={loading}>
@@ -543,38 +624,46 @@ export function ReviewsView(): React.ReactElement {
       </div>
 
       {loading && entries.length === 0 && (
-        <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading…</div>
+        <div role="status" aria-live="polite" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews...</div>
       )}
 
-      {!loading && entries.length === 0 && (
+      {loadError !== null && entries.length === 0 && (
+        <div role="alert" data-testid="reviews-load-error" style={alertStyle}>
+          <div style={{ marginBottom: 10 }}>Could not load pending reviews: {loadError}</div>
+          <button type="button" style={buttonSecondary} onClick={refresh} disabled={loading}>
+            Retry reviews
+          </button>
+        </div>
+      )}
+
+      {!loading && loadError === null && entries.length === 0 && (
         <div style={{
-          padding: 40, textAlign: "center", color: "#999",
-          background: "#fff", borderRadius: 8, border: "1px dashed #e5e7eb",
+          padding: 40, textAlign: "center", color: "rgba(246,241,232,0.66)",
+          background: "rgba(255,247,232,0.05)", borderRadius: 8, border: "1px dashed rgba(215,181,109,0.24)",
         }}>
           No pending reviews. Planners&rsquo; submissions will appear here.
         </div>
       )}
 
       {entries.map((entry) => (
-        <div
+        <button
           key={entry.id}
-          role="button"
-          tabIndex={0}
+          type="button"
+          aria-label={`Open review for ${entry.name}`}
           style={cardStyle}
           onClick={() => { setSelectedId(entry.id); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedId(entry.id); }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#1a1a2e" }}>{entry.name}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#fff7e8" }}>{entry.name}</div>
             <ReviewStatusBadge status={entry.reviewStatus} />
           </div>
-          <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#666" }}>
+          <div style={{ display: "flex", gap: 16, fontSize: 12, color: "rgba(246,241,232,0.66)" }}>
             <span>Guests: {String(entry.guestCount)}</span>
             {entry.submittedAt !== null && (
               <span>Submitted: {new Date(entry.submittedAt).toLocaleString()}</span>
             )}
           </div>
-        </div>
+        </button>
       ))}
     </div>
   );

@@ -50,6 +50,11 @@ import {
 
 type CheckMap = Readonly<Record<string, boolean>>;
 
+interface DownloadNotice {
+  readonly kind: "success" | "error";
+  readonly message: string;
+}
+
 /**
  * Set-or-clear a row's checked state without dynamic `delete`, which is
  * banned by @typescript-eslint/no-dynamic-delete. We rebuild the map
@@ -109,6 +114,8 @@ export function HallkeeperPage(): React.ReactElement {
   const [checks, setChecks] = useState<CheckMap>({});
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
   // Count of progress toggles queued offline. Surfaces as a small
   // badge on the page so the hallkeeper sees "3 edits pending sync"
   // when WiFi drops mid-event-setup. The number drains to 0 when the
@@ -348,14 +355,22 @@ export function HallkeeperPage(): React.ReactElement {
   }, []);
 
   const handleDownload = useCallback(() => {
-    if (configId === undefined) return;
+    if (configId === undefined || downloadBusy) return;
     void (async () => {
+      setDownloadBusy(true);
+      setDownloadNotice(null);
       try {
         const token = await getAuthToken();
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/sheet?download=true`, { headers });
-        if (!res.ok) return;
+        if (!res.ok) {
+          setDownloadNotice({
+            kind: "error",
+            message: "PDF could not be downloaded. Try again or use Print.",
+          });
+          return;
+        }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -363,9 +378,17 @@ export function HallkeeperPage(): React.ReactElement {
         a.download = `hallkeeper-${configId}.pdf`;
         a.click();
         URL.revokeObjectURL(url);
-      } catch { /* swallow */ }
+        setDownloadNotice({ kind: "success", message: "PDF download started." });
+      } catch {
+        setDownloadNotice({
+          kind: "error",
+          message: "PDF could not be downloaded. Try again or use Print.",
+        });
+      } finally {
+        setDownloadBusy(false);
+      }
     })();
-  }, [configId]);
+  }, [configId, downloadBusy]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
 
@@ -401,27 +424,81 @@ export function HallkeeperPage(): React.ReactElement {
   // ERROR STATE + RETRY
   // =====================================================================
   if (error !== null || data === null) {
+    const isPermissionError = error !== null && error.includes("permission");
     return (
       <div className="hk-page" style={pageStyle}>
-        <div style={{ textAlign: "center", paddingTop: 100 }}>
-          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.15 }}>⚠</div>
-          <div role="alert" style={{ color: "#ef4444", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-            {error ?? "Configuration not found"}
-          </div>
-          <p style={{ color: TEXT_MUT, fontSize: 13, marginBottom: 20 }}>
-            {error !== null && error.includes("permission") ? "Ask the events manager to share access." : "Check the link and try again."}
-          </p>
-          <button
-            type="button"
-            className="hk-retry-btn"
-            onClick={loadData}
+        <div style={{
+          minHeight: "100svh",
+          display: "grid",
+          placeItems: "center",
+          padding: "24px 0",
+        }}>
+          <section
+            aria-labelledby="hallkeeper-error-title"
             style={{
-              padding: "10px 28px", fontSize: 14, fontWeight: 600, borderRadius: 8,
-              background: GOLD, color: "#111", border: "none", cursor: "pointer",
+              width: "min(100%, 360px)",
+              padding: 22,
+              borderRadius: 8,
+              background: "linear-gradient(180deg, rgba(19,28,29,0.96), rgba(9,13,14,0.98))",
+              border: `1px solid ${isPermissionError ? "rgba(201,168,76,0.38)" : "rgba(239,68,68,0.36)"}`,
+              boxShadow: "0 18px 55px rgba(0,0,0,0.38)",
+              textAlign: "left",
             }}
           >
-            Try Again
-          </button>
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "5px 9px",
+              borderRadius: 999,
+              border: `1px solid ${isPermissionError ? "rgba(201,168,76,0.45)" : "rgba(239,68,68,0.45)"}`,
+              color: isPermissionError ? GOLD : "#fca5a5",
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              marginBottom: 14,
+            }}>
+              {isPermissionError ? "Access needed" : "Sheet unavailable"}
+            </div>
+            <h1
+              id="hallkeeper-error-title"
+              role="alert"
+              style={{
+                margin: "0 0 10px",
+                color: isPermissionError ? "#fff7e8" : "#fecaca",
+                fontSize: 24,
+                lineHeight: 1.08,
+                letterSpacing: 0,
+              }}
+            >
+              {error ?? "Configuration not found"}
+            </h1>
+            <p style={{ color: TEXT_SEC, fontSize: 14, lineHeight: 1.5, margin: "0 0 18px" }}>
+              {isPermissionError
+                ? "Ask the event manager to share this sheet or open it with a hallkeeper-approved account."
+                : "Check that the handoff link is current, then try again."}
+            </p>
+            <button
+              type="button"
+              className="hk-retry-btn"
+              onClick={loadData}
+              style={{
+                width: "100%",
+                minHeight: 44,
+                padding: "10px 18px",
+                fontSize: 14,
+                fontWeight: 800,
+                borderRadius: 8,
+                background: GOLD,
+                color: "#111",
+                border: "1px solid rgba(255,255,255,0.12)",
+                cursor: "pointer",
+              }}
+            >
+              Try Again
+            </button>
+          </section>
         </div>
       </div>
     );
@@ -620,9 +697,37 @@ export function HallkeeperPage(): React.ReactElement {
 
       {/* === ACTION BUTTONS === */}
       <div className="hk-actions" style={actionsRow}>
-        <button type="button" style={actionBtnPrimary} onClick={handleDownload}>Download PDF</button>
+        <button
+          type="button"
+          style={{
+            ...actionBtnPrimary,
+            opacity: downloadBusy ? 0.72 : 1,
+            cursor: downloadBusy ? "wait" : "pointer",
+          }}
+          onClick={handleDownload}
+          disabled={downloadBusy}
+        >
+          {downloadBusy ? "Preparing PDF..." : "Download PDF"}
+        </button>
         <button type="button" style={actionBtnSecondary} onClick={handlePrint}>Print</button>
       </div>
+      {downloadNotice !== null && (
+        <div
+          role={downloadNotice.kind === "error" ? "alert" : "status"}
+          style={{
+            margin: "-12px 0 24px",
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: `1px solid ${downloadNotice.kind === "error" ? "rgba(255, 154, 87, 0.42)" : "rgba(91,168,112,0.35)"}`,
+            background: downloadNotice.kind === "error" ? "rgba(255, 154, 87, 0.1)" : "rgba(91,168,112,0.1)",
+            color: downloadNotice.kind === "error" ? "#ffb06b" : GREEN,
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {downloadNotice.message}
+        </div>
+      )}
 
       {/* === STICKY PROGRESS === */}
       <div className="hk-summary-sticky" style={stickyBar}>

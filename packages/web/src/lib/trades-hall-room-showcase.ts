@@ -9,6 +9,7 @@ export interface RoomShowcaseProfile {
   readonly shortName: string;
   readonly heroImage: string;
   readonly heroImageAlt: string;
+  readonly heroImagePosition?: string;
   readonly heroImageKind: "room-photo" | "venue-context";
   readonly eventTypes: readonly string[];
   readonly guestGuidance: string;
@@ -25,6 +26,7 @@ export interface PublicRoomSelectionCard {
   readonly shortName: string;
   readonly image: string;
   readonly imageAlt: string;
+  readonly imagePosition?: string;
   readonly tone: string;
   readonly mood: string;
   readonly bestFor: readonly string[];
@@ -35,15 +37,25 @@ export interface PublicRoomSelectionCard {
   readonly enquiryHref: string;
 }
 
-const venueContextImage = "/images/venue/grand-hall-facade-3.jpg";
+export const tradesHallVenueImages = {
+  grandHall: "/images/venue/grand-hall-room.jpg",
+  receptionRoom: "/images/venue/reception-room.jpg",
+  robertAdamRoom: "/images/venue/robert-adam-room.jpg",
+  saloon: "/images/venue/saloon-room.jpg",
+  exterior: "/images/venue/trades-hall-exterior.jpg",
+} as const;
+
+const venueContextImage = tradesHallVenueImages.exterior;
+const venueContextImagePosition = "center 44%";
 
 export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
   "grand-hall": {
     slug: "grand-hall",
     name: "Grand Hall",
     shortName: "Grand Hall",
-    heroImage: "/rooms/Grand-Hall-scaled-opt.jpg",
-    heroImageAlt: "Grand Hall set for a formal event",
+    heroImage: tradesHallVenueImages.grandHall,
+    heroImageAlt: "Grand Hall dressed for a candlelit wedding dinner",
+    heroImagePosition: "center 48%",
     heroImageKind: "room-photo",
     eventTypes: ["Wedding dinner", "Gala", "Conference", "Ceremony", "Ceilidh"],
     guestGuidance: "Planning-grade guidance: suited to larger layouts, with final guest numbers confirmed by the venue team.",
@@ -60,8 +72,9 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     slug: "reception-room",
     name: "Reception Room",
     shortName: "Reception",
-    heroImage: "/rooms/reception-wedding-opt.jpg",
-    heroImageAlt: "Reception Room arranged for an event",
+    heroImage: tradesHallVenueImages.receptionRoom,
+    heroImageAlt: "Reception Room dressed for a wedding ceremony with floral aisle",
+    heroImagePosition: "center 52%",
     heroImageKind: "room-photo",
     eventTypes: ["Ceremony", "Drinks reception", "Private dinner", "Photography", "Arrival"],
     guestGuidance: "Planning-grade guidance: best reviewed against the chosen layout, service style, and guest movement needs.",
@@ -78,8 +91,9 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     slug: "robert-adam-room",
     name: "Robert Adam Room",
     shortName: "Robert Adam",
-    heroImage: "/rooms/robert-adam-wedding-opt.jpg",
-    heroImageAlt: "Robert Adam Room prepared for a ceremony",
+    heroImage: tradesHallVenueImages.robertAdamRoom,
+    heroImageAlt: "Robert Adam Room ceremony aisle with floral arch and chandelier",
+    heroImagePosition: "center 36%",
     heroImageKind: "room-photo",
     eventTypes: ["Ceremony", "Private dining", "Boardroom", "Talk", "Reception"],
     guestGuidance: "Planning-grade guidance: suited to more focused gatherings, with final details checked by the venue team.",
@@ -96,8 +110,9 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     slug: "saloon",
     name: "Saloon",
     shortName: "Saloon",
-    heroImage: "/rooms/saloon_TH_use.png",
-    heroImageAlt: "Saloon prepared for a venue event",
+    heroImage: tradesHallVenueImages.saloon,
+    heroImageAlt: "Saloon set for a candlelit wedding ceremony",
+    heroImagePosition: "center 46%",
     heroImageKind: "room-photo",
     eventTypes: ["Ceremony", "Dinner", "Reception", "Speeches", "Private event"],
     guestGuidance: "Planning-grade guidance: strong for mid-scale event formats, subject to layout and service review.",
@@ -116,6 +131,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     shortName: "Lady Convenor's",
     heroImage: venueContextImage,
     heroImageAlt: "Trades Hall exterior used as venue context while the room preview is prepared",
+    heroImagePosition: venueContextImagePosition,
     heroImageKind: "venue-context",
     eventTypes: ["Private dining", "VIP reception", "Green room", "Planning meeting", "Wedding party preparation"],
     guestGuidance: "Planning-grade guidance: reviewed as a smaller room or support space before any final arrangement is confirmed.",
@@ -134,6 +150,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     shortName: "North Gallery",
     heroImage: venueContextImage,
     heroImageAlt: "Trades Hall exterior used as venue context while the gallery preview is prepared",
+    heroImagePosition: venueContextImagePosition,
     heroImageKind: "venue-context",
     eventTypes: ["Arrival", "Drinks", "Exhibition", "Photography", "Overflow"],
     guestGuidance: "Planning-grade guidance: best treated as a movement or support zone until room-specific details are reviewed.",
@@ -152,6 +169,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     shortName: "South Gallery",
     heroImage: venueContextImage,
     heroImageAlt: "Trades Hall exterior used as venue context while the gallery preview is prepared",
+    heroImagePosition: venueContextImagePosition,
     heroImageKind: "venue-context",
     eventTypes: ["Arrival", "Drinks", "Exhibition", "Photography", "Overflow"],
     guestGuidance: "Planning-grade guidance: best reviewed as part of the wider event route and room sequence.",
@@ -182,6 +200,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Grand Hall",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["grand-hall"].heroImagePosition,
     tone: "Flagship scale",
     mood: "Grand dinner, gala, ceremony, and ceilidh planning.",
     bestFor: ["Wedding dinner", "Gala", "Conference"],
@@ -198,6 +217,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Deacon Convener's",
     image: venueContextImage,
     imageAlt: "Trades Hall exterior used as venue context for the Deacon Convener's Room enquiry",
+    imagePosition: venueContextImagePosition,
     tone: "Private host room",
     mood: "A venue-team conversation for hosted moments and private support use.",
     bestFor: ["VIP welcome", "Hosted meeting", "Support room"],
@@ -214,6 +234,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Lady Convener's",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["lady-convenors-room"].heroImagePosition,
     tone: "Private support",
     mood: "A quieter room for private dining, VIP reception, or event preparation.",
     bestFor: ["Private dining", "VIP reception", "Green room"],
@@ -230,6 +251,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Reception",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["reception-room"].heroImagePosition,
     tone: "Arrival warmth",
     mood: "Ceremony, drinks reception, photography, and arrival planning.",
     bestFor: ["Ceremony", "Drinks reception", "Photography"],
@@ -246,6 +268,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Robert Adam",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["robert-adam-room"].heroImagePosition,
     tone: "Period detail",
     mood: "Intimate ceremonies, private dining, boardroom use, and talks.",
     bestFor: ["Ceremony", "Private dining", "Boardroom"],
@@ -262,6 +285,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "Saloon",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES.saloon.heroImagePosition,
     tone: "Elegant mid-scale",
     mood: "Ceremony, dinner, reception, speeches, and multi-phase planning.",
     bestFor: ["Ceremony", "Dinner", "Speeches"],
@@ -278,6 +302,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "North Gallery",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["north-gallery"].heroImagePosition,
     tone: "Movement and pause",
     mood: "Arrival, drinks, exhibition, photography, and overflow planning.",
     bestFor: ["Arrival", "Drinks", "Exhibition"],
@@ -294,6 +319,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     shortName: "South Gallery",
     image: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].heroImage,
     imageAlt: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].heroImageAlt,
+    imagePosition: TRADES_HALL_ROOM_SHOWCASE_PROFILES["south-gallery"].heroImagePosition,
     tone: "Route support",
     mood: "Arrival, drinks, exhibition, photography, and overflow planning.",
     bestFor: ["Arrival", "Drinks", "Overflow"],

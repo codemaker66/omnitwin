@@ -44,15 +44,17 @@ import { useAuthStore } from "../../stores/auth-store.js";
 // ---------------------------------------------------------------------------
 
 const card: React.CSSProperties = {
-  background: "linear-gradient(180deg, #fffdf8 0%, #f8f1e5 100%)",
-  border: "1px solid rgba(92, 69, 38, 0.18)",
+  background:
+    "linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(9, 12, 12, 0.96)), radial-gradient(circle at 86% 0%, rgba(104, 216, 210, 0.1), transparent 34%)",
+  border: "1px solid rgba(215, 181, 109, 0.24)",
   borderRadius: 8,
   padding: 20,
-  boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
+  boxShadow: "0 22px 70px rgba(0, 0, 0, 0.3)",
+  color: "#f4efe4",
 };
 
 const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: 12, fontWeight: 700, color: "#715f42", marginBottom: 4,
+  display: "block", fontSize: 12, fontWeight: 800, color: "#d7b56d", marginBottom: 4,
 };
 
 const inputStyle: React.CSSProperties = {
@@ -61,17 +63,17 @@ const inputStyle: React.CSSProperties = {
   minHeight: 40,
   padding: "8px 10px",
   fontSize: 14,
-  border: "1px solid rgba(92, 69, 38, 0.22)",
+  border: "1px solid rgba(215, 181, 109, 0.24)",
   borderRadius: 6,
-  background: "#fffaf1",
-  color: "#21190f",
+  background: "rgba(255, 247, 232, 0.07)",
+  color: "#fff7e8",
   fontFamily: "inherit",
 };
 
 const buttonPrimary: React.CSSProperties = {
-  background: "#21190f",
-  color: "#fff7e8",
-  border: "none",
+  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  color: "#090807",
+  border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
   minHeight: 40,
   padding: "9px 18px",
@@ -81,9 +83,9 @@ const buttonPrimary: React.CSSProperties = {
 };
 
 const buttonSecondary: React.CSSProperties = {
-  background: "#fffaf1",
-  color: "#21190f",
-  border: "1px solid rgba(92, 69, 38, 0.24)",
+  background: "rgba(255, 247, 232, 0.07)",
+  color: "#f4efe4",
+  border: "1px solid rgba(215, 181, 109, 0.26)",
   borderRadius: 6,
   minHeight: 40,
   padding: "9px 18px",
@@ -94,8 +96,8 @@ const buttonSecondary: React.CSSProperties = {
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "#6b7280",
-  sent: "#2563eb",
-  changes_requested: "#d97706",
+  sent: "#68d8d2",
+  changes_requested: "#f2b35e",
   accepted: "#059669",
   declined: "#dc2626",
   expired: "#9ca3af",
@@ -130,15 +132,21 @@ export function ProposalsView(): ReactElement {
   const user = useAuthStore((s) => s.user);
 
   const [proposals, setProposals] = useState<StaffProposal[]>([]);
-  const [listError, setListError] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<StaffProposal | null>(null);
   const [history, setHistory] = useState<ProposalHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<StaffProposalVersion | null>(null);
   const [comments, setComments] = useState<ProposalCommentRow[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentLoadError, setCommentLoadError] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
 
   const [newTitle, setNewTitle] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const [clientMessage, setClientMessage] = useState("");
   const [capacityNote, setCapacityNote] = useState("");
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([]);
@@ -148,9 +156,17 @@ export function ProposalsView(): ReactElement {
   const [busy, setBusy] = useState(false);
 
   const refreshList = useCallback(() => {
+    setListLoading(true);
+    setListError(null);
     listProposals()
-      .then((rows) => { setProposals(rows); setListError(false); })
-      .catch(() => { setListError(true); });
+      .then((rows) => {
+        setProposals(rows);
+        setListError(null);
+      })
+      .catch(() => {
+        setListError("Couldn't load proposals. Check the connection and retry.");
+      })
+      .finally(() => { setListLoading(false); });
   }, []);
 
   useEffect(() => { refreshList(); }, [refreshList]);
@@ -173,10 +189,34 @@ export function ProposalsView(): ReactElement {
       .catch(() => { /* guidance unavailable — note stays manual */ });
   }, [user?.venueId]);
 
+  const loadHistory = useCallback((id: string) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    getProposalHistory(id)
+      .then(setHistory)
+      .catch(() => {
+        setHistory([]);
+        setHistoryError("Couldn't load this proposal's status history.");
+      })
+      .finally(() => { setHistoryLoading(false); });
+  }, []);
+
+  const loadLatestVersion = useCallback((id: string) => {
+    getLatestProposalVersion(id)
+      .then(setLatestVersion)
+      .catch(() => { setLatestVersion(null); });
+  }, []);
+
   const loadComments = useCallback((id: string) => {
+    setCommentsLoading(true);
+    setCommentLoadError(null);
     getProposalComments(id)
       .then(setComments)
-      .catch(() => { setComments([]); });
+      .catch(() => {
+        setComments([]);
+        setCommentLoadError("Couldn't load the client conversation.");
+      })
+      .finally(() => { setCommentsLoading(false); });
   }, []);
 
   const selectProposal = useCallback((proposal: StaffProposal) => {
@@ -184,31 +224,29 @@ export function ProposalsView(): ReactElement {
     setComposerError(null);
     setActionError(null);
     setCommentError(null);
+    setCommentLoadError(null);
+    setHistoryError(null);
     setReplyText("");
     setClientMessage("");
     setCapacityNote("");
     setQuoteLines([]);
     setLatestShareUrl(null);
-    getProposalHistory(proposal.id)
-      .then(setHistory)
-      .catch(() => { setHistory([]); });
-    getLatestProposalVersion(proposal.id)
-      .then(setLatestVersion)
-      .catch(() => { setLatestVersion(null); });
+    loadHistory(proposal.id);
+    loadLatestVersion(proposal.id);
     loadComments(proposal.id);
-  }, [loadComments]);
+  }, [loadComments, loadHistory, loadLatestVersion]);
 
   const refreshSelected = useCallback((id: string) => {
     getProposal(id)
       .then((proposal) => {
         setSelected(proposal);
         refreshList();
-        getProposalHistory(id).then(setHistory).catch(() => { setHistory([]); });
-        getLatestProposalVersion(id).then(setLatestVersion).catch(() => { setLatestVersion(null); });
+        loadHistory(id);
+        loadLatestVersion(id);
         loadComments(id);
       })
       .catch(() => { setActionError("Could not refresh the proposal. Reload the page and try again."); });
-  }, [refreshList, loadComments]);
+  }, [loadComments, loadHistory, loadLatestVersion, refreshList]);
 
   const handlePostReply = (): void => {
     if (selected === null || busy || replyText.trim().length === 0) return;
@@ -236,13 +274,14 @@ export function ProposalsView(): ReactElement {
   const handleCreate = (): void => {
     if (user?.venueId === undefined || user.venueId === null || newTitle.trim().length === 0 || busy) return;
     setBusy(true);
+    setCreateError(null);
     createProposal({ venueId: user.venueId, title: newTitle.trim() })
       .then((created) => {
         setNewTitle("");
         refreshList();
         selectProposal(created);
       })
-      .catch(() => { setActionError("Could not create the proposal. Please try again."); })
+      .catch(() => { setCreateError("Could not create the proposal. Please check the title and try again."); })
       .finally(() => { setBusy(false); });
   };
 
@@ -378,7 +417,7 @@ export function ProposalsView(): ReactElement {
         <section style={card} aria-label="Create proposal">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>New proposal</h2>
           {user?.venueId === null || user?.venueId === undefined ? (
-            <p style={{ fontSize: 13, color: "#75644c", margin: 0 }}>
+            <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
               Your account isn't linked to a venue, so proposals can't be created from here.
             </p>
           ) : (
@@ -393,6 +432,11 @@ export function ProposalsView(): ReactElement {
                 maxLength={200}
                 placeholder="Autumn gala — Grand Hall"
               />
+              {createError !== null && (
+                <div role="alert" data-testid="create-error" style={{ marginTop: 8, fontSize: 13, color: "#ffb4a2" }}>
+                  {createError}
+                </div>
+              )}
               <button
                 type="button"
                 data-testid="create-submit"
@@ -408,11 +452,24 @@ export function ProposalsView(): ReactElement {
 
         <section style={card} aria-label="Proposals">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>Proposals</h2>
-          {listError && (
-            <p style={{ fontSize: 13, color: "#b91c1c" }}>Couldn't load proposals. Refresh to retry.</p>
+          {listLoading && proposals.length === 0 && (
+            <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</p>
           )}
-          {!listError && proposals.length === 0 && (
-            <p style={{ fontSize: 13, color: "#75644c", margin: 0 }}>
+          {listError !== null && (
+            <div role="alert" data-testid="proposal-list-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
+              <p style={{ margin: "0 0 8px" }}>{listError}</p>
+              <button
+                type="button"
+                style={{ ...buttonSecondary, minHeight: 34, padding: "6px 12px", fontSize: 12, opacity: listLoading ? 0.5 : 1 }}
+                disabled={listLoading}
+                onClick={refreshList}
+              >
+                Retry proposals
+              </button>
+            </div>
+          )}
+          {!listLoading && listError === null && proposals.length === 0 && (
+            <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
               No proposals yet. Create a draft to start a client conversation.
             </p>
           )}
@@ -426,9 +483,9 @@ export function ProposalsView(): ReactElement {
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
                     width: "100%", textAlign: "left", padding: "10px 8px", fontSize: 13,
-                    background: selected?.id === proposal.id ? "#efe0bf" : "transparent",
-                    border: "none", borderBottom: "1px solid rgba(92, 69, 38, 0.14)", cursor: "pointer",
-                    color: "#21190f",
+                    background: selected?.id === proposal.id ? "rgba(215, 181, 109, 0.18)" : "transparent",
+                    border: "none", borderBottom: "1px solid rgba(215, 181, 109, 0.16)", cursor: "pointer",
+                    color: "#fff7e8",
                   }}
                 >
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proposal.title}</span>
@@ -441,17 +498,17 @@ export function ProposalsView(): ReactElement {
       </div>
 
       {selected === null ? (
-        <section style={{ ...card, color: "#75644c", fontSize: 14 }}>
+        <section style={{ ...card, color: "rgba(246, 241, 232, 0.68)", fontSize: 14 }}>
           Select a proposal to view and edit it, or create a new draft.
         </section>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <section style={card} aria-label="Proposal detail">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#21190f" }}>{selected.title}</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff7e8" }}>{selected.title}</h2>
               <StatusPill status={selected.status} />
             </div>
-            <div style={{ fontSize: 13, color: "#75644c", marginTop: 6 }}>
+            <div style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", marginTop: 6 }}>
               Version {selected.currentVersion} {latestVersion !== null ? `— last saved ${new Date(latestVersion.createdAt).toLocaleString("en-GB")}` : "— no content saved yet"}
             </div>
 
@@ -487,14 +544,14 @@ export function ProposalsView(): ReactElement {
               )}
             </div>
             {actionError !== null && (
-              <div role="alert" style={{ marginTop: 10, fontSize: 13, color: "#b91c1c" }}>{actionError}</div>
+              <div role="alert" style={{ marginTop: 10, fontSize: 13, color: "#ffb4a2" }}>{actionError}</div>
             )}
           </section>
 
           {canCompose && (
             <section style={card} aria-label="Compose version">
-              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, color: "#21190f" }}>Compose a new version</h3>
-              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#75644c" }}>
+              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Compose a new version</h3>
+              <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "rgba(246, 241, 232, 0.68)" }}>
                 Saved versions are immutable snapshots — sending shares the latest one. Figures are
                 planning estimates; wording that claims safety or compliance certainty is rejected.
               </p>
@@ -521,8 +578,8 @@ export function ProposalsView(): ReactElement {
               />
 
               {spaces.length > 0 && (
-                <div style={{ marginTop: 10, padding: 12, background: "#fff7e8", border: "1px solid rgba(92, 69, 38, 0.18)", borderRadius: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#715f42", marginBottom: 8 }}>
+                <div style={{ marginTop: 10, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.22)", borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#d7b56d", marginBottom: 8 }}>
                     Capacity guidance — planning-grade, from room floor area
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 1fr", gap: 8 }}>
@@ -560,7 +617,7 @@ export function ProposalsView(): ReactElement {
                   </div>
                   {capacityIntel !== null && capSpace !== null && (
                     <>
-                      <div data-testid="capacity-result" style={{ fontSize: 13, color: "#3b2c1b", marginTop: 10 }}>
+                      <div data-testid="capacity-result" style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.82)", marginTop: 10 }}>
                         Comfortable for around {capacityIntel.comfortableCapacity} guests
                         {capacityIntel.plannedSeats > 0 && ` — ${String(capacityIntel.plannedSeats)} requested (${capacityIntel.band.replace(/-/g, " ")})`}
                         . Planning estimate only — human review required.
@@ -584,14 +641,15 @@ export function ProposalsView(): ReactElement {
                   <button
                     type="button"
                     data-testid="add-quote-line"
-                    style={{ ...buttonSecondary, padding: "5px 12px", fontSize: 12 }}
+                    style={{ ...buttonSecondary, padding: "5px 12px", fontSize: 12, opacity: busy ? 0.5 : 1 }}
+                    disabled={busy}
                     onClick={() => { setQuoteLines((lines) => [...lines, { ...EMPTY_LINE }]); }}
                   >
                     Add line
                   </button>
                 </div>
                 {quoteLines.map((line, index) => (
-                  <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px", gap: 8, marginTop: 8 }}>
+                  <div key={index} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1fr) 80px 110px auto", gap: 8, marginTop: 8, alignItems: "center" }}>
                     <input
                       aria-label={`Line ${String(index + 1)} description`}
                       data-testid={`quote-desc-${String(index)}`}
@@ -623,12 +681,21 @@ export function ProposalsView(): ReactElement {
                         setQuoteLines((lines) => lines.map((l, i) => i === index ? { ...l, pounds: e.target.value } : l));
                       }}
                     />
+                    <button
+                      type="button"
+                      aria-label={`Remove quote line ${String(index + 1)}`}
+                      style={{ ...buttonSecondary, minHeight: 40, padding: "6px 10px", opacity: busy ? 0.5 : 1 }}
+                      disabled={busy}
+                      onClick={() => { setQuoteLines((lines) => lines.filter((_, i) => i !== index)); }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
 
               {composerError !== null && (
-                <div role="alert" data-testid="composer-error" style={{ marginTop: 12, fontSize: 13, color: "#b91c1c" }}>
+                <div role="alert" data-testid="composer-error" style={{ marginTop: 12, fontSize: 13, color: "#ffb4a2" }}>
                   {composerError}
                 </div>
               )}
@@ -647,11 +714,11 @@ export function ProposalsView(): ReactElement {
 
           {latestVersion !== null && latestVersion.payload.quote !== null && (
             <section style={card} aria-label="Latest quote">
-              <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#21190f" }}>Latest saved quote</h3>
+              <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Latest saved quote</h3>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <tbody>
                   {latestVersion.payload.quote.lineItems.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: "1px solid rgba(92, 69, 38, 0.14)" }}>
+                    <tr key={index} style={{ borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}>
                       <td style={{ padding: "6px 0" }}>{item.description}</td>
                       <td style={{ padding: "6px 0", textAlign: "right" }}>{item.quantity}×</td>
                       <td style={{ padding: "6px 0", textAlign: "right" }}>{formatMinorAsCurrency(item.lineTotalMinor, latestVersion.payload.quote?.currency ?? "GBP")}</td>
@@ -669,9 +736,23 @@ export function ProposalsView(): ReactElement {
           )}
 
           <section style={card} aria-label="Client conversation" data-testid="proposal-conversation">
-            <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#21190f" }}>Conversation</h3>
-            {comments.length === 0 ? (
-              <p style={{ fontSize: 13, color: "#75644c", margin: 0 }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Conversation</h3>
+            {commentsLoading && comments.length === 0 ? (
+              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</p>
+            ) : commentLoadError !== null ? (
+              <div role="alert" data-testid="conversation-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
+                <p style={{ margin: "0 0 8px" }}>{commentLoadError}</p>
+                <button
+                  type="button"
+                  style={{ ...buttonSecondary, minHeight: 34, padding: "6px 12px", fontSize: 12, opacity: commentsLoading ? 0.5 : 1 }}
+                  disabled={commentsLoading}
+                  onClick={() => { loadComments(selected.id); }}
+                >
+                  Retry conversation
+                </button>
+              </div>
+            ) : comments.length === 0 ? (
+              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
                 No messages yet. Client comments left on the share link appear here.
               </p>
             ) : (
@@ -680,18 +761,18 @@ export function ProposalsView(): ReactElement {
                   <li
                     key={comment.id}
                     data-testid={`comment-${comment.authorType}`}
-                    style={{ padding: "8px 0", borderBottom: "1px solid rgba(92, 69, 38, 0.14)" }}
+                    style={{ padding: "8px 0", borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}
                   >
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                      <span style={{ fontWeight: 700, color: comment.authorType === "client" ? "#2563eb" : "#21190f" }}>
+                      <span style={{ fontWeight: 700, color: comment.authorType === "client" ? "#68d8d2" : "#fff7e8" }}>
                         {comment.authorType === "client" ? (comment.authorName ?? "Client") : (comment.authorName ?? "Venue team")}
                       </span>
-                      <span style={{ color: "#9c8a6f", fontSize: 12 }}>{new Date(comment.createdAt).toLocaleString("en-GB")}</span>
+                      <span style={{ color: "rgba(246, 241, 232, 0.5)", fontSize: 12 }}>{new Date(comment.createdAt).toLocaleString("en-GB")}</span>
                       {comment.kind === "request_changes" && (
-                        <span style={{ color: "#d97706", fontSize: 12 }}>· requested changes</span>
+                        <span style={{ color: "#f2b35e", fontSize: 12 }}>· requested changes</span>
                       )}
                     </div>
-                    <div style={{ color: "#3b2c1b", marginTop: 2, whiteSpace: "pre-wrap" }}>{comment.body}</div>
+                    <div style={{ color: "rgba(246, 241, 232, 0.82)", marginTop: 2, whiteSpace: "pre-wrap" }}>{comment.body}</div>
                   </li>
                 ))}
               </ul>
@@ -710,7 +791,7 @@ export function ProposalsView(): ReactElement {
                 placeholder="Reply — shown to the client on the share link"
               />
               {commentError !== null && (
-                <div role="alert" data-testid="reply-error" style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>
+                <div role="alert" data-testid="reply-error" style={{ marginTop: 8, fontSize: 13, color: "#ffb4a2" }}>
                   {commentError}
                 </div>
               )}
@@ -727,17 +808,31 @@ export function ProposalsView(): ReactElement {
           </section>
 
           <section style={card} aria-label="Status history">
-            <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#21190f" }}>History</h3>
-            {history.length === 0 ? (
-              <p style={{ fontSize: 13, color: "#75644c", margin: 0 }}>No status changes yet.</p>
+            <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>History</h3>
+            {historyLoading && history.length === 0 ? (
+              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</p>
+            ) : historyError !== null ? (
+              <div role="alert" data-testid="history-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
+                <p style={{ margin: "0 0 8px" }}>{historyError}</p>
+                <button
+                  type="button"
+                  style={{ ...buttonSecondary, minHeight: 34, padding: "6px 12px", fontSize: 12, opacity: historyLoading ? 0.5 : 1 }}
+                  disabled={historyLoading}
+                  onClick={() => { loadHistory(selected.id); }}
+                >
+                  Retry history
+                </button>
+              </div>
+            ) : history.length === 0 ? (
+              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>No status changes yet.</p>
             ) : (
               <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
                 {history.map((entry) => (
-                  <li key={entry.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(92, 69, 38, 0.14)" }}>
+                  <li key={entry.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}>
                     <span style={{ fontWeight: 600 }}>{entry.fromStatus.replace(/_/g, " ")} → {entry.toStatus.replace(/_/g, " ")}</span>
-                    <span style={{ color: "#999", marginLeft: 8 }}>{new Date(entry.createdAt).toLocaleString("en-GB")}</span>
-                    {entry.changedBy === null && <span style={{ color: "#2563eb", marginLeft: 8 }}>(client via share link)</span>}
-                    {entry.note !== null && <div style={{ color: "#75644c", marginTop: 2 }}>{entry.note}</div>}
+                    <span style={{ color: "rgba(246, 241, 232, 0.46)", marginLeft: 8 }}>{new Date(entry.createdAt).toLocaleString("en-GB")}</span>
+                    {entry.changedBy === null && <span style={{ color: "#68d8d2", marginLeft: 8 }}>(client via share link)</span>}
+                    {entry.note !== null && <div style={{ color: "rgba(246, 241, 232, 0.68)", marginTop: 2 }}>{entry.note}</div>}
                   </li>
                 ))}
               </ul>

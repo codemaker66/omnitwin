@@ -303,7 +303,8 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
   it("DashboardLayout shows admin nav only for admin role", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
     expect(codeOnly).toContain("adminOnly");
-    expect(codeOnly).toMatch(/user\?\.role\s*!==\s*["']admin["']/);
+    expect(codeOnly).toContain("canShowNavItem");
+    expect(codeOnly).toMatch(/item\.adminOnly\s*===\s*true[\s\S]*?role\s*===\s*["']admin["']/);
   });
 
   it("DashboardPage imports and renders AdminPanel", async () => {
@@ -381,6 +382,37 @@ describe("DashboardPage", () => {
   it("exports", async () => {
     const { DashboardPage } = await import("../pages/DashboardPage.js");
     expect(typeof DashboardPage).toBe("function");
+  });
+
+  it("parses dashboard view query params and rejects unknown values", async () => {
+    const { dashboardViewFromSearchValue } = await import("../pages/DashboardPage.js");
+    expect(dashboardViewFromSearchValue("settings")).toBe("settings");
+    expect(dashboardViewFromSearchValue("onboarding")).toBe("onboarding");
+    expect(dashboardViewFromSearchValue("made-up-view")).toBeNull();
+    expect(dashboardViewFromSearchValue(null)).toBeNull();
+  });
+
+  it("enforces role visibility before mounting route-addressed dashboard views", async () => {
+    const { canOpenDashboardView } = await import("../pages/DashboardPage.js");
+    expect(canOpenDashboardView("onboarding", "admin")).toBe(true);
+    expect(canOpenDashboardView("onboarding", "staff")).toBe(false);
+    expect(canOpenDashboardView("admin", "hallkeeper")).toBe(false);
+    expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);
+    expect(canOpenDashboardView("analytics", "executive")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "executive")).toBe(false);
+    expect(canOpenDashboardView("admin", "executive")).toBe(false);
+    expect(canOpenDashboardView("analytics", "supplier")).toBe(false);
+    expect(canOpenDashboardView("settings", "hallkeeper")).toBe(true);
+    expect(canOpenDashboardView("settings", null)).toBe(false);
+  });
+
+  it("uses a permitted default dashboard surface for restricted roles", async () => {
+    const { canOpenDashboardView, defaultDashboardViewForRole } = await import("../pages/DashboardPage.js");
+    expect(defaultDashboardViewForRole("executive")).toBe("analytics");
+    expect(canOpenDashboardView(defaultDashboardViewForRole("executive"), "executive")).toBe(true);
+    expect(defaultDashboardViewForRole("staff")).toBe("enquiries");
+    expect(defaultDashboardViewForRole("hallkeeper")).toBe("enquiries");
   });
 });
 
@@ -689,8 +721,8 @@ describe("LoadoutDetail photo improvements (#37, #38) — source-grep", () => {
 
   it("disables Move Up on the first photo and Move Down on the last", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
-    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*0\}/);
-    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*loadout\.photos\.length\s*-\s*1\}/);
+    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*0\s*\|\|\s*busyAction\s*!==\s*null\}/);
+    expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*loadout\.photos\.length\s*-\s*1\s*\|\|\s*busyAction\s*!==\s*null\}/);
   });
 });
 

@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowRight, CalendarDays, LayoutTemplate, Mail, ShieldQuestion, Sparkles, Users } from "lucide-react";
 import type { PublicRoomRuntimeVisual } from "@omnitwin/types";
@@ -18,6 +27,10 @@ const RuntimeCanvas = lazy(() => import("../components/showcase/PublicRoomRuntim
 })));
 
 const VENUE_SLUG = "trades-hall";
+
+function imagePositionStyle(position: string | undefined): CSSProperties | undefined {
+  return position === undefined ? undefined : { objectPosition: position };
+}
 
 function safeFallbackVisual(roomSlug: RoomShowcaseProfile["slug"]): PublicRoomRuntimeVisual {
   return {
@@ -69,7 +82,11 @@ function HeroVisual({
             />
           </Suspense>
         ) : (
-          <img src={profile.heroImage} alt={profile.heroImageAlt} />
+          <img
+            src={profile.heroImage}
+            alt={profile.heroImageAlt}
+            style={imagePositionStyle(profile.heroImagePosition)}
+          />
         )}
 
         <div className="room-showcase-visual-label" aria-live="polite">
@@ -140,7 +157,12 @@ function RoomSelectionRail({ currentRoomSlug }: RoomSelectionRailProps): ReactEl
               aria-label={label}
             >
               <span className="room-showcase-selector-image" aria-hidden="true">
-                <img src={room.image} alt="" loading="lazy" />
+                <img
+                  src={room.image}
+                  alt=""
+                  loading="lazy"
+                  style={imagePositionStyle(room.imagePosition)}
+                />
               </span>
               <span className="room-showcase-selector-copy">
                 <span className="room-showcase-selector-tone">{room.tone}</span>

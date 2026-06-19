@@ -14,6 +14,7 @@ import {
   type OpportunityDetail,
 } from "../../api/crm.js";
 import { createProposal, type StaffProposal } from "../../api/proposals.js";
+import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 
@@ -49,18 +50,20 @@ const STAGE_NEXT: Record<string, string> = {
 };
 
 const card: React.CSSProperties = {
-  background: "linear-gradient(180deg, #fffdf8 0%, #f8f1e5 100%)",
-  border: "1px solid rgba(92, 69, 38, 0.18)",
+  background:
+    "linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(9, 12, 12, 0.96)), radial-gradient(circle at 90% 0%, rgba(104, 216, 210, 0.1), transparent 34%)",
+  border: "1px solid rgba(215, 181, 109, 0.24)",
   borderRadius: 8,
   padding: 16,
-  boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
+  boxShadow: "0 22px 70px rgba(0, 0, 0, 0.3)",
+  color: "#f4efe4",
 };
 
 const label: React.CSSProperties = {
   display: "block",
   fontSize: 12,
   fontWeight: 700,
-  color: "#715f42",
+  color: "#d7b56d",
   marginBottom: 4,
 };
 
@@ -68,20 +71,20 @@ const input: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
   minHeight: 40,
-  border: "1px solid rgba(92, 69, 38, 0.22)",
+  border: "1px solid rgba(215, 181, 109, 0.24)",
   borderRadius: 6,
-  background: "#fffaf1",
-  color: "#21190f",
+  background: "rgba(255, 247, 232, 0.07)",
+  color: "#fff7e8",
   padding: "8px 10px",
   fontSize: 13,
   fontFamily: "inherit",
 };
 
 const primaryButton: React.CSSProperties = {
-  border: "none",
+  border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
-  background: "#21190f",
-  color: "#fff7e8",
+  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  color: "#090807",
   minHeight: 40,
   padding: "8px 14px",
   fontSize: 13,
@@ -90,10 +93,10 @@ const primaryButton: React.CSSProperties = {
 };
 
 const secondaryButton: React.CSSProperties = {
-  border: "1px solid rgba(92, 69, 38, 0.24)",
+  border: "1px solid rgba(215, 181, 109, 0.26)",
   borderRadius: 6,
-  background: "#fffaf1",
-  color: "#21190f",
+  background: "rgba(255, 247, 232, 0.07)",
+  color: "#f4efe4",
   minHeight: 40,
   padding: "8px 14px",
   fontSize: 13,
@@ -145,10 +148,18 @@ export function CommercialPipelineView(): ReactElement {
   const [manualValue, setManualValue] = useState("");
   const [activityText, setActivityText] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
+  const [enquiryError, setEnquiryError] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [stageError, setStageError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(() => {
     setLoading(true);
+    setError(null);
     getPipeline()
       .then((summary) => {
         setOpportunities(summary.opportunities);
@@ -162,9 +173,14 @@ export function CommercialPipelineView(): ReactElement {
   useEffect(() => { refresh(); }, [refresh]);
 
   const reloadSelected = useCallback((id: string) => {
+    setDetailError(null);
     getOpportunity(id)
       .then((detail) => { setSelected(toDetailState(detail)); })
-      .catch(() => { addToast("Could not load opportunity detail", "error"); });
+      .catch(() => {
+        setSelected(null);
+        setDetailError("Could not load that opportunity. Retry from the stage card or refresh the pipeline.");
+        addToast("Could not load opportunity detail", "error");
+      });
   }, [addToast]);
 
   const pipelineValue = useMemo(
@@ -175,6 +191,7 @@ export function CommercialPipelineView(): ReactElement {
   const handleFromEnquiry = (): void => {
     if (enquiryId.trim().length === 0 || busy) return;
     setBusy(true);
+    setEnquiryError(null);
     createOpportunityFromEnquiry(enquiryId.trim())
       .then((result) => {
         addToast(result.created ? "Opportunity created from enquiry" : "Existing opportunity opened", "success");
@@ -182,14 +199,26 @@ export function CommercialPipelineView(): ReactElement {
         refresh();
         reloadSelected(result.opportunity.id);
       })
-      .catch(() => { addToast("Could not create opportunity from that enquiry", "error"); })
+      .catch(() => {
+        setEnquiryError("Could not create an opportunity from that enquiry ID. Check the ID and try again.");
+        addToast("Could not create opportunity from that enquiry", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleManualCreate = (): void => {
-    if (user?.venueId === null || user?.venueId === undefined || manualTitle.trim().length === 0 || busy) return;
-    const pounds = manualValue.trim().length === 0 ? 0 : Number(manualValue);
-    const estimatedValueMinor = Number.isFinite(pounds) && pounds >= 0 ? Math.round(pounds * 100) : 0;
+    setManualError(null);
+    if (busy) return;
+    if (user?.venueId === null || user?.venueId === undefined) {
+      setManualError("Your account is not linked to a venue, so manual opportunities cannot be created here.");
+      return;
+    }
+    if (manualTitle.trim().length === 0) return;
+    const estimatedValueMinor = manualValue.trim().length === 0 ? 0 : parsePoundsToMinor(manualValue);
+    if (estimatedValueMinor === null) {
+      setManualError("Estimated value must be a non-negative pounds amount like 1200 or 1200.50.");
+      return;
+    }
     setBusy(true);
     createOpportunity({
       venueId: user.venueId,
@@ -204,50 +233,66 @@ export function CommercialPipelineView(): ReactElement {
         refresh();
         reloadSelected(result.opportunity.id);
       })
-      .catch(() => { addToast("Could not create opportunity", "error"); })
+      .catch(() => {
+        setManualError("Could not create the opportunity. Check the details and try again.");
+        addToast("Could not create opportunity", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleStageChange = (stage: string): void => {
     if (selected === null || busy) return;
     setBusy(true);
+    setStageError(null);
     updateOpportunity(selected.opportunity.id, { stage, note: `Moved to ${stageLabel(stage)}` })
       .then((updated) => {
         setSelected((current) => current === null ? null : { ...current, opportunity: updated });
         refresh();
       })
-      .catch(() => { addToast("Could not update stage", "error"); })
+      .catch(() => {
+        setStageError("Could not update the stage. The opportunity has not moved.");
+        addToast("Could not update stage", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleAddActivity = (): void => {
     if (selected === null || activityText.trim().length === 0 || busy) return;
     setBusy(true);
+    setActivityError(null);
     addOpportunityActivity(selected.opportunity.id, activityText.trim())
       .then((activity) => {
         setSelected((current) => current === null ? null : { ...current, activities: [...current.activities, activity] });
         setActivityText("");
       })
-      .catch(() => { addToast("Could not add note", "error"); })
+      .catch(() => {
+        setActivityError("Could not add the note. The text is still here so you can retry.");
+        addToast("Could not add note", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleAddTask = (): void => {
     if (selected === null || taskTitle.trim().length === 0 || busy) return;
     setBusy(true);
+    setTaskError(null);
     addFollowUpTask(selected.opportunity.id, taskTitle.trim())
       .then((task) => {
         setSelected((current) => current === null ? null : { ...current, tasks: [...current.tasks, task] });
         setTasks((current) => [...current, task]);
         setTaskTitle("");
       })
-      .catch(() => { addToast("Could not add task", "error"); })
+      .catch(() => {
+        setTaskError("Could not add the follow-up task. Retry after checking the title.");
+        addToast("Could not add task", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleCompleteTask = (task: FollowUpTask): void => {
     if (selected === null || busy) return;
     setBusy(true);
+    setTaskError(null);
     updateFollowUpTaskStatus(selected.opportunity.id, task.id, "done")
       .then((updated) => {
         setSelected((current) => current === null
@@ -255,31 +300,43 @@ export function CommercialPipelineView(): ReactElement {
           : { ...current, tasks: current.tasks.map((row) => row.id === updated.id ? updated : row) });
         setTasks((current) => current.filter((row) => row.id !== updated.id));
       })
-      .catch(() => { addToast("Could not complete task", "error"); })
+      .catch(() => {
+        setTaskError("Could not complete that task. It remains open until the server confirms it.");
+        addToast("Could not complete task", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
   const handleCreateProposal = (): void => {
     if (selected === null || busy) return;
     setBusy(true);
+    setProposalError(null);
     createProposal({
       venueId: selected.opportunity.venueId,
       opportunityId: selected.opportunity.id,
       enquiryId: selected.opportunity.sourceEnquiryId,
       title: `${selected.opportunity.title} proposal`,
     })
-      .then((proposal) => {
+      .then(async (proposal) => {
         addToast("Proposal draft created", "success");
         setSelected((current) => current === null ? null : { ...current, proposals: [...current.proposals, proposal] });
-        void updateOpportunity(selected.opportunity.id, {
-          stage: "proposal_drafting",
-          note: "Proposal draft created",
-        }).then((updated) => {
+        // Await the stage auto-advance before releasing `busy`. Returning this
+        // promise keeps the outer .finally() (and the busy lock that disables
+        // the stage <select>) held until the advance settles, so a manual
+        // stage change can't interleave and get clobbered by a late resolve.
+        try {
+          const updated = await updateOpportunity(selected.opportunity.id, {
+            stage: "proposal_drafting",
+            note: "Proposal draft created",
+          });
           setSelected((current) => current === null ? null : { ...current, opportunity: updated });
           refresh();
-        }).catch(() => { /* non-critical; proposal still exists */ });
+        } catch { /* non-critical; proposal still exists */ }
       })
-      .catch(() => { addToast("Could not create proposal draft", "error"); })
+      .catch(() => {
+        setProposalError("Could not create the proposal draft. No proposal was added to this opportunity.");
+        addToast("Could not create proposal draft", "error");
+      })
       .finally(() => { setBusy(false); });
   };
 
@@ -293,14 +350,14 @@ export function CommercialPipelineView(): ReactElement {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 20, color: "#21190f" }}>Commercial pipeline</h2>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#75644c" }}>
+            <h2 style={{ margin: 0, fontSize: 20, color: "#fff7e8" }}>Commercial pipeline</h2>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
               Enquiries become opportunities, proposals, quotes, and client share links. Planning assumptions stay visible.
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "#715f42", fontWeight: 700 }}>Pipeline value</div>
-            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#21190f" }}>
+            <div style={{ fontSize: 12, color: "#d7b56d", fontWeight: 700 }}>Pipeline value</div>
+            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#fff7e8" }}>
               {formatMoney(pipelineValue, "GBP")}
             </div>
           </div>
@@ -312,10 +369,21 @@ export function CommercialPipelineView(): ReactElement {
             <label style={label} htmlFor="pipeline-enquiry-id">Enquiry ID</label>
             <div style={{ display: "flex", gap: 8 }}>
               <input id="pipeline-enquiry-id" data-testid="pipeline-enquiry-id" style={input} value={enquiryId} onChange={(event) => { setEnquiryId(event.target.value); }} />
-              <button type="button" style={primaryButton} disabled={busy || enquiryId.trim().length === 0} onClick={handleFromEnquiry}>
+              <button
+                type="button"
+                data-testid="pipeline-enquiry-create"
+                style={primaryButton}
+                disabled={busy || enquiryId.trim().length === 0}
+                onClick={handleFromEnquiry}
+              >
                 Create
               </button>
             </div>
+            {enquiryError !== null && (
+              <div role="alert" data-testid="pipeline-enquiry-error" style={{ marginTop: 8, fontSize: 12, color: "#ffb4a2" }}>
+                {enquiryError}
+              </div>
+            )}
           </div>
           <div>
             <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>Manual opportunity</h3>
@@ -326,15 +394,27 @@ export function CommercialPipelineView(): ReactElement {
                 Add
               </button>
             </div>
+            {manualError !== null && (
+              <div role="alert" data-testid="manual-opportunity-error" style={{ marginTop: 8, fontSize: 12, color: "#ffb4a2" }}>
+                {manualError}
+              </div>
+            )}
           </div>
         </section>
 
         {loading && <section style={card}>Loading pipeline...</section>}
-        {error !== null && <section role="alert" style={{ ...card, color: "#b91c1c" }}>{error}</section>}
+        {error !== null && (
+          <section role="alert" style={{ ...card, color: "#ffb4a2" }}>
+            <p style={{ margin: "0 0 10px" }}>{error}</p>
+            <button type="button" style={secondaryButton} disabled={loading} onClick={refresh}>
+              Retry pipeline
+            </button>
+          </section>
+        )}
         {!loading && error === null && opportunities.length === 0 && (
           <section style={card}>
             <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>No opportunities yet</h3>
-            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>
+            <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
               Create one from an enquiry, then build the proposal and quote from the same record.
             </p>
           </section>
@@ -344,36 +424,38 @@ export function CommercialPipelineView(): ReactElement {
           {stageGroups.map(({ stage, rows }) => (
             <section key={stage} style={{ ...card, minHeight: 150 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#715f42" }}>
+                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#d7b56d" }}>
                   {stageLabel(stage)}
                 </h3>
-                <span style={{ fontSize: 12, color: "#75644c" }}>{rows.length}</span>
+                <span style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>{rows.length}</span>
               </div>
               {rows.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#8b7b62" }}>{STAGE_NEXT[stage]}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.55)" }}>{STAGE_NEXT[stage]}</p>
               ) : rows.map((opportunity) => (
                 <button
                   key={opportunity.id}
                   type="button"
                   data-testid={`opportunity-${opportunity.id}`}
                   onClick={() => { reloadSelected(opportunity.id); }}
+                  disabled={busy}
                   style={{
                     display: "block",
                     width: "100%",
                     textAlign: "left",
-                    border: "1px solid rgba(92, 69, 38, 0.16)",
+                    border: "1px solid rgba(215, 181, 109, 0.18)",
                     borderRadius: 6,
-                    background: selected?.opportunity.id === opportunity.id ? "#efe0bf" : "#fffaf1",
+                    background: selected?.opportunity.id === opportunity.id ? "rgba(215, 181, 109, 0.18)" : "rgba(255, 247, 232, 0.07)",
                     padding: 10,
                     marginBottom: 8,
-                    cursor: "pointer",
+                    cursor: busy ? "wait" : "pointer",
+                    opacity: busy ? 0.65 : 1,
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#21190f" }}>{opportunity.title}</div>
-                  <div style={{ fontSize: 12, color: "#75644c", marginTop: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff7e8" }}>{opportunity.title}</div>
+                  <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 4 }}>
                     {formatMoney(opportunity.estimatedValueMinor, opportunity.currency)} · {opportunity.guestCount ?? "Guest count pending"} guests
                   </div>
-                  <div style={{ fontSize: 12, color: "#75644c", marginTop: 6 }}>{opportunity.nextAction}</div>
+                  <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 6 }}>{opportunity.nextAction}</div>
                 </button>
               ))}
             </section>
@@ -385,11 +467,11 @@ export function CommercialPipelineView(): ReactElement {
         <section style={card}>
           <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Today's follow-ups</h3>
           {tasks.length === 0 ? (
-            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>No open follow-ups loaded.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>No open follow-ups loaded.</p>
           ) : tasks.map((task) => (
-            <div key={task.id} style={{ borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "10px 0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#21190f" }}>{task.title}</div>
-              <div style={{ fontSize: 12, color: "#75644c", marginTop: 2 }}>{formatDateTime(task.dueAt)}</div>
+            <div key={task.id} style={{ borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "10px 0" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff7e8" }}>{task.title}</div>
+              <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 2 }}>{formatDateTime(task.dueAt)}</div>
             </div>
           ))}
         </section>
@@ -397,7 +479,12 @@ export function CommercialPipelineView(): ReactElement {
         {selected === null ? (
           <section style={card}>
             <h3 style={{ margin: "0 0 6px", fontSize: 15 }}>Select an opportunity</h3>
-            <p style={{ margin: 0, fontSize: 13, color: "#75644c" }}>
+            {detailError !== null && (
+              <div role="alert" data-testid="opportunity-detail-error" style={{ marginBottom: 10, fontSize: 13, color: "#ffb4a2" }}>
+                {detailError}
+              </div>
+            )}
+            <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
               The detail panel shows next action, proposal status, follow-ups, and client-safe notes.
             </p>
           </section>
@@ -405,8 +492,8 @@ export function CommercialPipelineView(): ReactElement {
           <section style={card} aria-label="Opportunity detail">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 17, color: "#21190f" }}>{selected.opportunity.title}</h3>
-                <div style={{ fontSize: 12, color: "#75644c", marginTop: 4 }}>
+                <h3 style={{ margin: 0, fontSize: 17, color: "#fff7e8" }}>{selected.opportunity.title}</h3>
+                <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 4 }}>
                   {formatMoney(selected.opportunity.estimatedValueMinor, selected.opportunity.currency)}
                 </div>
               </div>
@@ -415,27 +502,38 @@ export function CommercialPipelineView(): ReactElement {
                 data-testid="opportunity-stage"
                 style={{ ...input, width: 150 }}
                 value={selected.opportunity.stage}
+                disabled={busy}
                 onChange={(event) => { handleStageChange(event.target.value); }}
               >
                 {STAGES.map((stage) => <option key={stage} value={stage}>{stageLabel(stage)}</option>)}
               </select>
             </div>
+            {stageError !== null && (
+              <div role="alert" data-testid="opportunity-stage-error" style={{ marginTop: 10, fontSize: 13, color: "#ffb4a2" }}>
+                {stageError}
+              </div>
+            )}
 
-            <div style={{ marginTop: 14, padding: 12, background: "#fff7e8", border: "1px solid rgba(92, 69, 38, 0.14)", borderRadius: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#715f42" }}>Next action</div>
-              <div style={{ fontSize: 13, color: "#21190f", marginTop: 4 }}>{selected.opportunity.nextAction}</div>
+            <div style={{ marginTop: 14, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.18)", borderRadius: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#d7b56d" }}>Next action</div>
+              <div style={{ fontSize: 13, color: "#fff7e8", marginTop: 4 }}>{selected.opportunity.nextAction}</div>
             </div>
 
             <button type="button" style={{ ...primaryButton, width: "100%", marginTop: 14 }} disabled={busy} onClick={handleCreateProposal}>
               Create proposal draft
             </button>
+            {proposalError !== null && (
+              <div role="alert" data-testid="opportunity-proposal-error" style={{ marginTop: 8, fontSize: 13, color: "#ffb4a2" }}>
+                {proposalError}
+              </div>
+            )}
 
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Proposal status</h4>
               {selected.proposals.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No proposal draft yet.</p>
+                <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No proposal draft yet.</p>
               ) : selected.proposals.map((proposal) => (
-                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid rgba(92, 69, 38, 0.14)" }}>
+                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid rgba(215, 181, 109, 0.14)" }}>
                   <strong>{proposal.title}</strong> · {proposal.status.replace(/_/g, " ")}
                 </div>
               ))}
@@ -443,12 +541,17 @@ export function CommercialPipelineView(): ReactElement {
 
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Tasks</h4>
-              {selected.tasks.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No tasks on this opportunity.</p>}
+              {taskError !== null && (
+                <div role="alert" data-testid="opportunity-task-error" style={{ marginBottom: 8, fontSize: 12, color: "#ffb4a2" }}>
+                  {taskError}
+                </div>
+              )}
+              {selected.tasks.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No tasks on this opportunity.</p>}
               {selected.tasks.map((task) => (
-                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "7px 0" }}>
+                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "7px 0" }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{task.title}</div>
-                    <div style={{ fontSize: 12, color: "#75644c" }}>{task.status} · {formatDateTime(task.dueAt)}</div>
+                    <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>{task.status} · {formatDateTime(task.dueAt)}</div>
                   </div>
                   {task.status === "open" && (
                     <button type="button" style={{ ...secondaryButton, padding: "5px 8px", fontSize: 12 }} disabled={busy} onClick={() => { handleCompleteTask(task); }}>
@@ -459,15 +562,28 @@ export function CommercialPipelineView(): ReactElement {
               ))}
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <input aria-label="New task title" style={input} value={taskTitle} onChange={(event) => { setTaskTitle(event.target.value); }} />
-                <button type="button" style={secondaryButton} disabled={busy || taskTitle.trim().length === 0} onClick={handleAddTask}>Add</button>
+                <button
+                  type="button"
+                  data-testid="opportunity-task-add"
+                  style={secondaryButton}
+                  disabled={busy || taskTitle.trim().length === 0}
+                  onClick={handleAddTask}
+                >
+                  Add
+                </button>
               </div>
             </div>
 
             <div style={{ marginTop: 16 }}>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Activity</h4>
-              {selected.activities.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "#75644c" }}>No notes yet.</p>}
+              {activityError !== null && (
+                <div role="alert" data-testid="opportunity-activity-error" style={{ marginBottom: 8, fontSize: 12, color: "#ffb4a2" }}>
+                  {activityError}
+                </div>
+              )}
+              {selected.activities.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No notes yet.</p>}
               {selected.activities.slice(-4).map((activity) => (
-                <div key={activity.id} style={{ borderTop: "1px solid rgba(92, 69, 38, 0.14)", padding: "7px 0", fontSize: 12, color: "#3b2c1b" }}>
+                <div key={activity.id} style={{ borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "7px 0", fontSize: 12, color: "rgba(246, 241, 232, 0.82)" }}>
                   {activity.body}
                 </div>
               ))}

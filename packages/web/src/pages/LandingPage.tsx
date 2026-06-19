@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
@@ -27,6 +28,7 @@ import {
 } from "../data/room-geometries.js";
 import {
   publicRoomSelectionCards,
+  tradesHallVenueImages,
   type PublicRoomSelectionCard,
 } from "../lib/trades-hall-room-showcase.js";
 import { buildCapacityGuidance } from "../lib/proposal-capacity-note.js";
@@ -76,6 +78,7 @@ interface VenueRoom {
   readonly geometryName: GeometryName;
   readonly image: string;
   readonly alt: string;
+  readonly imagePosition?: string;
   readonly title: string;
   readonly shortTitle: string;
   readonly sub: string;
@@ -88,8 +91,9 @@ const GRAND_HALL_ROOM: VenueRoom = {
   slug: "grand-hall",
   size: "lg",
   geometryName: "Grand Hall",
-  image: "/rooms/Grand-Hall-scaled-opt.jpg",
-  alt: "The Grand Hall set for a banquet with chandeliers and domed ceiling",
+  image: tradesHallVenueImages.grandHall,
+  alt: "The Grand Hall dressed for a candlelit wedding dinner with chandeliers and domed ceiling",
+  imagePosition: "center 48%",
   title: "The Grand Hall",
   shortTitle: "Grand Hall",
   sub: "1st floor - double-height - domed ceiling and gallery",
@@ -104,8 +108,9 @@ const VENUE_ROOMS: readonly VenueRoom[] = [
     slug: "saloon",
     size: "md",
     geometryName: "Saloon",
-    image: "/rooms/saloon_TH_use.png",
-    alt: "The Saloon with panelled walls and stained-glass windows set for a ceremony",
+    image: tradesHallVenueImages.saloon,
+    alt: "The Saloon with panelled walls and stained-glass windows set for a candlelit ceremony",
+    imagePosition: "center 46%",
     title: "The Saloon",
     shortTitle: "Saloon",
     sub: "Ground floor - stained glass - panelled",
@@ -116,8 +121,9 @@ const VENUE_ROOMS: readonly VenueRoom[] = [
     slug: "robert-adam-room",
     size: "md",
     geometryName: "Robert Adam Room",
-    image: "/rooms/robert-adam-wedding-opt.jpg",
-    alt: "The Robert Adam Room with neoclassical plasterwork ceiling set for a ceremony",
+    image: tradesHallVenueImages.robertAdamRoom,
+    alt: "The Robert Adam Room set for a ceremony with floral arch and chandelier",
+    imagePosition: "center 36%",
     title: "Robert Adam Room",
     shortTitle: "Robert Adam Room",
     sub: "1st floor - neoclassical - plaster ceiling",
@@ -128,8 +134,9 @@ const VENUE_ROOMS: readonly VenueRoom[] = [
     slug: "reception-room",
     size: "md",
     geometryName: "Reception Room",
-    image: "/rooms/reception-wedding-opt.jpg",
-    alt: "Reception Room dressed for a wedding ceremony with floral arch",
+    image: tradesHallVenueImages.receptionRoom,
+    alt: "Reception Room dressed for a wedding ceremony with floral aisle",
+    imagePosition: "center 52%",
     title: "Reception Room",
     shortTitle: "Reception Room",
     sub: "Ground floor - intimate - ceremony ready",
@@ -155,6 +162,10 @@ function plannerHrefForSelection(room: PublicRoomSelectionCard): string | null {
     return `/plan?space=${room.canonicalRoomSlug}`;
   }
   return null;
+}
+
+function imagePositionStyle(position: string | undefined): CSSProperties | undefined {
+  return position === undefined ? undefined : { objectPosition: position };
 }
 
 function geometryForRoom(room: VenueRoom): RoomGeometry {
@@ -335,6 +346,7 @@ function Hero(): ReactElement {
                 src={selectedRoom.image}
                 alt={selectedRoom.alt}
                 loading="eager"
+                style={imagePositionStyle(selectedRoom.imagePosition)}
               />
               <div className="hero-media-photo-copy">
                 <span>{selectedRoom.shortTitle} planning draft</span>
@@ -1667,7 +1679,12 @@ function Rooms(): ReactElement {
                 aria-label={`${room.name} room selection`}
               >
               <div className="image">
-                <img src={room.image} alt={room.imageAlt} loading="lazy" />
+                <img
+                  src={room.image}
+                  alt={room.imageAlt}
+                  loading="lazy"
+                  style={imagePositionStyle(room.imagePosition)}
+                />
                 <div className="tag">{room.tone}</div>
               </div>
               <div className="meta">

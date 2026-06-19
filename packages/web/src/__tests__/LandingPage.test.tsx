@@ -117,8 +117,9 @@ describe("LandingPage — Grand Hall module", () => {
     expect(within(tools).getByRole("button", { name: /Snap/i })).toBeTruthy();
     expect(within(tools).getByRole("button", { name: /Review/i })).toBeTruthy();
     const img = getHeroImage();
-    expect(img.getAttribute("alt")).toMatch(/Grand Hall set for a banquet/i);
-    expect(img.getAttribute("src")).toBe("/rooms/Grand-Hall-scaled-opt.jpg");
+    expect(img.getAttribute("alt")).toMatch(/Grand Hall dressed for a candlelit wedding dinner/i);
+    expect(img.getAttribute("src")).toBe("/images/venue/grand-hall-room.jpg");
+    expect(img.style.objectPosition).toBe("center 48%");
   });
 
   it("exposes a visible trash action for selected 2D furniture", () => {
@@ -152,9 +153,9 @@ describe("LandingPage — Grand Hall module", () => {
     expect(screen.getByRole("link", { name: /Open The Saloon in the planner/i }).getAttribute("href")).toBe("/plan?space=saloon");
     expect(screen.getByRole("link", { name: /Open The Robert Adam Room in the planner/i }).getAttribute("href")).toBe("/plan?space=robert-adam-room");
     expect(screen.getByRole("link", { name: /Open The Reception Room in the planner/i }).getAttribute("href")).toBe("/plan?space=reception-room");
-    expect(screen.getByAltText(/Saloon prepared for a venue event/i).getAttribute("src")).toBe("/rooms/saloon_TH_use.png");
-    expect(screen.getByAltText(/Robert Adam Room prepared for a ceremony/i).getAttribute("src")).toBe("/rooms/robert-adam-wedding-opt.jpg");
-    expect(screen.getByAltText(/Reception Room arranged for an event/i).getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+    expect(screen.getByAltText(/Saloon set for a candlelit wedding ceremony/i).getAttribute("src")).toBe("/images/venue/saloon-room.jpg");
+    expect(screen.getByAltText(/Robert Adam Room ceremony aisle/i).getAttribute("src")).toBe("/images/venue/robert-adam-room.jpg");
+    expect(screen.getByAltText(/Reception Room dressed for a wedding ceremony/i).getAttribute("src")).toBe("/images/venue/reception-room.jpg");
     expect(document.body.textContent).toContain("Human review required");
     expect(document.body.textContent).toContain("No public runtime package is exposed");
   });
@@ -170,7 +171,8 @@ describe("LandingPage — Grand Hall module", () => {
     }
     const img = getHeroImage();
     expect(img.getAttribute("alt")).toMatch(/Reception Room dressed/i);
-    expect(img.getAttribute("src")).toBe("/rooms/reception-wedding-opt.jpg");
+    expect(img.getAttribute("src")).toBe("/images/venue/reception-room.jpg");
+    expect(img.style.objectPosition).toBe("center 52%");
     const plannerTitle = document.querySelector(".planner-embedded .chrome .title");
     expect(plannerTitle?.textContent).toMatch(/Reception Room\s*·\s*wedding layout\s*·\s*Draft/i);
   });

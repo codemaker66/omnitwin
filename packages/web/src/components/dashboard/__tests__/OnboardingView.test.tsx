@@ -5,12 +5,18 @@ import { OnboardingView } from "../OnboardingView.js";
 const mocks = vi.hoisted(() => ({
   createManagedOnboarding: vi.fn(),
   getOnboardingSummary: vi.fn(),
+  inviteWorkspaceMembers: vi.fn(),
+  updateOnboardingProject: vi.fn(),
+  verifyWorkspaceEntitlement: vi.fn(),
   addToast: vi.fn(),
 }));
 
 vi.mock("../../../api/onboarding.js", () => ({
   createManagedOnboarding: mocks.createManagedOnboarding,
   getOnboardingSummary: mocks.getOnboardingSummary,
+  inviteWorkspaceMembers: mocks.inviteWorkspaceMembers,
+  updateOnboardingProject: mocks.updateOnboardingProject,
+  verifyWorkspaceEntitlement: mocks.verifyWorkspaceEntitlement,
 }));
 
 vi.mock("../../../stores/toast-store.js", () => ({
@@ -119,6 +125,9 @@ beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.getOnboardingSummary.mockResolvedValue(emptySummary());
   mocks.createManagedOnboarding.mockResolvedValue({});
+  mocks.inviteWorkspaceMembers.mockResolvedValue({ memberships: [] });
+  mocks.updateOnboardingProject.mockResolvedValue({});
+  mocks.verifyWorkspaceEntitlement.mockResolvedValue({});
 });
 afterEach(() => {
   cleanup();
@@ -130,7 +139,7 @@ describe("OnboardingView", () => {
     render(<OnboardingView />);
 
     expect(await screen.findByText("Workspace onboarding")).toBeTruthy();
-    expect(screen.getByText("Trades Hall rollout")).toBeTruthy();
+    expect(screen.getAllByText("Trades Hall rollout").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Provider verification")).toBeTruthy();
     expect(document.body.textContent ?? "").toContain("Provider-verified only");
   });
@@ -180,5 +189,116 @@ describe("OnboardingView", () => {
         operatorReviewNote: "Operator review required before deployment is marked ready.",
       });
     });
+  });
+
+  it("shows onboarding load failures and retries without trapping the admin", async () => {
+    mocks.getOnboardingSummary
+      .mockRejectedValueOnce(new Error("Onboarding API offline"))
+      .mockResolvedValueOnce(emptySummary());
+
+    render(<OnboardingView />);
+
+    expect(await screen.findByText("Onboarding unavailable")).toBeTruthy();
+    expect(screen.getByText("Onboarding API offline")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
+
+    expect(await screen.findByText("No managed workspaces have been created yet.")).toBeTruthy();
+  });
+
+  it("invites additional staff from an existing workspace action card", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    render(<OnboardingView />);
+
+    await screen.findByText("Operator action board");
+    fireEvent.change(screen.getByLabelText("Invite staff for Trades Hall rollout"), {
+      target: { value: "planner@tradeshall.co.uk\nops@tradeshall.co.uk\nplanner@tradeshall.co.uk" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send 2 invite(s)" }));
+
+    await waitFor(() => {
+      expect(mocks.inviteWorkspaceMembers).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000002",
+        {
+          staffInvites: [
+            { email: "planner@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
+            { email: "ops@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
+          ],
+        },
+      );
+    });
+    expect(mocks.addToast).toHaveBeenCalledWith("2 staff invitation(s) recorded", "success");
+  });
+
+  it("updates deployment review and provider gates through real onboarding APIs", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    render(<OnboardingView />);
+
+    await screen.findByText("Operator action board");
+
+    fireEvent.change(screen.getByLabelText("Project status for Trades Hall rollout"), {
+      target: { value: "ready" },
+    });
+    fireEvent.change(screen.getByLabelText("Operator review for Trades Hall rollout"), {
+      target: { value: "approved" },
+    });
+    fireEvent.change(screen.getByLabelText("Current step for Trades Hall rollout"), {
+      target: { value: "Ready for staff handoff." },
+    });
+    fireEvent.change(screen.getByLabelText("Evidence note for Trades Hall rollout"), {
+      target: { value: "Owner accepted and staff invite list reviewed." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save project gate for Trades Hall rollout" }));
+
+    await waitFor(() => {
+      expect(mocks.updateOnboardingProject).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000006",
+        {
+          status: "ready",
+          operatorReviewState: "approved",
+          currentStep: "Ready for staff handoff.",
+          evidenceNote: "Owner accepted and staff invite list reviewed.",
+        },
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText("Billing provider for Trades Hall rollout"), {
+      target: { value: "manual_invoice" },
+    });
+    fireEvent.change(screen.getByLabelText("Provider status for Trades Hall rollout"), {
+      target: { value: "provider_verified" },
+    });
+    fireEvent.change(screen.getByLabelText("Provider evidence reference for Trades Hall rollout"), {
+      target: { value: "invoice-2026-001" },
+    });
+    fireEvent.click(screen.getByLabelText("Enforce managed access for Trades Hall rollout"));
+    fireEvent.click(screen.getByRole("button", { name: "Save provider gate for Trades Hall rollout" }));
+
+    await waitFor(() => {
+      expect(mocks.verifyWorkspaceEntitlement).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000007",
+        {
+          billingProvider: "manual_invoice",
+          providerVerificationStatus: "provider_verified",
+          providerCustomerRef: null,
+          providerEntitlementRef: null,
+          providerEvidenceRef: "invoice-2026-001",
+          accessEnforced: true,
+        },
+      );
+    });
+  });
+
+  it("keeps provider verification blocked until evidence and provider are present", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    render(<OnboardingView />);
+
+    await screen.findByText("Operator action board");
+    fireEvent.change(screen.getByLabelText("Provider status for Trades Hall rollout"), {
+      target: { value: "provider_verified" },
+    });
+
+    expect(screen.getByText("Verified provider state requires a real provider plus at least one evidence reference.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save provider gate for Trades Hall rollout" })).toHaveProperty("disabled", true);
   });
 });

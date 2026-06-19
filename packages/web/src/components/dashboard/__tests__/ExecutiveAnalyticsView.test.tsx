@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VenueDashboardAnalytics } from "@omnitwin/types";
 
 const { getVenueDashboardAnalyticsMock } = vi.hoisted(() => ({
@@ -94,5 +94,22 @@ describe("ExecutiveAnalyticsView", () => {
     expect(bodyText).not.toMatch(/legally compliant/i);
     expect(bodyText).not.toMatch(/approved for occupancy/i);
     expect(bodyText).not.toMatch(/guaranteed accessible/i);
+  });
+
+  it("surfaces analytics failures with a retry path", async () => {
+    getVenueDashboardAnalyticsMock
+      .mockRejectedValueOnce(new Error("analytics offline"))
+      .mockResolvedValueOnce(dashboardData());
+
+    render(<ExecutiveAnalyticsView />);
+
+    expect(await screen.findByText("Analytics unavailable")).toBeDefined();
+    expect(document.body.textContent).toContain("analytics offline");
+    fireEvent.click(screen.getByRole("button", { name: "Retry analytics" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Commercial planning dashboard")).toBeDefined();
+    });
+    expect(getVenueDashboardAnalyticsMock).toHaveBeenCalledTimes(2);
   });
 });

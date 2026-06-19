@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ReviewsView } from "../components/dashboard/ReviewsView.js";
@@ -11,6 +12,7 @@ import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyti
 import { ProposalsView } from "../components/dashboard/ProposalsView.js";
 import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
+import { useAuthStore } from "../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
 // DashboardPage — hallkeeper management interface
@@ -36,11 +38,97 @@ interface EnquiryReturnContext {
   readonly returnLeadId: string | null;
 }
 
+const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
+  "enquiries",
+  "pipeline",
+  "reviews",
+  "analytics",
+  "proposals",
+  "search",
+  "loadouts",
+  "settings",
+  "onboarding",
+  "admin",
+];
+
+const STAFF_ONLY_VIEWS = new Set<DashboardView>(["pipeline", "proposals"]);
+const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+
+export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
+  if (value === null) return null;
+  return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
+}
+
+export function canOpenDashboardView(view: DashboardView, role: string | null): boolean {
+  if (role === "supplier") return false;
+  if (role === "executive") return view === "analytics";
+  if (ADMIN_ONLY_VIEWS.has(view)) return role === "admin";
+  if (STAFF_ONLY_VIEWS.has(view)) return role === "admin" || role === "staff";
+  return role !== null;
+}
+
+export function defaultDashboardViewForRole(role: string | null): DashboardView {
+  return role === "executive" ? "analytics" : "enquiries";
+}
+
+function DashboardAccessDenied({
+  requestedView,
+  onOpenDefault,
+  defaultView,
+}: {
+  readonly requestedView: DashboardView;
+  readonly onOpenDefault: () => void;
+  readonly defaultView: DashboardView;
+}): React.ReactElement {
+  const defaultLabel = defaultView === "analytics" ? "Open analytics" : "Open enquiries";
+  return (
+    <section className="vv-state-panel" role="alert">
+      <p className="vv-state-kicker">Role restricted</p>
+      <h1>That dashboard surface is not available for this role</h1>
+      <p>
+        The requested view "{requestedView}" is held back because it can change commercial, deployment, or admin records.
+        Open a permitted dashboard view or ask an admin to update your workspace role.
+      </p>
+      <button type="button" className="vv-button primary" onClick={onOpenDefault}>
+        {defaultLabel}
+      </button>
+    </section>
+  );
+}
+
 export function DashboardPage(): React.ReactElement {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userRole = useAuthStore((state) => state.user?.role ?? null);
+  const requestedView = useMemo(
+    () => dashboardViewFromSearchValue(searchParams.get("view")),
+    [searchParams],
+  );
   const [view, setView] = useState<DashboardView>("enquiries");
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLeadId, setProfileLeadId] = useState<string | null>(null);
   const [enquiryReturnContext, setEnquiryReturnContext] = useState<EnquiryReturnContext | null>(null);
+
+  useEffect(() => {
+    if (requestedView !== null) {
+      if (!canOpenDashboardView(requestedView, userRole)) return;
+      setView(requestedView);
+      setProfileUserId(null);
+      setProfileLeadId(null);
+      setEnquiryReturnContext(null);
+      return;
+    }
+
+    const defaultView = defaultDashboardViewForRole(userRole);
+    if (!canOpenDashboardView(defaultView, userRole)) return;
+    setView(defaultView);
+    setProfileUserId(null);
+    setProfileLeadId(null);
+    setEnquiryReturnContext(null);
+  }, [requestedView, userRole]);
+
+  const deniedRequestedView = requestedView !== null && userRole !== null && !canOpenDashboardView(requestedView, userRole)
+    ? requestedView
+    : null;
 
   const handleViewChange = (newView: DashboardView): void => {
     setView(newView);
@@ -49,6 +137,13 @@ export function DashboardPage(): React.ReactElement {
     // Switching views from the sidebar is a deliberate user action — drop
     // the cross-view return context so it doesn't bleed into the next view.
     setEnquiryReturnContext(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("view", newView);
+    setSearchParams(nextParams);
+  };
+
+  const handleOpenDefaultView = (): void => {
+    handleViewChange(defaultDashboardViewForRole(userRole));
   };
 
   // Triggered from ClientProfile. Snapshots the current profile so "Back"
@@ -74,6 +169,16 @@ export function DashboardPage(): React.ReactElement {
   };
 
   const renderContent = (): React.ReactElement => {
+    if (deniedRequestedView !== null) {
+      return (
+        <DashboardAccessDenied
+          requestedView={deniedRequestedView}
+          defaultView={defaultDashboardViewForRole(userRole)}
+          onOpenDefault={handleOpenDefaultView}
+        />
+      );
+    }
+
     // Client profile sub-view (shown from search)
     if (profileUserId !== null || profileLeadId !== null) {
       return (

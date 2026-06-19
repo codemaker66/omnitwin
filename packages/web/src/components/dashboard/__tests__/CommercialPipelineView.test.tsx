@@ -30,17 +30,21 @@ vi.mock("../../../api/proposals.js", () => ({
   createProposal: mocks.createProposal,
 }));
 
-const MOCK_USER = {
-  id: "u1",
-  role: "staff",
-  venueId: "v1",
-  email: "staff@test.com",
-  name: "Staff",
-};
+const authState = vi.hoisted(() => ({
+  user: {
+    id: "u1",
+    role: "staff",
+    venueId: "v1" as string | null,
+    email: "staff@test.com",
+    name: "Staff",
+  },
+}));
+
+type MockUser = typeof authState.user;
 
 vi.mock("../../../stores/auth-store.js", () => ({
-  useAuthStore: (selector: (state: { user: typeof MOCK_USER }) => unknown): unknown =>
-    selector({ user: MOCK_USER }),
+  useAuthStore: (selector: (state: { user: MockUser }) => unknown): unknown =>
+    selector({ user: authState.user }),
 }));
 
 vi.mock("../../../stores/toast-store.js", () => ({
@@ -112,6 +116,7 @@ function proposal(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
+  authState.user = { ...authState.user, venueId: "v1" };
   mocks.getPipeline.mockResolvedValue({
     opportunities: [opportunity()],
     todayTasks: [task()],
@@ -161,6 +166,65 @@ describe("CommercialPipelineView", () => {
     });
   });
 
+  it("rejects invalid manual opportunity values without coercing them to zero", async () => {
+    render(<CommercialPipelineView />);
+
+    fireEvent.change(await screen.findByTestId("manual-opportunity-title"), { target: { value: "Winter dinner" } });
+    fireEvent.change(screen.getByTestId("manual-opportunity-value"), { target: { value: "-10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    const error = await screen.findByTestId("manual-opportunity-error");
+    expect(error.textContent).toContain("Estimated value must be a non-negative pounds amount");
+    expect(mocks.createOpportunity).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the no-venue role state before creating a manual opportunity", async () => {
+    authState.user = { ...authState.user, venueId: null };
+    render(<CommercialPipelineView />);
+
+    fireEvent.change(await screen.findByTestId("manual-opportunity-title"), { target: { value: "Winter dinner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    const error = await screen.findByTestId("manual-opportunity-error");
+    expect(error.textContent).toContain("not linked to a venue");
+    expect(mocks.createOpportunity).not.toHaveBeenCalled();
+  });
+
+  it("shows a retryable pipeline load failure", async () => {
+    mocks.getPipeline
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({ opportunities: [opportunity()], todayTasks: [], stageCounts: { new: 1 } });
+    render(<CommercialPipelineView />);
+
+    expect(await screen.findByText(/Could not load the commercial pipeline/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry pipeline" }));
+
+    expect(await screen.findByTestId("opportunity-opp1")).toBeTruthy();
+    expect(mocks.getPipeline).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps quick-create enquiry failures visible in the form", async () => {
+    mocks.createOpportunityFromEnquiry.mockRejectedValue(new Error("missing"));
+    render(<CommercialPipelineView />);
+
+    fireEvent.change(await screen.findByTestId("pipeline-enquiry-id"), { target: { value: "enq-missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const error = await screen.findByTestId("pipeline-enquiry-error");
+    expect(error.textContent).toContain("Could not create an opportunity from that enquiry ID");
+    expect(mocks.createOpportunityFromEnquiry).toHaveBeenCalledWith("enq-missing");
+  });
+
+  it("shows an opportunity-detail failure in the detail rail", async () => {
+    mocks.getOpportunity.mockRejectedValue(new Error("gone"));
+    render(<CommercialPipelineView />);
+
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+
+    const error = await screen.findByTestId("opportunity-detail-error");
+    expect(error.textContent).toContain("Could not load that opportunity");
+  });
+
   it("opens opportunity detail, updates stage, completes tasks, and creates a proposal draft", async () => {
     mocks.updateOpportunity.mockResolvedValue(opportunity({ stage: "proposal_drafting" }));
     mocks.updateFollowUpTaskStatus.mockResolvedValue(task({ status: "done", completedAt: NOW }));
@@ -192,5 +256,39 @@ describe("CommercialPipelineView", () => {
         title: "Grand Hall gala proposal",
       });
     });
+  });
+
+  it("keeps detail mutation failures inline until the user retries", async () => {
+    mocks.updateOpportunity.mockRejectedValue(new Error("stage"));
+    mocks.updateFollowUpTaskStatus.mockRejectedValue(new Error("task"));
+    mocks.addFollowUpTask.mockRejectedValue(new Error("task"));
+    mocks.addOpportunityActivity.mockRejectedValue(new Error("activity"));
+    mocks.createProposal.mockRejectedValue(new Error("proposal"));
+
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    expect(await screen.findByLabelText("Opportunity detail")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("opportunity-stage"), { target: { value: "proposal_drafting" } });
+    const stageError = await screen.findByTestId("opportunity-stage-error");
+    expect(stageError.textContent).toContain("Could not update the stage");
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const completeTaskError = await screen.findByTestId("opportunity-task-error");
+    expect(completeTaskError.textContent).toContain("remains open");
+
+    fireEvent.change(screen.getByLabelText("New task title"), { target: { value: "Confirm AV" } });
+    fireEvent.click(screen.getByTestId("opportunity-task-add"));
+    const addTaskError = await screen.findByTestId("opportunity-task-error");
+    expect(addTaskError.textContent).toContain("Could not add the follow-up task");
+
+    fireEvent.change(screen.getByLabelText("Activity note"), { target: { value: "Client asked for a new package." } });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    const activityError = await screen.findByTestId("opportunity-activity-error");
+    expect(activityError.textContent).toContain("Could not add the note");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create proposal draft" }));
+    const proposalError = await screen.findByTestId("opportunity-proposal-error");
+    expect(proposalError.textContent).toContain("Could not create the proposal draft");
   });
 });

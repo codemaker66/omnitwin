@@ -255,4 +255,22 @@ describe("runtimeQaRecordAllowsPublicRoomVisual", () => {
       publicExposureDecision: "approved_internal_preview",
     }), transformArtifactRow())).toBe(false);
   });
+
+  it("blocks public visuals when persisted QA row readiness columns drift from the signed record", () => {
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      signedTransformArtifactId: null,
+    }), transformArtifactRow())).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      signedTransformArtifactId: "wrong-transform-artifact",
+    }), transformArtifactRow())).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      publicExposureDecision: "blocked_internal_only",
+    }), transformArtifactRow())).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      assetEvidenceStatus: "unverified",
+    }), transformArtifactRow())).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      runtimeStatus: "internal_ready",
+    }), transformArtifactRow())).toBe(false);
+  });
 });

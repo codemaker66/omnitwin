@@ -75,6 +75,26 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
   });
 
+  it("redirects a staff user straight to /dashboard", () => {
+    setAuth({
+      isAuthenticated: true,
+      isLoading: false,
+      user: { id: "u5", email: "s@x.com", role: "staff", venueId: "v1", name: "Staff" },
+    });
+    const { container } = render(<RoleAwareRedirect />);
+    expect(container.textContent).toBe("Navigate->/dashboard(replace)");
+  });
+
+  it("redirects an executive straight to /dashboard", () => {
+    setAuth({
+      isAuthenticated: true,
+      isLoading: false,
+      user: { id: "u6", email: "e@x.com", role: "executive", venueId: "v1", name: "Exec" },
+    });
+    const { container } = render(<RoleAwareRedirect />);
+    expect(container.textContent).toBe("Navigate->/dashboard(replace)");
+  });
+
   it("sends a logged-in client to /plan (their working surface)", () => {
     setAuth({
       isAuthenticated: true,

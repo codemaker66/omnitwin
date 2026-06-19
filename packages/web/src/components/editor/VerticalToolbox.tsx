@@ -1453,14 +1453,16 @@ export function VerticalToolbox(): React.ReactElement {
     };
   }, []);
 
+  // Undo/redo restore the selection the history captured (the store re-selects
+  // step.selection, and its HistoryIdAdapter remaps ids so nothing dead is
+  // restored). This matches the keyboard shortcut and the command deck — every
+  // "Undo" surface now leaves the same selection state.
   const handleUndo = useCallback(() => {
     useEditorStore.getState().undo();
-    useSelectionStore.getState().clearSelection();
   }, []);
 
   const handleRedo = useCallback(() => {
     useEditorStore.getState().redo();
-    useSelectionStore.getState().clearSelection();
   }, []);
 
   const handleCameraToggle = useCallback(() => {

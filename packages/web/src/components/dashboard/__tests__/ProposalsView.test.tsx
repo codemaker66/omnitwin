@@ -56,6 +56,32 @@ function draftProposal(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+function clientComment(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "comment-client",
+    kind: "comment",
+    authorType: "client",
+    authorName: "Elaine",
+    body: "Could we review a later finish time?",
+    isClientVisible: true,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+function historyEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "history1",
+    proposalId: "p1",
+    fromStatus: "draft",
+    toStatus: "sent",
+    changedBy: "u1",
+    note: "Shared with the client",
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.listProposals.mockResolvedValue([]);
@@ -97,6 +123,20 @@ describe("ProposalsView", () => {
     expect(await screen.findByText(/No proposals yet/)).toBeTruthy();
   });
 
+  it("shows a retryable proposal-list error instead of a dead empty panel", async () => {
+    mocks.listProposals
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([draftProposal()]);
+    render(<ProposalsView />);
+
+    const listError = await screen.findByTestId("proposal-list-error");
+    expect(listError.textContent).toContain("Couldn't load proposals");
+    fireEvent.click(screen.getByRole("button", { name: "Retry proposals" }));
+
+    expect(await screen.findByTestId("proposal-row-p1")).toBeTruthy();
+    expect(mocks.listProposals).toHaveBeenCalledTimes(2);
+  });
+
   it("creates a draft scoped to the staff member's venue", async () => {
     mocks.createProposal.mockResolvedValue(draftProposal({ title: "Winter ball" }));
     render(<ProposalsView />);
@@ -108,6 +148,18 @@ describe("ProposalsView", () => {
       expect(mocks.createProposal).toHaveBeenCalledWith({ venueId: "v1", title: "Winter ball" });
     });
     expect(await screen.findByRole("heading", { name: "Winter ball" })).toBeTruthy();
+  });
+
+  it("keeps create-draft failures visible in the create form", async () => {
+    mocks.createProposal.mockRejectedValue(new Error("duplicate"));
+    render(<ProposalsView />);
+
+    fireEvent.change(await screen.findByTestId("create-title"), { target: { value: "Winter ball" } });
+    fireEvent.click(screen.getByTestId("create-submit"));
+
+    const error = await screen.findByTestId("create-error");
+    expect(error.textContent).toContain("Could not create the proposal");
+    expect(screen.queryByLabelText("Proposal detail")).toBeNull();
   });
 
   it("disables client-link generation until a version snapshot exists", async () => {
@@ -142,15 +194,7 @@ describe("ProposalsView", () => {
 
   it("loads client comments and posts a claim-guarded venue-team reply", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal()]);
-    mocks.getProposalComments.mockResolvedValue([{
-      id: "comment-client",
-      kind: "comment",
-      authorType: "client",
-      authorName: "Elaine",
-      body: "Could we review a later finish time?",
-      isClientVisible: true,
-      createdAt: NOW,
-    }]);
+    mocks.getProposalComments.mockResolvedValue([clientComment()]);
     render(<ProposalsView />);
     await selectFirstProposal("p1");
 
@@ -166,6 +210,22 @@ describe("ProposalsView", () => {
         "Thanks Elaine - we will review this with the venue team.",
       );
     });
+  });
+
+  it("shows a retry action when the client conversation fails to load", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    mocks.getProposalComments
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([clientComment({ id: "comment-retry", body: "Retry loaded." })]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    const conversationError = await screen.findByTestId("conversation-load-error");
+    expect(conversationError.textContent).toContain("Couldn't load the client conversation");
+    fireEvent.click(screen.getByRole("button", { name: "Retry conversation" }));
+
+    expect(await screen.findByText("Retry loaded.")).toBeTruthy();
+    expect(mocks.getProposalComments).toHaveBeenCalledTimes(2);
   });
 
   it("blocks unsupported certainty claims in venue-team replies", async () => {
@@ -295,6 +355,18 @@ describe("ProposalsView", () => {
     expect(mocks.createProposalVersion).not.toHaveBeenCalled();
   });
 
+  it("lets staff remove accidental quote lines before saving", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    fireEvent.click(await screen.findByTestId("add-quote-line"));
+    expect(screen.getByTestId("quote-desc-0")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove quote line 1" }));
+
+    expect(screen.queryByTestId("quote-desc-0")).toBeNull();
+  });
+
   it("hides the composer and shows archive for concluded proposals", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal({ status: "accepted", currentVersion: 3, shareCode: "abcdef", sentAt: NOW })]);
     render(<ProposalsView />);
@@ -304,6 +376,22 @@ describe("ProposalsView", () => {
     expect(screen.queryByTestId("composer-save")).toBeNull();
     expect(screen.queryByTestId("send-button")).toBeNull();
     expect(screen.queryByTestId("withdraw-button")).toBeNull();
+  });
+
+  it("keeps status-history failures visible and retryable", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    mocks.getProposalHistory
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([historyEntry()]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    const historyError = await screen.findByTestId("history-load-error");
+    expect(historyError.textContent).toContain("Couldn't load this proposal's status history");
+    fireEvent.click(screen.getByRole("button", { name: "Retry history" }));
+
+    expect(await screen.findByText(/Shared with the client/)).toBeTruthy();
+    expect(mocks.getProposalHistory).toHaveBeenCalledTimes(2);
   });
 
   it("computes capacity guidance from room area and inserts the SAFE note (T-429)", async () => {

@@ -5,6 +5,6 @@
 // ---------------------------------------------------------------------------
 
 export function getDefaultRoute(role: string): string {
-  if (role === "admin" || role === "hallkeeper" || role === "planner") return "/dashboard";
+  if (role === "admin" || role === "hallkeeper" || role === "planner" || role === "staff" || role === "executive") return "/dashboard";
   return "/plan";
 }

@@ -213,7 +213,8 @@ test.describe("Trades Hall landing page redesign", () => {
       await expect(page.getByRole("link", { name: /Open The Robert Adam Room in the planner/i })).toBeVisible();
       await expect(page.getByRole("link", { name: /Open The Reception Room in the planner/i })).toBeVisible();
       await page.getByLabel("Choose room").selectOption("robert-adam-room");
-      await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/rooms/robert-adam-wedding-opt.jpg");
+      await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/images/venue/robert-adam-room.jpg");
+      await expect(page.locator(".hero-media-photo img")).toHaveCSS("object-position", "50% 36%");
       await expect(page.locator(".planner-embedded .chrome .title")).toContainText("Robert Adam Room");
       await expect(page.locator(".hero-left").getByRole("link", { name: /Open the Robert Adam Room planner/i })).toHaveAttribute("href", "/plan?space=robert-adam-room");
       await expect(page.getByText("Planrise preview")).toBeVisible();

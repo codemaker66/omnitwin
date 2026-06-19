@@ -27,11 +27,15 @@ describe("getDefaultRoute", () => {
     expect(getDefaultRoute("client")).toBe("/plan");
   });
 
-  it("routes staff to /plan (current behavior — not in the dashboard group)", () => {
-    // Documenting that staff is NOT in the dashboard-default group.
-    // If this is a bug, the assertion will fail loudly when the fix
-    // lands, prompting the test author to confirm the new intent.
-    expect(getDefaultRoute("staff")).toBe("/plan");
+  it("routes staff to /dashboard (now in the dashboard-default group)", () => {
+    // staff was promoted into the dashboard-default group alongside
+    // admin/hallkeeper/planner/executive; client and unknown roles still
+    // fall through to /plan.
+    expect(getDefaultRoute("staff")).toBe("/dashboard");
+  });
+
+  it("routes executive to /dashboard", () => {
+    expect(getDefaultRoute("executive")).toBe("/dashboard");
   });
 
   it("routes unknown roles to /plan (fail-soft default)", () => {

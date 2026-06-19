@@ -64,15 +64,22 @@ describe("VerticalToolbox undo buttons", () => {
     expect(useEditorStore.getState().objects).toHaveLength(1);
   });
 
-  it("clears the 3D selection when undoing so no dead ids linger", () => {
+  it("restores the captured selection when undoing, matching the keyboard + command deck", () => {
+    // Place an item, select it, then move it — the move records [id] as the
+    // selection to restore to. Deselect, then undo the move from the toolbar:
+    // the toolbar must re-select what the store captured, NOT force-clear it.
+    // (The store's HistoryIdAdapter remaps ids, so no dead id is restored.)
     useEditorStore.getState().addObject("a1", 1, 0, 2);
     const placed = useEditorStore.getState().objects.at(0);
     expect(placed).toBeDefined();
-    useSelectionStore.getState().select(placed?.id ?? "");
+    const id = placed?.id ?? "";
+    useSelectionStore.getState().select(id);
+    useEditorStore.getState().updateObject(id, { positionX: 3 });
+    useSelectionStore.getState().clearSelection();
     renderToolbox();
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
 
-    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    expect([...useSelectionStore.getState().selectedIds]).toEqual([id]);
   });
 });

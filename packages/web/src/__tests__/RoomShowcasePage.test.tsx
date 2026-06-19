@@ -98,6 +98,14 @@ describe("RoomShowcasePage", () => {
     expect(screen.queryByTestId("public-runtime-canvas")).toBeNull();
   });
 
+  it("uses the updated optimized room photography for public fallback previews", async () => {
+    mount("/venues/trades-hall/rooms/robert-adam-room");
+
+    const image = await screen.findByRole("img", { name: /Robert Adam Room ceremony aisle/i });
+    expect(image.getAttribute("src")).toBe("/images/venue/robert-adam-room.jpg");
+    expect((image as HTMLImageElement).style.objectPosition).toBe("center 36%");
+  });
+
   it("offers an engaging full-room selector without inventing a Deacon Convener runtime route", async () => {
     mount("/venues/trades-hall/rooms/grand-hall");
 

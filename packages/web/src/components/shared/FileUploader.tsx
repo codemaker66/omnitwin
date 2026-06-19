@@ -25,9 +25,10 @@ interface FileUploaderProps {
 }
 
 const dropZoneStyle: React.CSSProperties = {
-  border: "2px dashed #d1d5db", borderRadius: 12, padding: 24,
+  border: "2px dashed rgba(215,181,109,0.28)", borderRadius: 12, padding: 24,
   textAlign: "center", cursor: "pointer", transition: "border-color 0.2s",
-  fontSize: 13, color: "#999", fontFamily: "'Inter', sans-serif",
+  fontSize: 13, color: "rgba(246,241,232,0.68)", fontFamily: "'Inter', sans-serif",
+  background: "rgba(255,247,232,0.04)",
 };
 
 export function FileUploader({ context, contextId, onUploaded }: FileUploaderProps): React.ReactElement {
@@ -98,18 +99,24 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
   return (
     <div>
       <div
-        style={{ ...dropZoneStyle, borderColor: dragOver ? "#3b82f6" : "#d1d5db" }}
+        style={{ ...dropZoneStyle, borderColor: dragOver ? "#68d8d2" : "rgba(215,181,109,0.28)" }}
         onClick={() => { inputRef.current?.click(); }}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => { setDragOver(false); }}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter") inputRef.current?.click(); }}
+        aria-label="Upload photos"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
       >
         <div style={{ fontSize: 24, marginBottom: 8 }}>&#128247;</div>
         <div>Click or drag photos here</div>
-        <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>JPEG, PNG, WebP</div>
+        <div style={{ fontSize: 11, color: "rgba(246,241,232,0.48)", marginTop: 4 }}>JPEG, PNG, WebP</div>
       </div>
       <input
         ref={inputRef}
@@ -123,24 +130,27 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
       {uploads.length > 0 && (
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           {uploads.map((u) => (
-            <div key={`${u.file.name}-${String(u.file.size)}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+            <div key={`${u.file.name}-${String(u.file.size)}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(246,241,232,0.72)" }}>
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {u.file.name}
               </span>
               {u.status === "uploading" && (
-                <div style={{ width: 80, height: 6, background: "#e5e7eb", borderRadius: 3 }}>
-                  <div style={{ width: `${String(u.progress)}%`, height: "100%", background: "#3b82f6", borderRadius: 3, transition: "width 0.2s" }} />
+                <div style={{ width: 80, height: 6, background: "rgba(255,247,232,0.12)", borderRadius: 3 }}>
+                  <div style={{ width: `${String(u.progress)}%`, height: "100%", background: "#68d8d2", borderRadius: 3, transition: "width 0.2s" }} />
                 </div>
               )}
               {u.status === "done" && <span style={{ color: "#22c55e" }}>Done</span>}
               {u.status === "error" && (
-                <button
-                  type="button"
-                  onClick={() => { retryUpload(u); }}
-                  style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
-                >
-                  Retry
-                </button>
+                <>
+                  <span role="alert" style={{ color: "#ffd89a" }}>{u.error ?? "Upload failed"}</span>
+                  <button
+                    type="button"
+                    onClick={() => { retryUpload(u); }}
+                    style={{ background: "none", border: "none", color: "#68d8d2", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
+                  >
+                    Retry
+                  </button>
+                </>
               )}
             </div>
           ))}

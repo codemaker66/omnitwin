@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { EventDayOpsBoard, OpsTask } from "@omnitwin/types";
+import type { ChangeFeedItem, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { EventDayOpsPage } from "../pages/EventDayOpsPage.js";
 
@@ -9,6 +9,8 @@ const {
   mockGetEventDayOpsBoard,
   mockUpdateOpsTaskStatus,
   mockCreateEventDayIssue,
+  mockGetEventChangeFeed,
+  mockAcknowledgeEventPlanChange,
   mockAckEventDayOp,
   mockEnqueueEventDayIssueCreate,
   mockEnqueueEventDayTaskStatus,
@@ -17,6 +19,8 @@ const {
   mockGetEventDayOpsBoard: vi.fn(),
   mockUpdateOpsTaskStatus: vi.fn(),
   mockCreateEventDayIssue: vi.fn(),
+  mockGetEventChangeFeed: vi.fn(),
+  mockAcknowledgeEventPlanChange: vi.fn(),
   mockAckEventDayOp: vi.fn(),
   mockEnqueueEventDayIssueCreate: vi.fn(),
   mockEnqueueEventDayTaskStatus: vi.fn(),
@@ -27,6 +31,11 @@ vi.mock("../api/event-day-ops.js", () => ({
   getEventDayOpsBoard: mockGetEventDayOpsBoard,
   updateOpsTaskStatus: mockUpdateOpsTaskStatus,
   createEventDayIssue: mockCreateEventDayIssue,
+}));
+
+vi.mock("../api/notifications.js", () => ({
+  getEventChangeFeed: mockGetEventChangeFeed,
+  acknowledgeEventPlanChange: mockAcknowledgeEventPlanChange,
 }));
 
 vi.mock("../lib/event-day-offline-queue.js", () => ({
@@ -190,6 +199,31 @@ function boardFixture(): EventDayOpsBoard {
   };
 }
 
+function requiredChangeFixture(): ChangeFeedItem {
+  return {
+    id: "00000000-0000-4000-8000-000000003030",
+    eventId: EVENT_ID,
+    venueId: "00000000-0000-4000-8000-000000003004",
+    configurationId: null,
+    proposalId: null,
+    handoffPackId: PACK_ID,
+    actorUserId: "00000000-0000-4000-8000-000000003031",
+    actorRole: "staff",
+    actorLabel: "planner@e2e.test",
+    sourceKind: "proposal",
+    sourceId: "00000000-0000-4000-8000-000000003032",
+    title: "Guest count changed",
+    summary: "Guest count moved from 120 to 132 after handoff.",
+    beforeSummary: "120 guests",
+    afterSummary: "132 guests",
+    affectedSurfaces: ["guest_count", "ops_tasks"],
+    audienceRoles: ["hallkeeper"],
+    riskLevel: "attention",
+    requiresHallkeeperAcknowledgement: true,
+    createdAt: NOW,
+  };
+}
+
 function renderPage(): void {
   render(
     <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
@@ -204,11 +238,23 @@ beforeEach(() => {
   mockGetEventDayOpsBoard.mockReset();
   mockUpdateOpsTaskStatus.mockReset();
   mockCreateEventDayIssue.mockReset();
+  mockGetEventChangeFeed.mockReset();
+  mockAcknowledgeEventPlanChange.mockReset();
   mockAckEventDayOp.mockReset();
   mockEnqueueEventDayIssueCreate.mockReset();
   mockEnqueueEventDayTaskStatus.mockReset();
   mockListPendingEventDayOps.mockReset();
   mockListPendingEventDayOps.mockResolvedValue([]);
+  mockGetEventChangeFeed.mockResolvedValue([]);
+  mockAcknowledgeEventPlanChange.mockResolvedValue({
+    id: "00000000-0000-4000-8000-000000003020",
+    changeId: "00000000-0000-4000-8000-000000003021",
+    eventId: EVENT_ID,
+    acknowledgedBy: "00000000-0000-4000-8000-000000003022",
+    acknowledgedByRole: "hallkeeper",
+    note: null,
+    createdAt: NOW,
+  });
   mockEnqueueEventDayIssueCreate.mockResolvedValue(undefined);
   mockEnqueueEventDayTaskStatus.mockResolvedValue(undefined);
   mockAckEventDayOp.mockResolvedValue(undefined);
@@ -230,6 +276,21 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByText("Task checklist")).toBeTruthy();
     expect(screen.getByText("Issue report")).toBeTruthy();
     expect(screen.getByText("Supplier arrivals")).toBeTruthy();
+  });
+
+  it("acknowledges required planner or client changes", async () => {
+    const change = requiredChangeFixture();
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([change]);
+    renderPage();
+
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Acknowledge change/i }));
+
+    await waitFor(() => {
+      expect(mockAcknowledgeEventPlanChange).toHaveBeenCalledWith(EVENT_ID, { changeId: change.id });
+    });
+    expect(await screen.findByText("Change acknowledged.")).toBeTruthy();
   });
 
   it("updates task status from the checklist", async () => {

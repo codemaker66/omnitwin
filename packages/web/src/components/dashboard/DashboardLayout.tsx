@@ -4,6 +4,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
+import "./DashboardLayout.css";
 
 // ---------------------------------------------------------------------------
 // DashboardLayout — sidebar nav + top bar + main content
@@ -11,43 +12,9 @@ import { NotificationCenter } from "./NotificationCenter.js";
 
 type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
 
-const sidebarStyle: React.CSSProperties = {
-  position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
-  background: "linear-gradient(180deg, #090807 0%, #17120d 100%)",
-  color: "#fff7e8",
-  display: "flex",
-  flexDirection: "column",
-  borderRight: "1px solid rgba(215,181,109,0.22)",
-  boxShadow: "18px 0 60px rgba(0,0,0,0.22)",
-  fontFamily: "'Inter', sans-serif",
-  zIndex: 40,
-};
-
-const navItemStyle = (active: boolean): React.CSSProperties => ({
-  display: "block", width: "100%", minHeight: 44, padding: "12px 20px", fontSize: 14,
-  background: active ? "rgba(215,181,109,0.16)" : "none", border: "none",
-  color: active ? "#fff7e8" : "rgba(246,241,232,0.68)", cursor: "pointer",
-  textAlign: "left", borderLeft: active ? "3px solid #d7b56d" : "3px solid transparent",
-  transition: "all 0.15s",
-  fontWeight: active ? 800 : 650,
-});
-
-const mainStyle: React.CSSProperties = {
-  marginLeft: 220,
-  minHeight: "100vh",
-  background:
-    "radial-gradient(circle at 72% 0%, rgba(143,216,210,0.12), transparent 30%), linear-gradient(180deg, #101617 0%, #070807 100%)",
-  fontFamily: "'Inter', sans-serif",
-};
-
-const topBarStyle: React.CSSProperties = {
-  minHeight: 62,
-  background: "rgba(6,8,8,0.92)",
-  borderBottom: "1px solid rgba(215,181,109,0.22)",
-  display: "flex", alignItems: "center", justifyContent: "space-between",
-  padding: "0 24px",
-  boxShadow: "0 14px 42px rgba(0,0,0,0.24)",
-};
+interface E2EWindow extends Window {
+  readonly __OMNITWIN_E2E__?: boolean;
+}
 
 interface DashboardLayoutProps {
   readonly activeView: DashboardView;
@@ -71,10 +38,46 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "admin", label: "Admin", adminOnly: true },
 ];
 
+function canShowNavItem(
+  item: (typeof NAV_ITEMS)[number],
+  role: string | null | undefined,
+): boolean {
+  if (role === "supplier") return false;
+  if (role === "executive") return item.view === "analytics";
+  if (item.adminOnly === true) return role === "admin";
+  if (item.staffOnly === true) return role === "admin" || role === "staff";
+  return role !== null && role !== undefined;
+}
+
+function isE2EAuthBypass(): boolean {
+  return import.meta.env.DEV && (window as E2EWindow).__OMNITWIN_E2E__ === true;
+}
+
+function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+  const { signOut } = useClerk();
+  const handleSignOut = (): void => {
+    props.onLocalSignOut();
+    void signOut();
+  };
+
+  return (
+    <button type="button" onClick={handleSignOut} className="dashboard-layout-signout">
+      Sign Out
+    </button>
+  );
+}
+
+function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+  return (
+    <button type="button" onClick={props.onLocalSignOut} className="dashboard-layout-signout">
+      Sign Out
+    </button>
+  );
+}
+
 export function DashboardLayout({ activeView, onViewChange, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
-  const { signOut } = useClerk();
 
   // Fetch venue name dynamically so the header reflects the actual venue,
   // not the hardcoded placeholder (F28). Admin users without a venueId see
@@ -90,36 +93,28 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
       .catch(() => { /* non-critical — keep default */ });
   }, [user?.venueId, user?.role]);
 
-  // Punch list #11: previously called only the local Zustand `logout()`,
-  // which cleared the in-memory user but left the Clerk session intact.
-  // A page refresh would re-populate the store from Clerk and the user
-  // would be "logged in" again. Now invokes Clerk's signOut() and clears
-  // local state for immediate UI feedback. Clerk handles the redirect
-  // (default: stays on the current page; ProtectedRoute then redirects).
-  const handleSignOut = (): void => {
+  const handleLocalSignOut = (): void => {
     logoutLocal();
-    void signOut();
   };
 
   return (
     <>
-      <nav style={sidebarStyle} aria-label="Staff dashboard">
-        <div style={{ padding: "20px 20px 24px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ color: "#fff2dc", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 24, fontWeight: 650, letterSpacing: 0 }}>
+      <nav className="dashboard-layout-sidebar" aria-label="Staff dashboard">
+        <div className="dashboard-layout-brand">
+          <div className="dashboard-layout-brand-name">
             Venviewer
           </div>
-          <div style={{ marginTop: 4, color: "rgba(246,241,232,0.56)", fontSize: 12, fontWeight: 800, letterSpacing: 0, textTransform: "uppercase" }}>
+          <div className="dashboard-layout-brand-kicker">
             Venue command
           </div>
         </div>
         {NAV_ITEMS.map((item) => {
-          if (item.adminOnly === true && user?.role !== "admin") return null;
-          if (item.staffOnly === true && user?.role !== "admin" && user?.role !== "staff") return null;
+          if (!canShowNavItem(item, user?.role)) return null;
           return (
             <button
               key={item.view}
               type="button"
-              style={navItemStyle(activeView === item.view)}
+              className={`dashboard-layout-nav-item${activeView === item.view ? " dashboard-layout-nav-item--active" : ""}`}
               aria-current={activeView === item.view ? "page" : undefined}
               onClick={() => { onViewChange(item.view); }}
             >
@@ -127,30 +122,26 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             </button>
           );
         })}
-        <div style={{ flex: 1 }} />
-        <div style={{ padding: "16px 20px", fontSize: 12, color: "rgba(246,241,232,0.58)", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+        <div className="dashboard-layout-spacer" />
+        <div className="dashboard-layout-account">
           {user?.email ?? ""}
-          <button
-            type="button"
-            onClick={handleSignOut}
-            style={{ display: "block", minHeight: 32, marginTop: 8, background: "none", border: "none", color: "#d7b56d", cursor: "pointer", fontSize: 12, fontWeight: 800, padding: 0 }}
-          >
-            Sign Out
-          </button>
+          {isE2EAuthBypass()
+            ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
+            : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
         </div>
       </nav>
 
-      <div style={mainStyle}>
-        <header style={topBarStyle}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: "#fff7e8", margin: 0, letterSpacing: 0 }}>
+      <div className="dashboard-layout-main">
+        <header className="dashboard-layout-topbar">
+          <h1 className="dashboard-layout-title">
             {venueName}
           </h1>
-          <div style={{ alignItems: "center", display: "flex", gap: 12 }}>
+          <div className="dashboard-layout-topbar-actions">
             <NotificationCenter />
             <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
           </div>
         </header>
-        <main style={{ padding: 24 }} id="dashboard-main">
+        <main className="dashboard-layout-content" id="dashboard-main">
           {children}
         </main>
       </div>
