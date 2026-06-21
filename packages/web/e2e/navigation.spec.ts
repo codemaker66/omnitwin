@@ -144,7 +144,7 @@ test.describe("Navigation", () => {
     // Wait for page to fully load
     await page.waitForLoadState("networkidle");
     const title = await page.title();
-    // Title should contain OMNITWIN or the app name
+    // Title should contain the current product name.
     expect(title.length).toBeGreaterThan(0);
   });
 

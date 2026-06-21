@@ -294,7 +294,7 @@ export const router = createBrowserRouter([
     element: withSuspense(<LandingPage />),
   },
   {
-    // Role-aware post-sign-in destination. Used by the in-app "OMNITWIN"
+    // Role-aware post-sign-in destination. Used by the in-app Venviewer
     // logo click: signed-in staff land on their dashboard, admins on admin,
     // planners on /editor. Kept off `/` so the public landing isn't
     // bypassed for unauthenticated visitors.

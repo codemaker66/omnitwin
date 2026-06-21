@@ -50,6 +50,12 @@ export function assertRequiredProductionEnv(
         "Set it in Vercel or in the local build environment.",
     );
   }
+  if (!clerkKey.startsWith("pk_live_")) {
+    throw new Error(
+      "Production web builds require a live Clerk publishable key (pk_live_...). " +
+        "Do not ship Clerk development mode to venviewer.com.",
+    );
+  }
 
   getSentrySourceMapUploadConfig(env);
 }

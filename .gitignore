@@ -36,3 +36,5 @@ tmp/
 artifacts/
 *.log
 /*.jpeg
+
+.vercel

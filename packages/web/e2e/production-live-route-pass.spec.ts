@@ -659,7 +659,9 @@ test.describe("T-469 production-live route pass", () => {
       const problems = watchPageProblems(page);
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/u);
-      await expect(page.getByRole("heading", { name: /Sign in/u }).first()).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Sign in to Venviewer" })).toBeVisible();
+      await expect(page.getByText(/OMNITWIN/u)).toHaveCount(0);
+      await expect(page.getByText("Development mode")).toHaveCount(0);
       actionProofs.push(`Protected dashboard ${view}: live production redirects unauthenticated traffic to /login before drawer data can load.`);
       await recordControlAudit(page, `protected dashboard auth ${view}`, path);
       await recordAccessibilityState(page, problems, `protected dashboard auth ${view}`, path, "desktop", 12);

@@ -7,7 +7,7 @@ import { getDefaultRoute } from "../../lib/role-routing.js";
 // RoleAwareRedirect — the `/` landing decision.
 //
 // Why not a static `<Navigate to="/editor">` like before: clicking the
-// OMNITWIN logo as an admin used to dump them into the public editor,
+// app logo as an admin used to dump them into the public editor,
 // then the dashboard sidebar button, then the actual page they wanted.
 // Three navigations to do one thing. This component reads the auth store
 // and sends the user to the role-appropriate landing in one hop.

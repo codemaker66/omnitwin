@@ -30,7 +30,7 @@ Run from the repository root:
 pnpm --filter @omnitwin/web lint
 pnpm --filter @omnitwin/web typecheck
 pnpm --filter @omnitwin/web test
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_dummy pnpm --filter @omnitwin/web build
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_local_validation_only pnpm --filter @omnitwin/web build
 ```
 
 Local development:
@@ -79,4 +79,5 @@ pnpm --filter @omnitwin/web e2e -- e2e/trades-hall-visual.spec.ts --workers=1
 Use `packages/web/.env.example` for local development and
 `packages/web/.env.production.example` for provider configuration. Only
 `VITE_*` variables reach the browser; never put server secrets in this package's
-client environment.
+client environment. Production web builds deliberately reject Clerk `pk_test_`
+publishable keys so venviewer.com cannot ship Clerk's Development mode banner.

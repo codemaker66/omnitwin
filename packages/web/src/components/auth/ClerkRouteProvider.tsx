@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/react";
 import type { ReactElement, ReactNode } from "react";
 import { ClerkAuthBridge } from "./ClerkAuthBridge.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { VENVIEWER_CLERK_LOCALIZATION } from "./clerk-localization.js";
 
 interface ClerkRouteProviderProps {
   readonly children: ReactNode;
@@ -22,7 +23,11 @@ export function ClerkRouteProvider({ children }: ClerkRouteProviderProps): React
   if (isE2EAuthBypassEnabled()) return <>{children}</>;
 
   return (
-    <ClerkProvider publishableKey={clerkPublishableKey()} afterSignOutUrl="/">
+    <ClerkProvider
+      publishableKey={clerkPublishableKey()}
+      afterSignOutUrl="/"
+      localization={VENVIEWER_CLERK_LOCALIZATION}
+    >
       <ClerkAuthBridge />
       {children}
     </ClerkProvider>

@@ -1,8 +1,31 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render } from "@testing-library/react";
+import { createElement } from "react";
 
 // ---------------------------------------------------------------------------
 // Auth component tests — Clerk-based
 // ---------------------------------------------------------------------------
+
+interface CapturedClerkProviderProps {
+  readonly children?: unknown;
+  readonly afterSignOutUrl?: string;
+  readonly localization?: {
+    readonly signIn?: {
+      readonly start?: {
+        readonly title?: string;
+      };
+    };
+    readonly signUp?: {
+      readonly start?: {
+        readonly title?: string;
+      };
+    };
+  };
+}
+
+const clerkProviderMock = vi.hoisted(() =>
+  vi.fn((props: CapturedClerkProviderProps) => props.children),
+);
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();
@@ -15,7 +38,7 @@ vi.mock("react-router-dom", () => ({
 
 // Mock Clerk
 vi.mock("@clerk/react", () => ({
-  ClerkProvider: ({ children }: { children: unknown }) => children,
+  ClerkProvider: clerkProviderMock,
   ClerkLoaded: ({ children }: { children: unknown }) => children,
   ClerkLoading: ({ children }: { children: unknown }) => children,
   SignIn: () => "SignIn",
@@ -88,6 +111,19 @@ describe("ClerkAuthBridge", () => {
   it("exports a component", async () => {
     const { ClerkAuthBridge } = await import("../components/auth/ClerkAuthBridge.js");
     expect(typeof ClerkAuthBridge).toBe("function");
+  });
+});
+
+describe("ClerkRouteProvider", () => {
+  it("pins Clerk-rendered account copy to Venviewer", async () => {
+    const { ClerkRouteProvider } = await import("../components/auth/ClerkRouteProvider.js");
+
+    render(createElement(ClerkRouteProvider, null, "workspace"));
+
+    const props = clerkProviderMock.mock.calls.at(-1)?.[0];
+    expect(props?.afterSignOutUrl).toBe("/");
+    expect(props?.localization?.signIn?.start?.title).toBe("Sign in to Venviewer");
+    expect(props?.localization?.signUp?.start?.title).toBe("Create your Venviewer account");
   });
 });
 
