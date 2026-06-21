@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ClerkLoaded, ClerkLoading, SignUp } from "@clerk/react";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
+import "./AuthPage.css";
 
 export function RegisterPage(): React.ReactElement {
   const navigate = useNavigate();
@@ -20,46 +21,34 @@ export function RegisterPage(): React.ReactElement {
   }, [isAuthenticated, user, navigate]);
 
   return (
-    <div style={{
-      minHeight: "100vh", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 480px))",
-      alignItems: "center", justifyContent: "center", gap: 48,
-      fontFamily: "'Inter', sans-serif", background: "#f5f5f0", padding: 32,
-    }}>
-      <section aria-label="Venviewer account context" style={{ color: "#1d1712" }}>
-        <div style={{ fontSize: 13, letterSpacing: 3, textTransform: "uppercase", color: "#8a6f2f", fontWeight: 700 }}>
+    <main className="auth-page" aria-label="Account access">
+      <section className="auth-page__context" aria-label="Venviewer account context">
+        <div className="auth-page__brand">
           Venviewer
         </div>
-        <h1 style={{ fontFamily: "Georgia, serif", fontSize: "clamp(34px, 7vw, 46px)", lineHeight: 1.05, margin: "14px 0 16px", fontWeight: 500 }}>
+        <h1 className="auth-page__title">
           Create your planning workspace.
         </h1>
-        <p style={{ fontSize: 16, lineHeight: 1.65, color: "#5d5247", margin: 0 }}>
+        <p className="auth-page__copy">
           Start with a draft, invite your venue team, and keep client layouts in one place.
         </p>
+        <div className="auth-page__proof-grid" aria-label="Workspace capabilities">
+          <span>Venue records</span>
+          <span>Staff roles</span>
+          <span>Planning evidence</span>
+        </div>
       </section>
-      <section
-        aria-label="Secure account creation form"
-        style={{
-          minHeight: 422,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          borderRadius: 8,
-          background: "#fffdf8",
-          border: "1px solid rgba(29,23,18,0.08)",
-          boxShadow: "0 18px 55px rgba(29,23,18,0.08)",
-          padding: 24,
-        }}
-      >
+      <section className="auth-page__form-shell" aria-label="Secure account creation form">
         <ClerkLoading>
-          <div role="status" style={{ textAlign: "center", color: "#5d5247", lineHeight: 1.6 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1d1712" }}>Loading secure account creation.</div>
-            <p style={{ margin: "8px 0 0", fontSize: 14 }}>Keep this page open while the account form connects.</p>
+          <div className="auth-page__loading" role="status">
+            <div>Loading secure account creation.</div>
+            <p>Keep this page open while the account form connects.</p>
           </div>
         </ClerkLoading>
         <ClerkLoaded>
           <SignUp routing="hash" signInUrl="/login" />
         </ClerkLoaded>
       </section>
-    </div>
+    </main>
   );
 }
