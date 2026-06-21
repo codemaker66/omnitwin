@@ -297,6 +297,9 @@ async function recordFrameAndVisualState(
   const screenshotPath = `${ARTIFACT_DIR}/${viewport}-${name}.png`;
   await page.waitForLoadState("networkidle").catch(() => undefined);
   await assertNoRuntimeBreakage(page);
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   const screenshotBytes = await takeSmokeScreenshot(page, screenshotPath);
 
   const session = await page.context().newCDPSession(page);
