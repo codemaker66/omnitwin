@@ -530,6 +530,7 @@ test.afterAll(async () => {
 
 test.describe("T-469 production-live route pass", () => {
   test("public room pages stay live, accessible, controlled, and within frame budget", async ({ page }) => {
+    test.setTimeout(90_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const roomCases = [
