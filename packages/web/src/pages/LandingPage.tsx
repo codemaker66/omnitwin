@@ -145,6 +145,35 @@ const VENUE_ROOMS: readonly VenueRoom[] = [
   },
 ] as const;
 
+const HERO_PLATFORM_SIGNALS: readonly {
+  readonly label: string;
+  readonly value: string;
+  readonly detail: string;
+}[] = [
+  {
+    label: "Client view",
+    value: "Cinematic",
+    detail: "Room photos, layout preview, and proposal-ready paths share one public surface.",
+  },
+  {
+    label: "Planner state",
+    value: "Draft",
+    detail: "Guest count, layout, and room choice continue into the live planning cockpit.",
+  },
+  {
+    label: "Evidence",
+    value: "Human review",
+    detail: "Public guidance stays client-safe until the venue team confirms final details.",
+  },
+];
+
+function roomRuntimeCopy(room: VenueRoom): string {
+  if (room.slug === "reception-room") {
+    return "Reception Room runtime visual is staged internally and unverified. Public route stays on the honest photo fallback until signing evidence is complete.";
+  }
+  return "Client-safe photo showcase. Spatial planning opens as a draft for venue-team review.";
+}
+
 function roomBySlug(slug: RoomSlug): VenueRoom {
   return VENUE_ROOMS.find((room) => room.slug === slug) ?? GRAND_HALL_ROOM;
 }
@@ -216,9 +245,9 @@ export function LandingPage(): ReactElement {
   return (
     <div
       className="th-landing"
-      data-mode="light"
+      data-mode="cinematic"
       data-layout="grand-hall"
-      data-accent="oxblood"
+      data-accent="gold"
       data-display="newsreader"
       ref={rootRef}
     >
@@ -312,33 +341,58 @@ function Hero(): ReactElement {
           <div className="hero-left rise">
             <div className="eyebrow">Trades Hall Glasgow · Grand Hall planner</div>
             <h1>
-              Design your event for the Grand Hall.
+              Design your event for the {selectedRoom.shortTitle}.
             </h1>
             <p className="lede">
-              Try a wedding, gala, or conference planning draft — then send it directly
-              to the Trades Hall events team.
+              A cinematic room showcase and live planning draft in one place: choose the
+              room, shape the layout, then continue into Venviewer for venue-team review.
             </p>
+            <div className="hero-showcase-tabs" role="group" aria-label="Room showcase selector">
+              {VENUE_ROOMS.map((roomOption) => (
+                <button
+                  key={roomOption.slug}
+                  type="button"
+                  className={roomOption.slug === selectedRoom.slug ? "hero-room-tab on" : "hero-room-tab"}
+                  aria-pressed={roomOption.slug === selectedRoom.slug}
+                  aria-label={`Show ${roomOption.shortTitle} in public showcase`}
+                  onClick={() => { setSelectedRoomSlug(roomOption.slug); }}
+                >
+                  <span>{roomOption.shortTitle}</span>
+                  <small>{roomOption.banquet} seated draft</small>
+                </button>
+              ))}
+            </div>
             <div className="ctas">
               <Link
                 to={selectedPlannerPath}
                 className="btn primary big"
                 onClick={onPreviewCtaClick}
               >
-                Open the {selectedRoom.shortTitle} planner
+                <span className="cta-label">Open the {selectedRoom.shortTitle} planner</span>
                 <span className="arrow" aria-hidden>→</span>
               </Link>
               <Link to={selectedPlannerPath} className="btn big">View in 3D</Link>
             </div>
             <div className="proof-row">
-              <span>To scale</span>
+              <span>Client-safe showcase</span>
               <span>{selectedRoom.shortTitle}</span>
               <span>Draft layout</span>
-              <span>Sent to Events Team</span>
+              <span>Human review required</span>
             </div>
             <p className="hero-capacity" data-testid="hero-capacity-guidance">
               {selectedRoom.shortTitle} is comfortable for {heroCapacity.summary}.{" "}
               <span className="hero-capacity-note">{heroCapacity.disclosure}</span>
             </p>
+            <p className="hero-runtime-note">{roomRuntimeCopy(selectedRoom)}</p>
+            <div className="hero-platform-signals" aria-label="Public planning status">
+              {HERO_PLATFORM_SIGNALS.map((signal) => (
+                <div key={signal.label} className="hero-platform-signal">
+                  <span>{signal.label}</span>
+                  <strong>{signal.value}</strong>
+                  <small>{signal.detail}</small>
+                </div>
+              ))}
+            </div>
             <div className="powered-by">Powered by Venviewer</div>
           </div>
 
@@ -351,8 +405,15 @@ function Hero(): ReactElement {
                 style={imagePositionStyle(selectedRoom.imagePosition)}
               />
               <div className="hero-media-photo-copy">
-                <span>{selectedRoom.shortTitle} planning draft</span>
-                <strong>Heritage room, planning draft</strong>
+                <span>{selectedRoom.shortTitle} public room showcase</span>
+                <strong>Client-facing venue experience</strong>
+              </div>
+              <div className="hero-photo-overlays" aria-hidden="true">
+                <span className="flow-line flow-line-primary" />
+                <span className="flow-line flow-line-secondary" />
+                <span className="flow-chip flow-chip-cyan">Guest flow draft</span>
+                <span className="flow-chip flow-chip-amber">Review gate</span>
+                <span className="density-bloom" />
               </div>
             </div>
             <div className="hero-planner-panel" style={{ transitionDelay: ".18s" }}>

@@ -27,7 +27,7 @@ describe("LandingPage — Grand Hall module", () => {
     mount();
     const h1 = screen.getByRole("heading", { level: 1 });
     expect(h1.textContent).toMatch(/Design your event for the Grand Hall/);
-    expect(screen.getByText(/Try a wedding, gala, or conference planning draft/i)).toBeTruthy();
+    expect(screen.getByText(/A cinematic room showcase and live planning draft/i)).toBeTruthy();
     expect(screen.getAllByText(/Powered by Venviewer/i).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -50,12 +50,24 @@ describe("LandingPage — Grand Hall module", () => {
 
   it("renders the proof chips without unsupported precision claims", () => {
     mount();
-    expect(screen.getByText("To scale")).toBeTruthy();
+    expect(screen.getByText("Client-safe showcase")).toBeTruthy();
     expect(screen.getAllByText("Grand Hall").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Draft layout")).toBeTruthy();
-    expect(screen.getByText("Sent to Events Team")).toBeTruthy();
+    expect(screen.getAllByText("Human review required").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/to the centimetre/i)).toBeNull();
     expect(screen.queryByText(/events@tradeshall\.example/i)).toBeNull();
+  });
+
+  it("wires the cinematic room showcase selector to the planner and evidence copy", () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: /Show Reception Room in public showcase/i }));
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Reception Room/);
+    expect(screen.getByText(/runtime visual is staged internally and unverified/i)).toBeTruthy();
+    expect(screen.getByText(/Public route stays on the honest photo fallback/i)).toBeTruthy();
+    const img = getHeroImage();
+    expect(img.getAttribute("src")).toBe("/images/venue/reception-room.jpg");
+    expect(img.style.objectPosition).toBe("center 52%");
   });
 
   it("surfaces planning-grade hero capacity guidance with SAFE wording (T-429)", () => {

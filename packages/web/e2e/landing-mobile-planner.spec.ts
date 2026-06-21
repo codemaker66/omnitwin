@@ -115,7 +115,7 @@ async function expectEmbeddedPlannerIsNotClipped(preview: Locator): Promise<void
 async function expectCoreLanding(page: Page, viewport: ViewportSpec): Promise<void> {
   await expectNoHorizontalOverflow(page);
   await expect(page.getByRole("heading", { level: 1, name: /Design your event for the Grand Hall/i })).toBeVisible();
-  await expect(page.getByText(/Try a wedding, gala, or conference planning draft/i)).toBeVisible();
+  await expect(page.getByText(/A cinematic room showcase and live planning draft/i)).toBeVisible();
   await expect(page.getByText(/Powered by Venviewer/i).first()).toBeVisible();
 
   const heroPrimary = page.locator(".hero-left").getByRole("link", { name: /Open the Grand Hall planner/i });

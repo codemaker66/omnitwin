@@ -233,6 +233,24 @@ async function expectUpdatedPublicPhotoSet(page: Page): Promise<void> {
   expect(imageSources).toContain("/images/venue/trades-hall-exterior.jpg");
 }
 
+async function expectHeroPrimaryActionsInsideViewport(page: Page): Promise<void> {
+  const escaped = await page.evaluate(() => Array.from(
+    document.querySelectorAll<HTMLElement>(".hero-grid, .hero-left, .hero-left .ctas, .hero-left .ctas .btn"),
+  )
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        selector: element.className,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+      };
+    })
+    .filter((rect) => rect.left < -1 || rect.right > window.innerWidth + 1));
+
+  expect(escaped, "hero primary layout elements should stay inside the mobile viewport").toEqual([]);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.afterAll(async () => {
@@ -256,11 +274,13 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Design your event for the Grand Hall." })).toBeVisible();
+    await expect(page.locator(".th-landing")).toHaveAttribute("data-mode", "cinematic");
     await expectUpdatedPublicPhotoSet(page);
 
     await recordFrameAndVisualState(page, "landing-updated-photos", "desktop", async () => {
-      await page.getByLabel("Choose room").selectOption("reception-room");
+      await page.getByRole("button", { name: "Show Reception Room in public showcase" }).click();
       await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/images/venue/reception-room.jpg");
+      await expect(page.getByText(/runtime visual is staged internally and unverified/i)).toBeVisible();
       await page.mouse.wheel(0, 540);
       await page.mouse.wheel(0, -220);
     });
@@ -274,10 +294,12 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Design your event for the Grand Hall." })).toBeVisible();
+    await expect(page.locator(".th-landing")).toHaveAttribute("data-mode", "cinematic");
     await expectUpdatedPublicPhotoSet(page);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "public landing mobile should not horizontally overflow").toBeLessThanOrEqual(1);
+    await expectHeroPrimaryActionsInsideViewport(page);
 
     await recordFrameAndVisualState(page, "landing-mobile-updated-photos", "mobile", async () => {
       await page.mouse.wheel(0, 620);
