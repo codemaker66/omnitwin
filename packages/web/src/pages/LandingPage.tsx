@@ -223,10 +223,12 @@ export function LandingPage(): ReactElement {
       ref={rootRef}
     >
       <TopNav />
-      <Hero />
-      <Rooms />
-      <PlanriseLite />
-      <FinalCTA />
+      <main aria-label="Trades Hall Glasgow public planner">
+        <Hero />
+        <Rooms />
+        <PlanriseLite />
+        <FinalCTA />
+      </main>
       <SiteFooter />
     </div>
   );

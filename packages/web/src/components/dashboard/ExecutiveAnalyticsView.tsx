@@ -26,7 +26,7 @@ const metricValueStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   margin: 0,
-  color: "#68d8d2",
+  color: "#8ff8f2",
   fontSize: 12,
   fontWeight: 850,
   letterSpacing: 0,
@@ -71,7 +71,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
         <section style={cardStyle} aria-live="polite">
           <p style={labelStyle}>Executive analytics</p>
           <h2 style={{ margin: "8px 0", fontSize: 22, color: "#fff7e8" }}>Loading commercial planning data</h2>
-          <p style={{ margin: 0, color: "rgba(246,241,232,0.72)" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
+          <p style={{ margin: 0, color: "rgba(246,241,232,0.86)" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
         </section>
       );
     }
@@ -81,7 +81,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
         <section style={cardStyle} role="alert">
           <p style={labelStyle}>Executive analytics</p>
           <h2 style={{ margin: "8px 0", fontSize: 22, color: "#ffd2bd" }}>Analytics unavailable</h2>
-          <p style={{ margin: "0 0 14px", color: "rgba(246,241,232,0.72)" }}>{loadState.message}</p>
+          <p style={{ margin: "0 0 14px", color: "rgba(246,241,232,0.86)" }}>{loadState.message}</p>
           <button type="button" onClick={load} style={primaryButtonStyle}>Retry analytics</button>
         </section>
       );
@@ -95,7 +95,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div>
             <p style={labelStyle}>Executive analytics</p>
             <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>Commercial planning dashboard</h2>
-            <p style={{ margin: 0, maxWidth: 760, color: "rgba(246,241,232,0.72)", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, maxWidth: 760, color: "rgba(246,241,232,0.88)", lineHeight: 1.5 }}>
               {data.disclosure}. Values are planning indicators and keep comfort floors and review gates visible.
             </p>
           </div>
@@ -202,9 +202,9 @@ const primaryButtonStyle: React.CSSProperties = {
 
 const secondaryButtonStyle: React.CSSProperties = {
   minHeight: 40,
-  border: "1px solid rgba(215,181,109,0.25)",
+  border: "1px solid rgba(143,248,242,0.68)",
   borderRadius: 8,
-  background: "rgba(255,247,232,0.07)",
+  background: "rgba(7,12,14,0.92)",
   color: "#fff7e8",
   padding: "0 14px",
   fontWeight: 700,

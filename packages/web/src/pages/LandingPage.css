@@ -248,8 +248,15 @@
   z-index: 1;
   display: grid;
   gap: 4px;
+  max-width: min(88%, 520px);
+  padding: 12px 14px 13px;
+  border: 1px solid rgba(255,248,237,0.18);
+  border-radius: 6px;
+  background-color: rgba(10,8,6,0.82);
+  backdrop-filter: blur(8px) saturate(120%);
   color: #fff8ed;
-  text-shadow: 0 2px 18px rgba(0,0,0,0.4);
+  box-shadow: 0 18px 48px -24px rgba(0,0,0,0.78);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.62);
 }
 
 .th-landing .hero-media-photo-copy span {

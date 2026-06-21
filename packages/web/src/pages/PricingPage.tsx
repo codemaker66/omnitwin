@@ -23,7 +23,7 @@ const GOLD_DIM = "#8a6e1e";
 const OXBLOOD = "#7a1f2a";
 const CREAM = "#f5ede0";
 const CREAM_MUT = "rgba(245,237,224,0.7)";
-const CREAM_FAINT = "rgba(245,237,224,0.4)";
+const CREAM_FAINT = "rgba(245,237,224,0.62)";
 const SERIF = "'Playfair Display', 'Newsreader', Georgia, serif";
 const BODY = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -321,53 +321,54 @@ export function PricingPage(): React.ReactElement {
         </Link>
       </nav>
 
-      {/* === HERO === */}
-      <section
-        className="pricing-hero"
-        style={{
-          position: "relative",
-          zIndex: 2,
-          padding: "80px 48px 60px",
-          textAlign: "center",
-          maxWidth: 1100,
-          margin: "0 auto",
-          animation: "pricing-fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
-        }}
-      >
-        <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 24, fontWeight: 600 }}>
-          Pricing
-        </div>
-        <h1
-          aria-label="Turn every enquiry into a yes."
+      <main aria-label="Venviewer pricing">
+        {/* === HERO === */}
+        <section
+          className="pricing-hero"
           style={{
-            fontFamily: SERIF,
-            fontSize: "clamp(48px, 7vw, 96px)",
-            lineHeight: 1.02,
-            margin: 0,
-            fontWeight: 400,
-            letterSpacing: 0,
+            position: "relative",
+            zIndex: 2,
+            padding: "80px 48px 60px",
+            textAlign: "center",
+            maxWidth: 1100,
+            margin: "0 auto",
+            animation: "pricing-fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          <span aria-hidden="true">Turn every enquiry<br />
-          <em style={{ color: GOLD, fontStyle: "italic" }}>into a yes.</em></span>
-        </h1>
-        <p
-          style={{
-            fontSize: 20,
-            color: CREAM_MUT,
-            maxWidth: 640,
-            margin: "32px auto 0",
-            lineHeight: 1.6,
-            fontFamily: "'Newsreader', Georgia, serif",
-            fontStyle: "italic",
-          }}
-        >
-          One monthly plan. Clients build planning drafts while your team reviews and responds from the same workspace.
-        </p>
-      </section>
+          <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 24, fontWeight: 600 }}>
+            Pricing
+          </div>
+          <h1
+            aria-label="Turn every enquiry into a yes."
+            style={{
+              fontFamily: SERIF,
+              fontSize: "clamp(48px, 7vw, 96px)",
+              lineHeight: 1.02,
+              margin: 0,
+              fontWeight: 400,
+              letterSpacing: 0,
+            }}
+          >
+            <span aria-hidden="true">Turn every enquiry<br />
+            <em style={{ color: GOLD, fontStyle: "italic" }}>into a yes.</em></span>
+          </h1>
+          <p
+            style={{
+              fontSize: 20,
+              color: CREAM_MUT,
+              maxWidth: 640,
+              margin: "32px auto 0",
+              lineHeight: 1.6,
+              fontFamily: "'Newsreader', Georgia, serif",
+              fontStyle: "italic",
+            }}
+          >
+            One monthly plan. Clients build planning drafts while your team reviews and responds from the same workspace.
+          </p>
+        </section>
 
-      {/* === Main pricing card === */}
-      <section style={{ position: "relative", zIndex: 2, padding: "20px 48px 80px", maxWidth: 720, margin: "0 auto" }}>
+        {/* === Main pricing card === */}
+        <section style={{ position: "relative", zIndex: 2, padding: "20px 48px 80px", maxWidth: 720, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <BillingCycleToggle cycle={cycle} onChange={setCycle} />
         </div>
@@ -818,6 +819,7 @@ export function PricingPage(): React.ReactElement {
           Start free trial →
         </Link>
       </section>
+      </main>
 
       {/* Footer */}
       <footer style={{ position: "relative", zIndex: 2, padding: "40px 48px", borderTop: "1px solid rgba(255,255,255,0.05)", textAlign: "center", fontSize: 12, color: CREAM_FAINT }}>

@@ -367,6 +367,18 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
 
 const routeSpecs: readonly RouteSpec[] = [
   {
+    routeName: "public landing",
+    path: "/",
+    readyText: "Design your event for the Grand Hall.",
+    mockRoutes: mockNoRoutes,
+  },
+  {
+    routeName: "public pricing",
+    path: "/pricing",
+    readyText: "Start your 14-day free trial",
+    mockRoutes: mockNoRoutes,
+  },
+  {
     routeName: "dashboard executive analytics",
     path: "/dashboard?view=analytics",
     readyText: "Commercial planning dashboard",

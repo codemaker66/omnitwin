@@ -453,15 +453,147 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
       return `${element.tagName.toLowerCase()}${id}${className}`;
     }
 
-    function parseCssColor(value: string): Rgba | null {
-      const numbers = value.match(/[\d.]+/gu)?.map((part) => Number.parseFloat(part)) ?? [];
-      if (numbers.length < 3 || numbers.some((part) => !Number.isFinite(part))) return null;
+    function clampByte(value: number): number {
+      return Math.min(255, Math.max(0, value));
+    }
+
+    function channelToSrgb(value: number): number {
+      const clamped = Math.min(1, Math.max(0, value));
+      return clamped <= 0.0031308
+        ? 12.92 * clamped
+        : (1.055 * (clamped ** (1 / 2.4))) - 0.055;
+    }
+
+    function oklabToSrgbBytes(lightness: number, aAxis: number, bAxis: number): Pick<Rgba, "r" | "g" | "b"> {
+      const long = lightness + (0.3963377774 * aAxis) + (0.2158037573 * bAxis);
+      const medium = lightness - (0.1055613458 * aAxis) - (0.0638541728 * bAxis);
+      const short = lightness - (0.0894841775 * aAxis) - (1.2914855480 * bAxis);
+      const longCubed = long ** 3;
+      const mediumCubed = medium ** 3;
+      const shortCubed = short ** 3;
+
+      const linearR = (4.0767416621 * longCubed) - (3.3077115913 * mediumCubed) + (0.2309699292 * shortCubed);
+      const linearG = (-1.2684380046 * longCubed) + (2.6097574011 * mediumCubed) - (0.3413193965 * shortCubed);
+      const linearB = (-0.0041960863 * longCubed) - (0.7034186147 * mediumCubed) + (1.7076147010 * shortCubed);
+
       return {
-        r: numbers[0] ?? 0,
-        g: numbers[1] ?? 0,
-        b: numbers[2] ?? 0,
-        a: numbers[3] ?? 1,
+        r: clampByte(channelToSrgb(linearR) * 255),
+        g: clampByte(channelToSrgb(linearG) * 255),
+        b: clampByte(channelToSrgb(linearB) * 255),
       };
+    }
+
+    function parseCssNumber(part: string): number {
+      const trimmed = part.trim();
+      if (trimmed.endsWith("%")) return Number.parseFloat(trimmed) / 100;
+      return Number.parseFloat(trimmed);
+    }
+
+    function splitColorComponents(body: string): { channels: readonly string[]; alpha: number } {
+      const [channelPart = "", alphaPart] = body.split("/");
+      const channels = channelPart
+        .trim()
+        .split(/\s+|,/u)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+      const alpha = alphaPart === undefined ? 1 : parseCssNumber(alphaPart);
+      return { channels, alpha: Number.isFinite(alpha) ? alpha : 1 };
+    }
+
+    function parseCssColor(value: string): Rgba | null {
+      const trimmed = value.trim().toLowerCase();
+      const rgbMatch = trimmed.match(/^rgba?\((.*)\)$/u);
+      if (rgbMatch !== null) {
+        const { channels, alpha } = splitColorComponents(rgbMatch[1] ?? "");
+        if (channels.length < 3) return null;
+        const legacyAlpha = channels.length >= 4 ? parseCssNumber(channels[3] ?? "") : alpha;
+        const rgb = channels.slice(0, 3).map((part) => {
+          const parsed = parseCssNumber(part);
+          return part.endsWith("%") ? parsed * 255 : parsed;
+        });
+        if (rgb.some((part) => !Number.isFinite(part)) || !Number.isFinite(legacyAlpha)) return null;
+        return {
+          r: clampByte(rgb[0] ?? 0),
+          g: clampByte(rgb[1] ?? 0),
+          b: clampByte(rgb[2] ?? 0),
+          a: Math.min(1, Math.max(0, legacyAlpha)),
+        };
+      }
+
+      const oklabMatch = trimmed.match(/^oklab\((.*)\)$/u);
+      if (oklabMatch !== null) {
+        const { channels, alpha } = splitColorComponents(oklabMatch[1] ?? "");
+        if (channels.length < 3) return null;
+        const lightness = parseCssNumber(channels[0] ?? "");
+        const aAxis = parseCssNumber(channels[1] ?? "");
+        const bAxis = parseCssNumber(channels[2] ?? "");
+        if (![lightness, aAxis, bAxis].every(Number.isFinite)) return null;
+        return {
+          ...oklabToSrgbBytes(lightness, aAxis, bAxis),
+          a: Math.min(1, Math.max(0, alpha)),
+        };
+      }
+
+      const oklchMatch = trimmed.match(/^oklch\((.*)\)$/u);
+      if (oklchMatch !== null) {
+        const { channels, alpha } = splitColorComponents(oklchMatch[1] ?? "");
+        if (channels.length < 3) return null;
+        const lightness = parseCssNumber(channels[0] ?? "");
+        const chroma = parseCssNumber(channels[1] ?? "");
+        const hueDegrees = Number.parseFloat(channels[2] ?? "");
+        if (![lightness, chroma, hueDegrees].every(Number.isFinite)) return null;
+        const hueRadians = (hueDegrees / 180) * Math.PI;
+        return {
+          ...oklabToSrgbBytes(lightness, chroma * Math.cos(hueRadians), chroma * Math.sin(hueRadians)),
+          a: Math.min(1, Math.max(0, alpha)),
+        };
+      }
+
+      return null;
+    }
+
+    function splitBackgroundLayers(value: string): string[] {
+      const layers: string[] = [];
+      let depth = 0;
+      let start = 0;
+      for (let index = 0; index < value.length; index += 1) {
+        const char = value[index];
+        if (char === "(") depth += 1;
+        if (char === ")") depth = Math.max(0, depth - 1);
+        if (char === "," && depth === 0) {
+          layers.push(value.slice(start, index).trim());
+          start = index + 1;
+        }
+      }
+      layers.push(value.slice(start).trim());
+      return layers.filter((layer) => layer.length > 0 && layer !== "none");
+    }
+
+    function averageLayerColor(layer: string): Rgba | null {
+      const colors = Array.from(layer.matchAll(/(?:rgba?|oklab|oklch)\([^)]+\)/giu))
+        .map((match) => parseCssColor(match[0] ?? ""))
+        .filter((color): color is Rgba => color !== null);
+
+      if (colors.length === 0) return null;
+
+      return {
+        r: colors.reduce((sum, color) => sum + color.r, 0) / colors.length,
+        g: colors.reduce((sum, color) => sum + color.g, 0) / colors.length,
+        b: colors.reduce((sum, color) => sum + color.b, 0) / colors.length,
+        a: colors.reduce((sum, color) => sum + color.a, 0) / colors.length,
+      };
+    }
+
+    function parseBackgroundImageColor(value: string): Rgba | null {
+      const layers = splitBackgroundLayers(value)
+        .map(averageLayerColor)
+        .filter((color): color is Rgba => color !== null && color.a > 0);
+
+      if (layers.length === 0) return null;
+
+      return layers
+        .reverse()
+        .reduce((background, layer) => blend(layer, background), { r: 0, g: 0, b: 0, a: 0 });
     }
 
     function blend(foreground: Rgba, background: Rgba): Rgba {
@@ -479,9 +611,14 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
       const layers: Rgba[] = [];
       let current: Element | null = element;
       while (current !== null) {
-        const color = parseCssColor(window.getComputedStyle(current).backgroundColor);
+        const style = window.getComputedStyle(current);
+        const color = parseCssColor(style.backgroundColor);
         if (color !== null && color.a > 0) {
           layers.push(color);
+        }
+        const imageColor = parseBackgroundImageColor(style.backgroundImage);
+        if (imageColor !== null && imageColor.a > 0) {
+          layers.push(imageColor);
         }
         current = current.parentElement;
       }
