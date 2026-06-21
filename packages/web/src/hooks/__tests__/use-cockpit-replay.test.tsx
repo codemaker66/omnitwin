@@ -11,6 +11,8 @@ vi.mock("../../lib/guest-flow-replay-worker.js", () => ({ runGuestFlowReplayInBr
 const worker = vi.mocked(await import("../../lib/guest-flow-replay-worker.js"));
 const { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } = await import("../../lib/trades-hall-visual-demo-state.js");
 const { useCockpitReplay } = await import("../use-cockpit-replay.js");
+const { usePlacementStore } = await import("../../stores/placement-store.js");
+const { CATALOGUE_ITEMS } = await import("../../lib/catalogue.js");
 
 // A *real* artifact produced by the real deterministic engine over the existing
 // demo input — the mock only controls timing, never the numbers.
@@ -24,7 +26,7 @@ beforeEach(() => {
     mode: "main-thread-fallback",
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); usePlacementStore.setState({ placedItems: [] }); });
 
 describe("useCockpitReplay", () => {
   it("stays idle and never runs the replay when disabled", () => {
@@ -63,5 +65,22 @@ describe("useCockpitReplay", () => {
     worker.runGuestFlowReplayInBrowser.mockRejectedValueOnce(new Error("boom"));
     const { result } = renderHook(() => useCockpitReplay(true));
     await waitFor(() => { expect(result.current.status).toBe("error"); });
+  });
+
+  it("builds the replay input from the live placed layout, not a demo constant", async () => {
+    const table = CATALOGUE_ITEMS.find((item) => item.category === "table");
+    if (table === undefined) throw new Error("expected a table in the catalogue");
+    usePlacementStore.setState({
+      placedItems: [{
+        id: "t1", catalogueItemId: table.id, label: "", x: 6, y: 0, z: 2,
+        rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null,
+      }],
+    });
+    const { result } = renderHook(() => useCockpitReplay(true));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    // The hook fed the worker an input derived from the placed table.
+    const callArg = worker.runGuestFlowReplayInBrowser.mock.calls[0]?.[0];
+    expect(callArg?.layout.placedObjectCount).toBe(1);
+    expect(callArg?.obstacles).toHaveLength(1);
   });
 });
