@@ -32,3 +32,7 @@ web-structure.txt
 # Local scratch + Playwright extension session artifacts (never committed).
 tmp/
 .playwright-cli/
+.playwright-mcp/
+artifacts/
+*.log
+/*.jpeg

@@ -105,7 +105,7 @@ function HeroVisual({
 
 function RoomNotFound(): ReactElement {
   return (
-    <main className="room-showcase room-showcase-missing">
+    <main className="room-showcase room-showcase-missing" aria-label="Public room showcase">
       <section className="room-showcase-missing-panel">
         <p className="room-showcase-kicker">Trades Hall rooms</p>
         <h1>Room preview unavailable</h1>
@@ -273,7 +273,7 @@ export function RoomShowcasePage(): ReactElement {
   }
 
   return (
-    <main className="room-showcase">
+    <main className="room-showcase" aria-label={`${profile.name} public room showcase`}>
       <section className="room-showcase-hero">
         <div className="room-showcase-copy">
           <p className="room-showcase-kicker">Trades Hall room preview</p>

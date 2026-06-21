@@ -26,7 +26,7 @@ interface FileUploaderProps {
 
 const dropZoneStyle: React.CSSProperties = {
   border: "2px dashed rgba(215,181,109,0.28)", borderRadius: 12, padding: 24,
-  textAlign: "center", cursor: "pointer", transition: "border-color 0.2s",
+  textAlign: "center", cursor: "pointer", transition: "none",
   fontSize: 13, color: "rgba(246,241,232,0.68)", fontFamily: "'Inter', sans-serif",
   background: "rgba(255,247,232,0.04)",
 };
@@ -136,7 +136,7 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
               </span>
               {u.status === "uploading" && (
                 <div style={{ width: 80, height: 6, background: "rgba(255,247,232,0.12)", borderRadius: 3 }}>
-                  <div style={{ width: `${String(u.progress)}%`, height: "100%", background: "#68d8d2", borderRadius: 3, transition: "width 0.2s" }} />
+                  <div style={{ width: `${String(u.progress)}%`, height: "100%", background: "#68d8d2", borderRadius: 3, transition: "none" }} />
                 </div>
               )}
               {u.status === "done" && <span style={{ color: "#22c55e" }}>Done</span>}

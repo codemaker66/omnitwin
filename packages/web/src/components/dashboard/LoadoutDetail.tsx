@@ -45,6 +45,7 @@ const primaryButtonStyle: React.CSSProperties = {
   borderRadius: 8,
   border: "1px solid rgba(255,224,154,0.52)",
   background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  backgroundColor: "#d7b56d",
   color: "#0a0b0b",
   cursor: "pointer",
   fontSize: 13,

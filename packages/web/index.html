@@ -31,6 +31,25 @@
         transition-duration: 0.06s !important;
       }
 
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto !important;
+        }
+
+        button,
+        [role="button"],
+        button:hover:not(:disabled),
+        [role="button"]:hover,
+        button:active:not(:disabled),
+        [role="button"]:active {
+          transition: none !important;
+          transition-property: none !important;
+          transition-duration: 0.001ms !important;
+          transform: none !important;
+          filter: none !important;
+        }
+      }
+
       /* ============================================
          Golden scrollbar — matches the VenViewer aesthetic
          ============================================ */

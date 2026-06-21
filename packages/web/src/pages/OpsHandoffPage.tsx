@@ -104,7 +104,7 @@ export function OpsHandoffPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <main className="ops-handoff-page ops-handoff-centered">
+      <main className="ops-handoff-page ops-handoff-centered" aria-label="Operations handoff loading">
         <RefreshCw aria-hidden="true" className="ops-handoff-spin" />
         <h1>Loading handoff pack</h1>
         <p>Preparing the latest compiled operations view.</p>
@@ -114,7 +114,7 @@ export function OpsHandoffPage(): ReactElement {
 
   if (state.kind === "error") {
     return (
-      <main className="ops-handoff-page ops-handoff-centered">
+      <main className="ops-handoff-page ops-handoff-centered" aria-label="Operations handoff unavailable">
         <AlertCircle aria-hidden="true" />
         <h1>Handoff pack unavailable</h1>
         <p>{state.message}</p>
@@ -129,7 +129,7 @@ export function OpsHandoffPage(): ReactElement {
   const { bundle } = state;
 
   return (
-    <main className="ops-handoff-page">
+    <main className="ops-handoff-page" aria-label="Operations handoff pack">
       <header className="ops-handoff-hero">
         <div>
           <p className="ops-handoff-kicker">Internal operations handoff</p>

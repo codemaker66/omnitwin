@@ -193,7 +193,7 @@ const primaryButtonStyle: React.CSSProperties = {
   minHeight: 40,
   border: "1px solid rgba(255,224,154,0.52)",
   borderRadius: 8,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  background: "linear-gradient(135deg, #d7b56d, #f0cf84), #d7b56d",
   color: "#0a0b0b",
   padding: "0 14px",
   fontWeight: 700,

@@ -85,14 +85,36 @@
   color: #f1b4ac;
 }
 
+.asset-status-panel.error button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(215, 170, 73, 0.52);
+  border-radius: 8px;
+  background: #33230e;
+  color: #ffe0a3;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.asset-status-panel.error button:hover,
+.asset-status-panel.error button:focus-visible {
+  background: #493113;
+  outline: 2px solid rgba(215, 170, 73, 0.44);
+  outline-offset: 2px;
+}
+
 .asset-status-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .asset-status-room {
   display: grid;
+  align-content: start;
   gap: 16px;
   padding: 18px;
   border: 1px solid rgba(234, 220, 190, 0.13);

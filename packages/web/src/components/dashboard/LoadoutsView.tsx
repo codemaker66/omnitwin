@@ -6,6 +6,7 @@ import type { Loadout } from "../../api/loadouts.js";
 import { LoadoutDetail } from "./LoadoutDetail.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // LoadoutsView — space selector + loadout grid + create
@@ -44,6 +45,7 @@ const btnStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  backgroundColor: "#d7b56d",
   color: "#0a0b0b",
   border: "1px solid rgba(255,224,154,0.52)",
   borderRadius: 8,
@@ -53,6 +55,7 @@ const btnStyle: React.CSSProperties = {
 const secondaryBtnStyle: React.CSSProperties = {
   ...btnStyle,
   background: "rgba(255,247,232,0.07)",
+  backgroundColor: "rgba(255,247,232,0.07)",
   color: "#fff7e8",
   border: "1px solid rgba(215,181,109,0.25)",
 };
@@ -95,6 +98,7 @@ export function LoadoutsView(): React.ReactElement {
   const [loadoutsError, setLoadoutsError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const createModalRef = useFocusTrap<HTMLDivElement>(showCreate);
 
   // Load spaces. Punch list #36: the early return for empty venueId must
   // also clear the loading flag — otherwise users without a venue
@@ -283,7 +287,17 @@ export function LoadoutsView(): React.ReactElement {
 
       {/* Create modal */}
       {showCreate && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.68)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 300,
+          contain: "paint",
+        }}
           onClick={() => { if (!createBusy) setShowCreate(false); }}
           onKeyDown={(e) => { if (e.key === "Escape" && !createBusy) setShowCreate(false); }}
           role="dialog"
@@ -291,7 +305,7 @@ export function LoadoutsView(): React.ReactElement {
           aria-labelledby="loadout-create-title"
           tabIndex={-1}
         >
-          <div style={{ ...panelStyle, padding: 24, width: 420, maxWidth: "90vw" }} onClick={(e) => { e.stopPropagation(); }}>
+          <div ref={createModalRef} style={{ ...panelStyle, padding: 24, width: 420, maxWidth: "90vw" }} onClick={(e) => { e.stopPropagation(); }}>
             <h3 id="loadout-create-title" style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", color: "#fff7e8" }}>New Reference Loadout</h3>
             {createError !== null && (
               <div role="alert" data-testid="loadout-create-error" style={{ ...alertStyle, marginBottom: 12 }}>

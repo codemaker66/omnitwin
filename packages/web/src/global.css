@@ -39,6 +39,8 @@ textarea {
 button,
 a,
 [role="button"],
+[role="tab"],
+[tabindex]:not([tabindex="-1"]),
 input,
 select,
 textarea {
@@ -48,6 +50,8 @@ textarea {
 button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -182,9 +186,27 @@ button:disabled,
   *,
   *::before,
   *::after {
+    transition: none !important;
+    transition-property: none !important;
+    transition-delay: 0ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
+  }
+
+  body :where(a, button, input, select, textarea, summary, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])) {
+    transition-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    transition-property: none !important;
+  }
+
+  button,
+  [role="button"] {
+    filter: none !important;
+    transform: none !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    transition-property: none !important;
   }
 }

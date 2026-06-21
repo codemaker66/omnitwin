@@ -399,7 +399,7 @@ export function HallkeeperPage(): React.ReactElement {
   // =====================================================================
   if (loading) {
     return (
-      <div className="hk-page" style={pageStyle}>
+      <main className="hk-page" style={pageStyle} aria-label="Hallkeeper sheet loading">
         <div style={{ paddingTop: 20 }}>
           {/* Skeleton header */}
           <div style={{ ...skeletonBar, width: 120, height: 10, marginBottom: 8 }} />
@@ -416,7 +416,7 @@ export function HallkeeperPage(): React.ReactElement {
             <div key={i} style={{ ...skeletonBar, height: 16, marginTop: 8, width: `${String(80 - i * 5)}%` }} />
           ))}
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -426,7 +426,7 @@ export function HallkeeperPage(): React.ReactElement {
   if (error !== null || data === null) {
     const isPermissionError = error !== null && error.includes("permission");
     return (
-      <div className="hk-page" style={pageStyle}>
+      <main className="hk-page" style={pageStyle} aria-label="Hallkeeper sheet unavailable">
         <div style={{
           minHeight: "100svh",
           display: "grid",
@@ -500,7 +500,7 @@ export function HallkeeperPage(): React.ReactElement {
             </button>
           </section>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -509,7 +509,7 @@ export function HallkeeperPage(): React.ReactElement {
   // =====================================================================
   if (data.phases.length === 0) {
     return (
-      <div className="hk-page" style={pageStyle}>
+      <main className="hk-page" style={pageStyle} aria-label={`Hallkeeper sheet for ${data.config.name}`}>
         <header style={headerStyle}>
           <div style={labelStyle}>Hallkeeper Sheet</div>
           <h1 style={eventNameStyle}>{data.config.name}</h1>
@@ -521,7 +521,7 @@ export function HallkeeperPage(): React.ReactElement {
             The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.
           </p>
         </div>
-      </div>
+      </main>
     );
   }
 

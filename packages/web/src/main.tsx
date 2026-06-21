@@ -7,6 +7,7 @@ import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
+import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
 import "./global.css";
 
 // ---------------------------------------------------------------------------
@@ -15,14 +16,15 @@ import "./global.css";
 // Playwright tests cannot produce a real Clerk session. To test protected
 // routes end-to-end, tests set `window.__OMNITWIN_E2E__ = true` and an
 // `__OMNITWIN_SEED_USER__` payload via `page.addInitScript` before the app
-// mounts. When that flag is present (and only in dev builds), main.tsx:
+// mounts. When that flag is present (and only in dev builds or an explicitly
+// flagged production-preview E2E build), main.tsx:
 //   1. Seeds the auth store synchronously from the payload
 //   2. Skips ClerkAuthBridge so Clerk's real (unauthenticated) state does
 //      not overwrite the seeded user
 //
-// `import.meta.env.DEV` is `false` in production Vite builds, so the entire
-// branch is dead-code-eliminated from prod bundles. This is not a runtime
-// attack surface.
+// Real production builds do not set VITE_ENABLE_E2E_AUTH_BYPASS, so this is
+// unavailable unless the build was made specifically for Playwright preview
+// parity.
 // ---------------------------------------------------------------------------
 
 interface E2EWindow extends Window {
@@ -30,7 +32,7 @@ interface E2EWindow extends Window {
   readonly __OMNITWIN_SEED_USER__?: AuthUser | null;
 }
 
-const E2E_ENABLED: boolean = import.meta.env.DEV && (window as E2EWindow).__OMNITWIN_E2E__ === true;
+const E2E_ENABLED = isE2EAuthBypassEnabled();
 
 if (E2E_ENABLED) {
   const seed = (window as E2EWindow).__OMNITWIN_SEED_USER__ ?? null;

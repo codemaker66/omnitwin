@@ -143,15 +143,21 @@ export function ProposalPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}>
-        Loading proposal…
-      </div>
+      <main
+        aria-label="Client proposal"
+        style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}
+      >
+        <div role="status" aria-live="polite">Loading proposal...</div>
+      </main>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, fontFamily: SANS, padding: 24 }}>
+      <main
+        aria-label="Client proposal"
+        style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, fontFamily: SANS, padding: 24 }}
+      >
         <div style={{ maxWidth: 460, textAlign: "center" }}>
           <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 32, color: CREAM, marginBottom: 12 }}>
             This proposal link isn't available
@@ -161,7 +167,7 @@ export function ProposalPage(): ReactElement {
             who sent it to you for an up-to-date copy.
           </p>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -175,7 +181,7 @@ export function ProposalPage(): ReactElement {
     && (proposal.status === "sent" || proposal.status === "changes_requested");
 
   return (
-    <div style={{ minHeight: "100vh", background: GRAPHITE, fontFamily: SANS, color: CREAM, padding: "48px 20px 80px" }}>
+    <main aria-label="Client proposal" style={{ minHeight: "100vh", background: GRAPHITE, fontFamily: SANS, color: CREAM, padding: "48px 20px 80px" }}>
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <header style={{ marginBottom: 36 }}>
           {proposal.venueName !== null && (
@@ -399,6 +405,6 @@ export function ProposalPage(): ReactElement {
           is finalised, and nothing here is a safety, occupancy, or compliance determination.
         </footer>
       </div>
-    </div>
+    </main>
   );
 }

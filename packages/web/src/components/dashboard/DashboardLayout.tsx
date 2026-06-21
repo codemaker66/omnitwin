@@ -4,6 +4,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
+import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import "./DashboardLayout.css";
 
 // ---------------------------------------------------------------------------
@@ -11,10 +12,6 @@ import "./DashboardLayout.css";
 // ---------------------------------------------------------------------------
 
 type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
-
-interface E2EWindow extends Window {
-  readonly __OMNITWIN_E2E__?: boolean;
-}
 
 interface DashboardLayoutProps {
   readonly activeView: DashboardView;
@@ -47,10 +44,6 @@ function canShowNavItem(
   if (item.adminOnly === true) return role === "admin";
   if (item.staffOnly === true) return role === "admin" || role === "staff";
   return role !== null && role !== undefined;
-}
-
-function isE2EAuthBypass(): boolean {
-  return import.meta.env.DEV && (window as E2EWindow).__OMNITWIN_E2E__ === true;
 }
 
 function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
@@ -125,7 +118,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
         <div className="dashboard-layout-spacer" />
         <div className="dashboard-layout-account">
           {user?.email ?? ""}
-          {isE2EAuthBypass()
+          {isE2EAuthBypassEnabled()
             ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
             : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
         </div>
@@ -141,7 +134,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
           </div>
         </header>
-        <main className="dashboard-layout-content" id="dashboard-main">
+        <main className="dashboard-layout-content" id="dashboard-main" aria-label="Dashboard workspace">
           {children}
         </main>
       </div>

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { RoomAssetStatus } from "@omnitwin/types";
 
@@ -252,5 +252,18 @@ describe("TradesHallAssetStatusPage", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("Asset status unavailable.");
     expect(screen.getByText("registry unavailable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry asset registry" })).toBeTruthy();
+  });
+
+  it("retries the asset registry after a transient failure", async () => {
+    getAdminAssetRoomsMock.mockRejectedValueOnce(new Error("registry unavailable"));
+    mount();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry asset registry" }));
+
+    await waitFor(() => {
+      expect(getAdminAssetRoomsMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Lady Convenor's Room")).toBeTruthy();
+    });
   });
 });

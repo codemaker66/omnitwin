@@ -118,6 +118,7 @@ const heroStyle: CSSProperties = {
   border: "1px solid rgba(215,181,109,0.22)",
   borderRadius: 8,
   background: "linear-gradient(135deg, #120f0c 0%, #262018 70%, #15110d 100%)",
+  backgroundColor: "#120f0c",
   color: "#fff7e8",
   padding: 22,
   boxShadow: "0 24px 70px rgba(35, 24, 12, 0.18)",
@@ -127,6 +128,7 @@ const panelStyle: CSSProperties = {
   border: "1px solid rgba(92, 69, 38, 0.18)",
   borderRadius: 8,
   background: "linear-gradient(180deg, #fffdf8 0%, #f7efe1 100%)",
+  backgroundColor: "#fffdf8",
   padding: 18,
   boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
 };
@@ -185,7 +187,10 @@ const secondaryButtonStyle: CSSProperties = {
 };
 
 const mutedTextStyle: CSSProperties = {
-  margin: 0,
+  marginTop: 0,
+  marginRight: 0,
+  marginBottom: 0,
+  marginLeft: 0,
   color: "#75644c",
   fontSize: 13,
   lineHeight: 1.5,
@@ -195,6 +200,7 @@ const compactPanelStyle: CSSProperties = {
   border: "1px solid rgba(92, 69, 38, 0.14)",
   borderRadius: 8,
   background: "#fffaf1",
+  backgroundColor: "#fffaf1",
   padding: 14,
 };
 
@@ -875,6 +881,7 @@ export function OnboardingView(): ReactElement {
                     border: "1px solid rgba(92, 69, 38, 0.16)",
                     borderRadius: 8,
                     background: "linear-gradient(180deg, #fffaf1 0%, #f9f1e4 100%)",
+                    backgroundColor: "#fffaf1",
                     padding: 16,
                   }}
                   aria-label={`${workspace.name} deployment actions`}

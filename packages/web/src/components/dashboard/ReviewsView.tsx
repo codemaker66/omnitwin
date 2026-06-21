@@ -14,6 +14,7 @@ import {
 } from "../../api/configuration-reviews.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { useReviewViewers } from "../../hooks/use-review-viewers.js";
+import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // ReviewsView — staff approval dashboard for pending configuration reviews.
@@ -58,7 +59,7 @@ const cardStyle: React.CSSProperties = {
 
 const buttonPrimary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
+  background: "linear-gradient(135deg, #d7b56d, #f0cf84)", backgroundColor: "#d7b56d", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonSecondary: React.CSSProperties = {
@@ -194,6 +195,7 @@ interface NoteModalProps {
 
 function NoteModal(props: NoteModalProps): React.ReactElement {
   const [note, setNote] = useState("");
+  const trapRef = useFocusTrap<HTMLDivElement>();
   const trimmed = note.trim();
   const canConfirm = trimmed.length > 0 && !props.inFlight;
 
@@ -203,14 +205,17 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
       aria-modal="true"
       aria-labelledby="review-note-modal-title"
       aria-describedby="review-note-modal-description"
+      onClick={() => { if (!props.inFlight) props.onCancel(); }}
+      onKeyDown={(event) => { if (event.key === "Escape" && !props.inFlight) props.onCancel(); }}
       style={{
         position: "fixed", inset: 0, zIndex: 100,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.68)",
-        backdropFilter: "blur(14px)",
+        background:
+          "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
+        contain: "paint",
       }}
     >
-      <div style={{
+      <div ref={trapRef} onClick={(event) => { event.stopPropagation(); }} style={{
         background: "linear-gradient(150deg, rgba(22,19,15,0.98), rgba(10,10,9,0.95))",
         border: "1px solid rgba(215,181,109,0.28)",
         borderRadius: 8, padding: 24, maxWidth: 520, width: "90%",

@@ -414,6 +414,15 @@ describe("DashboardPage", () => {
     expect(defaultDashboardViewForRole("staff")).toBe("enquiries");
     expect(defaultDashboardViewForRole("hallkeeper")).toBe("enquiries");
   });
+
+  it("resolves the first rendered dashboard surface from the requested view and role", async () => {
+    const { initialDashboardViewForRole } = await import("../pages/DashboardPage.js");
+    expect(initialDashboardViewForRole("analytics", "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole("reviews", "staff")).toBe("reviews");
+    expect(initialDashboardViewForRole("pipeline", "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole("admin", "hallkeeper")).toBe("enquiries");
+    expect(initialDashboardViewForRole(null, "executive")).toBe("analytics");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,10 @@
 import { ClerkProvider } from "@clerk/react";
 import type { ReactElement, ReactNode } from "react";
 import { ClerkAuthBridge } from "./ClerkAuthBridge.js";
+import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 
 interface ClerkRouteProviderProps {
   readonly children: ReactNode;
-}
-
-interface E2EWindow extends Window {
-  readonly __OMNITWIN_E2E__?: boolean;
 }
 
 function clerkPublishableKey(): string {
@@ -22,8 +19,7 @@ function clerkPublishableKey(): string {
 }
 
 export function ClerkRouteProvider({ children }: ClerkRouteProviderProps): ReactElement {
-  const e2eEnabled = import.meta.env.DEV && (window as E2EWindow).__OMNITWIN_E2E__ === true;
-  if (e2eEnabled) return <>{children}</>;
+  if (isE2EAuthBypassEnabled()) return <>{children}</>;
 
   return (
     <ClerkProvider publishableKey={clerkPublishableKey()} afterSignOutUrl="/">

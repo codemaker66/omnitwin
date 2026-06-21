@@ -263,6 +263,7 @@ describe("OpsHandoffPage", () => {
     renderPage();
 
     expect(await screen.findByText("Ops handoff pack")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Operations handoff pack" })).toBeTruthy();
     expect(screen.getByText("Pick list")).toBeTruthy();
     expect(screen.getByText("Round Table")).toBeTruthy();
     expect(screen.getByText("Setup tasks")).toBeTruthy();
@@ -290,6 +291,7 @@ describe("OpsHandoffPage", () => {
     renderPage();
 
     expect(await screen.findByText("Handoff pack unavailable")).toBeTruthy();
+    expect(screen.getByRole("main", { name: "Operations handoff unavailable" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 

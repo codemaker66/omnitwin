@@ -215,8 +215,8 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
         onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
         style={{
-          background: "#fafafa",
-          border: "1px solid #ccc",
+          background: "#071112",
+          border: "1px solid rgba(215,181,109,0.32)",
           borderRadius: 8,
           cursor: disabled ? "not-allowed" : draggingIndex !== null ? "grabbing" : "crosshair",
           userSelect: "none",
@@ -224,17 +224,17 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
       >
         {/* Origin crosshair */}
         <line x1={CANVAS_PX / 2} y1={0} x2={CANVAS_PX / 2} y2={CANVAS_PX}
-          stroke="#e0e0e0" strokeWidth={1} strokeDasharray="3 3" />
+          stroke="rgba(246,241,232,0.18)" strokeWidth={1} strokeDasharray="3 3" />
         <line x1={0} y1={CANVAS_PX / 2} x2={CANVAS_PX} y2={CANVAS_PX / 2}
-          stroke="#e0e0e0" strokeWidth={1} strokeDasharray="3 3" />
+          stroke="rgba(246,241,232,0.18)" strokeWidth={1} strokeDasharray="3 3" />
 
         {/* Filled polygon (closed shape when ≥ 3 points) */}
         {value.length >= MIN_POLYGON_POINTS && (
           <polygon
             data-testid="polygon-shape"
             points={polylinePoints}
-            fill="rgba(26,26,46,0.08)"
-            stroke="#1a1a2e"
+            fill="rgba(104,216,210,0.14)"
+            stroke="#68d8d2"
             strokeWidth={2}
           />
         )}
@@ -244,7 +244,7 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
           <polyline
             points={polylinePoints}
             fill="none"
-            stroke="#1a1a2e"
+            stroke="#68d8d2"
             strokeWidth={2}
           />
         )}
@@ -265,8 +265,8 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
               cx={cx}
               cy={cy}
               r={VERTEX_DRAW_RADIUS_PX}
-              fill={draggingIndex === i ? "#c9a84c" : "#1a1a2e"}
-              stroke="#fff"
+              fill={draggingIndex === i ? "#d7b56d" : "#68d8d2"}
+              stroke="#071112"
               strokeWidth={2}
             />
           );
@@ -274,7 +274,7 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
       </svg>
 
       <div style={readoutRowStyle}>
-        <div data-testid="polygon-readout" style={{ fontSize: 12, color: "#555" }}>
+        <div data-testid="polygon-readout" style={{ fontSize: 12, color: "rgba(246,241,232,0.78)" }}>
           {value.length < MIN_POLYGON_POINTS ? (
             <span>
               Click on the canvas to add vertices. Need <strong>{String(MIN_POLYGON_POINTS - value.length)}</strong> more.
@@ -335,7 +335,8 @@ const smallBtnStyle: CSSProperties = {
   padding: "4px 10px",
   fontSize: 12,
   borderRadius: 6,
-  border: "1px solid #ccc",
-  background: "#fff",
+  border: "1px solid rgba(215,181,109,0.42)",
+  background: "rgba(255,247,232,0.07)",
+  color: "#fff7e8",
   cursor: "pointer",
 };

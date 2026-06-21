@@ -95,8 +95,23 @@
 .admin-panel-button--primary {
   border-color: rgba(201, 169, 106, 0.62);
   color: #14100a;
-  background: linear-gradient(135deg, #f1c978, #b98a35);
+  background-color: #d5a550;
+  background-image: linear-gradient(135deg, #f1c978, #b98a35);
   box-shadow: 0 10px 28px rgba(201, 169, 106, 0.16);
+}
+
+.admin-panel-button--primary:hover:not(:disabled) {
+  border-color: rgba(255, 224, 154, 0.82);
+  color: #14100a;
+  background-color: #d5a550;
+  background-image: linear-gradient(135deg, #f8d88a, #c7943e);
+}
+
+.admin-panel-button--primary:disabled {
+  color: rgba(255, 247, 232, 0.72);
+  background: rgba(215, 181, 109, 0.16);
+  border-color: rgba(215, 181, 109, 0.28);
+  box-shadow: none;
 }
 
 .admin-panel-button--secondary {
@@ -346,8 +361,11 @@
   align-items: center;
   justify-content: center;
   padding: 22px;
-  background: rgba(0, 0, 0, 0.68);
-  backdrop-filter: blur(16px);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(104, 216, 210, 0.08), transparent 34%),
+    radial-gradient(circle at 78% 16%, rgba(201, 169, 106, 0.1), transparent 28%),
+    rgba(0, 0, 0, 0.82);
+  contain: paint;
 }
 
 .admin-panel-modal {

@@ -16,13 +16,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps):
 
   if (isLoading) {
     return (
-      <div className="vv-route-state">
+      <main className="vv-route-state" aria-label="Workspace access check">
         <section className="vv-state-panel" role="status" aria-live="polite">
           <p className="vv-state-kicker">Checking access</p>
           <h1>Opening your workspace</h1>
           <p>We are confirming your Venviewer session before loading this internal route.</p>
         </section>
-      </div>
+      </main>
     );
   }
 
@@ -32,14 +32,14 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps):
 
   if (allowedRoles !== undefined && user !== null && !allowedRoles.includes(user.role)) {
     return (
-      <div className="vv-route-state">
+      <main className="vv-route-state" aria-label="Workspace access denied">
         <section className="vv-state-panel" role="alert">
           <p className="vv-state-kicker">Permission needed</p>
           <h1>This workspace is not available to your role</h1>
           <p>You are signed in as {user.role}. Ask an admin to update access if you need this route for venue work.</p>
           <span className="vv-status-chip">Access not granted</span>
         </section>
-      </div>
+      </main>
     );
   }
 

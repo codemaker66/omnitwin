@@ -71,6 +71,12 @@ export function defaultDashboardViewForRole(role: string | null): DashboardView 
   return role === "executive" ? "analytics" : "enquiries";
 }
 
+export function initialDashboardViewForRole(requestedView: DashboardView | null, role: string | null): DashboardView {
+  if (requestedView !== null && canOpenDashboardView(requestedView, role)) return requestedView;
+  const defaultView = defaultDashboardViewForRole(role);
+  return canOpenDashboardView(defaultView, role) ? defaultView : "enquiries";
+}
+
 function DashboardAccessDenied({
   requestedView,
   onOpenDefault,
@@ -103,7 +109,7 @@ export function DashboardPage(): React.ReactElement {
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
   );
-  const [view, setView] = useState<DashboardView>("enquiries");
+  const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole));
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLeadId, setProfileLeadId] = useState<string | null>(null);
   const [enquiryReturnContext, setEnquiryReturnContext] = useState<EnquiryReturnContext | null>(null);

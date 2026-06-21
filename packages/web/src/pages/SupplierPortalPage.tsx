@@ -129,7 +129,7 @@ export function SupplierPortalPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <main className="supplier-portal">
+      <main className="supplier-portal" aria-label="Supplier handoff">
         <section className="supplier-portal__state" role="status" aria-live="polite">
           <h1>Loading supplier handoff</h1>
           <p>Preparing the supplier-scoped pack and acknowledgement state.</p>
@@ -140,7 +140,7 @@ export function SupplierPortalPage(): ReactElement {
 
   if (state.kind === "error") {
     return (
-      <main className="supplier-portal">
+      <main className="supplier-portal" aria-label="Supplier handoff">
         <section className="supplier-portal__state">
           <h1>This supplier link is not available</h1>
           <p>The link may have expired or been withdrawn. Please contact the venue team for the current handoff pack.</p>
@@ -156,7 +156,7 @@ export function SupplierPortalPage(): ReactElement {
   const canAcknowledge = statusAllowsAcknowledgement(pack.status);
 
   return (
-    <main className="supplier-portal">
+    <main className="supplier-portal" aria-label="Supplier handoff">
       <div className="supplier-portal__shell">
         <section className="supplier-portal__hero">
           <div className="supplier-portal__headline">

@@ -666,6 +666,7 @@
   .venviewer-planner-shell *,
   .venviewer-planner-shell *::before,
   .venviewer-planner-shell *::after {
+    transition: none !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;

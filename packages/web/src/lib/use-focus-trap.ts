@@ -16,9 +16,32 @@ const FOCUSABLE_SELECTOR = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 
+function visibleFocusableNodes(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter((node) => !node.hasAttribute("disabled"))
+    .filter((node) => node.closest("[hidden], [aria-hidden='true']") === null)
+    .filter((node) => {
+      const style = window.getComputedStyle(node);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+}
+
+function focusFirstNode(container: HTMLElement): void {
+  const first = visibleFocusableNodes(container)[0];
+  if (first !== undefined) {
+    first.focus();
+    return;
+  }
+  if (!container.hasAttribute("tabindex")) {
+    container.setAttribute("tabindex", "-1");
+  }
+  container.focus();
+}
+
 /**
  * Returns a ref to attach to the modal/dialog container.
- * While mounted, Tab and Shift+Tab cycle within the container.
+ * While mounted, focus is moved into the container and Tab/Shift+Tab cycle
+ * inside it even if the opener still owns focus for a frame after mount.
  */
 export function useFocusTrap<T extends HTMLElement>(
   active = true,
@@ -31,21 +54,38 @@ export function useFocusTrap<T extends HTMLElement>(
     if (container === null) return;
 
     const el = container; // narrow once, capture non-null
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    window.requestAnimationFrame(() => {
+      if (document.contains(el) && !el.contains(document.activeElement)) {
+        focusFirstNode(el);
+      }
+    });
+
     function handleKeyDown(e: KeyboardEvent): void {
       if (e.key !== "Tab") return;
 
-      const focusable = Array.from(
-        el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ).filter((node) => node.offsetParent !== null); // visible only
+      const focusable = visibleFocusableNodes(el);
 
       if (focusable.length === 0) {
         e.preventDefault();
+        focusFirstNode(el);
         return;
       }
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (first === undefined || last === undefined) return;
+
+      if (!el.contains(document.activeElement)) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          last.focus();
+        } else {
+          first.focus();
+        }
+        return;
+      }
 
       if (e.shiftKey) {
         if (document.activeElement === first) {
@@ -60,8 +100,13 @@ export function useFocusTrap<T extends HTMLElement>(
       }
     }
 
-    el.addEventListener("keydown", handleKeyDown);
-    return () => { el.removeEventListener("keydown", handleKeyDown); };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      if (previousActive !== null && document.contains(previousActive)) {
+        previousActive.focus();
+      }
+    };
   }, [active]);
 
   return containerRef;

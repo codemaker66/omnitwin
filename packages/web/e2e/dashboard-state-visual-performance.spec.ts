@@ -6,6 +6,12 @@ import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configur
 import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
 import type { Space } from "../src/api/spaces.js";
+import {
+  collectAccessibilityAudit,
+  expectAccessibilityAuditClean,
+  type AccessibilityAuditResult,
+  type AccessibilityViewport,
+} from "./support/accessibility-audit.js";
 
 const API = "http://localhost:3001";
 const NOW = "2026-06-18T12:00:00.000Z";
@@ -80,6 +86,12 @@ interface CdpMetricsPayload {
 }
 
 const results: StatePassResult[] = [];
+const accessibilityResults: AccessibilityAuditResult[] = [];
+
+function accessibilityViewport(name: DashboardViewportName): AccessibilityViewport {
+  if (name === "mobile") return { name: "mobile", width: 390, height: 844 };
+  return { name: "desktop", width: 1440, height: 900 };
+}
 
 function watchPageProblems(page: Page): PageProblems {
   const pageErrors: string[] = [];
@@ -580,6 +592,25 @@ async function recordFrameAndVisualState(
   expect(interactionSummary.sustainedOverPassBudget, `${name} interaction sustained pass-budget misses`).toBeLessThanOrEqual(MAX_SUSTAINED_OVER_BUDGET);
 }
 
+async function recordAccessibilityState(
+  page: Page,
+  problems: PageProblems,
+  name: string,
+  path: string,
+  viewport: DashboardViewportName,
+  maxFocusSteps = 14,
+): Promise<void> {
+  const result = await collectAccessibilityAudit(page, {
+    name,
+    path,
+    problems,
+    viewport: accessibilityViewport(viewport),
+    maxFocusSteps,
+  });
+  accessibilityResults.push(result);
+  expectAccessibilityAuditClean(result);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.afterAll(async () => {
@@ -591,12 +622,14 @@ test.afterAll(async () => {
     maxSustainedOverBudget: MAX_SUSTAINED_OVER_BUDGET,
     sampleMs: SAMPLE_MS,
     results,
+    accessibilityResults,
   }, null, 2)}\n`, "utf8");
 });
 
 test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
   test("reviews drawer approval-error state stays visually stable and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "staff");
     await mockDashboardRoutes(page, { failReviewApprove: true });
@@ -613,10 +646,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.wheel(0, 320);
       await page.mouse.wheel(0, -160);
     });
+    await recordAccessibilityState(page, problems, "reviews drawer approval-error state", "/dashboard?view=reviews", "desktop", 16);
   });
 
   test("loadout drawer caption-error state stays visually stable and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "staff");
     await mockDashboardRoutes(page, { failLoadoutCaption: true });
@@ -635,10 +670,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.wheel(0, 360);
       await page.mouse.wheel(0, -220);
     });
+    await recordAccessibilityState(page, problems, "loadout drawer caption-error state", "/dashboard?view=loadouts", "desktop", 16);
   });
 
   test("executive analytics success and error surfaces stay within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "executive");
     await mockDashboardRoutes(page);
@@ -652,10 +689,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.wheel(0, 340);
       await page.mouse.wheel(0, -180);
     });
+    await recordAccessibilityState(page, problems, "executive analytics success", "/dashboard", "desktop", 16);
   });
 
   test("executive analytics API failure state stays readable and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "executive");
     await mockDashboardRoutes(page, { failAnalytics: true });
@@ -668,10 +707,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.move(690, 400);
       await page.keyboard.press("Tab");
     });
+    await recordAccessibilityState(page, problems, "executive analytics API failure", "/dashboard?view=analytics", "desktop", 10);
   });
 
   test("supplier denied dashboard route stays polished and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "supplier");
 
@@ -682,10 +723,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.move(720, 420);
       await page.keyboard.press("Tab");
     });
+    await recordAccessibilityState(page, problems, "supplier dashboard denied state", "/dashboard", "desktop", 10);
   });
 
   test("admin denied dashboard sub-route stays polished and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "hallkeeper");
     await mockDashboardRoutes(page);
@@ -698,10 +741,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.move(780, 520);
       await page.keyboard.press("Tab");
     });
+    await recordAccessibilityState(page, problems, "admin subroute denied state", "/dashboard?view=admin", "desktop", 10);
   });
 
   test("admin registry error state stays polished and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "admin");
     await mockDashboardRoutes(page, { failVenues: true });
@@ -714,10 +759,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.move(760, 500);
       await page.keyboard.press("Tab");
     });
+    await recordAccessibilityState(page, problems, "admin registry error state", "/dashboard?view=admin", "desktop", 10);
   });
 
   test("hallkeeper mobile API-denied state remains readable, contained, and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "planner");
     await mockHallkeeperDeniedRoutes(page);
@@ -732,5 +779,6 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.wheel(0, 260);
       await page.keyboard.press("Tab");
     });
+    await recordAccessibilityState(page, problems, "hallkeeper mobile API-denied state", `/hallkeeper/${CONFIG_ID}`, "mobile", 10);
   });
 });

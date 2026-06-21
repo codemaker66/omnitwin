@@ -197,7 +197,7 @@ function RoomStatusRow({ room }: { readonly room: RoomAssetStatus }): ReactEleme
       <div className="asset-status-action">
         <p>{room.nextAction}</p>
         {room.internalVisualEnabled ? (
-          <Link to={url}>
+          <Link to={url} aria-label={`Open room view for ${room.displayName}`}>
             Open room view <ExternalLink size={15} aria-hidden="true" />
           </Link>
         ) : (
@@ -212,6 +212,7 @@ export function TradesHallAssetStatusPage(): ReactElement {
   const [rooms, setRooms] = useState<readonly RoomAssetStatus[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,12 +233,12 @@ export function TradesHallAssetStatusPage(): ReactElement {
       });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadToken]);
 
   const unsafeClaimDetected = useMemo(() => hasUnsafeClaim(rooms), [rooms]);
 
   return (
-    <main className="asset-status-shell">
+    <main className="asset-status-shell" aria-label="Trades Hall asset registry">
       <header className="asset-status-hero">
         <div>
           <p className="asset-status-eyebrow">Internal asset registry</p>
@@ -270,6 +271,9 @@ export function TradesHallAssetStatusPage(): ReactElement {
         <section className="asset-status-panel error" role="alert">
           <strong>Asset status unavailable.</strong>
           <span>{error}</span>
+          <button type="button" onClick={() => { setReloadToken((value) => value + 1); }}>
+            Retry asset registry
+          </button>
         </section>
       )}
 

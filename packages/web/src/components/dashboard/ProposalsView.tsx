@@ -72,6 +72,7 @@ const inputStyle: React.CSSProperties = {
 
 const buttonPrimary: React.CSSProperties = {
   background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  backgroundColor: "#d7b56d",
   color: "#090807",
   border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
@@ -767,7 +768,7 @@ export function ProposalsView(): ReactElement {
                       <span style={{ fontWeight: 700, color: comment.authorType === "client" ? "#68d8d2" : "#fff7e8" }}>
                         {comment.authorType === "client" ? (comment.authorName ?? "Client") : (comment.authorName ?? "Venue team")}
                       </span>
-                      <span style={{ color: "rgba(246, 241, 232, 0.5)", fontSize: 12 }}>{new Date(comment.createdAt).toLocaleString("en-GB")}</span>
+                      <span style={{ color: "rgba(246, 241, 232, 0.72)", fontSize: 12 }}>{new Date(comment.createdAt).toLocaleString("en-GB")}</span>
                       {comment.kind === "request_changes" && (
                         <span style={{ color: "#f2b35e", fontSize: 12 }}>· requested changes</span>
                       )}
@@ -830,7 +831,7 @@ export function ProposalsView(): ReactElement {
                 {history.map((entry) => (
                   <li key={entry.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}>
                     <span style={{ fontWeight: 600 }}>{entry.fromStatus.replace(/_/g, " ")} → {entry.toStatus.replace(/_/g, " ")}</span>
-                    <span style={{ color: "rgba(246, 241, 232, 0.46)", marginLeft: 8 }}>{new Date(entry.createdAt).toLocaleString("en-GB")}</span>
+                    <span style={{ color: "rgba(246, 241, 232, 0.72)", marginLeft: 8 }}>{new Date(entry.createdAt).toLocaleString("en-GB")}</span>
                     {entry.changedBy === null && <span style={{ color: "#68d8d2", marginLeft: 8 }}>(client via share link)</span>}
                     {entry.note !== null && <div style={{ color: "rgba(246, 241, 232, 0.68)", marginTop: 2 }}>{entry.note}</div>}
                   </li>

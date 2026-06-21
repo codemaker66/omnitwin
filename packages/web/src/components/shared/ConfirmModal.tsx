@@ -6,9 +6,11 @@ import { useFocusTrap } from "../../lib/use-focus-trap.js";
 // ---------------------------------------------------------------------------
 
 const overlayStyle: React.CSSProperties = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.68)",
+  position: "fixed", inset: 0,
+  background:
+    "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
   display: "flex", alignItems: "center", justifyContent: "center",
-  zIndex: 300, fontFamily: "'Inter', sans-serif", backdropFilter: "blur(14px)",
+  zIndex: 300, fontFamily: "'Inter', sans-serif", contain: "paint",
 };
 
 const modalStyle: React.CSSProperties = {
