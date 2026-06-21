@@ -10,7 +10,7 @@ vi.mock("../../lib/guest-flow-replay-worker.js", () => ({ runGuestFlowReplayInBr
 
 const worker = vi.mocked(await import("../../lib/guest-flow-replay-worker.js"));
 const { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } = await import("../../lib/trades-hall-visual-demo-state.js");
-const { useCockpitReplay } = await import("../use-cockpit-replay.js");
+const { useCockpitReplay, __resetCockpitReplayCache } = await import("../use-cockpit-replay.js");
 const { usePlacementStore } = await import("../../stores/placement-store.js");
 const { CATALOGUE_ITEMS } = await import("../../lib/catalogue.js");
 
@@ -26,7 +26,7 @@ beforeEach(() => {
     mode: "main-thread-fallback",
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); usePlacementStore.setState({ placedItems: [] }); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); usePlacementStore.setState({ placedItems: [] }); __resetCockpitReplayCache(); });
 
 describe("useCockpitReplay", () => {
   it("stays idle and never runs the replay when disabled", () => {

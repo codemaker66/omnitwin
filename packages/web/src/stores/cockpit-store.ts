@@ -44,11 +44,17 @@ interface CockpitState {
   readonly layersOpen: boolean;
   readonly beam: CockpitBeam | null;
   readonly focusRequest: CockpitFocusRequest | null;
+  /** Planned guest count driving the Flow lens simulation (null → builder default). */
+  readonly plannedGuestCount: number | null;
+  /** Arrival-window minutes for the Flow lens scenario (phase duration). */
+  readonly flowArrivalMinutes: number;
   readonly setMode: (mode: CockpitMode) => void;
   readonly setLayerMode: (mode: CockpitLayerMode) => void;
   readonly toggleOverlay: (key: CockpitOverlayKey) => void;
   readonly setOverlay: (key: CockpitOverlayKey, visible: boolean) => void;
   readonly selectPhase: (phaseId: string | null) => void;
+  readonly setPlannedGuestCount: (count: number | null) => void;
+  readonly setFlowArrivalMinutes: (minutes: number) => void;
   readonly setRuntimeAssetStatus: (status: string) => void;
   readonly toggleLayers: () => void;
   readonly setLayersOpen: (open: boolean) => void;
@@ -67,6 +73,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   layersOpen: false,
   beam: null,
   focusRequest: null,
+  plannedGuestCount: null,
+  flowArrivalMinutes: 30,
   setMode: (mode) => { set({ activeMode: mode }); },
   setLayerMode: (mode) => { set({ layerMode: mode }); },
   toggleOverlay: (key) => {
@@ -80,6 +88,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
     }));
   },
   selectPhase: (phaseId) => { set({ selectedPhaseId: phaseId }); },
+  setPlannedGuestCount: (count) => { set({ plannedGuestCount: count }); },
+  setFlowArrivalMinutes: (minutes) => { set({ flowArrivalMinutes: minutes }); },
   setRuntimeAssetStatus: (status) => { set({ runtimeAssetStatus: status }); },
   toggleLayers: () => { set((state) => ({ layersOpen: !state.layersOpen })); },
   setLayersOpen: (open) => { set({ layersOpen: open }); },
@@ -98,6 +108,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
       layersOpen: false,
       beam: null,
       focusRequest: null,
+      plannedGuestCount: null,
+      flowArrivalMinutes: 30,
     });
   },
 }));

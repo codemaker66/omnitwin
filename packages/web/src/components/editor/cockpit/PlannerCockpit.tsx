@@ -2,7 +2,7 @@ import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitTopBar } from "./CockpitTopBar.js";
-import { CockpitTruthRail } from "./CockpitTruthRail.js";
+import { CockpitRightDock } from "./CockpitRightDock.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
@@ -33,7 +33,7 @@ export function PlannerCockpit(): ReactElement {
         <CanvasLayerControls />
         <CockpitMinimap />
       </section>
-      <CockpitTruthRail />
+      <CockpitRightDock />
       <CockpitBottom />
     </div>
   );

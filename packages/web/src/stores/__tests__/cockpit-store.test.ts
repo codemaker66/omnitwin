@@ -86,6 +86,8 @@ describe("cockpit-store", () => {
     api.toggleLayers();
     api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
     api.requestFocus(1, 1);
+    api.setPlannedGuestCount(200);
+    api.setFlowArrivalMinutes(90);
     api.reset();
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");
@@ -96,5 +98,22 @@ describe("cockpit-store", () => {
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();
+    expect(s.plannedGuestCount).toBeNull();
+    expect(s.flowArrivalMinutes).toBe(30);
+  });
+
+  it("defaults plannedGuestCount to null and flowArrivalMinutes to 30", () => {
+    const s = useCockpitStore.getState();
+    expect(s.plannedGuestCount).toBeNull();
+    expect(s.flowArrivalMinutes).toBe(30);
+  });
+
+  it("setPlannedGuestCount / setFlowArrivalMinutes update the Flow scenario", () => {
+    useCockpitStore.getState().setPlannedGuestCount(120);
+    expect(useCockpitStore.getState().plannedGuestCount).toBe(120);
+    useCockpitStore.getState().setPlannedGuestCount(null);
+    expect(useCockpitStore.getState().plannedGuestCount).toBeNull();
+    useCockpitStore.getState().setFlowArrivalMinutes(45);
+    expect(useCockpitStore.getState().flowArrivalMinutes).toBe(45);
   });
 });
