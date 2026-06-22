@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
@@ -76,6 +77,10 @@ import { getEventPhaseGraph } from "../api/events.js";
 import { getLatestGuestFlowReplay } from "../api/guest-flow-replay.js";
 import { getTruthModeSummary } from "../api/truth-mode.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
+import {
+  FloatingWidgetFrame,
+  type FloatingWidgetPlacement,
+} from "../components/shared/FloatingWidgetFrame.js";
 import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
 
@@ -646,16 +651,57 @@ function CanvasLayerControls({
   );
 }
 
+function VisualCalloutWidget({
+  id,
+  title,
+  compactLabel,
+  placement,
+  tone,
+  defaultMinimized = false,
+  storageScope,
+  children,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly compactLabel: string;
+  readonly placement: FloatingWidgetPlacement;
+  readonly tone?: "gold" | "danger";
+  readonly defaultMinimized?: boolean;
+  readonly storageScope?: string;
+  readonly children: ReactNode;
+}): ReactElement {
+  const toneClassName = tone === undefined ? "" : `visual-callout-widget--${tone}`;
+  return (
+    <FloatingWidgetFrame
+      id={`visual-callout-${id}`}
+      title={title}
+      compactLabel={compactLabel}
+      defaultPlacement={placement}
+      defaultMinimized={defaultMinimized}
+      storageScope={storageScope}
+      className={["visual-callout-widget", toneClassName].filter(Boolean).join(" ")}
+      bodyClassName="visual-callout-widget__body"
+      zIndex={7}
+    >
+      <div className="visual-callout">
+        {children}
+      </div>
+    </FloatingWidgetFrame>
+  );
+}
+
 function VenueCanvasOverlays({
   overlays,
   replay,
   replayProgress,
   planningCuesVisible,
+  isNarrowViewport,
 }: {
   readonly overlays: OverlayState;
   readonly replay: GuestFlowReplayArtifact;
   readonly replayProgress: number;
   readonly planningCuesVisible: boolean;
+  readonly isNarrowViewport: boolean;
 }): ReactElement {
   const flowTrajectories = replay.trajectories.slice(0, 4);
   const ghostTrajectories = replay.trajectories.slice(0, 8);
@@ -665,9 +711,16 @@ function VenueCanvasOverlays({
   const reviewConflicts = replay.routeConflicts
     .filter((conflict) => conflict.severity !== "info")
     .slice(0, 3);
+  const calloutStorageScope = isNarrowViewport ? "mobile" : "desktop";
+  const calloutDefaultMinimized = isNarrowViewport;
+  const calloutPlacement = (desktop: FloatingWidgetPlacement, mobileOffsetY: number): FloatingWidgetPlacement => (
+    isNarrowViewport
+      ? { type: "anchor", anchor: "top-left", offsetX: 16, offsetY: mobileOffsetY }
+      : desktop
+  );
 
   return (
-    <div className="visual-stage-overlay" aria-hidden="true">
+    <div className="visual-stage-overlay" aria-label="Venue spatial overlays">
       {overlays.guestFlow && (
         <>
           {flowTrajectories.map((trajectory) => (
@@ -704,26 +757,56 @@ function VenueCanvasOverlays({
       )}
       {overlays.routeClearance && (
         <>
-          <span className="visual-callout clearance-a">
+          <VisualCalloutWidget
+            id="route-clearance-a"
+            title="Route clearance"
+            compactLabel="1.20 m"
+            placement={calloutPlacement({ type: "percent", xPercent: 0.16, yPercent: 0.62 }, 112)}
+            defaultMinimized={calloutDefaultMinimized}
+            storageScope={calloutStorageScope}
+          >
             <strong>1.20 m</strong>
             <span>route clearance</span>
-          </span>
-          <span className="visual-callout clearance-b">
+          </VisualCalloutWidget>
+          <VisualCalloutWidget
+            id="route-clearance-b"
+            title="Route clearance"
+            compactLabel="1.20 m"
+            placement={calloutPlacement({ type: "percent", xPercent: 0.72, yPercent: 0.7 }, 154)}
+            defaultMinimized={calloutDefaultMinimized}
+            storageScope={calloutStorageScope}
+          >
             <strong>1.20 m</strong>
             <span>route clearance</span>
-          </span>
+          </VisualCalloutWidget>
         </>
       )}
       {overlays.heritageBuffer && (
         <>
-          <span className="visual-callout heritage">
+          <VisualCalloutWidget
+            id="heritage-buffer"
+            title="Heritage buffer"
+            compactLabel="Do not place"
+            placement={calloutPlacement({ type: "percent", xPercent: 0.09, yPercent: 0.31 }, 196)}
+            tone="gold"
+            defaultMinimized={calloutDefaultMinimized}
+            storageScope={calloutStorageScope}
+          >
             <strong>Heritage buffer</strong>
             <span>Do not place</span>
-          </span>
-          <span className="visual-callout conflict">
+          </VisualCalloutWidget>
+          <VisualCalloutWidget
+            id="route-conflict"
+            title="Route conflict"
+            compactLabel="Review"
+            placement={calloutPlacement({ type: "percent", xPercent: 0.7, yPercent: 0.38 }, 238)}
+            tone="danger"
+            defaultMinimized={calloutDefaultMinimized}
+            storageScope={calloutStorageScope}
+          >
             <strong>Route conflict</strong>
             <span>review required</span>
-          </span>
+          </VisualCalloutWidget>
           {reviewConflicts.map((conflict) => (
             <span
               key={conflict.id}
@@ -735,13 +818,20 @@ function VenueCanvasOverlays({
       )}
       {planningCuesVisible && (
         <>
-          <span className="visual-callout table">
+          <VisualCalloutWidget
+            id="selected-table"
+            title={TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}
+            compactLabel={TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}
+            placement={calloutPlacement({ type: "percent", xPercent: 0.45, yPercent: 0.57 }, 280)}
+            defaultMinimized={calloutDefaultMinimized}
+            storageScope={calloutStorageScope}
+          >
             <strong>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}</strong>
             <span>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.guests} guests</span>
             {TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.notes.map((note) => (
               <span key={note}>{note}</span>
             ))}
-          </span>
+          </VisualCalloutWidget>
           <span className="visual-selected-ring" />
         </>
       )}
@@ -1017,7 +1107,7 @@ function VisualCameraControls({
       makeDefault
       regress={smoothControls}
       enableDamping={smoothControls}
-      dampingFactor={smoothControls ? runtimeCameraView?.dampingFactor ?? 0.08 : 0}
+      dampingFactor={smoothControls ? runtimeCameraView?.dampingFactor ?? 0.14 : 0}
       target={target}
       minDistance={minDistance}
       maxDistance={maxDistance}
@@ -1453,6 +1543,14 @@ export function TradesHallVisualPage(): ReactElement {
   const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
   const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
   const visualAdaptiveResolution = visualAdaptiveResolutionForViewportWidth(viewportWidth);
+  const isNarrowVisualViewport = viewportWidth <= 640;
+  const visualWidgetStorageScope = isNarrowVisualViewport ? "mobile" : "desktop";
+  const layerControlsPlacement: FloatingWidgetPlacement = isNarrowVisualViewport
+    ? { type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 22 }
+    : { type: "anchor", anchor: "top-left", offsetX: 24, offsetY: 22 };
+  const overlayLegendPlacement: FloatingWidgetPlacement = isNarrowVisualViewport
+    ? { type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 66 }
+    : { type: "anchor", anchor: "top-right", offsetX: 24, offsetY: 22 };
   const smoothVisualControls = hasRegisteredRuntimeAsset && shouldUseSmoothVisualControls(viewportWidth);
   const visualMouseButtons = hasRegisteredRuntimeAsset
     ? visualMouseButtonsForViewportWidth(viewportWidth)
@@ -1722,28 +1820,59 @@ export function TradesHallVisualPage(): ReactElement {
             )}
           </Canvas>
         </div>
-        <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
+        <FloatingWidgetFrame
+          id="visual-layer-controls"
+          title="Visual layer"
+          compactLabel={layerMode}
+          defaultPlacement={layerControlsPlacement}
+          defaultMinimized={isNarrowVisualViewport}
+          storageScope={visualWidgetStorageScope}
+          zIndex={9}
+        >
+          <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
+        </FloatingWidgetFrame>
         <VenueCanvasOverlays
           overlays={overlays}
           replay={guestFlowReplay}
           replayProgress={replayProgress}
           planningCuesVisible={!hasRegisteredRuntimeAsset}
+          isNarrowViewport={isNarrowVisualViewport}
         />
-        <VenueOverlayLegend
-          overlays={overlays}
-          onToggleOverlay={toggleOverlay}
-          replay={guestFlowReplay}
-          replayProgress={replayProgress}
-          replayStatus={replayStatus}
-          replayRunning={replayRunning}
-          onReplayProgressChange={setReplayProgress}
-          onToggleReplay={() => { setReplayRunning((running) => !running); }}
-          onResetReplay={() => {
-            setReplayRunning(false);
-            setReplayProgress(0);
-          }}
-        />
-        <ViewTool activeMode={activeMode} />
+        <FloatingWidgetFrame
+          id="visual-overlay-legend"
+          title="Overlay controls"
+          compactLabel="Overlays"
+          defaultPlacement={overlayLegendPlacement}
+          defaultMinimized
+          storageScope={visualWidgetStorageScope}
+          zIndex={8}
+        >
+          <VenueOverlayLegend
+            overlays={overlays}
+            onToggleOverlay={toggleOverlay}
+            replay={guestFlowReplay}
+            replayProgress={replayProgress}
+            replayStatus={replayStatus}
+            replayRunning={replayRunning}
+            onReplayProgressChange={setReplayProgress}
+            onToggleReplay={() => { setReplayRunning((running) => !running); }}
+            onResetReplay={() => {
+              setReplayRunning(false);
+              setReplayProgress(0);
+            }}
+          />
+        </FloatingWidgetFrame>
+        <FloatingWidgetFrame
+          id="visual-view-status"
+          title="View status"
+          compactLabel="3D"
+          defaultPlacement={{ type: "anchor", anchor: "bottom-left", offsetX: 24, offsetY: 24 }}
+          defaultMinimized
+          storageScope={visualWidgetStorageScope}
+          zIndex={8}
+        >
+          <ViewTool activeMode={activeMode} />
+        </FloatingWidgetFrame>
       </section>
       <TruthModePanel
         activeMode={activeMode}

@@ -183,6 +183,7 @@ beforeEach(() => {
     (input: { readonly targetType: EvidenceTargetType; readonly targetId: string }) =>
       Promise.resolve(makeTruthSummary(input.targetType, input.targetId)),
   );
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -415,7 +416,11 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getByText("Truth Mode")).toBeTruthy();
     expect(screen.getByText("Event Phase Graph")).toBeTruthy();
     expect(screen.getByText("Guest Flow Replay")).toBeTruthy();
-    expect(screen.getByText("Overlays")).toBeTruthy();
+    expect(screen.getAllByText("Overlays").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Expand Overlay controls" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
+    expect(screen.getByRole("button", { name: "Expand View status" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand View status" }));
     expect(screen.getByLabelText("Visual view status")).toBeTruthy();
     expect(screen.getByLabelText("Current visual view: 3D")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "3D view" })).toBeNull();
@@ -575,13 +580,13 @@ describe("TradesHallVisualPage", () => {
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(orbitControlsMock).toHaveBeenCalledWith(expect.objectContaining({
       enableDamping: true,
-      dampingFactor: 0.065,
+      dampingFactor: 0.14,
       target: [0, 0.9, -4.15],
       minDistance: 1.2,
       maxDistance: 13.5,
-      panSpeed: 0.08,
-      rotateSpeed: 0.18,
-      zoomSpeed: 0.16,
+      panSpeed: 0.16,
+      rotateSpeed: 0.36,
+      zoomSpeed: 0.32,
       minPolarAngle: Math.PI * 0.14,
       maxPolarAngle: Math.PI * 0.48,
     }));
@@ -616,6 +621,7 @@ describe("TradesHallVisualPage", () => {
 
   it("renders worker/fallback replay status and lets operators scrub playback", async () => {
     mount();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
     await waitFor(() => {
       expect(screen.getAllByText(/Deterministic fallback replay|Worker replay generated/i).length).toBeGreaterThan(0);
     });
@@ -646,6 +652,30 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getByRole("button", { name: /Mesh/i }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+  });
+
+  it("lets operators minimize floating controls and callouts", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual"]}>
+        <TradesHallVisualPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Expand Overlay controls" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Visual layer" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Expand View status" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Minimize Route clearance" }).length).toBe(2);
+
+    const overlayWidget = container.querySelector<HTMLElement>("[data-floating-widget-id='visual-overlay-legend']");
+    if (overlayWidget === null) throw new Error("Overlay widget shell was not rendered.");
+    expect(overlayWidget.getAttribute("data-minimized")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
+    expect(overlayWidget.getAttribute("data-minimized")).toBe("false");
+    expect(screen.getByLabelText("Replay controls")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Overlay controls" }));
+    expect(overlayWidget.getAttribute("data-minimized")).toBe("true");
+    expect(screen.getAllByText("Overlays").length).toBeGreaterThan(0);
   });
 
   it("allows the event phase graph to select a phase", () => {

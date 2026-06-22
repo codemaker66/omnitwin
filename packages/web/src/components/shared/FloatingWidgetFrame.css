@@ -1,0 +1,120 @@
+.vv-floating-widget {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-width: min(360px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  contain: layout paint style;
+  color: #f5ead7;
+  border: 1px solid rgba(231, 202, 139, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(17, 19, 20, 0.96), rgba(8, 10, 12, 0.92)),
+    #0b0d0f;
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.vv-floating-widget--fixed {
+  position: fixed;
+}
+
+.vv-floating-widget.is-dragging {
+  cursor: grabbing;
+  transition: none;
+  will-change: transform;
+}
+
+.vv-floating-widget__bar {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 4px;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.vv-floating-widget.is-minimized .vv-floating-widget__bar {
+  border-bottom-color: transparent;
+}
+
+.vv-floating-widget__handle,
+.vv-floating-widget__icon-button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  color: #d7c6a5;
+  font: inherit;
+}
+
+.vv-floating-widget__handle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  background: transparent;
+  cursor: grab;
+  text-align: left;
+}
+
+.vv-floating-widget__handle span {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.1;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vv-floating-widget__icon-button {
+  width: 32px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+}
+
+.vv-floating-widget__handle:hover,
+.vv-floating-widget__handle:focus-visible,
+.vv-floating-widget__icon-button:hover,
+.vv-floating-widget__icon-button:focus-visible {
+  color: #f4d37d;
+  background: rgba(215, 170, 73, 0.13);
+  outline: 1px solid rgba(215, 170, 73, 0.42);
+  outline-offset: 1px;
+}
+
+.vv-floating-widget__compact-label {
+  padding: 0 6px;
+  color: #6bd9e8;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.vv-floating-widget__body {
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+  scrollbar-color: rgba(215, 170, 73, 0.46) rgba(255, 255, 255, 0.06);
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-floating-widget {
+    transition: none;
+  }
+}

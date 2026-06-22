@@ -229,18 +229,8 @@
 }
 
 .visual-layer-controls {
-  position: absolute;
-  left: 26px;
-  top: 22px;
-  z-index: 6;
   display: inline-flex;
   gap: 4px;
-  padding: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(8, 9, 10, 0.74);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
-  backdrop-filter: blur(12px);
 }
 
 .visual-layer-controls button,
@@ -275,6 +265,10 @@
   inset: 0;
   pointer-events: none;
   z-index: 5;
+}
+
+.visual-stage-overlay .vv-floating-widget {
+  pointer-events: auto;
 }
 
 .visual-flow-line {
@@ -396,15 +390,8 @@
 }
 
 .visual-callout {
-  position: absolute;
   min-width: 130px;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(9, 10, 11, 0.78);
   color: #f5ead7;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(10px);
 }
 
 .visual-callout strong {
@@ -421,32 +408,19 @@
   line-height: 1.35;
 }
 
-.visual-callout.table {
-  left: 45%;
-  top: 57%;
+.visual-callout-widget {
+  min-width: 164px;
 }
 
-.visual-callout.clearance-a {
-  left: 27%;
-  top: 68%;
-}
-
-.visual-callout.clearance-b {
-  right: 21%;
-  bottom: 23%;
-}
-
-.visual-callout.heritage {
-  left: 9%;
-  top: 31%;
+.visual-callout-widget--gold {
   border-color: rgba(215, 170, 73, 0.5);
 }
 
-.visual-callout.conflict {
-  right: 18%;
-  top: 38%;
+.visual-callout-widget--danger {
   border-color: rgba(226, 90, 83, 0.65);
-  background: rgba(83, 24, 25, 0.74);
+  background:
+    linear-gradient(180deg, rgba(83, 24, 25, 0.93), rgba(32, 14, 15, 0.9)),
+    #1d1111;
 }
 
 .visual-selected-ring {
@@ -484,17 +458,7 @@
 .probe-c { left: 71%; top: 28%; }
 
 .visual-overlay-legend {
-  position: absolute;
-  right: 24px;
-  bottom: 24px;
-  z-index: 8;
   width: 230px;
-  padding: 13px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 8px;
-  background: rgba(9, 10, 11, 0.76);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
 }
 
 .visual-overlay-legend h2,
@@ -621,17 +585,8 @@
 }
 
 .visual-view-tool {
-  position: absolute;
-  left: 24px;
-  bottom: 24px;
-  z-index: 8;
   display: grid;
   gap: 7px;
-  padding: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(9, 10, 11, 0.76);
-  backdrop-filter: blur(12px);
 }
 
 .visual-view-tool__item {

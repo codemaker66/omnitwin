@@ -11,6 +11,7 @@ import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
 import { ObjectNotePanel } from "../components/editor/ObjectNotePanel.js";
 import { EventDetailsPanel } from "../components/editor/EventDetailsPanel.js";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
+import { FloatingWidgetFrame } from "../components/shared/FloatingWidgetFrame.js";
 import { BlueprintPage } from "./BlueprintPage.js";
 import {
   buildProceduralTruthSummary,
@@ -523,7 +524,7 @@ function ViewModeToggle({
           padding: "6px 14px",
           fontSize: 12,
           fontWeight: 600,
-          letterSpacing: "0.05em",
+          letterSpacing: 0,
           border: "none",
           borderRadius: 6,
           cursor: "pointer",
@@ -537,26 +538,33 @@ function ViewModeToggle({
     );
   };
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: isMobile ? "calc(env(safe-area-inset-top) + 10px)" : 82,
-        left: isMobile ? 10 : "50%",
-        transform: isMobile ? "none" : "translateX(-50%)",
-        zIndex: 31,
-        display: "inline-flex",
-        gap: 2,
-        padding: 3,
-        borderRadius: 8,
-        background: "rgba(20,19,17,0.85)",
-        backdropFilter: "blur(8px)",
-        border: "1px solid rgba(201,168,76,0.35)",
+    <FloatingWidgetFrame
+      id="planner-view-mode"
+      title="View mode"
+      strategy="fixed"
+      compactLabel={mode.toUpperCase()}
+      defaultPlacement={{
+        type: "anchor",
+        anchor: "top-left",
+        offsetX: isMobile ? 10 : 112,
+        offsetY: isMobile ? 10 : 82,
       }}
-      role="group"
-      aria-label="View mode"
+      zIndex={31}
     >
-      {btn("3D", "3d")}
-      {btn("2D", "2d")}
-    </div>
+      <div
+        role="group"
+        aria-label="View mode"
+        style={{
+          display: "inline-flex",
+          gap: 2,
+          padding: 3,
+          borderRadius: 8,
+          background: "rgba(20,19,17,0.62)",
+        }}
+      >
+        {btn("3D", "3d")}
+        {btn("2D", "2d")}
+      </div>
+    </FloatingWidgetFrame>
   );
 }

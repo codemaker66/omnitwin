@@ -93,10 +93,10 @@ export function computePanBounds(
 
 export const MIN_POLAR_ANGLE = 0.1;
 export const MAX_POLAR_ANGLE = Math.PI * 0.48;
-export const DAMPING_FACTOR = 0.04;
+export const DAMPING_FACTOR = 0.14;
 export const PAN_SPEED = 20;
 export const EDGE_SCROLL_ZONE = 40;
-export const DAMPING_SETTLE_FRAMES = 180;
+export const DAMPING_SETTLE_FRAMES = 36;
 export const ZOOM_IMPULSE = 0.025;
 export const ZOOM_FRICTION = 0.09;
 export const ZOOM_VELOCITY_THRESHOLD = 0.001;

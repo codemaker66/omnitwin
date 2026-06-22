@@ -327,7 +327,7 @@ describe("runtimeAssetCameraViewForRoom", () => {
     expect(cameraView.rotateSpeed).toBeLessThan(1);
     expect(cameraView.zoomSpeed).toBeLessThan(1);
     expect(cameraView.dampingFactor).toBeGreaterThan(0);
-    expect(cameraView.dampingFactor).toBeLessThanOrEqual(0.08);
+    expect(cameraView.dampingFactor).toBeLessThanOrEqual(0.14);
     expect(cameraView.minPolarAngle).toBeGreaterThan(0);
     expect(cameraView.maxPolarAngle).toBeLessThan(Math.PI / 2);
     expect(cameraView.targetBounds).not.toBeNull();
@@ -379,7 +379,7 @@ describe("runtimeAssetCameraViewForRoom", () => {
       panSpeed: 0.8,
       rotateSpeed: 1,
       zoomSpeed: 1,
-      dampingFactor: 0.08,
+      dampingFactor: 0.14,
       minPolarAngle: 0,
       maxPolarAngle: Math.PI * 0.49,
       targetBounds: null,
