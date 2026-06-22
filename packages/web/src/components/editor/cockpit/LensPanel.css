@@ -288,3 +288,13 @@
   text-decoration: none;
 }
 .lens-panel__chip-link:hover { background: rgba(255, 247, 232, 0.12); }
+
+/* Positive (green) chip — seat sufficiency / comfortable room. */
+.lens-panel__chip--ok { border-color: rgba(116, 208, 140, 0.45); background: rgba(116, 208, 140, 0.12); color: #a7e3b6; }
+
+/* Utilization meter — assessed headcount vs comfortable capacity. */
+.lens-panel__meter { height: 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.lens-panel__meter-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #c9a84c, #e7d49a); transition: width 220ms ease; }
+.lens-panel__meter-fill--ok { background: linear-gradient(90deg, #74d08c, #a7e3b6); }
+.lens-panel__meter-fill--attention { background: linear-gradient(90deg, #e6c463, #f1ce78); }
+.lens-panel__meter-fill--review { background: linear-gradient(90deg, #d87856, #f0b39a); }
