@@ -256,7 +256,7 @@ export function PlannerSpatialHud(): React.ReactElement {
         </div>
       </section>
 
-      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--capacity">
+      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--capacity" data-testid="planner-capacity-panel">
         <div className="planner-spatial-hud__title">Capacity</div>
         <div
           className="planner-spatial-hud__gauge"

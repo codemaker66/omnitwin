@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
@@ -18,6 +20,7 @@ const API = "http://localhost:3001";
 const VENUE_ID = "e2e-venue-001";
 const SPACE_ID = "e2e-space-001";
 const CONFIG_ID = "e2e-config-001";
+const WIDGET_COLLISION_ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-widget-collision-2026-06-22";
 
 // ---------------------------------------------------------------------------
 // Typed mock fixtures
@@ -48,6 +51,31 @@ interface MockConfig {
   readonly revision: number;
   readonly objects: readonly MockPlacedObject[];
 }
+
+interface RectSnapshot {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
+
+interface CollisionSnapshot {
+  readonly status: "measured";
+  readonly bottomOverlap: number;
+  readonly capacityOverlap: number;
+  readonly truthOverlap: number;
+  readonly bottom: RectSnapshot;
+  readonly capacity: RectSnapshot;
+  readonly minimap: RectSnapshot;
+  readonly truth: RectSnapshot;
+}
+
+interface MissingCollisionTarget {
+  readonly status: "missing-target";
+  readonly missing: string;
+}
+
+type CollisionCheck = CollisionSnapshot | MissingCollisionTarget;
 
 const MOCK_VENUE = {
   id: VENUE_ID,
@@ -359,6 +387,83 @@ test.describe("Editor with placed objects", () => {
     expect(layout.status).toBe("measured");
     if (layout.status === "measured") {
       expect(layout.fits).toBe(true);
+    }
+  });
+
+  test("Plan View widget clears the Capacity HUD and Event Phase Graph", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1493, height: 1053 });
+    await page.evaluate(() => {
+      window.localStorage.removeItem("venviewer:floating-widget:cockpit-minimap:v2");
+    });
+    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockRoundTables(18) });
+    await page.goto(`/plan/${CONFIG_ID}`);
+    await page.waitForSelector("canvas", { timeout: 15_000 });
+
+    const minimap = page.locator("[data-floating-widget-id='cockpit-minimap']");
+    await expect(minimap).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("planner-capacity-panel")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("cockpit-bottom")).toBeVisible({ timeout: 5_000 });
+
+    const collision = await page.evaluate<CollisionCheck>(() => {
+      function snapshot(selector: string): RectSnapshot | null {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (element === null) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+        };
+      }
+
+      function overlapArea(a: RectSnapshot, b: RectSnapshot): number {
+        const left = Math.max(a.left, b.left);
+        const right = Math.min(a.right, b.right);
+        const top = Math.max(a.top, b.top);
+        const bottom = Math.min(a.bottom, b.bottom);
+        return Math.max(0, right - left) * Math.max(0, bottom - top);
+      }
+
+      const minimapRect = snapshot("[data-floating-widget-id='cockpit-minimap']");
+      if (minimapRect === null) return { status: "missing-target", missing: "cockpit-minimap" };
+
+      const capacityRect = snapshot("[data-testid='planner-capacity-panel']");
+      if (capacityRect === null) return { status: "missing-target", missing: "planner-capacity-panel" };
+
+      const truthRect = snapshot("[data-testid='truth-mode-indicator']");
+      if (truthRect === null) return { status: "missing-target", missing: "truth-mode-indicator" };
+
+      const bottomRect = snapshot("[data-testid='cockpit-bottom']");
+      if (bottomRect === null) return { status: "missing-target", missing: "cockpit-bottom" };
+
+      return {
+        status: "measured",
+        minimap: minimapRect,
+        capacity: capacityRect,
+        truth: truthRect,
+        bottom: bottomRect,
+        capacityOverlap: overlapArea(minimapRect, capacityRect),
+        truthOverlap: overlapArea(minimapRect, truthRect),
+        bottomOverlap: overlapArea(minimapRect, bottomRect),
+      };
+    });
+
+    const screenshotPath = `${WIDGET_COLLISION_ARTIFACT_DIR}/plan-minimap-capacity-clear.png`;
+    await mkdir(dirname(screenshotPath), { recursive: true });
+    const screenshot = await page.screenshot({ path: screenshotPath, fullPage: false });
+    await testInfo.attach("plan-minimap-collision-proof", {
+      body: screenshot,
+      contentType: "image/png",
+    });
+
+    expect(collision.status).toBe("measured");
+    if (collision.status === "measured") {
+      expect(collision.capacityOverlap).toBe(0);
+      expect(collision.truthOverlap).toBe(0);
+      expect(collision.bottomOverlap).toBe(0);
+      expect(collision.minimap.right).toBeLessThanOrEqual(collision.capacity.left - 8);
+      expect(collision.minimap.bottom).toBeLessThanOrEqual(collision.bottom.top - 8);
     }
   });
 

@@ -2,6 +2,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { FloatingWidgetFrame } from "../FloatingWidgetFrame.js";
 
+interface TransformPosition {
+  readonly left: number;
+  readonly top: number;
+}
+
+function transformPosition(element: HTMLElement): TransformPosition {
+  const match = /translate3d\((-?\d+(?:\.\d+)?)px, (-?\d+(?:\.\d+)?)px, 0\)/.exec(element.style.transform);
+  if (match === null) throw new Error(`Unexpected transform: ${element.style.transform}`);
+  return { left: Number(match[1]), top: Number(match[2]) };
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -140,5 +151,58 @@ describe("FloatingWidgetFrame", () => {
       expect(root.style.transform).toContain("32px");
       expect(root.getAttribute("data-minimized")).toBe("true");
     });
+  });
+
+  it("moves an overlapping default position away from declared avoid zones", async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "getBoundingClientRect");
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function getBoundingClientRect(this: HTMLElement): DOMRect {
+        if (this.dataset["testid"] === "floating-surface") {
+          return new DOMRect(0, 0, 520, 320);
+        }
+        if (this.dataset["testid"] === "reserved-zone") {
+          return new DOMRect(84, 96, 190, 122);
+        }
+        if (this.dataset["floatingWidgetId"] === "avoid-overlay") {
+          return new DOMRect(0, 0, 190, 122);
+        }
+        return new DOMRect(0, 0, 0, 0);
+      },
+    });
+
+    try {
+      const { container } = render(
+        <div data-testid="floating-surface">
+          <div data-testid="reserved-zone">Reserved dashboard lane</div>
+          <FloatingWidgetFrame
+            id="avoid-overlay"
+            title="Plan view"
+            defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 84, offsetY: 96 }}
+            avoidSelectors={["[data-testid='reserved-zone']"]}
+            avoidPaddingPx={10}
+          >
+            <p>Plan overview</p>
+          </FloatingWidgetFrame>
+        </div>,
+      );
+
+      const root = container.querySelector<HTMLElement>("[data-floating-widget-id='avoid-overlay']");
+      if (root === null) throw new Error("Floating widget root was not rendered.");
+
+      await waitFor(() => {
+        const position = transformPosition(root);
+        expect(position.left).toBeGreaterThanOrEqual(292);
+        expect(position.top).toBe(96);
+      });
+
+      const stored = window.localStorage.getItem("venviewer:floating-widget:avoid-overlay:v2");
+      expect(stored).not.toBeNull();
+      expect(stored).toContain("\"left\":292");
+    } finally {
+      if (originalDescriptor !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", originalDescriptor);
+      }
+    }
   });
 });

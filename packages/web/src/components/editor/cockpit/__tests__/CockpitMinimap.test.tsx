@@ -43,7 +43,12 @@ beforeEach(() => {
   resetStores();
   mockReplay.mockReturnValue({ artifact: null, bounds: null, status: "idle" });
 });
-afterEach(() => { cleanup(); resetStores(); vi.clearAllMocks(); });
+afterEach(() => {
+  cleanup();
+  resetStores();
+  window.localStorage.clear();
+  vi.clearAllMocks();
+});
 
 describe("CockpitMinimap", () => {
   it("renders the plan-view inset with the SAFE planning-overview note", () => {

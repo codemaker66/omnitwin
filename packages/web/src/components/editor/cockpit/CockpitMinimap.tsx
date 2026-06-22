@@ -16,6 +16,7 @@ import {
   selectRouteConflicts,
   shouldLoadReplay,
 } from "../../../lib/cockpit-scene-overlay-model.js";
+import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CockpitMinimap.css";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,24 @@ import "./CockpitMinimap.css";
 const MINIMAP_MAX_PX = 132;
 const HERITAGE_INSET_M = 1.2;
 const MAX_MINIMAP_CONFLICTS = 4;
+const MINIMAP_AVOID_PADDING_PX = 14;
+const MINIMAP_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
+  type: "anchor",
+  anchor: "top-left",
+  offsetX: 84,
+  offsetY: 96,
+};
+const MINIMAP_AVOID_SELECTORS = [
+  ".planner-status-header",
+  ".cockpit-layer-controls",
+  ".planner-command-deck",
+  ".planner-section-slider-dock",
+  "[data-testid='truth-mode-indicator']",
+  "[data-testid='truth-mode-popover']",
+  ".planner-spatial-hud",
+  "[data-testid='save-send-panel']",
+  "[data-testid='cockpit-bottom']",
+] as const;
 
 function dotColor(category: string | undefined): string {
   switch (category) {
@@ -106,50 +125,61 @@ export function CockpitMinimap(): ReactElement {
     : "Planning overview · click to recentre";
 
   return (
-    <aside className="cockpit-minimap" aria-label="Plan view minimap">
-      <header className="cockpit-minimap__title">Plan view</header>
-      <button
-        type="button"
-        className="cockpit-minimap__plate"
-        style={{ width: layout.width, height: layout.height }}
-        onClick={handleClick}
-        aria-label="Recentre the planner camera on a point in the room"
-      >
-        {heritageInset > 0 && (
-          <span
-            className="cockpit-minimap__heritage"
-            style={{ inset: `${String(heritageInset)}px` }}
-            aria-hidden="true"
-          />
-        )}
-        {placedItems.map((item) => {
-          const { left, top } = minimapProject(item.x, item.z, layout);
-          const category = getCatalogueItem(item.catalogueItemId)?.category;
-          return (
+    <FloatingWidgetFrame
+      id="cockpit-minimap"
+      title="Plan view"
+      compactLabel="Plan"
+      className="cockpit-minimap-widget"
+      bodyClassName="cockpit-minimap-widget__body"
+      defaultPlacement={MINIMAP_DEFAULT_PLACEMENT}
+      avoidSelectors={MINIMAP_AVOID_SELECTORS}
+      avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
+      zIndex={36}
+    >
+      <aside className="cockpit-minimap" aria-label="Plan view minimap">
+        <button
+          type="button"
+          className="cockpit-minimap__plate"
+          style={{ width: layout.width, height: layout.height }}
+          onClick={handleClick}
+          aria-label="Recentre the planner camera on a point in the room"
+        >
+          {heritageInset > 0 && (
             <span
-              key={item.id}
-              className="cockpit-minimap__dot"
-              style={{ left: `${String(left)}px`, top: `${String(top)}px`, background: dotColor(category) }}
+              className="cockpit-minimap__heritage"
+              style={{ inset: `${String(heritageInset)}px` }}
               aria-hidden="true"
             />
-          );
-        })}
-        {conflictMarkers.map((marker) => (
-          <span
-            key={marker.id}
-            className="cockpit-minimap__conflict"
-            style={{
-              left: `${String(marker.left)}px`,
-              top: `${String(marker.top)}px`,
-              background: marker.color,
-              color: marker.color,
-            }}
-            title={marker.message}
-            aria-hidden="true"
-          />
-        ))}
-      </button>
-      <p className="cockpit-minimap__note">{note}</p>
-    </aside>
+          )}
+          {placedItems.map((item) => {
+            const { left, top } = minimapProject(item.x, item.z, layout);
+            const category = getCatalogueItem(item.catalogueItemId)?.category;
+            return (
+              <span
+                key={item.id}
+                className="cockpit-minimap__dot"
+                style={{ left: `${String(left)}px`, top: `${String(top)}px`, background: dotColor(category) }}
+                aria-hidden="true"
+              />
+            );
+          })}
+          {conflictMarkers.map((marker) => (
+            <span
+              key={marker.id}
+              className="cockpit-minimap__conflict"
+              style={{
+                left: `${String(marker.left)}px`,
+                top: `${String(marker.top)}px`,
+                background: marker.color,
+                color: marker.color,
+              }}
+              title={marker.message}
+              aria-hidden="true"
+            />
+          ))}
+        </button>
+        <p className="cockpit-minimap__note">{note}</p>
+      </aside>
+    </FloatingWidgetFrame>
   );
 }

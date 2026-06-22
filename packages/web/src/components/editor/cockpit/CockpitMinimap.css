@@ -1,16 +1,16 @@
+.cockpit-minimap-widget {
+  width: max-content;
+  max-width: 204px;
+}
+
+.cockpit-minimap-widget__body {
+  overflow: hidden;
+  padding: 10px;
+}
+
 .cockpit-minimap {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 12;
   display: grid;
   gap: 6px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(10, 9, 7, 0.82);
-  border: 1px solid rgba(201, 168, 76, 0.32);
-  box-shadow: 0 12px 34px -14px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
   color: #f4efe6;
   font-family: "Inter", system-ui, sans-serif;
   pointer-events: auto;
@@ -85,6 +85,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cockpit-minimap { backdrop-filter: none; }
   .cockpit-minimap__conflict { animation: none; }
 }

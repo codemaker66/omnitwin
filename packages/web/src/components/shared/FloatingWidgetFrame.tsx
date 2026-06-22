@@ -39,6 +39,8 @@ export interface FloatingWidgetFrameProps {
   readonly title: string;
   readonly children: ReactNode;
   readonly defaultPlacement: FloatingWidgetPlacement;
+  readonly avoidPaddingPx?: number;
+  readonly avoidSelectors?: readonly string[];
   readonly className?: string;
   readonly bodyClassName?: string;
   readonly compactLabel?: string;
@@ -70,9 +72,24 @@ interface SurfaceSize {
   readonly height: number;
 }
 
+interface SurfaceFrame extends SurfaceSize {
+  readonly left: number;
+  readonly top: number;
+}
+
+interface AvoidRect {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 const EDGE_MARGIN_PX = 8;
 const KEYBOARD_NUDGE_PX = 8;
 const KEYBOARD_LARGE_NUDGE_PX = 24;
+const DEFAULT_AVOID_PADDING_PX = 10;
+const MAX_AVOIDANCE_PASSES = 8;
+const OVERLAP_SCORE_WEIGHT = 1_000_000;
 
 function storageKey(id: string): string {
   return `venviewer:floating-widget:${id}:v2`;
@@ -115,25 +132,34 @@ function writeStoredState(id: string, state: StoredFloatingWidgetState): void {
   }
 }
 
-function viewportSurface(): SurfaceSize {
+function viewportSurface(): SurfaceFrame {
   if (typeof window === "undefined") {
-    return { width: 1440, height: 900 };
+    return { left: 0, top: 0, width: 1440, height: 900 };
   }
   return {
+    left: 0,
+    top: 0,
     width: Math.max(320, window.innerWidth),
     height: Math.max(240, window.innerHeight),
   };
 }
 
-function surfaceForElement(element: HTMLElement, strategy: FloatingWidgetStrategy): SurfaceSize {
+function surfaceFrameForElement(element: HTMLElement, strategy: FloatingWidgetStrategy): SurfaceFrame {
   if (strategy === "fixed") return viewportSurface();
   const parent = element.offsetParent instanceof HTMLElement ? element.offsetParent : element.parentElement;
   if (parent === null) return viewportSurface();
   const rect = parent.getBoundingClientRect();
   return {
+    left: rect.left,
+    top: rect.top,
     width: rect.width > 0 ? rect.width : parent.clientWidth || viewportSurface().width,
     height: rect.height > 0 ? rect.height : parent.clientHeight || viewportSurface().height,
   };
+}
+
+function surfaceForElement(element: HTMLElement, strategy: FloatingWidgetStrategy): SurfaceSize {
+  const surface = surfaceFrameForElement(element, strategy);
+  return { width: surface.width, height: surface.height };
 }
 
 function widgetSize(element: HTMLElement): SurfaceSize {
@@ -144,7 +170,7 @@ function widgetSize(element: HTMLElement): SurfaceSize {
   };
 }
 
-function clampPosition(
+function clampToSurface(
   position: FloatingWidgetPosition,
   surface: SurfaceSize,
   widget: SurfaceSize,
@@ -157,10 +183,126 @@ function clampPosition(
   };
 }
 
+function overlapArea(position: FloatingWidgetPosition, widget: SurfaceSize, avoidRect: AvoidRect): number {
+  const left = Math.max(position.left, avoidRect.left);
+  const right = Math.min(position.left + widget.width, avoidRect.right);
+  const top = Math.max(position.top, avoidRect.top);
+  const bottom = Math.min(position.top + widget.height, avoidRect.bottom);
+  const width = Math.max(0, right - left);
+  const height = Math.max(0, bottom - top);
+  return width * height;
+}
+
+function totalOverlapArea(
+  position: FloatingWidgetPosition,
+  widget: SurfaceSize,
+  avoidRects: readonly AvoidRect[],
+): number {
+  return avoidRects.reduce((total, rect) => total + overlapArea(position, widget, rect), 0);
+}
+
+function positionDistanceSquared(a: FloatingWidgetPosition, b: FloatingWidgetPosition): number {
+  const dx = a.left - b.left;
+  const dy = a.top - b.top;
+  return dx * dx + dy * dy;
+}
+
+function bestPositionCandidate(
+  desired: FloatingWidgetPosition,
+  candidates: readonly FloatingWidgetPosition[],
+  widget: SurfaceSize,
+  avoidRects: readonly AvoidRect[],
+): FloatingWidgetPosition {
+  let best = candidates[0] ?? desired;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const score = totalOverlapArea(candidate, widget, avoidRects) * OVERLAP_SCORE_WEIGHT
+      + positionDistanceSquared(candidate, desired);
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function avoidOverlaps(
+  desired: FloatingWidgetPosition,
+  surface: SurfaceSize,
+  widget: SurfaceSize,
+  avoidRects: readonly AvoidRect[],
+): FloatingWidgetPosition {
+  let current = clampToSurface(desired, surface, widget);
+
+  for (let pass = 0; pass < MAX_AVOIDANCE_PASSES; pass += 1) {
+    const blockingRect = avoidRects.find((rect) => overlapArea(current, widget, rect) > 0);
+    if (blockingRect === undefined) return current;
+
+    const candidates = [
+      { left: blockingRect.left - widget.width - EDGE_MARGIN_PX, top: current.top },
+      { left: blockingRect.right + EDGE_MARGIN_PX, top: current.top },
+      { left: current.left, top: blockingRect.top - widget.height - EDGE_MARGIN_PX },
+      { left: current.left, top: blockingRect.bottom + EDGE_MARGIN_PX },
+    ].map((candidate) => clampToSurface(candidate, surface, widget));
+
+    const next = bestPositionCandidate(desired, candidates, widget, avoidRects);
+    if (next.left === current.left && next.top === current.top) return current;
+    current = next;
+  }
+
+  return current;
+}
+
+function clampPosition(
+  position: FloatingWidgetPosition,
+  surface: SurfaceSize,
+  widget: SurfaceSize,
+  avoidRects: readonly AvoidRect[] = [],
+): FloatingWidgetPosition {
+  if (avoidRects.length === 0) return clampToSurface(position, surface, widget);
+  return avoidOverlaps(position, surface, widget, avoidRects);
+}
+
+function avoidRectsForElement(
+  element: HTMLElement,
+  strategy: FloatingWidgetStrategy,
+  selectors: readonly string[] | undefined,
+  paddingPx: number,
+): readonly AvoidRect[] {
+  if (selectors === undefined || selectors.length === 0) return [];
+  const ownerDocument = element.ownerDocument;
+  const ownerWindow = ownerDocument.defaultView;
+  const surface = surfaceFrameForElement(element, strategy);
+  const avoidRects: AvoidRect[] = [];
+
+  for (const selector of selectors) {
+    ownerDocument.querySelectorAll<HTMLElement>(selector).forEach((candidate) => {
+      if (candidate === element || element.contains(candidate)) return;
+      const style = ownerWindow?.getComputedStyle(candidate);
+      if (style?.display === "none" || style?.visibility === "hidden") return;
+
+      const rect = candidate.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      avoidRects.push({
+        left: rect.left - surface.left - paddingPx,
+        top: rect.top - surface.top - paddingPx,
+        right: rect.right - surface.left + paddingPx,
+        bottom: rect.bottom - surface.top + paddingPx,
+      });
+    });
+  }
+
+  return avoidRects;
+}
+
 function resolvePlacement(
   element: HTMLElement,
   placement: FloatingWidgetPlacement,
   strategy: FloatingWidgetStrategy,
+  avoidRects: readonly AvoidRect[] = [],
 ): FloatingWidgetPosition {
   const surface = surfaceForElement(element, strategy);
   const widget = widgetSize(element);
@@ -168,7 +310,7 @@ function resolvePlacement(
     return clampPosition({
       left: surface.width * placement.xPercent,
       top: surface.height * placement.yPercent,
-    }, surface, widget);
+    }, surface, widget, avoidRects);
   }
 
   const fromRight = surface.width - widget.width - placement.offsetX;
@@ -177,7 +319,7 @@ function resolvePlacement(
     left: placement.anchor.endsWith("right") ? fromRight : placement.offsetX,
     top: placement.anchor.startsWith("bottom") ? fromBottom : placement.offsetY,
   };
-  return clampPosition(position, surface, widget);
+  return clampPosition(position, surface, widget, avoidRects);
 }
 
 function transformForPosition(position: FloatingWidgetPosition): string {
@@ -203,6 +345,8 @@ export function FloatingWidgetFrame({
   title,
   children,
   defaultPlacement,
+  avoidPaddingPx = DEFAULT_AVOID_PADDING_PX,
+  avoidSelectors,
   className,
   bodyClassName,
   compactLabel,
@@ -214,6 +358,7 @@ export function FloatingWidgetFrame({
   const bodyId = useId();
   const rootRef = useRef<HTMLElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const dragAvoidRectsRef = useRef<readonly AvoidRect[]>([]);
   const resolvedStorageIdentity = storageIdentity(id, storageScope);
   const [initialStoredState] = useState<StoredFloatingWidgetState | null>(() => (
     readStoredState(resolvedStorageIdentity)
@@ -236,11 +381,16 @@ export function FloatingWidgetFrame({
     const root = rootRef.current;
     const clamped = root === null
       ? nextPosition
-      : clampPosition(nextPosition, surfaceForElement(root, strategy), widgetSize(root));
+      : clampPosition(
+        nextPosition,
+        surfaceForElement(root, strategy),
+        widgetSize(root),
+        avoidRectsForElement(root, strategy, avoidSelectors, avoidPaddingPx),
+      );
     positionRef.current = clamped;
     setPosition(clamped);
     persistState(clamped, minimized);
-  }, [minimized, persistState, strategy]);
+  }, [avoidPaddingPx, avoidSelectors, minimized, persistState, strategy]);
 
   const resetPosition = useCallback((): void => {
     const root = rootRef.current;
@@ -253,19 +403,20 @@ export function FloatingWidgetFrame({
     if (root === null) return;
     const storedState = readStoredState(resolvedStorageIdentity);
     const nextMinimized = storedState?.minimized ?? defaultMinimized;
+    const avoidRects = avoidRectsForElement(root, strategy, avoidSelectors, avoidPaddingPx);
     const next = storedState === null
-      ? resolvePlacement(root, stableDefaultPlacement, strategy)
+      ? resolvePlacement(root, stableDefaultPlacement, strategy, avoidRects)
       : clampPosition({
         left: storedState.left,
         top: storedState.top,
-      }, surfaceForElement(root, strategy), widgetSize(root));
+      }, surfaceForElement(root, strategy), widgetSize(root), avoidRects);
     positionRef.current = next;
     setPosition(next);
     setMinimized(nextMinimized);
     persistState(next, nextMinimized);
   // Resolve once when mounted or when the target placement changes. Stored
   // user positions should win until reset.
-  }, [defaultMinimized, persistState, resolvedStorageIdentity, stableDefaultPlacement, strategy]);
+  }, [avoidPaddingPx, avoidSelectors, defaultMinimized, persistState, resolvedStorageIdentity, stableDefaultPlacement, strategy]);
 
   useEffect(() => {
     persistState(positionRef.current, minimized);
@@ -323,6 +474,7 @@ export function FloatingWidgetFrame({
     if (typeof event.currentTarget.setPointerCapture === "function") {
       event.currentTarget.setPointerCapture(event.pointerId);
     }
+    dragAvoidRectsRef.current = avoidRectsForElement(root, strategy, avoidSelectors, avoidPaddingPx);
     dragStateRef.current = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -331,7 +483,7 @@ export function FloatingWidgetFrame({
       startTop: positionRef.current.top,
     };
     setDragging(true);
-  }, []);
+  }, [avoidPaddingPx, avoidSelectors, strategy]);
 
   const onDragMove = useCallback((event: PointerEvent<HTMLButtonElement>): void => {
     const dragState = dragStateRef.current;
@@ -340,7 +492,7 @@ export function FloatingWidgetFrame({
     const next = clampPosition({
       left: dragState.startLeft + (event.clientX - dragState.startClientX),
       top: dragState.startTop + (event.clientY - dragState.startClientY),
-    }, surfaceForElement(root, strategy), widgetSize(root));
+    }, surfaceForElement(root, strategy), widgetSize(root), dragAvoidRectsRef.current);
     positionRef.current = next;
     root.style.transform = transformForPosition(next);
   }, [strategy]);
@@ -349,6 +501,7 @@ export function FloatingWidgetFrame({
     const dragState = dragStateRef.current;
     if (dragState === null || dragState.pointerId !== event.pointerId) return;
     dragStateRef.current = null;
+    dragAvoidRectsRef.current = [];
     try {
       if (typeof event.currentTarget.releasePointerCapture === "function") {
         event.currentTarget.releasePointerCapture(event.pointerId);
