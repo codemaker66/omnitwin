@@ -4,16 +4,28 @@ import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 
-const panelStyle: React.CSSProperties = {
-  position: "fixed",
-  top: 84,
-  right: 72,
-  zIndex: 60,
-  display: "flex",
-  flexDirection: "row",
-  gap: 10,
-  fontFamily: "'Inter', sans-serif",
-};
+const DEFAULT_PANEL_RIGHT_PX = 72;
+const COCKPIT_RIGHT_DOCK_WIDTH_PX = 360;
+const COCKPIT_DOCK_CLEARANCE_PX = 24;
+
+interface SaveSendPanelProps {
+  readonly avoidRightDock?: boolean;
+}
+
+function panelStyle(avoidRightDock: boolean): React.CSSProperties {
+  return {
+    position: "fixed",
+    top: 84,
+    right: avoidRightDock
+      ? COCKPIT_RIGHT_DOCK_WIDTH_PX + COCKPIT_DOCK_CLEARANCE_PX
+      : DEFAULT_PANEL_RIGHT_PX,
+    zIndex: avoidRightDock ? 32 : 60,
+    display: "flex",
+    flexDirection: "row",
+    gap: 10,
+    fontFamily: "'Inter', sans-serif",
+  };
+}
 
 const sendBtn: React.CSSProperties = {
   padding: "9px 20px",
@@ -29,7 +41,9 @@ const sendBtn: React.CSSProperties = {
   boxShadow: "0 2px 12px rgba(201,168,76,0.2)",
 };
 
-export function SaveSendPanel(): React.ReactElement | null {
+export function SaveSendPanel({
+  avoidRightDock = false,
+}: SaveSendPanelProps = {}): React.ReactElement | null {
   const objects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
   const isNarrow = useIsNarrowViewport();
@@ -67,7 +81,7 @@ export function SaveSendPanel(): React.ReactElement | null {
 
   return (
     <>
-      <div style={panelStyle} data-testid="save-send-panel">
+      <div style={panelStyle(avoidRightDock)} data-testid="save-send-panel">
         <button
           type="button"
           aria-label="Send to Events Team"

@@ -408,7 +408,7 @@ function PlannerCommsLayer(): React.ReactElement {
       )}
       <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
       <ObjectNotePanel />
-      <SaveSendPanel />
+      <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} />
       <SubmitForReviewPanel />
       {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (

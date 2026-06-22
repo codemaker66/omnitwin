@@ -77,6 +77,33 @@ describe("SaveSendPanel visibility", () => {
   });
 });
 
+describe("SaveSendPanel cockpit placement", () => {
+  async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const raw = await fs.readFile(path.resolve(relPath), "utf-8");
+    const codeOnly = raw
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return { raw, codeOnly };
+  }
+
+  it("can offset the guest send control away from the cockpit evidence dock", async () => {
+    const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");
+
+    expect(codeOnly).toContain("avoidRightDock");
+    expect(codeOnly).toContain("COCKPIT_RIGHT_DOCK_WIDTH_PX");
+    expect(codeOnly).toContain("COCKPIT_DOCK_CLEARANCE_PX");
+    expect(codeOnly).toMatch(/right:\s*avoidRightDock[\s\S]*?COCKPIT_RIGHT_DOCK_WIDTH_PX\s*\+\s*COCKPIT_DOCK_CLEARANCE_PX/);
+  });
+
+  it("enables right-dock avoidance only for the desktop 3D planner cockpit", async () => {
+    const { codeOnly } = await readSource("src/pages/EditorPage.tsx");
+
+    expect(codeOnly).toContain("<SaveSendPanel avoidRightDock={viewMode === \"3d\" && !mobile} />");
+  });
+});
+
 describe("GuestEnquiryModal validation", () => {
   it("requires email field", async () => {
     const { GuestEnquiryModal } = await import("../components/editor/GuestEnquiryModal.js");

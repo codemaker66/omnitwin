@@ -281,6 +281,23 @@ test.describe("Editor with placed objects", () => {
     ).toBeVisible();
   });
 
+  test("SaveSendPanel clears the cockpit Truth Mode rail", async ({ page }) => {
+    const sendPanel = page.getByTestId("save-send-panel");
+    const truthRail = page.getByTestId("cockpit-truth-rail");
+
+    await expect(sendPanel).toBeVisible({ timeout: 5_000 });
+    await expect(truthRail).toBeVisible({ timeout: 5_000 });
+
+    const sendBox = await sendPanel.boundingBox();
+    const railBox = await truthRail.boundingBox();
+
+    expect(sendBox).not.toBeNull();
+    expect(railBox).not.toBeNull();
+    if (sendBox === null || railBox === null) return;
+
+    expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(railBox.x - 8);
+  });
+
   test("Send to Events Team button opens the guest enquiry form", async ({ page }) => {
     // flushAutoSave + thumbnail upload are best-effort — mock both so the
     // modal is not blocked by network errors in test.
