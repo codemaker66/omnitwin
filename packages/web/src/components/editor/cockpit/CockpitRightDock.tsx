@@ -6,6 +6,7 @@ import { FlowLensPanel } from "./FlowLensPanel.js";
 import { CostsLensPanel } from "./CostsLensPanel.js";
 import { ShareLensPanel } from "./ShareLensPanel.js";
 import { GuestsLensPanel } from "./GuestsLensPanel.js";
+import { OpsLensPanel } from "./OpsLensPanel.js";
 
 // ---------------------------------------------------------------------------
 // CockpitRightDock — the contextual right column (Epic 0).
@@ -20,6 +21,7 @@ import { GuestsLensPanel } from "./GuestsLensPanel.js";
 export const LENS_PANELS: Partial<Record<CockpitMode, FC>> = {
   guests: GuestsLensPanel,
   flow: FlowLensPanel,
+  ops: OpsLensPanel,
   costs: CostsLensPanel,
   share: ShareLensPanel,
 };
