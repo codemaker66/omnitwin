@@ -3,6 +3,7 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import type { CockpitMode } from "../../../lib/cockpit-modes.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { FlowLensPanel } from "./FlowLensPanel.js";
+import { CostsLensPanel } from "./CostsLensPanel.js";
 
 // ---------------------------------------------------------------------------
 // CockpitRightDock — the contextual right column (Epic 0).
@@ -16,6 +17,7 @@ import { FlowLensPanel } from "./FlowLensPanel.js";
 
 export const LENS_PANELS: Partial<Record<CockpitMode, FC>> = {
   flow: FlowLensPanel,
+  costs: CostsLensPanel,
 };
 
 /** The registered panel component for a lens, or null when it has none yet. */
