@@ -68,6 +68,89 @@ function recommendationColor(severity: RecommendationSeverity): string {
   }
 }
 
+const gradePanelBaseStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  minHeight: 150,
+  padding: "17px 18px 15px",
+};
+
+const gradeRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "52px minmax(0, 1fr)",
+  gap: 13,
+  alignItems: "center",
+  minWidth: 0,
+};
+
+const gradeCopyStyle: React.CSSProperties = {
+  display: "grid",
+  minWidth: 0,
+  gap: 4,
+};
+
+const gradeScoreDenominatorStyle: React.CSSProperties = {
+  marginLeft: 2,
+  color: "rgba(246, 239, 227, 0.56)",
+  fontSize: 12,
+  fontWeight: 680,
+};
+
+const gradeHeadlineStyle: React.CSSProperties = {
+  display: "-webkit-box",
+  overflow: "hidden",
+  overflowWrap: "anywhere",
+  color: "rgba(246, 239, 227, 0.84)",
+  fontSize: 12,
+  fontWeight: 720,
+  letterSpacing: 0,
+  lineHeight: 1.24,
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+};
+
+function gradeBadgeStyle(color: string): React.CSSProperties {
+  return {
+    display: "grid",
+    placeItems: "center",
+    width: 52,
+    height: 52,
+    border: `2px solid ${color}`,
+    borderRadius: 999,
+    background: "rgba(255, 255, 255, 0.04)",
+    color,
+    fontSize: 20,
+    fontWeight: 820,
+    letterSpacing: 0,
+    lineHeight: 1,
+  };
+}
+
+function gradeScoreStyle(color: string): React.CSSProperties {
+  return {
+    color,
+    fontSize: 20,
+    fontWeight: 820,
+    letterSpacing: 0,
+    lineHeight: 1,
+  };
+}
+
+function gradeRecommendationStyle(color: string): React.CSSProperties {
+  return {
+    display: "-webkit-box",
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+    color,
+    fontSize: 12,
+    fontWeight: 720,
+    letterSpacing: 0,
+    lineHeight: 1.3,
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 2,
+  };
+}
+
 export function PlannerSpatialHud(): React.ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
@@ -120,6 +203,9 @@ export function PlannerSpatialHud(): React.ReactElement {
   );
   const topRecommendation = grade.recommendations[0];
   const gradeColor = gradeBandColor(grade.band);
+  const topRecommendationColor = topRecommendation === undefined
+    ? gradeColor
+    : recommendationColor(topRecommendation.severity);
 
   return (
     <aside className="planner-spatial-hud" data-testid="planner-spatial-hud" aria-label="Layout summary">
@@ -127,39 +213,29 @@ export function PlannerSpatialHud(): React.ReactElement {
         className="planner-spatial-hud__panel planner-spatial-hud__panel--grade"
         data-testid="planner-layout-grade"
         aria-label={`Layout grade ${grade.band}, ${String(grade.score)} out of 100. ${grade.headline}`}
+        style={{
+          ...gradePanelBaseStyle,
+          "--layout-grade-color": gradeColor,
+          "--layout-recommendation-color": topRecommendationColor,
+        } as React.CSSProperties}
       >
         <div className="planner-spatial-hud__title">Layout grade</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span
-            aria-hidden="true"
-            style={{
-              width: 46,
-              height: 46,
-              flexShrink: 0,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 800,
-              fontSize: 20,
-              color: gradeColor,
-              border: `2px solid ${gradeColor}`,
-              background: "rgba(255,255,255,0.04)",
-            }}
-          >
+        <div className="planner-spatial-hud__grade-row" style={gradeRowStyle}>
+          <span className="planner-spatial-hud__grade-badge" style={gradeBadgeStyle(gradeColor)} aria-hidden="true">
             {grade.band}
           </span>
-          <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <strong style={{ fontSize: 18, lineHeight: 1, color: gradeColor }}>
+          <span className="planner-spatial-hud__grade-copy" style={gradeCopyStyle}>
+            <strong className="planner-spatial-hud__grade-score" style={gradeScoreStyle(gradeColor)}>
               {grade.score}
-              <span style={{ fontSize: 12, opacity: 0.55, fontWeight: 600 }}>/100</span>
+              <span className="planner-spatial-hud__grade-score-denominator" style={gradeScoreDenominatorStyle}>/100</span>
             </strong>
-            <span style={{ fontSize: 12, opacity: 0.82 }}>{grade.headline}</span>
+            <span className="planner-spatial-hud__grade-headline" style={gradeHeadlineStyle}>{grade.headline}</span>
           </span>
         </div>
         {topRecommendation !== undefined && (
           <div
-            style={{ marginTop: 9, fontSize: 12, lineHeight: 1.35, color: recommendationColor(topRecommendation.severity) }}
+            className="planner-spatial-hud__grade-recommendation"
+            style={gradeRecommendationStyle(topRecommendationColor)}
           >
             {topRecommendation.message}
           </div>

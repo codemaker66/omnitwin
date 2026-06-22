@@ -89,6 +89,15 @@ const MOCK_OBJECT: MockPlacedObject = {
   metadata: null,
 };
 
+function mockRoundTables(count: number): readonly MockPlacedObject[] {
+  return Array.from({ length: count }, (_, i) => ({
+    ...MOCK_OBJECT,
+    id: `e2e-round-table-${String(i + 1)}`,
+    positionX: String(i * 8),
+    sortOrder: i,
+  }));
+}
+
 const MOCK_CONFIG_EMPTY: MockConfig = {
   id: CONFIG_ID,
   spaceId: SPACE_ID,
@@ -296,6 +305,61 @@ test.describe("Editor with placed objects", () => {
     if (sendBox === null || railBox === null) return;
 
     expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(railBox.x - 8);
+  });
+
+  test("Layout grade card keeps long recommendation copy inside the panel", async ({ page }) => {
+    await page.setViewportSize({ width: 1493, height: 1053 });
+    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockRoundTables(18) });
+    await page.goto(`/plan/${CONFIG_ID}`);
+    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await expect(page.getByTestId("planner-layout-grade")).toBeVisible({ timeout: 5_000 });
+
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>('[data-testid="planner-layout-grade"]');
+      if (panel === null) return { status: "missing-panel" as const };
+
+      const children = [
+        panel.querySelector<HTMLElement>(".planner-spatial-hud__title"),
+        panel.querySelector<HTMLElement>(".planner-spatial-hud__grade-row"),
+        panel.querySelector<HTMLElement>(".planner-spatial-hud__grade-recommendation"),
+      ];
+      if (children.some((child) => child === null)) return { status: "missing-child" as const };
+
+      const panelRect = panel.getBoundingClientRect();
+      const childRects = children.map((child) => {
+        if (child === null) throw new Error("unreachable");
+        const rect = child.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+        };
+      });
+      const inset = 8;
+
+      return {
+        status: "measured" as const,
+        fits: childRects.every((rect) =>
+          rect.left >= panelRect.left + inset
+          && rect.right <= panelRect.right - inset
+          && rect.top >= panelRect.top + inset
+          && rect.bottom <= panelRect.bottom - inset,
+        ),
+        panel: {
+          bottom: panelRect.bottom,
+          left: panelRect.left,
+          right: panelRect.right,
+          top: panelRect.top,
+        },
+        children: childRects,
+      };
+    });
+
+    expect(layout.status).toBe("measured");
+    if (layout.status === "measured") {
+      expect(layout.fits).toBe(true);
+    }
   });
 
   test("Send to Events Team button opens the guest enquiry form", async ({ page }) => {

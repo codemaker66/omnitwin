@@ -196,4 +196,26 @@ describe("PlannerSpatialHud", () => {
     // Aria-label carries the band + score for screen readers.
     expect(panel.getAttribute("aria-label")).toMatch(/Layout grade [SABCD], \d+ out of 100/);
   });
+
+  it("uses the compact grade-card structure for long recommendation copy", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    expect(roundTable).toBeDefined();
+    if (roundTable === undefined) return;
+
+    usePlacementStore.setState({
+      placedItems: Array.from({ length: 18 }, (_, i) =>
+        createPlacedItem(roundTable.id, i * 8, 0, 0),
+      ),
+    });
+
+    render(<PlannerSpatialHud />);
+
+    const panel = screen.getByTestId("planner-layout-grade");
+    expect(panel.querySelector(".planner-spatial-hud__grade-row")).not.toBeNull();
+    expect(panel.querySelector(".planner-spatial-hud__grade-badge")).not.toBeNull();
+    expect(panel.querySelector(".planner-spatial-hud__grade-headline")).not.toBeNull();
+    const recommendation = panel.querySelector(".planner-spatial-hud__grade-recommendation");
+    expect(recommendation).not.toBeNull();
+    expect(recommendation?.textContent).toContain("18 tables are undressed");
+  });
 });

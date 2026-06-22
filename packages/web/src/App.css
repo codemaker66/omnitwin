@@ -448,7 +448,7 @@
   z-index: 33;
   display: grid;
   gap: 14px;
-  width: min(236px, 22vw);
+  width: clamp(260px, 20vw, 288px);
   color: #f6efe3;
   font-family: "Inter", system-ui, sans-serif;
   pointer-events: none;
@@ -471,6 +471,13 @@
   padding: 18px 16px 16px;
 }
 
+.planner-spatial-hud__panel--grade {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  padding: 17px 18px 15px;
+}
+
 .planner-spatial-hud__panel--capacity {
   display: grid;
   justify-items: center;
@@ -485,6 +492,83 @@
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.05;
+}
+
+.planner-spatial-hud__panel--grade .planner-spatial-hud__title {
+  margin-bottom: 0;
+}
+
+.planner-spatial-hud__grade-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 13px;
+  align-items: center;
+  min-width: 0;
+}
+
+.planner-spatial-hud__grade-badge {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--layout-grade-color);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--layout-grade-color);
+  font-size: 20px;
+  font-weight: 820;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.planner-spatial-hud__grade-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.planner-spatial-hud__grade-score {
+  color: var(--layout-grade-color);
+  font-size: 20px;
+  font-weight: 820;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.planner-spatial-hud__grade-score-denominator {
+  margin-left: 2px;
+  color: rgba(246, 239, 227, 0.56);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.planner-spatial-hud__grade-headline,
+.planner-spatial-hud__grade-recommendation {
+  overflow-wrap: anywhere;
+}
+
+.planner-spatial-hud__grade-headline {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(246, 239, 227, 0.84);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.24;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.planner-spatial-hud__grade-recommendation {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--layout-recommendation-color);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .planner-spatial-hud__list {
