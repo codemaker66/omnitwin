@@ -1,3 +1,7 @@
+/* Truth rail — the fallback right column for lenses without a registered panel.
+   Type scale kept in step with LensPanel.css (bumped a second notch 2026-06-22
+   after live review). */
+
 .cockpit-truth {
   grid-area: panel;
   display: flex;
@@ -36,7 +40,7 @@
 .cockpit-truth__head-copy { display: grid; gap: 3px; min-width: 0; }
 .cockpit-truth__eyebrow {
   color: #d7bd68;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -44,7 +48,7 @@
 .cockpit-truth__title {
   color: #fff6e9;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 21px;
+  font-size: 23px;
   font-weight: 600;
   line-height: 1.05;
 }
@@ -55,7 +59,7 @@
   border-radius: 999px;
   background: rgba(201, 168, 76, 0.08);
   color: rgba(246, 238, 220, 0.82);
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -76,7 +80,7 @@
   grid-column: 1;
   margin: 0;
   color: rgba(244, 239, 230, 0.58);
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 850;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -85,7 +89,7 @@
   grid-column: 1;
   margin: 2px 0 0;
   color: #f6efe0;
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -95,7 +99,7 @@
   align-self: center;
   padding: 4px 9px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -127,10 +131,10 @@
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.025);
 }
-.cockpit-truth__count strong { color: #fff6e9; font-size: 20px; font-weight: 700; line-height: 1; }
+.cockpit-truth__count strong { color: #fff6e9; font-size: 22px; font-weight: 700; line-height: 1; }
 .cockpit-truth__count small {
   color: rgba(244, 239, 230, 0.56);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -141,7 +145,7 @@
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   color: rgba(241, 206, 120, 0.82);
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 650;
   line-height: 1.4;
 }
