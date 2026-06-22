@@ -216,3 +216,75 @@
   font-weight: 600;
   line-height: 1.45;
 }
+
+/* Read-only preview paragraphs (room / layout / capacity summaries). */
+.lens-panel__paragraph { margin: 0; color: rgba(244, 239, 230, 0.86); font-size: 14px; line-height: 1.5; }
+.lens-panel__paragraph--muted { color: rgba(244, 239, 230, 0.62); font-size: 13px; }
+
+/* Multi-line input (client message). */
+.lens-panel__input--area { min-height: 74px; line-height: 1.45; resize: vertical; font-weight: 500; }
+
+/* Action stack + primary / ghost buttons. */
+.lens-panel__actions { display: grid; gap: 10px; margin-top: 2px; }
+.lens-panel__button {
+  appearance: none;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 224, 154, 0.5);
+  background: linear-gradient(135deg, #d7b56d, #f0cf84);
+  color: #14110a;
+  font: 750 15px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: filter 120ms ease, opacity 120ms ease;
+}
+.lens-panel__button:hover:not(:disabled) { filter: brightness(1.05); }
+.lens-panel__button:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.7); outline-offset: 2px; }
+.lens-panel__button:disabled { opacity: 0.45; cursor: default; }
+.lens-panel__button--ghost { background: rgba(255, 247, 232, 0.06); border-color: rgba(201, 168, 76, 0.34); color: #f4efe6; }
+
+/* Inline precondition / status note + error line. */
+.lens-panel__note { margin: 0; color: rgba(244, 239, 230, 0.62); font-size: 13px; line-height: 1.45; }
+.lens-panel__note--warn { color: #f1ce78; }
+.lens-panel__error { margin: 0; color: #f0b39a; font-size: 13.5px; line-height: 1.45; }
+
+/* Created share-link result. */
+.lens-panel__share-result {
+  display: grid;
+  gap: 8px;
+  padding: 13px 14px;
+  border: 1px solid rgba(201, 168, 76, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(155deg, rgba(201, 168, 76, 0.16), rgba(201, 168, 76, 0.04));
+}
+.lens-panel__share-result-label {
+  color: #f3ddb0;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lens-panel__share-url {
+  color: #fff6e9;
+  font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.lens-panel__share-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.lens-panel__chip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 168, 76, 0.34);
+  background: rgba(255, 247, 232, 0.06);
+  color: #f4efe6;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+.lens-panel__chip-link:hover { background: rgba(255, 247, 232, 0.12); }
