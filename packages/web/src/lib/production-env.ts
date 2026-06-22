@@ -7,9 +7,25 @@ export interface SentrySourceMapUploadConfig {
   readonly release?: string;
 }
 
+const WEB_CLERK_PUBLISHABLE_KEY_ENV_NAMES = [
+  "VITE_CLERK_PUBLISHABLE_KEY",
+  "CLERK_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+] as const;
+
 function trimmedEnv(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+export function resolveWebClerkPublishableKey(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  const candidates = WEB_CLERK_PUBLISHABLE_KEY_ENV_NAMES
+    .map((name) => trimmedEnv(env[name]))
+    .filter((value): value is string => value !== undefined);
+
+  return candidates.find((value) => value.startsWith("pk_live_")) ?? candidates[0];
 }
 
 export function getSentrySourceMapUploadConfig(
@@ -43,11 +59,12 @@ export function assertRequiredProductionEnv(
 ): void {
   if (mode !== "production") return;
 
-  const clerkKey = env["VITE_CLERK_PUBLISHABLE_KEY"]?.trim();
+  const clerkKey = resolveWebClerkPublishableKey(env);
   if (clerkKey === undefined || clerkKey.length === 0) {
     throw new Error(
-      "VITE_CLERK_PUBLISHABLE_KEY is required for production web builds. " +
-        "Set it in Vercel or in the local build environment.",
+      "A Clerk publishable key is required for production web builds. " +
+        "Set VITE_CLERK_PUBLISHABLE_KEY=pk_live_... in Vercel. " +
+        "CLERK_PUBLISHABLE_KEY and NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY are accepted as public-key aliases.",
     );
   }
   if (!clerkKey.startsWith("pk_live_")) {

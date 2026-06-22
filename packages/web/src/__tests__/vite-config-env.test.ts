@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
+  resolveWebClerkPublishableKey,
 } from "../lib/production-env.js";
 
 describe("Vite production environment guard", () => {
   it("requires Clerk publishable key for production builds", () => {
     expect(() => {
       assertRequiredProductionEnv("production", {});
-    }).toThrow("VITE_CLERK_PUBLISHABLE_KEY");
+    }).toThrow("Clerk publishable key");
   });
 
   it("allows production builds when a live Clerk publishable key is present", () => {
@@ -17,6 +18,21 @@ describe("Vite production environment guard", () => {
         VITE_CLERK_PUBLISHABLE_KEY: "pk_live_local",
       });
     }).not.toThrow();
+  });
+
+  it("allows production builds when the live Clerk publishable key uses the server-side public alias", () => {
+    expect(() => {
+      assertRequiredProductionEnv("production", {
+        CLERK_PUBLISHABLE_KEY: "pk_live_local",
+      });
+    }).not.toThrow();
+  });
+
+  it("selects a live public-key alias over a stale Vite test key", () => {
+    expect(resolveWebClerkPublishableKey({
+      VITE_CLERK_PUBLISHABLE_KEY: "pk_test_stale",
+      CLERK_PUBLISHABLE_KEY: "pk_live_current",
+    })).toBe("pk_live_current");
   });
 
   it("rejects Clerk test keys in production builds", () => {

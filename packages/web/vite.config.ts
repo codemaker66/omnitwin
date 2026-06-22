@@ -4,6 +4,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
+  resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ import {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   assertRequiredProductionEnv(mode, env);
+  const clerkPublishableKey = resolveWebClerkPublishableKey(env) ?? "";
   const sentrySourceMapUpload = mode === "production"
     ? getSentrySourceMapUploadConfig(env)
     : null;
@@ -56,6 +58,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins,
+    define: {
+      __VENVIEWER_CLERK_PUBLISHABLE_KEY__: JSON.stringify(clerkPublishableKey),
+    },
     build: {
       target: "es2022",
       sourcemap: sentrySourceMapUpload === null ? false : "hidden",

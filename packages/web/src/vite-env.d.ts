@@ -20,3 +20,5 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare const __VENVIEWER_CLERK_PUBLISHABLE_KEY__: string | undefined;

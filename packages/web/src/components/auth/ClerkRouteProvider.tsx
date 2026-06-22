@@ -8,8 +8,18 @@ interface ClerkRouteProviderProps {
   readonly children: ReactNode;
 }
 
+declare const __VENVIEWER_CLERK_PUBLISHABLE_KEY__: string | undefined;
+
+function injectedClerkPublishableKey(): string | undefined {
+  if (typeof __VENVIEWER_CLERK_PUBLISHABLE_KEY__ === "string") {
+    const trimmed = __VENVIEWER_CLERK_PUBLISHABLE_KEY__.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return undefined;
+}
+
 function clerkPublishableKey(): string {
-  const key = import.meta.env["VITE_CLERK_PUBLISHABLE_KEY"];
+  const key = injectedClerkPublishableKey() ?? import.meta.env["VITE_CLERK_PUBLISHABLE_KEY"];
   if ((key === undefined || key === "") && import.meta.env.PROD) {
     throw new Error(
       "VITE_CLERK_PUBLISHABLE_KEY is required in production builds. " +
