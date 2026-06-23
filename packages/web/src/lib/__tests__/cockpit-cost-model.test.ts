@@ -34,7 +34,7 @@ const RATES: CostRates = {
 
 describe("buildCostScenario", () => {
   it("computes line items, subtotal, margin and total with exact integer arithmetic", () => {
-    const quantities: CostQuantities = { covers: 100, tables: 12, chairs: 96, avItems: 2, coversSource: "guest-count" };
+    const quantities: CostQuantities = { covers: 100, tables: 12, chairs: 96, avItems: 2, lightingFixtures: 0, coversSource: "guest-count" };
     const model = buildCostScenario(quantities, RATES);
     // room 75000 + catering 100*4500=450000 + furniture 12*800=9600 + av 2*15000=30000
     expect(model.lineItems).toHaveLength(4);
@@ -45,7 +45,7 @@ describe("buildCostScenario", () => {
   });
 
   it("omits the catering line and per-cover figure when there are no covers", () => {
-    const quantities: CostQuantities = { covers: 0, tables: 0, chairs: 0, avItems: 0, coversSource: "none" };
+    const quantities: CostQuantities = { covers: 0, tables: 0, chairs: 0, avItems: 0, lightingFixtures: 0, coversSource: "none" };
     const model = buildCostScenario(quantities, RATES);
     expect(model.lineItems).toHaveLength(1); // room hire only
     expect(model.lineItems[0]?.key).toBe("room-hire");
@@ -54,12 +54,20 @@ describe("buildCostScenario", () => {
   });
 
   it("treats negative / non-finite rates as zero (never a negative line)", () => {
-    const quantities: CostQuantities = { covers: 10, tables: 0, chairs: 10, avItems: 0, coversSource: "placed-chairs" };
+    const quantities: CostQuantities = { covers: 10, tables: 0, chairs: 10, avItems: 0, lightingFixtures: 0, coversSource: "placed-chairs" };
     const model = buildCostScenario(quantities, { ...RATES, roomHireMinor: -5000, cateringPerCoverMinor: 4500, marginPercent: 0 });
     const roomHire = model.lineItems.find((line) => line.key === "room-hire");
     expect(roomHire?.amountMinor).toBe(0);
     expect(model.subtotalMinor).toBe(45000); // catering only
     expect(model.marginMinor).toBe(0);
+  });
+
+  it("adds a lighting hire line from the rig fixtures", () => {
+    const quantities: CostQuantities = { covers: 0, tables: 0, chairs: 0, avItems: 0, lightingFixtures: 18, coversSource: "none" };
+    const model = buildCostScenario(quantities, { ...RATES, roomHireMinor: 0, marginPercent: 0, lightingPerFixtureMinor: 3500 });
+    const lighting = model.lineItems.find((line) => line.key === "lighting");
+    expect(lighting?.amountMinor).toBe(63000); // 18 × £35
+    expect(lighting?.detail).toMatch(/18 fixtures × £35\.00/);
   });
 });
 
@@ -89,6 +97,12 @@ describe("costQuantitiesFromLayout", () => {
     const q = costQuantitiesFromLayout([], null);
     expect(q.covers).toBe(0);
     expect(q.coversSource).toBe("none");
+    expect(q.lightingFixtures).toBe(0);
+  });
+
+  it("passes the rig lighting fixture count through", () => {
+    const q = costQuantitiesFromLayout([], 100, 18);
+    expect(q.lightingFixtures).toBe(18);
   });
 });
 

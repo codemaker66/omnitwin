@@ -21,6 +21,8 @@ export interface CostQuantities {
   readonly tables: number;
   readonly chairs: number;
   readonly avItems: number;
+  /** Lighting fixtures from the rig (Lighting lens); 0 when no rig is set. */
+  readonly lightingFixtures: number;
   /** Where the cover count came from, for honest display. */
   readonly coversSource: CoversSource;
 }
@@ -28,10 +30,12 @@ export interface CostQuantities {
 /**
  * Derive cost quantities from the live layout. The planner's guest count
  * (`coversOverride`) wins; otherwise covers fall back to the placed chair count.
+ * Lighting fixtures come from the rig (Lighting lens), not the floor layout.
  */
 export function costQuantitiesFromLayout(
   placedItems: readonly PlacedItem[],
   coversOverride: number | null,
+  lightingFixtures = 0,
 ): CostQuantities {
   const seating = seatingCountsFromPlacedItems(placedItems);
   const tables = seating.roundTables + seating.banquetTables;
@@ -44,7 +48,8 @@ export function costQuantitiesFromLayout(
   const hasOverride = coversOverride !== null && Number.isFinite(coversOverride) && coversOverride > 0;
   const covers = hasOverride ? Math.floor(coversOverride) : chairs;
   const coversSource: CoversSource = hasOverride ? "guest-count" : chairs > 0 ? "placed-chairs" : "none";
-  return { covers, tables, chairs, avItems, coversSource };
+  const rigFixtures = Number.isFinite(lightingFixtures) && lightingFixtures > 0 ? Math.floor(lightingFixtures) : 0;
+  return { covers, tables, chairs, avItems, lightingFixtures: rigFixtures, coversSource };
 }
 
 export interface CostRates {
@@ -52,6 +57,8 @@ export interface CostRates {
   readonly cateringPerCoverMinor: number;
   readonly furniturePerTableMinor: number;
   readonly avPerItemMinor: number;
+  /** Per-lighting-fixture hire rate; optional (0 when not priced). */
+  readonly lightingPerFixtureMinor?: number;
   readonly marginPercent: number;
 }
 
@@ -106,6 +113,15 @@ export function buildCostScenario(quantities: CostQuantities, rates: CostRates):
       label: "AV / equipment",
       detail: `${quantities.avItems.toLocaleString("en-GB")} items × ${formatMinorAsCurrency(rate)}`,
       amountMinor: quantities.avItems * rate,
+    });
+  }
+  if (quantities.lightingFixtures > 0) {
+    const rate = nonNegativeMinor(rates.lightingPerFixtureMinor ?? 0);
+    lineItems.push({
+      key: "lighting",
+      label: "Lighting hire",
+      detail: `${quantities.lightingFixtures.toLocaleString("en-GB")} fixtures × ${formatMinorAsCurrency(rate)}`,
+      amountMinor: quantities.lightingFixtures * rate,
     });
   }
 

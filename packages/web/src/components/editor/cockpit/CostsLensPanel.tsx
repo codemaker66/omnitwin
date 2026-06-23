@@ -1,9 +1,11 @@
 import { type ChangeEvent, type ReactElement } from "react";
 import { CircleDollarSign } from "lucide-react";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { useMemo } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useCostStore } from "../../../stores/cost-store.js";
+import { useLightingRigStore } from "../../../stores/lighting-rig-store.js";
 import { costQuantitiesFromLayout, buildCostScenario, coversSourceLabel } from "../../../lib/cockpit-cost-model.js";
 import { parsePoundsToMinor, formatMinorAsCurrency } from "../../../lib/money-input.js";
 
@@ -58,19 +60,28 @@ export function CostsLensPanel(): ReactElement {
   const cateringPerCoverMinor = useCostStore((state) => state.cateringPerCoverMinor);
   const furniturePerTableMinor = useCostStore((state) => state.furniturePerTableMinor);
   const avPerItemMinor = useCostStore((state) => state.avPerItemMinor);
+  const lightingPerFixtureMinor = useCostStore((state) => state.lightingPerFixtureMinor);
   const marginPercent = useCostStore((state) => state.marginPercent);
   const setRoomHireMinor = useCostStore((state) => state.setRoomHireMinor);
   const setCateringPerCoverMinor = useCostStore((state) => state.setCateringPerCoverMinor);
   const setFurniturePerTableMinor = useCostStore((state) => state.setFurniturePerTableMinor);
   const setAvPerItemMinor = useCostStore((state) => state.setAvPerItemMinor);
+  const setLightingPerFixtureMinor = useCostStore((state) => state.setLightingPerFixtureMinor);
   const setMarginPercent = useCostStore((state) => state.setMarginPercent);
 
-  const quantities = costQuantitiesFromLayout(placedItems, plannedGuestCount);
+  const rigCounts = useLightingRigStore((state) => state.counts);
+  const lightingFixtures = useMemo(
+    () => Object.values(rigCounts).reduce((sum, n) => sum + n, 0),
+    [rigCounts],
+  );
+
+  const quantities = costQuantitiesFromLayout(placedItems, plannedGuestCount, lightingFixtures);
   const model = buildCostScenario(quantities, {
     roomHireMinor,
     cateringPerCoverMinor,
     furniturePerTableMinor,
     avPerItemMinor,
+    lightingPerFixtureMinor,
     marginPercent,
   });
 
@@ -94,6 +105,7 @@ export function CostsLensPanel(): ReactElement {
         <RateField label="Catering (£/cover)" minor={cateringPerCoverMinor} onMinor={setCateringPerCoverMinor} testId="cost-catering" />
         <RateField label="Furniture (£/table)" minor={furniturePerTableMinor} onMinor={setFurniturePerTableMinor} testId="cost-furniture" />
         <RateField label="AV (£/item)" minor={avPerItemMinor} onMinor={setAvPerItemMinor} testId="cost-av" />
+        <RateField label="Lighting (£/fixture)" minor={lightingPerFixtureMinor} onMinor={setLightingPerFixtureMinor} testId="cost-lighting" />
         <label className="lens-panel__field lens-panel__field--inline">
           <span className="lens-panel__field-label">Margin (%)</span>
           <input
@@ -142,6 +154,7 @@ export function CostsLensPanel(): ReactElement {
         <LensPanelMetric label="Tables" value={String(quantities.tables)} />
         <LensPanelMetric label="Chairs" value={String(quantities.chairs)} />
         <LensPanelMetric label="AV items" value={String(quantities.avItems)} />
+        <LensPanelMetric label="Lighting fixtures" value={`${String(quantities.lightingFixtures)} · from rig`} />
       </LensPanelSection>
     </LensPanel>
   );

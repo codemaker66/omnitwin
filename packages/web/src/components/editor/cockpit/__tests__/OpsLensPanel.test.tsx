@@ -12,6 +12,7 @@ import { OpsLensPanel } from "../OpsLensPanel.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
+import { useLightingRigStore } from "../../../../stores/lighting-rig-store.js";
 import { CATALOGUE_ITEMS, type CatalogueItem } from "../../../../lib/catalogue.js";
 import type { PlacedItem } from "../../../../lib/placement.js";
 
@@ -43,6 +44,7 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useEditorStore.setState({ configId: null });
   useAuthStore.getState().logout();
+  useLightingRigStore.getState().clear();
 });
 
 afterEach(() => { cleanup(); });
@@ -62,6 +64,12 @@ describe("OpsLensPanel", () => {
   it("shows an empty-state hint with nothing placed", () => {
     render(<OpsLensPanel />);
     expect(screen.getByTestId("ops-empty")).toBeTruthy();
+  });
+
+  it("adds a lighting rig task from the Lighting lens rig", () => {
+    useLightingRigStore.getState().setCount("par", 12);
+    render(<OpsLensPanel />);
+    expect(screen.getByTestId("ops-task-lighting").textContent).toMatch(/12 to place/);
   });
 
   it("blocks compiling until staff sign-in", () => {

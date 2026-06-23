@@ -60,6 +60,20 @@ describe("buildOpsSetupPlan", () => {
     expect(plan.suggestedCrew).toBe(0);
     expect(plan.estimatedSetupMinutes).toBe(0);
   });
+
+  it("adds a lighting rig task from the Lighting lens, early in the load-in", () => {
+    const plan = buildOpsSetupPlan(place(chair(), 10), { lightingFixtures: 18 });
+    const lighting = plan.tasks.find((t) => t.key === "lighting");
+    expect(lighting?.count).toBe(18);
+    expect(lighting?.effortMinutes).toBe(108); // 18 × 6
+    // Lighting rigs before furniture: it is the first task here (no stage placed).
+    expect(plan.tasks[0]?.key).toBe("lighting");
+  });
+
+  it("ignores the lighting option when no rig is set", () => {
+    const plan = buildOpsSetupPlan(place(chair(), 10), { lightingFixtures: 0 });
+    expect(plan.tasks.find((t) => t.key === "lighting")).toBeUndefined();
+  });
 });
 
 describe("formatSetupDuration", () => {

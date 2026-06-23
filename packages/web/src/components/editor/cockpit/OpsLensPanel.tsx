@@ -5,6 +5,7 @@ import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { useLightingRigStore } from "../../../stores/lighting-rig-store.js";
 import { buildOpsSetupPlan, formatSetupDuration } from "../../../lib/cockpit-ops-model.js";
 import { compileOpsHandoffPack } from "../../../api/ops-handoff.js";
 
@@ -32,7 +33,15 @@ export function OpsLensPanel(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [pack, setPack] = useState<OpsHandoffPackBundle | null>(null);
 
-  const plan = useMemo(() => buildOpsSetupPlan(placedItems), [placedItems]);
+  const rigCounts = useLightingRigStore((state) => state.counts);
+  const lightingFixtures = useMemo(
+    () => Object.values(rigCounts).reduce((sum, n) => sum + n, 0),
+    [rigCounts],
+  );
+  const plan = useMemo(
+    () => buildOpsSetupPlan(placedItems, { lightingFixtures }),
+    [placedItems, lightingFixtures],
+  );
   const canCompile = isSignedIn && configId !== null;
   const compiling = phase === "compiling";
 

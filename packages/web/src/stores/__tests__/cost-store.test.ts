@@ -10,6 +10,7 @@ describe("cost-store", () => {
     expect(s.cateringPerCoverMinor).toBe(DEFAULT_COST_RATES.cateringPerCoverMinor);
     expect(s.furniturePerTableMinor).toBe(DEFAULT_COST_RATES.furniturePerTableMinor);
     expect(s.avPerItemMinor).toBe(DEFAULT_COST_RATES.avPerItemMinor);
+    expect(s.lightingPerFixtureMinor).toBe(DEFAULT_COST_RATES.lightingPerFixtureMinor);
     expect(s.marginPercent).toBe(0);
   });
 
@@ -18,6 +19,8 @@ describe("cost-store", () => {
     expect(useCostStore.getState().roomHireMinor).toBe(100000);
     useCostStore.getState().setRoomHireMinor(-50);
     expect(useCostStore.getState().roomHireMinor).toBe(0);
+    useCostStore.getState().setLightingPerFixtureMinor(5000);
+    expect(useCostStore.getState().lightingPerFixtureMinor).toBe(5000);
   });
 
   it("clamps margin to 0..100", () => {

@@ -19,6 +19,7 @@ import { BAR_CATALOGUE_SLUG } from "./guest-flow-layout-input.js";
 /** Indicative crew-minutes per unit of work (planning-grade rules of thumb). */
 export const OPS_EFFORT_MINUTES = {
   stage: 20,
+  lightingFixture: 6,
   table: 3,
   dressTable: 4,
   chair: 0.5,
@@ -84,14 +85,28 @@ function collectCounts(placedItems: readonly PlacedItem[]): LayoutCounts {
   };
 }
 
+export interface OpsSetupPlanOptions {
+  /** Lighting fixtures from the rig (Lighting lens) to rig & focus during load-in. */
+  readonly lightingFixtures?: number;
+}
+
 /**
  * Build the indicative setup plan from the live layout. Pure. Tasks are listed
- * in a sensible load-in order; only non-empty tasks appear.
+ * in a sensible load-in order; only non-empty tasks appear. The lighting rig
+ * (from the Lighting lens) is an optional input — rigging happens early, so it
+ * sits right after the stage.
  */
-export function buildOpsSetupPlan(placedItems: readonly PlacedItem[]): OpsSetupPlan {
+export function buildOpsSetupPlan(
+  placedItems: readonly PlacedItem[],
+  options: OpsSetupPlanOptions = {},
+): OpsSetupPlan {
   const c = collectCounts(placedItems);
+  const lightingFixtures = options.lightingFixtures !== undefined && options.lightingFixtures > 0
+    ? Math.floor(options.lightingFixtures)
+    : 0;
   const candidates: ReadonlyArray<{ key: string; label: string; count: number; perUnit: number }> = [
     { key: "stage", label: "Set up stage", count: c.stages, perUnit: OPS_EFFORT_MINUTES.stage },
+    { key: "lighting", label: "Rig & focus lighting", count: lightingFixtures, perUnit: OPS_EFFORT_MINUTES.lightingFixture },
     { key: "round-tables", label: "Lay round tables", count: c.roundTables, perUnit: OPS_EFFORT_MINUTES.table },
     { key: "long-tables", label: "Lay long tables", count: c.banquetTables, perUnit: OPS_EFFORT_MINUTES.table },
     { key: "dress-tables", label: "Dress tables (linen)", count: c.clothedTables, perUnit: OPS_EFFORT_MINUTES.dressTable },

@@ -1,15 +1,21 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CostsLensPanel } from "../CostsLensPanel.js";
 import { useCostStore } from "../../../../stores/cost-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
+import { useLightingRigStore } from "../../../../stores/lighting-rig-store.js";
+
+// Clear the shared lighting rig so the layout-only assertions are not perturbed
+// by the starter rig's lighting hire line (the rig path is asserted explicitly).
+beforeEach(() => { useLightingRigStore.getState().clear(); });
 
 afterEach(() => {
   cleanup();
   useCostStore.getState().reset();
   useCockpitStore.getState().reset();
   usePlacementStore.setState({ placedItems: [] });
+  useLightingRigStore.getState().reset();
 });
 
 describe("CostsLensPanel", () => {
@@ -42,5 +48,13 @@ describe("CostsLensPanel", () => {
     render(<CostsLensPanel />);
     fireEvent.change(screen.getByTestId("cost-margin"), { target: { value: "10" } });
     expect(useCostStore.getState().marginPercent).toBe(10);
+  });
+
+  it("adds a lighting hire line from the Lighting lens rig", () => {
+    useLightingRigStore.getState().setCount("par", 18); // 18 fixtures × £35 default
+    render(<CostsLensPanel />);
+    expect(screen.getByText("Lighting hire")).toBeTruthy();
+    // £750 room hire + 18 × £35 = £630 → £1,380.00
+    expect(screen.getByTestId("cost-total").textContent).toMatch(/£1,380\.00/);
   });
 });
