@@ -10,6 +10,7 @@ export const COCKPIT_MODES = [
   { id: "lighting", label: "Lighting" },
   { id: "power", label: "Power" },
   { id: "rigging", label: "Rigging" },
+  { id: "av", label: "AV" },
   { id: "ops", label: "Ops" },
   { id: "costs", label: "Costs" },
   { id: "share", label: "Share" },

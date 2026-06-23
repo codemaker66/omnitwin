@@ -11,6 +11,7 @@ import { EvidenceLensPanel } from "./EvidenceLensPanel.js";
 import { LightingLensPanel } from "./LightingLensPanel.js";
 import { PowerLensPanel } from "./PowerLensPanel.js";
 import { RiggingLensPanel } from "./RiggingLensPanel.js";
+import { AVLensPanel } from "./AVLensPanel.js";
 
 // ---------------------------------------------------------------------------
 // CockpitRightDock — the contextual right column (Epic 0).
@@ -29,6 +30,7 @@ export const LENS_PANELS: Partial<Record<CockpitMode, FC>> = {
   lighting: LightingLensPanel,
   power: PowerLensPanel,
   rigging: RiggingLensPanel,
+  av: AVLensPanel,
   ops: OpsLensPanel,
   costs: CostsLensPanel,
   share: ShareLensPanel,
