@@ -8,6 +8,7 @@ export const COCKPIT_MODES = [
   { id: "flow", label: "Flow" },
   { id: "evidence", label: "Evidence" },
   { id: "lighting", label: "Lighting" },
+  { id: "power", label: "Power" },
   { id: "ops", label: "Ops" },
   { id: "costs", label: "Costs" },
   { id: "share", label: "Share" },

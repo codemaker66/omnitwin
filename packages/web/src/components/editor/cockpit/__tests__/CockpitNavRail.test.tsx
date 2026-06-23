@@ -6,10 +6,10 @@ import { CockpitNavRail } from "../CockpitNavRail.js";
 afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
 
 describe("CockpitNavRail", () => {
-  it("renders eight lens buttons with Design pressed by default", () => {
+  it("renders nine lens buttons with Design pressed by default", () => {
     render(<CockpitNavRail />);
-    const buttons = screen.getAllByRole("button", { name: /design|guests|flow|evidence|lighting|ops|costs|share/i });
-    expect(buttons.length).toBeGreaterThanOrEqual(8);
+    const buttons = screen.getAllByRole("button", { name: /design|guests|flow|evidence|lighting|power|ops|costs|share/i });
+    expect(buttons.length).toBeGreaterThanOrEqual(9);
     expect(screen.getByRole("button", { name: /design/i }).getAttribute("aria-pressed")).toBe("true");
   });
 

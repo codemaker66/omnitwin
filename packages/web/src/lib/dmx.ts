@@ -175,6 +175,18 @@ export function buildDmxPatch(groups: readonly RigGroup[], options: DmxPatchOpti
   };
 }
 
+/** Expand a rig into a flat list of per-fixture watts (one entry per fixture).
+ *  Feeds the Power lens's distro balancing, which assigns fixtures to phases. */
+export function fixtureWattsFromGroups(groups: readonly RigGroup[]): number[] {
+  const watts: number[] = [];
+  for (const group of groups) {
+    const perFixture = FIXTURE_FAMILY_WATTS[group.family];
+    const count = Number.isFinite(group.count) && group.count > 0 ? Math.floor(group.count) : 0;
+    for (let i = 0; i < count; i += 1) watts.push(perFixture);
+  }
+  return watts;
+}
+
 export interface RigPower {
   readonly totalWatts: number;
   readonly amps: number;

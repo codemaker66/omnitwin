@@ -290,6 +290,11 @@
   text-decoration: none;
 }
 .lens-panel__chip-link:hover { background: rgba(255, 247, 232, 0.12); }
+.lens-panel__chip-link.is-active {
+  background: linear-gradient(135deg, rgba(201, 168, 76, 0.3), rgba(201, 168, 76, 0.15));
+  border-color: rgba(226, 193, 93, 0.6);
+  color: #fbe9b8;
+}
 
 /* Positive (green) chip — seat sufficiency / comfortable room. */
 .lens-panel__chip--ok { border-color: rgba(116, 208, 140, 0.45); background: rgba(116, 208, 140, 0.12); color: #a7e3b6; }

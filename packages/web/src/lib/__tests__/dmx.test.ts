@@ -4,8 +4,10 @@ import {
   estimateRigPower,
   rigGroupsFromCounts,
   fixtureFamilyLabel,
+  fixtureWattsFromGroups,
   DMX_UNIVERSE_SIZE,
   FIXTURE_FAMILY_DMX_CHANNELS,
+  FIXTURE_FAMILY_WATTS,
 } from "../dmx.js";
 
 describe("buildDmxPatch", () => {
@@ -80,5 +82,14 @@ describe("fixtureFamilyLabel", () => {
   it("labels every family", () => {
     expect(fixtureFamilyLabel("par")).toBe("PAR");
     expect(fixtureFamilyLabel("beam-hybrid")).toBe("Beam / hybrid");
+  });
+});
+
+describe("fixtureWattsFromGroups", () => {
+  it("expands a rig into one watt entry per fixture", () => {
+    const watts = fixtureWattsFromGroups([{ family: "par", count: 3 }, { family: "wash", count: 1 }]);
+    expect(watts).toHaveLength(4);
+    expect(watts.filter((w) => w === FIXTURE_FAMILY_WATTS.par)).toHaveLength(3);
+    expect(watts).toContain(FIXTURE_FAMILY_WATTS.wash);
   });
 });
