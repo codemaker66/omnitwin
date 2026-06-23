@@ -6,7 +6,9 @@ import { rigGroupsFromCounts, fixtureWattsFromGroups } from "../../../lib/dmx.js
 import {
   buildDistroPlan,
   supplyLabel,
+  circuitSummaryLabel,
   DEFAULT_PER_PHASE_BREAKER_A,
+  DEFAULT_CIRCUIT_BREAKER_A,
   POWER_PLANNING_DISCLAIMER,
 } from "../../../lib/power.js";
 
@@ -25,25 +27,35 @@ function formatWatts(watts: number): string {
   return `${watts.toLocaleString("en-GB")} W`;
 }
 
-function phaseTone(amps: number, breakerA: number): string {
-  if (amps > breakerA) return "review";
-  if (amps > breakerA * 0.8) return "attention";
+function loadTone(utilisationPercent: number): string {
+  if (utilisationPercent > 100) return "review";
+  if (utilisationPercent > 80) return "attention";
   return "ok";
+}
+
+function phaseTone(amps: number, breakerA: number): string {
+  return loadTone(breakerA > 0 ? (amps / breakerA) * 100 : 0);
 }
 
 export function PowerLensPanel(): ReactElement {
   const counts = useLightingRigStore((state) => state.counts);
   const [phaseCount, setPhaseCount] = useState<1 | 3>(3);
   const [breakerA, setBreakerA] = useState<number>(DEFAULT_PER_PHASE_BREAKER_A);
+  const [circuitA, setCircuitA] = useState<number>(DEFAULT_CIRCUIT_BREAKER_A);
 
   const plan = useMemo(() => {
     const watts = fixtureWattsFromGroups(rigGroupsFromCounts(counts));
-    return buildDistroPlan(watts, { phaseCount, perPhaseBreakerA: breakerA });
-  }, [counts, phaseCount, breakerA]);
+    return buildDistroPlan(watts, { phaseCount, perPhaseBreakerA: breakerA, circuitBreakerA: circuitA });
+  }, [counts, phaseCount, breakerA, circuitA]);
 
   const onBreaker = (event: ChangeEvent<HTMLInputElement>): void => {
     const parsed = Number.parseInt(event.target.value, 10);
     if (Number.isFinite(parsed) && parsed > 0) setBreakerA(parsed);
+  };
+
+  const onCircuit = (event: ChangeEvent<HTMLInputElement>): void => {
+    const parsed = Number.parseInt(event.target.value, 10);
+    if (Number.isFinite(parsed) && parsed > 0) setCircuitA(parsed);
   };
 
   const empty = plan.totalWatts <= 0;
@@ -90,6 +102,19 @@ export function PowerLensPanel(): ReactElement {
             aria-label="Breaker per phase"
           />
         </label>
+        <label className="lens-panel__field lens-panel__field--inline">
+          <span className="lens-panel__field-label">Circuit way (A)</span>
+          <input
+            className="lens-panel__input"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            value={String(circuitA)}
+            onChange={onCircuit}
+            data-testid="power-circuit"
+            aria-label="Circuit way rating"
+          />
+        </label>
       </LensPanelSection>
 
       <LensPanelSection label="Distribution">
@@ -107,7 +132,25 @@ export function PowerLensPanel(): ReactElement {
                 <div className="lens-panel__meter" aria-hidden="true">
                   <div className={`lens-panel__meter-fill lens-panel__meter-fill--${phaseTone(p.amps, breakerA)}`} style={{ width: `${String(pct)}%` }} />
                 </div>
-                <span className="lens-panel__field-hint">{formatWatts(p.watts)} · {String(p.fixtures)} fixtures</span>
+                <span className="lens-panel__field-hint">
+                  {formatWatts(p.watts)} · {String(p.fixtures)} fixtures · {String(p.circuits.length)} {p.circuits.length === 1 ? "way" : "ways"}
+                </span>
+                {p.circuits.length > 0 && (
+                  <div className="lens-panel__circuits" data-testid={`power-circuits-${p.phase}`}>
+                    {p.circuits.map((c) => (
+                      <div key={c.id} className="lens-panel__circuit">
+                        <span className="lens-panel__circuit-id">{c.id}</span>
+                        <span className="lens-panel__circuit-bar" aria-hidden="true">
+                          <span
+                            className={`lens-panel__circuit-fill lens-panel__circuit-fill--${loadTone(c.utilisationPercent)}`}
+                            style={{ width: `${String(Math.min(100, c.utilisationPercent))}%` }}
+                          />
+                        </span>
+                        <span className="lens-panel__circuit-load">{c.amps.toFixed(1)} A · {String(c.fixtures)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })
@@ -124,7 +167,8 @@ export function PowerLensPanel(): ReactElement {
         <LensPanelMetric label="Total load" value={formatWatts(plan.totalWatts)} />
         <LensPanelMetric label="Apparent power" value={`${plan.totalKva.toFixed(1)} kVA`} />
         <LensPanelMetric label="Phase imbalance" value={`${String(plan.imbalancePercent)}%`} />
-        <LensPanelMetric label="Recommended supply" value={supplyLabel(plan)} />
+        <LensPanelMetric label="Distro ways" value={circuitSummaryLabel(plan)} />
+        <LensPanelMetric label="Recommended feeder" value={supplyLabel(plan)} />
       </LensPanelSection>
     </LensPanel>
   );

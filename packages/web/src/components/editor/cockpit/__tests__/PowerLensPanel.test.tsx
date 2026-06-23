@@ -21,8 +21,20 @@ describe("PowerLensPanel", () => {
     expect(screen.getByTestId("power-phase-L1").textContent).toMatch(/9\.4 A/);
     expect(screen.getByTestId("power-phase-L3")).toBeTruthy();
     expect(metricValue("Phase imbalance")).toBe("1%");
-    expect(metricValue("Recommended supply")).toBe("16 A 3-phase");
+    expect(metricValue("Recommended feeder")).toBe("16 A 3-phase");
+    // Each balanced phase fits a single 16 A way → 3 distro ways.
+    expect(metricValue("Distro ways")).toBe("3 × 16 A ways");
+    expect(screen.getByTestId("power-circuits-L1")).toBeTruthy();
     expect(screen.queryByTestId("power-warning")).toBeNull();
+  });
+
+  it("splits a phase onto more ways when the circuit rating drops", () => {
+    render(<PowerLensPanel />);
+    // A 6 A way (~1,242 W) can't hold a whole ~1,950 W phase → multiple ways.
+    fireEvent.change(screen.getByTestId("power-circuit"), { target: { value: "6" } });
+    expect(metricValue("Distro ways")).toMatch(/ × 6 A ways$/);
+    const before = screen.getByTestId("power-circuits-L1").childElementCount;
+    expect(before).toBeGreaterThan(1);
   });
 
   it("collapses onto one phase in single-phase mode", () => {
