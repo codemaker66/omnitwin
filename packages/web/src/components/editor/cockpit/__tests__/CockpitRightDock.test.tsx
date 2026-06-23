@@ -10,6 +10,7 @@ vi.mock("../OpsLensPanel.js", () => ({ OpsLensPanel: () => <div data-testid="ops
 vi.mock("../EvidenceLensPanel.js", () => ({ EvidenceLensPanel: () => <div data-testid="evidence-panel-mock" /> }));
 vi.mock("../LightingLensPanel.js", () => ({ LightingLensPanel: () => <div data-testid="lighting-panel-mock" /> }));
 vi.mock("../PowerLensPanel.js", () => ({ PowerLensPanel: () => <div data-testid="power-panel-mock" /> }));
+vi.mock("../RiggingLensPanel.js", () => ({ RiggingLensPanel: () => <div data-testid="rigging-panel-mock" /> }));
 vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <div data-testid="truth-rail-mock" /> }));
 
 const { CockpitRightDock, panelForMode } = await import("../CockpitRightDock.js");
@@ -27,6 +28,7 @@ describe("panelForMode (registry)", () => {
     expect(panelForMode("evidence")).not.toBeNull();
     expect(panelForMode("lighting")).not.toBeNull();
     expect(panelForMode("power")).not.toBeNull();
+    expect(panelForMode("rigging")).not.toBeNull();
     expect(panelForMode("design")).toBeNull();
   });
 });
@@ -86,5 +88,11 @@ describe("CockpitRightDock", () => {
     useCockpitStore.getState().setMode("power");
     render(<CockpitRightDock />);
     expect(screen.getByTestId("power-panel-mock")).toBeTruthy();
+  });
+
+  it("renders the Rigging panel for the rigging lens", () => {
+    useCockpitStore.getState().setMode("rigging");
+    render(<CockpitRightDock />);
+    expect(screen.getByTestId("rigging-panel-mock")).toBeTruthy();
   });
 });

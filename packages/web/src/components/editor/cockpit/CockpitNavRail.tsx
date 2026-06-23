@@ -1,6 +1,6 @@
 import { type ReactElement } from "react";
 import {
-  Box, Users, Waypoints, FileCheck2, Lightbulb, Zap, ClipboardList,
+  Box, Users, Waypoints, FileCheck2, Lightbulb, Zap, Anchor, ClipboardList,
   CircleDollarSign, Share2, type LucideIcon,
 } from "lucide-react";
 import { COCKPIT_MODES, type CockpitMode } from "../../../lib/cockpit-modes.js";
@@ -13,6 +13,7 @@ const MODE_ICONS: Readonly<Record<CockpitMode, LucideIcon>> = {
   evidence: FileCheck2,
   lighting: Lightbulb,
   power: Zap,
+  rigging: Anchor,
   ops: ClipboardList,
   costs: CircleDollarSign,
   share: Share2,

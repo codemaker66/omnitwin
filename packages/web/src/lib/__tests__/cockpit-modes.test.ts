@@ -7,9 +7,9 @@ import {
 } from "../cockpit-modes.js";
 
 describe("cockpit-modes", () => {
-  it("exposes the nine lenses in nav order with labels", () => {
+  it("exposes the ten lenses in nav order with labels", () => {
     expect(COCKPIT_MODES.map((m) => m.id)).toEqual([
-      "design", "guests", "flow", "evidence", "lighting", "power", "ops", "costs", "share",
+      "design", "guests", "flow", "evidence", "lighting", "power", "rigging", "ops", "costs", "share",
     ]);
     expect(COCKPIT_MODES.every((m) => m.label.length > 0)).toBe(true);
   });
