@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { ZipWriter, Uint8ArrayWriter, TextReader } from "@zip.js/zip.js";
 import { LightingLensPanel } from "../LightingLensPanel.js";
 import { useLightingRigStore } from "../../../../stores/lighting-rig-store.js";
+
+async function makeGdtfFile(name: string, descriptionXml: string): Promise<File> {
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add("description.xml", new TextReader(descriptionXml));
+  const bytes = await writer.close();
+  return new File([bytes], name, { type: "application/zip" });
+}
 
 function metricValue(label: string): string {
   const labelEl = screen.getByText(label);
@@ -77,5 +85,29 @@ describe("LightingLensPanel", () => {
     fireEvent.change(screen.getByTestId("gdtf-xml"), { target: { value: "not gdtf at all <<<" } });
     expect(screen.getByTestId("gdtf-error")).toBeTruthy();
     expect(screen.queryByTestId("gdtf-add")).toBeNull();
+  });
+
+  it("imports a fixture from a chosen .gdtf file (unzips the archive)", async () => {
+    const channels = Array.from({ length: 9 }, (_, i) => `<DMXChannel Offset="${String(i + 1)}"/>`).join("");
+    const xml = `<?xml version="1.0"?><GDTF DataVersion="1.2"><FixtureType Name="FileFix" Manufacturer="ZipCo"><DMXModes><DMXMode Name="M"><DMXChannels>${channels}</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
+    const file = await makeGdtfFile("filefix.gdtf", xml);
+
+    render(<LightingLensPanel />);
+    fireEvent.click(screen.getByTestId("rig-clear"));
+    fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+
+    // The archive is unzipped asynchronously and its description.xml feeds the preview.
+    const name = await screen.findByTestId("gdtf-name");
+    expect(name.textContent).toContain("ZipCo");
+    fireEvent.click(screen.getByTestId("gdtf-add"));
+    expect(metricValue("DMX channels")).toBe("9");
+    expect(useLightingRigStore.getState().imported).toHaveLength(1);
+  });
+
+  it("shows a file error for a non-GDTF file", async () => {
+    const file = new File([new TextEncoder().encode("not a zip")], "bad.gdtf", { type: "application/zip" });
+    render(<LightingLensPanel />);
+    fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+    expect(await screen.findByTestId("gdtf-file-error")).toBeTruthy();
   });
 });

@@ -182,6 +182,9 @@ importers:
       '@sparkjsdev/spark':
         specifier: 2.0.0
         version: 2.0.0(three@0.180.0)
+      '@zip.js/zip.js':
+        specifier: ^2.8.26
+        version: 2.8.26
       framer-motion:
         specifier: 12.38.0
         version: 12.38.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2058,6 +2061,10 @@ packages:
 
   '@webgpu/types@0.1.69':
     resolution: {integrity: sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ==}
+
+  '@zip.js/zip.js@2.8.26':
+    resolution: {integrity: sha512-RQ4h9F6DOiHxpdocUDrOl6xBM+yOtz+LkUol47AVWcfebGBDpZ7w7Xvz9PS24JgXvLGiXXzSAfdCdVy1tPlaFA==}
+    engines: {bun: '>=0.7.0', deno: '>=1.0.0', node: '>=18.0.0'}
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -6384,6 +6391,8 @@ snapshots:
       tinyrainbow: 3.1.0
 
   '@webgpu/types@0.1.69': {}
+
+  '@zip.js/zip.js@2.8.26': {}
 
   abstract-logging@2.0.1: {}
 

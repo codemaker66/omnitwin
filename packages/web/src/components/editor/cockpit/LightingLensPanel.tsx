@@ -4,6 +4,7 @@ import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { useLightingRigStore, rigGroupsForRig, fixtureDisplayLabel } from "../../../stores/lighting-rig-store.js";
 import { LIGHTING_FIXTURE_FAMILIES, type LightingFixtureFamily } from "../../../lib/photometrics.js";
 import { parseGdtfDescription, gdtfFixtureFamily, GDTF_IMPORT_DISCLAIMER } from "../../../lib/gdtf.js";
+import { readGdtfArchive } from "../../../lib/gdtf-archive.js";
 import {
   buildDmxPatch,
   estimateRigPower,
@@ -61,6 +62,7 @@ function GdtfImportSection(): ReactElement {
   const [xml, setXml] = useState("");
   const [modeIndex, setModeIndex] = useState(0);
   const [familyOverride, setFamilyOverride] = useState<LightingFixtureFamily | "">("");
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const parse = useMemo(() => (xml.trim() === "" ? null : parseGdtfDescription(xml)), [xml]);
   const fixture = parse !== null && parse.ok ? parse.fixture : null;
@@ -75,6 +77,26 @@ function GdtfImportSection(): ReactElement {
     setXml(event.target.value);
     setModeIndex(0);
     setFamilyOverride("");
+    setFileError(null);
+  };
+
+  const onFile = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file
+    if (file === undefined) return;
+    setFileError(null);
+    file.arrayBuffer()
+      .then((buffer) => readGdtfArchive(new Uint8Array(buffer)))
+      .then((result) => {
+        if (result.ok) {
+          setXml(result.archive.descriptionXml);
+          setModeIndex(0);
+          setFamilyOverride("");
+        } else {
+          setFileError(result.error);
+        }
+      })
+      .catch(() => { setFileError("Could not read the file."); });
   };
 
   const onAdd = (): void => {
@@ -94,7 +116,16 @@ function GdtfImportSection(): ReactElement {
 
   return (
     <LensPanelSection label="Import a fixture (GDTF)">
-      <p className="lens-panel__field-hint">Paste a fixture&apos;s GDTF description.xml to use its real DMX footprint.</p>
+      <p className="lens-panel__field-hint">Choose a .gdtf file, or paste a fixture&apos;s description.xml, to use its real DMX footprint.</p>
+      <div className="lens-panel__file-row">
+        <label className="lens-panel__chip-link" data-testid="gdtf-file-label">
+          Choose .gdtf file
+          <input type="file" accept=".gdtf,application/zip" onChange={onFile} data-testid="gdtf-file" aria-label="Choose a GDTF file" hidden />
+        </label>
+      </div>
+      {fileError !== null && (
+        <p className="lens-panel__error" data-testid="gdtf-file-error">{fileError}</p>
+      )}
       <textarea
         className="lens-panel__input lens-panel__input--area"
         value={xml}
