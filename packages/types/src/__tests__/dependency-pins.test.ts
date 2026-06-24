@@ -102,7 +102,7 @@ describe("direct dependency reproducibility", () => {
     expect(api.dependencies?.["@clerk/backend"]).toBe("3.4.1");
     expect(api.dependencies?.["@clerk/fastify"]).toBe("3.1.19");
     expect(web.dependencies?.["@clerk/react"]).toBe("6.4.5");
-    expect(web.devDependencies?.["vite"]).toBe("6.4.2");
+    expect(web.devDependencies?.["vite"]).toBe("6.4.3");
     expect(web.devDependencies?.["vitest"]).toBe("4.1.8");
     expect(api.devDependencies?.["vitest"]).toBe("4.1.8");
   });

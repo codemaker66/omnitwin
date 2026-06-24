@@ -46,7 +46,7 @@ const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_S
 const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-operational-state-frame-visual-2026-06-19";
 const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type OperationalViewportName = "desktop" | "tablet" | "mobile";
 
 interface PageProblems {
@@ -128,17 +128,21 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       planner: "92",
       hallkeeper: "93",
       admin: "94",
+      "platform-admin": "97",
       executive: "95",
       supplier: "96",
     };
+    const isPlatformAdmin = seedRole === "platform-admin";
+    const venueRole = isPlatformAdmin ? "admin" : seedRole;
 
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
       value: {
         id: `00000000-0000-4000-8000-0000000040${roleSuffix[seedRole] ?? "99"}`,
         email: `${seedRole}@t469-operational.test`,
-        role: seedRole,
-        venueId,
+        role: venueRole,
+        platformRole: isPlatformAdmin ? "admin" : "none",
+        venueId: isPlatformAdmin ? null : venueId,
         name: `${seedRole[0]?.toUpperCase() ?? "U"}${seedRole.slice(1)} Operational Budget`,
       },
       writable: false,
@@ -1383,7 +1387,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     await mockAdminAssetRoomsRoutes(page);
 
     await page.goto("/dev/assets/rooms");
@@ -1410,7 +1414,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.setViewportSize({ width: 900, height: 1180 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     let releaseFirstResponse: () => void = () => undefined;
     const firstResponseGate = new Promise<void>((resolve) => {
       releaseFirstResponse = resolve;
@@ -1464,7 +1468,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.setViewportSize({ width: 900, height: 1180 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     await mockOnboardingRoutes(page);
 
     await page.goto("/dashboard?view=onboarding");
@@ -1485,7 +1489,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     await mockAdminRegistryRoutes(page);
 
     await page.goto("/dashboard?view=admin");

@@ -46,7 +46,7 @@
     "@omnitwin/types": "workspace:*",
     "@react-email/components": "1.0.12",
     "@react-email/render": "2.0.7",
-    "@sentry/node": "8.55.0",
+    "@sentry/node": "10.60.0",
     "dotenv": "16.4.7",
     "drizzle-orm": "0.45.2",
     "fastify": "5.8.5",

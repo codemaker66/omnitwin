@@ -232,7 +232,7 @@ export const router = createBrowserRouter([
     // capture/package registration state and links into dev runtime routes.
     path: "/dev/assets/rooms",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]}>
+      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
         <TradesHallAssetStatusPage />
       </ProtectedRoute>,
     ),

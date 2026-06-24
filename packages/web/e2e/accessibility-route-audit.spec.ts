@@ -30,7 +30,7 @@ const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
 test.describe.configure({ mode: "serial" });
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 
 interface RouteSpec {
   readonly routeName: string;
@@ -55,17 +55,21 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       planner: "92",
       hallkeeper: "93",
       admin: "94",
+      "platform-admin": "97",
       executive: "95",
       supplier: "96",
     };
+    const isPlatformAdmin = seedRole === "platform-admin";
+    const venueRole = isPlatformAdmin ? "admin" : seedRole;
 
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
       value: {
         id: `00000000-0000-4000-8000-0000000040${roleSuffix[seedRole] ?? "99"}`,
         email: `${seedRole}@t469-accessibility.test`,
-        role: seedRole,
-        venueId,
+        role: venueRole,
+        platformRole: isPlatformAdmin ? "admin" : "none",
+        venueId: isPlatformAdmin ? null : venueId,
         name: `${seedRole[0]?.toUpperCase() ?? "U"}${seedRole.slice(1)} Accessibility`,
       },
       writable: false,

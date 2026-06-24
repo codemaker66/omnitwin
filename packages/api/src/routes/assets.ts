@@ -1143,12 +1143,6 @@ export async function assetRoutes(
     if (!parsedParams.success) {
       return validationError(reply, parsedParams.error.issues);
     }
-    if (!r2IsConfigured(env)) {
-      return reply.status(503).send({
-        error: "Runtime asset storage is not configured",
-        code: "RUNTIME_ASSET_STORAGE_DISABLED",
-      });
-    }
 
     const rangeHeader = request.headers.range;
     const range = typeof rangeHeader === "string" ? rangeHeader : undefined;
@@ -1156,6 +1150,12 @@ export async function assetRoutes(
       return reply.status(416).send({
         error: "Unsupported range request",
         code: "UNSUPPORTED_RANGE",
+      });
+    }
+    if (!r2IsConfigured(env)) {
+      return reply.status(503).send({
+        error: "Runtime asset storage is not configured",
+        code: "RUNTIME_ASSET_STORAGE_DISABLED",
       });
     }
 

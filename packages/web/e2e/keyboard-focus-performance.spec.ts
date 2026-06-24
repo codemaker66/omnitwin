@@ -62,7 +62,7 @@ const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_S
 const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-keyboard-focus-frame-accessibility-2026-06-19";
 const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type FocusViewportName = "desktop" | "mobile";
 
 interface PageProblems {
@@ -162,17 +162,21 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       planner: "92",
       hallkeeper: "93",
       admin: "94",
+      "platform-admin": "97",
       executive: "95",
       supplier: "96",
     };
+    const isPlatformAdmin = seedRole === "platform-admin";
+    const venueRole = isPlatformAdmin ? "admin" : seedRole;
 
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
       value: {
         id: `00000000-0000-4000-8000-0000000040${roleSuffix[seedRole] ?? "99"}`,
         email: `${seedRole}@t469-focus.test`,
-        role: seedRole,
-        venueId,
+        role: venueRole,
+        platformRole: isPlatformAdmin ? "admin" : "none",
+        venueId: isPlatformAdmin ? null : venueId,
         name: `${seedRole[0]?.toUpperCase() ?? "U"}${seedRole.slice(1)} Focus Budget`,
       },
       writable: false,
@@ -1305,7 +1309,7 @@ test.afterAll(async () => {
 
 test("admin create-venue dialog traps keyboard focus and stays within frame budget", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const problems = await openDashboardView(page, "admin", "admin");
+  const problems = await openDashboardView(page, "platform-admin", "admin");
   const opener = page.getByRole("button", { name: "New Venue" });
   await opener.click();
   const dialog = page.getByRole("dialog", { name: "New Venue" });
@@ -1327,7 +1331,7 @@ test("admin create-venue dialog traps keyboard focus and stays within frame budg
 test("admin nested space, pricing, and destructive dialogs stay accessible and keyboard-contained", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await seedAuthenticatedUser(page, "admin");
+  await seedAuthenticatedUser(page, "platform-admin");
   const mockState = await mockApiRoutes(page);
   const problems = watchPageProblems(page);
   await page.goto("/dashboard?view=admin");
@@ -1469,7 +1473,7 @@ test("proposal drawer and composer controls remain keyboard reachable within fra
 
 test("onboarding admin action forms keep focus visible across seeded operator controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const problems = await openDashboardView(page, "admin", "onboarding");
+  const problems = await openDashboardView(page, "platform-admin", "onboarding");
   await expect(page.getByLabel("Trades Hall deployment deployment actions")).toBeVisible();
   await page.getByLabel("Invite staff for Trades Hall deployment").fill("planner@venue.example\nhallkeeper@venue.example");
   await recordAccessibilityState(page, problems, "onboarding operator action forms", "/dashboard?view=onboarding", "desktop", 14);

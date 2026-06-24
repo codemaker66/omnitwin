@@ -128,7 +128,7 @@ function watchPageProblems(page: Page): PageProblems {
   return { pageErrors, consoleErrors };
 }
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 
 async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> {
   await page.addInitScript(({ seedRole, venueId }) => {
@@ -137,16 +137,20 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       planner: "92",
       hallkeeper: "93",
       admin: "94",
+      "platform-admin": "97",
       executive: "95",
       supplier: "96",
     };
+    const isPlatformAdmin = seedRole === "platform-admin";
+    const venueRole = isPlatformAdmin ? "admin" : seedRole;
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
     Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
       value: {
         id: `00000000-0000-4000-8000-0000000040${roleSuffix[seedRole] ?? "99"}`,
         email: `${seedRole}@button-audit.test`,
-        role: seedRole,
-        venueId,
+        role: venueRole,
+        platformRole: isPlatformAdmin ? "admin" : "none",
+        venueId: isPlatformAdmin ? null : venueId,
         name: `${seedRole[0]?.toUpperCase() ?? "U"}${seedRole.slice(1)} Audit`,
       },
       writable: false,
@@ -2309,7 +2313,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("dashboard admin role exposes commercial and deployment controls", async ({ page }) => {
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     await mockDashboardRoutes(page);
 
     await page.goto("/dashboard");
@@ -2321,7 +2325,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("admin registry view wires venue, space, and pricing actions", async ({ page }) => {
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     const mock = await mockDashboardRoutes(page);
 
     await page.goto("/dashboard?view=admin");
@@ -2839,7 +2843,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("admin onboarding form enforces required fields and posts the rollout package", async ({ page }) => {
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     const mock = await mockDashboardRoutes(page);
 
     await page.goto("/dashboard");
@@ -2863,7 +2867,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("admin deployment controls invite staff and save reviewed rollout gates", async ({ page }) => {
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     const mock = await mockDashboardRoutes(page, { onboardingPopulated: true });
 
     await page.goto("/dashboard");
@@ -2895,7 +2899,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("admin deployment project-gate failures keep the save control retryable", async ({ page }) => {
-    await seedAuthenticatedUser(page, "admin");
+    await seedAuthenticatedUser(page, "platform-admin");
     const mock = await mockDashboardRoutes(page, { onboardingPopulated: true, failProjectGateOnce: true });
 
     await page.goto("/dashboard");

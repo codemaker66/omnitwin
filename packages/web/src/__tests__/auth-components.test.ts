@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +104,21 @@ describe("ProtectedRoute", () => {
     mockAuthState.user = { id: "u1", email: "viewer@test.com", role: "viewer", platformRole: "none", venueId: null, name: "V" };
     const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
     expect(ProtectedRoute).toBeDefined();
+  });
+
+  it("keeps venue admins out of platform-only routes", async () => {
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.user = { id: "u2", email: "venue-admin@test.com", role: "admin", platformRole: "none", venueId: "v1", name: "Venue Admin" };
+    const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
+
+    render(createElement(ProtectedRoute, {
+      allowedRoles: ["admin"],
+      requiredPlatformRole: "admin",
+      children: "Platform surface",
+    }));
+
+    expect(screen.getByRole("alert").textContent).toContain("reserved for Venviewer platform admins");
+    expect(screen.queryByText("Platform surface")).toBeNull();
   });
 });
 

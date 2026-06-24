@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { buildServer } from "../index.js";
 import type { FastifyInstance } from "fastify";
 
+process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
+
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet route tests
 //

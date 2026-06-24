@@ -427,7 +427,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     Move Down
                   </button>
                   <button type="button" aria-label={`Remove ${p.filename}`} onClick={() => { setShowDeletePhoto(p.id); }}
-                    style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: "auto" }}>
+                    style={{ fontSize: 11, color: "#ff8a75", background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: "auto" }}>
                     Remove
                   </button>
                 </div>
