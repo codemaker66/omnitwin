@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { placedObjects, configurations, configurationLayoutRevisions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, type JwtUser } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { canAccessResource } from "../utils/query.js";
 import {
@@ -74,9 +74,7 @@ const BatchBody = z.object({
 async function verifyConfigAccess(
   db: Database,
   configId: string,
-  userId: string,
-  userRole: string,
-  userVenueId: string | null,
+  user: JwtUser,
 ): Promise<{ config: typeof configurations.$inferSelect } | { error: string; code: string; status: number }> {
   const [config] = await db.select()
     .from(configurations)
@@ -87,7 +85,7 @@ async function verifyConfigAccess(
     return { error: "Configuration not found", code: "NOT_FOUND", status: 404 };
   }
 
-  if (!canAccessResource({ id: userId, email: "", role: userRole, venueId: userVenueId }, config.userId, config.venueId)) {
+  if (!canAccessResource(user, config.userId, config.venueId)) {
     return { error: "Insufficient permissions", code: "FORBIDDEN", status: 403 };
   }
 
@@ -111,7 +109,7 @@ export async function placedObjectRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
+    const result = await verifyConfigAccess(db, params.data.configId, request.user);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
@@ -136,7 +134,7 @@ export async function placedObjectRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
+    const result = await verifyConfigAccess(db, params.data.configId, request.user);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
@@ -183,7 +181,7 @@ export async function placedObjectRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
+    const result = await verifyConfigAccess(db, params.data.configId, request.user);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
@@ -240,7 +238,7 @@ export async function placedObjectRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
+    const result = await verifyConfigAccess(db, params.data.configId, request.user);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }
@@ -271,7 +269,7 @@ export async function placedObjectRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const result = await verifyConfigAccess(db, params.data.configId, request.user.id, request.user.role, request.user.venueId);
+    const result = await verifyConfigAccess(db, params.data.configId, request.user);
     if ("error" in result) {
       return reply.status(result.status).send({ error: result.error, code: result.code });
     }

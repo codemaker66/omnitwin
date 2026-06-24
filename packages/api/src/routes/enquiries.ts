@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
@@ -73,7 +73,7 @@ export async function enquiryRoutes(
       whereConditions.push(eq(enquiries.state, query.data.status));
     }
 
-    if (user.role === "admin") {
+    if (isPlatformAdmin(user)) {
       // Admin sees all
     } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
       whereConditions.push(eq(enquiries.venueId, user.venueId));
@@ -138,7 +138,7 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }
 
-    if (config.userId !== request.user.id && request.user.role !== "admin") {
+    if (config.userId !== request.user.id && !isPlatformAdmin(request.user)) {
       return reply.status(403).send({ error: "Configuration does not belong to you", code: "FORBIDDEN" });
     }
 
@@ -180,8 +180,8 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    // Owner can only edit in draft state. Admin can edit anytime.
-    if (request.user.role !== "admin") {
+    // Owner can only edit in draft state. Platform admin can edit anytime.
+    if (!isPlatformAdmin(request.user)) {
       if (enquiry.userId !== request.user.id) {
         return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
       }

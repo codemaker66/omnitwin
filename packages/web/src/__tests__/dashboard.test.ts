@@ -85,7 +85,7 @@ vi.mock("@clerk/react", () => ({
 }));
 
 const mockAuthState = {
-  user: { id: "u1", email: "elaine@tradeshall.co.uk", role: "hallkeeper", venueId: "v1", name: "Elaine" },
+  user: { id: "u1", email: "elaine@tradeshall.co.uk", role: "hallkeeper", platformRole: "none", venueId: "v1", name: "Elaine" },
   isAuthenticated: true,
   isLoading: false,
   error: null,
@@ -300,11 +300,11 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
     expect(codeOnly).toContain(`"admin"`);
   });
 
-  it("DashboardLayout shows admin nav only for admin role", async () => {
+  it("DashboardLayout shows admin nav only for platform admin role", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
     expect(codeOnly).toContain("adminOnly");
     expect(codeOnly).toContain("canShowNavItem");
-    expect(codeOnly).toMatch(/item\.adminOnly\s*===\s*true[\s\S]*?role\s*===\s*["']admin["']/);
+    expect(codeOnly).toMatch(/item\.adminOnly\s*===\s*true[\s\S]*?platformRole\s*===\s*["']admin["']/);
   });
 
   it("DashboardPage imports and renders AdminPanel", async () => {
@@ -394,10 +394,12 @@ describe("DashboardPage", () => {
 
   it("enforces role visibility before mounting route-addressed dashboard views", async () => {
     const { canOpenDashboardView } = await import("../pages/DashboardPage.js");
-    expect(canOpenDashboardView("onboarding", "admin")).toBe(true);
+    expect(canOpenDashboardView("onboarding", "admin", "admin")).toBe(true);
+    expect(canOpenDashboardView("onboarding", "admin", "none")).toBe(false);
     expect(canOpenDashboardView("onboarding", "staff")).toBe(false);
     expect(canOpenDashboardView("admin", "hallkeeper")).toBe(false);
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
     expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);
     expect(canOpenDashboardView("analytics", "executive")).toBe(true);
     expect(canOpenDashboardView("pipeline", "executive")).toBe(false);
@@ -420,6 +422,8 @@ describe("DashboardPage", () => {
     expect(initialDashboardViewForRole("analytics", "executive")).toBe("analytics");
     expect(initialDashboardViewForRole("reviews", "staff")).toBe("reviews");
     expect(initialDashboardViewForRole("pipeline", "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole("admin", "admin", "none")).toBe("enquiries");
+    expect(initialDashboardViewForRole("admin", "admin", "admin")).toBe("admin");
     expect(initialDashboardViewForRole("admin", "hallkeeper")).toBe("enquiries");
     expect(initialDashboardViewForRole(null, "executive")).toBe("analytics");
   });

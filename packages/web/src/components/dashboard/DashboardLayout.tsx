@@ -38,11 +38,12 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
 function canShowNavItem(
   item: (typeof NAV_ITEMS)[number],
   role: string | null | undefined,
+  platformRole: "none" | "operator" | "admin",
 ): boolean {
   if (role === "supplier") return false;
   if (role === "executive") return item.view === "analytics";
-  if (item.adminOnly === true) return role === "admin";
-  if (item.staffOnly === true) return role === "admin" || role === "staff";
+  if (item.adminOnly === true) return platformRole === "admin";
+  if (item.staffOnly === true) return platformRole === "admin" || role === "admin" || role === "staff";
   return role !== null && role !== undefined;
 }
 
@@ -78,13 +79,13 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
   const [venueName, setVenueName] = useState("Dashboard");
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
-      setVenueName(user?.role === "admin" ? "Admin Dashboard" : "Dashboard");
+      setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
       return;
     }
     void spacesApi.getVenue(user.venueId)
       .then((v) => { setVenueName(v.name); })
       .catch(() => { /* non-critical — keep default */ });
-  }, [user?.venueId, user?.role]);
+  }, [user?.platformRole, user?.venueId]);
 
   const handleLocalSignOut = (): void => {
     logoutLocal();
@@ -102,7 +103,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
           </div>
         </div>
         {NAV_ITEMS.map((item) => {
-          if (!canShowNavItem(item, user?.role)) return null;
+          if (!canShowNavItem(item, user?.role, user?.platformRole ?? "none")) return null;
           return (
             <button
               key={item.view}

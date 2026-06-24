@@ -14,7 +14,7 @@ import {
   opportunityStatusHistory,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 const IdParam = {
   schema: {
@@ -27,12 +27,12 @@ const IdParam = {
 } as const;
 
 function canManageCommercial(user: JwtUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
+  if (isPlatformAdmin(user)) return true;
   return user.role === "staff" && user.venueId === venueId;
 }
 
 function staffVenueOrAdmin(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
-  if (user.role === "admin") return { ok: true, venueId: null };
+  if (isPlatformAdmin(user)) return { ok: true, venueId: null };
   if (user.role === "staff" && user.venueId !== null) return { ok: true, venueId: user.venueId };
   return { ok: false };
 }

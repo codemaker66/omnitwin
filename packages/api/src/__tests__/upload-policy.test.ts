@@ -18,21 +18,27 @@ const noopDb = {} as Database;
 const admin: JwtUser = {
   id: "admin-user",
   email: "admin@test.com",
+  name: "Platform Admin",
   role: "admin",
+  platformRole: "admin",
   venueId: null,
 };
 
 const staff: JwtUser = {
   id: "staff-user",
   email: "staff@test.com",
+  name: "Venue Staff",
   role: "staff",
+  platformRole: "none",
   venueId: CTX_ID,
 };
 
 const planner: JwtUser = {
   id: "planner-user",
   email: "planner@test.com",
+  name: "Planner User",
   role: "planner",
+  platformRole: "none",
   venueId: null,
 };
 

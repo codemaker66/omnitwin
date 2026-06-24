@@ -20,6 +20,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
+    "platform-admin:bootstrap": "tsx src/scripts/bootstrap-platform-admin.ts",
     "assets:build-capture-control-source-from-runtime-control": "tsx src/scripts/build-capture-control-source-from-runtime-control.ts",
     "assets:build-runtime-control-coordinate-pair-collection-pack": "tsx src/scripts/build-runtime-control-coordinate-pair-collection-pack.ts",
     "assets:build-runtime-control-evidence-chain-status": "tsx src/scripts/build-runtime-control-evidence-chain-status.ts",

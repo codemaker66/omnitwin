@@ -20,7 +20,7 @@ beforeEach(() => {
     isDirty: false, isSaving: false, saveError: null, lastSavedAt: null,
   });
   useAuthStore.setState({
-    user: { id: "user-1", email: "b@example.com", role: "planner", venueId: null, name: "Blake Faraway" },
+    user: { id: "user-1", email: "b@example.com", role: "planner", platformRole: "none", venueId: null, name: "Blake Faraway" },
     isAuthenticated: true,
   });
   useCockpitStore.getState().reset();

@@ -15,7 +15,7 @@ import {
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
 import { canTransition } from "../state-machines/config-review.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import { sendEmailAsync } from "../services/email.js";
 import {
@@ -984,7 +984,8 @@ export async function configurationReviewRoutes(
 
   server.get("/reviews/pending", { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.user;
-    if (user.role !== "admin" && user.role !== "staff") {
+    const platformAdmin = isPlatformAdmin(user);
+    if (!platformAdmin && user.role !== "admin" && user.role !== "staff") {
       return reply.status(403).send({
         error: "Only approvers can list pending reviews",
         code: "FORBIDDEN",
@@ -999,7 +1000,7 @@ export async function configurationReviewRoutes(
       "changes_requested",
     ];
 
-    const scopedRows = user.role === "admin"
+    const scopedRows = platformAdmin
       ? await db.select({
           id: configurations.id,
           name: configurations.name,
@@ -1143,12 +1144,12 @@ export async function configurationReviewRoutes(
     if (
       config.reviewStatus === "draft"
       && !isOwner
-      && role !== "admin"
+      && !isPlatformAdmin(request.user)
     ) {
       return reply.status(404).send({ error: "No snapshot available", code: "SNAPSHOT_NOT_FOUND" });
     }
 
-    const snapshot = role === "staff" || role === "admin"
+    const snapshot = role === "staff" || role === "admin" || isPlatformAdmin(request.user)
       ? await getLatestSnapshot(db, config.id)
       : await getLatestApprovedSnapshot(db, config.id);
 

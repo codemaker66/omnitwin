@@ -3,6 +3,8 @@ import {
   UserIdSchema,
   USER_ROLES,
   UserRoleSchema,
+  PLATFORM_ROLES,
+  PlatformRoleSchema,
   EmailSchema,
   UserSchema,
   CreateUserSchema,
@@ -26,6 +28,7 @@ const validUser = {
   phone: "+44 7911 000001",
   organizationName: "Acme Events",
   role: "staff" as const,
+  platformRole: "none" as const,
   venueId: VALID_VENUE_UUID,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
@@ -35,6 +38,7 @@ const validCreateUser = {
   email: "alice@example.com",
   name: "Alice Smith",
   role: "staff" as const,
+  platformRole: "none" as const,
   venueId: VALID_VENUE_UUID,
 };
 
@@ -99,6 +103,27 @@ describe("UserRoleSchema", () => {
 
   it("rejects a number", () => {
     expect(UserRoleSchema.safeParse(1).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PlatformRoleSchema
+// ---------------------------------------------------------------------------
+
+describe("PlatformRoleSchema", () => {
+  it.each(PLATFORM_ROLES)("accepts '%s'", (role) => {
+    expect(PlatformRoleSchema.safeParse(role).success).toBe(true);
+  });
+
+  it("keeps platform authority separate from customer workspace roles", () => {
+    expect(PLATFORM_ROLES).toEqual(["none", "operator", "admin"]);
+    expect(USER_ROLES).toEqual(["client", "planner", "staff", "hallkeeper", "admin"]);
+  });
+
+  it("rejects user/workspace role names that are not platform authority", () => {
+    expect(PlatformRoleSchema.safeParse("owner").success).toBe(false);
+    expect(PlatformRoleSchema.safeParse("staff").success).toBe(false);
+    expect(PlatformRoleSchema.safeParse("superadmin").success).toBe(false);
   });
 });
 
@@ -233,6 +258,15 @@ describe("UserSchema", () => {
     expect(UserSchema.safeParse(noRole).success).toBe(false);
   });
 
+  it("defaults missing platformRole to none for legacy user rows", () => {
+    const { platformRole: _, ...legacyUser } = validUser;
+    const result = UserSchema.safeParse(legacyUser);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.platformRole).toBe("none");
+    }
+  });
+
   it("rejects missing venueId (must be present, even if null)", () => {
     const { venueId: _, ...noVenueId } = validUser;
     expect(UserSchema.safeParse(noVenueId).success).toBe(false);
@@ -258,6 +292,10 @@ describe("UserSchema", () => {
 
   it("rejects invalid role", () => {
     expect(UserSchema.safeParse({ ...validUser, role: "superadmin" }).success).toBe(false);
+  });
+
+  it("rejects invalid platformRole", () => {
+    expect(UserSchema.safeParse({ ...validUser, platformRole: "owner" }).success).toBe(false);
   });
 
   it("rejects invalid UUID for venueId", () => {
@@ -319,6 +357,15 @@ describe("CreateUserSchema", () => {
   it("rejects missing role", () => {
     const { role: _, ...noRole } = validCreateUser;
     expect(CreateUserSchema.safeParse(noRole).success).toBe(false);
+  });
+
+  it("defaults missing create-user platformRole to none", () => {
+    const { platformRole: _, ...legacyCreateUser } = validCreateUser;
+    const result = CreateUserSchema.safeParse(legacyCreateUser);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.platformRole).toBe("none");
+    }
   });
 
   it("rejects missing venueId", () => {

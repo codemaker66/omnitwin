@@ -49,7 +49,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u1", email: "a@x.com", role: "admin", venueId: "v1", name: "Admin" },
+      user: { id: "u1", email: "a@x.com", role: "admin", platformRole: "none", venueId: "v1", name: "Admin" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
@@ -59,7 +59,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u2", email: "h@x.com", role: "hallkeeper", venueId: "v1", name: "Halle" },
+      user: { id: "u2", email: "h@x.com", role: "hallkeeper", platformRole: "none", venueId: "v1", name: "Halle" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
@@ -69,7 +69,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u3", email: "p@x.com", role: "planner", venueId: "v1", name: "Plan" },
+      user: { id: "u3", email: "p@x.com", role: "planner", platformRole: "none", venueId: "v1", name: "Plan" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
@@ -79,7 +79,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u5", email: "s@x.com", role: "staff", venueId: "v1", name: "Staff" },
+      user: { id: "u5", email: "s@x.com", role: "staff", platformRole: "none", venueId: "v1", name: "Staff" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
@@ -89,7 +89,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u6", email: "e@x.com", role: "executive", venueId: "v1", name: "Exec" },
+      user: { id: "u6", email: "e@x.com", role: "executive", platformRole: "none", venueId: "v1", name: "Exec" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
@@ -99,7 +99,7 @@ describe("RoleAwareRedirect", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u4", email: "c@x.com", role: "client", venueId: null, name: "Client" },
+      user: { id: "u4", email: "c@x.com", role: "client", platformRole: "none", venueId: null, name: "Client" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/plan(replace)");

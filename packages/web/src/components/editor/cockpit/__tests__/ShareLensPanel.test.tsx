@@ -30,7 +30,7 @@ import { useAuthStore } from "../../../../stores/auth-store.js";
 const CONFIG_ID = "11111111-1111-4111-8111-111111111111";
 
 function signInStaff(): void {
-  useAuthStore.getState().setUser({ id: "u1", email: "staff@venue.test", role: "owner", venueId: "v1", name: "Staff" });
+  useAuthStore.getState().setUser({ id: "u1", email: "staff@venue.test", role: "owner", platformRole: "none", venueId: "v1", name: "Staff" });
 }
 
 beforeEach(() => {

@@ -34,6 +34,7 @@ const authState = vi.hoisted(() => ({
   user: {
     id: "u1",
     role: "staff",
+    platformRole: "none" as const,
     venueId: "v1" as string | null,
     email: "staff@test.com",
     name: "Staff",

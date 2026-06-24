@@ -24,7 +24,13 @@ let webhookMessageCounter = 0;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-function mockToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+function mockToken(payload: {
+  readonly id: string;
+  readonly email: string;
+  readonly role: string;
+  readonly venueId: string | null;
+  readonly platformRole?: "none" | "operator" | "admin";
+}): string {
   return JSON.stringify(payload);
 }
 
@@ -166,6 +172,17 @@ describe("mock token shape validation (#7)", () => {
     });
     expect(res.statusCode).not.toBe(401);
   });
+
+  it("defaults mock token platformRole to none", async () => {
+    const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
+    const res = await server.inject({
+      method: "GET", url: "/auth/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body: { data?: { platformRole?: string } } = res.json();
+    expect(body.data?.platformRole).toBe("none");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -187,8 +204,14 @@ describe("clients/search inline role guard", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("allows admin access to admin-only endpoints", async () => {
-    const token = mockToken({ id: "u1", email: "test@test.com", role: "admin", venueId: null });
+  it("allows platform admin access to global client search", async () => {
+    const token = mockToken({
+      id: "u1",
+      email: "test@test.com",
+      role: "admin",
+      platformRole: "admin",
+      venueId: null,
+    });
     const res = await server.inject({
       method: "GET", url: "/clients/search?q=test",
       headers: { authorization: `Bearer ${token}` },
@@ -291,15 +314,33 @@ describe("authorize() middleware — admin route guards", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("POST /venues with admin role: NOT 403 (passes the guard)", async () => {
-    // Positive case: admin token gets past authorize() into the handler.
-    // Likely returns 500 here (mock DB) or a validation error — what
-    // matters is that it's NOT 403.
+  it("POST /venues with legacy admin role but no platform admin: rejected with 403", async () => {
     const token = mockToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: null });
     const res = await server.inject({
       method: "POST", url: "/venues",
       headers: { authorization: `Bearer ${token}` },
       payload: { name: "Test Venue", slug: "test-venue-5" },
+    });
+    expect(res.statusCode).toBe(403);
+    const body: { code?: string } = res.json();
+    expect(body.code).toBe("FORBIDDEN");
+  });
+
+  it("POST /venues with platform admin: NOT 403 (passes the guard)", async () => {
+    // Positive case: platform admin token gets past authorizePlatformAdmin()
+    // into the handler. With the mock DB this may return 500 or validation
+    // details; the guard-specific assertion is that it is not 403/401.
+    const token = mockToken({
+      id: "u1",
+      email: "platform-admin@test.com",
+      role: "admin",
+      platformRole: "admin",
+      venueId: null,
+    });
+    const res = await server.inject({
+      method: "POST", url: "/venues",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Test Venue", slug: "test-venue-6", address: "1 Test Street" },
     });
     expect(res.statusCode).not.toBe(403);
     expect(res.statusCode).not.toBe(401);

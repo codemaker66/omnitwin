@@ -41,6 +41,7 @@ if (E2E_ENABLED) {
     id: seed.id,
     email: seed.email,
     role: seed.role,
+    platformRole: seed.platformRole,
     venueId: seed.venueId,
   })));
 }

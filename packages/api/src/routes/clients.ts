@@ -5,7 +5,7 @@ import {
   users, configurations, enquiries, guestLeads,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
@@ -34,14 +34,12 @@ export async function clientRoutes(
     }
 
     if (!canManageVenue(request.user, request.user.venueId ?? "")) {
-      if (request.user.role !== "admin") {
-        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-      }
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     const pattern = `%${query.data.q}%`;
     const venueId = request.user.venueId;
-    const isAdmin = request.user.role === "admin";
+    const isAdmin = isPlatformAdmin(request.user);
 
     // Search users — only those who have configurations or enquiries at this venue
     const venueUserFilter = isAdmin
@@ -145,13 +143,11 @@ export async function clientRoutes(
     }
 
     if (!canManageVenue(request.user, request.user.venueId ?? "")) {
-      if (request.user.role !== "admin") {
-        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-      }
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     const profileVenueId = request.user.venueId;
-    const profileIsAdmin = request.user.role === "admin";
+    const profileIsAdmin = isPlatformAdmin(request.user);
 
     // Non-admin: verify the target user has configs or enquiries at this venue
     // BEFORE returning any PII (prevents IDOR exposure of unrelated users)
@@ -233,13 +229,11 @@ export async function clientRoutes(
     }
 
     if (!canManageVenue(request.user, request.user.venueId ?? "")) {
-      if (request.user.role !== "admin") {
-        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-      }
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     const leadVenueId = request.user.venueId;
-    const leadIsAdmin = request.user.role === "admin";
+    const leadIsAdmin = isPlatformAdmin(request.user);
 
     // Non-admin: verify this lead has enquiries at the hallkeeper's venue
     // BEFORE returning any PII. See venueLeadFilter above — the join is on
@@ -297,12 +291,10 @@ export async function clientRoutes(
   // GET /clients/recent — last 20 enquiries with contact info
   server.get("/recent", { preHandler: [authenticate] }, async (request, reply) => {
     if (!canManageVenue(request.user, request.user.venueId ?? "")) {
-      if (request.user.role !== "admin") {
-        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
-      }
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const venueFilter = request.user.role === "admin"
+    const venueFilter = isPlatformAdmin(request.user)
       ? undefined
       : eq(enquiries.venueId, request.user.venueId ?? "");
 

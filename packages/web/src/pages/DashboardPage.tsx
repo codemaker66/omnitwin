@@ -53,17 +53,18 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
 
 const STAFF_ONLY_VIEWS = new Set<DashboardView>(["pipeline", "proposals"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
   if (value === null) return null;
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
-export function canOpenDashboardView(view: DashboardView, role: string | null): boolean {
+export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === "supplier") return false;
   if (role === "executive") return view === "analytics";
-  if (ADMIN_ONLY_VIEWS.has(view)) return role === "admin";
-  if (STAFF_ONLY_VIEWS.has(view)) return role === "admin" || role === "staff";
+  if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
+  if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || role === "admin" || role === "staff";
   return role !== null;
 }
 
@@ -71,10 +72,14 @@ export function defaultDashboardViewForRole(role: string | null): DashboardView 
   return role === "executive" ? "analytics" : "enquiries";
 }
 
-export function initialDashboardViewForRole(requestedView: DashboardView | null, role: string | null): DashboardView {
-  if (requestedView !== null && canOpenDashboardView(requestedView, role)) return requestedView;
+export function initialDashboardViewForRole(
+  requestedView: DashboardView | null,
+  role: string | null,
+  platformRole: PlatformRole = "none",
+): DashboardView {
+  if (requestedView !== null && canOpenDashboardView(requestedView, role, platformRole)) return requestedView;
   const defaultView = defaultDashboardViewForRole(role);
-  return canOpenDashboardView(defaultView, role) ? defaultView : "enquiries";
+  return canOpenDashboardView(defaultView, role, platformRole) ? defaultView : "enquiries";
 }
 
 function DashboardAccessDenied({
@@ -105,18 +110,19 @@ function DashboardAccessDenied({
 export function DashboardPage(): React.ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
   const userRole = useAuthStore((state) => state.user?.role ?? null);
+  const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
   );
-  const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole));
+  const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLeadId, setProfileLeadId] = useState<string | null>(null);
   const [enquiryReturnContext, setEnquiryReturnContext] = useState<EnquiryReturnContext | null>(null);
 
   useEffect(() => {
     if (requestedView !== null) {
-      if (!canOpenDashboardView(requestedView, userRole)) return;
+      if (!canOpenDashboardView(requestedView, userRole, userPlatformRole)) return;
       setView(requestedView);
       setProfileUserId(null);
       setProfileLeadId(null);
@@ -125,14 +131,14 @@ export function DashboardPage(): React.ReactElement {
     }
 
     const defaultView = defaultDashboardViewForRole(userRole);
-    if (!canOpenDashboardView(defaultView, userRole)) return;
+    if (!canOpenDashboardView(defaultView, userRole, userPlatformRole)) return;
     setView(defaultView);
     setProfileUserId(null);
     setProfileLeadId(null);
     setEnquiryReturnContext(null);
-  }, [requestedView, userRole]);
+  }, [requestedView, userPlatformRole, userRole]);
 
-  const deniedRequestedView = requestedView !== null && userRole !== null && !canOpenDashboardView(requestedView, userRole)
+  const deniedRequestedView = requestedView !== null && userRole !== null && !canOpenDashboardView(requestedView, userRole, userPlatformRole)
     ? requestedView
     : null;
 

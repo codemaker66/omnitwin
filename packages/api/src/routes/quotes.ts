@@ -4,7 +4,7 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 import { CreateQuoteLineItemSchema, CreateQuoteSchema, MAX_MINOR_UNIT_AMOUNT } from "@omnitwin/types";
 import { quotes, quoteLineItems, proposals, opportunities, enquiries, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource } from "../utils/query.js";
 import { QUOTE_STATES, canTransitionQuote } from "../state-machines/proposal.js";
@@ -45,11 +45,11 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-type AuthedUser = { id: string; role: string; venueId: string | null };
+type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 
 /** Create/mutate policy: admin anywhere, staff within their own venue. */
 function canManageVenueQuotes(user: AuthedUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
+  if (isPlatformAdmin(user)) return true;
   return user.role === "staff" && user.venueId === venueId;
 }
 
@@ -85,7 +85,7 @@ export async function quoteRoutes(
       whereConditions.push(eq(quotes.proposalId, query.data.proposalId));
     }
 
-    if (user.role === "admin") {
+    if (isPlatformAdmin(user)) {
       // Admin sees all venues
     } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
@@ -261,7 +261,7 @@ export async function quoteRoutes(
     if (!canManageVenueQuotes(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (request.user.role !== "admin" && quote.status !== "draft") {
+    if (!isPlatformAdmin(request.user) && quote.status !== "draft") {
       return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
     }
 
@@ -298,7 +298,7 @@ export async function quoteRoutes(
     if (!canManageVenueQuotes(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (request.user.role !== "admin" && quote.status !== "draft") {
+    if (!isPlatformAdmin(request.user) && quote.status !== "draft") {
       return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
     }
 
@@ -357,7 +357,7 @@ export async function quoteRoutes(
     if (!canManageVenueQuotes(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (quote.status !== "draft" && request.user.role !== "admin") {
+    if (quote.status !== "draft" && !isPlatformAdmin(request.user)) {
       return reply.status(422).send({ error: "Issued quotes are a commercial record — supersede or expire them instead", code: "QUOTE_ISSUED_LOCKED" });
     }
 

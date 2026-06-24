@@ -22,7 +22,7 @@ const EVENT_ID = "00000000-0000-4000-8000-000000003102";
 const USER_ID = "00000000-0000-4000-8000-000000003103";
 const NOW = "2026-06-12T11:00:00.000Z";
 
-function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+function signToken(payload: { id: string; email: string; role: string; platformRole?: "none" | "operator" | "admin"; venueId: string | null }): string {
   return JSON.stringify(payload);
 }
 
@@ -40,6 +40,7 @@ function adminToken(): string {
     id: USER_ID,
     email: "admin@test.com",
     role: "admin",
+    platformRole: "admin",
     venueId: null,
   });
 }

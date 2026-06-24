@@ -204,6 +204,7 @@ describe("EditorPage venue-scoped bootstrap", () => {
       id: "user-planner",
       email: "planner@example.com",
       role: "planner",
+      platformRole: "none",
       venueId: tradesHall.id,
       name: "Planner",
     });

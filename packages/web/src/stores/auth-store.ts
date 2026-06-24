@@ -11,6 +11,7 @@ export interface AuthUser {
   readonly id: string;
   readonly email: string;
   readonly role: string;
+  readonly platformRole: "none" | "operator" | "admin";
   readonly venueId: string | null;
   readonly name: string;
 }

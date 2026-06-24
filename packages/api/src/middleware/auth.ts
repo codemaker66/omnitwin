@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { PlatformRoleSchema, type PlatformRole } from "@omnitwin/types";
 import { userInvitations, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -13,7 +14,9 @@ import type { Database } from "../db/client.js";
 export interface JwtUser {
   readonly id: string;
   readonly email: string;
+  readonly name: string;
   readonly role: string;
+  readonly platformRole: PlatformRole;
   readonly venueId: string | null;
 }
 
@@ -25,7 +28,9 @@ export interface JwtUser {
 const MockTokenSchema = z.object({
   id: z.string().min(1),
   email: z.string().min(1),
+  name: z.string().min(1).default("Test User"),
   role: z.string().min(1),
+  platformRole: PlatformRoleSchema.default("none"),
   venueId: z.string().nullable(),
 });
 
@@ -107,6 +112,11 @@ export function resolveVerifiedClerkEmail(payload: Record<string, unknown>): Ver
 
 function sanitizeRole(raw: string): AuthRole {
   return allowedRoleSet.has(raw) ? raw as AuthRole : "planner";
+}
+
+function sanitizePlatformRole(raw: unknown): PlatformRole {
+  const parsed = PlatformRoleSchema.safeParse(raw);
+  return parsed.success ? parsed.data : "none";
 }
 
 function getEmailDomain(email: string): string | null {
@@ -219,7 +229,9 @@ export async function getUserByClerkId(
     return {
       id: existing.id,
       email: existing.email,
+      name: existing.name,
       role: existing.role,
+      platformRole: sanitizePlatformRole(existing.platformRole),
       venueId: existing.venueId,
     };
   }
@@ -235,7 +247,9 @@ export async function getUserByClerkId(
     return {
       id: byEmail.id,
       email: byEmail.email,
+      name: byEmail.name,
       role: byEmail.role,
+      platformRole: sanitizePlatformRole(byEmail.platformRole),
       venueId: byEmail.venueId,
     };
   }
@@ -268,6 +282,7 @@ export async function getUserByClerkId(
         email: normalizedEmail,
         name: defaultNameFromEmail(normalizedEmail),
         role: grant.role,
+        platformRole: "none",
         venueId: grant.venueId,
       }).returning();
 
@@ -286,7 +301,9 @@ export async function getUserByClerkId(
     return {
       id: created.id,
       email: created.email,
+      name: created.name,
       role: created.role,
+      platformRole: sanitizePlatformRole(created.platformRole),
       venueId: created.venueId,
     };
   }
@@ -296,6 +313,7 @@ export async function getUserByClerkId(
     email: normalizedEmail,
     name: defaultNameFromEmail(normalizedEmail),
     role: grant.role,
+    platformRole: "none",
     venueId: grant.venueId,
   }).returning();
 
@@ -304,7 +322,9 @@ export async function getUserByClerkId(
   return {
     id: created.id,
     email: created.email,
+    name: created.name,
     role: created.role,
+    platformRole: sanitizePlatformRole(created.platformRole),
     venueId: created.venueId,
   };
 }
@@ -409,6 +429,21 @@ export function authorize(
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!roleSet.has(request.user.role)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+  };
+}
+
+export function isPlatformAdmin(user: Pick<JwtUser, "platformRole">): boolean {
+  return user.platformRole === "admin";
+}
+
+export function authorizePlatformAdmin(): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    if (!isPlatformAdmin(request.user)) {
+      return reply.status(403).send({
+        error: "Venviewer platform administrator access required",
+        code: "FORBIDDEN",
+      });
     }
   };
 }

@@ -14,7 +14,9 @@ import type { JwtUser } from "../../middleware/auth.js";
 //
 //   | actor         | owner?  | venue match | expected |
 //   |---------------|---------|-------------|----------|
-//   | admin         | -       | -           | true     |
+//   | platform admin| -       | -           | true     |
+//   | venue admin@A | -       | A           | true     |
+//   | venue admin@A | -       | B           | FALSE    |
 //   | staff@A       | -       | A           | true     |
 //   | staff@A       | -       | B           | FALSE    |
 //   | hallkeeper@A  | -       | A           | true     |
@@ -34,7 +36,9 @@ function makeUser(overrides: Partial<JwtUser> & Pick<JwtUser, "role">): JwtUser 
   return {
     id: overrides.id ?? "00000000-0000-0000-0000-000000000001",
     email: overrides.email ?? "user@test.com",
+    name: overrides.name ?? "Test User",
     role: overrides.role,
+    platformRole: overrides.platformRole ?? "none",
     venueId: overrides.venueId ?? null,
   };
 }
@@ -44,9 +48,15 @@ function makeUser(overrides: Partial<JwtUser> & Pick<JwtUser, "role">): JwtUser 
 // ---------------------------------------------------------------------------
 
 describe("canManageVenue", () => {
-  it("admin can manage any venue regardless of their own venueId", () => {
-    expect(canManageVenue(makeUser({ role: "admin", venueId: null }), VENUE_A)).toBe(true);
-    expect(canManageVenue(makeUser({ role: "admin", venueId: VENUE_B }), VENUE_A)).toBe(true);
+  it("platform admin can manage any venue regardless of their own venueId", () => {
+    expect(canManageVenue(makeUser({ role: "admin", platformRole: "admin", venueId: null }), VENUE_A)).toBe(true);
+    expect(canManageVenue(makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(true);
+  });
+
+  it("venue admin can manage only their assigned venue", () => {
+    expect(canManageVenue(makeUser({ role: "admin", platformRole: "none", venueId: VENUE_A }), VENUE_A)).toBe(true);
+    expect(canManageVenue(makeUser({ role: "admin", platformRole: "none", venueId: VENUE_B }), VENUE_A)).toBe(false);
+    expect(canManageVenue(makeUser({ role: "admin", platformRole: "none", venueId: null }), VENUE_A)).toBe(false);
   });
 
   it("staff at venue A can manage venue A", () => {
@@ -99,10 +109,16 @@ describe("canAccessResource", () => {
     expect(canAccessResource(user, USER_PLANNER_2, VENUE_B)).toBe(false);
   });
 
-  it("admin can access any resource", () => {
-    const user = makeUser({ role: "admin", venueId: null });
+  it("platform admin can access any resource", () => {
+    const user = makeUser({ role: "admin", platformRole: "admin", venueId: null });
     expect(canAccessResource(user, USER_PLANNER_1, VENUE_A)).toBe(true);
     expect(canAccessResource(user, null, VENUE_B)).toBe(true);
+  });
+
+  it("venue admin can access only resources at their venue", () => {
+    const user = makeUser({ role: "admin", platformRole: "none", venueId: VENUE_A });
+    expect(canAccessResource(user, USER_PLANNER_1, VENUE_A)).toBe(true);
+    expect(canAccessResource(user, USER_PLANNER_1, VENUE_B)).toBe(false);
   });
 
   it("staff at venue A can access any resource at venue A (non-owner path)", () => {
@@ -125,8 +141,8 @@ describe("canAccessResource", () => {
     expect(canAccessResource(user, null, VENUE_B)).toBe(false);
   });
 
-  it("null ownerId + admin → granted (the anonymous-owned-resource path)", () => {
-    const user = makeUser({ role: "admin", venueId: null });
+  it("null ownerId + platform admin → granted (the anonymous-owned-resource path)", () => {
+    const user = makeUser({ role: "admin", platformRole: "admin", venueId: null });
     expect(canAccessResource(user, null, VENUE_A)).toBe(true);
   });
 });

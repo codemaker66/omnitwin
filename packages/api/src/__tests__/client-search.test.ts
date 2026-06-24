@@ -10,14 +10,14 @@ let server: FastifyInstance;
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
-function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+function signToken(payload: { id: string; email: string; role: string; platformRole?: "none" | "operator" | "admin"; venueId: string | null }): string {
   return JSON.stringify(payload);
 }
 
 const VENUE_ID = "00000000-0000-0000-0000-000000000001";
 const USER_ID = "00000000-0000-0000-0000-000000000090";
 const LEAD_ID = "00000000-0000-0000-0000-000000000091";
-const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: VENUE_ID });
+const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", platformRole: "admin", venueId: VENUE_ID });
 const hallkeeperToken = (): string => signToken({ id: "u2", email: "hk@test.com", role: "hallkeeper", venueId: VENUE_ID });
 const plannerToken = (): string => signToken({ id: "u3", email: "planner@test.com", role: "planner", venueId: null });
 

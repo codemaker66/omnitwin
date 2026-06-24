@@ -37,6 +37,7 @@ function adminToken(): string {
     id: USER_ID,
     email: "admin@test.com",
     role: "admin",
+    platformRole: "admin",
     venueId: null,
   });
 }

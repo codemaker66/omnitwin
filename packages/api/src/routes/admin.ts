@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import { cleanupPreviewConfigurations, cleanupOrphanedFiles } from "../services/cleanup.js";
 import {
   DEFAULT_SNAPSHOT_RETENTION,
@@ -21,7 +21,7 @@ export async function adminRoutes(
 
   // POST /admin/cleanup — trigger manual cleanup of stale preview configs
   server.post("/cleanup", {
-    preHandler: [authenticate, authorize("admin")],
+    preHandler: [authenticate, authorizePlatformAdmin()],
   }, async () => {
     const deletedConfigs = await cleanupPreviewConfigurations(db);
     const deletedFiles = await cleanupOrphanedFiles(db);
@@ -56,7 +56,7 @@ export async function adminRoutes(
   });
 
   server.post("/prune-snapshots", {
-    preHandler: [authenticate, authorize("admin")],
+    preHandler: [authenticate, authorizePlatformAdmin()],
   }, async (request, reply) => {
     const body = PruneBody.safeParse(request.body ?? {});
     if (!body.success) {

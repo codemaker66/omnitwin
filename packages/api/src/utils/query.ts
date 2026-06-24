@@ -1,4 +1,4 @@
-import type { JwtUser } from "../middleware/auth.js";
+import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Ownership & permission helpers
@@ -6,11 +6,12 @@ import type { JwtUser } from "../middleware/auth.js";
 
 /**
  * Returns true if the user can manage a resource belonging to the given venue.
- * Admin can manage any venue. Staff/hallkeeper can manage their own venue only.
+ * Venviewer platform admins can manage any venue. Customer venue roles can
+ * manage only their assigned venue.
  */
 export function canManageVenue(user: JwtUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
-  if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId === venueId) return true;
+  if (isPlatformAdmin(user)) return true;
+  if ((user.role === "admin" || user.role === "staff" || user.role === "hallkeeper") && user.venueId === venueId) return true;
   return false;
 }
 

@@ -53,7 +53,14 @@ vi.mock("@clerk/react", () => ({
 
 // Mock auth store
 const mockAuthState = {
-  user: null as { id: string; email: string; role: string; venueId: string | null; name: string } | null,
+  user: null as {
+    id: string;
+    email: string;
+    role: string;
+    platformRole: "none" | "operator" | "admin";
+    venueId: string | null;
+    name: string;
+  } | null,
   isAuthenticated: false,
   isLoading: false,
   error: null as string | null,
@@ -94,7 +101,7 @@ describe("ProtectedRoute", () => {
 
   it("shows 403 for wrong role", async () => {
     mockAuthState.isAuthenticated = true;
-    mockAuthState.user = { id: "u1", email: "viewer@test.com", role: "viewer", venueId: null, name: "V" };
+    mockAuthState.user = { id: "u1", email: "viewer@test.com", role: "viewer", platformRole: "none", venueId: null, name: "V" };
     const { ProtectedRoute } = await import("../components/auth/ProtectedRoute.js");
     expect(ProtectedRoute).toBeDefined();
   });

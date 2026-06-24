@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, and, isNull } from "drizzle-orm";
 import { referencePhotos, referenceLoadouts, files } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, type JwtUser } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
 import { sql } from "drizzle-orm";
 
@@ -42,8 +42,7 @@ const ReorderBody = z.object({
 async function verifyLoadoutAccess(
   db: Database,
   loadoutId: string,
-  userRole: string,
-  userVenueId: string | null,
+  user: JwtUser,
 ): Promise<{ venueId: string } | { error: string; code: string; status: number }> {
   const [loadout] = await db.select({ venueId: referenceLoadouts.venueId })
     .from(referenceLoadouts)
@@ -54,7 +53,7 @@ async function verifyLoadoutAccess(
     return { error: "Loadout not found", code: "NOT_FOUND", status: 404 };
   }
 
-  if (!canManageVenue({ id: "", email: "", role: userRole, venueId: userVenueId }, loadout.venueId)) {
+  if (!canManageVenue(user, loadout.venueId)) {
     return { error: "Insufficient permissions", code: "FORBIDDEN", status: 403 };
   }
 
@@ -83,7 +82,7 @@ export async function referencePhotoRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user.role, request.user.venueId);
+    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user);
     if ("error" in access) {
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }
@@ -134,7 +133,7 @@ export async function referencePhotoRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user.role, request.user.venueId);
+    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user);
     if ("error" in access) {
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }
@@ -165,7 +164,7 @@ export async function referencePhotoRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user.role, request.user.venueId);
+    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user);
     if ("error" in access) {
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }
@@ -194,7 +193,7 @@ export async function referencePhotoRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user.role, request.user.venueId);
+    const access = await verifyLoadoutAccess(db, params.data.loadoutId, request.user);
     if ("error" in access) {
       return reply.status(access.status).send({ error: access.error, code: access.code });
     }

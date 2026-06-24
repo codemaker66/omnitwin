@@ -17,9 +17,17 @@ const { authState, mocks } = vi.hoisted(() => ({
       id: "00000000-0000-4000-8000-000000008010",
       email: "ops@tradeshall.test",
       role: "staff",
+      platformRole: "none",
       venueId: "00000000-0000-4000-8000-000000008001",
       name: "Ops",
-    } as { readonly id: string; readonly email: string; readonly role: string; readonly venueId: string | null; readonly name: string } | null,
+    } as {
+      readonly id: string;
+      readonly email: string;
+      readonly role: string;
+      readonly platformRole: "none" | "operator" | "admin";
+      readonly venueId: string | null;
+      readonly name: string;
+    } | null,
   },
   mocks: {
     addPhoto: vi.fn(),
@@ -131,6 +139,7 @@ beforeEach(() => {
     id: "00000000-0000-4000-8000-000000008010",
     email: "ops@tradeshall.test",
     role: "staff",
+    platformRole: "none",
     venueId: VENUE_ID,
     name: "Ops",
   };
@@ -169,6 +178,7 @@ describe("LoadoutsView", () => {
       id: "00000000-0000-4000-8000-000000008010",
       email: "ops@tradeshall.test",
       role: "staff",
+      platformRole: "none",
       venueId: null,
       name: "Ops",
     };

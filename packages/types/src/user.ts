@@ -23,6 +23,21 @@ export const UserRoleSchema = z.enum(USER_ROLES);
 export type UserRole = z.infer<typeof UserRoleSchema>;
 
 // ---------------------------------------------------------------------------
+// Platform Role — Venviewer operating-company authority
+//
+// This is deliberately separate from UserRole and workspace_memberships.role.
+// A customer can be a workspace owner/admin without becoming a Venviewer
+// platform administrator. Server-side platform routes must check this field,
+// not `role === "admin"`.
+// ---------------------------------------------------------------------------
+
+export const PLATFORM_ROLES = ["none", "operator", "admin"] as const;
+
+export const PlatformRoleSchema = z.enum(PLATFORM_ROLES);
+
+export type PlatformRole = z.infer<typeof PlatformRoleSchema>;
+
+// ---------------------------------------------------------------------------
 // Email — reusable email schema
 // ---------------------------------------------------------------------------
 
@@ -49,6 +64,7 @@ export const UserSchema = z.object({
   phone: z.string().nullable(),
   organizationName: z.string().nullable(),
   role: UserRoleSchema,
+  platformRole: PlatformRoleSchema.default("none"),
   venueId: VenueIdSchema.nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -68,8 +84,8 @@ export const CreateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   organizationName: z.string().nullable().optional(),
   role: UserRoleSchema,
+  platformRole: PlatformRoleSchema.default("none"),
   venueId: VenueIdSchema.nullable(),
 });
 
 export type CreateUser = z.infer<typeof CreateUserSchema>;
-

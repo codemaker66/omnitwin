@@ -31,7 +31,7 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource } from "../utils/query.js";
 import {
@@ -136,7 +136,7 @@ function toStaffCommentView(row: {
   };
 }
 
-type AuthedUser = { id: string; role: string; venueId: string | null };
+type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 type ProposalRow = typeof proposals.$inferSelect;
 
 interface ProposalEventContext {
@@ -147,7 +147,7 @@ interface ProposalEventContext {
 
 /** Create/mutate policy: admin anywhere, staff within their own venue. */
 function canManageVenueProposals(user: AuthedUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
+  if (isPlatformAdmin(user)) return true;
   return user.role === "staff" && user.venueId === venueId;
 }
 
@@ -277,7 +277,7 @@ export async function proposalRoutes(
       whereConditions.push(eq(proposals.status, query.data.status));
     }
 
-    if (user.role === "admin") {
+    if (isPlatformAdmin(user)) {
       // Admin sees all venues
     } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
       whereConditions.push(eq(proposals.venueId, user.venueId));
@@ -397,7 +397,7 @@ export async function proposalRoutes(
     if (!canManageVenueProposals(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (request.user.role !== "admin" && !isProposalEditable(proposal.status as ProposalStatus)) {
+    if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" });
     }
 
@@ -476,7 +476,7 @@ export async function proposalRoutes(
     if (!canManageVenueProposals(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (proposal.status === "accepted" && request.user.role !== "admin") {
+    if (proposal.status === "accepted" && !isPlatformAdmin(request.user)) {
       return reply.status(422).send({ error: "Accepted proposals are a commercial record and cannot be deleted", code: "PROPOSAL_ACCEPTED_LOCKED" });
     }
 
@@ -817,7 +817,7 @@ export async function proposalRoutes(
     if (!canManageVenueProposals(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (request.user.role !== "admin" && !isProposalEditable(proposal.status as ProposalStatus)) {
+    if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
 

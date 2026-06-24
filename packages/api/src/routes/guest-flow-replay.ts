@@ -29,7 +29,7 @@ import {
   routeConflicts,
   staffLanes,
 } from "../db/schema.js";
-import { authenticate, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { generateGuestFlowReplayV0 } from "../services/guest-flow-replay.js";
 
 type GuestFlowReplayRow = typeof guestFlowReplays.$inferSelect;
@@ -37,7 +37,7 @@ type GuestFlowScenarioRow = typeof guestFlowScenarios.$inferSelect;
 type NavmeshVersionRow = typeof navmeshVersions.$inferSelect;
 
 function canUseGuestFlowReplay(user: JwtUser): boolean {
-  return user.role === "admin" || user.role === "staff";
+  return isPlatformAdmin(user) || user.role === "admin" || user.role === "staff";
 }
 
 function dateIso(value: Date): string {
@@ -186,9 +186,9 @@ async function validateLinkedVenue(
     return { ok: false, status: 422, error: "Guest-flow replay links must belong to one venue", code: "VENUE_MISMATCH" };
   }
 
-  if (user.role === "staff") {
+  if (!isPlatformAdmin(user)) {
     if (linkedVenueIds.size === 0) {
-      return { ok: false, status: 422, error: "Staff replay requests must be linked to an event, phase, or configuration", code: "VENUE_SCOPE_REQUIRED" };
+      return { ok: false, status: 422, error: "Venue replay requests must be linked to an event, phase, or configuration", code: "VENUE_SCOPE_REQUIRED" };
     }
     const [venueId] = Array.from(linkedVenueIds);
     if (user.venueId === null || venueId !== user.venueId) {

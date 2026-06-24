@@ -23,7 +23,7 @@ import {
   workspaces,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 
 const WorkspaceIdParam = z.object({ workspaceId: z.string().uuid() });
 const ProjectIdParam = z.object({ projectId: z.string().uuid() });
@@ -67,7 +67,9 @@ export async function onboardingRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  server.get("/summary", { preHandler: [authenticate, authorize("admin")] }, async () => {
+  const platformAdminPreHandler = [authenticate, authorizePlatformAdmin()];
+
+  server.get("/summary", { preHandler: platformAdminPreHandler }, async () => {
     const organisationRows = await db.select()
       .from(organisations)
       .where(isNull(organisations.deletedAt))
@@ -106,7 +108,7 @@ export async function onboardingRoutes(
     };
   });
 
-  server.post("/managed-workspaces", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  server.post("/managed-workspaces", { preHandler: platformAdminPreHandler }, async (request, reply) => {
     const parsed = CreateManagedOnboardingSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
@@ -284,7 +286,7 @@ export async function onboardingRoutes(
     return reply.status(201).send({ data: created });
   });
 
-  server.post("/workspaces/:workspaceId/invitations", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  server.post("/workspaces/:workspaceId/invitations", { preHandler: platformAdminPreHandler }, async (request, reply) => {
     const params = WorkspaceIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid workspace ID", code: "VALIDATION_ERROR", details: params.error.issues });
@@ -355,7 +357,7 @@ export async function onboardingRoutes(
     return reply.status(201).send({ data: { memberships } });
   });
 
-  server.patch("/projects/:projectId", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  server.patch("/projects/:projectId", { preHandler: platformAdminPreHandler }, async (request, reply) => {
     const params = ProjectIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid project ID", code: "VALIDATION_ERROR", details: params.error.issues });
@@ -391,7 +393,7 @@ export async function onboardingRoutes(
     return { data: updated };
   });
 
-  server.patch("/entitlements/:entitlementId/provider-verification", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  server.patch("/entitlements/:entitlementId/provider-verification", { preHandler: platformAdminPreHandler }, async (request, reply) => {
     const params = EntitlementIdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid entitlement ID", code: "VALIDATION_ERROR", details: params.error.issues });

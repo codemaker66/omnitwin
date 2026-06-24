@@ -121,6 +121,7 @@ export const users = pgTable("users", {
   phone: text("phone"),
   organizationName: text("organization_name"),
   role: varchar("role", { length: 20 }).notNull(),
+  platformRole: varchar("platform_role", { length: 20 }).notNull().default("none"),
   venueId: uuid("venue_id").references(() => venues.id),
   // URL-safe handle for the `/<username>/<slug>` namespace URLs.
   // Mirrored from Clerk's username field via the clerk-webhook. Nullable

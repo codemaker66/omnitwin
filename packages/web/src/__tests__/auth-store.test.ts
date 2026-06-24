@@ -6,7 +6,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 const { useAuthStore } = await import("../stores/auth-store.js");
 
-const mockUser = { id: "u1", email: "test@test.com", role: "planner", venueId: null, name: "Test" };
+const mockUser = {
+  id: "u1",
+  email: "test@test.com",
+  role: "planner",
+  platformRole: "none" as const,
+  venueId: null,
+  name: "Test",
+};
 
 beforeEach(() => {
   useAuthStore.setState({
@@ -88,5 +95,11 @@ describe("AuthUser type", () => {
   it("supports string venueId", () => {
     useAuthStore.getState().setUser({ ...mockUser, venueId: "v1" });
     expect(useAuthStore.getState().user?.venueId).toBe("v1");
+  });
+
+  it("includes platformRole field separate from venue role", () => {
+    useAuthStore.getState().setUser({ ...mockUser, role: "admin", platformRole: "none" });
+    expect(useAuthStore.getState().user?.role).toBe("admin");
+    expect(useAuthStore.getState().user?.platformRole).toBe("none");
   });
 });

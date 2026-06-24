@@ -16,11 +16,11 @@ beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
 /** Sign a test JWT with the given payload. */
-function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+function signToken(payload: { id: string; email: string; role: string; platformRole?: "none" | "operator" | "admin"; venueId: string | null }): string {
   return JSON.stringify(payload);
 }
 
-const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });
+const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", platformRole: "admin", venueId: "v1" });
 const staffToken = (): string => signToken({ id: "u2", email: "staff@test.com", role: "staff", venueId: "v1" });
 const clientToken = (): string => signToken({ id: "u3", email: "client@test.com", role: "client", venueId: null });
 

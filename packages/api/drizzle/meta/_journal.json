@@ -288,6 +288,13 @@
       "when": 1781193600000,
       "tag": "0042_event_plan_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1781197200000,
+      "tag": "0043_platform_admin_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -57,7 +57,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
 // Asset routes
@@ -1237,7 +1237,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/capture-session",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterCaptureSessionInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1276,7 +1276,7 @@ export async function adminAssetRoutes(
 
   server.get(
     "/rooms",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsedQuery = AdminRoomsQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {
@@ -1338,7 +1338,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/register-version",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterAssetVersionInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1384,7 +1384,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/register-runtime-package",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterRuntimePackageInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1454,7 +1454,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/register-runtime-transform-artifact",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterRuntimeTransformArtifactInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1522,7 +1522,7 @@ export async function adminAssetRoutes(
 
   server.get(
     "/runtime-transform-artifacts",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsedQuery = RuntimeTransformArtifactQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {
@@ -1541,7 +1541,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/register-capture-control-source",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterCaptureControlSourceRecordInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1629,7 +1629,7 @@ export async function adminAssetRoutes(
 
   server.get(
     "/capture-control-sources",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsedQuery = CaptureControlSourceRecordQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {
@@ -1660,7 +1660,7 @@ export async function adminAssetRoutes(
 
   server.post(
     "/register-runtime-qa-record",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsed = RegisterRuntimeQaRecordInputSchema.safeParse(request.body);
       if (!parsed.success) {
@@ -1742,7 +1742,7 @@ export async function adminAssetRoutes(
 
   server.get(
     "/runtime-qa-records",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsedQuery = RuntimeQaRecordQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {
@@ -1761,7 +1761,7 @@ export async function adminAssetRoutes(
 
   server.get(
     "/room-manifests",
-    { preHandler: [authenticate, authorize("admin")] },
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
       const parsedQuery = RoomManifestQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {

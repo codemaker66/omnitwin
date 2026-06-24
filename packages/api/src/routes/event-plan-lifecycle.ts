@@ -20,7 +20,7 @@ import {
   eventPlanNotifications,
   events,
 } from "../db/schema.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import {
   serializeAcknowledgement,
@@ -75,7 +75,7 @@ function canReadNotification(request: FastifyRequest, row: NotificationRow): boo
   if (row.recipientUserId !== null) return row.recipientUserId === request.user.id;
   const role = audienceRoleForRequest(request);
   if (role === null || role !== row.audienceRole) return false;
-  if (request.user.role === "admin") return true;
+  if (isPlatformAdmin(request.user)) return true;
   return row.venueId !== null && request.user.venueId === row.venueId;
 }
 
@@ -124,7 +124,7 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
     const conditions: SQL[] = [eq(eventPlanNotifications.recipientUserId, request.user.id)];
 
     if (role !== null) {
-      if (request.user.role === "admin") {
+      if (isPlatformAdmin(request.user)) {
         const roleCondition = and(
           isNull(eventPlanNotifications.recipientUserId),
           eq(eventPlanNotifications.audienceRole, role),

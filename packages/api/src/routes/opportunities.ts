@@ -22,7 +22,7 @@ import {
   proposals,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
@@ -34,12 +34,12 @@ const ListQuery = z.object({
 });
 
 function canManageCommercial(user: JwtUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
+  if (isPlatformAdmin(user)) return true;
   return user.role === "staff" && user.venueId === venueId;
 }
 
 function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
-  if (user.role === "admin") return { ok: true, venueId: null };
+  if (isPlatformAdmin(user)) return { ok: true, venueId: null };
   if (user.role === "staff" && user.venueId !== null) return { ok: true, venueId: user.venueId };
   return { ok: false };
 }
@@ -264,7 +264,7 @@ export async function opportunityRoutes(
 
     const fromStage = opportunity.stage as OpportunityStage;
     const toStage = parsed.data.stage;
-    if (toStage !== undefined && toStage !== fromStage && request.user.role !== "admin" && !isValidOpportunityStageTransition(fromStage, toStage)) {
+    if (toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)) {
       return reply.status(422).send({ error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" });
     }
 

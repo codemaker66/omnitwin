@@ -36,7 +36,7 @@ function place(item: CatalogueItem, n: number): PlacedItem[] {
 }
 
 function signInStaff(): void {
-  useAuthStore.getState().setUser({ id: "u1", email: "staff@venue.test", role: "staff", venueId: "v1", name: "Staff" });
+  useAuthStore.getState().setUser({ id: "u1", email: "staff@venue.test", role: "staff", platformRole: "none", venueId: "v1", name: "Staff" });
 }
 
 beforeEach(() => {

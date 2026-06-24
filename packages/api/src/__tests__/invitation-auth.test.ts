@@ -39,6 +39,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
     phone: null,
     organizationName: null,
     role: "planner",
+    platformRole: "none",
     venueId: null,
     username: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -134,6 +135,7 @@ function makeMockDb(options: {
             clerkId: asRecord(values)["clerkId"] as string,
             email: asRecord(values)["email"] as string,
             role: asRecord(values)["role"] as string,
+            platformRole: asRecord(values)["platformRole"] as string,
             venueId: asRecord(values)["venueId"] as string | null,
           })]);
         },
@@ -211,7 +213,9 @@ describe("Clerk invitation access policy", () => {
     expect(user).toEqual({
       id: createdUser.id,
       email: "invited@example.com",
+      name: "Invited User",
       role: "staff",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     expect(state.inserted).toHaveLength(1);
@@ -220,6 +224,7 @@ describe("Clerk invitation access policy", () => {
       clerkId: "clerk_invited",
       email: "invited@example.com",
       role: "staff",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     expect(state.updated).toHaveLength(2);
@@ -277,6 +282,7 @@ describe("Clerk invitation access policy", () => {
       clerkId: null,
       email: "seeded@example.com",
       role: "hallkeeper",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     const { db, state } = makeMockDb({ existingByEmail: existing });
@@ -286,7 +292,9 @@ describe("Clerk invitation access policy", () => {
     expect(user).toEqual({
       id: existing.id,
       email: "seeded@example.com",
+      name: "Invited User",
       role: "hallkeeper",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     expect(state.inserted).toHaveLength(0);
@@ -328,6 +336,7 @@ describe("Clerk invitation access policy", () => {
       clerkId: "clerk_domain",
       email: "person@approved.example",
       role: "staff",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     const { db, state } = makeMockDb({ createdUser });
@@ -337,14 +346,43 @@ describe("Clerk invitation access policy", () => {
     expect(user).toEqual({
       id: createdUser.id,
       email: "person@approved.example",
+      name: "Invited User",
       role: "staff",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
     expect(state.inserted[0]?.values).toMatchObject({
       clerkId: "clerk_domain",
       email: "person@approved.example",
       role: "staff",
+      platformRole: "none",
       venueId: VENUE_ID,
     });
+  });
+
+  it("links a pre-provisioned Venviewer platform admin without assigning a venue", async () => {
+    const existing = userRow({
+      id: "77777777-7777-4777-8777-777777777777",
+      clerkId: null,
+      email: "blake@venviewer.com",
+      role: "admin",
+      platformRole: "admin",
+      venueId: null,
+    });
+    const { db, state } = makeMockDb({ existingByEmail: existing });
+
+    const user = await getUserByClerkId(db, "clerk_platform_admin", "BLAKE@venviewer.com");
+
+    expect(user).toEqual({
+      id: existing.id,
+      email: "blake@venviewer.com",
+      name: "Invited User",
+      role: "admin",
+      platformRole: "admin",
+      venueId: null,
+    });
+    expect(state.inserted).toHaveLength(0);
+    expect(state.updated[0]?.table).toBe(users);
+    expect(state.updated[0]?.values).toMatchObject({ clerkId: "clerk_platform_admin" });
   });
 });

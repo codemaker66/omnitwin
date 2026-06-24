@@ -24,7 +24,7 @@ import {
   revenueScenarios,
   spaces,
 } from "../db/schema.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import {
   buildPipelineSummary,
@@ -39,7 +39,7 @@ const AnalyticsQuery = z.object({ venueId: z.string().uuid().optional() });
 type RevenueScenarioRow = typeof revenueScenarios.$inferSelect;
 type PricingAssumptionRow = typeof pricingAssumptions.$inferSelect;
 type ComfortConstraintRow = typeof comfortConstraints.$inferSelect;
-type AuthedUser = { readonly id: string; readonly role: string; readonly venueId: string | null };
+type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
@@ -50,7 +50,7 @@ function toIso(value: Date): string {
 }
 
 function canManageVenueRevenue(user: AuthedUser, venueId: string): boolean {
-  if (user.role === "admin") return true;
+  if (isPlatformAdmin(user)) return true;
   return (user.role === "staff" || user.role === "planner") && user.venueId === venueId;
 }
 
@@ -60,7 +60,7 @@ function resolveVenueScope(
   requestedVenueId: string | undefined,
 ): string | null {
   const user = request.user;
-  if (user.role === "admin") {
+  if (isPlatformAdmin(user)) {
     if (requestedVenueId === undefined) {
       void reply.status(400).send({
         error: "Admin analytics requests must provide venueId",

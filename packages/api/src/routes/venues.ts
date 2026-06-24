@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { venues, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
 import { canManageVenue } from "../utils/query.js";
 
@@ -84,8 +84,8 @@ export async function venueRoutes(
     return { data: { ...venue, spaces: venueSpaces } };
   });
 
-  // POST /venues — admin only
-  server.post("/", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  // POST /venues — Venviewer platform admin only
+  server.post("/", { preHandler: [authenticate, authorizePlatformAdmin()] }, async (request, reply) => {
     const parsed = CreateVenueBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
@@ -135,8 +135,8 @@ export async function venueRoutes(
     return { data: updated };
   });
 
-  // DELETE /venues/:id — admin only, soft delete
-  server.delete("/:id", { preHandler: [authenticate, authorize("admin")] }, async (request, reply) => {
+  // DELETE /venues/:id — Venviewer platform admin only, soft delete
+  server.delete("/:id", { preHandler: [authenticate, authorizePlatformAdmin()] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });

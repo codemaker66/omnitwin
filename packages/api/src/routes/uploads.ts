@@ -4,8 +4,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { files, spaces, enquiries, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
-import type { JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
 import type { Env } from "../env.js";
 
@@ -202,14 +201,14 @@ export async function resolveUploadScope(
   visibility: UploadVisibility = "private",
 ): Promise<UploadScope | null> {
   if (context === "public_marketing") {
-    if (user.role !== "admin" || visibility !== "public") return null;
+    if (!isPlatformAdmin(user) || visibility !== "public") return null;
     return { venueId: null, keyPrefix: `public/marketing/${contextId}`, visibility };
   }
 
   if (visibility !== "private") return null;
 
   if (context === "asset") {
-    if (user.role !== "admin") return null;
+    if (!isPlatformAdmin(user)) return null;
     return { venueId: null, keyPrefix: `private/catalogue/assets/${contextId}`, visibility };
   }
 

@@ -14,15 +14,29 @@ const WORKSPACE_ID = "00000000-0000-4000-8000-000000000021";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000022";
 const ENTITLEMENT_ID = "00000000-0000-4000-8000-000000000023";
 
-function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
+function signToken(payload: {
+  readonly id: string;
+  readonly email: string;
+  readonly role: string;
+  readonly venueId: string | null;
+  readonly platformRole?: "none" | "operator" | "admin";
+}): string {
   return JSON.stringify(payload);
 }
 
-const adminToken = (): string => signToken({
+const platformAdminToken = (): string => signToken({
   id: "00000000-0000-4000-8000-000000000099",
   email: "admin@test.com",
   role: "admin",
+  platformRole: "admin",
   venueId: null,
+});
+const venueAdminToken = (): string => signToken({
+  id: "00000000-0000-4000-8000-000000000097",
+  email: "venue-admin@test.com",
+  role: "admin",
+  platformRole: "none",
+  venueId: "00000000-0000-4000-8000-00000000000a",
 });
 const staffToken = (): string => signToken({
   id: "00000000-0000-4000-8000-000000000098",
@@ -35,7 +49,7 @@ beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
 
 describe("onboarding routes", () => {
-  it("requires admin authentication for onboarding surfaces", async () => {
+  it("requires Venviewer platform admin authentication for onboarding surfaces", async () => {
     for (const [method, url] of [
       ["GET", "/onboarding/summary"],
       ["POST", "/onboarding/managed-workspaces"],
@@ -53,6 +67,14 @@ describe("onboarding routes", () => {
         payload: method !== "GET" ? {} : undefined,
       });
       expect(staff.statusCode).toBe(403);
+
+      const venueAdmin = await server.inject({
+        method,
+        url,
+        headers: { authorization: `Bearer ${venueAdminToken()}` },
+        payload: method !== "GET" ? {} : undefined,
+      });
+      expect(venueAdmin.statusCode).toBe(403);
     }
   });
 
@@ -60,7 +82,7 @@ describe("onboarding routes", () => {
     const res = await server.inject({
       method: "POST",
       url: "/onboarding/managed-workspaces",
-      headers: { authorization: `Bearer ${adminToken()}` },
+      headers: { authorization: `Bearer ${platformAdminToken()}` },
       payload: {
         organisationName: "Trades Hall Trust",
         venue: {
@@ -85,7 +107,7 @@ describe("onboarding routes", () => {
     const invalid = await server.inject({
       method: "PATCH",
       url: `/onboarding/entitlements/${ENTITLEMENT_ID}/provider-verification`,
-      headers: { authorization: `Bearer ${adminToken()}` },
+      headers: { authorization: `Bearer ${platformAdminToken()}` },
       payload: {
         billingProvider: "stripe",
         providerVerificationStatus: "pending",
@@ -97,7 +119,7 @@ describe("onboarding routes", () => {
     const validShape = await server.inject({
       method: "PATCH",
       url: `/onboarding/entitlements/${ENTITLEMENT_ID}/provider-verification`,
-      headers: { authorization: `Bearer ${adminToken()}` },
+      headers: { authorization: `Bearer ${platformAdminToken()}` },
       payload: {
         billingProvider: "manual_invoice",
         providerVerificationStatus: "provider_verified",
@@ -114,7 +136,7 @@ describe("onboarding routes", () => {
     const res = await server.inject({
       method: "POST",
       url: "/onboarding/managed-workspaces",
-      headers: { authorization: `Bearer ${adminToken()}` },
+      headers: { authorization: `Bearer ${platformAdminToken()}` },
       payload: {
         organisationName: "Trades Hall Trust",
         workspaceName: "Trades Hall rollout",
@@ -141,13 +163,15 @@ describe("onboarding routes", () => {
 });
 
 describe("onboarding route source guards", () => {
-  it("routes are admin-gated and use user invitations rather than direct platform-admin grants", async () => {
+  it("routes are platform-admin gated and use user invitations rather than direct customer platform grants", async () => {
     const source = await readFile(resolve("src/routes/onboarding.ts"), "utf-8");
-    expect(source).toContain("authorize(\"admin\")");
+    expect(source).toContain("authorizePlatformAdmin()");
     expect(source).toContain("userInvitations");
     expect(source).toContain("workspaceMemberships");
     expect(source).toContain("venueRole");
+    expect(source).toContain("workspaceRole");
     expect(source).not.toContain("venueRole: \"admin\"");
+    expect(source).not.toContain("platformRole: \"admin\"");
   });
 
   it("server registers the onboarding route prefix", async () => {

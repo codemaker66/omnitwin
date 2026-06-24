@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
       id: "00000000-0000-4000-8000-000000005002",
       email: "admin@tradeshall.test",
       role: "admin",
+      platformRole: "none",
       venueId: "00000000-0000-4000-8000-000000005001" as string | null,
       name: "Admin User",
     },
@@ -79,6 +80,7 @@ beforeEach(() => {
     id: "00000000-0000-4000-8000-000000005002",
     email: "admin@tradeshall.test",
     role: "admin",
+    platformRole: "none",
     venueId: VENUE_ID,
     name: "Admin User",
   };

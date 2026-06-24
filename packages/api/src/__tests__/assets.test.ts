@@ -16,9 +16,9 @@ afterAll(async () => {
   await server.close();
 });
 
-const signToken = (payload: { id: string; email: string; role: string; venueId: string | null }): string =>
+const signToken = (payload: { id: string; email: string; role: string; platformRole?: "none" | "operator" | "admin"; venueId: string | null }): string =>
   JSON.stringify(payload);
-const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", venueId: "v1" });
+const adminToken = (): string => signToken({ id: "u1", email: "admin@test.com", role: "admin", platformRole: "admin", venueId: "v1" });
 const plannerToken = (): string => signToken({ id: "u2", email: "planner@test.com", role: "planner", venueId: "v1" });
 
 const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
