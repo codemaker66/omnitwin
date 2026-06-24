@@ -66,6 +66,11 @@ export function fixtureFamilyLabel(family: LightingFixtureFamily): string {
 export interface RigGroup {
   readonly family: LightingFixtureFamily;
   readonly count: number;
+  /** Explicit DMX channel footprint (e.g. from an imported GDTF mode); overrides
+   *  the indicative FIXTURE_FAMILY_DMX_CHANNELS default for the family. */
+  readonly channels?: number;
+  /** Display label override (e.g. an imported fixture's manufacturer + model). */
+  readonly label?: string;
 }
 
 /** Build the rig group list from an editable family→count map (count > 0 only). */
@@ -131,8 +136,10 @@ export function buildDmxPatch(groups: readonly RigGroup[], options: DmxPatchOpti
   let nextAddress = 1;
 
   for (const group of groups) {
-    const channels = FIXTURE_FAMILY_DMX_CHANNELS[group.family];
-    const label = fixtureFamilyLabel(group.family);
+    const channels = group.channels !== undefined && Number.isFinite(group.channels) && group.channels > 0
+      ? Math.floor(group.channels)
+      : FIXTURE_FAMILY_DMX_CHANNELS[group.family];
+    const label = group.label ?? fixtureFamilyLabel(group.family);
     const count = Number.isFinite(group.count) && group.count > 0 ? Math.floor(group.count) : 0;
     for (let i = 0; i < count; i += 1) {
       if (channels > DMX_UNIVERSE_SIZE) {

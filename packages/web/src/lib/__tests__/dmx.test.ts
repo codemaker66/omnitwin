@@ -45,6 +45,14 @@ describe("buildDmxPatch", () => {
     expect(patch.universes[0]?.universe).toBe(5);
   });
 
+  it("uses an explicit channel footprint + label (imported fixture) over the family default", () => {
+    // beam-hybrid defaults to 20 ch; the imported GDTF mode is 40 ch.
+    const patch = buildDmxPatch([{ family: "beam-hybrid", count: 2, channels: 40, label: "Robe MegaPointe" }]);
+    expect(patch.totalChannels).toBe(80);
+    expect(patch.fixtures.map((f) => [f.startAddress, f.endAddress])).toEqual([[1, 40], [41, 80]]);
+    expect(patch.fixtures[0]?.label).toBe("Robe MegaPointe");
+  });
+
   it("is empty for an empty rig", () => {
     const patch = buildDmxPatch([]);
     expect(patch.totalFixtures).toBe(0);

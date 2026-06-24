@@ -1,8 +1,8 @@
 import { useMemo, useState, type ChangeEvent, type ReactElement } from "react";
 import { Zap } from "lucide-react";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
-import { useLightingRigStore } from "../../../stores/lighting-rig-store.js";
-import { rigGroupsFromCounts, fixtureWattsFromGroups } from "../../../lib/dmx.js";
+import { useLightingRigStore, rigGroupsForRig } from "../../../stores/lighting-rig-store.js";
+import { fixtureWattsFromGroups } from "../../../lib/dmx.js";
 import {
   buildDistroPlan,
   supplyLabel,
@@ -39,14 +39,15 @@ function phaseTone(amps: number, breakerA: number): string {
 
 export function PowerLensPanel(): ReactElement {
   const counts = useLightingRigStore((state) => state.counts);
+  const imported = useLightingRigStore((state) => state.imported);
   const [phaseCount, setPhaseCount] = useState<1 | 3>(3);
   const [breakerA, setBreakerA] = useState<number>(DEFAULT_PER_PHASE_BREAKER_A);
   const [circuitA, setCircuitA] = useState<number>(DEFAULT_CIRCUIT_BREAKER_A);
 
   const plan = useMemo(() => {
-    const watts = fixtureWattsFromGroups(rigGroupsFromCounts(counts));
+    const watts = fixtureWattsFromGroups(rigGroupsForRig(counts, imported));
     return buildDistroPlan(watts, { phaseCount, perPhaseBreakerA: breakerA, circuitBreakerA: circuitA });
-  }, [counts, phaseCount, breakerA, circuitA]);
+  }, [counts, imported, phaseCount, breakerA, circuitA]);
 
   const onBreaker = (event: ChangeEvent<HTMLInputElement>): void => {
     const parsed = Number.parseInt(event.target.value, 10);

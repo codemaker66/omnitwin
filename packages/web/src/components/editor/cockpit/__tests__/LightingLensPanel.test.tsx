@@ -40,4 +40,42 @@ describe("LightingLensPanel", () => {
     expect(screen.getByTestId("dmx-empty")).toBeTruthy();
     expect(metricValue("Fixtures")).toBe("0");
   });
+
+  it("imports a pasted GDTF fixture and patches its real channel footprint", () => {
+    render(<LightingLensPanel />);
+    fireEvent.click(screen.getByTestId("rig-clear")); // start from an empty rig
+    expect(metricValue("Fixtures")).toBe("0");
+
+    const channels = Array.from({ length: 11 }, (_, i) => `<DMXChannel Offset="${String(i + 1)}"/>`).join("");
+    const xml = `<?xml version="1.0"?><GDTF DataVersion="1.2"><FixtureType Name="MegaPointe" Manufacturer="Robe"><DMXModes><DMXMode Name="Standard"><DMXChannels>${channels}</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
+    fireEvent.change(screen.getByTestId("gdtf-xml"), { target: { value: xml } });
+    expect(screen.getByTestId("gdtf-name").textContent).toContain("Robe");
+
+    fireEvent.click(screen.getByTestId("gdtf-add"));
+    // One imported fixture drives the patch with its real 11-channel footprint.
+    expect(metricValue("Fixtures")).toBe("1");
+    expect(metricValue("DMX channels")).toBe("11");
+    const imported = useLightingRigStore.getState().imported;
+    expect(imported).toHaveLength(1);
+    expect(imported[0]?.channels).toBe(11);
+    expect(screen.getByTestId(`imported-count-${imported[0]?.id ?? ""}`)).toBeTruthy();
+  });
+
+  it("removes an imported fixture from the rig", () => {
+    render(<LightingLensPanel />);
+    fireEvent.click(screen.getByTestId("rig-clear"));
+    const xml = `<?xml version="1.0"?><GDTF><FixtureType Name="Strobe X" Manufacturer="Acme"><DMXModes><DMXMode Name="Basic"><DMXChannels><DMXChannel Offset="1"/><DMXChannel Offset="2"/></DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
+    fireEvent.change(screen.getByTestId("gdtf-xml"), { target: { value: xml } });
+    fireEvent.click(screen.getByTestId("gdtf-add"));
+    expect(useLightingRigStore.getState().imported).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText("Remove Strobe X"));
+    expect(useLightingRigStore.getState().imported).toHaveLength(0);
+  });
+
+  it("shows a parse error and no add button for invalid GDTF", () => {
+    render(<LightingLensPanel />);
+    fireEvent.change(screen.getByTestId("gdtf-xml"), { target: { value: "not gdtf at all <<<" } });
+    expect(screen.getByTestId("gdtf-error")).toBeTruthy();
+    expect(screen.queryByTestId("gdtf-add")).toBeNull();
+  });
 });

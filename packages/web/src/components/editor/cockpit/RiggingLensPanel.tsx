@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent, type ReactElement } from "react";
 import { Anchor } from "lucide-react";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
+import { useLightingRigStore, importedRigWeightKg } from "../../../stores/lighting-rig-store.js";
 import {
   assessRigging,
   RIGGING_PLANNING_DISCLAIMER,
@@ -51,6 +52,8 @@ function NumberField({
 }
 
 export function RiggingLensPanel(): ReactElement {
+  const imported = useLightingRigStore((state) => state.imported);
+  const rigWeightKg = Math.round(importedRigWeightKg(imported));
   const [suspendedLoadKg, setSuspendedLoadKg] = useState(200);
   const [bridleLegs, setBridleLegs] = useState<1 | 2>(1);
   const [legAngleFromHorizontalDeg, setLegAngle] = useState(45);
@@ -80,6 +83,16 @@ export function RiggingLensPanel(): ReactElement {
       <LensPanelSection label="Suspended load">
         <NumberField label="Suspended load (kg)" value={suspendedLoadKg} onValue={(v) => { setSuspendedLoadKg(Math.max(0, v)); }} testId="rig-load" min={0} />
         <p className="lens-panel__field-hint">Include fixtures, truss, motors, steels and cabling.</p>
+        {rigWeightKg > 0 && (
+          <button
+            type="button"
+            className="lens-panel__chip-link"
+            onClick={() => { setSuspendedLoadKg(rigWeightKg); }}
+            data-testid="rig-use-rig-weight"
+          >
+            Use rig weight ({String(rigWeightKg)} kg)
+          </button>
+        )}
         <NumberField label="Point WLL (kg)" value={pointWllKg} onValue={(v) => { setPointWllKg(Math.max(0, v)); }} testId="rig-wll" min={0} />
       </LensPanelSection>
 
