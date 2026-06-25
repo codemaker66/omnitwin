@@ -21,6 +21,9 @@ const LoginPage = lazy(() =>
 const RegisterPage = lazy(() =>
   import("./pages/RegisterPage.js").then((m) => ({ default: m.RegisterPage })),
 );
+const OAuthConsentPage = lazy(() =>
+  import("./pages/OAuthConsentPage.js").then((m) => ({ default: m.OAuthConsentPage })),
+);
 const ClerkRouteProvider = lazy(() =>
   import("./components/auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider })),
 );
@@ -117,6 +120,13 @@ export const router = createBrowserRouter([
   {
     path: "/register",
     element: withClerk(<RegisterPage />),
+  },
+  {
+    // Clerk OAuth application consent screen. Keep this route minimal:
+    // no app nav, no account menu, and no custom consent logic that can
+    // hide scopes, redirect warnings, or the deny action.
+    path: "/oauth-consent",
+    element: withClerk(<OAuthConsentPage />),
   },
   {
     // Temporary acquisition path until a dedicated billing/onboarding flow lands.

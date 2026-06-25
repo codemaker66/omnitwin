@@ -1,0 +1,142 @@
+.oauth-consent-page {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(280px, 500px) minmax(320px, 520px);
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+  overflow-x: hidden;
+  padding: 48px 32px;
+  color: #f6efe0;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(219, 166, 75, 0.14), transparent 28%),
+    linear-gradient(135deg, rgba(82, 230, 224, 0.09), transparent 38%),
+    linear-gradient(180deg, #040706 0%, #07100f 48%, #020403 100%);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.oauth-consent-page::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(rgba(82, 230, 224, 0.052) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(82, 230, 224, 0.04) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 78%, transparent 100%);
+}
+
+.oauth-consent-page::after {
+  position: absolute;
+  inset: 26px;
+  pointer-events: none;
+  content: "";
+  border: 1px solid rgba(219, 166, 75, 0.24);
+  border-radius: 8px;
+}
+
+.oauth-consent-page__context,
+.oauth-consent-page__shell {
+  position: relative;
+  z-index: 1;
+}
+
+.oauth-consent-page__brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border-bottom: 1px solid rgba(82, 230, 224, 0.54);
+  color: #dba64b;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.oauth-consent-page__context h1 {
+  max-width: 540px;
+  margin: 18px 0;
+  color: #fff7e8;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1.06;
+}
+
+.oauth-consent-page__context p {
+  max-width: 500px;
+  margin: 0;
+  color: rgba(246, 239, 224, 0.76);
+  font-size: 16px;
+  line-height: 1.68;
+}
+
+.oauth-consent-page__shell {
+  min-height: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(219, 166, 75, 0.3);
+  border-radius: 8px;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(16, 30, 29, 0.95), rgba(4, 11, 11, 0.97)),
+    #07100f;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.oauth-consent-page__status {
+  max-width: 340px;
+  display: grid;
+  gap: 8px;
+  color: rgba(246, 239, 224, 0.74);
+  line-height: 1.56;
+  text-align: center;
+}
+
+.oauth-consent-page__status strong {
+  color: #fff7e8;
+  font-size: 15px;
+}
+
+.oauth-consent-page .cl-rootBox,
+.oauth-consent-page .cl-card {
+  width: 100%;
+}
+
+.oauth-consent-page .cl-card {
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.98);
+}
+
+.oauth-consent-page button:focus-visible,
+.oauth-consent-page a:focus-visible,
+.oauth-consent-page input:focus-visible,
+.oauth-consent-page select:focus-visible {
+  outline: 3px solid rgba(82, 230, 224, 0.9);
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .oauth-consent-page {
+    grid-template-columns: minmax(0, 560px);
+    gap: 30px;
+    align-content: center;
+    padding: 34px 18px;
+  }
+
+  .oauth-consent-page::after {
+    inset: 12px;
+  }
+
+  .oauth-consent-page__context h1 {
+    font-size: 36px;
+  }
+
+  .oauth-consent-page__shell {
+    min-height: 430px;
+    padding: 16px;
+  }
+}

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Auth component tests — Clerk-based
@@ -40,7 +42,10 @@ vi.mock("react-router-dom", () => ({
 vi.mock("@clerk/react", () => ({
   ClerkProvider: clerkProviderMock,
   ClerkLoaded: ({ children }: { children: unknown }) => children,
-  ClerkLoading: ({ children }: { children: unknown }) => children,
+  ClerkFailed: () => null,
+  ClerkLoading: () => null,
+  OAuthConsent: () => "OAuthConsent",
+  Show: ({ children }: { children: unknown }) => children,
   SignIn: () => "SignIn",
   SignUp: () => "SignUp",
   UserButton: () => "UserButton",
@@ -149,6 +154,48 @@ describe("ClerkRouteProvider", () => {
   });
 });
 
+describe("OAuthConsentPage", () => {
+  it("renders Clerk's prebuilt OAuth consent component inside a focused Venviewer shell", async () => {
+    const { OAuthConsentPage } = await import("../pages/OAuthConsentPage.js");
+
+    render(createElement(OAuthConsentPage));
+
+    expect(screen.getByLabelText("Venviewer OAuth consent").textContent).toContain("Review external access");
+    expect(screen.getByLabelText("OAuth consent decision").textContent).toContain("OAuthConsent");
+    expect(document.title).toBe("OAuth consent - Venviewer");
+  });
+
+  it("sets a strict origin referrer policy for the consent route", async () => {
+    document.head.querySelector('meta[name="referrer"]')?.remove();
+    const { OAuthConsentPage } = await import("../pages/OAuthConsentPage.js");
+
+    render(createElement(OAuthConsentPage));
+
+    expect(document.head.querySelector<HTMLMetaElement>('meta[name="referrer"]')?.content).toBe(
+      "strict-origin-when-cross-origin",
+    );
+  });
+
+  it("uses Clerk consent primitives instead of a custom token-grant flow", async () => {
+    const source = await readFile(resolve("src/pages/OAuthConsentPage.tsx"), "utf-8");
+
+    expect(source).toContain("OAuthConsent");
+    expect(source).toContain("ClerkFailed");
+    expect(source).toContain("Consent screen unavailable.");
+    expect(source).toContain('Show when="signed-in"');
+    expect(source).not.toContain("useOAuthConsent");
+    expect(source).not.toContain("oauth_authorization.granted");
+    expect(source).not.toContain("oauth_token.created");
+  });
+
+  it("mounts the custom consent route behind Clerk", async () => {
+    const routerSource = await readFile(resolve("src/router.tsx"), "utf-8");
+
+    expect(routerSource).toContain('path: "/oauth-consent"');
+    expect(routerSource).toContain("withClerk(<OAuthConsentPage />)");
+  });
+});
+
 describe("Pages", () => {
   it("LoginPage exports", async () => {
     const { LoginPage } = await import("../pages/LoginPage.js");
@@ -158,6 +205,11 @@ describe("Pages", () => {
   it("RegisterPage exports", async () => {
     const { RegisterPage } = await import("../pages/RegisterPage.js");
     expect(typeof RegisterPage).toBe("function");
+  });
+
+  it("OAuthConsentPage exports", async () => {
+    const { OAuthConsentPage } = await import("../pages/OAuthConsentPage.js");
+    expect(typeof OAuthConsentPage).toBe("function");
   });
 
   it("EditorPage exports", async () => {
