@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClerkLoaded, ClerkLoading, SignUp } from "@clerk/react";
+import { ClerkFailed, ClerkLoaded, ClerkLoading, SignUp } from "@clerk/react";
+import { isClerkGoogleSignInEnabled, VENVIEWER_CLERK_APPEARANCE } from "../components/auth/clerk-appearance.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
 import "./AuthPage.css";
@@ -9,6 +10,9 @@ export function RegisterPage(): React.ReactElement {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
+  const authPageClassName = isClerkGoogleSignInEnabled()
+    ? "auth-page auth-page--social-enabled"
+    : "auth-page auth-page--social-disabled";
 
   useEffect(() => {
     document.title = "Create account - Venviewer";
@@ -21,7 +25,7 @@ export function RegisterPage(): React.ReactElement {
   }, [isAuthenticated, user, navigate]);
 
   return (
-    <main className="auth-page" aria-label="Account access">
+    <main className={authPageClassName} aria-label="Account access">
       <section className="auth-page__context" aria-label="Venviewer account context">
         <div className="auth-page__brand">
           Venviewer
@@ -45,8 +49,14 @@ export function RegisterPage(): React.ReactElement {
             <p>Keep this page open while the account form connects.</p>
           </div>
         </ClerkLoading>
+        <ClerkFailed>
+          <div className="auth-page__loading auth-page__loading--failed" role="alert">
+            <div>Secure account creation is unavailable.</div>
+            <p>Refresh this page. If it still fails, the Clerk production domain needs attention.</p>
+          </div>
+        </ClerkFailed>
         <ClerkLoaded>
-          <SignUp routing="hash" signInUrl="/login" />
+          <SignUp appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" signInUrl="/login" />
         </ClerkLoaded>
       </section>
     </main>

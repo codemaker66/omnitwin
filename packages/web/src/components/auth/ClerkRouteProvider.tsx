@@ -2,6 +2,7 @@ import { ClerkProvider } from "@clerk/react";
 import type { ReactElement, ReactNode } from "react";
 import { ClerkAuthBridge } from "./ClerkAuthBridge.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { VENVIEWER_CLERK_APPEARANCE } from "./clerk-appearance.js";
 import { VENVIEWER_CLERK_LOCALIZATION } from "./clerk-localization.js";
 
 interface ClerkRouteProviderProps {
@@ -36,6 +37,7 @@ export function ClerkRouteProvider({ children }: ClerkRouteProviderProps): React
     <ClerkProvider
       publishableKey={clerkPublishableKey()}
       afterSignOutUrl="/"
+      appearance={VENVIEWER_CLERK_APPEARANCE}
       localization={VENVIEWER_CLERK_LOCALIZATION}
     >
       <ClerkAuthBridge />

@@ -11,6 +11,16 @@ import { resolve } from "node:path";
 interface CapturedClerkProviderProps {
   readonly children?: unknown;
   readonly afterSignOutUrl?: string;
+  readonly appearance?: {
+    readonly elements?: {
+      readonly socialButtonsBlockButton?: {
+        readonly display?: string;
+      };
+      readonly dividerRow?: {
+        readonly display?: string;
+      };
+    };
+  };
   readonly localization?: {
     readonly signIn?: {
       readonly start?: {
@@ -27,6 +37,19 @@ interface CapturedClerkProviderProps {
 
 const clerkProviderMock = vi.hoisted(() =>
   vi.fn((props: CapturedClerkProviderProps) => props.children),
+);
+
+interface CapturedClerkFormProps {
+  readonly appearance?: CapturedClerkProviderProps["appearance"];
+  readonly routing?: string;
+}
+
+const signInMock = vi.hoisted(() =>
+  vi.fn((_props: CapturedClerkFormProps) => "SignIn"),
+);
+
+const signUpMock = vi.hoisted(() =>
+  vi.fn((_props: CapturedClerkFormProps) => "SignUp"),
 );
 
 // Mock react-router-dom
@@ -46,8 +69,8 @@ vi.mock("@clerk/react", () => ({
   ClerkLoading: () => null,
   OAuthConsent: () => "OAuthConsent",
   Show: ({ children }: { children: unknown }) => children,
-  SignIn: () => "SignIn",
-  SignUp: () => "SignUp",
+  SignIn: signInMock,
+  SignUp: signUpMock,
   UserButton: () => "UserButton",
   SignInButton: ({ children }: { children: unknown }) => children,
   SignedIn: ({ children }: { children: unknown }) => children,
@@ -142,7 +165,7 @@ describe("ClerkAuthBridge", () => {
 });
 
 describe("ClerkRouteProvider", () => {
-  it("pins Clerk-rendered account copy to Venviewer", async () => {
+  it("pins Clerk-rendered account copy to Venviewer and hides unverified social sign-in", async () => {
     const { ClerkRouteProvider } = await import("../components/auth/ClerkRouteProvider.js");
 
     render(createElement(ClerkRouteProvider, null, "workspace"));
@@ -151,6 +174,8 @@ describe("ClerkRouteProvider", () => {
     expect(props?.afterSignOutUrl).toBe("/");
     expect(props?.localization?.signIn?.start?.title).toBe("Sign in to Venviewer");
     expect(props?.localization?.signUp?.start?.title).toBe("Create your Venviewer account");
+    expect(props?.appearance?.elements?.socialButtonsBlockButton?.display).toBe("none");
+    expect(props?.appearance?.elements?.dividerRow?.display).toBe("none");
   });
 });
 
@@ -202,9 +227,35 @@ describe("Pages", () => {
     expect(typeof LoginPage).toBe("function");
   });
 
+  it("LoginPage uses the Venviewer Clerk theme and hides unverified Google social sign-in", async () => {
+    const { LoginPage } = await import("../pages/LoginPage.js");
+
+    render(createElement(LoginPage));
+
+    expect(document.querySelector(".auth-page--social-disabled")).not.toBeNull();
+
+    const props = signInMock.mock.calls.at(-1)?.[0];
+    expect(props?.routing).toBe("hash");
+    expect(props?.appearance?.elements?.socialButtonsBlockButton?.display).toBe("none");
+    expect(props?.appearance?.elements?.dividerRow?.display).toBe("none");
+  });
+
   it("RegisterPage exports", async () => {
     const { RegisterPage } = await import("../pages/RegisterPage.js");
     expect(typeof RegisterPage).toBe("function");
+  });
+
+  it("RegisterPage uses the Venviewer Clerk theme and hides unverified Google social sign-in", async () => {
+    const { RegisterPage } = await import("../pages/RegisterPage.js");
+
+    render(createElement(RegisterPage));
+
+    expect(document.querySelector(".auth-page--social-disabled")).not.toBeNull();
+
+    const props = signUpMock.mock.calls.at(-1)?.[0];
+    expect(props?.routing).toBe("hash");
+    expect(props?.appearance?.elements?.socialButtonsBlockButton?.display).toBe("none");
+    expect(props?.appearance?.elements?.dividerRow?.display).toBe("none");
   });
 
   it("OAuthConsentPage exports", async () => {

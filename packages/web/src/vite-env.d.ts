@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   /** Clerk publishable key. Required in production. */
   readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
+  /** Enable Clerk social providers only after production OAuth provider credentials are verified. */
+  readonly VITE_CLERK_GOOGLE_SIGN_IN_ENABLED?: string;
   /** Backend API URL. Defaults to http://localhost:3001. */
   readonly VITE_API_URL?: string;
   /** Cloudflare R2 public URL for file previews. Optional. */
