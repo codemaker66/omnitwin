@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { ZipWriter, Uint8ArrayWriter, TextReader } from "@zip.js/zip.js";
-import { readGdtfArchive } from "../gdtf-archive.js";
+import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader, TextReader } from "@zip.js/zip.js";
+import { readGdtfArchive, readMvrArchive } from "../gdtf-archive.js";
 import { parseGdtfDescription } from "../gdtf.js";
 
 const SAMPLE_XML =
@@ -67,5 +67,48 @@ describe("readGdtfArchive", () => {
     const result = await readGdtfArchive(zip);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/description\.xml/);
+  });
+});
+
+async function makeGdtfBytes(descriptionXml: string): Promise<Uint8Array> {
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add("description.xml", new TextReader(descriptionXml));
+  return writer.close();
+}
+
+async function makeMvrZip(sceneXml: string, gdtfs: Record<string, Uint8Array>): Promise<Uint8Array> {
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add("GeneralSceneDescription.xml", new TextReader(sceneXml));
+  for (const [name, bytes] of Object.entries(gdtfs)) {
+    await writer.add(name, new Uint8ArrayReader(bytes));
+  }
+  return writer.close();
+}
+
+describe("readMvrArchive", () => {
+  it("extracts the scene + embedded gdtf files keyed by basename", async () => {
+    const gdtfBytes = await makeGdtfBytes(SAMPLE_XML);
+    const scene = `<GeneralSceneDescription verMajor="1" verMinor="6"><Scene/></GeneralSceneDescription>`;
+    const mvr = await makeMvrZip(scene, { "Acme@Test PAR.gdtf": gdtfBytes });
+    const result = await readMvrArchive(mvr);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.archive.sceneXml).toContain("GeneralSceneDescription");
+      expect(result.archive.gdtfFiles.has("Acme@Test PAR.gdtf")).toBe(true);
+      // The embedded gdtf bytes round-trip back into the GDTF reader.
+      const embedded = result.archive.gdtfFiles.get("Acme@Test PAR.gdtf");
+      expect(embedded).toBeInstanceOf(Uint8Array);
+    }
+  });
+
+  it("errors on a ZIP without a scene description", async () => {
+    const mvr = await (async () => {
+      const writer = new ZipWriter(new Uint8ArrayWriter());
+      await writer.add("readme.txt", new TextReader("hi"));
+      return writer.close();
+    })();
+    const result = await readMvrArchive(mvr);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/GeneralSceneDescription/);
   });
 });

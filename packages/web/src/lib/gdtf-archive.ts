@@ -1,4 +1,4 @@
-import { ZipReader, Uint8ArrayReader, TextWriter, configure, type FileEntry } from "@zip.js/zip.js";
+import { ZipReader, Uint8ArrayReader, Uint8ArrayWriter, TextWriter, configure, type FileEntry } from "@zip.js/zip.js";
 
 // ---------------------------------------------------------------------------
 // gdtf-archive — the GDTF/MVR archive layer (Epic 6 import, slice 3).
@@ -56,6 +56,54 @@ export async function readGdtfArchive(data: Uint8Array | ArrayBuffer): Promise<G
     return { ok: true, archive: { descriptionXml, modelFiles } };
   } catch {
     return { ok: false, error: "Could not read the GDTF archive — it is not a valid ZIP file." };
+  } finally {
+    await reader.close().catch(() => undefined);
+  }
+}
+
+const SCENE_FILENAME = "generalscenedescription.xml";
+
+export interface MvrArchive {
+  /** Raw `GeneralSceneDescription.xml` text, ready for parseMvrScene. */
+  readonly sceneXml: string;
+  /** Embedded `.gdtf` files keyed by their basename (the scene's GDTFSpec value). */
+  readonly gdtfFiles: ReadonlyMap<string, Uint8Array>;
+}
+
+export type MvrArchiveResult =
+  | { readonly ok: true; readonly archive: MvrArchive }
+  | { readonly ok: false; readonly error: string };
+
+function basename(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(slash + 1) : path;
+}
+
+/**
+ * Read an `.mvr` archive's bytes and extract its scene description + the embedded
+ * `.gdtf` files (the fixture catalogue), keyed by basename so a scene fixture's
+ * GDTFSpec resolves directly. Never throws. Async.
+ */
+export async function readMvrArchive(data: Uint8Array | ArrayBuffer): Promise<MvrArchiveResult> {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const reader = new ZipReader(new Uint8ArrayReader(bytes));
+  try {
+    const entries = await reader.getEntries();
+    const files = entries.filter((entry): entry is FileEntry => !entry.directory);
+    const sceneEntry = files.find((entry) => basename(entry.filename).toLowerCase() === SCENE_FILENAME);
+    if (sceneEntry === undefined) {
+      return { ok: false, error: "No GeneralSceneDescription.xml in the archive — is this a .mvr file?" };
+    }
+    const sceneXml = await sceneEntry.getData(new TextWriter());
+    const gdtfFiles = new Map<string, Uint8Array>();
+    for (const entry of files) {
+      if (entry.filename.toLowerCase().endsWith(".gdtf")) {
+        gdtfFiles.set(basename(entry.filename), await entry.getData(new Uint8ArrayWriter()));
+      }
+    }
+    return { ok: true, archive: { sceneXml, gdtfFiles } };
+  } catch {
+    return { ok: false, error: "Could not read the MVR archive — it is not a valid ZIP file." };
   } finally {
     await reader.close().catch(() => undefined);
   }

@@ -1,14 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ZipWriter, Uint8ArrayWriter, TextReader } from "@zip.js/zip.js";
+import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader, TextReader } from "@zip.js/zip.js";
 import { LightingLensPanel } from "../LightingLensPanel.js";
 import { useLightingRigStore } from "../../../../stores/lighting-rig-store.js";
 
-async function makeGdtfFile(name: string, descriptionXml: string): Promise<File> {
+async function makeGdtfBytes(descriptionXml: string): Promise<Uint8Array> {
   const writer = new ZipWriter(new Uint8ArrayWriter());
   await writer.add("description.xml", new TextReader(descriptionXml));
-  const bytes = await writer.close();
+  return writer.close();
+}
+
+async function makeGdtfFile(name: string, descriptionXml: string): Promise<File> {
+  const bytes = await makeGdtfBytes(descriptionXml);
   return new File([bytes], name, { type: "application/zip" });
+}
+
+async function makeMvrFile(name: string, sceneXml: string, gdtfs: Record<string, Uint8Array>): Promise<File> {
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add("GeneralSceneDescription.xml", new TextReader(sceneXml));
+  for (const [entry, bytes] of Object.entries(gdtfs)) {
+    await writer.add(entry, new Uint8ArrayReader(bytes));
+  }
+  return new File([await writer.close()], name, { type: "application/zip" });
 }
 
 function metricValue(label: string): string {
@@ -109,5 +122,30 @@ describe("LightingLensPanel", () => {
     render(<LightingLensPanel />);
     fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
     expect(await screen.findByTestId("gdtf-file-error")).toBeTruthy();
+  });
+
+  it("imports a whole rig from a chosen .mvr file", async () => {
+    const gdtfXml = `<?xml version="1.0"?><GDTF DataVersion="1.2"><FixtureType Name="Acme Spot" Manufacturer="Acme"><DMXModes><DMXMode Name="Basic"><DMXChannels>`
+      + Array.from({ length: 5 }, (_, i) => `<DMXChannel Offset="${String(i + 1)}"/>`).join("")
+      + `</DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
+    const fixtures = [1, 2, 3].map((id) =>
+      `<Fixture name="F${String(id)}"><GDTFSpec>Acme@Spot.gdtf</GDTFSpec><GDTFMode>Basic</GDTFMode>`
+      + `<Addresses><Address break="0">${String(id)}</Address></Addresses></Fixture>`).join("");
+    const scene = `<GeneralSceneDescription verMajor="1" verMinor="6"><Scene><Layers><Layer><ChildList>${fixtures}</ChildList></Layer></Layers></Scene></GeneralSceneDescription>`;
+    const file = await makeMvrFile("rig.mvr", scene, { "Acme@Spot.gdtf": await makeGdtfBytes(gdtfXml) });
+
+    render(<LightingLensPanel />);
+    fireEvent.click(screen.getByTestId("rig-clear"));
+    fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+
+    const summary = await screen.findByTestId("mvr-summary");
+    expect(summary.textContent).toContain("3 fixtures");
+    fireEvent.click(screen.getByTestId("mvr-add"));
+
+    // One type (Acme Spot, Basic), count 3 → 3 × 5 ch = 15 channels.
+    const imported = useLightingRigStore.getState().imported;
+    expect(imported).toHaveLength(1);
+    expect(imported[0]?.count).toBe(3);
+    expect(metricValue("DMX channels")).toBe("15");
   });
 });

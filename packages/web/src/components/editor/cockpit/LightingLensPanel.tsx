@@ -4,7 +4,8 @@ import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { useLightingRigStore, rigGroupsForRig, fixtureDisplayLabel } from "../../../stores/lighting-rig-store.js";
 import { LIGHTING_FIXTURE_FAMILIES, type LightingFixtureFamily } from "../../../lib/photometrics.js";
 import { parseGdtfDescription, gdtfFixtureFamily, GDTF_IMPORT_DISCLAIMER } from "../../../lib/gdtf.js";
-import { readGdtfArchive } from "../../../lib/gdtf-archive.js";
+import { readGdtfArchive, readMvrArchive } from "../../../lib/gdtf-archive.js";
+import { parseMvrScene, resolveMvrRig, MVR_IMPORT_DISCLAIMER, type ResolvedMvrRig } from "../../../lib/mvr.js";
 import {
   buildDmxPatch,
   estimateRigPower,
@@ -63,6 +64,7 @@ function GdtfImportSection(): ReactElement {
   const [modeIndex, setModeIndex] = useState(0);
   const [familyOverride, setFamilyOverride] = useState<LightingFixtureFamily | "">("");
   const [fileError, setFileError] = useState<string | null>(null);
+  const [mvrRig, setMvrRig] = useState<ResolvedMvrRig | null>(null);
 
   const parse = useMemo(() => (xml.trim() === "" ? null : parseGdtfDescription(xml)), [xml]);
   const fixture = parse !== null && parse.ok ? parse.fixture : null;
@@ -80,23 +82,57 @@ function GdtfImportSection(): ReactElement {
     setFileError(null);
   };
 
+  const handleFile = async (file: File): Promise<void> => {
+    setFileError(null);
+    setMvrRig(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (file.name.toLowerCase().endsWith(".mvr")) {
+        const archive = await readMvrArchive(bytes);
+        if (!archive.ok) { setFileError(archive.error); return; }
+        const scene = parseMvrScene(archive.archive.sceneXml);
+        if (!scene.ok) { setFileError(scene.error); return; }
+        const rig = await resolveMvrRig(scene.scene, archive.archive.gdtfFiles);
+        if (rig.types.length === 0) { setFileError("No resolvable fixtures in this MVR scene."); return; }
+        setMvrRig(rig);
+      } else {
+        const archive = await readGdtfArchive(bytes);
+        if (archive.ok) {
+          setXml(archive.archive.descriptionXml);
+          setModeIndex(0);
+          setFamilyOverride("");
+        } else {
+          setFileError(archive.error);
+        }
+      }
+    } catch {
+      setFileError("Could not read the file.");
+    }
+  };
+
   const onFile = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
     event.target.value = ""; // allow re-selecting the same file
     if (file === undefined) return;
-    setFileError(null);
-    file.arrayBuffer()
-      .then((buffer) => readGdtfArchive(new Uint8Array(buffer)))
-      .then((result) => {
-        if (result.ok) {
-          setXml(result.archive.descriptionXml);
-          setModeIndex(0);
-          setFamilyOverride("");
-        } else {
-          setFileError(result.error);
-        }
-      })
-      .catch(() => { setFileError("Could not read the file."); });
+    void handleFile(file);
+  };
+
+  const onAddMvr = (): void => {
+    if (mvrRig === null) return;
+    for (const type of mvrRig.types) {
+      addImportedFixture(
+        {
+          manufacturer: type.manufacturer,
+          name: type.name,
+          family: type.family,
+          channels: type.channels,
+          weightKg: type.weightKg,
+          modeName: type.modeName,
+        },
+        type.count,
+      );
+    }
+    setMvrRig(null);
   };
 
   const onAdd = (): void => {
@@ -115,16 +151,34 @@ function GdtfImportSection(): ReactElement {
   };
 
   return (
-    <LensPanelSection label="Import a fixture (GDTF)">
-      <p className="lens-panel__field-hint">Choose a .gdtf file, or paste a fixture&apos;s description.xml, to use its real DMX footprint.</p>
+    <LensPanelSection label="Import fixtures (GDTF / MVR)">
+      <p className="lens-panel__field-hint">Choose a .gdtf fixture or an .mvr rig file, or paste a fixture&apos;s description.xml, to use real DMX footprints.</p>
       <div className="lens-panel__file-row">
         <label className="lens-panel__chip-link" data-testid="gdtf-file-label">
-          Choose .gdtf file
-          <input type="file" accept=".gdtf,application/zip" onChange={onFile} data-testid="gdtf-file" aria-label="Choose a GDTF file" hidden />
+          Choose .gdtf / .mvr file
+          <input type="file" accept=".gdtf,.mvr,application/zip" onChange={onFile} data-testid="gdtf-file" aria-label="Choose a GDTF or MVR file" hidden />
         </label>
       </div>
       {fileError !== null && (
         <p className="lens-panel__error" data-testid="gdtf-file-error">{fileError}</p>
+      )}
+      {mvrRig !== null && (
+        <div className="lens-panel__mvr" data-testid="mvr-summary">
+          <p className="lens-panel__paragraph">MVR scene · {String(mvrRig.fixtureCount)} fixtures across {String(mvrRig.types.length)} types</p>
+          {mvrRig.types.map((type) => (
+            <div key={`${type.gdtfSpec}-${type.modeName}`} className="lens-panel__cost-line">
+              <div className="lens-panel__cost-line-label">
+                {String(type.count)}× {fixtureDisplayLabel(type.manufacturer, type.name)}
+                <small>{type.modeName} · {String(type.channels)} ch · {fixtureFamilyLabel(type.family)}</small>
+              </div>
+            </div>
+          ))}
+          {mvrRig.unresolved.length > 0 && (
+            <p className="lens-panel__note lens-panel__note--warn" data-testid="mvr-unresolved">{String(mvrRig.unresolved.length)} fixture type(s) had no embedded GDTF and were skipped.</p>
+          )}
+          <button type="button" className="lens-panel__button" onClick={onAddMvr} data-testid="mvr-add">Add {String(mvrRig.fixtureCount)} fixtures to rig</button>
+          <p className="lens-panel__note">{MVR_IMPORT_DISCLAIMER}</p>
+        </div>
       )}
       <textarea
         className="lens-panel__input lens-panel__input--area"

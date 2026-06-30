@@ -343,6 +343,16 @@
 .lens-panel__file-row { display: flex; }
 .lens-panel__file-row .lens-panel__chip-link { cursor: pointer; }
 
+/* MVR scene import summary — a bordered group of resolved fixture types. */
+.lens-panel__mvr {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(201, 168, 76, 0.3);
+  border-radius: 12px;
+  background: linear-gradient(155deg, rgba(201, 168, 76, 0.08), rgba(255, 255, 255, 0.012));
+}
+
 /* Imported-fixture row controls — count input + remove, right-aligned. */
 .lens-panel__imported-controls { display: flex; align-items: center; gap: 8px; justify-self: end; }
 .lens-panel__imported-controls .lens-panel__input {
