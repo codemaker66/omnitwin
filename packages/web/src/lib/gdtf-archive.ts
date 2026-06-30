@@ -21,13 +21,19 @@ const DESCRIPTION_FILENAME = "description.xml";
 export interface GdtfArchive {
   /** Raw `description.xml` text, ready for parseGdtfDescription. */
   readonly descriptionXml: string;
-  /** Paths of bundled 3D model files (models/…) — for the later 3D slice. */
-  readonly modelFiles: readonly string[];
+  /** Bundled 3D model files (models/…) keyed by path → bytes. Empty unless the
+   *  caller asked for them (includeModels), so MVR catalogue resolution stays lean. */
+  readonly models: ReadonlyMap<string, Uint8Array>;
 }
 
 export type GdtfArchiveResult =
   | { readonly ok: true; readonly archive: GdtfArchive }
   | { readonly ok: false; readonly error: string };
+
+export interface ReadGdtfOptions {
+  /** Extract the bundled `models/*` 3D files (for the fixture preview). Default off. */
+  readonly includeModels?: boolean;
+}
 
 function isRootDescription(filename: string): boolean {
   const lower = filename.toLowerCase();
@@ -39,7 +45,10 @@ function isRootDescription(filename: string): boolean {
  * bundled model files. Never throws — a non-ZIP or a ZIP without a description
  * yields `{ ok: false, error }`. Async (unzip + decode are async in zip.js).
  */
-export async function readGdtfArchive(data: Uint8Array | ArrayBuffer): Promise<GdtfArchiveResult> {
+export async function readGdtfArchive(
+  data: Uint8Array | ArrayBuffer,
+  options: ReadGdtfOptions = {},
+): Promise<GdtfArchiveResult> {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   const reader = new ZipReader(new Uint8ArrayReader(bytes));
   try {
@@ -50,10 +59,15 @@ export async function readGdtfArchive(data: Uint8Array | ArrayBuffer): Promise<G
       return { ok: false, error: "No description.xml in the archive — is this a .gdtf file?" };
     }
     const descriptionXml = await descEntry.getData(new TextWriter());
-    const modelFiles = files
-      .map((entry) => entry.filename)
-      .filter((name) => /^models\//i.test(name));
-    return { ok: true, archive: { descriptionXml, modelFiles } };
+    const models = new Map<string, Uint8Array>();
+    if (options.includeModels === true) {
+      for (const entry of files) {
+        if (/^models\//i.test(entry.filename)) {
+          models.set(entry.filename, await entry.getData(new Uint8ArrayWriter()));
+        }
+      }
+    }
+    return { ok: true, archive: { descriptionXml, models } };
   } catch {
     return { ok: false, error: "Could not read the GDTF archive — it is not a valid ZIP file." };
   } finally {

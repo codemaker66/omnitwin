@@ -6,6 +6,8 @@ import { LIGHTING_FIXTURE_FAMILIES, type LightingFixtureFamily } from "../../../
 import { parseGdtfDescription, gdtfFixtureFamily, GDTF_IMPORT_DISCLAIMER } from "../../../lib/gdtf.js";
 import { readGdtfArchive, readMvrArchive } from "../../../lib/gdtf-archive.js";
 import { parseMvrScene, resolveMvrRig, MVR_IMPORT_DISCLAIMER, type ResolvedMvrRig } from "../../../lib/mvr.js";
+import { selectFixtureModel, type SelectedFixtureModel } from "../../../lib/gdtf-model.js";
+import { FixtureModelPreview } from "./FixtureModelPreview.js";
 import {
   buildDmxPatch,
   estimateRigPower,
@@ -65,6 +67,7 @@ function GdtfImportSection(): ReactElement {
   const [familyOverride, setFamilyOverride] = useState<LightingFixtureFamily | "">("");
   const [fileError, setFileError] = useState<string | null>(null);
   const [mvrRig, setMvrRig] = useState<ResolvedMvrRig | null>(null);
+  const [fixtureModel, setFixtureModel] = useState<SelectedFixtureModel | null>(null);
 
   const parse = useMemo(() => (xml.trim() === "" ? null : parseGdtfDescription(xml)), [xml]);
   const fixture = parse !== null && parse.ok ? parse.fixture : null;
@@ -80,11 +83,13 @@ function GdtfImportSection(): ReactElement {
     setModeIndex(0);
     setFamilyOverride("");
     setFileError(null);
+    setFixtureModel(null); // a pasted description has no archive → no 3D model
   };
 
   const handleFile = async (file: File): Promise<void> => {
     setFileError(null);
     setMvrRig(null);
+    setFixtureModel(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (file.name.toLowerCase().endsWith(".mvr")) {
@@ -96,11 +101,12 @@ function GdtfImportSection(): ReactElement {
         if (rig.types.length === 0) { setFileError("No resolvable fixtures in this MVR scene."); return; }
         setMvrRig(rig);
       } else {
-        const archive = await readGdtfArchive(bytes);
+        const archive = await readGdtfArchive(bytes, { includeModels: true });
         if (archive.ok) {
           setXml(archive.archive.descriptionXml);
           setModeIndex(0);
           setFamilyOverride("");
+          setFixtureModel(selectFixtureModel(archive.archive.models));
         } else {
           setFileError(archive.error);
         }
@@ -148,6 +154,7 @@ function GdtfImportSection(): ReactElement {
     setXml("");
     setModeIndex(0);
     setFamilyOverride("");
+    setFixtureModel(null);
   };
 
   return (
@@ -195,6 +202,7 @@ function GdtfImportSection(): ReactElement {
       {fixture !== null && (
         <>
           <p className="lens-panel__paragraph" data-testid="gdtf-name">{fixture.manufacturer} — {fixture.name}</p>
+          {fixtureModel !== null && <FixtureModelPreview model={fixtureModel} />}
           {fixture.modes.length > 0 && (
             <label className="lens-panel__field lens-panel__field--inline">
               <span className="lens-panel__field-label">DMX mode</span>

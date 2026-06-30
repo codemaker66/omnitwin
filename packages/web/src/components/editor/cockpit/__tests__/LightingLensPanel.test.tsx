@@ -1,17 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader, TextReader } from "@zip.js/zip.js";
 import { LightingLensPanel } from "../LightingLensPanel.js";
 import { useLightingRigStore } from "../../../../stores/lighting-rig-store.js";
 
-async function makeGdtfBytes(descriptionXml: string): Promise<Uint8Array> {
+// Stub the WebGL preview so this stays a routing test (no Canvas in happy-dom).
+vi.mock("../FixtureModelPreview.js", () => ({ FixtureModelPreview: () => <div data-testid="fixture-model-preview-mock" /> }));
+
+async function makeGdtfBytes(descriptionXml: string, extras: Record<string, string> = {}): Promise<Uint8Array> {
   const writer = new ZipWriter(new Uint8ArrayWriter());
   await writer.add("description.xml", new TextReader(descriptionXml));
+  for (const [name, content] of Object.entries(extras)) await writer.add(name, new TextReader(content));
   return writer.close();
 }
 
-async function makeGdtfFile(name: string, descriptionXml: string): Promise<File> {
-  const bytes = await makeGdtfBytes(descriptionXml);
+async function makeGdtfFile(name: string, descriptionXml: string, extras: Record<string, string> = {}): Promise<File> {
+  const bytes = await makeGdtfBytes(descriptionXml, extras);
   return new File([bytes], name, { type: "application/zip" });
 }
 
@@ -115,6 +119,23 @@ describe("LightingLensPanel", () => {
     fireEvent.click(screen.getByTestId("gdtf-add"));
     expect(metricValue("DMX channels")).toBe("9");
     expect(useLightingRigStore.getState().imported).toHaveLength(1);
+  });
+
+  it("shows a 3D model preview when the .gdtf bundles a glTF model", async () => {
+    const xml = `<?xml version="1.0"?><GDTF DataVersion="1.2"><FixtureType Name="Modeled" Manufacturer="Acme"><DMXModes><DMXMode Name="M"><DMXChannels><DMXChannel Offset="1"/></DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`;
+    const file = await makeGdtfFile("modeled.gdtf", xml, { "models/gltf/base.glb": "FAKE-GLB-BYTES" });
+    render(<LightingLensPanel />);
+    fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+    expect(await screen.findByTestId("gdtf-name")).toBeTruthy();
+    expect(screen.getByTestId("fixture-model-preview-mock")).toBeTruthy();
+  });
+
+  it("shows no model preview for a .gdtf without a glTF", async () => {
+    const file = await makeGdtfFile("plain.gdtf", `<?xml version="1.0"?><GDTF><FixtureType Name="Plain" Manufacturer="Acme"><DMXModes><DMXMode Name="M"><DMXChannels><DMXChannel Offset="1"/></DMXChannels></DMXMode></DMXModes></FixtureType></GDTF>`);
+    render(<LightingLensPanel />);
+    fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+    expect(await screen.findByTestId("gdtf-name")).toBeTruthy();
+    expect(screen.queryByTestId("fixture-model-preview-mock")).toBeNull();
   });
 
   it("shows a file error for a non-GDTF file", async () => {

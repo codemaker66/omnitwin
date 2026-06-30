@@ -19,18 +19,26 @@ async function makeGdtfZip(descriptionXml: string, extra: Record<string, string>
 }
 
 describe("readGdtfArchive", () => {
-  it("extracts description.xml and lists bundled model files", async () => {
+  it("extracts the bundled model files as bytes when asked", async () => {
     const zip = await makeGdtfZip(SAMPLE_XML, {
       "models/gltf/base.glb": "GLB-BYTES",
       "models/3ds/base.3ds": "3DS-BYTES",
       "thumbnail.png": "PNG-BYTES",
     });
-    const result = await readGdtfArchive(zip);
+    const result = await readGdtfArchive(zip, { includeModels: true });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.archive.descriptionXml).toContain("FixtureType");
-      expect(result.archive.modelFiles).toEqual(["models/gltf/base.glb", "models/3ds/base.3ds"]);
+      expect([...result.archive.models.keys()]).toEqual(["models/gltf/base.glb", "models/3ds/base.3ds"]);
+      expect(result.archive.models.get("models/gltf/base.glb")).toBeInstanceOf(Uint8Array);
     }
+  });
+
+  it("skips model extraction by default (lean for MVR resolution)", async () => {
+    const zip = await makeGdtfZip(SAMPLE_XML, { "models/gltf/base.glb": "GLB-BYTES" });
+    const result = await readGdtfArchive(zip);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.archive.models.size).toBe(0);
   });
 
   it("feeds parseGdtfDescription end-to-end", async () => {
