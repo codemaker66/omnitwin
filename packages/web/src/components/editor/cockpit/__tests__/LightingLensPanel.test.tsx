@@ -52,6 +52,26 @@ describe("LightingLensPanel", () => {
     expect(metricValue("Single-phase")).toBe("28.0 A @ 230 V");
   });
 
+  it("exports a patch sheet CSV and disables export for an empty rig", () => {
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:patch");
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    render(<LightingLensPanel />);
+    const button = screen.getByTestId<HTMLButtonElement>("patch-export");
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("rig-clear"));
+    expect(screen.getByTestId<HTMLButtonElement>("patch-export").disabled).toBe(true);
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
   it("re-patches into more universes when the rig grows", () => {
     render(<LightingLensPanel />);
     fireEvent.change(screen.getByTestId("rig-par"), { target: { value: "100" } });

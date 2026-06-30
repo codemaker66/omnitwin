@@ -7,6 +7,7 @@ import { parseGdtfDescription, gdtfFixtureFamily, GDTF_IMPORT_DISCLAIMER } from 
 import { readGdtfArchive, readMvrArchive } from "../../../lib/gdtf-archive.js";
 import { parseMvrScene, resolveMvrRig, MVR_IMPORT_DISCLAIMER, type ResolvedMvrRig } from "../../../lib/mvr.js";
 import { selectFixtureModel, type SelectedFixtureModel } from "../../../lib/gdtf-model.js";
+import { patchSheetCsv, PATCH_SHEET_FILENAME } from "../../../lib/patch-sheet.js";
 import { FixtureModelPreview } from "./FixtureModelPreview.js";
 import {
   buildDmxPatch,
@@ -307,6 +308,15 @@ export function LightingLensPanel(): ReactElement {
     if (Number.isFinite(parsed)) setCount(family, Math.max(0, parsed));
   };
 
+  const onExportPatch = (): void => {
+    const url = URL.createObjectURL(new Blob([patchSheetCsv(patch)], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = PATCH_SHEET_FILENAME;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <LensPanel
       eyebrow="Lighting lens"
@@ -353,6 +363,15 @@ export function LightingLensPanel(): ReactElement {
             );
           })
         )}
+        <button
+          type="button"
+          className="lens-panel__chip-link"
+          onClick={onExportPatch}
+          disabled={patch.totalFixtures === 0}
+          data-testid="patch-export"
+        >
+          Export patch sheet (CSV)
+        </button>
       </LensPanelSection>
 
       <LensPanelSection label="Power (indicative)">
