@@ -118,7 +118,7 @@ export function RiggingLensPanel(): ReactElement {
         <label className="lens-panel__field lens-panel__field--inline">
           <span className="lens-panel__field-label">Load kind</span>
           <select className="lens-panel__input" value={loadKind} onChange={(e) => { setLoadKind(e.target.value as LoadKind); }} data-testid="rig-loadkind" aria-label="Load kind">
-            <option value="static">Static (dead-hung)</option>
+            <option value="static">Static</option>
             <option value="manual-hoist">Manual hoist</option>
             <option value="power-hoist">Power hoist</option>
           </select>

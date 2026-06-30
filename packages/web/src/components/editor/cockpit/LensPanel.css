@@ -137,6 +137,16 @@
 .lens-panel__field--inline .lens-panel__field-label { align-self: center; }
 .lens-panel__field--inline .lens-panel__input { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* A <select> needs more room than a number — long options (e.g. "Static
+   (dead-hung)", "Beam / hybrid") otherwise clip in the fixed 120px column. */
+.lens-panel__field--inline:has(select.lens-panel__input) {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 1.5fr);
+}
+.lens-panel__field--inline select.lens-panel__input {
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
 /* Severity-tinted chips for conflict counts. */
 .lens-panel__chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .lens-panel__chip {
