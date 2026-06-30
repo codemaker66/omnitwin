@@ -68,7 +68,9 @@ try {
     }
   }
   report.steps.push("cockpit loaded");
-  await page.waitForTimeout(3000); // let the scene settle
+  await page.waitForTimeout(4000); // let the 3D scene settle
+  // The core product: the 3D venue + cockpit chrome.
+  await page.screenshot({ path: join(OUT, "planner-3d.png") });
 
   // --- Slices 2/3/4/7: import a .gdtf, preview its 3D model, add it to the rig ---
   await clickLens(page, "Lighting");
@@ -123,6 +125,19 @@ try {
       report.steps.push(`shot ${lens}`);
     } catch (e) {
       report.steps.push(`SKIP ${lens}: ${String(e).slice(0, 120)}`);
+    }
+  }
+
+  // --- Public marketing pages (no auth) ---
+  const origin = new URL(PLAN_URL).origin;
+  for (const [name, path] of [["landing", "/"], ["pricing", "/pricing"]]) {
+    try {
+      await page.goto(origin + path, { waitUntil: "networkidle", timeout: 30000 });
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: join(OUT, `page-${name}.png`), fullPage: true });
+      report.steps.push(`shot page ${name}`);
+    } catch (e) {
+      report.steps.push(`SKIP page ${name}: ${String(e).slice(0, 100)}`);
     }
   }
 
