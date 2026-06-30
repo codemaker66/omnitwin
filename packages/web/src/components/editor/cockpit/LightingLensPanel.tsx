@@ -69,6 +69,7 @@ function GdtfImportSection(): ReactElement {
   const [fileError, setFileError] = useState<string | null>(null);
   const [mvrRig, setMvrRig] = useState<ResolvedMvrRig | null>(null);
   const [fixtureModel, setFixtureModel] = useState<SelectedFixtureModel | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null); // set when loaded from a file (hide the raw-XML editor)
 
   const parse = useMemo(() => (xml.trim() === "" ? null : parseGdtfDescription(xml)), [xml]);
   const fixture = parse !== null && parse.ok ? parse.fixture : null;
@@ -85,12 +86,14 @@ function GdtfImportSection(): ReactElement {
     setFamilyOverride("");
     setFileError(null);
     setFixtureModel(null); // a pasted description has no archive → no 3D model
+    setFileName(null); // hand-editing → show the editor again
   };
 
   const handleFile = async (file: File): Promise<void> => {
     setFileError(null);
     setMvrRig(null);
     setFixtureModel(null);
+    setFileName(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (file.name.toLowerCase().endsWith(".mvr")) {
@@ -108,6 +111,7 @@ function GdtfImportSection(): ReactElement {
           setModeIndex(0);
           setFamilyOverride("");
           setFixtureModel(selectFixtureModel(archive.archive.models));
+          setFileName(file.name);
         } else {
           setFileError(archive.error);
         }
@@ -156,6 +160,7 @@ function GdtfImportSection(): ReactElement {
     setModeIndex(0);
     setFamilyOverride("");
     setFixtureModel(null);
+    setFileName(null);
   };
 
   return (
@@ -169,6 +174,9 @@ function GdtfImportSection(): ReactElement {
       </div>
       {fileError !== null && (
         <p className="lens-panel__error" data-testid="gdtf-file-error">{fileError}</p>
+      )}
+      {fileName !== null && (
+        <p className="lens-panel__field-hint" data-testid="gdtf-file-name">Loaded {fileName}</p>
       )}
       {mvrRig !== null && (
         <div className="lens-panel__mvr" data-testid="mvr-summary">
@@ -188,15 +196,17 @@ function GdtfImportSection(): ReactElement {
           <p className="lens-panel__note">{MVR_IMPORT_DISCLAIMER}</p>
         </div>
       )}
-      <textarea
-        className="lens-panel__input lens-panel__input--area"
-        value={xml}
-        placeholder="Paste GDTF description XML…"
-        onChange={onXml}
-        data-testid="gdtf-xml"
-        aria-label="GDTF description XML"
-        spellCheck={false}
-      />
+      {fileName === null && (
+        <textarea
+          className="lens-panel__input lens-panel__input--area"
+          value={xml}
+          placeholder="Paste GDTF description XML…"
+          onChange={onXml}
+          data-testid="gdtf-xml"
+          aria-label="GDTF description XML"
+          spellCheck={false}
+        />
+      )}
       {parse !== null && !parse.ok && (
         <p className="lens-panel__error" data-testid="gdtf-error">{parse.error}</p>
       )}

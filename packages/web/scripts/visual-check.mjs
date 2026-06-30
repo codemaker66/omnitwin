@@ -70,42 +70,48 @@ try {
   report.steps.push("cockpit loaded");
   await page.waitForTimeout(3000); // let the scene settle
 
-  // --- Slice 4: import a .gdtf with a 3D model into the Lighting lens ---
+  // --- Slices 2/3/4/7: import a .gdtf, preview its 3D model, add it to the rig ---
   await clickLens(page, "Lighting");
   await page.getByTestId("lighting-lens-panel").waitFor({ timeout: 15000 });
-  await page.getByTestId("rig-clear").click();
+  await page.getByTestId("rig-reset").click(); // starter rig (18 fixtures), so numbers are real
   const tmp = join(OUT, "modeled-spot.gdtf");
   writeFileSync(tmp, await buildGdtf());
   await page.getByTestId("gdtf-file").setInputFiles(tmp);
   await page.getByTestId("gdtf-name").waitFor({ timeout: 15000 });
   await page.getByTestId("fixture-model-preview").waitFor({ timeout: 15000 });
   await page.waitForTimeout(2000); // GLTFLoader.parse + a few auto-rotate frames
-
-  const diag = await page.evaluate(() => {
+  // The model preview (before Add to rig clears it).
+  await page.getByTestId("fixture-model-preview").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(800);
+  await page.getByTestId("fixture-model-preview").screenshot({ path: join(OUT, "fixture-model.png") });
+  // The clean import state (file loaded → "Loaded …" note + preview, no raw XML).
+  await page.getByTestId("gdtf-file-name").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.getByTestId("lighting-lens-panel").screenshot({ path: join(OUT, "lighting-import.png") });
+  const preAdd = await page.evaluate(() => {
     const panel = document.querySelector('[data-testid="lighting-lens-panel"]');
+    const canvas = panel.querySelector('[data-testid="fixture-model-preview"] canvas');
+    return {
+      name: panel.querySelector('[data-testid="gdtf-name"]')?.textContent?.trim() ?? null,
+      hasCanvas: Boolean(canvas), canvasW: canvas?.width ?? 0, canvasH: canvas?.height ?? 0,
+      modelError: Boolean(panel.querySelector('[data-testid="fixture-model-error"]')),
+    };
+  });
+  await page.getByTestId("gdtf-add").click(); // rig now = starter (18) + imported
+  await page.waitForTimeout(600);
+  const postAdd = await page.evaluate(() => {
+    const panel = document.querySelector('[data-testid="lighting-lens-panel"]');
+    panel.scrollTop = 0;
     const metric = (l) => {
       const e = [...panel.querySelectorAll(".lens-panel__metric-label")].find((x) => x.textContent.trim() === l);
       return e?.nextElementSibling?.textContent?.trim() ?? null;
     };
-    const canvas = panel.querySelector('[data-testid="fixture-model-preview"] canvas');
-    return {
-      name: panel.querySelector('[data-testid="gdtf-name"]')?.textContent?.trim() ?? null,
-      channels: metric("DMX channels"),
-      hasCanvas: Boolean(canvas),
-      canvasW: canvas?.width ?? 0,
-      canvasH: canvas?.height ?? 0,
-      modelError: Boolean(panel.querySelector('[data-testid="fixture-model-error"]')),
-    };
+    return { fixtures: metric("Fixtures"), channels: metric("DMX channels"), universes: metric("Universes") };
   });
-  report.lighting = diag;
-  report.steps.push("lighting imported");
+  report.lighting = { ...preAdd, ...postAdd };
+  report.steps.push("lighting imported + added");
+  await page.waitForTimeout(300);
   await page.getByTestId("lighting-lens-panel").screenshot({ path: join(OUT, "lens-lighting.png") });
-  // The 3D preview element directly (Playwright scrolls it into view first).
-  await page.getByTestId("fixture-model-preview").scrollIntoViewIfNeeded();
-  await page.waitForTimeout(800);
-  await page.getByTestId("fixture-model-preview").screenshot({ path: join(OUT, "fixture-model.png") });
-  // Also a wider shot of the parsed-fixture block (name + preview + controls).
-  await page.getByTestId("lighting-lens-panel").screenshot({ path: join(OUT, "lens-lighting-scrolled.png") });
 
   // --- Screenshot every lens panel for a visual polish review ---
   for (const lens of LENSES) {
