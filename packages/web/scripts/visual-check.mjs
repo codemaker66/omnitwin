@@ -15,7 +15,7 @@ const OUT = process.env.OUT_DIR ?? join(process.cwd(), "visual-out");
 const PLAN_URL = process.env.PLAN_URL ?? "http://localhost:5173/plan/46a90419-fc36-43b4-862e-8c90967e7515";
 mkdirSync(OUT, { recursive: true });
 
-const LENSES = ["Lighting", "Power", "Rigging", "AV", "Guests", "Flow", "Evidence", "Ops", "Costs", "Share"];
+const LENSES = ["Lighting", "Power", "Rigging", "AV", "Guests", "Flow", "Evidence", "Ops", "Costs", "Share", "Design"];
 
 /** Build a minimal self-contained .gdtf: an 8-channel fixture + an embedded glTF triangle. */
 async function buildGdtf() {
@@ -120,7 +120,7 @@ try {
     try {
       await clickLens(page, lens);
       await page.waitForTimeout(700);
-      const panel = page.locator('.lens-panel, [class*="cockpit-truth-rail"]').first();
+      const panel = page.locator(".lens-panel, .cockpit-truth").first();
       await panel.screenshot({ path: join(OUT, `lens-${lens.toLowerCase()}.png`) });
       report.steps.push(`shot ${lens}`);
     } catch (e) {
