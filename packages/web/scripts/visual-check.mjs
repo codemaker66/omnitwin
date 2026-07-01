@@ -139,6 +139,19 @@ try {
     report.steps.push(`SKIP overwll: ${String(e).slice(0, 90)}`);
   }
 
+  // --- Feature: Room-by-style capacity with a live fit verdict ---
+  try {
+    await clickLens(page, "Guests");
+    await page.getByTestId("guests-count").fill("150");
+    await page.waitForTimeout(500);
+    await page.getByTestId("guests-style-boardroom").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await page.getByTestId("guests-lens-panel").screenshot({ path: join(OUT, "guests-room-by-style.png") });
+    report.steps.push("guests room-by-style captured");
+  } catch (e) {
+    report.steps.push(`SKIP roombystyle: ${String(e).slice(0, 90)}`);
+  }
+
   // --- Public marketing pages (no auth) ---
   const origin = new URL(PLAN_URL).origin;
   for (const [name, path] of [["landing", "/"], ["pricing", "/pricing"]]) {

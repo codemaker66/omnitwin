@@ -11,6 +11,7 @@ import {
   seatSufficiencyLabel,
   type GuestsCapacityModel,
 } from "../../../lib/cockpit-guests-model.js";
+import { styleFitLabel, type StyleFit } from "../../../lib/room-capacity.js";
 import type { ComfortBand } from "../../../lib/layout-capacity.js";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,12 @@ function seatBalanceText(model: GuestsCapacityModel): string {
 function meterTone(band: ComfortBand): ChipTone {
   if (band === "over-capacity") return "review";
   if (band === "tight") return "attention";
+  return "ok";
+}
+
+function fitTone(fit: StyleFit): ChipTone {
+  if (fit === "over") return "review";
+  if (fit === "tight") return "attention";
   return "ok";
 }
 
@@ -137,6 +144,25 @@ export function GuestsLensPanel(): ReactElement {
         <LensPanelMetric label="Comfortable capacity" value={`${String(model.comfortableCapacity)} · ${model.styleLabel}`} />
         <LensPanelMetric label="Using" value={`${String(model.utilizationPercent)}% of comfortable`} />
         <LensPanelMetric label="Tight capacity" value={String(model.tightCapacity)} />
+      </LensPanelSection>
+
+      <LensPanelSection label="Room by style">
+        <p className="lens-panel__field-hint" data-testid="guests-style-summary">
+          {model.styleSummary ?? "Comfortable guests per event style. Set a guest count to see which styles fit."}
+        </p>
+        {model.styles.map((s) => (
+          <div key={s.style} className="lens-panel__style-row" data-testid={`guests-style-${s.style}`}>
+            <span className="lens-panel__style-label">{s.label}</span>
+            <span className="lens-panel__style-cap">
+              {String(s.comfortable)}<small>~{String(s.tight)} tight</small>
+            </span>
+            {s.fit !== "unknown" && (
+              <span className={`lens-panel__chip lens-panel__chip--${fitTone(s.fit)}`} data-testid={`guests-style-fit-${s.style}`}>
+                {styleFitLabel(s.fit)}
+              </span>
+            )}
+          </div>
+        ))}
       </LensPanelSection>
     </LensPanel>
   );

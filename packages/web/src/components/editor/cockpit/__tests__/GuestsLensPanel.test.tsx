@@ -68,4 +68,21 @@ describe("GuestsLensPanel", () => {
     render(<GuestsLensPanel />);
     expect(screen.getByTestId("guests-comfort-chip").textContent).toBe("Over capacity");
   });
+
+  it("compares room capacity across every event style with a live fit verdict", () => {
+    useCockpitStore.getState().setPlannedGuestCount(150);
+    render(<GuestsLensPanel />);
+    // 210 m²: Theatre comfortably seats 150; Boardroom is over.
+    expect(screen.getByTestId("guests-style-cocktail")).toBeTruthy();
+    expect(screen.getByTestId("guests-style-fit-theatre").textContent).toBe("Comfortable");
+    expect(screen.getByTestId("guests-style-fit-boardroom").textContent).toBe("Over");
+    expect(screen.getByTestId("guests-style-summary").textContent).toMatch(/150 guests/);
+  });
+
+  it("lists per-style capacities without fit chips until a guest count is set", () => {
+    render(<GuestsLensPanel />);
+    expect(screen.getByTestId("guests-style-theatre")).toBeTruthy();
+    expect(screen.queryByTestId("guests-style-fit-theatre")).toBeNull();
+    expect(screen.getByTestId("guests-style-summary").textContent).toMatch(/Set a guest count/);
+  });
 });

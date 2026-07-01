@@ -5,6 +5,7 @@ import {
   type ComfortBand,
 } from "./layout-capacity.js";
 import { CAPACITY_STYLE_LABELS } from "./proposal-capacity-note.js";
+import { roomStyleCapacities, styleFitSummary, type RoomStyleCapacity } from "./room-capacity.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import type { PlacedItem } from "./placement.js";
 
@@ -46,6 +47,10 @@ export interface GuestsCapacityModel {
   readonly bandLabel: string;
   /** Assessed headcount as a percentage of comfortable capacity. */
   readonly utilizationPercent: number;
+  /** The room's capacity in every event style (comfortable/tight + fit vs guests). */
+  readonly styles: readonly RoomStyleCapacity[];
+  /** One-line SAFE fit summary across styles, or null when no guest count is set. */
+  readonly styleSummary: string | null;
 }
 
 export interface GuestsModelInput {
@@ -80,6 +85,8 @@ export function buildGuestsCapacityModel(input: GuestsModelInput): GuestsCapacit
   const assessedHeadcount = normalisedGuestCount ?? seatsProvided;
   const intel = computeCapacityIntelligence(floorAreaM2, assessedHeadcount, style);
   const seatBalance = normalisedGuestCount !== null ? seatsProvided - normalisedGuestCount : null;
+  const styles = roomStyleCapacities(floorAreaM2, normalisedGuestCount);
+  const styleSummary = styleFitSummary(styles, normalisedGuestCount);
 
   return {
     guestCount: normalisedGuestCount,
@@ -94,6 +101,8 @@ export function buildGuestsCapacityModel(input: GuestsModelInput): GuestsCapacit
     band: intel.band,
     bandLabel: comfortBandLabel(intel.band),
     utilizationPercent: intel.utilizationPercent,
+    styles,
+    styleSummary,
   };
 }
 
