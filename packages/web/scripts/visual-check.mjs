@@ -47,7 +47,7 @@ const browser = await chromium.launch({
 });
 const report = { ok: false, steps: [], errors: [] };
 try {
-  const page = await browser.newPage({ viewport: { width: 1680, height: 1050 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 1680, height: 1050 }, deviceScaleFactor: 2 });
   page.on("console", (m) => { if (m.type() === "error") report.errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => report.errors.push(`pageerror: ${String(e).slice(0, 200)}`));
 
