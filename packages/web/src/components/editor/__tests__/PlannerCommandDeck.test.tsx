@@ -10,6 +10,7 @@ import {
 } from "../../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
+import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -18,6 +19,7 @@ import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
 
 function resetPlannerStores(): void {
   useEditorStore.getState().reset();
+  useCockpitStore.getState().reset();
   useCatalogueStore.setState({
     drawerOpen: false,
     selectedItemId: null,
@@ -132,6 +134,24 @@ describe("PlannerCommandDeck", () => {
     const items = usePlacementStore.getState().placedItems;
     const tables = items.filter((i) => i.catalogueItemId === table.id);
     expect(tables.length).toBeGreaterThan(0);
+  });
+
+  it("auto-fills FOR the planner's guest count, not the whole room", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) return;
+    useRoomDimensionsStore.setState({ dimensions: { width: 60, length: 30, height: 7 } }); // large room
+    useCockpitStore.getState().setPlannedGuestCount(24);
+
+    render(<PlannerCommandDeck />);
+    expect(screen.getByTestId("planner-command-action-auto-fill").textContent).toMatch(/Auto-fill 24/);
+    fireEvent.click(screen.getByTestId("planner-command-action-auto-fill"));
+
+    const items = usePlacementStore.getState().placedItems;
+    const tables = items.filter((i) => i.catalogueItemId === table.id);
+    const chairs = items.filter((i) => i.catalogueItemId !== table.id);
+    // 24 guests ÷ 8 per table ≈ 3 tables — a small layout, not a packed 60×30 room.
+    expect(tables.length).toBeLessThanOrEqual(6);
+    expect(chairs.length).toBeGreaterThanOrEqual(24);
   });
 
   it("hides auto-fill once the floor has furniture", () => {

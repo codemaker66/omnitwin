@@ -23,6 +23,7 @@ import { canRedo, canUndo, redoLabel, undoLabel, type EditorHistory } from "../.
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore, type EditorObject } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
@@ -131,6 +132,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
   const placedItems = usePlacementStore((s) => s.placedItems);
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const history = useEditorStore((s) => s.history);
+  const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
 
   const selectedItems = useMemo(
     () => placedItems.filter((item) => selectedIds.has(item.id)),
@@ -345,18 +347,23 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     ];
 
     // Offer a one-click banquet fill only on a blank floor, so it can never
-    // overwrite work in progress. Fills the room with comfortable-aisle round
-    // tables (undo-safe); the planner then tunes from there.
+    // overwrite work in progress. When a guest count is set (Guests lens), lay
+    // out just enough comfortable-aisle round tables for that many guests — a
+    // planner wants a layout FOR their headcount, not the room packed wall to
+    // wall. With no count, fill the whole room. Undo-safe; tune from there.
     if (placedItems.length === 0) {
+      const forGuests = plannedGuestCount !== null && plannedGuestCount > 0 ? plannedGuestCount : 0;
       emptyActions.splice(1, 0, {
         id: "auto-fill",
-        label: "Auto-fill",
-        ariaLabel: "Auto-fill the room with banquet tables",
+        label: forGuests > 0 ? `Auto-fill ${forGuests.toLocaleString("en-GB")}` : "Auto-fill",
+        ariaLabel: forGuests > 0
+          ? `Auto-fill a banquet layout for ${String(forGuests)} guests`
+          : "Auto-fill the room with banquet tables",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
           const table = getCatalogueItemBySlug("round-table-6ft");
           if (table === undefined) return;
-          usePlacementStore.getState().autoArrangeBanquet(table.id, 0, 8);
+          usePlacementStore.getState().autoArrangeBanquet(table.id, forGuests, 8);
         },
       });
     }
@@ -366,7 +373,9 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
         kicker: "Command deck",
         title: "Build the room from the floor",
         detail: placedItems.length === 0
-          ? "Auto-fill a comfortable banquet grid in one click, open furniture, or sketch with Laser Diagram."
+          ? (plannedGuestCount !== null && plannedGuestCount > 0
+            ? `Auto-fill a banquet layout for ${plannedGuestCount.toLocaleString("en-GB")} guests in one click, open furniture, or sketch with Laser Diagram.`
+            : "Auto-fill a comfortable banquet grid in one click, open furniture, or sketch with Laser Diagram.")
           : "Open furniture, drag rows of chairs, right-click a seat for POV, or sketch with Laser Diagram.",
         metric: placedItems.length === 0
           ? "No furniture placed"
@@ -382,6 +391,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     markupActive,
     markupStrokeCount,
     placedItems.length,
+    plannedGuestCount,
     selectedCatalogue,
     selectedCount,
     selectedIdSet,

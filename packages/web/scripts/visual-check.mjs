@@ -152,6 +152,28 @@ try {
     report.steps.push(`SKIP roombystyle: ${String(e).slice(0, 90)}`);
   }
 
+  // --- Feature: guest-aware Auto-fill (guest count is 150 from the step above) ---
+  try {
+    await clickLens(page, "Design");
+    await page.waitForTimeout(700);
+    await page.getByTestId("planner-command-deck").screenshot({ path: join(OUT, "command-deck-autofill.png") });
+    const autoFill = page.getByTestId("planner-command-action-auto-fill");
+    report.autoFillLabel = (await autoFill.count()) ? (await autoFill.textContent()) : null;
+    if (await autoFill.count()) {
+      await autoFill.click();
+      await page.waitForTimeout(2800);
+      await page.screenshot({ path: join(OUT, "planner-autofill-150.png") });
+      const placed = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="planner-command-deck"]');
+        return el?.textContent?.match(/(\d[\d,]*)\s+placed/)?.[1] ?? null;
+      });
+      report.autoFillPlaced = placed;
+    }
+    report.steps.push("auto-fill 150 captured");
+  } catch (e) {
+    report.steps.push(`SKIP autofill: ${String(e).slice(0, 90)}`);
+  }
+
   // --- Public marketing pages (no auth) ---
   const origin = new URL(PLAN_URL).origin;
   for (const [name, path] of [["landing", "/"], ["pricing", "/pricing"]]) {
