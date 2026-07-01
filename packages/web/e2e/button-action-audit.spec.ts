@@ -1972,7 +1972,7 @@ test.describe("SS++ button and action inventory", () => {
       name: "landing",
       path: "/",
       waitFor: async (page) => {
-        await expect(page.getByRole("heading", { level: 1, name: /Design your event for the Grand Hall/i })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: /There is a hall in Glasgow/i })).toBeVisible();
       },
     },
     {

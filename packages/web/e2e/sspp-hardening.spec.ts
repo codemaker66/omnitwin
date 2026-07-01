@@ -506,8 +506,8 @@ test.describe("SS++ hardening visual regression", () => {
   test("captures deterministic room showcase screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: /Design your event for the Grand Hall/i })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /There is a hall in Glasgow/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Explore The Robert Adam Room/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Enquire about Deacon Convener's Room/i })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-room-showcase.png");

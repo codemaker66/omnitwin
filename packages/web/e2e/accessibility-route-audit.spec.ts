@@ -373,7 +373,7 @@ const routeSpecs: readonly RouteSpec[] = [
   {
     routeName: "public landing",
     path: "/",
-    readyText: "Design your event for the Grand Hall.",
+    readyText: "There is a hall in Glasgow that has been lit for 230 years.",
     mockRoutes: mockNoRoutes,
   },
   {

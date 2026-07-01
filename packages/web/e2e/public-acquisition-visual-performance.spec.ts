@@ -233,9 +233,9 @@ async function expectUpdatedPublicPhotoSet(page: Page): Promise<void> {
   expect(imageSources).toContain("/images/venue/trades-hall-exterior.jpg");
 }
 
-async function expectHeroPrimaryActionsInsideViewport(page: Page): Promise<void> {
+async function expectRitePrimaryActionsInsideViewport(page: Page): Promise<void> {
   const escaped = await page.evaluate(() => Array.from(
-    document.querySelectorAll<HTMLElement>(".hero-grid, .hero-left, .hero-left .ctas, .hero-left .ctas .btn"),
+    document.querySelectorAll<HTMLElement>(".rite-threshold-line, .rite-enter, .rite-cta, .rite-return-stage"),
   )
     .map((element) => {
       const rect = element.getBoundingClientRect();
@@ -246,9 +246,9 @@ async function expectHeroPrimaryActionsInsideViewport(page: Page): Promise<void>
         width: rect.width,
       };
     })
-    .filter((rect) => rect.left < -1 || rect.right > window.innerWidth + 1));
+    .filter((rect) => rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1)));
 
-  expect(escaped, "hero primary layout elements should stay inside the mobile viewport").toEqual([]);
+  expect(escaped, "rite primary layout elements should stay inside the mobile viewport").toEqual([]);
 }
 
 test.describe.configure({ mode: "serial" });
@@ -273,14 +273,14 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     const problems = watchPageProblems(page);
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Design your event for the Grand Hall." })).toBeVisible();
-    await expect(page.locator(".th-landing")).toHaveAttribute("data-mode", "cinematic");
+    await expect(page.getByRole("heading", { name: "There is a hall in Glasgow that has been lit for 230 years." })).toBeVisible();
+    // Reduced motion renders The Rite's first-class static variant.
+    await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
     await expectUpdatedPublicPhotoSet(page);
 
     await recordFrameAndVisualState(page, "landing-updated-photos", "desktop", async () => {
-      await page.getByRole("button", { name: "Show Reception Room in public showcase" }).click();
-      await expect(page.locator(".hero-media-photo img")).toHaveAttribute("src", "/images/venue/reception-room.jpg");
-      await expect(page.getByText(/runtime visual is staged internally and unverified/i)).toBeVisible();
+      await page.getByRole("heading", { name: "The Grand Hall", exact: true }).scrollIntoViewIfNeeded();
+      await expect(page.getByText("The room the city keeps its promises in.")).toBeVisible();
       await page.mouse.wheel(0, 540);
       await page.mouse.wheel(0, -220);
     });
@@ -293,13 +293,14 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     const problems = watchPageProblems(page);
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Design your event for the Grand Hall." })).toBeVisible();
-    await expect(page.locator(".th-landing")).toHaveAttribute("data-mode", "cinematic");
+    await expect(page.getByRole("heading", { name: "There is a hall in Glasgow that has been lit for 230 years." })).toBeVisible();
+    // Reduced motion renders The Rite's first-class static variant.
+    await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
     await expectUpdatedPublicPhotoSet(page);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "public landing mobile should not horizontally overflow").toBeLessThanOrEqual(1);
-    await expectHeroPrimaryActionsInsideViewport(page);
+    await expectRitePrimaryActionsInsideViewport(page);
 
     await recordFrameAndVisualState(page, "landing-mobile-updated-photos", "mobile", async () => {
       await page.mouse.wheel(0, 620);
