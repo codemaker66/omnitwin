@@ -17,6 +17,13 @@
   color: #f4efe6;
   font-family: "Inter", system-ui, sans-serif;
   scrollbar-width: thin;
+  animation: lensPanelEnter 280ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Respect reduced-motion for both the lens panels and the truth rail. */
+@media (prefers-reduced-motion: reduce) {
+  .lens-panel,
+  .cockpit-truth { animation: none; }
 }
 
 .cockpit-truth__head {
