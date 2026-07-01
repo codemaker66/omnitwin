@@ -128,6 +128,17 @@ try {
     }
   }
 
+  // --- Alert state: Rigging over-WLL (red meter + warnings) ---
+  try {
+    await clickLens(page, "Rigging");
+    await page.getByTestId("rig-load").fill("600");
+    await page.waitForTimeout(600);
+    await page.locator(".lens-panel").first().screenshot({ path: join(OUT, "rigging-overwll.png") });
+    report.steps.push("rigging over-wll captured");
+  } catch (e) {
+    report.steps.push(`SKIP overwll: ${String(e).slice(0, 90)}`);
+  }
+
   // --- Public marketing pages (no auth) ---
   const origin = new URL(PLAN_URL).origin;
   for (const [name, path] of [["landing", "/"], ["pricing", "/pricing"]]) {
