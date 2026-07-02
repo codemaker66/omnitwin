@@ -78,6 +78,9 @@ const EventDayOpsPage = lazy(() =>
 const RoomShowcasePage = lazy(() =>
   import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
 );
+const TwinPage = lazy(() =>
+  import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -246,6 +249,14 @@ export const router = createBrowserRouter([
         <TradesHallAssetStatusPage />
       </ProtectedRoute>,
     ),
+  },
+  {
+    // Public walkable twin (Twin Phase 1). Placed above the room showcase
+    // route so /venues/:venueSlug/twin can never fall through to the
+    // :roomSlug matcher. The R3F viewer is its own lazy chunk behind this
+    // page shell; marketing routes never pay for Three.js.
+    path: "/venues/:venueSlug/twin",
+    element: withSuspense(<TwinPage />),
   },
   {
     // Public room showcase. Uses only the client-safe room visual endpoint and
