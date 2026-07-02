@@ -34,7 +34,7 @@ product — it is the spatial substrate under every existing planner feature
 ## 2. The data reality (verified on disk)
 
 | Asset | Location | Facts |
-|---|---|---|
+| --- | --- | --- |
 | Panoramas | `F:\downloads (some very important)\E57\panoramas` | 149 × equirectangular 3600×1800 JPG (~2.5 MB each, ~375 MB total). Zenith hole (scanner FOV) — viewer must crown it. |
 | Poses | E57 headers; legacy `poses.json` | Quaternion `[w,x,y,z]` + translation (m); tripod height ≈1.5 m. Extraction pipeline + coordinate-basis math already exists and is documented in that folder's CLAUDE.md. |
 | Laser scan | `E57\cloud_0.e57` | 19.5 GB structured, 100+ scan positions (source of truth for poses + measurement). |
@@ -149,7 +149,7 @@ every user-visible twin string by test, exactly like The Rite.
 ## 5. Why this beats Matterport (scorecard we will demo)
 
 | Capability | Matterport | Venviewer Twin |
-|---|---|---|
+| --- | --- | --- |
 | Walkthrough | ✓ (hosted, subscription) | ✓ (owned, open formats) |
 | Dollhouse | ✓ | ✓ (from their own matterpak export) |
 | Measurement | unqualified numbers | confidence-tiered, claim-safe |
@@ -162,7 +162,7 @@ every user-visible twin string by test, exactly like The Rite.
 ## 6. Phasing, DoD, budgets
 
 | Phase | Definition of Done | Budget |
-|---|---|---|
+| --- | --- | --- |
 | 1 Walk | 149 nodes walkable at `/venues/trades-hall/twin` behind auth flag; first pano interactive < 2.5 s on 4G; node hop < 800 ms perceived; unit + e2e + visual-harness coverage | viewer chunk ≤ 250 KB gz (excl. three) |
 | 2 Dollhouse | dive-in/out ≤ 1.2 s; GLB ≤ 8 MB; floorplan mode | +80 KB gz |
 | 3 Measure | ±2 cm vs laser reference on 20 test edges (internal validation vs E57); disclosure on every readout | index ≤ 30 MB server-side |
@@ -173,17 +173,23 @@ Each phase ships through the full house chain: spec-slice → tests-first where
 sane → typecheck/lint/test/build → visual harness → e2e → review agents →
 tasks.md log. One phase = one implementation plan (superpowers writing-plans).
 
-## 7. Open decisions for Blake
+## 7. Decisions (resolved by Blake, 2026-07-02)
 
-1. **Object storage/CDN** for twin bundles: Cloudflare R2 (recommended: zero
-   egress fees, S3-compatible) vs AWS S3+CloudFront vs Bunny. Needed by
-   Phase 1 (tiles ≈ 400 MB for Trades Hall).
-2. **Access posture for v1:** internal/admin-flagged first (recommended) or
-   public from day one on the showcase pages?
-3. **XGrids LCC:** spike now (format research, no code) or defer wholly to
-   Phase 5? Recommended: 1-day research spike during Phase 2 so the manifest
-   format reserves the right shapes.
-4. Naming: "Twin" (working name) — happy to bikeshed once, then it's frozen.
+1. **Object storage/CDN: Cloudflare R2.** Zero-egress economics make tile +
+   splat streaming viable; S3-compatible API; CDN via custom domain.
+2. **Access posture: PUBLIC from day one.** Consequence: Phase 1's DoD gains
+   public-readiness gates — full claim-guard sweep, accessibility route audit
+   (the same battery The Rite passed), mobile perf verification on a mid-tier
+   device profile, and graceful states for slow networks. No rough edge ships
+   because "it's only v1": public is the bar from the first commit.
+3. **XGrids LCC is not a future spike — captures already exist.** Blake has
+   LCC (Lixel) captures; the Reception Room scan is already in this project
+   (the existing Reception Room runtime splat package). Remaining rooms will
+   be processed and delivered. Consequence: the `twin/0` manifest treats
+   `capture.source` as a first-class discriminated union from day one
+   (`matterport-e57` | `xgrids-lcc` | `photo-mapanything`), and Phase 4's
+   fusion work plans for both splat provenances.
+4. **Name: Twin** ("Venviewer Twin"). Frozen.
 
 ## 8. Out of scope (entire program)
 
