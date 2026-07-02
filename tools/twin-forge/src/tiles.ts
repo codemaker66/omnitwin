@@ -41,10 +41,10 @@ export async function convertTiles(
           report.skipped += 1;
           continue;
         }
-        const pipeline = sharp(src);
-        if (lod !== 1024) {
-          pipeline.resize(lod, lod, { kernel: "lanczos3" });
-        }
+        // Always normalize to the LOD size: sources may be any square size
+        // (lidar-splat faces were 1024²; the photographic skybox faces are
+        // 1536²) and the tile contract is exact.
+        const pipeline = sharp(src).resize(lod, lod, { kernel: "lanczos3" });
         await pipeline.webp({ quality: lod === 1024 ? 80 : 75 }).toFile(dest);
         report.written += 1;
       }
