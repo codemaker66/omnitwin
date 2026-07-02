@@ -18,4 +18,28 @@ describe("buildManifest", () => {
     expect(m.capture).toEqual({ kind: "matterport-e57", scanCount: 2 });
     expect(m.edges.length).toBeGreaterThan(0);
   });
+
+  it("carries a mesh descriptor through verbatim", () => {
+    const mesh = {
+      path: "mesh/dollhouse.glb",
+      bytes: 7340032,
+      sourceName: "trades-hall-web.glb",
+    } as const;
+    const m = buildManifest(rawPoses, {
+      venueSlug: "trades-hall", name: "Trades Hall Glasgow",
+      tier: "ops-grade-2cm", generatedAt: "2026-07-02T12:00:00.000Z",
+      mesh,
+    });
+    expect(() => TwinManifestSchema.parse(m)).not.toThrow();
+    expect(m.mesh).toEqual(mesh);
+  });
+
+  it("omits mesh entirely when the option is not provided", () => {
+    const m = buildManifest(rawPoses, {
+      venueSlug: "trades-hall", name: "Trades Hall Glasgow",
+      tier: "ops-grade-2cm", generatedAt: "2026-07-02T12:00:00.000Z",
+    });
+    expect(m.mesh).toBeUndefined();
+    expect("mesh" in m).toBe(false);
+  });
 });

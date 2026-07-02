@@ -40,6 +40,15 @@ export const TwinNavEdgeSchema = z.object({
 });
 export type TwinNavEdge = z.infer<typeof TwinNavEdgeSchema>;
 
+export const TwinMeshSchema = z.object({
+  /** Bundle-relative location — fixed so viewers never guess. */
+  path: z.literal("mesh/dollhouse.glb"),
+  bytes: z.number().int().positive(),
+  /** Basename of the source GLB the forge optimized (provenance). */
+  sourceName: z.string().min(1),
+});
+export type TwinMesh = z.infer<typeof TwinMeshSchema>;
+
 export const TwinCaptureSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("matterport-e57"), scanCount: z.number().int().positive() }),
   z.object({ kind: z.literal("xgrids-lcc") }),
@@ -64,6 +73,8 @@ export const TwinManifestSchema = z.object({
   generatedAt: z.string().datetime(),
   nodes: z.array(TwinScanNodeSchema).min(1),
   edges: z.array(TwinNavEdgeSchema),
+  /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
+  mesh: TwinMeshSchema.optional(),
   /** SHA-256 per bundle entry, filled by twin-forge hash step (D-014 shape). */
   contentHashes: z.record(z.string(), z.string()).optional(),
 });

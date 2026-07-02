@@ -44,7 +44,9 @@ describe("twin/0 manifest schema", () => {
 
   it("rejects a pose with wrong arity", () => {
     const bad = structuredClone(validManifest);
-    bad.nodes[0].pose.q = [1, 0, 0];
+    const node = bad.nodes[0];
+    if (node === undefined) throw new Error("fixture must have one node");
+    node.pose.q = [1, 0, 0];
     expect(() => TwinManifestSchema.parse(bad)).toThrow();
   });
 
@@ -64,5 +66,32 @@ describe("twin/0 manifest schema", () => {
   it("locks faces and lods", () => {
     expect(TWIN_FACES).toEqual(["front", "back", "left", "right", "up", "down"]);
     expect(TWIN_LODS).toEqual([256, 1024]);
+  });
+});
+
+describe("twin/0 optional mesh descriptor", () => {
+  const mesh = {
+    path: "mesh/dollhouse.glb",
+    bytes: 7340032,
+    sourceName: "trades-hall-web.glb",
+  };
+
+  it("accepts a manifest with a mesh descriptor", () => {
+    const parsed = TwinManifestSchema.parse({ ...validManifest, mesh });
+    expect(parsed.mesh).toEqual(mesh);
+  });
+
+  it("rejects a mesh with a wrong path", () => {
+    expect(() =>
+      TwinManifestSchema.parse({
+        ...validManifest,
+        mesh: { ...mesh, path: "mesh/other.glb" },
+      }),
+    ).toThrow();
+  });
+
+  it("still accepts a manifest without a mesh", () => {
+    const parsed = TwinManifestSchema.parse(validManifest);
+    expect(parsed.mesh).toBeUndefined();
   });
 });

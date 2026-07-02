@@ -18,6 +18,8 @@ export interface ManifestOptions {
   readonly tier: TwinManifest["tier"];
   readonly generatedAt: string;
   readonly nav?: NavGraphOptions;
+  /** Dollhouse mesh descriptor from the forge mesh step; omitted → no mesh. */
+  readonly mesh?: TwinManifest["mesh"];
 }
 
 /** poses.json (E57-native) → schema-valid twin/0 manifest. */
@@ -48,5 +50,7 @@ export function buildManifest(raw: RawPoses, opts: ManifestOptions): TwinManifes
     generatedAt: opts.generatedAt,
     nodes,
     edges: buildNavGraph(nodes, opts.nav),
+    // Conditional spread keeps the key absent (not `undefined`) when omitted.
+    ...(opts.mesh === undefined ? {} : { mesh: opts.mesh }),
   });
 }
