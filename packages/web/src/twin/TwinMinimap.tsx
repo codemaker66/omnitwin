@@ -29,11 +29,16 @@ const DOT_COLOR = "#b9aa8b";
 const CURRENT_COLOR = "#d7a64b";
 const SELECTED_STROKE = "#f0c66b";
 
-const DOT_RADIUS = 3;
+// Dot radii are in METRES (the viewBox is plan metres) — scan spacing in the
+// bundle is ~1.5 m, so sub-metre dots stay distinguishable at 149 nodes.
+const DOT_RADIUS = 0.45;
+const CURRENT_DOT_RADIUS = 0.7;
 const VIEWBOX_PADDING_M = 2;
-const CONE_RADIUS = 6;
+const CONE_RADIUS = 2.5;
 const CONE_HALF_ANGLE_RAD = (20 * Math.PI) / 180;
 const OTHER_FLOOR_OPACITY = 0.25;
+/** Selection ring width in screen px — paired with non-scaling stroke. */
+const SELECTED_STROKE_WIDTH_PX = 1.5;
 
 /** ViewBox auto-fitted to the node (x, −y) extents plus 2 m padding. */
 export function minimapViewBox(nodes: readonly TwinScanNode[]): string {
@@ -235,10 +240,11 @@ export function TwinMinimap({
               <circle
                 cx={node.pose.t[0]}
                 cy={-node.pose.t[1]}
-                r={DOT_RADIUS}
+                r={isCurrent ? CURRENT_DOT_RADIUS : DOT_RADIUS}
                 fill={isCurrent ? CURRENT_COLOR : DOT_COLOR}
                 stroke={isSelected ? SELECTED_STROKE : "none"}
-                strokeWidth={isSelected ? 0.6 : 0}
+                strokeWidth={isSelected ? SELECTED_STROKE_WIDTH_PX : 0}
+                vectorEffect="non-scaling-stroke"
               />
             </g>
           );

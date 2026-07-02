@@ -108,18 +108,32 @@ export function scannerForward(
 }
 
 /**
- * Which WebGL cube face each scanner face fills, plus per-face flips.
- * CALIBRATION TABLE — Task 7's visual step against scan_000 may correct
- * flips (or remap targets on a gross error); nothing else may.
+ * Which WebGL cube face each scanner face fills, plus per-face flips and
+ * clockwise quarter-turns applied when the face image is drawn to its canvas.
+ * CALIBRATION TABLE — the visual step against scan_000 may correct flips or
+ * rotateQuarters (or remap targets on a gross error); nothing else may.
+ * Calibrated 2026-07-02 against scan_000/scan_001/scan_048 renders (horizon,
+ * zenith and nadir rings at four headings each): front and up each need one
+ * clockwise quarter-turn, back and down each need three (i.e. one CCW) — the
+ * forge stores every face upright, and WebGL's per-face cube conventions
+ * rotate the ±x and ±z faces in opposite directions. left/right sample
+ * upright as forged. Symptoms when wrong: walls read sideways dead-ahead of
+ * the scanner pose, and the coffered ceiling ends on a hard diagonal at the
+ * zenith instead of flowing into all four walls.
  */
 export const FACE_TO_CUBE: Record<
   TwinFace,
-  { target: "px" | "nx" | "py" | "ny" | "pz" | "nz"; flipX: boolean; flipY: boolean }
+  {
+    target: "px" | "nx" | "py" | "ny" | "pz" | "nz";
+    flipX: boolean;
+    flipY: boolean;
+    rotateQuarters: 0 | 1 | 2 | 3;
+  }
 > = {
-  front: { target: "px", flipX: false, flipY: false },
-  back: { target: "nx", flipX: false, flipY: false },
-  left: { target: "py", flipX: false, flipY: false },
-  right: { target: "ny", flipX: false, flipY: false },
-  up: { target: "pz", flipX: false, flipY: false },
-  down: { target: "nz", flipX: false, flipY: false },
+  front: { target: "px", flipX: false, flipY: false, rotateQuarters: 1 },
+  back: { target: "nx", flipX: false, flipY: false, rotateQuarters: 3 },
+  left: { target: "py", flipX: false, flipY: false, rotateQuarters: 0 },
+  right: { target: "ny", flipX: false, flipY: false, rotateQuarters: 0 },
+  up: { target: "pz", flipX: false, flipY: false, rotateQuarters: 1 },
+  down: { target: "nz", flipX: false, flipY: false, rotateQuarters: 3 },
 };

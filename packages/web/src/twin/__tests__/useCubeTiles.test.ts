@@ -29,6 +29,7 @@ interface RecordedContext {
   readonly canvas: HTMLCanvasElement;
   readonly scaleCalls: [number, number][];
   readonly translateCalls: [number, number][];
+  readonly rotateCalls: number[];
   readonly drawnSrcs: string[];
 }
 
@@ -38,6 +39,7 @@ const contexts: RecordedContext[] = [];
 interface RecordingContext2D {
   scale(x: number, y: number): void;
   translate(x: number, y: number): void;
+  rotate(angle: number): void;
   drawImage(image: unknown, dx: number, dy: number, dw: number, dh: number): void;
 }
 
@@ -52,6 +54,7 @@ function makeRecordingContext(canvas: HTMLCanvasElement): CanvasRenderingContext
     canvas,
     scaleCalls: [],
     translateCalls: [],
+    rotateCalls: [],
     drawnSrcs: [],
   };
   contexts.push(recorded);
@@ -61,6 +64,9 @@ function makeRecordingContext(canvas: HTMLCanvasElement): CanvasRenderingContext
     },
     translate: (x: number, y: number): void => {
       recorded.translateCalls.push([x, y]);
+    },
+    rotate: (angle: number): void => {
+      recorded.rotateCalls.push(angle);
     },
     drawImage: (image: unknown): void => {
       recorded.drawnSrcs.push((image as MockImage).src);
@@ -162,20 +168,35 @@ describe("useCubeTiles", () => {
       expect(cubeImages[slot]).toBe(canvasThatDrew(`${BASE}/tiles/scan_000/${face}_1024.webp`));
     }
 
-    // One draw per face per LOD; flip transforms match the calibration table.
+    // One draw per face per LOD; the rotate/flip transforms are derived from
+    // the calibration table, so future FACE_TO_CUBE calibration edits cannot
+    // break this test — it pins the drawing contract, not the calibration.
     expect(contexts).toHaveLength(12);
-    expect(contexts.every((context) => context.drawnSrcs.length === 1)).toBe(true);
-    const flipOpsPerLod = TWIN_FACES.reduce((count, face) => {
+    for (const face of TWIN_FACES) {
       const mapping = FACE_TO_CUBE[face];
-      return count + (mapping.flipX ? 1 : 0) + (mapping.flipY ? 1 : 0);
-    }, 0);
-    const scaleCalls = contexts.reduce((count, context) => count + context.scaleCalls.length, 0);
-    const translateCalls = contexts.reduce(
-      (count, context) => count + context.translateCalls.length,
-      0,
-    );
-    expect(scaleCalls).toBe(flipOpsPerLod * 2);
-    expect(translateCalls).toBe(flipOpsPerLod * 2);
+      for (const lod of [256, 1024] as const) {
+        const src = `${BASE}/tiles/scan_000/${face}_${String(lod)}.webp`;
+        const recorded = contexts.find((context) => context.drawnSrcs.includes(src));
+        if (recorded === undefined) {
+          throw new Error(`no canvas drew ${src}`);
+        }
+        expect(recorded.drawnSrcs).toEqual([src]);
+        // rotateQuarters draws as one clockwise rotation about the face
+        // centre, bracketed by a translate to the centre and back.
+        expect(recorded.rotateCalls).toEqual(
+          mapping.rotateQuarters === 0 ? [] : [(mapping.rotateQuarters * Math.PI) / 2],
+        );
+        const flipCount = (mapping.flipX ? 1 : 0) + (mapping.flipY ? 1 : 0);
+        expect(recorded.scaleCalls).toHaveLength(flipCount);
+        expect(recorded.translateCalls).toHaveLength(
+          (mapping.rotateQuarters === 0 ? 0 : 2) + flipCount,
+        );
+        if (mapping.rotateQuarters !== 0) {
+          expect(recorded.translateCalls[0]).toEqual([lod / 2, lod / 2]);
+          expect(recorded.translateCalls[1]).toEqual([-lod / 2, -lod / 2]);
+        }
+      }
+    }
   });
 
   it("disposes the previous texture when the node changes and restarts at 256", async () => {

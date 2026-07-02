@@ -14,7 +14,8 @@ import { FACE_TO_CUBE } from "./twin-basis.js";
 // THREE.CubeTexture, low LOD first. The 256 set paints the sphere within a
 // few tens of KB; the 1024 set swaps in silently once it arrives (the pano
 // simply sharpens — no spinner, no pop). Each face is drawn through a 2D
-// canvas so the FACE_TO_CUBE calibration flips are baked into the texture,
+// canvas so the FACE_TO_CUBE calibration (quarter-turns, then flips) is
+// baked into the texture,
 // and the canvases are slotted into WebGL's fixed [px,nx,py,ny,pz,nz] order
 // per the FACE_TO_CUBE targets. Textures are disposed on LOD swap, node
 // change, and unmount — nothing leaks across a walk.
@@ -54,7 +55,7 @@ function loadTileImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
-/** Draw one face tile onto a canvas, applying the FACE_TO_CUBE flips. */
+/** Draw one face tile onto a canvas, applying the FACE_TO_CUBE calibration. */
 function drawFaceCanvas(
   image: HTMLImageElement,
   face: TwinFace,
@@ -68,6 +69,12 @@ function drawFaceCanvas(
     return null;
   }
   const mapping = FACE_TO_CUBE[face];
+  // Clockwise quarter-turns about the face centre — exact for square faces.
+  if (mapping.rotateQuarters !== 0) {
+    context.translate(lod / 2, lod / 2);
+    context.rotate((mapping.rotateQuarters * Math.PI) / 2);
+    context.translate(-lod / 2, -lod / 2);
+  }
   if (mapping.flipX) {
     context.translate(lod, 0);
     context.scale(-1, 1);

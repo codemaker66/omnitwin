@@ -1,0 +1,153 @@
+// ---------------------------------------------------------------------------
+// twin-visual-check — screenshot pass for the Twin walkthrough (Phase 1).
+// Standalone Playwright, same pattern as rite-visual-check.mjs. Needs the web
+// dev server on 5173 AND the forged bundle at public/twin/trades-hall
+// (skips gracefully when the bundle is absent — CI machines don't carry it).
+//
+// Usage: node scripts/twin-visual-check.mjs
+// Env:   OUT_DIR (screenshot dir), BASE_URL (default http://localhost:5173)
+//
+// The scan_000 captures double as the FACE_TO_CUBE calibration reference:
+// compare against F:\...\E57\panoramas\scan_000.jpg — doorways must sit where
+// the pano shows them and plaque text must not be mirrored.
+// ---------------------------------------------------------------------------
+
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "@playwright/test";
+
+const BASE = process.env.BASE_URL ?? "http://localhost:5173";
+const OUT = process.env.OUT_DIR ?? "twin-shots";
+
+const bundleManifest = join(
+  fileURLToPath(new URL("..", import.meta.url)),
+  "public", "twin", "trades-hall", "manifest.json",
+);
+if (!existsSync(bundleManifest)) {
+  console.log(JSON.stringify({
+    ok: true,
+    skipped: true,
+    reason: `no local twin bundle at ${bundleManifest} — run twin-forge first`,
+  }));
+  process.exit(0);
+}
+
+mkdirSync(OUT, { recursive: true });
+const report = { ok: false, steps: [], errors: [] };
+
+/** Drag horizontally across the canvas to rotate the view by roughly 90°. */
+async function dragLook(page, dxPixels) {
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("no canvas box");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  // Several small moves so pointermove deltas accumulate through the spring.
+  const steps = 12;
+  for (let i = 1; i <= steps; i += 1) {
+    await page.mouse.move(cx + (dxPixels * i) / steps, cy, { steps: 1 });
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(1400); // spring settle
+}
+
+const browser = await chromium.launch();
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on("pageerror", (e) => report.errors.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => {
+    if (m.type() === "error") report.errors.push(`console: ${m.text()}`);
+  });
+
+  await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_000`, {
+    waitUntil: "domcontentloaded", timeout: 60000,
+  });
+  await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  await page.waitForTimeout(4000); // 1024 LOD faces land
+  await page.screenshot({ path: join(OUT, "twin-01-scan000-forward.png") });
+  report.steps.push("scan_000 forward (calibration reference)");
+
+  await dragLook(page, -520);
+  await page.screenshot({ path: join(OUT, "twin-02-scan000-right.png") });
+  report.steps.push("scan_000 rotated right");
+
+  await dragLook(page, -520);
+  await page.screenshot({ path: join(OUT, "twin-03-scan000-back.png") });
+  report.steps.push("scan_000 rotated back");
+
+  // Look up — the zenith crown must cap the scanner hole.
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (box !== null) {
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i += 1) {
+      await page.mouse.move(cx, cy + (420 * i) / 12, { steps: 1 });
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(1400);
+  }
+  await page.screenshot({ path: join(OUT, "twin-04-scan000-zenith-crown.png") });
+  report.steps.push("zenith crown");
+
+  // Look down — swing from the zenith through level to the nadir: the tripod
+  // patch must read as a coherent floor view, not a twisted one.
+  if (box !== null) {
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i += 1) {
+      await page.mouse.move(cx, cy + (-840 * i) / 12, { steps: 1 });
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(1400);
+  }
+  await page.screenshot({ path: join(OUT, "twin-05-scan000-nadir-floor.png") });
+  report.steps.push("nadir floor");
+
+  // Reset view, then hop: click the first minimap option that is not the
+  // current node (the minimap exposes role="option" dots; the current node is
+  // the one carrying aria-selected="true"). Keep the mid-hop capture timing.
+  await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_000`, {
+    waitUntil: "domcontentloaded", timeout: 60000,
+  });
+  await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  await page.waitForTimeout(3000);
+  const beforeUrl = page.url();
+  const hopDot = page.locator('[role="option"][aria-selected="false"]').first();
+  await hopDot.click({ timeout: 5000 });
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: join(OUT, "twin-06-mid-hop.png") });
+  await page.waitForTimeout(2200);
+  if (page.url() === beforeUrl) {
+    report.errors.push("hop did not change the ?node param");
+  }
+  await page.screenshot({ path: join(OUT, "twin-07-after-hop.png") });
+  report.steps.push(`hop (url ${page.url().split("?")[1] ?? "?"})`);
+
+  // Minimap open state + mobile.
+  await page.screenshot({ path: join(OUT, "twin-08-minimap.png") });
+  const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await mobile.goto(`${BASE}/venues/trades-hall/twin`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await mobile.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  await mobile.waitForTimeout(3500);
+  await mobile.screenshot({ path: join(OUT, "twin-09-mobile.png") });
+  await mobile.close();
+  report.steps.push("minimap + mobile");
+
+  report.ok = report.errors.length === 0;
+} catch (e) {
+  report.fatal = String(e).slice(0, 400);
+} finally {
+  await browser.close();
+}
+console.log(JSON.stringify(report, null, 2));
