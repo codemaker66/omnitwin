@@ -105,37 +105,46 @@
   color: var(--gold);
 }
 
-/* — ready state (placeholder stage until the viewer lands) — */
+/* — ready state: the walkable viewer (Task 9) — */
 
-.vv-twin-ready {
-  display: grid;
-  gap: 18px;
-  justify-items: center;
-  text-align: center;
+/* The viewer owns the whole viewport; the padded grid is for text states. */
+.vv-twin .vv-twin-main--viewer {
+  display: block;
+  padding: 0;
 }
 
 .vv-twin-stage {
-  display: grid;
-  gap: 8px;
-  padding: 48px 56px;
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--black-2);
+  overflow: hidden;
+}
+
+.vv-twin-viewer {
+  position: absolute;
+  inset: 0;
+}
+
+.vv-twin-viewer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.vv-twin-node-label {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 2;
+  padding: 8px 14px;
   border: 1px solid var(--rule);
   border-radius: 6px;
-  background: var(--black-2);
-}
-
-.vv-twin-stage-name {
-  margin: 0;
-  font-family: var(--display);
-  font-size: clamp(1.4rem, 3vw, 2rem);
-  line-height: 1.3;
-  color: var(--ink);
-}
-
-.vv-twin-stage-count {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  background: rgba(7, 16, 15, 0.72);
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
 }
 
 .vv-twin-disclosure {
@@ -145,4 +154,14 @@
   font-size: 0.8rem;
   line-height: 1.6;
   text-align: center;
+}
+
+/* The viewer's always-visible disclosure sits along the bottom edge. */
+.vv-twin-viewer-disclosure {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  z-index: 2;
+  max-width: 26rem;
+  text-align: left;
 }

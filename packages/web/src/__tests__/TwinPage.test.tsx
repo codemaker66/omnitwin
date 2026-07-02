@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { findUnsupportedProposalClaim, type TwinManifest } from "@omnitwin/types";
-import { TwinPage } from "../pages/TwinPage.js";
 import {
   allTwinCopy,
   TWIN_DISCLOSURE,
@@ -10,17 +9,39 @@ import {
   TWIN_LOADING_LINE,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
-  twinStageLine,
+  twinNodeLabel,
 } from "../twin/twin-copy.js";
 
 // ---------------------------------------------------------------------------
-// TwinPage — public twin route shell (Twin Phase 1, Task 6).
+// TwinPage — public twin route shell (Twin Phase 1, Tasks 6 + 9).
 //
 // The page owns three Rite-voiced states (loading / error / ready) around a
-// manifest fetch validated with TwinManifestSchema. The R3F viewer arrives in
-// a later task; the ready state here is a placeholder stage, so no
-// @react-three/fiber mock is needed yet.
+// manifest fetch validated with TwinManifestSchema. The ready state mounts
+// TwinViewer, so the R3F Canvas is mocked exactly as PlannerScene.test.tsx
+// does: an empty host div — the scene children are constructed as React
+// elements but never mounted, so their useThree/useFrame hooks don't run
+// outside a real Canvas. The HUD outside the Canvas (node label, disclosure)
+// renders for real and is asserted here.
 // ---------------------------------------------------------------------------
+
+type CanvasMockProps = Readonly<{
+  dpr?: unknown;
+  frameloop?: unknown;
+}>;
+
+vi.mock("@react-three/fiber", () => ({
+  Canvas: ({ dpr, frameloop }: CanvasMockProps) => (
+    <div
+      data-testid="r3f-canvas"
+      data-dpr={JSON.stringify(dpr)}
+      data-frameloop={typeof frameloop === "string" ? frameloop : ""}
+    />
+  ),
+  useFrame: (): void => undefined,
+  useThree: (): undefined => undefined,
+}));
+
+const { TwinPage } = await import("../pages/TwinPage.js");
 
 /** The plan's Task-1 fixture manifest — a schema-valid single-node twin/0. */
 const validManifest: TwinManifest = {
@@ -118,13 +139,24 @@ describe("TwinPage — error state", () => {
 });
 
 describe("TwinPage — ready state", () => {
-  it("renders the placeholder stage with the node count and the disclosure", async () => {
+  it("mounts the viewer with its canvas host, node label, and the disclosure", async () => {
     fetchMock.mockResolvedValue(jsonResponse(validManifest));
     mount();
 
     const stage = await screen.findByTestId("twin-stage");
-    expect(stage.textContent).toContain(twinStageLine(validManifest.nodes.length));
+    expect(within(stage).getByTestId("r3f-canvas")).toBeTruthy();
+
+    const label = within(stage).getByTestId("twin-node-label");
+    expect(label.textContent).toBe(twinNodeLabel("scan_000", validManifest.name));
     expect(screen.getByText(TWIN_DISCLOSURE)).toBeTruthy();
+  });
+
+  it("renders the disclosure exactly once on the page", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(validManifest));
+    mount();
+
+    await screen.findByTestId("twin-stage");
+    expect(screen.getAllByText(TWIN_DISCLOSURE)).toHaveLength(1);
   });
 });
 

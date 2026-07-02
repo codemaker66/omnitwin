@@ -1,24 +1,27 @@
 import { useEffect, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
 import {
-  TWIN_DISCLOSURE,
   TWIN_ERROR_LINE,
   TWIN_LOADING_LINE,
   TWIN_PREPARING_LINE,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
-  twinStageLine,
 } from "../twin/twin-copy.js";
-import { isDefaultTwinAssetBase, useTwinManifest } from "../twin/useTwinManifest.js";
+import { TwinViewer } from "../twin/TwinViewer.js";
+import {
+  isDefaultTwinAssetBase,
+  twinAssetBase,
+  useTwinManifest,
+} from "../twin/useTwinManifest.js";
 import "../twin/twin.css";
 
 // -----------------------------------------------------------------------------
 // TwinPage — the public walkable twin at /venues/:venueSlug/twin.
 //
-// Phase 1, Task 6: the route shell and its Rite-voiced states. The page owns
-// loading / error / ready around the manifest fetch; the R3F viewer
-// (PanoStage + WalkControls, Tasks 7–9) mounts into the ready state later —
-// for now it is a placeholder stage showing the scan-point count.
+// Phase 1: the route shell and its Rite-voiced states. The page owns
+// loading / error / ready around the manifest fetch; the ready state mounts
+// TwinViewer (Task 9) — the R3F walkthrough with its own HUD, including the
+// disclosure line, which therefore renders exactly once on the page.
 //
 // Public from day one: named main landmark, calm failure states, and
 // claim-safe copy (all strings live in twin-copy.ts) are the contract here.
@@ -55,7 +58,12 @@ export function TwinPage(): ReactElement {
 
   return (
     <div className="vv-twin">
-      <main className="vv-twin-main" aria-label={TWIN_TITLE}>
+      <main
+        className={
+          manifest.state === "ready" ? "vv-twin-main vv-twin-main--viewer" : "vv-twin-main"
+        }
+        aria-label={TWIN_TITLE}
+      >
         {manifest.state === "loading" && (
           <section className="vv-twin-state" role="status" aria-live="polite">
             <p className="vv-twin-line">{TWIN_LOADING_LINE}</p>
@@ -72,16 +80,12 @@ export function TwinPage(): ReactElement {
         )}
 
         {manifest.state === "ready" && (
-          <section className="vv-twin-ready">
-            {/* Placeholder stage — TwinViewer replaces this in Task 9. */}
-            <div className="vv-twin-stage" data-testid="twin-stage">
-              <p className="vv-twin-stage-name">{manifest.manifest.name}</p>
-              <p className="vv-twin-stage-count">
-                {twinStageLine(manifest.manifest.nodes.length)}
-              </p>
-            </div>
-            <p className="vv-twin-disclosure">{TWIN_DISCLOSURE}</p>
-          </section>
+          <div className="vv-twin-stage" data-testid="twin-stage">
+            <TwinViewer
+              manifest={manifest.manifest}
+              assetBase={`${twinAssetBase()}/${venueSlug}`}
+            />
+          </div>
         )}
       </main>
     </div>

@@ -32,6 +32,11 @@ export function twinStageLine(nodeCount: number): string {
   return `${String(nodeCount)} scan ${nodeCount === 1 ? "point" : "points"}, posed and waiting.`;
 }
 
+/** Viewer HUD label — the scan you are standing on (Task 9). */
+export function twinNodeLabel(nodeId: string, venueName: string): string {
+  return `${nodeId} — ${venueName}`;
+}
+
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
   return [
@@ -43,5 +48,6 @@ export function allTwinCopy(): readonly string[] {
     TWIN_DISCLOSURE,
     twinStageLine(1),
     twinStageLine(149),
+    twinNodeLabel("scan_000", "Trades Hall Glasgow"),
   ] as const;
 }
