@@ -37,11 +37,17 @@ export function useTwinManifest(venueSlug: string): TwinManifestState {
 
   useEffect(() => {
     let cancelled = false;
+    // Abort the superseded request itself (venue change, retry mash) — the
+    // cancelled flag alone kept state correct but let stale fetches run to
+    // completion in the network layer.
+    const controller = new AbortController();
     setStatus({ state: "loading" });
 
     const load = async (): Promise<void> => {
       try {
-        const response = await fetch(`${twinAssetBase()}/${venueSlug}/manifest.json`);
+        const response = await fetch(`${twinAssetBase()}/${venueSlug}/manifest.json`, {
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error(`twin manifest request failed: ${String(response.status)}`);
         }
@@ -65,6 +71,7 @@ export function useTwinManifest(venueSlug: string): TwinManifestState {
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [venueSlug, attempt, retry]);
 

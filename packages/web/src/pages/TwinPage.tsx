@@ -82,6 +82,10 @@ export function TwinPage(): ReactElement {
         {manifest.state === "ready" && (
           <div className="vv-twin-stage" data-testid="twin-stage">
             <TwinViewer
+              // Re-seed the walk state if the venue ever changes without a
+              // route remount (reviewer P1 — defence for the multi-venue
+              // milestone; today's router always remounts).
+              key={manifest.manifest.venueSlug}
               manifest={manifest.manifest}
               assetBase={`${twinAssetBase()}/${venueSlug}`}
             />

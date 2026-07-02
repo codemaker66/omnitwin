@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import { TwinManifestSchema } from "@omnitwin/types";
 import { buildManifest, type RawPoses } from "./build-manifest.js";
 import { convertTiles } from "./tiles.js";
 import { hashBundle } from "./hashes.js";
@@ -29,10 +30,19 @@ const overrides = values.overrides === undefined
       remove?: [string, string][];
     });
 
+// Validate the raw CLI string against the schema's own enum so a typo fails
+// with a purposeful message instead of a zod stack from deep inside parse.
+const tierResult = TwinManifestSchema.shape.tier.safeParse(values.tier);
+if (!tierResult.success) {
+  throw new Error(
+    `--tier must be one of ${TwinManifestSchema.shape.tier.options.join(", ")} (got "${String(values.tier)}")`,
+  );
+}
+
 const manifest = buildManifest(posesRaw, {
   venueSlug: req("venue", values.venue),
   name: req("name", values.name),
-  tier: values.tier as "survey-grade-1cm" | "ops-grade-2cm" | "planning-grade-5cm",
+  tier: tierResult.data,
   generatedAt: new Date().toISOString(),
   nav: { overrides },
 });

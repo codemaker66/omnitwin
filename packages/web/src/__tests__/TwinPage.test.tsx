@@ -111,7 +111,12 @@ describe("TwinPage — loading state", () => {
   it("requests the manifest from the venue's slug under the default asset base", () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
     mount();
-    expect(fetchMock).toHaveBeenCalledWith("/twin/trades-hall/manifest.json");
+    // The request is abortable (reviewer P1): the hook passes its
+    // AbortController's signal so superseded fetches are truly cancelled.
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/twin/trades-hall/manifest.json",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });
 
