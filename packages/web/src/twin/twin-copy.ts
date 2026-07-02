@@ -37,6 +37,12 @@ export function twinNodeLabel(nodeId: string, venueName: string): string {
   return `${nodeId} — ${venueName}`;
 }
 
+/** View-mode segmented control (Phase 2, Task 5) — shown only with a mesh. */
+export const TWIN_MODE_GROUP_LABEL = "View mode";
+export const TWIN_MODE_WALK_LABEL = "Walk";
+export const TWIN_MODE_DOLLHOUSE_LABEL = "Dollhouse";
+export const TWIN_MODE_PLAN_LABEL = "Plan";
+
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
   return [
@@ -49,5 +55,9 @@ export function allTwinCopy(): readonly string[] {
     twinStageLine(1),
     twinStageLine(149),
     twinNodeLabel("scan_000", "Trades Hall Glasgow"),
+    TWIN_MODE_GROUP_LABEL,
+    TWIN_MODE_WALK_LABEL,
+    TWIN_MODE_DOLLHOUSE_LABEL,
+    TWIN_MODE_PLAN_LABEL,
   ] as const;
 }

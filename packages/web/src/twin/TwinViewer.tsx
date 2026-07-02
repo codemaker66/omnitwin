@@ -1,19 +1,31 @@
 import {
+  Suspense,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type MutableRefObject,
   type ReactElement,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
 import { PerspectiveCamera } from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
+import { DollhouseStage } from "./DollhouseStage.js";
 import { NavMarkers } from "./NavMarkers.js";
 import { PanoStage } from "./PanoStage.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
-import { TWIN_DISCLOSURE, twinNodeLabel } from "./twin-copy.js";
+import {
+  TWIN_DISCLOSURE,
+  TWIN_MODE_DOLLHOUSE_LABEL,
+  TWIN_MODE_GROUP_LABEL,
+  TWIN_MODE_PLAN_LABEL,
+  TWIN_MODE_WALK_LABEL,
+  twinNodeLabel,
+} from "./twin-copy.js";
 import { TwinMinimap } from "./TwinMinimap.js";
+import { useTwinMode, type TwinMode } from "./useTwinMode.js";
 import { useTwinWalk } from "./useTwinWalk.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 
@@ -32,7 +44,16 @@ import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 // camera through YawProbe, a useFrame observer that lifts yaw into React
 // state at most ~10 Hz and only when it moves more than 0.05 rad.
 //
-// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Tasks 9–10).
+// Phase 2 (Task 5) adds the mode machine: a segmented control (top-right,
+// only when the bundle carries a mesh) switches walk ⇄ dollhouse ⇄ plan.
+// Walk renders the Phase-1 content unchanged; the mesh modes render
+// DollhouseStage under OrbitControls (target = node-extent centroid). Plan
+// mode currently shares the dollhouse stage with an overhead vantage — the
+// true orthographic floorplan with per-floor slicing is the plan's Task 7.
+// The minimap shows in walk mode only.
+//
+// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Tasks 9–10)
+// and …/2026-07-02-twin-phase2-dollhouse.md (Tasks 4–5).
 // -----------------------------------------------------------------------------
 
 interface DollyState {
@@ -101,6 +122,167 @@ function YawProbe({ onYaw }: { readonly onYaw: (yaw: number) => void }): null {
   return null;
 }
 
+/** Orbit tilt limit for the dollhouse — never under the floor plane. */
+const DOLLHOUSE_MAX_POLAR_RAD = (85 * Math.PI) / 180;
+/** Plan-mode interim tilt limit — keeps the vantage overhead until Task 7. */
+const PLAN_MAX_POLAR_RAD = (30 * Math.PI) / 180;
+/** Never let the orbit camera dolly closer than this (metres). */
+const ORBIT_MIN_DISTANCE_M = 2;
+/** Smallest orbit radius — tiny bundles still get a readable dollhouse. */
+const ORBIT_MIN_RADIUS_M = 4;
+
+interface NodeExtent {
+  readonly center: [number, number, number];
+  readonly radius: number;
+}
+
+/** Centroid + bounding radius of the node poses in three space. */
+function nodeExtent(nodes: readonly TwinScanNode[]): NodeExtent {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const node of nodes) {
+    const [x, y, z] = e57PointToThree(node.pose.t);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    maxZ = Math.max(maxZ, z);
+  }
+  if (!Number.isFinite(minX)) {
+    return { center: [0, 0, 0], radius: ORBIT_MIN_RADIUS_M };
+  }
+  const radius =
+    Math.max(maxX - minX, maxY - minY, maxZ - minZ, ORBIT_MIN_RADIUS_M * 2) / 2;
+  return {
+    center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2],
+    radius,
+  };
+}
+
+/**
+ * Orbit rig for the mesh modes: boots the camera to a vantage on mode entry
+ * (three-quarter for dollhouse, overhead for plan), then hands control to
+ * drei's OrbitControls around the node-extent centroid. The demand loop is
+ * woken by the house `onChange={() => { invalidate(); }}` pattern.
+ */
+function MeshOrbitRig({
+  mode,
+  extent,
+}: {
+  readonly mode: TwinMode;
+  readonly extent: NodeExtent;
+}): ReactElement {
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    const [cx, cy, cz] = extent.center;
+    if (mode === "plan") {
+      // Slight z lean keeps the up-vector defined when looking straight down.
+      camera.position.set(cx, cy + extent.radius * 2.4, cz + 0.01);
+    } else {
+      camera.position.set(
+        cx + extent.radius * 1.15,
+        cy + extent.radius * 0.95,
+        cz + extent.radius * 1.15,
+      );
+    }
+    camera.lookAt(cx, cy, cz);
+    invalidate();
+  }, [mode, camera, extent, invalidate]);
+
+  return (
+    <OrbitControls
+      makeDefault
+      enableDamping
+      target={extent.center}
+      maxPolarAngle={mode === "plan" ? PLAN_MAX_POLAR_RAD : DOLLHOUSE_MAX_POLAR_RAD}
+      minDistance={ORBIT_MIN_DISTANCE_M}
+      maxDistance={extent.radius * 5}
+      onChange={() => {
+        invalidate();
+      }}
+    />
+  );
+}
+
+const TWIN_MODE_OPTIONS: readonly { readonly id: TwinMode; readonly label: string }[] = [
+  { id: "walk", label: TWIN_MODE_WALK_LABEL },
+  { id: "dollhouse", label: TWIN_MODE_DOLLHOUSE_LABEL },
+  { id: "plan", label: TWIN_MODE_PLAN_LABEL },
+];
+
+/**
+ * The segmented view-mode control (WAI-ARIA radio group): click or arrow-key
+ * between Walk / Dollhouse / Plan. Roving tabindex — the active segment is
+ * the group's single tab stop, arrows move both selection and focus.
+ */
+function TwinModeControl({
+  mode,
+  setMode,
+}: {
+  readonly mode: TwinMode;
+  readonly setMode: (mode: TwinMode) => void;
+}): ReactElement {
+  const buttonsRef = useRef(new Map<TwinMode, HTMLButtonElement | null>());
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (step === 0) {
+      return;
+    }
+    event.preventDefault();
+    const index = TWIN_MODE_OPTIONS.findIndex((option) => option.id === mode);
+    const next =
+      TWIN_MODE_OPTIONS[(index + step + TWIN_MODE_OPTIONS.length) % TWIN_MODE_OPTIONS.length];
+    if (next !== undefined) {
+      setMode(next.id);
+      buttonsRef.current.get(next.id)?.focus();
+    }
+  };
+
+  return (
+    <div
+      className="vv-twin-mode"
+      role="radiogroup"
+      aria-label={TWIN_MODE_GROUP_LABEL}
+      data-testid="twin-mode-control"
+      onKeyDown={onKeyDown}
+    >
+      {TWIN_MODE_OPTIONS.map(({ id, label }) => (
+        <button
+          key={id}
+          ref={(element) => {
+            buttonsRef.current.set(id, element);
+          }}
+          type="button"
+          role="radio"
+          aria-checked={mode === id}
+          tabIndex={mode === id ? 0 : -1}
+          className={
+            mode === id ? "vv-twin-mode-option vv-twin-mode-option--active" : "vv-twin-mode-option"
+          }
+          onClick={() => {
+            setMode(id);
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export interface TwinViewerProps {
   readonly manifest: TwinManifest;
   /** Bundle base URL including the venue segment, e.g. `/twin/trades-hall`. */
@@ -109,7 +291,12 @@ export interface TwinViewerProps {
 
 export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactElement | null {
   const walk = useTwinWalk(manifest);
+  const hasMesh = manifest.mesh !== undefined;
+  const { mode, setMode } = useTwinMode(hasMesh);
   const [yaw, setYaw] = useState(0);
+
+  const meshUrl = manifest.mesh === undefined ? null : `${assetBase}/${manifest.mesh.path}`;
+  const extent = useMemo(() => nodeExtent(manifest.nodes), [manifest]);
 
   const nodesById = useMemo(
     () => new Map<string, TwinScanNode>(manifest.nodes.map((node) => [node.id, node])),
@@ -153,36 +340,62 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         gl={{ powerPreference: "high-performance" }}
         camera={{ fov: 75, near: 0.1, far: 200 }}
       >
-        <WalkControls enabled />
-        <CameraDolly dolly={dollyRef} />
-        {stages.map(({ node, opacity }) => (
-          <PanoStage
-            key={node.id}
-            nodeId={node.id}
-            position={e57PointToThree(node.pose.t)}
-            quaternion={e57QuatToThree(node.pose.q)}
-            assetBase={assetBase}
-            opacity={opacity}
-          />
-        ))}
-        {!hopping && (
-          <NavMarkers neighbors={walk.neighbors} nodesById={nodesById} onHop={walk.hopTo} />
+        {mode === "walk" ? (
+          <>
+            <WalkControls enabled />
+            <CameraDolly dolly={dollyRef} />
+            {stages.map(({ node, opacity }) => (
+              <PanoStage
+                key={node.id}
+                nodeId={node.id}
+                position={e57PointToThree(node.pose.t)}
+                quaternion={e57QuatToThree(node.pose.q)}
+                assetBase={assetBase}
+                opacity={opacity}
+              />
+            ))}
+            {!hopping && (
+              <NavMarkers neighbors={walk.neighbors} nodesById={nodesById} onHop={walk.hopTo} />
+            )}
+            <YawProbe onYaw={setYaw} />
+          </>
+        ) : (
+          meshUrl !== null && (
+            <>
+              <Suspense fallback={null}>
+                <DollhouseStage
+                  meshUrl={meshUrl}
+                  nodes={manifest.nodes}
+                  currentId={walk.currentId}
+                  onDive={(id) => {
+                    // Interim descent (Task 6 replaces this with the spring
+                    // dive): land on the node and surface into walk mode.
+                    walk.hopTo(id, { teleport: true });
+                    setMode("walk");
+                  }}
+                />
+              </Suspense>
+              <MeshOrbitRig mode={mode} extent={extent} />
+            </>
+          )
         )}
-        <YawProbe onYaw={setYaw} />
       </Canvas>
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
         {twinNodeLabel(walk.currentId, manifest.name)}
       </div>
+      {hasMesh && <TwinModeControl mode={mode} setMode={setMode} />}
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
-      <TwinMinimap
-        nodes={manifest.nodes}
-        currentId={walk.currentId}
-        yaw={yaw}
-        onSelect={(id) => {
-          walk.hopTo(id, { teleport: true });
-        }}
-      />
+      {mode === "walk" && (
+        <TwinMinimap
+          nodes={manifest.nodes}
+          currentId={walk.currentId}
+          yaw={yaw}
+          onSelect={(id) => {
+            walk.hopTo(id, { teleport: true });
+          }}
+        />
+      )}
     </div>
   );
 }

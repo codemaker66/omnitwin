@@ -7,10 +7,17 @@ import {
   TWIN_DISCLOSURE,
   TWIN_ERROR_LINE,
   TWIN_LOADING_LINE,
+  TWIN_MODE_DOLLHOUSE_LABEL,
+  TWIN_MODE_GROUP_LABEL,
+  TWIN_MODE_WALK_LABEL,
   TWIN_RETRY_LABEL,
   TWIN_TITLE,
   twinNodeLabel,
 } from "../twin/twin-copy.js";
+import {
+  TWIN_FIXTURE_MANIFEST,
+  TWIN_FIXTURE_MANIFEST_NO_MESH,
+} from "../twin/__fixtures__/twin-fixture.js";
 
 // ---------------------------------------------------------------------------
 // TwinPage — public twin route shell (Twin Phase 1, Tasks 6 + 9).
@@ -39,6 +46,17 @@ vi.mock("@react-three/fiber", () => ({
   ),
   useFrame: (): void => undefined,
   useThree: (): undefined => undefined,
+}));
+
+// TwinViewer imports drei's OrbitControls and (via DollhouseStage) useGLTF
+// plus the meshopt decoder module. Canvas children never mount (the Canvas
+// mock is an empty div), so inert stand-ins are all these need to be.
+vi.mock("@react-three/drei", () => ({
+  OrbitControls: (): null => null,
+  useGLTF: vi.fn(() => ({ scene: {} })),
+}));
+vi.mock("three/examples/jsm/libs/meshopt_decoder.module.js", () => ({
+  MeshoptDecoder: { ready: Promise.resolve(), supported: true },
 }));
 
 const { TwinPage } = await import("../pages/TwinPage.js");
@@ -115,7 +133,7 @@ describe("TwinPage — loading state", () => {
     // AbortController's signal so superseded fetches are truly cancelled.
     expect(fetchMock).toHaveBeenCalledWith(
       "/twin/trades-hall/manifest.json",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) as AbortSignal }),
     );
   });
 });
@@ -181,6 +199,47 @@ describe("TwinPage — document chrome and landmarks", () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
     mount();
     expect(screen.getByRole("main", { name: TWIN_TITLE })).toBeTruthy();
+  });
+});
+
+describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
+  it("shows the segmented control when the manifest carries a mesh", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST));
+    mount();
+
+    await screen.findByTestId("twin-stage");
+    const group = screen.getByRole("radiogroup", { name: TWIN_MODE_GROUP_LABEL });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(
+      screen.getByRole("radio", { name: TWIN_MODE_WALK_LABEL }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("hides the control entirely when the bundle has no mesh", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST_NO_MESH));
+    mount();
+
+    await screen.findByTestId("twin-stage");
+    expect(screen.queryByRole("radiogroup", { name: TWIN_MODE_GROUP_LABEL })).toBeNull();
+  });
+
+  it("switching to Dollhouse checks the segment and hides the walk minimap", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST));
+    mount();
+
+    await screen.findByTestId("twin-stage");
+    expect(screen.getByRole("listbox", { name: "Scan positions" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL }));
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL })
+          .getAttribute("aria-checked"),
+      ).toBe("true");
+    });
+    expect(screen.queryByRole("listbox", { name: "Scan positions" })).toBeNull();
   });
 });
 

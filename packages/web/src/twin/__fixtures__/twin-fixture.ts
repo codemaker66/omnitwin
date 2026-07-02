@@ -14,12 +14,14 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 // identity quaternions (level tripod) and metre-round translations — never
 // real capture data (real bundles are gitignored, plan Global Constraints).
 //
-// Consumers: e2e/twin-walk.spec.ts (Playwright network mocks) and
-// src/__tests__/twin-chunk-budget.test.ts (fixture validation).
-// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 11).
+// Consumers: e2e/twin-walk.spec.ts (Playwright network mocks),
+// src/__tests__/twin-chunk-budget.test.ts (fixture validation), and
+// src/__tests__/TwinPage.test.tsx (mode-control show/hide, Phase 2 Task 5).
+// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 11);
+// mesh descriptor: …/2026-07-02-twin-phase2-dollhouse.md (Task 5).
 // -----------------------------------------------------------------------------
 
-export const TWIN_FIXTURE_MANIFEST: TwinManifest = TwinManifestSchema.parse({
+const FIXTURE_WITHOUT_MESH = {
   schema: "twin/0",
   venueSlug: "trades-hall",
   name: "Trades Hall Glasgow",
@@ -65,7 +67,22 @@ export const TWIN_FIXTURE_MANIFEST: TwinManifest = TwinManifestSchema.parse({
     { a: "scan_001", b: "scan_002", distanceM: 2.5 },
     { a: "scan_001", b: "scan_003", distanceM: 2.5 },
   ],
+};
+
+export const TWIN_FIXTURE_MANIFEST: TwinManifest = TwinManifestSchema.parse({
+  ...FIXTURE_WITHOUT_MESH,
+  // The mesh descriptor mirrors the REAL bundle's shape (Phase 2, Task 3) so
+  // the mode control and dollhouse gates exercise the mesh-backed path; the
+  // e2e routes mesh/dollhouse.glb to a byte fixture (Task 8), never real bytes.
+  mesh: { path: "mesh/dollhouse.glb", bytes: 7158232, sourceName: "trades-hall-web.glb" },
 });
+
+/**
+ * The same bundle WITHOUT a mesh — twin/0 keeps `mesh` optional, and the
+ * viewer must hide the dollhouse/plan modes entirely for bundles like this.
+ */
+export const TWIN_FIXTURE_MANIFEST_NO_MESH: TwinManifest =
+  TwinManifestSchema.parse(FIXTURE_WITHOUT_MESH);
 
 /**
  * A structurally valid 1×1 lossy WebP (RIFF/WEBP/VP8 , 44 bytes) served for
