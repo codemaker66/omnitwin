@@ -13,11 +13,13 @@
     "@gltf-transform/extensions": "4.3.0",
     "@gltf-transform/functions": "4.3.0",
     "@omnitwin/types": "workspace:*",
+    "draco3dgltf": "1.5.7",
     "meshoptimizer": "1.2.0",
     "sharp": "0.34.5",
     "zod": "3.24.2"
   },
   "devDependencies": {
+    "@types/draco3dgltf": "1.4.3",
     "@types/node": "25.5.0",
     "tsx": "4.20.6",
     "typescript": "5.7.3",

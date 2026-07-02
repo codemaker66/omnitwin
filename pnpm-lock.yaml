@@ -279,6 +279,9 @@ importers:
       '@omnitwin/types':
         specifier: workspace:*
         version: link:../../packages/types
+      draco3dgltf:
+        specifier: 1.5.7
+        version: 1.5.7
       meshoptimizer:
         specifier: 1.2.0
         version: 1.2.0
@@ -289,6 +292,9 @@ importers:
         specifier: 3.24.2
         version: 3.24.2
     devDependencies:
+      '@types/draco3dgltf':
+        specifier: 1.4.3
+        version: 1.4.3
       '@types/node':
         specifier: 25.5.0
         version: 25.5.0
@@ -1952,6 +1958,9 @@ packages:
   '@types/draco3d@1.4.10':
     resolution: {integrity: sha512-AX22jp8Y7wwaBgAixaSvkoG4M/+PlAcm3Qs4OW8yT9DM4xUpWKeFhLueTAyZF39pviAdcDdeJoACapiAceqNcw==}
 
+  '@types/draco3dgltf@1.4.3':
+    resolution: {integrity: sha512-JTY574f8xRI9+bOsDajeVSQ/gnIo0q3dt/MAJhNRKWJKdH2TAP3hld+lQ+eQnG9Eb6Ae493EiKi2oDZZpciQgw==}
+
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
@@ -2438,6 +2447,9 @@ packages:
 
   draco3d@1.5.7:
     resolution: {integrity: sha512-m6WCKt/erDXcw+70IJXnG7M3awwQPAsZvJGX5zY7beBqpELw6RDGkYVU0W43AFxye4pDZ5i2Lbyc/NNGqwjUVQ==}
+
+  draco3dgltf@1.5.7:
+    resolution: {integrity: sha512-LeqcpmoHIyYUi0z70/H3tMkGj8QhqVxq6FJGPjlzR24BNkQ6jyMheMvFKJBI0dzGZrEOUyQEmZ8axM1xRrbRiw==}
 
   drizzle-kit@0.30.4:
     resolution: {integrity: sha512-B2oJN5UkvwwNHscPWXDG5KqAixu7AUzZ3qbe++KU9SsQ+cZWR4DXEPYcvWplyFAno0dhRJECNEhNxiDmFaPGyQ==}
@@ -6089,6 +6101,10 @@ snapshots:
 
   '@types/draco3d@1.4.10': {}
 
+  '@types/draco3dgltf@1.4.3':
+    dependencies:
+      '@types/draco3d': 1.4.10
+
   '@types/estree@1.0.8': {}
 
   '@types/json-schema@7.0.15': {}
@@ -6600,6 +6616,8 @@ snapshots:
   dotenv@16.4.7: {}
 
   draco3d@1.5.7: {}
+
+  draco3dgltf@1.5.7: {}
 
   drizzle-kit@0.30.4:
     dependencies:
