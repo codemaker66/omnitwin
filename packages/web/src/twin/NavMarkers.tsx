@@ -102,6 +102,12 @@ function NavMarker({ node, onHop }: NavMarkerProps): ReactElement {
         rotation={[-Math.PI / 2, 0, 0]}
         onClick={(event: ThreeEvent<MouseEvent>) => {
           event.stopPropagation();
+          // A look-drag that ends over a ring must not teleport: R3F's
+          // `delta` is the pointer travel (px) since pointerdown — treat
+          // anything beyond a click-sized wobble as a drag, not a hop.
+          if (event.delta > 4) {
+            return;
+          }
           onHop(node.id);
         }}
         onPointerOver={(event: ThreeEvent<PointerEvent>) => {
