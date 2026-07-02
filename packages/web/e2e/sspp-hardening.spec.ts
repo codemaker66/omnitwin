@@ -579,7 +579,11 @@ test.describe("SS++ hardening visual regression", () => {
 test.describe("SS++ hardening keyboard and mobile operations", () => {
   test("landing CTA is reachable by keyboard", async ({ page }) => {
     await page.goto("/");
-    const primaryCta = page.locator(".hero-left").getByRole("link", { name: /Open the Grand Hall planner/i });
+    await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
+    // The Rite's nav is visually withheld until Act II but stays in the tab
+    // order (it reveals on :focus-within), so keyboard users reach the
+    // planner CTA within the first few tabs.
+    const primaryCta = page.getByRole("link", { name: /Open the planner/i });
 
     let focused = false;
     for (let i = 0; i < 12; i += 1) {
@@ -589,6 +593,7 @@ test.describe("SS++ hardening keyboard and mobile operations", () => {
     }
 
     expect(focused).toBe(true);
+    await expect(primaryCta).toBeVisible(); // focus-within reveals the nav
   });
 
   test("public room selector is keyboard reachable and mobile-safe", async ({ page }) => {

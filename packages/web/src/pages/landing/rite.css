@@ -46,6 +46,10 @@
   line-height: 1.5;
   min-height: 100vh;
   position: relative;
+  /* Structural guarantee for the "never overflow horizontally" invariant.
+   * `clip` (unlike hidden) creates no scroll container, so sticky stages
+   * keep working. Decorative elements may reach the edge, never past it. */
+  overflow-x: clip;
 }
 
 /* After dusk the ambient hue runs ~2% warmer. Never announced. */
@@ -200,6 +204,11 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   color: var(--ink-2);
 }
 .vv-rite .rite-nav-links a { text-decoration: none; }
+.vv-rite .rite-nav-links a:not(.rite-nav-cta) {
+  display: inline-block;
+  padding: 8px 4px;
+  margin: -8px -4px;
+}
 .vv-rite .rite-nav-links a:hover { color: var(--gold-2); }
 .vv-rite .rite-nav-cta {
   border: 1px solid var(--rule);
@@ -363,6 +372,55 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   font-variation-settings: "opsz" calc(72 - var(--rite-act-progress) * 40);
 }
 
+/* ——— the descent (animated mode only) ———
+ * Act I is a procession, not a tableau: the whispers replace each other at
+ * centre stage and the carried light finds different architecture as the
+ * visitor goes deeper. Everything below rides --rite-act-progress (written
+ * once per scrolled frame by useScrollRite), so the choreography is
+ * scroll-locked with zero additional JS. */
+.vv-rite:not(.is-static) .rite-dark-lines {
+  display: grid;
+  place-items: center;
+  gap: 0;
+}
+.vv-rite:not(.is-static) .rite-dark-lines .rite-dark-line {
+  grid-area: 1 / 1;
+  transition: none;
+  transform: none;
+}
+/* Whisper one holds the first half of the descent, then yields. */
+.vv-rite:not(.is-static) .rite-dark-lines .rite-dark-line:nth-child(1) {
+  opacity: clamp(0, min(
+    calc(var(--rite-act-progress) * 8 - 0.4),
+    calc(3.4 - var(--rite-act-progress) * 8)
+  ), 1);
+}
+/* Whisper two takes the second half — peaking just before the dark begins
+ * its slide up into Act II, so it gets one beat of stillness. */
+.vv-rite:not(.is-static) .rite-dark-lines .rite-dark-line:nth-child(2) {
+  opacity: clamp(0, min(
+    calc(var(--rite-act-progress) * 8 - 3.4),
+    calc(7.0 - var(--rite-act-progress) * 8)
+  ), 1);
+}
+/* The architecture surfaces in sequence: chandelier first, the dome's curve
+ * midway, the panelling last — the hall assembling itself in the dark. */
+.vv-rite:not(.is-static) .rite-fragment-chandelier {
+  opacity: clamp(0, min(
+    calc(0.35 + var(--rite-act-progress) * 6),
+    calc(3.2 - var(--rite-act-progress) * 6)
+  ), 1);
+}
+.vv-rite:not(.is-static) .rite-fragment-dome-curve {
+  opacity: clamp(0, min(
+    calc(var(--rite-act-progress) * 6 - 1.4),
+    calc(5.2 - var(--rite-act-progress) * 6)
+  ), 1);
+}
+.vv-rite:not(.is-static) .rite-fragment-panelling {
+  opacity: clamp(0, calc(var(--rite-act-progress) * 6 - 3.2), 1);
+}
+
 /* ————————————————————————— act II · magnitude ————————————————————————— */
 .vv-rite .rite-magnitude {
   background: linear-gradient(180deg, var(--black) 0%, #0d1414 18%, #101717 100%);
@@ -443,6 +501,11 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
     transparent 1px calc(100% / 21)
   );
   opacity: 0.75;
+}
+/* The ruler needs room to breathe beside the monument; below this width it
+ * would crowd (or clip against) the viewport edge, so it withdraws. */
+@media (max-width: 960px) {
+  .vv-rite .rite-measure-etchings { display: none; }
 }
 .vv-rite .rite-measure-label {
   font-family: var(--mono);
@@ -528,7 +591,9 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   text-decoration: none;
   color: var(--gold-2);
   border-bottom: 1px solid var(--rule);
-  padding-bottom: 4px;
+  /* ≥24px touch target without moving the underline off the text. */
+  padding: 10px 6px 4px 0;
+  margin: -10px -6px 0 0;
   opacity: 0;
   transform: translateY(14px);
   transition: opacity 1.2s var(--settle) 0.24s, transform 1.2s var(--settle) 0.24s,
@@ -617,6 +682,12 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   text-decoration: none;
   color: var(--ink-3);
   transition: color 0.4s var(--settle);
+  /* Hairline typography, humane touch target: padding grows the hit box to
+   * ≥24px, the negative margin returns the glyphs to their typographic
+   * position so the ledger stays quiet. */
+  display: inline-block;
+  padding: 10px 8px;
+  margin: -10px -8px;
 }
 .vv-rite .rite-index-links a:hover { color: var(--gold-2); }
 
@@ -744,11 +815,14 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
 }
 
 .vv-rite .rite-return-secondary {
+  display: inline-block;
   font-size: 13.5px;
   color: var(--ink-3);
   text-decoration: none;
   border-bottom: 1px solid transparent;
-  padding-bottom: 3px;
+  /* ≥24px touch target; underline stays close to the text. */
+  padding: 8px 10px 3px;
+  margin: -8px -10px 0;
   opacity: 0;
   transition: opacity 1.6s var(--settle) 0.45s, color 0.4s var(--settle),
     border-color 0.4s var(--settle);
@@ -800,7 +874,12 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   font-size: 13px;
   color: var(--ink-3);
 }
-.vv-rite .rite-footer-legal a { text-decoration: none; }
+.vv-rite .rite-footer-legal a {
+  text-decoration: none;
+  display: inline-block;
+  padding: 8px 6px;
+  margin: -8px -6px;
+}
 .vv-rite .rite-footer-legal a:hover { color: var(--gold-2); }
 .vv-rite .rite-footer-baseline {
   display: flex;

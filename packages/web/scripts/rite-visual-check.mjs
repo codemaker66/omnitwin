@@ -40,12 +40,17 @@ try {
   await page.screenshot({ path: join(OUT, "rite-01-threshold.png") });
   report.steps.push("threshold");
 
-  // --- Act I: darkness, light carried onto a fragment ---
+  // --- Act I: the descent — early (whisper one, chandelier) and late
+  // (whisper two, panelling). The procession rides --rite-act-progress. ---
   await scrollToVh(page, 1.6);
   await page.mouse.move(430, 320); // over the chandelier fragment
   await page.waitForTimeout(1200);
-  await page.screenshot({ path: join(OUT, "rite-02-darkness-light.png") });
-  report.steps.push("darkness + carried light");
+  await page.screenshot({ path: join(OUT, "rite-02-darkness-early.png") });
+  await scrollToVh(page, 2.95);
+  await page.mouse.move(760, 620); // over the panelling fragment
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: join(OUT, "rite-02b-darkness-late.png") });
+  report.steps.push("darkness descent (early + late)");
 
   // --- Act II: the dome cut, then the monument ---
   await scrollToVh(page, 3.7);
