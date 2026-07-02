@@ -4,6 +4,10 @@ import { TwinManifestSchema } from "@omnitwin/types";
 import { buildManifest, type RawPoses } from "./build-manifest.js";
 import { convertTiles } from "./tiles.js";
 import { hashBundle } from "./hashes.js";
+import { optimizeMesh } from "./mesh.js";
+
+/** Program spec §6 Phase 2: optimized dollhouse GLB must stay ≤ 8 MB. */
+const MESH_BUDGET_BYTES = 8 * 1024 * 1024;
 
 const { values } = parseArgs({
   options: {
@@ -14,6 +18,7 @@ const { values } = parseArgs({
     name: { type: "string" },
     tier: { type: "string", default: "ops-grade-2cm" },
     overrides: { type: "string" },
+    mesh: { type: "string" },
   },
 });
 
@@ -39,15 +44,33 @@ if (!tierResult.success) {
   );
 }
 
+const out = req("out", values.out);
+
+// Mesh step runs before the manifest so the descriptor can ride along.
+const meshResult = values.mesh === undefined ? undefined : await optimizeMesh(values.mesh, out);
+if (meshResult !== undefined) {
+  process.stdout.write(`mesh: ${String(meshResult.bytes)} bytes from ${meshResult.sourceName}\n`);
+  if (meshResult.bytes > MESH_BUDGET_BYTES) {
+    process.stdout.write("WARN mesh exceeds 8 MB budget\n");
+  }
+}
+
 const manifest = buildManifest(posesRaw, {
   venueSlug: req("venue", values.venue),
   name: req("name", values.name),
   tier: tierResult.data,
   generatedAt: new Date().toISOString(),
   nav: { overrides },
+  ...(meshResult === undefined
+    ? {}
+    : {
+        mesh: {
+          path: "mesh/dollhouse.glb" as const,
+          bytes: meshResult.bytes,
+          sourceName: meshResult.sourceName,
+        },
+      }),
 });
-
-const out = req("out", values.out);
 const report = await convertTiles(
   req("cubemaps", values.cubemaps),
   out,

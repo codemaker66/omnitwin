@@ -9,7 +9,11 @@
     "forge": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@gltf-transform/core": "4.3.0",
+    "@gltf-transform/extensions": "4.3.0",
+    "@gltf-transform/functions": "4.3.0",
     "@omnitwin/types": "workspace:*",
+    "meshoptimizer": "1.2.0",
     "sharp": "0.34.5",
     "zod": "3.24.2"
   },
