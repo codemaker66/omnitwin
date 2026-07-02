@@ -38,3 +38,5 @@ artifacts/
 /*.jpeg
 
 .vercel
+
+packages/web/public/twin/
