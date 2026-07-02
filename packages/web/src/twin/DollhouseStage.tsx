@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import type { GLTFLoader } from "three-stdlib";
 import type { Group, MeshStandardMaterial } from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import {
@@ -17,8 +18,10 @@ import { E57_TO_THREE_QUAT, MESH_OFFSET_M, e57PointToThree } from "./twin-basis.
 // (Twin Phase 2, Task 4).
 //
 // The optimized GLB (meshopt geometry + WebP textures) loads through drei's
-// useGLTF the first time dollhouse mode opens — deliberately no preload, so
-// walk-only visitors never pay the 7 MB. The mesh root carries
+// useGLTF the first time dollhouse mode opens — no eager preload, so
+// walk-only visitors never pay the 7 MB at first paint. TwinViewer warms it
+// via preloadDollhouse() once the walk has been idle a beat, so the Surface
+// dive never flies through an unloaded void. The mesh root carries
 // E57_TO_THREE_QUAT + MESH_OFFSET_M (twin-basis, the single calibration
 // surface); the node dots live OUTSIDE that group at e57PointToThree(t), so
 // mesh and dots agree exactly when the basis conversion is right — which is
@@ -73,6 +76,20 @@ export function diveClickGuard(
   onCleanClick();
 }
 
+/** Shared loader config for the render and preload paths alike. */
+function configureDollhouseLoader(loader: GLTFLoader): void {
+  loader.setMeshoptDecoder(MeshoptDecoder);
+}
+
+/**
+ * Warm the dollhouse GLB (fetch + meshopt decode into drei's cache) so a
+ * Surface dive started from walk mode never flies through an unloaded void.
+ * TwinViewer schedules this once the walk has been idle a beat.
+ */
+export function preloadDollhouse(meshUrl: string): void {
+  useGLTF.preload(meshUrl, true, true, configureDollhouseLoader);
+}
+
 interface DollhouseMeshProps {
   readonly meshUrl: string;
 }
@@ -85,9 +102,7 @@ interface DollhouseMeshProps {
  * extension hooks. WebP textures decode natively; no KTX2/basis transcoder.
  */
 function DollhouseMesh({ meshUrl }: DollhouseMeshProps): ReactElement {
-  const gltf = useGLTF(meshUrl, true, true, (loader) => {
-    loader.setMeshoptDecoder(MeshoptDecoder);
-  });
+  const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
   // Markers ride Object3D.name — NEVER data-* props: R3F pierces dashed prop
   // names as nested paths (data-x → object.data.x) and crashes on real nodes.
   return (

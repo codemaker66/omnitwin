@@ -164,6 +164,21 @@ try {
     await page.waitForTimeout(4000);
     await page.screenshot({ path: join(OUT, "twin-10-dollhouse-orbit.png") });
     report.steps.push("dollhouse orbit (mesh/dot alignment gate)");
+
+    // The dive, surfacing direction (deterministic via the DOM button):
+    // walk → Surface → mid-flight frame → settled dollhouse vantage.
+    await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_000`, {
+      waitUntil: "domcontentloaded", timeout: 60000,
+    });
+    await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+    await page.waitForTimeout(3000);
+    await page.getByRole("button", { name: /Surface/ }).click();
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: join(OUT, "twin-11-dive-mid-flight.png") });
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => undefined);
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: join(OUT, "twin-12-dive-surfaced.png") });
+    report.steps.push("surface dive (mid-flight + settled)");
   }
 
   report.ok = report.errors.length === 0;

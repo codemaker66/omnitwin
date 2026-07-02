@@ -42,6 +42,8 @@ export const TWIN_MODE_GROUP_LABEL = "View mode";
 export const TWIN_MODE_WALK_LABEL = "Walk";
 export const TWIN_MODE_DOLLHOUSE_LABEL = "Dollhouse";
 export const TWIN_MODE_PLAN_LABEL = "Plan";
+/** Walk-mode HUD: the reverse dive back up to the dollhouse (Task 6). */
+export const TWIN_SURFACE_LABEL = "Surface";
 
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
@@ -59,5 +61,6 @@ export function allTwinCopy(): readonly string[] {
     TWIN_MODE_WALK_LABEL,
     TWIN_MODE_DOLLHOUSE_LABEL,
     TWIN_MODE_PLAN_LABEL,
+    TWIN_SURFACE_LABEL,
   ] as const;
 }
