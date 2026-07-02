@@ -144,6 +144,28 @@ try {
   await mobile.close();
   report.steps.push("minimap + mobile");
 
+  // Dollhouse orbit — the Phase-2 Task-4 VISUAL ALIGNMENT GATE. Judge the
+  // capture by eye: gold node dots must sit INSIDE the building volume,
+  // ~1.5 m above the floor slabs, none outside the walls. Any uniform offset
+  // is calibrated through MESH_OFFSET_M in twin-basis.ts — nowhere else.
+  // The manifest may lack a mesh (forge run without --mesh): skip cleanly.
+  await page.goto(`${BASE}/venues/trades-hall/twin?mode=dollhouse`, {
+    waitUntil: "domcontentloaded", timeout: 60000,
+  });
+  await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  const modeControl = page.getByTestId("twin-mode-control");
+  if ((await modeControl.count()) === 0) {
+    report.steps.push("dollhouse skipped — bundle manifest carries no mesh");
+  } else {
+    await modeControl.waitFor({ timeout: 10000 });
+    // The 7 MB GLB streams + meshopt-decodes: give the network up to 20 s,
+    // then let the canvas paint settle before the capture.
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => undefined);
+    await page.waitForTimeout(4000);
+    await page.screenshot({ path: join(OUT, "twin-10-dollhouse-orbit.png") });
+    report.steps.push("dollhouse orbit (mesh/dot alignment gate)");
+  }
+
   report.ok = report.errors.length === 0;
 } catch (e) {
   report.fatal = String(e).slice(0, 400);

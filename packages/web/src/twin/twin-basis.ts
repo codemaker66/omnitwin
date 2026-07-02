@@ -84,6 +84,29 @@ export function e57PointToThree(t: readonly [number, number, number]): Vec3 {
 }
 
 /**
+ * The E57-world → three-world rotation as a three.js quaternion ([x,y,z,w]):
+ * −90° about X, so a mesh root carrying it agrees with `e57PointToThree` for
+ * every point (pinned by test against three's own Quaternion math). The
+ * dollhouse GLB shares the E57 Z-up frame with the scan poses (verified in
+ * the Phase-2 plan: GLB z bounds are storey heights), so one quat on the mesh
+ * root puts mesh and pose dots in the same three-space.
+ */
+export const E57_TO_THREE_QUAT: [number, number, number, number] = [
+  -Math.SQRT1_2,
+  0,
+  0,
+  Math.SQRT1_2,
+];
+
+/**
+ * Mesh-root translation in three metres — the ONLY permissible alignment
+ * fudge between the dollhouse mesh and the posed node dots. Calibrated
+ * exclusively through the visual gate (twin-visual-check dollhouse capture);
+ * never edited from component code. [0,0,0] = the frames agree as-is.
+ */
+export const MESH_OFFSET_M: [number, number, number] = [0, 0, 0];
+
+/**
  * E57 pose quaternion [w,x,y,z] (scanner→E57world) → three.js quaternion
  * [x,y,z,w] expressing the same physical rotation in the three basis.
  */
