@@ -165,3 +165,54 @@
   max-width: 26rem;
   text-align: left;
 }
+
+/* — minimap (Task 10) — */
+
+.vv-twin .twin-minimap {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(7, 16, 15, 0.72);
+  border: 1px solid rgba(216, 174, 91, 0.28);
+  border-radius: 6px;
+}
+
+.vv-twin .twin-minimap-map {
+  display: block;
+  width: 200px;
+  height: auto;
+  max-height: 240px;
+}
+
+.vv-twin .twin-minimap-map [role="option"] {
+  cursor: pointer;
+}
+
+.vv-twin .twin-minimap-floors {
+  display: flex;
+  gap: 6px;
+}
+
+.vv-twin .twin-minimap-floor {
+  appearance: none;
+  border: 1px solid rgba(216, 174, 91, 0.28);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition:
+    border-color 220ms var(--settle),
+    color 220ms var(--settle);
+}
+
+.vv-twin .twin-minimap-floor--active {
+  color: var(--gold-2);
+  border-color: var(--gold);
+}

@@ -2,17 +2,20 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type MutableRefObject,
   type ReactElement,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { PerspectiveCamera } from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
 import { NavMarkers } from "./NavMarkers.js";
 import { PanoStage } from "./PanoStage.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
 import { TWIN_DISCLOSURE, twinNodeLabel } from "./twin-copy.js";
+import { TwinMinimap } from "./TwinMinimap.js";
 import { useTwinWalk } from "./useTwinWalk.js";
-import { WalkControls } from "./WalkControls.js";
+import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 
 // -----------------------------------------------------------------------------
 // TwinViewer — the walkable pano viewer (Twin Phase 1, Task 9).
@@ -25,9 +28,11 @@ import { WalkControls } from "./WalkControls.js";
 // node positions each frame from a ref, never React state.
 //
 // Outside the Canvas live the HUD pieces: the node label, the claim-safe
-// disclosure line, and the minimap slot (filled by Task 10's TwinMinimap).
+// disclosure line, and the TwinMinimap (Task 10) — its view cone follows the
+// camera through YawProbe, a useFrame observer that lifts yaw into React
+// state at most ~10 Hz and only when it moves more than 0.05 rad.
 //
-// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 9).
+// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Tasks 9–10).
 // -----------------------------------------------------------------------------
 
 interface DollyState {
@@ -63,6 +68,39 @@ function CameraDolly({
   return null;
 }
 
+/** Minimum yaw movement before the probe reports (radians). */
+const YAW_PROBE_MIN_DELTA_RAD = 0.05;
+/** Report cadence ceiling — ~10 Hz keeps minimap re-renders negligible. */
+const YAW_PROBE_MIN_INTERVAL_MS = 100;
+
+/**
+ * Lifts the camera yaw into React state for the minimap's view cone —
+ * throttled to ~10 Hz and gated on a 0.05 rad change so look-drags never
+ * flood React with renders.
+ */
+function YawProbe({ onYaw }: { readonly onYaw: (yaw: number) => void }): null {
+  const camera = useThree((state) => state.camera);
+  const lastRef = useRef<{ yaw: number; at: number }>({ yaw: 0, at: 0 });
+
+  useFrame(() => {
+    if (!(camera instanceof PerspectiveCamera)) {
+      return;
+    }
+    const { yaw } = lookStateFromCamera(camera);
+    const now = performance.now();
+    const last = lastRef.current;
+    if (
+      Math.abs(yaw - last.yaw) > YAW_PROBE_MIN_DELTA_RAD &&
+      now - last.at >= YAW_PROBE_MIN_INTERVAL_MS
+    ) {
+      lastRef.current = { yaw, at: now };
+      onYaw(yaw);
+    }
+  });
+
+  return null;
+}
+
 export interface TwinViewerProps {
   readonly manifest: TwinManifest;
   /** Bundle base URL including the venue segment, e.g. `/twin/trades-hall`. */
@@ -71,6 +109,7 @@ export interface TwinViewerProps {
 
 export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactElement | null {
   const walk = useTwinWalk(manifest);
+  const [yaw, setYaw] = useState(0);
 
   const nodesById = useMemo(
     () => new Map<string, TwinScanNode>(manifest.nodes.map((node) => [node.id, node])),
@@ -129,14 +168,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         {!hopping && (
           <NavMarkers neighbors={walk.neighbors} nodesById={nodesById} onHop={walk.hopTo} />
         )}
+        <YawProbe onYaw={setYaw} />
       </Canvas>
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
         {twinNodeLabel(walk.currentId, manifest.name)}
       </div>
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
-      {/* Minimap slot — TwinMinimap mounts here in Task 10. */}
-      <div className="vv-twin-minimap-slot" />
+      <TwinMinimap
+        nodes={manifest.nodes}
+        currentId={walk.currentId}
+        yaw={yaw}
+        onSelect={(id) => {
+          walk.hopTo(id, { teleport: true });
+        }}
+      />
     </div>
   );
 }
