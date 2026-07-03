@@ -49,7 +49,7 @@ for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.emulateMedia({ reducedMotion: "reduce" });
 
-    await page.goto("/");
+    await page.goto("/landing");
     await expect(
       page.getByRole("heading", { name: /There is a hall in Glasgow/i }),
     ).toBeVisible();
@@ -77,7 +77,7 @@ for (const viewport of VIEWPORTS) {
 
 test("the enter control descends into the dark", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/");
+  await page.goto("/landing");
   await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
 
   await page.getByRole("button", { name: /Enter/i }).click();

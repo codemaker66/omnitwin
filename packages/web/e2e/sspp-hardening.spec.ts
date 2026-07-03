@@ -505,7 +505,7 @@ test.describe("SS++ hardening visual regression", () => {
 
   test("captures deterministic room showcase screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
-    await page.goto("/");
+    await page.goto("/landing");
     await expect(page.getByRole("heading", { level: 1, name: /There is a hall in Glasgow/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Explore The Robert Adam Room/i })).toBeVisible();
@@ -578,7 +578,7 @@ test.describe("SS++ hardening visual regression", () => {
 
 test.describe("SS++ hardening keyboard and mobile operations", () => {
   test("landing CTA is reachable by keyboard", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/landing");
     await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
     // The Rite's nav is visually withheld until Act II but stays in the tab
     // order (it reveals on :focus-within), so keyboard users reach the

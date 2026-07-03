@@ -22,17 +22,25 @@ export interface PointerMotion {
 // the springs settle. Touch devices never receive pointermove streams of use,
 // so the light is driven by scroll position instead (handled in CSS via
 // `--rite-overall`; see rite.css).
+//
+// Modes: "spring" is the carried light above. "direct" pins the light to the
+// pointer with no spring and no rAF loop — pointer-following is user-initiated
+// interaction, so under prefers-reduced-motion the lag is removed, not the
+// light (freezing it killed the spotlight page's whole mechanic). "off" is for
+// pages whose reduced-motion variant genuinely has no light (the rite).
 // -----------------------------------------------------------------------------
+
+export type CursorLightMode = "spring" | "direct" | "off";
 
 export function useCursorLight(
   rootRef: RefObject<HTMLElement | null>,
-  enabled: boolean,
+  mode: CursorLightMode,
 ): MutableRefObject<PointerMotion> {
   const motionRef = useRef<PointerMotion>({ speed: 0 });
 
   useEffect(() => {
     const root = rootRef.current;
-    if (!enabled || root === null) {
+    if (mode === "off" || root === null) {
       return;
     }
 
@@ -86,6 +94,12 @@ export function useCursorLight(
       targetX = event.clientX;
       targetY = event.clientY;
       root.style.setProperty("--light-on", "1");
+      if (mode === "direct") {
+        // No spring, no rAF: the light sits exactly under the pointer.
+        root.style.setProperty("--light-x", `${String(Math.round(targetX))}px`);
+        root.style.setProperty("--light-y", `${String(Math.round(targetY))}px`);
+        return;
+      }
       wake();
     };
 
@@ -99,7 +113,13 @@ export function useCursorLight(
     document.documentElement.addEventListener("pointerleave", onPointerLeave, {
       passive: true,
     });
-    wake();
+    if (mode === "direct") {
+      // Seed the resting position once; afterwards the pointer drives it.
+      root.style.setProperty("--light-x", `${String(Math.round(x.value))}px`);
+      root.style.setProperty("--light-y", `${String(Math.round(y.value))}px`);
+    } else {
+      wake();
+    }
 
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
@@ -108,7 +128,7 @@ export function useCursorLight(
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [rootRef, enabled]);
+  }, [rootRef, mode]);
 
   return motionRef;
 }

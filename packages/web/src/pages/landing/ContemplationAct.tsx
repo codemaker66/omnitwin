@@ -5,6 +5,7 @@ import { useSeen } from "./useSeen.js";
 import type { RoomTone } from "./useRoomTone.js";
 import {
   CAPACITY_DISCLOSURE,
+  enquiryMailtoHref,
   ROOM_CHAPTERS,
   ROOM_INDEX_CARDS,
   ROOM_INDEX_ENQUIRE_LABEL,
@@ -104,7 +105,10 @@ export function ContemplationAct({
                     {ROOM_INDEX_EXPLORE_LABEL} <span aria-hidden>→</span>
                   </Link>
                 )}
-                <a href="#contact" aria-label={`Enquire about ${card.name}`}>
+                <a
+                  href={enquiryMailtoHref(card.name)}
+                  aria-label={`Enquire about ${card.name}`}
+                >
                   {ROOM_INDEX_ENQUIRE_LABEL}
                 </a>
               </span>

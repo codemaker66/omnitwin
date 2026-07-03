@@ -371,9 +371,17 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
 
 const routeSpecs: readonly RouteSpec[] = [
   {
-    routeName: "public landing",
+    routeName: "public landing (spotlight)",
     path: "/",
-    readyText: "There is a hall in Glasgow that has been lit for 230 years.",
+    readyText: "before it happens.",
+    mockRoutes: mockNoRoutes,
+  },
+  {
+    routeName: "the rite (previous landing)",
+    path: "/landing",
+    // Derived the same way as THRESHOLD_LINE in rite-copy.ts — the count
+    // ages with the calendar instead of rotting in a fixture.
+    readyText: `There is a hall in Glasgow that has been lit for ${String(new Date().getFullYear() - 1791)} years.`,
     mockRoutes: mockNoRoutes,
   },
   {

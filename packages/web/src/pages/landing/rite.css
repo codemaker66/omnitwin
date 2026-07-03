@@ -865,6 +865,16 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   line-height: 1.7;
 }
 .vv-rite .rite-footer-address span { display: block; }
+.vv-rite .rite-footer-contact { margin-top: 10px; }
+.vv-rite .rite-footer-contact a {
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color 0.4s var(--settle);
+  display: inline-block;
+  padding: 8px 2px;
+  margin: -8px -2px;
+}
+.vv-rite .rite-footer-contact a:hover { color: var(--gold-2); }
 .vv-rite .rite-footer-legal {
   display: flex;
   gap: 22px;

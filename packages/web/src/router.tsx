@@ -33,6 +33,11 @@ const EditorPage = lazy(() =>
 const BlueprintPage = lazy(() =>
   import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage })),
 );
+const SpotlightLandingPage = lazy(() =>
+  import("./pages/spotlight/SpotlightLandingPage.js").then((m) => ({
+    default: m.SpotlightLandingPage,
+  })),
+);
 const LandingPage = lazy(() =>
   import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage })),
 );
@@ -110,11 +115,17 @@ function OnboardRedirect(): ReactElement {
 
 export const router = createBrowserRouter([
   {
-    // Alias kept so any stale bookmarks of `/landing` still work.
-    // Canonical path for the marketing homepage is `/` (see the bottom
-    // of this route list).
+    // The Rite (the previous scroll-dramaturgy homepage) lives on here for
+    // comparison and stale bookmarks. The homepage at `/` is now the
+    // spotlight-reveal hero (see the bottom of this route list).
     path: "/landing",
     element: withSuspense(<LandingPage />),
+  },
+  {
+    // Alias of `/` from the spotlight page's first review round — links
+    // already shared to /welcome keep working.
+    path: "/welcome",
+    element: withSuspense(<SpotlightLandingPage />),
   },
   {
     path: "/login",
@@ -139,11 +150,11 @@ export const router = createBrowserRouter([
   },
   {
     // `/editor` is the URL Trades Hall already shares publicly (on flyers,
-    // on their own website, in email signatures). We render the marketing
-    // LandingPage there so visitors see the new design, not the planner
+    // on their own website, in email signatures). It renders the current
+    // marketing homepage so visitors see the new design, not the planner
     // app's login wall. The actual planner moved to `/plan` (below).
     path: "/editor",
-    element: withSuspense(<LandingPage />),
+    element: withSuspense(<SpotlightLandingPage />),
   },
   {
     // `/plan` is the new home of the planner app. `/editor` used to live
@@ -307,12 +318,11 @@ export const router = createBrowserRouter([
     element: withSuspense(<AccessibilityPage />),
   },
   {
-    // Public marketing homepage — ported from the Claude Design handoff
-    // (trades-house-landing-page, Apr 2026). Anonymous visitors see the
-    // hero + planner preview + rooms gallery + quote here, then click
-    // through to /editor to actually plan.
+    // Public marketing homepage — the spotlight-reveal hero (empty hall,
+    // carried light, the dressed room inside it). The previous homepage,
+    // the Rite, remains at /landing.
     path: "/",
-    element: withSuspense(<LandingPage />),
+    element: withSuspense(<SpotlightLandingPage />),
   },
   {
     // Role-aware post-sign-in destination. Used by the in-app Venviewer

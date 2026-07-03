@@ -1,0 +1,434 @@
+/* -----------------------------------------------------------------------------
+   spotlight.css — the /welcome white-label hero.
+
+   One viewport, two photographs of the same room: the empty hall beneath,
+   the dressed evening above, revealed through a radial-gradient mask that
+   reads the --light-x/--light-y variables written by useCursorLight. All
+   movement is transform/opacity/mask-position — no canvas, no layout work.
+   Palette and easing follow the rite (near-black #030707, candle golds).
+----------------------------------------------------------------------------- */
+
+.vv-spotlight {
+  --sp-bg: #030707;
+  --sp-ink: #f4ead2;
+  --sp-ink-2: rgba(231, 216, 187, 0.82);
+  --sp-gold: #d8ae5b;
+  --sp-gold-2: #f0c66b;
+  /* Interactive borders hold ≥3:1 against the near-black field (WCAG 1.4.11);
+     the rite's decorative 0.28 alpha measured 1.7:1 — do not reuse it here. */
+  --sp-rule: rgba(216, 174, 91, 0.5);
+  --sp-serif: "Newsreader", "Georgia", serif;
+  --sp-ui: "Geist", system-ui, sans-serif;
+  --sp-mono: "Geist Mono", ui-monospace, monospace;
+  --sp-settle: cubic-bezier(0.16, 1, 0.3, 1);
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--sp-bg);
+  color: var(--sp-ink);
+  letter-spacing: -0.02em;
+}
+
+/* The app shell's bouncy button hover reads as a toy here — hold still. */
+.vv-spotlight button,
+.vv-spotlight button:hover:not(:disabled),
+.vv-spotlight button:active:not(:disabled) {
+  transform: none;
+  filter: none;
+}
+
+.vv-spotlight :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(240, 198, 107, 0.85);
+}
+
+/* ————————————————————————— nav ————————————————————————— */
+
+.vv-spotlight .sp-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.vv-spotlight .sp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--sp-ink);
+}
+.vv-spotlight .sp-crest {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--sp-rule);
+  border-radius: 6px;
+  font-family: var(--sp-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--sp-gold-2);
+  background: linear-gradient(145deg, rgba(216, 174, 91, 0.16), rgba(216, 174, 91, 0));
+}
+.vv-spotlight .sp-wordmark {
+  font-family: var(--sp-serif);
+  font-style: italic;
+  font-size: 24px;
+}
+
+.vv-spotlight .sp-nav-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--sp-rule);
+  /* ≥0.75 alpha keeps the 14px labels AA-legible over any photo beneath. */
+  background: rgba(3, 7, 7, 0.78);
+  backdrop-filter: blur(12px);
+}
+.vv-spotlight .sp-nav-link {
+  font-family: var(--sp-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sp-ink-2);
+  text-decoration: none;
+  padding: 7px 16px;
+  border-radius: 999px;
+  transition:
+    color 0.4s var(--sp-settle),
+    background-color 0.4s var(--sp-settle);
+}
+.vv-spotlight .sp-nav-link:hover {
+  color: var(--sp-ink);
+  background: rgba(216, 174, 91, 0.16);
+}
+.vv-spotlight .sp-nav-link.is-current {
+  color: #fdf7ea;
+  background: rgba(216, 174, 91, 0.22);
+}
+
+.vv-spotlight .sp-signin {
+  font-family: var(--sp-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: #101717;
+  background: var(--sp-ink);
+  text-decoration: none;
+  padding: 10px 24px;
+  border-radius: 999px;
+  transition: background-color 0.4s var(--sp-settle);
+}
+.vv-spotlight .sp-signin:hover {
+  background: #fdf7ea;
+}
+
+.vv-spotlight .sp-menu-btn {
+  display: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--sp-rule);
+  border-radius: 8px;
+  background: rgba(3, 7, 7, 0.78);
+  color: var(--sp-ink);
+  cursor: pointer;
+}
+
+.vv-spotlight .sp-menu {
+  display: none;
+  position: fixed;
+  top: 68px;
+  left: 16px;
+  right: 16px;
+  z-index: 99;
+  flex-direction: column;
+  padding: 10px;
+  border: 1px solid var(--sp-rule);
+  border-radius: 12px;
+  background: rgba(3, 7, 7, 0.92);
+  backdrop-filter: blur(14px);
+}
+.vv-spotlight .sp-menu.is-open {
+  display: flex;
+}
+.vv-spotlight .sp-menu a {
+  font-family: var(--sp-ui);
+  font-size: 15px;
+  color: var(--sp-ink-2);
+  text-decoration: none;
+  padding: 12px 14px;
+  border-radius: 8px;
+  transition: color 0.4s var(--sp-settle);
+}
+.vv-spotlight .sp-menu a:hover {
+  color: var(--sp-gold-2);
+}
+
+/* ————————————————————————— hero layers ————————————————————————— */
+
+.vv-spotlight .sp-hero {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.vv-spotlight .sp-base {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  animation: sp-zoom 1.8s var(--sp-settle) forwards;
+  pointer-events: none;
+}
+
+/* The dressed room, visible only inside the carried light. The gradient tile
+   is painted ONCE (520px square, circle at its centre) and the carried light
+   moves it via mask-position — vars inside a mask-image gradient hit repaint-
+   invalidation quirks on some Blink builds (the mask silently freezes), and
+   repositioning a fixed tile is cheaper than re-rastering the gradient every
+   frame anyway. The soft stops are the reveal's whole feel — edit as one
+   curve. */
+.vv-spotlight .sp-reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  opacity: min(1, calc(0.55 + var(--light-on, 0.35) * 0.45));
+  transition: opacity 0.8s var(--sp-settle);
+  -webkit-mask-image: radial-gradient(
+    circle 260px at center,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 1) 40%,
+    rgba(255, 255, 255, 0.75) 60%,
+    rgba(255, 255, 255, 0.4) 75%,
+    rgba(255, 255, 255, 0.12) 88%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  mask-image: radial-gradient(
+    circle 260px at center,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 1) 40%,
+    rgba(255, 255, 255, 0.75) 60%,
+    rgba(255, 255, 255, 0.4) 75%,
+    rgba(255, 255, 255, 0.12) 88%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 520px 520px;
+  mask-size: 520px 520px;
+  -webkit-mask-position: calc(var(--light-x, 50vw) - 260px)
+    calc(var(--light-y, 42vh) - 260px);
+  mask-position: calc(var(--light-x, 50vw) - 260px)
+    calc(var(--light-y, 42vh) - 260px);
+}
+
+/* ————————————————————————— copy ————————————————————————— */
+
+.vv-spotlight .sp-heading {
+  position: absolute;
+  top: 14%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 20px;
+  pointer-events: none;
+}
+.vv-spotlight .sp-heading h1 {
+  margin: 0;
+  font-weight: 400;
+  line-height: 0.98;
+  color: var(--sp-ink);
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.6);
+}
+.vv-spotlight .sp-heading-italic,
+.vv-spotlight .sp-heading-roman {
+  display: block;
+  font-family: var(--sp-serif);
+  font-size: clamp(44px, 8vw, 88px);
+}
+.vv-spotlight .sp-heading-italic {
+  font-style: italic;
+  letter-spacing: -0.03em;
+}
+.vv-spotlight .sp-heading-roman {
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  margin-top: -0.04em;
+}
+
+.vv-spotlight .sp-venue-line {
+  position: absolute;
+  bottom: 56px;
+  left: 40px;
+  z-index: 5;
+  max-width: 300px;
+  margin: 0;
+  font-family: var(--sp-ui);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--sp-ink-2);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.7);
+}
+
+.vv-spotlight .sp-invite {
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  max-width: 320px;
+}
+.vv-spotlight .sp-invite p {
+  margin: 0;
+  font-family: var(--sp-ui);
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--sp-ink-2);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.7);
+}
+
+.vv-spotlight .sp-cta {
+  font-family: var(--sp-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: #171106;
+  background: linear-gradient(180deg, #e7c473, #cfa552);
+  padding: 15px 30px;
+  border-radius: 999px;
+  transition:
+    transform 0.3s var(--sp-settle),
+    box-shadow 0.3s var(--sp-settle);
+}
+.vv-spotlight .sp-cta:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 12px 32px rgba(216, 174, 91, 0.35);
+}
+.vv-spotlight .sp-cta:active {
+  transform: scale(0.97);
+}
+
+/* ————————————————————————— entrance ————————————————————————— */
+
+.vv-spotlight .sp-anim {
+  opacity: 0;
+  animation-fill-mode: forwards;
+  animation-timing-function: var(--sp-settle);
+}
+.vv-spotlight .sp-rise {
+  animation-name: sp-rise-kf;
+  animation-duration: 1.1s;
+  animation-delay: 0.25s;
+}
+.vv-spotlight .sp-rise-late {
+  animation-delay: 0.42s;
+}
+.vv-spotlight .sp-fade {
+  animation-name: sp-fade-kf;
+  animation-duration: 1s;
+  animation-delay: 0.7s;
+}
+.vv-spotlight .sp-fade-late {
+  animation-delay: 0.85s;
+}
+
+@keyframes sp-rise-kf {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@keyframes sp-fade-kf {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes sp-zoom {
+  0% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* The static variant is the same page, already arrived. */
+@media (prefers-reduced-motion: reduce) {
+  .vv-spotlight .sp-anim,
+  .vv-spotlight .sp-base {
+    animation: none;
+    opacity: 1;
+  }
+  .vv-spotlight .sp-cta,
+  .vv-spotlight .sp-cta:hover,
+  .vv-spotlight .sp-cta:active {
+    transform: none;
+    transition: none;
+  }
+}
+.vv-spotlight .sp-hero.is-static .sp-anim,
+.vv-spotlight .sp-hero.is-static .sp-base {
+  animation: none;
+  opacity: 1;
+}
+
+/* ————————————————————————— small viewports ————————————————————————— */
+
+@media (max-width: 900px) {
+  .vv-spotlight .sp-nav-pill,
+  .vv-spotlight .sp-signin {
+    display: none;
+  }
+  .vv-spotlight .sp-menu-btn {
+    display: grid;
+  }
+}
+
+@media (max-width: 720px) {
+  .vv-spotlight .sp-venue-line {
+    display: none;
+  }
+  .vv-spotlight .sp-invite {
+    left: 20px;
+    right: 20px;
+    bottom: 28px;
+    max-width: none;
+  }
+}

@@ -35,7 +35,7 @@ try {
   });
 
   // --- Act 0: the threshold (flame settled, line risen) ---
-  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(`${BASE}/landing`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForTimeout(3200);
   await page.screenshot({ path: join(OUT, "rite-01-threshold.png") });
   report.steps.push("threshold");
@@ -90,7 +90,7 @@ try {
 
   // --- Mobile: threshold + a chapter ---
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await mobile.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await mobile.goto(`${BASE}/landing`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await mobile.waitForTimeout(3000);
   await mobile.screenshot({ path: join(OUT, "rite-10-mobile-threshold.png") });
   await mobile.getByRole("heading", { name: "The Grand Hall", exact: true }).scrollIntoViewIfNeeded();
@@ -102,7 +102,7 @@ try {
   // --- Reduced motion: the first-class static variant ---
   const still = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await still.emulateMedia({ reducedMotion: "reduce" });
-  await still.goto(`${BASE}/`, { waitUntil: "networkidle", timeout: 60000 });
+  await still.goto(`${BASE}/landing`, { waitUntil: "networkidle", timeout: 60000 });
   await still.waitForTimeout(1500);
   await still.screenshot({ path: join(OUT, "rite-12-static-variant.png"), fullPage: true });
   await still.close();

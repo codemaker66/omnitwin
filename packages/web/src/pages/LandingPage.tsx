@@ -94,7 +94,7 @@ export function LandingPage(): ReactElement {
   const afterDusk = useMemo(() => isAfterDusk(new Date()), []);
 
   useRiteDocumentChrome();
-  const pointerMotion = useCursorLight(rootRef, !reducedMotion);
+  const pointerMotion = useCursorLight(rootRef, reducedMotion ? "off" : "spring");
   const { act } = useScrollRite(rootRef, true);
   const roomTone = useRoomTone();
 

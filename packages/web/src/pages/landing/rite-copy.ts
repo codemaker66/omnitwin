@@ -19,14 +19,22 @@ import { CAPACITY_GUIDANCE_DISCLOSURE } from "../../lib/proposal-capacity-note.j
 // Design spec: docs/superpowers/specs/2026-07-01-landing-rite-redesign-design.md
 // -----------------------------------------------------------------------------
 
+/** The hall's founding year — the anchor for every age claim on the page. */
+const HALL_FOUNDED_YEAR = 1791;
+/** Derived from the calendar so the figure never rots — the old hard-coded
+ *  "230" had silently dated the copy to 2021. */
+export const HALL_LIT_YEARS = new Date().getFullYear() - HALL_FOUNDED_YEAR;
+
+/** Applied client-side when the rite mounts (/landing). The static tags in
+ *  index.html carry the homepage's SPOTLIGHT_META_* copy — scrapers read
+ *  those; this pair only retitles the tab once the rite hydrates. */
 export const RITE_META_TITLE =
-  "Trades Hall Glasgow — a hall lit for 230 years";
+  "Trades Hall Glasgow — a hall lit since 1791";
 export const RITE_META_DESC =
-  "Enter the Grand Hall of Trades Hall Glasgow. Four rooms by Robert Adam, held in candlelight — then arrange the room for your own evening.";
+  "Enter the Grand Hall of Trades Hall Glasgow — four principal rooms within Robert Adam's hall, held in candlelight. Then arrange the room for your own evening.";
 
 /** Beat 0 — the threshold. One line in the dark. */
-export const THRESHOLD_LINE =
-  "There is a hall in Glasgow that has been lit for 230 years.";
+export const THRESHOLD_LINE = `There is a hall in Glasgow that has been lit for ${String(HALL_LIT_YEARS)} years.`;
 export const THRESHOLD_ENTER_LABEL = "Enter";
 
 /** Act I — darkness. Whispered lines pacing the descent. */
@@ -96,9 +104,11 @@ export function buildMagnitudeMeasures(): readonly MagnitudeMeasure[] {
       countTo: null,
     },
     {
-      figure: "240",
+      // Venue-published dinner capacity (tradeshallglasgow.co.uk/rooms/,
+      // verified 2026-07-02) — not derivable from geometry.
+      figure: "180",
       label: "seats at dinner, beneath the dome",
-      countTo: 240,
+      countTo: 180,
     },
     {
       figure: "1791",
@@ -137,38 +147,41 @@ interface ChapterVoice {
   readonly banquet: number;
 }
 
+/** Capacity figures are the venue's own published numbers
+ *  (tradeshallglasgow.co.uk/rooms/, verified 2026-07-02):
+ *  standing = the venue's "Reception" figure, banquet = "Dinner". */
 const CHAPTER_VOICES: readonly ChapterVoice[] = [
   {
     slug: "grand-hall",
     line: "The room the city keeps its promises in.",
     alt: "The Grand Hall, empty, its chandeliers lit beneath the domed ceiling",
     imagePosition: "center 48%",
-    standing: 400,
-    banquet: 240,
+    standing: 250,
+    banquet: 180,
   },
   {
     slug: "saloon",
     line: "Stained glass, panelled walls, and the quiet before the toast.",
     alt: "The Saloon, empty, stained-glass windows above panelled walls",
     imagePosition: "center 46%",
-    standing: 150,
-    banquet: 90,
+    standing: 80,
+    banquet: 60,
   },
   {
     slug: "robert-adam-room",
     line: "The architect's own hand, at its most intimate scale.",
     alt: "The Robert Adam Room, empty, plasterwork ceiling above",
     imagePosition: "center 36%",
-    standing: 120,
-    banquet: 80,
+    standing: 150,
+    banquet: 60,
   },
   {
     slug: "reception-room",
     line: "Where every evening at Trades Hall begins.",
     alt: "The Reception Room, empty, afternoon light along the aisle",
     imagePosition: "center 52%",
-    standing: 80,
-    banquet: 50,
+    standing: 100,
+    banquet: 60,
   },
 ] as const;
 
@@ -226,6 +239,22 @@ export const FOOTER_ADDRESS_LINES: readonly string[] = [
   "Use a planning draft as the conversation starter.",
 ] as const;
 
+/** The venue's published contact details
+ *  (tradeshallglasgow.co.uk/contact/, verified 2026-07-02). */
+export const FOOTER_PHONE_DISPLAY = "0141 552 2418";
+export const FOOTER_PHONE_HREF = "tel:+441415522418";
+export const FOOTER_EMAIL = "info@tradeshallglasgow.co.uk";
+
+/** Mailto for the events team, with the room carried in the subject so
+ *  per-room "Enquire" links keep their context instead of dead-ending. */
+export function enquiryMailtoHref(roomName?: string): string {
+  const subject =
+    roomName === undefined
+      ? "Event enquiry — Trades Hall Glasgow"
+      : `Event enquiry — ${roomName}, Trades Hall Glasgow`;
+  return `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(subject)}`;
+}
+
 export const FOOTER_BASELINE =
   "© 2026 The Trades House of Glasgow · Powered by Venviewer";
 export const FOOTER_BASELINE_RIGHT = "Built in Glasgow";
@@ -278,6 +307,8 @@ export function allRiteCopy(): readonly string[] {
     NAV_PLAN_LABEL,
     NAV_SIGN_IN_LABEL,
     ...FOOTER_ADDRESS_LINES,
+    FOOTER_PHONE_DISPLAY,
+    FOOTER_EMAIL,
     FOOTER_BASELINE,
     FOOTER_BASELINE_RIGHT,
     ...FOOTER_LEGAL_LINKS.map((l) => l.label),

@@ -9,6 +9,10 @@ import {
   type AccessibilityViewport,
 } from "./support/accessibility-audit.js";
 
+// Derived the same way as THRESHOLD_LINE in rite-copy.ts — ages with the
+// calendar instead of rotting in a fixture.
+const LANDING_THRESHOLD_LINE = `There is a hall in Glasgow that has been lit for ${String(new Date().getFullYear() - 1791)} years.`;
+
 const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 10);
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
@@ -272,8 +276,8 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
 
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "There is a hall in Glasgow that has been lit for 230 years." })).toBeVisible();
+    await page.goto("/landing");
+    await expect(page.getByRole("heading", { name: LANDING_THRESHOLD_LINE })).toBeVisible();
     // Reduced motion renders The Rite's first-class static variant.
     await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
     await expectUpdatedPublicPhotoSet(page);
@@ -284,7 +288,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
       await page.mouse.wheel(0, 540);
       await page.mouse.wheel(0, -220);
     });
-    await recordAccessibilityState(page, problems, "public landing updated photo route", "/", "desktop");
+    await recordAccessibilityState(page, problems, "public landing updated photo route", "/landing", "desktop");
   });
 
   test("landing page remains contained and smooth on mobile", async ({ page }) => {
@@ -292,8 +296,8 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
 
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "There is a hall in Glasgow that has been lit for 230 years." })).toBeVisible();
+    await page.goto("/landing");
+    await expect(page.getByRole("heading", { name: LANDING_THRESHOLD_LINE })).toBeVisible();
     // Reduced motion renders The Rite's first-class static variant.
     await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
     await expectUpdatedPublicPhotoSet(page);

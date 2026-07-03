@@ -5,12 +5,14 @@ import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { LandingPage } from "../pages/LandingPage.js";
 import {
   CAPACITY_DISCLOSURE,
+  FOOTER_PHONE_HREF,
   RETURN_CTA_HREF,
   RETURN_CTA_LABEL,
   RITE_META_TITLE,
   ROOM_CHAPTERS,
   ROOM_INDEX_CARDS,
   THRESHOLD_LINE,
+  enquiryMailtoHref,
 } from "../pages/landing/rite-copy.js";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +52,28 @@ describe("LandingPage — the threshold", () => {
   it("offers the Enter control", () => {
     mount();
     expect(screen.getByRole("button", { name: /Enter/ })).toBeTruthy();
+  });
+});
+
+describe("LandingPage — the enquiry funnel has a real destination", () => {
+  it("gives the footer the venue's published phone and email", () => {
+    mount();
+    expect(
+      document.querySelector(`a[href="${FOOTER_PHONE_HREF}"]`),
+    ).toBeTruthy();
+    expect(
+      document.querySelector(`.rite-footer-contact a[href^="mailto:"]`),
+    ).toBeTruthy();
+  });
+
+  it("routes every index Enquire link to a room-contextual mailto", () => {
+    mount();
+    for (const card of ROOM_INDEX_CARDS) {
+      const anchor = document.querySelector(
+        `a[aria-label="Enquire about ${card.name}"]`,
+      );
+      expect(anchor?.getAttribute("href")).toBe(enquiryMailtoHref(card.name));
+    }
   });
 });
 

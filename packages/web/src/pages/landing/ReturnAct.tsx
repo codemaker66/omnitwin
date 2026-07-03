@@ -3,10 +3,14 @@ import { Link } from "react-router-dom";
 import { useSeen } from "./useSeen.js";
 import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
+  enquiryMailtoHref,
   FOOTER_ADDRESS_LINES,
   FOOTER_BASELINE,
   FOOTER_BASELINE_RIGHT,
+  FOOTER_EMAIL,
   FOOTER_LEGAL_LINKS,
+  FOOTER_PHONE_DISPLAY,
+  FOOTER_PHONE_HREF,
   NAV_BRAND_NAME,
   NAV_BRAND_SMALL,
   RETURN_CTA_HREF,
@@ -78,6 +82,11 @@ export function ReturnAct(): ReactElement {
             {FOOTER_ADDRESS_LINES.map((line) => (
               <span key={line}>{line}</span>
             ))}
+            <span className="rite-footer-contact">
+              <a href={FOOTER_PHONE_HREF}>{FOOTER_PHONE_DISPLAY}</a>
+              <span aria-hidden> · </span>
+              <a href={enquiryMailtoHref()}>{FOOTER_EMAIL}</a>
+            </span>
           </address>
           <ul className="rite-footer-legal">
             {FOOTER_LEGAL_LINKS.map((link) => (
