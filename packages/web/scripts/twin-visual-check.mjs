@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// twin-visual-check — screenshot pass for the Twin walkthrough (Phase 1).
+// twin-visual-check — screenshot pass for the Twin walkthrough.
 // Standalone Playwright, same pattern as rite-visual-check.mjs. Needs the web
 // dev server on 5173 AND the forged bundle at public/twin/trades-hall
 // (skips gracefully when the bundle is absent — CI machines don't carry it).
@@ -7,9 +7,16 @@
 // Usage: node scripts/twin-visual-check.mjs
 // Env:   OUT_DIR (screenshot dir), BASE_URL (default http://localhost:5173)
 //
-// The scan_000 captures double as the FACE_TO_CUBE calibration reference:
-// compare against F:\...\E57\panoramas\scan_000.jpg — doorways must sit where
-// the pano shows them and plaque text must not be mirrored.
+// EQUIRECT ERA (2026-07-04): the bundle carries one seamless world-frame
+// equirect per node (manifest imagery: "equirect"). The waits below cover the
+// 512 preview → 2048 full swap (a single texture per node — faster than the
+// old six-face set). The scan_000 captures double as the EQUIRECT_U_FLIP /
+// EQUIRECT_U_OFFSET calibration reference: compare against the E57
+// workspace's panoramas/scan_000.jpg — same scene composition (note the raw
+// equirect JPGs are the horizontal MIRROR of Matterport's flat raster by
+// convention; the viewer renders them true). scan_050 — the node whose
+// cube-era wall face rendered rotated 90° — is captured at two opposite
+// headings: any per-node rotation/seam defect must be visible in neither.
 // ---------------------------------------------------------------------------
 
 import { existsSync, mkdirSync } from "node:fs";
@@ -67,7 +74,7 @@ try {
     waitUntil: "domcontentloaded", timeout: 60000,
   });
   await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
-  await page.waitForTimeout(4000); // 1024 LOD faces land
+  await page.waitForTimeout(4000); // full 2048 equirect lands (512 preview first)
   await page.screenshot({ path: join(OUT, "twin-01-scan000-forward.png") });
   report.steps.push("scan_000 forward (calibration reference)");
 
@@ -116,18 +123,18 @@ try {
   await page.screenshot({ path: join(OUT, "twin-05-scan000-nadir-floor.png") });
   report.steps.push("nadir floor (tripod crown)");
 
-  // Text chirality EYE GATE (no automated assert): scan_039, turn left to the
-  // Coopers memorial window, zoom to min fov. Reviewers MUST verify the etched
-  // text ("…leading the procession to the new Trades Hall at the official
-  // opening on 15th September 1794") reads LEFT-TO-RIGHT with upright letters.
-  // Mirrored text here means the PanoStage handedness fix (scanner-y negation
-  // in the sampling direction) has regressed — see twin-basis.ts FACE_TO_CUBE.
+  // Text chirality EYE GATE (no automated assert): scan_039, the Coopers
+  // memorial window sits at the equirect default heading. Zoom to min fov.
+  // Reviewers MUST verify the etched text ("…leading the procession to the
+  // new Trades Hall at the official opening on 15th September 1794") reads
+  // LEFT-TO-RIGHT with upright letters. Mirrored text here means the equirect
+  // shader's u-sign has regressed — see EQUIRECT_U_FLIP in twin-basis.ts
+  // (cube-era bundles: the PanoStage cube shader's scanner-y negation).
   await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_039`, {
     waitUntil: "domcontentloaded", timeout: 60000,
   });
   await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
-  await page.waitForTimeout(4000); // 1024 LOD faces land
-  await dragLook(page, 520); // face the etched window (left of pose forward)
+  await page.waitForTimeout(4000); // full 2048 pano lands
   const chiralityBox = await page.locator("canvas").first().boundingBox();
   if (chiralityBox !== null) {
     const chiralityX = chiralityBox.x + chiralityBox.width / 2;
@@ -141,6 +148,21 @@ try {
   }
   await page.screenshot({ path: join(OUT, "twin-12-text-chirality.png") });
   report.steps.push("text chirality eye gate (scan_039 etched window, min fov)");
+
+  // scan_050 — the cube-era broken node (one wall face rotated 90° vs its
+  // neighbours). Two headings 180° apart: walls must read upright and
+  // continuous in BOTH. With per-node equirects this failure class is
+  // structurally impossible; these captures are the standing regression eye.
+  await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_050`, {
+    waitUntil: "domcontentloaded", timeout: 60000,
+  });
+  await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  await page.waitForTimeout(4000); // full 2048 pano lands
+  await page.screenshot({ path: join(OUT, "twin-13-scan050-front.png") });
+  await dragLook(page, -520);
+  await dragLook(page, -520); // two ~90° right turns = 180°
+  await page.screenshot({ path: join(OUT, "twin-14-scan050-back.png") });
+  report.steps.push("scan_050 regression eye (two headings 180° apart)");
 
   // Reset view, then hop: click the first minimap option that is not the
   // current node (the minimap exposes role="option" dots; the current node is
@@ -205,7 +227,7 @@ try {
     await page.screenshot({ path: join(OUT, "twin-11-dive-mid-flight.png") });
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => undefined);
     await page.waitForTimeout(2500);
-    await page.screenshot({ path: join(OUT, "twin-12-dive-surfaced.png") });
+    await page.screenshot({ path: join(OUT, "twin-15-dive-surfaced.png") });
     report.steps.push("surface dive (mid-flight + settled)");
   }
 

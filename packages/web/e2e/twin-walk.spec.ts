@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   TWIN_FIXTURE_MANIFEST,
+  TWIN_FIXTURE_MANIFEST_EQUIRECT,
   TWIN_FIXTURE_TILE_DATA_URI,
 } from "../src/twin/__fixtures__/twin-fixture.js";
 import {
@@ -12,12 +13,15 @@ import {
 } from "../src/twin/twin-copy.js";
 
 // ---------------------------------------------------------------------------
-// The Twin — walk e2e (Twin Phase 1, Task 11).
+// The Twin — walk e2e (Twin Phase 1, Task 11; equirect era 2026-07-04).
 //
 // Every request the viewer makes is fixture-mocked via page.route: the
-// manifest is the four-node twin-fixture bundle and every tile request is
+// manifest is the four-node twin-fixture bundle — the EQUIRECT variant by
+// default, matching the production pipeline — and every tile request
+// (equirect_512/equirect_2048 panos here; face tiles on the legacy test) is
 // answered with the same 1×1 WebP, so the suite needs no real capture data
-// and no twin-forge output on disk.
+// and no twin-forge output on disk. One test re-routes the cube-faces
+// manifest to keep the legacy bundle path rendering.
 //
 // Keyboard reachability is asserted on the minimap listbox (arrows + Enter):
 // the gold nav rings live inside the WebGL canvas and are not DOM-reachable,
@@ -35,7 +39,7 @@ const TWIN_PATH = "/venues/trades-hall/twin";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
 const TILE_ROUTE = "**/twin/trades-hall/tiles/**";
 
-const VENUE_NAME = TWIN_FIXTURE_MANIFEST.name;
+const VENUE_NAME = TWIN_FIXTURE_MANIFEST_EQUIRECT.name;
 
 const TILE_BYTES = Buffer.from(
   TWIN_FIXTURE_TILE_DATA_URI.slice(TWIN_FIXTURE_TILE_DATA_URI.indexOf(",") + 1),
@@ -88,7 +92,7 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(TWIN_FIXTURE_MANIFEST),
+      body: JSON.stringify(TWIN_FIXTURE_MANIFEST_EQUIRECT),
     }),
   );
   await page.route(TILE_ROUTE, (route) =>
@@ -198,6 +202,26 @@ for (const viewport of VIEWPORTS) {
     expect(errors).toEqual([]);
   });
 }
+
+test("a legacy cube-faces bundle still renders (imagery default path)", async ({ page }) => {
+  const errors = collectRuntimeErrors(page);
+  // Override the equirect default with the original cube-faces fixture — the
+  // manifest carries no imagery field, so the schema default must route the
+  // viewer down the FACE_TO_CUBE path, streaming face_256/face_1024 tiles.
+  await page.route(MANIFEST_ROUTE, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(TWIN_FIXTURE_MANIFEST),
+    }),
+  );
+
+  await openTwin(page);
+  await expect(page.getByTestId("twin-node-label")).toHaveText(
+    twinNodeLabel("scan_000", VENUE_NAME),
+  );
+  expect(errors).toEqual([]);
+});
 
 test("a manifest failure shows the calm error line, and retry recovers", async ({ page }) => {
   const failManifest = (route: Route): Promise<void> =>
