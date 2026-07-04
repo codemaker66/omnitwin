@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { TwinManifestSchema } from "@omnitwin/types";
+import { TwinTierSchema } from "@omnitwin/types";
 import { buildManifest, type RawPoses } from "./build-manifest.js";
+import { convertEquirectTiles } from "./equirect-tiles.js";
 import { convertTiles } from "./tiles.js";
 import { hashBundle } from "./hashes.js";
 import { optimizeMesh } from "./mesh.js";
@@ -12,6 +13,9 @@ const MESH_BUDGET_BYTES = 8 * 1024 * 1024;
 const { values } = parseArgs({
   options: {
     cubemaps: { type: "string" },
+    // Equirect imagery mode: directory of scan_NNN.jpg world-frame panos
+    // (extract_equirect.py). When present it REPLACES --cubemaps.
+    equirects: { type: "string" },
     poses: { type: "string" },
     out: { type: "string" },
     venue: { type: "string" },
@@ -37,10 +41,10 @@ const overrides = values.overrides === undefined
 
 // Validate the raw CLI string against the schema's own enum so a typo fails
 // with a purposeful message instead of a zod stack from deep inside parse.
-const tierResult = TwinManifestSchema.shape.tier.safeParse(values.tier);
+const tierResult = TwinTierSchema.safeParse(values.tier);
 if (!tierResult.success) {
   throw new Error(
-    `--tier must be one of ${TwinManifestSchema.shape.tier.options.join(", ")} (got "${String(values.tier)}")`,
+    `--tier must be one of ${TwinTierSchema.options.join(", ")} (got "${String(values.tier)}")`,
   );
 }
 
@@ -55,12 +59,15 @@ if (meshResult !== undefined) {
   }
 }
 
+const imagery = values.equirects === undefined ? ("cube-faces" as const) : ("equirect" as const);
+
 const manifest = buildManifest(posesRaw, {
   venueSlug: req("venue", values.venue),
   name: req("name", values.name),
   tier: tierResult.data,
   generatedAt: new Date().toISOString(),
   nav: { overrides },
+  imagery,
   ...(meshResult === undefined
     ? {}
     : {
@@ -71,16 +78,16 @@ const manifest = buildManifest(posesRaw, {
         },
       }),
 });
-const report = await convertTiles(
-  req("cubemaps", values.cubemaps),
-  out,
-  manifest.nodes.map((n) => n.id),
-  (done, total) => {
-    if (done % 60 === 0 || done === total) {
-      process.stdout.write(`tiles ${String(done)}/${String(total)}\n`);
-    }
-  },
-);
+const nodeIds = manifest.nodes.map((n) => n.id);
+const onTileProgress = (done: number, total: number): void => {
+  if (done % 60 === 0 || done === total) {
+    process.stdout.write(`tiles ${String(done)}/${String(total)}\n`);
+  }
+};
+const report =
+  values.equirects === undefined
+    ? await convertTiles(req("cubemaps", values.cubemaps), out, nodeIds, onTileProgress)
+    : await convertEquirectTiles(values.equirects, out, nodeIds, onTileProgress);
 
 manifest.contentHashes = await hashBundle(out);
 await writeFile(`${out}/manifest.json`, JSON.stringify(manifest, null, 2));

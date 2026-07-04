@@ -10,9 +10,21 @@ import { z } from "zod";
 export const TWIN_SCHEMA_ID = "twin/0" as const;
 export const TWIN_FACES = ["front", "back", "left", "right", "up", "down"] as const;
 export const TWIN_LODS = [256, 1024] as const;
+/** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 2048×1024 full. */
+export const TWIN_EQUIRECT_LODS = [512, 2048] as const;
 
 export type TwinFace = (typeof TWIN_FACES)[number];
 export type TwinLod = (typeof TWIN_LODS)[number];
+export type TwinEquirectLod = (typeof TWIN_EQUIRECT_LODS)[number];
+
+/**
+ * Imagery mode of a bundle. `cube-faces` is the original six-face pipeline;
+ * `equirect` is one seamless world-frame equirectangular pano per node
+ * (E57 workspace extract_equirect.py — no per-face table, no cube seams).
+ * The `.default("cube-faces")` keeps every pre-equirect manifest parsing.
+ */
+export const TwinImagerySchema = z.enum(["cube-faces", "equirect"]).default("cube-faces");
+export type TwinImagery = z.infer<typeof TwinImagerySchema>;
 
 export const TwinPoseSchema = z.object({
   /** Quaternion [w, x, y, z] — scanner→E57-world rotation, as captured. */
@@ -56,30 +68,59 @@ export const TwinCaptureSourceSchema = z.discriminatedUnion("kind", [
 ]);
 export type TwinCaptureSource = z.infer<typeof TwinCaptureSourceSchema>;
 
-export const TwinManifestSchema = z.object({
-  schema: z.literal(TWIN_SCHEMA_ID),
-  venueSlug: z.string().min(1),
-  name: z.string().min(1),
-  capture: TwinCaptureSourceSchema,
-  /** ADR-015-aligned planning tier; never implies certification (ADR-012). */
-  tier: z.enum(["survey-grade-1cm", "ops-grade-2cm", "planning-grade-5cm"]),
-  upAxis: z.literal("z"),
-  units: z.literal("m"),
-  faces: z.tuple([
-    z.literal("front"), z.literal("back"), z.literal("left"),
-    z.literal("right"), z.literal("up"), z.literal("down"),
-  ]),
-  lods: z.tuple([z.literal(256), z.literal(1024)]),
-  generatedAt: z.string().datetime(),
-  nodes: z.array(TwinScanNodeSchema).min(1),
-  edges: z.array(TwinNavEdgeSchema),
-  /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
-  mesh: TwinMeshSchema.optional(),
-  /** SHA-256 per bundle entry, filled by twin-forge hash step (D-014 shape). */
-  contentHashes: z.record(z.string(), z.string()).optional(),
-});
+/** ADR-015-aligned planning tier; never implies certification (ADR-012). */
+export const TwinTierSchema = z.enum([
+  "survey-grade-1cm",
+  "ops-grade-2cm",
+  "planning-grade-5cm",
+]);
+
+export const TwinManifestSchema = z
+  .object({
+    schema: z.literal(TWIN_SCHEMA_ID),
+    venueSlug: z.string().min(1),
+    name: z.string().min(1),
+    capture: TwinCaptureSourceSchema,
+    tier: TwinTierSchema,
+    upAxis: z.literal("z"),
+    units: z.literal("m"),
+    /** Absent in pre-equirect bundles → defaults to the cube-face pipeline. */
+    imagery: TwinImagerySchema,
+    /** Vestigial in equirect mode (kept so older manifests parse unchanged). */
+    faces: z.tuple([
+      z.literal("front"), z.literal("back"), z.literal("left"),
+      z.literal("right"), z.literal("up"), z.literal("down"),
+    ]),
+    /** Cube mode: face edge px [256, 1024]. Equirect mode: widths [512, 2048]. */
+    lods: z.union([
+      z.tuple([z.literal(256), z.literal(1024)]),
+      z.tuple([z.literal(512), z.literal(2048)]),
+    ]),
+    generatedAt: z.string().datetime(),
+    nodes: z.array(TwinScanNodeSchema).min(1),
+    edges: z.array(TwinNavEdgeSchema),
+    /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
+    mesh: TwinMeshSchema.optional(),
+    /** SHA-256 per bundle entry, filled by twin-forge hash step (D-014 shape). */
+    contentHashes: z.record(z.string(), z.string()).optional(),
+  })
+  .superRefine((manifest, ctx) => {
+    const expected = manifest.imagery === "equirect" ? TWIN_EQUIRECT_LODS : TWIN_LODS;
+    if (manifest.lods[0] !== expected[0] || manifest.lods[1] !== expected[1]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["lods"],
+        message: `${manifest.imagery} bundles must declare lods [${expected.join(", ")}]`,
+      });
+    }
+  });
 export type TwinManifest = z.infer<typeof TwinManifestSchema>;
 
 export function twinTilePath(nodeId: string, face: TwinFace, lod: TwinLod): string {
   return `tiles/${nodeId}/${face}_${String(lod)}.webp`;
+}
+
+/** Bundle-relative path of one node's equirect pano at the given width. */
+export function twinEquirectPath(nodeId: string, lod: TwinEquirectLod): string {
+  return `tiles/${nodeId}/equirect_${String(lod)}.webp`;
 }

@@ -1,10 +1,18 @@
 # twin-forge
 
 Offline pipeline for **Venviewer Twin** bundles (`twin/0`). Converts a
-Matterport/Leica E57 capture's derived assets — posed equirectangular
-panoramas already split into cubemap faces — into the bundle the twin viewer
+Matterport/Leica E57 capture's derived assets into the bundle the twin viewer
 streams: WebP tiles at two LODs, a schema-validated manifest, a K-nearest-
 neighbour nav graph, and SHA-256 content hashes (D-014 bundle shape).
+
+Two imagery modes:
+
+- **equirect** (current, 2026-07-04): one seamless WORLD-frame
+  equirectangular pano per node from `e57-scripts/extract_equirect.py`
+  (run against the E57 workspace). No per-face table, no cube seams — the
+  scan_050 rotated-wall failure class is structurally impossible.
+- **cube-faces** (legacy): six face JPGs per node. Kept so older bundles
+  keep forging and rendering.
 
 Spec: `docs/superpowers/specs/2026-07-02-twin-program-design.md`
 Plan: `docs/superpowers/plans/2026-07-02-twin-phase1-walk.md`
@@ -13,24 +21,28 @@ Plan: `docs/superpowers/plans/2026-07-02-twin-phase1-walk.md`
 
 | Input | Shape |
 | --- | --- |
-| `--cubemaps <dir>` | `scan_NNN_{front,back,left,right,up,down}.jpg` (1024², from `pano_to_cubemap.py` in the E57 workspace) |
+| `--equirects <dir>` | `scan_NNN.jpg` (2048×1024 world-frame equirects from `extract_equirect.py`). Presence selects equirect mode and REPLACES `--cubemaps` |
+| `--cubemaps <dir>` | `scan_NNN_{front,back,left,right,up,down}.jpg` (square faces; legacy mode) |
 | `--poses <file>` | JSON `{ "<index>": { rotation: [w,x,y,z], translation: [x,y,z] } }` — E57 frame, Z-up, metres |
 | `--overrides <file>` | `{ "add": [["scan_a","scan_b"], …], "remove": [...] }` — hand-edited nav corrections (doorways, stairwells). Committed per venue under `nav-overrides/` |
 
-## Run (Trades Hall)
+## Run (Trades Hall, equirect)
 
 ```powershell
-pnpm --filter @omnitwin/twin-forge forge -- `
-  --cubemaps "F:\downloads (some very important)\E57\cubemaps" `
-  --poses "F:\downloads (some very important)\E57\poses.json" `
+pnpm --filter @omnitwin/twin-forge forge `
+  --equirects "F:\E57\equirect" `
+  --poses "F:\E57\poses.json" `
   --out "C:\Users\blake\omnitwin2\packages\web\public\twin\trades-hall" `
   --venue trades-hall --name "Trades Hall Glasgow" `
-  --overrides "C:\Users\blake\omnitwin2\tools\twin-forge\nav-overrides\trades-hall.json"
+  --overrides "C:\Users\blake\omnitwin2\tools\twin-forge\nav-overrides\trades-hall.json" `
+  --mesh "F:\downloads (some very important)\mp_matterpak_TH_T9pXgB4ygNf\trades-hall-web.glb"
 ```
 
 Paths must be **absolute** (the CLI runs with the package as cwd). Idempotent:
 existing tiles are skipped, so re-runs after adding scans only pay for new work.
-2026-07-02 reference run: 149 nodes, 357 edges, 1,788 tiles, 136 MB, 0 missing.
+2026-07-04 equirect reference run: 149 nodes, 357 edges, 298 tiles, 43 MB,
+0 missing, manifest `imagery: "equirect"`, lods `[512, 2048]`.
+(2026-07-02 cube reference run was 1,788 tiles / 136 MB.)
 
 The output directory is **gitignored** (`packages/web/public/twin/`) — bundles
 are data, not source. The dev server serves it at `/twin/<venue>/…`, which is

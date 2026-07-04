@@ -1,4 +1,5 @@
 import {
+  TWIN_EQUIRECT_LODS,
   TWIN_FACES,
   TWIN_LODS,
   TwinManifestSchema,
@@ -20,6 +21,8 @@ export interface ManifestOptions {
   readonly nav?: NavGraphOptions;
   /** Dollhouse mesh descriptor from the forge mesh step; omitted → no mesh. */
   readonly mesh?: TwinManifest["mesh"];
+  /** Imagery mode; omitted → the original cube-face pipeline. */
+  readonly imagery?: TwinManifest["imagery"];
 }
 
 /** poses.json (E57-native) → schema-valid twin/0 manifest. */
@@ -37,6 +40,7 @@ export function buildManifest(raw: RawPoses, opts: ManifestOptions): TwinManifes
     })
     .sort((a, b) => a.index - b.index);
 
+  const imagery = opts.imagery ?? "cube-faces";
   return TwinManifestSchema.parse({
     schema: "twin/0",
     venueSlug: opts.venueSlug,
@@ -45,8 +49,9 @@ export function buildManifest(raw: RawPoses, opts: ManifestOptions): TwinManifes
     tier: opts.tier,
     upAxis: "z",
     units: "m",
+    imagery,
     faces: [...TWIN_FACES],
-    lods: [...TWIN_LODS],
+    lods: imagery === "equirect" ? [...TWIN_EQUIRECT_LODS] : [...TWIN_LODS],
     generatedAt: opts.generatedAt,
     nodes,
     edges: buildNavGraph(nodes, opts.nav),

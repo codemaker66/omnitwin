@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  TWIN_EQUIRECT_LODS,
   TWIN_FACES,
   TWIN_LODS,
   TWIN_SCHEMA_ID,
   TwinManifestSchema,
+  twinEquirectPath,
   twinTilePath,
 } from "../twin.js";
 
@@ -66,6 +68,47 @@ describe("twin/0 manifest schema", () => {
   it("locks faces and lods", () => {
     expect(TWIN_FACES).toEqual(["front", "back", "left", "right", "up", "down"]);
     expect(TWIN_LODS).toEqual([256, 1024]);
+    expect(TWIN_EQUIRECT_LODS).toEqual([512, 2048]);
+  });
+});
+
+describe("twin/0 imagery modes", () => {
+  it("defaults a pre-equirect manifest (no imagery field) to cube-faces", () => {
+    const parsed = TwinManifestSchema.parse(validManifest);
+    expect(parsed.imagery).toBe("cube-faces");
+  });
+
+  it("accepts an equirect manifest with lods [512, 2048]", () => {
+    const parsed = TwinManifestSchema.parse({
+      ...validManifest,
+      imagery: "equirect",
+      lods: [512, 2048],
+    });
+    expect(parsed.imagery).toBe("equirect");
+    expect(parsed.lods).toEqual([512, 2048]);
+  });
+
+  it("rejects an equirect manifest carrying cube-face lods", () => {
+    expect(() =>
+      TwinManifestSchema.parse({ ...validManifest, imagery: "equirect" }),
+    ).toThrow();
+  });
+
+  it("rejects a cube-faces manifest carrying equirect lods", () => {
+    expect(() =>
+      TwinManifestSchema.parse({ ...validManifest, lods: [512, 2048] }),
+    ).toThrow();
+  });
+
+  it("rejects an unknown imagery mode", () => {
+    expect(() =>
+      TwinManifestSchema.parse({ ...validManifest, imagery: "spherical-harmonics" }),
+    ).toThrow();
+  });
+
+  it("builds equirect pano paths", () => {
+    expect(twinEquirectPath("scan_007", 2048)).toBe("tiles/scan_007/equirect_2048.webp");
+    expect(twinEquirectPath("scan_007", 512)).toBe("tiles/scan_007/equirect_512.webp");
   });
 });
 

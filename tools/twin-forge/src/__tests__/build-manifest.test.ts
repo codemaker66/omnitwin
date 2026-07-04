@@ -42,4 +42,24 @@ describe("buildManifest", () => {
     expect(m.mesh).toBeUndefined();
     expect("mesh" in m).toBe(false);
   });
+
+  it("defaults to cube-faces imagery with cube lods", () => {
+    const m = buildManifest(rawPoses, {
+      venueSlug: "trades-hall", name: "Trades Hall Glasgow",
+      tier: "ops-grade-2cm", generatedAt: "2026-07-02T12:00:00.000Z",
+    });
+    expect(m.imagery).toBe("cube-faces");
+    expect(m.lods).toEqual([256, 1024]);
+  });
+
+  it("equirect imagery flips the lods to [512, 2048] and stays schema-valid", () => {
+    const m = buildManifest(rawPoses, {
+      venueSlug: "trades-hall", name: "Trades Hall Glasgow",
+      tier: "ops-grade-2cm", generatedAt: "2026-07-02T12:00:00.000Z",
+      imagery: "equirect",
+    });
+    expect(m.imagery).toBe("equirect");
+    expect(m.lods).toEqual([512, 2048]);
+    expect(() => TwinManifestSchema.parse(m)).not.toThrow();
+  });
 });
