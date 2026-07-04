@@ -137,14 +137,32 @@ export function scannerForward(
  * clockwise quarter-turns applied when the face image is drawn to its canvas.
  * CALIBRATION TABLE — the visual step against scan_000 may correct flips or
  * rotateQuarters (or remap targets on a gross error); nothing else may.
- * Calibrated 2026-07-02 against scan_000/scan_001/scan_048 renders (horizon,
- * zenith and nadir rings at four headings each): front and up each need one
- * clockwise quarter-turn, back and down each need three (i.e. one CCW) — the
- * forge stores every face upright, and WebGL's per-face cube conventions
- * rotate the ±x and ±z faces in opposite directions. left/right sample
- * upright as forged. Symptoms when wrong: walls read sideways dead-ahead of
- * the scanner pose, and the coffered ceiling ends on a hard diagonal at the
- * zenith instead of flowing into all four walls.
+ * Walls calibrated 2026-07-02 against scan_000/scan_001/scan_048 renders
+ * (horizon rings at four headings each): front needs one clockwise
+ * quarter-turn and back three (i.e. one CCW) — the forge stores every wall
+ * face upright, and WebGL's per-face cube conventions transpose the ±x
+ * faces in opposite directions. left/right sample upright as forged.
+ *
+ * Vertical faces recalibrated 2026-07-04 against scan_000/scan_039
+ * (wall↔cap seam continuity plus doorway header/threshold azimuth
+ * agreement): the photographic bundle names its cap tiles by the
+ * v-flipped source convention — the "up" tile is the DOWNWARD view
+ * (floorboards, doormat, tripod patch) and "down" is the UPWARD view
+ * (dome, chandeliers) — so "up" fills nz (nadir) with a half-turn and
+ * "down" fills pz (zenith) upright. Symptoms when wrong: walls read
+ * sideways dead-ahead of the scanner pose, floorboards hang overhead
+ * while the dome sits underfoot, or the coffered ceiling ends on a hard
+ * diagonal at the zenith instead of flowing into all four walls.
+ *
+ * HANDEDNESS is deliberately NOT calibrated here: this table only ever
+ * expresses per-face rotations, so a whole-world mirror (text reading
+ * right-to-left everywhere) cannot be fixed by it face-by-face without
+ * also re-slotting targets. The chirality compensation lives in ONE place —
+ * PanoStage's fragment shader negates the scanner y (left/right) component
+ * of the sampling direction to cancel WebGL's left-handed cube convention
+ * (calibrated 2026-07-04 against scan_039's frieze text and scan_145's
+ * entrance signage; scan_000 doorway composition pinned against the raw
+ * pano). If text ever reads mirrored again, look there, not here.
  */
 export const FACE_TO_CUBE: Record<
   TwinFace,
@@ -159,6 +177,6 @@ export const FACE_TO_CUBE: Record<
   back: { target: "nx", flipX: false, flipY: false, rotateQuarters: 3 },
   left: { target: "py", flipX: false, flipY: false, rotateQuarters: 0 },
   right: { target: "ny", flipX: false, flipY: false, rotateQuarters: 0 },
-  up: { target: "pz", flipX: false, flipY: false, rotateQuarters: 1 },
-  down: { target: "nz", flipX: false, flipY: false, rotateQuarters: 3 },
+  up: { target: "nz", flipX: false, flipY: false, rotateQuarters: 2 },
+  down: { target: "pz", flipX: false, flipY: false, rotateQuarters: 0 },
 };

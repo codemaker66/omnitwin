@@ -79,7 +79,8 @@ try {
   await page.screenshot({ path: join(OUT, "twin-03-scan000-back.png") });
   report.steps.push("scan_000 rotated back");
 
-  // Look up — the zenith crown must cap the scanner hole.
+  // Look up — the coffered ceiling must flow continuously into all four
+  // walls (no crown up here since the 2026-07-04 chirality/cap fix).
   const canvas = page.locator("canvas").first();
   const box = await canvas.boundingBox();
   if (box !== null) {
@@ -95,10 +96,11 @@ try {
     await page.waitForTimeout(1400);
   }
   await page.screenshot({ path: join(OUT, "twin-04-scan000-zenith-crown.png") });
-  report.steps.push("zenith crown");
+  report.steps.push("zenith ceiling continuity");
 
-  // Look down — swing from the zenith through level to the nadir: the tripod
-  // patch must read as a coherent floor view, not a twisted one.
+  // Look down — swing from the zenith through level to the nadir: the green
+  // crown caps the tripod's blind spot and the floor around it must read as
+  // a coherent floor view, not a twisted one.
   if (box !== null) {
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
@@ -112,7 +114,33 @@ try {
     await page.waitForTimeout(1400);
   }
   await page.screenshot({ path: join(OUT, "twin-05-scan000-nadir-floor.png") });
-  report.steps.push("nadir floor");
+  report.steps.push("nadir floor (tripod crown)");
+
+  // Text chirality EYE GATE (no automated assert): scan_039, turn left to the
+  // Coopers memorial window, zoom to min fov. Reviewers MUST verify the etched
+  // text ("…leading the procession to the new Trades Hall at the official
+  // opening on 15th September 1794") reads LEFT-TO-RIGHT with upright letters.
+  // Mirrored text here means the PanoStage handedness fix (scanner-y negation
+  // in the sampling direction) has regressed — see twin-basis.ts FACE_TO_CUBE.
+  await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_039`, {
+    waitUntil: "domcontentloaded", timeout: 60000,
+  });
+  await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
+  await page.waitForTimeout(4000); // 1024 LOD faces land
+  await dragLook(page, 520); // face the etched window (left of pose forward)
+  const chiralityBox = await page.locator("canvas").first().boundingBox();
+  if (chiralityBox !== null) {
+    const chiralityX = chiralityBox.x + chiralityBox.width / 2;
+    const chiralityY = chiralityBox.y + chiralityBox.height / 2;
+    await page.mouse.move(chiralityX, chiralityY);
+    for (let i = 0; i < 5; i += 1) {
+      await page.mouse.wheel(0, -200); // zoom in; -1000 total clamps at MIN_FOV
+      await page.waitForTimeout(80);
+    }
+    await page.waitForTimeout(1500); // fov spring settle
+  }
+  await page.screenshot({ path: join(OUT, "twin-12-text-chirality.png") });
+  report.steps.push("text chirality eye gate (scan_039 etched window, min fov)");
 
   // Reset view, then hop: click the first minimap option that is not the
   // current node (the minimap exposes role="option" dots; the current node is

@@ -13,9 +13,11 @@ import { useCubeTiles } from "./useCubeTiles.js";
 // PanoStage — one scan node rendered as an inverted, cube-sampled sphere.
 //
 // The fragment shader remaps three.js sampling directions into the scanner
-// frame (the twin-basis convention: x_s=-z₃, y_s=-x₃, z_s=y₃) so the cubemap
-// reads exactly as the scanner saw the room, and blends a zenith "crown"
-// (deep Rite green) over the tripod's blind spot straight overhead. The mesh
+// frame (the twin-basis rotation x_s=-z₃, y_s=-x₃, z_s=y₃, composed with a
+// y_s negation that cancels the left-handed WebGL cube-sampling convention —
+// see the shader comment) so the cubemap reads exactly as the scanner saw
+// the room, chirality included, and blends a nadir "crown"
+// (deep Rite green) over the tripod's blind spot straight below. The mesh
 // carries the node's pose rotation (e57QuatToThree, passed in as a quaternion
 // prop) so every pano is oriented by its scan pose, and an opacity uniform so
 // Task 9 can crossfade two stages during a hop.
@@ -28,9 +30,9 @@ import { useCubeTiles } from "./useCubeTiles.js";
 // -----------------------------------------------------------------------------
 
 export const PANO_SPHERE_RADIUS = 50;
-/** Zenith crown colour — the Rite's deep green-black. */
+/** Nadir crown colour — the Rite's deep green-black. */
 export const PANO_CROWN_COLOR = "#07100f";
-/** Fraction of straight-up (scanner +Z) where the crown fade begins. */
+/** Fraction of straight-down (scanner −Z) where the crown fade begins. */
 export const PANO_CROWN_START = 0.82;
 
 const panoVertexShader = /* glsl */ `
@@ -49,10 +51,17 @@ uniform float uCrownStart;
 varying vec3 vDir;
 void main() {
   vec3 d = normalize(vDir);
-  // three sampling dir → scanner frame: x_s=-z₃, y_s=-x₃, z_s=y₃
-  vec3 s = vec3(-d.z, -d.x, d.y);
+  // three sampling dir → scanner frame is the proper rotation Mᵀ:
+  // x_s=-z₃, y_s=-x₃, z_s=y₃. But WebGL cube maps use the left-handed
+  // RenderMan convention (a view from OUTSIDE the cube), so sampling from
+  // inside the sphere with the rotation alone renders every pano as its
+  // horizontal mirror image. Negating y_s (the scanner left/right axis —
+  // the mirror plane contains forward and up, pinned by the 2026-07-04
+  // chirality calibration against scan_039's painted frieze and scan_145's
+  // entrance signage) folds that mirror back out: s = mirror_y ∘ Mᵀ · d.
+  vec3 s = vec3(-d.z, d.x, d.y);
   vec4 c = textureCube(uCube, s);
-  float crown = smoothstep(uCrownStart, 0.98, max(s.z, 0.0));
+  float crown = smoothstep(uCrownStart, 0.98, max(-s.z, 0.0));
   gl_FragColor = vec4(mix(c.rgb, uCrownColor, crown), uOpacity);
 }
 `;
