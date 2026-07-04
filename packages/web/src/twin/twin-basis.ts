@@ -84,6 +84,37 @@ export function e57PointToThree(t: readonly [number, number, number]): Vec3 {
 }
 
 /**
+ * three direction → E57 world direction — the EXACT inverse of the point map
+ * `e57PointToThree` ([x, z, −y]): x_e = x₃, y_e = −z₃, z_e = y₃. Pinned by a
+ * round-trip test against `e57PointToThree`. The equirect fragment shader
+ * (PanoStage) inlines this same mapping — the pinned test here is the
+ * shader's proof too. This is deliberately the POINT map, not the scanner
+ * direction map M: world-frame equirects must agree with node POSITIONS
+ * (nav markers, minimap), which travel through `e57PointToThree`.
+ */
+export function threeDirToE57(d: readonly [number, number, number]): Vec3 {
+  return [d[0], -d[2], d[1]];
+}
+
+/**
+ * Equirect horizontal calibration — the ONLY calibration surface for
+ * equirect bundles (FACE_TO_CUBE plays no part in them). The extractor
+ * (tools/twin-forge/e57-scripts/extract_equirect.py) writes WORLD-frame
+ * panos with column u = az/2π where az = atan2(y_e, x_e) (E57 world, +X
+ * toward +Y); PanoStage samples u = sign·az/2π + offset with
+ * RepeatWrapping absorbing the winding, v = ½ + asin(z_e)/π (flipY texture
+ * ⇒ v=1 is the zenith row). Because the shader maps view DIRECTIONS to the
+ * exact world directions the extractor assigned to each pixel, the derived
+ * identity (no flip, zero offset) is the expected truth; these constants
+ * exist so the visual gate can pin or correct that in ONE place.
+ * Calibrated 2026-07-04 against scan_000 (raw pano composition), scan_039
+ * (etched window text) and scan_145 (entrance signage).
+ */
+export const EQUIRECT_U_FLIP: boolean = false;
+/** Additive azimuth offset in TURNS (1.0 = full revolution). */
+export const EQUIRECT_U_OFFSET: number = 0;
+
+/**
  * The E57-world → three-world rotation as a three.js quaternion ([x,y,z,w]):
  * −90° about X, so a mesh root carrying it agrees with `e57PointToThree` for
  * every point (pinned by test against three's own Quaternion math). The

@@ -40,6 +40,7 @@ function fixtureManifest(): TwinManifest {
     tier: "ops-grade-2cm",
     upAxis: "z",
     units: "m",
+    imagery: "cube-faces",
     faces: ["front", "back", "left", "right", "up", "down"],
     lods: [256, 1024],
     generatedAt: "2026-07-02T12:00:00.000Z",

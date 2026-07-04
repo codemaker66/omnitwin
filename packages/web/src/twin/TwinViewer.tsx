@@ -557,6 +557,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 quaternion={e57QuatToThree(node.pose.q)}
                 assetBase={assetBase}
                 opacity={opacity}
+                imagery={manifest.imagery}
               />
             ))}
             {!hopping && (
@@ -593,6 +594,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   quaternion={e57QuatToThree(diveNode.pose.q)}
                   assetBase={assetBase}
                   opacity={(dive.progress - 0.45) / 0.55}
+                  imagery={manifest.imagery}
                 />
               )}
               {diveNode !== undefined && dive.direction === "up" && dive.progress < 0.55 && (
@@ -602,6 +604,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   quaternion={e57QuatToThree(diveNode.pose.q)}
                   assetBase={assetBase}
                   opacity={1 - dive.progress / 0.55}
+                  imagery={manifest.imagery}
                 />
               )}
             </>

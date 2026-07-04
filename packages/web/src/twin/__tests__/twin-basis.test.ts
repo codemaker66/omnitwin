@@ -3,11 +3,16 @@ import { Quaternion, Vector3 } from "three"; // test-only: pins the mesh quat ag
 import { describe, expect, it } from "vitest";
 import {
   E57_TO_THREE_QUAT,
+  EQUIRECT_U_FLIP,
+  EQUIRECT_U_OFFSET,
   MESH_OFFSET_M,
   e57PointToThree,
   e57QuatToThree,
   scannerForward,
+  threeDirToE57,
 } from "../twin-basis.js";
+
+type Vec3 = readonly [number, number, number];
 
 // scan_000 from poses.json — the entrance scan; per the E57 pipeline docs its
 // forward direction points into the Grand Hall and the scanner was level.
@@ -74,5 +79,48 @@ describe("twin-basis — dollhouse mesh frame (Phase 2, Task 4)", () => {
     // Calibrated exclusively by the visual gate (twin-visual-check dollhouse
     // capture); component code must never edit it.
     expect(MESH_OFFSET_M).toEqual([0, 0, 0]);
+  });
+});
+
+describe("twin-basis — equirect world mapping (2026-07-04 rebuild)", () => {
+  it("threeDirToE57 is the EXACT inverse of e57PointToThree (pinned)", () => {
+    // The equirect fragment shader inlines vec3(d.x, -d.z, d.y) — this
+    // round-trip is its proof. If either map changes, both must.
+    for (const p of [
+      [1, 2, 3],
+      T0,
+      [-5.31, 13.3, -2.13],
+      [19.47, -11.3, 1.72],
+      [0, 0, 1],
+      [1, 0, 0],
+      [0, 1, 0],
+    ] as const) {
+      const there = e57PointToThree(p);
+      const back = threeDirToE57(there);
+      expect(back[0]).toBeCloseTo(p[0], 12);
+      expect(back[1]).toBeCloseTo(p[1], 12);
+      expect(back[2]).toBeCloseTo(p[2], 12);
+    }
+  });
+
+  it("maps the axes exactly: three(x,y,z) → E57(x, −z, y)", () => {
+    const cases: readonly (readonly [Vec3, Vec3])[] = [
+      [[1, 0, 0], [1, 0, 0]], // three +X → E57 +X
+      [[0, 1, 0], [0, 0, 1]], // three up → E57 up (Z)
+      [[0, 0, -1], [0, 1, 0]], // three forward (−Z) → E57 +Y
+    ];
+    for (const [input, expected] of cases) {
+      const out = threeDirToE57(input);
+      expect(out[0]).toBeCloseTo(expected[0], 12);
+      expect(out[1]).toBeCloseTo(expected[1], 12);
+      expect(out[2]).toBeCloseTo(expected[2], 12);
+    }
+  });
+
+  it("pins the calibrated equirect constants (visual gate is the only editor)", () => {
+    // Identity confirmed 2026-07-04: the world-frame extractor raster and the
+    // shader's direction mapping agree with no flip and no offset.
+    expect(EQUIRECT_U_FLIP).toBe(false);
+    expect(EQUIRECT_U_OFFSET).toBe(0);
   });
 });

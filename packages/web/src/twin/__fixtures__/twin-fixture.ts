@@ -85,9 +85,24 @@ export const TWIN_FIXTURE_MANIFEST_NO_MESH: TwinManifest =
   TwinManifestSchema.parse(FIXTURE_WITHOUT_MESH);
 
 /**
+ * The equirect-imagery variant (the 2026-07-04 pipeline): identical nodes and
+ * edges, `imagery: "equirect"` with its [512, 2048] lods. The e2e suite runs
+ * on this variant by default and keeps the cube fixture above for the legacy
+ * bundle path.
+ */
+export const TWIN_FIXTURE_MANIFEST_EQUIRECT: TwinManifest = TwinManifestSchema.parse({
+  ...FIXTURE_WITHOUT_MESH,
+  imagery: "equirect",
+  lods: [512, 2048],
+  mesh: { path: "mesh/dollhouse.glb", bytes: 7158232, sourceName: "trades-hall-web.glb" },
+});
+
+/**
  * A structurally valid 1×1 lossy WebP (RIFF/WEBP/VP8 , 44 bytes) served for
  * every tile request in the e2e suite — the viewer streams and decodes it
  * exactly like a real tile, without any real capture bytes in the repo.
+ * Serves both pipelines: cube face tiles AND equirect pano tiles (the viewer
+ * imposes no aspect requirement on either — happy decode is the contract).
  */
 export const TWIN_FIXTURE_TILE_DATA_URI =
   "data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=";
