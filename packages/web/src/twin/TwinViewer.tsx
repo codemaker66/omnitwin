@@ -10,10 +10,11 @@ import {
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { PerspectiveCamera } from "three";
+import { Euler, PerspectiveCamera } from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
 import { DollhouseStage, preloadDollhouse } from "./DollhouseStage.js";
 import { NavMarkers } from "./NavMarkers.js";
+import { TravelControls } from "./TravelControls.js";
 import { PanoStage } from "./PanoStage.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
 import {
@@ -62,12 +63,33 @@ interface DollyState {
   from: readonly [number, number, number];
   to: readonly [number, number, number];
   progress: number;
+  /** Yaw (three YXZ) to face while travelling; null outside hops. */
+  travelYaw: number | null;
+  /** Changes per hop so the dolly captures a fresh start orientation. */
+  hopKey: string;
 }
+
+/** Shortest signed angular distance a→b (radians). */
+function shortestYawDelta(a: number, b: number): number {
+  const raw = (b - a) % (Math.PI * 2);
+  if (raw > Math.PI) {
+    return raw - Math.PI * 2;
+  }
+  if (raw < -Math.PI) {
+    return raw + Math.PI * 2;
+  }
+  return raw;
+}
+
+/** Scratch Euler for the dolly's travel turn — no per-frame allocation. */
+const dollyEuler = new Euler(0, 0, 0, "YXZ");
 
 /**
  * Camera position = lerp(from, to, progress), read from a ref each frame so
- * per-frame motion never re-renders React. The demand loop keeps painting
- * because every hop progress step already invalidates via PanoStage opacity.
+ * per-frame motion never re-renders React. While a hop is travelling the
+ * dolly also owns orientation (Street View arrival rule: you end up facing
+ * the direction you moved): WalkControls is disabled during hops and
+ * re-adopts the camera's orientation when it re-engages at settle.
  */
 function CameraDolly({
   dolly,
@@ -76,15 +98,31 @@ function CameraDolly({
 }): null {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
+  const hopStart = useRef<{ key: string; yaw: number; pitch: number } | null>(null);
 
   useFrame(() => {
-    const { from, to, progress } = dolly.current;
+    const { from, to, progress, travelYaw, hopKey } = dolly.current;
     const x = from[0] + (to[0] - from[0]) * progress;
     const y = from[1] + (to[1] - from[1]) * progress;
     const z = from[2] + (to[2] - from[2]) * progress;
     if (camera.position.x !== x || camera.position.y !== y || camera.position.z !== z) {
       camera.position.set(x, y, z);
       invalidate();
+    }
+
+    if (travelYaw !== null && progress > 0 && progress < 1) {
+      if (hopStart.current === null || hopStart.current.key !== hopKey) {
+        dollyEuler.setFromQuaternion(camera.quaternion, "YXZ");
+        hopStart.current = { key: hopKey, yaw: dollyEuler.y, pitch: dollyEuler.x };
+      }
+      const eased = progress * progress * (3 - 2 * progress); // smoothstep
+      const start = hopStart.current;
+      const yaw = start.yaw + shortestYawDelta(start.yaw, travelYaw) * eased;
+      const pitch = start.pitch * (1 - eased); // level out while moving
+      camera.quaternion.setFromEuler(dollyEuler.set(pitch, yaw, 0, "YXZ"));
+      invalidate();
+    } else if (progress <= 0 || progress >= 1) {
+      hopStart.current = null;
     }
   });
 
@@ -450,15 +488,32 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   // The dolly ref is refreshed after every commit; CameraDolly's useFrame
   // reads it on the next painted frame.
-  const dollyRef = useRef<DollyState>({ from: [0, 0, 0], to: [0, 0, 0], progress: 0 });
+  const dollyRef = useRef<DollyState>({
+    from: [0, 0, 0],
+    to: [0, 0, 0],
+    progress: 0,
+    travelYaw: null,
+    hopKey: "",
+  });
   useEffect(() => {
     if (currentNode === undefined) {
       return;
     }
     const from = e57PointToThree(currentNode.pose.t);
     dollyRef.current.from = from;
-    dollyRef.current.to = targetNode === undefined ? from : e57PointToThree(targetNode.pose.t);
-    dollyRef.current.progress = targetNode === undefined ? 0 : walk.progress;
+    if (targetNode === undefined) {
+      dollyRef.current.to = from;
+      dollyRef.current.progress = 0;
+      dollyRef.current.travelYaw = null;
+      dollyRef.current.hopKey = "";
+    } else {
+      const to = e57PointToThree(targetNode.pose.t);
+      dollyRef.current.to = to;
+      dollyRef.current.progress = walk.progress;
+      // three YXZ yaw facing the horizontal travel direction (-Z forward).
+      dollyRef.current.travelYaw = Math.atan2(-(to[0] - from[0]), -(to[2] - from[2]));
+      dollyRef.current.hopKey = `${currentNode.id}->${targetNode.id}`;
+    }
   });
 
   if (currentNode === undefined) {
@@ -483,8 +538,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       >
         {mode === "walk" ? (
           <>
-            <WalkControls enabled />
+            <WalkControls enabled={!hopping} />
             <CameraDolly dolly={dollyRef} />
+            <TravelControls
+              enabled={!hopping}
+              currentNode={currentNode}
+              neighbors={walk.neighbors}
+              nodesById={nodesById}
+              onTravel={(id) => {
+                walk.hopTo(id);
+              }}
+            />
             {stages.map(({ node, opacity }) => (
               <PanoStage
                 key={node.id}

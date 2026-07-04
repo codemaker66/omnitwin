@@ -24,7 +24,10 @@ import { e57PointToThree } from "./twin-basis.js";
 
 /** Flame-gold ring colour (Rite palette --gold). */
 export const NAV_MARKER_COLOR = "#d7a64b";
-export const NAV_MARKER_IDLE_OPACITY = 0.75;
+// Demoted from 0.75 when TravelControls landed (correction plan, workstream
+// B): click-anywhere travel is the primary mechanic now, so the sweep discs
+// read as quiet Matterport-style hints, not the way you move.
+export const NAV_MARKER_IDLE_OPACITY = 0.28;
 /** Metres below the scan pose the ring sits — tripod height, roughly. */
 export const NAV_MARKER_FLOOR_DROP_M = 1.35;
 /** Ring geometry (metres). */
