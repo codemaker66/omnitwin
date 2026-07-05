@@ -17,7 +17,7 @@ async function makeFakeEquirect(dir: string, name: string): Promise<void> {
 }
 
 describe("convertEquirectTiles", () => {
-  it("writes 512+2048 webp per present pano and reports missing ones", async () => {
+  it("writes 512+4096 webp per present pano and reports missing ones", async () => {
     const src = mkdtempSync(join(tmpdir(), "forge-eq-src-"));
     const out = mkdtempSync(join(tmpdir(), "forge-eq-out-"));
     await makeFakeEquirect(src, "scan_000.jpg");
@@ -26,14 +26,14 @@ describe("convertEquirectTiles", () => {
     expect(report.written).toBe(2); // one pano × two lods
     expect(report.missing).toEqual(["scan_001.jpg"]);
 
-    const full = join(out, "tiles", "scan_000", "equirect_2048.webp");
+    const full = join(out, "tiles", "scan_000", "equirect_4096.webp");
     const preview = join(out, "tiles", "scan_000", "equirect_512.webp");
     expect(existsSync(full)).toBe(true);
     expect(existsSync(preview)).toBe(true);
 
     // The 2:1 tile contract is exact regardless of source dimensions.
     const fullMeta = await sharp(full).metadata();
-    expect([fullMeta.width, fullMeta.height]).toEqual([2048, 1024]);
+    expect([fullMeta.width, fullMeta.height]).toEqual([4096, 2048]);
     const previewMeta = await sharp(preview).metadata();
     expect([previewMeta.width, previewMeta.height]).toEqual([512, 256]);
 
@@ -43,6 +43,6 @@ describe("convertEquirectTiles", () => {
 
     const hashes = await hashBundle(out);
     expect(Object.keys(hashes)).toContain("tiles/scan_000/equirect_512.webp");
-    expect(hashes["tiles/scan_000/equirect_2048.webp"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashes["tiles/scan_000/equirect_4096.webp"]).toMatch(/^[0-9a-f]{64}$/);
   });
 });

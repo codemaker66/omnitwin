@@ -10,8 +10,10 @@ import { z } from "zod";
 export const TWIN_SCHEMA_ID = "twin/0" as const;
 export const TWIN_FACES = ["front", "back", "left", "right", "up", "down"] as const;
 export const TWIN_LODS = [256, 1024] as const;
-/** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 2048×1024 full. */
-export const TWIN_EQUIRECT_LODS = [512, 2048] as const;
+/** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 4096×2048 full.
+ *  4096 ⇒ 11.4 px/deg — sharpness parity with the legacy cube tiles; the
+ *  first equirect ship at 2048 halved that and read as visibly soft. */
+export const TWIN_EQUIRECT_LODS = [512, 4096] as const;
 
 export type TwinFace = (typeof TWIN_FACES)[number];
 export type TwinLod = (typeof TWIN_LODS)[number];
@@ -91,10 +93,10 @@ export const TwinManifestSchema = z
       z.literal("front"), z.literal("back"), z.literal("left"),
       z.literal("right"), z.literal("up"), z.literal("down"),
     ]),
-    /** Cube mode: face edge px [256, 1024]. Equirect mode: widths [512, 2048]. */
+    /** Cube mode: face edge px [256, 1024]. Equirect mode: widths [512, 4096]. */
     lods: z.union([
       z.tuple([z.literal(256), z.literal(1024)]),
-      z.tuple([z.literal(512), z.literal(2048)]),
+      z.tuple([z.literal(512), z.literal(4096)]),
     ]),
     generatedAt: z.string().datetime(),
     nodes: z.array(TwinScanNodeSchema).min(1),

@@ -75,8 +75,13 @@ from PIL import Image
 E57_PATH = r"F:\E57\cloud_0.e57"
 PANO_DIR = r"F:\E57\panoramas"
 OUT_DEFAULT = r"F:\E57\equirect"
-SRC_SIZE = 2048  # photos downsampled 4096 -> 2048 before sampling
-OUT_W, OUT_H = 2048, 1024
+# Native-resolution sampling (2026-07-05): the skybox photos are 4096 sq
+# (2048 px per 90 deg = an 8192-wide sphere equivalent); downsampling the
+# sources starves the output. 4096-wide output = 11.4 px/deg = sharpness
+# parity with the legacy cube tiles Blake judged high-res; 2048 (the first
+# equirect ship) was half that and read as "terrible resolution".
+SRC_SIZE = 4096
+OUT_W, OUT_H = 4096, 2048
 PREV_W, PREV_H = 512, 256
 FIT_W, FIT_H = 480, 240  # low-res fit/acceptance raster
 AZ_SHIFT0 = 0      # global lidar-raster azimuth offset, columns of FIT_W

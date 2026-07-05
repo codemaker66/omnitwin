@@ -9,10 +9,16 @@ import {
 // -----------------------------------------------------------------------------
 // useEquirectTexture — streams one scan node's world-frame equirect pano into
 // a THREE.Texture, preview first. The 512×256 paints the sphere within a few
-// tens of KB; the 2048×1024 swaps in silently once it arrives (the pano
+// tens of KB; the 4096×2048 full swaps in silently once it arrives (the pano
 // simply sharpens — no spinner, no pop). Lifecycle mirrors useCubeTiles
 // exactly: textures are disposed on LOD swap, node change and unmount —
 // nothing leaks across a walk.
+//
+// Hop smoothness: where the platform provides createImageBitmap, the full
+// pano is decoded OFF the main thread (fetch → blob → bitmap) so the swap
+// never hitches the look springs; environments without it (happy-dom, old
+// engines) keep the plain Image path unchanged. Pair with useTwinPrefetch,
+// which cache-warms neighbour panos so travel starts from the HTTP cache.
 //
 // Sampling setup: the PanoStage equirect shader computes u from atan2, so
 // wrapS is RepeatWrapping (the winding seam samples continuously) and
@@ -46,17 +52,50 @@ function loadPanoImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
+/**
+ * Decode a pano off the main thread where possible. `imageOrientation:
+ * "flipY"` + `texture.flipY = false` is upload-equivalent to the classic
+ * Image path (three flips HTMLImageElement uploads itself) — the shader sees
+ * identical texels either way. Returns null on any failure so the caller
+ * falls back to the Image path.
+ */
+async function loadPanoBitmap(url: string): Promise<ImageBitmap | null> {
+  if (typeof createImageBitmap !== "function" || typeof fetch !== "function") {
+    return null;
+  }
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    const blob = await response.blob();
+    return await createImageBitmap(blob, { imageOrientation: "flipY" });
+  } catch {
+    return null;
+  }
+}
+
 /** Load one LOD into an sRGB, repeat-wrapping, mipless texture (or null). */
 async function buildLodTexture(
   nodeId: string,
   base: string,
   lod: TwinEquirectLod,
 ): Promise<Texture | null> {
-  const image = await loadPanoImage(`${base}/${twinEquirectPath(nodeId, lod)}`);
-  if (image === null) {
+  const url = `${base}/${twinEquirectPath(nodeId, lod)}`;
+  // Capability check happens BEFORE any await: without the bitmap path the
+  // Image must be constructed synchronously with the effect (the test suite
+  // pins that timing, and it keeps first paint one microtask earlier).
+  const canBitmap =
+    typeof createImageBitmap === "function" && typeof fetch === "function";
+  const bitmap = canBitmap ? await loadPanoBitmap(url) : null;
+  const source = bitmap ?? (await loadPanoImage(url));
+  if (source === null) {
     return null;
   }
-  const texture = new Texture(image);
+  const texture = new Texture(source);
+  if (bitmap !== null) {
+    texture.flipY = false; // orientation already baked by createImageBitmap
+  }
   texture.colorSpace = SRGBColorSpace;
   texture.wrapS = RepeatWrapping;
   texture.minFilter = LinearFilter;

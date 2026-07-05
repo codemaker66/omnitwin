@@ -86,14 +86,14 @@ export const TWIN_FIXTURE_MANIFEST_NO_MESH: TwinManifest =
 
 /**
  * The equirect-imagery variant (the 2026-07-04 pipeline): identical nodes and
- * edges, `imagery: "equirect"` with its [512, 2048] lods. The e2e suite runs
+ * edges, `imagery: "equirect"` with its [512, 4096] lods. The e2e suite runs
  * on this variant by default and keeps the cube fixture above for the legacy
  * bundle path.
  */
 export const TWIN_FIXTURE_MANIFEST_EQUIRECT: TwinManifest = TwinManifestSchema.parse({
   ...FIXTURE_WITHOUT_MESH,
   imagery: "equirect",
-  lods: [512, 2048],
+  lods: [512, 4096],
   mesh: { path: "mesh/dollhouse.glb", bytes: 7158232, sourceName: "trades-hall-web.glb" },
 });
 

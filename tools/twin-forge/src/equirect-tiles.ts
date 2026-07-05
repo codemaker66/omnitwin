@@ -11,12 +11,13 @@ export interface EquirectTileReport {
 }
 
 /**
- * Per-sweep world-frame equirect JPGs (`scan_NNN.jpg`, 2048×1024, from
- * extract_equirect.py) → WebP at both equirect LODs:
- * `tiles/<node>/equirect_2048.webp` (q82, full) and
- * `tiles/<node>/equirect_512.webp` (q75, 512×256 preview).
- * Both derive from the full-res source (the extractor's *_preview.jpg is a
- * human convenience, not a forge input). Idempotent: existing outputs skip.
+ * Per-sweep world-frame equirect JPGs (`scan_NNN.jpg`, 4096×2048, from
+ * extract_equirect_v2.py) → WebP at both equirect LODs:
+ * `tiles/<node>/equirect_4096.webp` (q82, full — 11.4 px/deg, sharpness
+ * parity with the legacy cube tiles) and `tiles/<node>/equirect_512.webp`
+ * (q75, 512×256 preview). Both derive from the full-res source (the
+ * extractor's *_preview.jpg is a human convenience, not a forge input).
+ * Idempotent: existing outputs skip.
  */
 export async function convertEquirectTiles(
   equirectDir: string,
@@ -44,8 +45,9 @@ export async function convertEquirectTiles(
         continue;
       }
       // Exact 2:1 tile contract regardless of source dimensions.
+      const fullLod = TWIN_EQUIRECT_LODS[1];
       const pipeline = sharp(src).resize(lod, lod / 2, { kernel: "lanczos3" });
-      await pipeline.webp({ quality: lod === 2048 ? 82 : 75 }).toFile(dest);
+      await pipeline.webp({ quality: lod === fullLod ? 82 : 75 }).toFile(dest);
       report.written += 1;
     }
     onProgress?.(done, total);

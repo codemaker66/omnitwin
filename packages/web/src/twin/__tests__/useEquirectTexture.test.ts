@@ -6,7 +6,7 @@ import { useEquirectTexture } from "../useEquirectTexture.js";
 // -----------------------------------------------------------------------------
 // useEquirectTexture — unit tests with the same manually-triggered Image mock
 // as useCubeTiles.test.ts (happy-dom never loads real images). Pins the
-// streaming order (512 preview before 2048 full), the sampling setup the
+// streaming order (512 preview before 4096 full), the sampling setup the
 // equirect shader depends on (sRGB, RepeatWrapping u, mipless linear
 // filtering), and disposal on LOD swap, node change and unmount.
 // -----------------------------------------------------------------------------
@@ -25,14 +25,14 @@ class MockImage {
 
 const BASE = "/twin/trades-hall";
 
-function imagesFor(lod: 512 | 2048): MockImage[] {
+function imagesFor(lod: 512 | 4096): MockImage[] {
   return MockImage.instances.filter((image) =>
     image.src.endsWith(`equirect_${String(lod)}.webp`),
   );
 }
 
 /** Fire onload for every pending image of one LOD and flush the microtasks. */
-async function completeLod(lod: 512 | 2048): Promise<void> {
+async function completeLod(lod: 512 | 4096): Promise<void> {
   await act(async () => {
     for (const image of imagesFor(lod)) {
       image.onload?.();
@@ -45,6 +45,10 @@ describe("useEquirectTexture", () => {
   beforeEach(() => {
     MockImage.instances = [];
     vi.stubGlobal("Image", MockImage);
+    // happy-dom ships fetch/createImageBitmap; pin them off so the suite
+    // exercises the classic Image path its mock was built around. The
+    // bitmap fast path gets its own dedicated test below.
+    vi.stubGlobal("createImageBitmap", undefined);
   });
 
   afterEach(() => {
@@ -52,7 +56,28 @@ describe("useEquirectTexture", () => {
     vi.restoreAllMocks();
   });
 
-  it("streams the 512 preview first, then swaps to the 2048 full pano", async () => {
+  it("prefers the off-thread bitmap path when the platform provides it", async () => {
+    const fakeBitmap = { width: 4096, height: 2048, close: vi.fn() };
+    const blob = new Blob(["x"]);
+    vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(fakeBitmap));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) }),
+    );
+
+    const { result } = renderHook(() => useEquirectTexture("scan_000", BASE));
+    await waitFor(() => {
+      expect(result.current.lod).toBe(4096);
+    });
+
+    // Decode ran through fetch → createImageBitmap; the Image mock was never
+    // touched, and the pre-flipped bitmap disables three's upload flip.
+    expect(MockImage.instances).toHaveLength(0);
+    expect(result.current.texture?.flipY).toBe(false);
+    expect(result.current.texture?.colorSpace).toBe(SRGBColorSpace);
+  });
+
+  it("streams the 512 preview first, then swaps to the 4096 full pano", async () => {
     const { result } = renderHook(() => useEquirectTexture("scan_000", BASE));
 
     // Exactly the preview loads first — anonymous CORS, correct pano URL.
@@ -78,11 +103,11 @@ describe("useEquirectTexture", () => {
 
     // Only after the preview is live does the full pano start.
     expect(MockImage.instances).toHaveLength(2);
-    expect(MockImage.instances[1]?.src).toBe(`${BASE}/tiles/scan_000/equirect_2048.webp`);
+    expect(MockImage.instances[1]?.src).toBe(`${BASE}/tiles/scan_000/equirect_4096.webp`);
 
-    await completeLod(2048);
+    await completeLod(4096);
     await waitFor(() => {
-      expect(result.current.lod).toBe(2048);
+      expect(result.current.lod).toBe(4096);
     });
     expect(result.current.texture).not.toBe(preview);
   });
@@ -100,9 +125,9 @@ describe("useEquirectTexture", () => {
     });
     expect(dispose).not.toHaveBeenCalled();
 
-    await completeLod(2048);
+    await completeLod(4096);
     await waitFor(() => {
-      expect(result.current.lod).toBe(2048);
+      expect(result.current.lod).toBe(4096);
     });
     // The preview texture is released the moment the full swap lands.
     expect(dispose).toHaveBeenCalledTimes(1);

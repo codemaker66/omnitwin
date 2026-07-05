@@ -18,7 +18,7 @@ import {
 // Every request the viewer makes is fixture-mocked via page.route: the
 // manifest is the four-node twin-fixture bundle — the EQUIRECT variant by
 // default, matching the production pipeline — and every tile request
-// (equirect_512/equirect_2048 panos here; face tiles on the legacy test) is
+// (equirect_512/equirect_4096 panos here; face tiles on the legacy test) is
 // answered with the same 1×1 WebP, so the suite needs no real capture data
 // and no twin-forge output on disk. One test re-routes the cube-faces
 // manifest to keep the legacy bundle path rendering.

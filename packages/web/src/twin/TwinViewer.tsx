@@ -29,6 +29,7 @@ import {
 import { TwinMinimap } from "./TwinMinimap.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
+import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinWalk } from "./useTwinWalk.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 
@@ -408,6 +409,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
   const [yaw, setYaw] = useState(0);
+
+  // Hop smoothness: neighbours' full panos are cache-warmed while the
+  // visitor lingers, so travel sharpens from disk, not the network.
+  useTwinPrefetch(manifest.imagery === "equirect" ? walk.neighbors : [], assetBase);
 
   // The dive (Phase 2, Task 6): down = dollhouse → node (arrive lands the
   // walk there); up = surfacing (mode already dollhouse; flight ends on the
