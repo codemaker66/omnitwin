@@ -60,6 +60,26 @@ MemoryError killed a run).
 
 --fullshift: development diagnostic - search the winning candidate's azimuth
 shift over the whole circle and report it, to verify AZ_SHIFT0.
+
+SUPERSAMPLED RENDER (2026-07-05). The render stage rasterises the sphere at
+8192x4096 (~22.8 px/deg - a mild 2x ratio against the ~45.5 px/deg native
+photos, safe for plain bilinear taps) and LANCZOS-downscales to the 4096x2048
+delivery base. The previous direct 4096 render point-sampled a 4x decimation
+with NO prefilter - detail was destroyed and aliased in the asset itself (the
+crisp cubemaps_photo_v3 faces prove the sources are pristine). Rendering runs
+in 8192x512 horizontal bands accumulated into one uint8 canvas so no process
+ever holds more than one band of float intermediates. Outputs per sweep:
+scan_NNN_8192.jpg (q85), scan_NNN.jpg (LANCZOS 4096x2048, q90 - the crisp
+delivery base) and scan_NNN_preview.jpg (LANCZOS 512x256, q85).
+
+--bases-from: reuse per-photo orientations already solved by a previous run
+(its _equirect_v2_report.json) instead of re-running the 48-candidate fit.
+The full-res render never consumed anything but the fitted bases (the
+per-photo az shift was fit-scoring tolerance only), so loading them is
+render-identical. Sweeps missing from that report still fit fresh.
+--verify-fit: run the fit anyway and assert it reproduces the loaded report's
+bases exactly (the fit is deterministic) - the validation gate run on a few
+sweeps before a bulk --bases-from pass.
 """
 import argparse
 import gc
@@ -81,8 +101,15 @@ OUT_DEFAULT = r"F:\E57\equirect"
 # parity with the legacy cube tiles Blake judged high-res; 2048 (the first
 # equirect ship) was half that and read as "terrible resolution".
 SRC_SIZE = 4096
+# Supersampled render raster (SUPERSAMPLED RENDER, module docstring): render
+# at 8192 wide, deliver the LANCZOS-prefiltered 4096 base alongside it.
+SS_W, SS_H = 8192, 4096
+BAND_ROWS = 512  # 8192x512 render bands - bounded float footprint per band
 OUT_W, OUT_H = 4096, 2048
 PREV_W, PREV_H = 512, 256
+SS_JPEG_QUALITY = 85
+BASE_JPEG_QUALITY = 90
+PREV_JPEG_QUALITY = 85
 FIT_W, FIT_H = 480, 240  # low-res fit/acceptance raster
 AZ_SHIFT0 = 0      # global lidar-raster azimuth offset, columns of FIT_W
 AZ_SHIFT_SPAN = 4  # +/- columns of residual rig yaw searched around AZ_SHIFT0
@@ -138,16 +165,18 @@ def quat_to_mat(q):
     ])
 
 
-def world_equirect_dirs(w, h):
-    """Unit ray grid (h x w x 3) over the full sphere, E57 WORLD frame (Z-up).
-    Row 0 = zenith; azimuth from +X toward +Y. Same as v1."""
-    el = np.pi / 2 - (np.arange(h) + 0.5) / h * np.pi
+def world_equirect_band_dirs(w, h, row0, rows):
+    """Unit ray grid (rows x w x 3) for one horizontal band of the
+    full-sphere equirect raster, E57 WORLD frame (Z-up). Row 0 of the FULL
+    raster = zenith; azimuth from +X toward +Y. Convention identical to
+    v1/v2 - only the resolution and the banding are new."""
+    el = np.pi / 2 - (np.arange(row0, row0 + rows) + 0.5) / h * np.pi
     az = (np.arange(w) + 0.5) / w * 2 * np.pi
     cos_el = np.cos(el)[:, None]
     return np.stack([
         cos_el * np.cos(az)[None, :],
         cos_el * np.sin(az)[None, :],
-        np.broadcast_to(np.sin(el)[:, None], (h, w)),
+        np.broadcast_to(np.sin(el)[:, None], (rows, w)),
     ], axis=2).astype(np.float32)
 
 
@@ -257,20 +286,20 @@ def fit_photo(gray, flat_dirs, truth, signal, fx, cx, cy, shape, stored_axes,
     return rec, (win[3], win[4], win[5]), win[6], win[7]
 
 
-def render_world_rgb(dirs_world, photos, bases, r_scan, fx, cx, cy):
-    """Full-colour bilinear best-photo render along world-frame rays, using
-    the FITTED scanner-frame camera bases. Nearest-camera-wins (max z)."""
-    h, w = dirs_world.shape[:2]
-    out = np.zeros((h, w, 3), dtype=np.uint8)
-    best = np.full((h, w), -1.0, dtype=np.float32)
-    flat = dirs_world.reshape(-1, 3)
-    for img, (f, r, d) in zip(photos, bases):
-        # camera axes in WORLD frame; z/x/y = world ray dotted with each
-        m = (r_scan @ np.column_stack([f, r, d])).astype(np.float32)
+def render_world_band(row0, rows, w, h, photos, cam_world, fx, cx, cy):
+    """One horizontal band of the world-frame composite: per-pixel
+    nearest-camera-wins (max forward z) across the photos, bilinear taps -
+    semantics identical to the pre-supersampling whole-frame renderer,
+    just band-shaped. `cam_world` = per-photo world-frame camera matrices
+    (columns fwd/right/down), precomputed once per sweep."""
+    flat = world_equirect_band_dirs(w, h, row0, rows).reshape(-1, 3)
+    out = np.zeros((rows, w, 3), dtype=np.uint8)
+    best = np.full((rows, w), -1.0, dtype=np.float32)
+    for img, m in zip(photos, cam_world):
         zxy = flat @ m
-        z = zxy[:, 0].reshape(h, w)
-        x = zxy[:, 1].reshape(h, w)
-        y = zxy[:, 2].reshape(h, w)
+        z = zxy[:, 0].reshape(rows, w)
+        x = zxy[:, 1].reshape(rows, w)
+        y = zxy[:, 2].reshape(rows, w)
         del zxy
         with np.errstate(divide="ignore", invalid="ignore"):
             uu = fx * x / z + cx
@@ -279,18 +308,48 @@ def render_world_rgb(dirs_world, photos, bases, r_scan, fx, cx, cy):
         score = np.where(valid, z, -1.0)
         take = score > best
         if not take.any():
+            del z, x, y, uu, vv, valid, score, take
             continue
         u0 = np.clip(uu[take].astype(np.int32), 0, SRC_SIZE - 2)
         v0 = np.clip(vv[take].astype(np.int32), 0, SRC_SIZE - 2)
         fu = (uu[take] - u0)[:, None]
         fv = (vv[take] - v0)[:, None]
-        p = img.astype(np.float32)
-        sample = ((p[v0, u0] * (1 - fu) + p[v0, u0 + 1] * fu) * (1 - fv)
-                  + (p[v0 + 1, u0] * (1 - fu) + p[v0 + 1, u0 + 1] * fu) * fv)
+        # Bilinear gather straight off the uint8 photo: the (n, 3) corner
+        # gathers promote against the float32 weights, so no full-frame
+        # float photo copy is ever materialised (band memory discipline).
+        sample = ((img[v0, u0] * (1 - fu) + img[v0, u0 + 1] * fu) * (1 - fv)
+                  + (img[v0 + 1, u0] * (1 - fu) + img[v0 + 1, u0 + 1] * fu) * fv)
         out[take] = np.clip(sample, 0, 255).astype(np.uint8)
         best = np.where(take, score, best)
-        del z, x, y, uu, vv, valid, score, take, p, sample
+        del z, x, y, uu, vv, valid, score, take, sample
     return out
+
+
+def render_world_ss(photos, bases, r_scan, fx, cx, cy):
+    """The supersampled SS_W x SS_H world-frame composite, rendered in
+    BAND_ROWS-high bands accumulated into one uint8 canvas."""
+    # camera axes in WORLD frame; z/x/y = world ray dotted with each column
+    cam_world = [(r_scan @ np.column_stack([f, r, d])).astype(np.float32)
+                 for f, r, d in bases]
+    canvas = np.zeros((SS_H, SS_W, 3), dtype=np.uint8)
+    for row0 in range(0, SS_H, BAND_ROWS):
+        canvas[row0:row0 + BAND_ROWS] = render_world_band(
+            row0, BAND_ROWS, SS_W, SS_H, photos, cam_world, fx, cx, cy)
+    return canvas
+
+
+def parse_basis_name(name):
+    """Inverse of build_candidates' naming: 'f+z_r-y_p' -> (fwd, right, down)
+    scanner-frame axes. 'p' bases carry d = f x r, 'm' (mirrored) the
+    negation - exactly how the candidates were built, so a loaded basis
+    renders identically to the fitted one."""
+    fpart, rpart, kind = name.split("_")
+    if kind not in ("p", "m") or fpart[0] != "f" or rpart[0] != "r":
+        raise ValueError(f"unrecognised basis name: {name}")
+    f = AXES[fpart[1:]]
+    r = AXES[rpart[1:]]
+    d = np.cross(f, r)
+    return f, r, (d if kind == "p" else -d)
 
 
 def parse_scans(spec, n_scans):
@@ -314,8 +373,20 @@ def main():
                     help="re-render even when outputs + report entry exist")
     ap.add_argument("--fullshift", action="store_true",
                     help="dev: full-circle azimuth diagnostic per winner")
+    ap.add_argument("--bases-from", default="",
+                    help="path to a previous run's _equirect_v2_report.json; "
+                         "sweeps present there reuse the solved bases and "
+                         "skip the fit (the render consumes only the bases)")
+    ap.add_argument("--verify-fit", action="store_true",
+                    help="run the fit even when --bases-from covers a sweep "
+                         "and assert it reproduces that report's bases")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
+
+    bases_src = {}
+    if args.bases_from:
+        with open(args.bases_from, "r", encoding="utf8") as f:
+            bases_src = json.load(f).get("sweeps", {})
 
     report_path = os.path.join(args.out, "_equirect_v2_report.json")
     report = {
@@ -323,6 +394,8 @@ def main():
         "truth": "lidar pano v-flipped to zenith-top (stored nadir-at-row-0), columns +az (CCW), scanner frame",
         "fit": "48 axis-aligned scanner-frame camera bases per photo, masked NCC vs lidar truth",
         "az_shift0": AZ_SHIFT0,
+        "supersample": {"render": [SS_W, SS_H], "band_rows": BAND_ROWS,
+                        "base": [OUT_W, OUT_H], "downscale": "lanczos"},
         "sweeps": {},
     }
     if os.path.exists(report_path):
@@ -368,16 +441,24 @@ def main():
     fx = 2048.0 * (SRC_SIZE / 4096.0)
     cx = cy = SRC_SIZE / 2.0
 
-    world_grid = world_equirect_dirs(OUT_W, OUT_H)
     fit_grid = scanner_pano_dirs(FIT_W, FIT_H)
     fit_flat = fit_grid.reshape(-1, 3)
+
+    def save_report():
+        report["ambiguous_photos"] = sorted(
+            f"{k}#{j}" for k, v in report["sweeps"].items()
+            if isinstance(v, dict) for j in v.get("ambiguous", []))
+        with open(report_path, "w", encoding="utf8") as f:
+            json.dump(report, f, indent=2)
 
     targets = parse_scans(args.scans, n_scans)
     for scan in targets:
         key = f"scan_{scan:03d}"
         full_path = os.path.join(args.out, f"{key}.jpg")
+        ss_path = os.path.join(args.out, f"{key}_8192.jpg")
         prev_path = os.path.join(args.out, f"{key}_preview.jpg")
         done = (os.path.exists(full_path) and os.path.exists(prev_path)
+                and os.path.exists(ss_path)
                 and isinstance(report["sweeps"].get(key), dict)
                 and "sweep_ncc" in report["sweeps"][key])
         if done and not args.force:
@@ -386,66 +467,99 @@ def main():
             report["sweeps"][key] = "MISSING_IMAGES"
             print(f"{key}: MISSING_IMAGES", flush=True)
             continue
-        truth = lidar_truth(scan)
-        if truth is None:
-            report["sweeps"][key] = "NO_LIDAR_PANO"
-            print(f"{key}: NO_LIDAR_PANO", flush=True)
-            continue
-        signal = truth > T_SIGNAL
 
-        photos, mats = load_photos(scan)
-        grays = [p.mean(axis=2) for p in photos]
+        src_entry = bases_src.get(key)
+        loadable = (isinstance(src_entry, dict)
+                    and len(src_entry.get("photos", [])) == 6)
         r_scan = scan_rot[scan]
 
-        # --- per-photo empirical orientation fit against laser truth ---
-        fits, bases = [], []
-        comp_band = np.zeros((FIT_H, FIT_W), dtype=np.float64)
-        comp_cover = np.zeros((FIT_H, FIT_W), dtype=bool)
-        for j in range(6):
-            stored = (
-                r_scan.T @ (mats[j] @ CONV[:, 0]),
-                r_scan.T @ (mats[j] @ CONV[:, 1]),
-                r_scan.T @ (mats[j] @ CONV[:, 2]),
-            )
-            rec, basis, band, cover = fit_photo(
-                grays[j], fit_flat, truth, signal, fx, cx, cy,
-                (FIT_H, FIT_W), stored, args.fullshift)
-            fits.append(rec)
-            bases.append(basis)
-            fresh = cover & ~comp_cover
-            comp_band[fresh] = band[fresh]
-            comp_cover |= cover
-            del band, cover, fresh
+        if loadable and not args.verify_fit:
+            # Render stage only: apply the already-solved bases verbatim.
+            photos, mats = load_photos(scan)
+            bases = [parse_basis_name(p["basis"]) for p in src_entry["photos"]]
+            entry = {
+                "photos": src_entry["photos"],
+                "sweep_ncc": src_entry["sweep_ncc"],
+                "sweep_shift": src_entry.get("sweep_shift", 0),
+                "ambiguous": src_entry.get("ambiguous", []),
+                "bases_source": "loaded",
+            }
+        else:
+            truth = lidar_truth(scan)
+            if truth is None:
+                report["sweeps"][key] = "NO_LIDAR_PANO"
+                print(f"{key}: NO_LIDAR_PANO", flush=True)
+                continue
+            signal = truth > T_SIGNAL
 
-        # --- whole-sweep acceptance: corrected composite vs truth ---
-        shifts = [(AZ_SHIFT0 + s) % FIT_W
-                  for s in range(-AZ_SHIFT_SPAN, AZ_SHIFT_SPAN + 1)]
-        sweep_ncc, sweep_shift = masked_ncc(comp_band, comp_cover, truth,
-                                            signal, shifts)
+            photos, mats = load_photos(scan)
+            grays = [p.mean(axis=2) for p in photos]
 
-        # --- full-res world-frame composite with fitted bases ---
-        pano = render_world_rgb(world_grid, photos, bases, r_scan, fx, cx, cy)
-        Image.fromarray(pano).save(full_path, quality=90)
-        Image.fromarray(pano).resize((PREV_W, PREV_H), Image.LANCZOS).save(prev_path, quality=85)
+            # --- per-photo empirical orientation fit against laser truth ---
+            fits, bases = [], []
+            comp_band = np.zeros((FIT_H, FIT_W), dtype=np.float64)
+            comp_cover = np.zeros((FIT_H, FIT_W), dtype=bool)
+            for j in range(6):
+                stored = (
+                    r_scan.T @ (mats[j] @ CONV[:, 0]),
+                    r_scan.T @ (mats[j] @ CONV[:, 1]),
+                    r_scan.T @ (mats[j] @ CONV[:, 2]),
+                )
+                rec, basis, band, cover = fit_photo(
+                    grays[j], fit_flat, truth, signal, fx, cx, cy,
+                    (FIT_H, FIT_W), stored, args.fullshift)
+                fits.append(rec)
+                bases.append(basis)
+                fresh = cover & ~comp_cover
+                comp_band[fresh] = band[fresh]
+                comp_cover |= cover
+                del band, cover, fresh
 
-        entry = {
-            "photos": fits,
-            "sweep_ncc": round(sweep_ncc, 4),
-            "sweep_shift": sweep_shift,
-            "ambiguous": [j for j, f in enumerate(fits) if f.get("ambiguous")],
-        }
+            if args.verify_fit and loadable:
+                got = [rec["basis"] for rec in fits]
+                want = [p["basis"] for p in src_entry["photos"]]
+                if got != want:
+                    raise AssertionError(
+                        f"{key}: deterministic fit diverged from --bases-from "
+                        f"report: fit={got} report={want}")
+                print(f"{key}: fit verified identical to --bases-from report",
+                      flush=True)
+
+            # --- whole-sweep acceptance: corrected composite vs truth ---
+            shifts = [(AZ_SHIFT0 + s) % FIT_W
+                      for s in range(-AZ_SHIFT_SPAN, AZ_SHIFT_SPAN + 1)]
+            sweep_ncc, sweep_shift = masked_ncc(comp_band, comp_cover, truth,
+                                                signal, shifts)
+            entry = {
+                "photos": fits,
+                "sweep_ncc": round(sweep_ncc, 4),
+                "sweep_shift": sweep_shift,
+                "ambiguous": [j for j, f in enumerate(fits) if f.get("ambiguous")],
+                "bases_source": "fit",
+            }
+            del grays, comp_band, comp_cover, truth, signal
+
+        # --- supersampled world-frame composite with the solved bases ---
+        canvas = render_world_ss(photos, bases, r_scan, fx, cx, cy)
+        ss_img = Image.fromarray(canvas)
+        ss_img.save(ss_path, quality=SS_JPEG_QUALITY)
+        base_img = ss_img.resize((OUT_W, OUT_H), Image.LANCZOS)
+        base_img.save(full_path, quality=BASE_JPEG_QUALITY)
+        ss_img.resize((PREV_W, PREV_H), Image.LANCZOS).save(
+            prev_path, quality=PREV_JPEG_QUALITY)
+        base_img.close()
+        ss_img.close()
+
         report["sweeps"][key] = entry
+        save_report()  # per-sweep flush: a killed chunk resumes cleanly
         print(f"{key}: sweep_ncc={entry['sweep_ncc']} "
-              f"basis={[f['basis'] for f in fits]} "
+              f"bases_source={entry['bases_source']} "
+              f"basis={[p['basis'] for p in entry['photos']]} "
               f"ambiguous={entry['ambiguous']}", flush=True)
-        del photos, mats, grays, pano, comp_band, comp_cover
+        del photos, mats, bases, canvas
         gc.collect()
 
-    report["ambiguous_photos"] = sorted(
-        f"{k}#{j}" for k, v in report["sweeps"].items()
-        if isinstance(v, dict) for j in v.get("ambiguous", []))
-    with open(report_path, "w", encoding="utf8") as f:
-        json.dump(report, f, indent=2)
+    save_report()
     n_amb = len(report["ambiguous_photos"])
     print(f"done: {len(targets)} targeted, {n_amb} ambiguous photos")
     return 0
