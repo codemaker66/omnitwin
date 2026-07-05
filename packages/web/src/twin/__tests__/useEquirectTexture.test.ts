@@ -1,14 +1,21 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinearFilter, RepeatWrapping, SRGBColorSpace, Texture } from "three";
-import { useEquirectTexture } from "../useEquirectTexture.js";
+import {
+  resolveEquirectMaxLod,
+  useEquirectTexture,
+  type EquirectMaxLod,
+} from "../useEquirectTexture.js";
 
 // -----------------------------------------------------------------------------
 // useEquirectTexture — unit tests with the same manually-triggered Image mock
 // as useCubeTiles.test.ts (happy-dom never loads real images). Pins the
-// streaming order (512 preview before 4096 full), the sampling setup the
-// equirect shader depends on (sRGB, RepeatWrapping u, mipless linear
-// filtering), and disposal on LOD swap, node change and unmount.
+// streaming order (512 preview → 4096 base → 8192 zoom tier when allowed),
+// the maxLod ceiling (8192 is NEVER requested at the default), the
+// upgrade-in-place rule (raising maxLod keeps the live texture on stage),
+// the sampling setup the equirect shader depends on (sRGB, RepeatWrapping u,
+// mipless linear filtering), and disposal on LOD swap, node change and
+// unmount. The capability × zoom-intent gate is a pure-function table test.
 // -----------------------------------------------------------------------------
 
 /** Stand-in for the browser Image: records instances, loads only on demand. */
@@ -25,14 +32,14 @@ class MockImage {
 
 const BASE = "/twin/trades-hall";
 
-function imagesFor(lod: 512 | 4096): MockImage[] {
+function imagesFor(lod: 512 | 4096 | 8192): MockImage[] {
   return MockImage.instances.filter((image) =>
     image.src.endsWith(`equirect_${String(lod)}.webp`),
   );
 }
 
 /** Fire onload for every pending image of one LOD and flush the microtasks. */
-async function completeLod(lod: 512 | 4096): Promise<void> {
+async function completeLod(lod: 512 | 4096 | 8192): Promise<void> {
   await act(async () => {
     for (const image of imagesFor(lod)) {
       image.onload?.();
@@ -77,7 +84,7 @@ describe("useEquirectTexture", () => {
     expect(result.current.texture?.colorSpace).toBe(SRGBColorSpace);
   });
 
-  it("streams the 512 preview first, then swaps to the 4096 full pano", async () => {
+  it("streams the 512 preview first, then swaps to the 4096 base — and never requests 8192 at the default maxLod", async () => {
     const { result } = renderHook(() => useEquirectTexture("scan_000", BASE));
 
     // Exactly the preview loads first — anonymous CORS, correct pano URL.
@@ -101,7 +108,7 @@ describe("useEquirectTexture", () => {
     expect(preview?.magFilter).toBe(LinearFilter);
     expect(preview?.generateMipmaps).toBe(false);
 
-    // Only after the preview is live does the full pano start.
+    // Only after the preview is live does the base pano start.
     expect(MockImage.instances).toHaveLength(2);
     expect(MockImage.instances[1]?.src).toBe(`${BASE}/tiles/scan_000/equirect_4096.webp`);
 
@@ -110,6 +117,73 @@ describe("useEquirectTexture", () => {
       expect(result.current.lod).toBe(4096);
     });
     expect(result.current.texture).not.toBe(preview);
+
+    // The ladder stops at the 4096 ceiling: no 8192 request ever went out.
+    expect(MockImage.instances).toHaveLength(2);
+    expect(imagesFor(8192)).toHaveLength(0);
+  });
+
+  it("streams 512 → 4096 → 8192 in order under maxLod 8192", async () => {
+    const dispose = vi.spyOn(Texture.prototype, "dispose");
+    const { result } = renderHook(() => useEquirectTexture("scan_000", BASE, 8192));
+
+    await completeLod(512);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(512);
+    });
+
+    await completeLod(4096);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(4096);
+    });
+    const basePano = result.current.texture;
+
+    // The zoom tier follows ONLY after the base has landed.
+    expect(MockImage.instances).toHaveLength(3);
+    expect(MockImage.instances[2]?.src).toBe(`${BASE}/tiles/scan_000/equirect_8192.webp`);
+
+    await completeLod(8192);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(8192);
+    });
+    expect(result.current.texture).not.toBe(basePano);
+    // Both superseded textures (512, then 4096) were released on swap.
+    expect(dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the live 4096 on stage when maxLod rises mid-node, then swaps to 8192", async () => {
+    const dispose = vi.spyOn(Texture.prototype, "dispose");
+    const { result, rerender } = renderHook(
+      ({ maxLod }: { maxLod: EquirectMaxLod }) =>
+        useEquirectTexture("scan_000", BASE, maxLod),
+      { initialProps: { maxLod: 4096 as EquirectMaxLod } },
+    );
+
+    await completeLod(512);
+    await completeLod(4096);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(4096);
+    });
+    const basePano = result.current.texture;
+    expect(MockImage.instances).toHaveLength(2);
+
+    // Zoom intent arrives: the upgrade must NOT reset the stream — the base
+    // stays live (no blur-down) and exactly one new request goes out.
+    rerender({ maxLod: 8192 });
+    expect(result.current.lod).toBe(4096);
+    expect(result.current.texture).toBe(basePano);
+    expect(dispose).toHaveBeenCalledTimes(1); // only the 512 → 4096 swap
+    await waitFor(() => {
+      expect(MockImage.instances).toHaveLength(3);
+    });
+    expect(MockImage.instances[2]?.src).toBe(`${BASE}/tiles/scan_000/equirect_8192.webp`);
+
+    await completeLod(8192);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(8192);
+    });
+    expect(result.current.texture).not.toBe(basePano);
+    expect(dispose).toHaveBeenCalledTimes(2); // the 4096 released on swap
   });
 
   it("disposes the previous texture when the node changes and restarts at 512", async () => {
@@ -167,5 +241,17 @@ describe("useEquirectTexture", () => {
       unmount();
     }).not.toThrow();
     expect(dispose).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveEquirectMaxLod", () => {
+  it("grants 8192 only when zoom intent AND texture capability meet", () => {
+    // capability × intent table — the device row must dominate.
+    expect(resolveEquirectMaxLod(16384, true)).toBe(8192);
+    expect(resolveEquirectMaxLod(8192, true)).toBe(8192);
+    expect(resolveEquirectMaxLod(8192, false)).toBe(4096);
+    expect(resolveEquirectMaxLod(4096, true)).toBe(4096); // GPU can't take it
+    expect(resolveEquirectMaxLod(4096, false)).toBe(4096);
+    expect(resolveEquirectMaxLod(2048, true)).toBe(4096);
   });
 });

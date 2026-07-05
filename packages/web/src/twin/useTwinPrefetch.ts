@@ -1,8 +1,12 @@
 import { useEffect } from "react";
-import { TWIN_EQUIRECT_LODS, twinEquirectPath } from "@omnitwin/types";
+import { twinEquirectPath, type TwinEquirectLod } from "@omnitwin/types";
+
+/** Prefetch warms the 4096 BASE tier only — the 8192 zoom tier is strictly
+ *  on-demand (zoom intent on the current node), never speculative traffic. */
+const PREFETCH_LOD: TwinEquirectLod = 4096;
 
 /**
- * Cache-warm the FULL-resolution panos of the current node's graph
+ * Cache-warm the base-resolution panos of the current node's graph
  * neighbours so travel starts from the HTTP cache instead of the network —
  * the difference between a hop that sharpens instantly and one that sits on
  * its 512 preview while 4096×2048 crosses the wire.
@@ -18,9 +22,8 @@ export function useTwinPrefetch(neighborIds: readonly string[], base: string): v
       return;
     }
     const controller = new AbortController();
-    const fullLod = TWIN_EQUIRECT_LODS[1];
     for (const id of neighborIds) {
-      void fetch(`${base}/${twinEquirectPath(id, fullLod)}`, {
+      void fetch(`${base}/${twinEquirectPath(id, PREFETCH_LOD)}`, {
         signal: controller.signal,
         priority: "low",
       } as RequestInit)

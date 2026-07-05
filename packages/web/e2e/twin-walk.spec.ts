@@ -17,11 +17,13 @@ import {
 //
 // Every request the viewer makes is fixture-mocked via page.route: the
 // manifest is the four-node twin-fixture bundle — the EQUIRECT variant by
-// default, matching the production pipeline — and every tile request
-// (equirect_512/equirect_4096 panos here; face tiles on the legacy test) is
-// answered with the same 1×1 WebP, so the suite needs no real capture data
-// and no twin-forge output on disk. One test re-routes the cube-faces
-// manifest to keep the legacy bundle path rendering.
+// default, matching the production pipeline (lods [512, 4096, 8192]; the
+// 8192 zoom tier is on-demand and never requested here — no test zooms
+// below the 50° fov trigger) — and every tile request (equirect panos here;
+// face tiles on the legacy test) is answered with the same 1×1 WebP, so the
+// suite needs no real capture data and no twin-forge output on disk. One
+// test re-routes the cube-faces manifest to keep the legacy bundle path
+// rendering.
 //
 // Keyboard reachability is asserted on the minimap listbox (arrows + Enter):
 // the gold nav rings live inside the WebGL canvas and are not DOM-reachable,

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   BackSide,
   Color,
+  PerspectiveCamera,
   ShaderMaterial,
   type CubeTexture,
   type IUniform,
@@ -11,7 +12,11 @@ import {
 import type { TwinImagery } from "@omnitwin/types";
 import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
 import { useCubeTiles } from "./useCubeTiles.js";
-import { useEquirectTexture } from "./useEquirectTexture.js";
+import {
+  EQUIRECT_ZOOM_FOV_DEG,
+  resolveEquirectMaxLod,
+  useEquirectTexture,
+} from "./useEquirectTexture.js";
 
 // -----------------------------------------------------------------------------
 // PanoStage — one scan node rendered as an inverted sphere, dispatched on the
@@ -207,7 +212,27 @@ function EquirectPanoStage({
   opacity,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
-  const { texture } = useEquirectTexture(nodeId, assetBase);
+  const camera = useThree((state) => state.camera);
+  const gl = useThree((state) => state.gl);
+
+  // Zoom intent, YawProbe-style: the per-frame fov read stays in a ref and
+  // React sees at most ONE setState per node (TwinViewer keys PanoStage by
+  // node id, so a hop remounts this component and re-arms the latch). Once
+  // latched the 8192 tier stays for the node — zoom out never blurs down.
+  const [zoomIntent, setZoomIntent] = useState(false);
+  const zoomLatchRef = useRef(false);
+  useFrame(() => {
+    if (zoomLatchRef.current || !(camera instanceof PerspectiveCamera)) {
+      return;
+    }
+    if (camera.fov < EQUIRECT_ZOOM_FOV_DEG) {
+      zoomLatchRef.current = true;
+      setZoomIntent(true);
+    }
+  });
+
+  const maxLod = resolveEquirectMaxLod(gl.capabilities.maxTextureSize, zoomIntent);
+  const { texture } = useEquirectTexture(nodeId, assetBase, maxLod);
 
   const material = useMemo(() => {
     const uniforms: EquirectPanoUniforms = {
