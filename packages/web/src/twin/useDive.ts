@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isSpringSettled, stepSpring, type SpringConfig, type SpringState } from "../lib/springs.js";
+import { prefersReducedMotion } from "./reduced-motion.js";
 
 // -----------------------------------------------------------------------------
 // useDive — the signature moment (Twin Phase 2, Task 6).
@@ -37,14 +38,6 @@ export interface DiveState {
       readonly direction?: DiveDirection;
     },
   ) => void;
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
 }
 
 export function useDive({

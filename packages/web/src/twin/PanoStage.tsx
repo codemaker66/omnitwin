@@ -9,7 +9,7 @@ import {
   type IUniform,
   type Texture,
 } from "three";
-import type { TwinImagery } from "@omnitwin/types";
+import { TWIN_EQUIRECT_LODS, TWIN_LODS, type TwinImagery } from "@omnitwin/types";
 import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
 import { useCubeTiles } from "./useCubeTiles.js";
 import {
@@ -141,6 +141,13 @@ export interface PanoStageProps {
   readonly opacity: number;
   /** Imagery mode from the manifest — selects the pano pipeline. */
   readonly imagery: TwinImagery;
+  /**
+   * HUD bridge (polish pass): reports each landed texture tier — "preview"
+   * for the fast first paint, "base" once the full-quality tier (or better)
+   * is on stage. Drives the stage fade-in and the initial-load shimmer;
+   * never influences streaming itself.
+   */
+  readonly onTier?: (nodeId: string, tier: "preview" | "base") => void;
 }
 
 function CubePanoStage({
@@ -149,9 +156,12 @@ function CubePanoStage({
   quaternion,
   assetBase,
   opacity,
+  onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
-  const { texture } = useCubeTiles(nodeId, assetBase);
+  const { texture, lod } = useCubeTiles(nodeId, assetBase);
+  const onTierRef = useRef(onTier);
+  onTierRef.current = onTier;
 
   const material = useMemo(() => {
     const uniforms: CubePanoUniforms = {
@@ -183,7 +193,10 @@ function CubePanoStage({
   useEffect(() => {
     (material.uniforms as CubePanoUniforms).uCube.value = texture;
     invalidate();
-  }, [texture, material, invalidate]);
+    if (texture !== null && lod !== 0) {
+      onTierRef.current?.(nodeId, lod >= TWIN_LODS[1] ? "base" : "preview");
+    }
+  }, [texture, lod, nodeId, material, invalidate]);
 
   useEffect(() => {
     (material.uniforms as CubePanoUniforms).uOpacity.value = opacity;
@@ -210,10 +223,13 @@ function EquirectPanoStage({
   position,
   assetBase,
   opacity,
+  onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
+  const onTierRef = useRef(onTier);
+  onTierRef.current = onTier;
 
   // Zoom intent, YawProbe-style: the per-frame fov read stays in a ref and
   // React sees at most ONE setState per node (TwinViewer keys PanoStage by
@@ -232,7 +248,7 @@ function EquirectPanoStage({
   });
 
   const maxLod = resolveEquirectMaxLod(gl.capabilities.maxTextureSize, zoomIntent);
-  const { texture } = useEquirectTexture(nodeId, assetBase, maxLod);
+  const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
 
   const material = useMemo(() => {
     const uniforms: EquirectPanoUniforms = {
@@ -263,7 +279,10 @@ function EquirectPanoStage({
   useEffect(() => {
     (material.uniforms as EquirectPanoUniforms).uMap.value = texture;
     invalidate();
-  }, [texture, material, invalidate]);
+    if (texture !== null && lod !== 0) {
+      onTierRef.current?.(nodeId, lod >= TWIN_EQUIRECT_LODS[1] ? "base" : "preview");
+    }
+  }, [texture, lod, nodeId, material, invalidate]);
 
   useEffect(() => {
     (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacity;

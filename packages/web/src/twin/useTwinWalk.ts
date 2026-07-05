@@ -7,6 +7,7 @@ import {
   type SpringConfig,
   type SpringState,
 } from "../lib/springs.js";
+import { prefersReducedMotion } from "./reduced-motion.js";
 
 // -----------------------------------------------------------------------------
 // useTwinWalk — the hop state machine for the twin walkthrough.
@@ -44,15 +45,6 @@ export interface TwinWalk {
    * silently ignored, as are unknown ids and hops issued mid-hop.
    */
   readonly hopTo: (id: string, opts?: { readonly teleport?: boolean }) => void;
-}
-
-/** Read the visitor's motion preference at hop time (cockpit pattern). */
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
 }
 
 export function useTwinWalk(manifest: TwinManifest): TwinWalk {

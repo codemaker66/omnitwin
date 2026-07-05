@@ -7,6 +7,7 @@ import {
   type SpringConfig,
   type SpringState,
 } from "../lib/springs.js";
+import { prefersReducedMotion } from "./reduced-motion.js";
 
 // -----------------------------------------------------------------------------
 // WalkControls — first-person look + fov zoom for the twin walkthrough.
@@ -17,12 +18,20 @@ import {
 // direct camera writes inside useFrame — no React state — and invalidate()
 // keeps the demand-mode canvas painting only while a spring is live.
 //
-// The pure helpers (dragToYawPitch, clampPitch, lookStateFromCamera) are
-// exported for unit tests and so Task 9's hops can hand orientation over
-// seamlessly. Pointer Events cover mouse and touch alike: one active pointer
-// is a look-drag, two are a pinch.
+// Release inertia (polish pass): a look-drag that ends as a flick hands its
+// velocity to the look springs — the release speed seeds the spring velocity
+// and projects the target ahead by FLICK_PROJECTION_S, so the view glides
+// ~300–500 ms and settles on LOOK_SPRING's overdamped tail (ζ ≈ 1.19 — no
+// wobble by construction). Mouse and touch share the code path. Under
+// prefers-reduced-motion the handoff is skipped: release stops the view.
 //
-// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 8).
+// The pure helpers (dragToYawPitch, clampPitch, lookStateFromCamera,
+// flickVelocity) are exported for unit tests and so Task 9's hops can hand
+// orientation over seamlessly. Pointer Events cover mouse and touch alike:
+// one active pointer is a look-drag, two are a pinch.
+//
+// Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 8);
+// inertia: the 2026-07-05 polish pass.
 // -----------------------------------------------------------------------------
 
 /** Radians of yaw/pitch per pixel of drag. */
@@ -37,8 +46,93 @@ export const MAX_FOV = 95;
 
 /** Look spring — crisp but padded so a flick glides to rest. */
 export const LOOK_SPRING: SpringConfig = { stiffness: 120, damping: 26 };
-/** Fov spring — slightly tighter so wheel steps feel immediate. */
-export const FOV_SPRING: SpringConfig = { stiffness: 160, damping: 24 };
+/**
+ * Fov spring — tight so wheel steps feel immediate, damped just past critical
+ * (ζ ≈ 1.03) so successive scroll notches read as one continuous breath
+ * rather than a series of tiny overshoot ticks.
+ */
+export const FOV_SPRING: SpringConfig = { stiffness: 160, damping: 26 };
+
+// — release inertia (the flick) —
+
+/** One pointer-motion sample used for release-velocity estimation. */
+export interface FlickSample {
+  /** Event timestamp (ms, performance-clock domain of PointerEvent). */
+  readonly t: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Sample-buffer horizon — motion older than this is pruned (ms). */
+export const FLICK_WINDOW_MS = 180;
+/** Pairwise low-pass time constant — recent pairs dominate (ms). */
+export const FLICK_SMOOTHING_MS = 40;
+/** Momentum half-life of a resting finger before release (ms). */
+export const FLICK_REST_DECAY_MS = 80;
+/** Release speeds below this settle in place — a hold, not a flick (px/s). */
+export const FLICK_MIN_SPEED_PX_S = 180;
+/** Release speed ceiling — a wild flick must never spin the room (px/s). */
+export const FLICK_MAX_SPEED_PX_S = 3200;
+/** How far ahead (seconds) the release velocity projects the look target. */
+export const FLICK_PROJECTION_S = 0.12;
+
+/**
+ * Release velocity (px/s), estimated the way native scroll views do it:
+ * consecutive sample pairs are low-passed (α = 1 − e^(−Δt/τ), so the most
+ * recent motion dominates), then the whole estimate decays by
+ * e^(−rest/τ_rest) for the gap between the last move and the release. A
+ * finger that stops before lifting therefore yields zero — the view must
+ * halt under a resting finger — while a single delayed event (a busy frame
+ * on a real device) only shaves momentum instead of zeroing it, which a
+ * hard sampling window would do. Speeds are clamped to
+ * FLICK_MAX_SPEED_PX_S preserving direction; sub-threshold speeds are zero.
+ */
+export function flickVelocity(
+  samples: readonly FlickSample[],
+  releaseT: number,
+): { vx: number; vy: number } {
+  const last = samples[samples.length - 1];
+  if (samples.length < 2 || last === undefined) {
+    return { vx: 0, vy: 0 };
+  }
+  let vx = 0;
+  let vy = 0;
+  let initialized = false;
+  for (let i = 1; i < samples.length; i += 1) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    if (a === undefined || b === undefined) {
+      continue;
+    }
+    // Sub-4 ms bursts (event floods in one task) share one trustworthy dt.
+    const dtMs = Math.max(b.t - a.t, 4);
+    const pairVx = ((b.x - a.x) / dtMs) * 1000;
+    const pairVy = ((b.y - a.y) / dtMs) * 1000;
+    if (!initialized) {
+      vx = pairVx;
+      vy = pairVy;
+      initialized = true;
+    } else {
+      const alpha = 1 - Math.exp(-dtMs / FLICK_SMOOTHING_MS);
+      vx += (pairVx - vx) * alpha;
+      vy += (pairVy - vy) * alpha;
+    }
+  }
+  const restMs = Math.max(releaseT - last.t, 0);
+  const rest = Math.exp(-restMs / FLICK_REST_DECAY_MS);
+  vx *= rest;
+  vy *= rest;
+  const speed = Math.hypot(vx, vy);
+  if (speed < FLICK_MIN_SPEED_PX_S) {
+    return { vx: 0, vy: 0 };
+  }
+  if (speed > FLICK_MAX_SPEED_PX_S) {
+    const scale = FLICK_MAX_SPEED_PX_S / speed;
+    vx *= scale;
+    vy *= scale;
+  }
+  return { vx, vy };
+}
 
 /** Wheel deltaY (px) → fov degrees. */
 const WHEEL_FOV_FACTOR = 0.05;
@@ -92,6 +186,8 @@ interface WalkState {
   readonly pointers: Map<number, { x: number; y: number }>;
   /** Last pinch span in px; null until both fingers have reported once. */
   pinchDistance: number | null;
+  /** Recent look-drag samples — the flick window for release inertia. */
+  readonly samples: FlickSample[];
 }
 
 /** Scratch Euler reused every frame — no per-frame allocation. */
@@ -115,6 +211,7 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
     fovTarget: 60,
     pointers: new Map(),
     pinchDistance: null,
+    samples: [],
   });
 
   // Adopt the camera's current orientation whenever control (re)engages so
@@ -143,6 +240,12 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
     const onPointerDown = (event: PointerEvent): void => {
       state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       state.pinchDistance = null;
+      // A fresh grab interrupts any glide in flight — and a second finger
+      // (pinch) can never inherit the first finger's flick history.
+      state.samples.length = 0;
+      if (state.pointers.size === 1) {
+        element.style.cursor = "grabbing";
+      }
       try {
         element.setPointerCapture(event.pointerId);
       } catch {
@@ -164,6 +267,15 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
         );
         state.yawTarget += dYaw;
         state.pitchTarget = clampPitch(state.pitchTarget + dPitch);
+        // Record the flick buffer: the recent horizon only, so a long slow
+        // drag never grows it (the low-pass already forgets old motion).
+        state.samples.push({ t: event.timeStamp, x: event.clientX, y: event.clientY });
+        while (
+          state.samples.length > 0 &&
+          (state.samples[0]?.t ?? 0) < event.timeStamp - FLICK_WINDOW_MS
+        ) {
+          state.samples.shift();
+        }
         invalidate();
         return;
       }
@@ -185,11 +297,32 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
     };
 
     const onPointerEnd = (event: PointerEvent): void => {
+      const wasLookDrag =
+        state.pointers.size === 1 && state.pointers.has(event.pointerId);
       state.pointers.delete(event.pointerId);
       state.pinchDistance = null;
       if (element.hasPointerCapture(event.pointerId)) {
         element.releasePointerCapture(event.pointerId);
       }
+      if (state.pointers.size === 0) {
+        element.style.cursor = "";
+      }
+      // The flick: hand the release velocity to the look springs so the view
+      // glides on. Momentum is an embellishment, so reduced motion skips it —
+      // release simply stops the view where the drag left it.
+      if (wasLookDrag && !prefersReducedMotion()) {
+        const { vx, vy } = flickVelocity(state.samples, event.timeStamp);
+        if (vx !== 0 || vy !== 0) {
+          // px/s → rad/s rides the same linear map as the drag itself.
+          const { dYaw: vYaw, dPitch: vPitch } = dragToYawPitch(vx, vy);
+          state.yaw.velocity = vYaw;
+          state.pitch.velocity = vPitch;
+          state.yawTarget += vYaw * FLICK_PROJECTION_S;
+          state.pitchTarget = clampPitch(state.pitchTarget + vPitch * FLICK_PROJECTION_S);
+          invalidate();
+        }
+      }
+      state.samples.length = 0;
     };
 
     const onWheel = (event: WheelEvent): void => {
@@ -210,8 +343,10 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
       element.removeEventListener("pointerup", onPointerEnd);
       element.removeEventListener("pointercancel", onPointerEnd);
       element.removeEventListener("wheel", onWheel);
+      element.style.cursor = "";
       state.pointers.clear();
       state.pinchDistance = null;
+      state.samples.length = 0;
     };
   }, [enabled, gl, invalidate]);
 
@@ -225,8 +360,10 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
     stepSpring(state.pitch, state.pitchTarget, delta, LOOK_SPRING);
     stepSpring(state.fov, state.fovTarget, delta, FOV_SPRING);
 
+    // The written pitch is clamped as well as the target: a seeded flick
+    // velocity may carry the spring value transiently past the ±85° rail.
     camera.quaternion.setFromEuler(
-      frameEuler.set(state.pitch.value, state.yaw.value, 0, "YXZ"),
+      frameEuler.set(clampPitch(state.pitch.value), state.yaw.value, 0, "YXZ"),
     );
     if (camera.fov !== state.fov.value) {
       camera.fov = state.fov.value;

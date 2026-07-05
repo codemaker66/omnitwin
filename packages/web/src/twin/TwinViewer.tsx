@@ -1,5 +1,6 @@
 import {
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -86,11 +87,23 @@ function shortestYawDelta(a: number, b: number): number {
 const dollyEuler = new Euler(0, 0, 0, "YXZ");
 
 /**
+ * Travel fov breath — the Street-View surge: +4° at mid-hop, back to the
+ * departing fov by settle. A pure function of the travel spring's progress
+ * (sin π·p), so the breath and the dolly ride the SAME spring and can never
+ * drift apart (house rule: springs, never tweens). Under
+ * prefers-reduced-motion useTwinWalk teleports instead of springing, so no
+ * travelling frame — and therefore no breath — ever runs.
+ */
+export const HOP_FOV_BREATH_DEG = 4;
+
+/**
  * Camera position = lerp(from, to, progress), read from a ref each frame so
  * per-frame motion never re-renders React. While a hop is travelling the
  * dolly also owns orientation (Street View arrival rule: you end up facing
- * the direction you moved): WalkControls is disabled during hops and
- * re-adopts the camera's orientation when it re-engages at settle.
+ * the direction you moved) and breathes the fov: WalkControls is disabled
+ * during hops and re-adopts the camera's orientation and fov when it
+ * re-engages at settle — the settle branch restores the exact pre-hop fov so
+ * the handover carries zero residue from the breath.
  */
 function CameraDolly({
   dolly,
@@ -99,7 +112,12 @@ function CameraDolly({
 }): null {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const hopStart = useRef<{ key: string; yaw: number; pitch: number } | null>(null);
+  const hopStart = useRef<{
+    key: string;
+    yaw: number;
+    pitch: number;
+    fov: number;
+  } | null>(null);
 
   useFrame(() => {
     const { from, to, progress, travelYaw, hopKey } = dolly.current;
@@ -114,15 +132,29 @@ function CameraDolly({
     if (travelYaw !== null && progress > 0 && progress < 1) {
       if (hopStart.current === null || hopStart.current.key !== hopKey) {
         dollyEuler.setFromQuaternion(camera.quaternion, "YXZ");
-        hopStart.current = { key: hopKey, yaw: dollyEuler.y, pitch: dollyEuler.x };
+        hopStart.current = {
+          key: hopKey,
+          yaw: dollyEuler.y,
+          pitch: dollyEuler.x,
+          fov: camera instanceof PerspectiveCamera ? camera.fov : 75,
+        };
       }
       const eased = progress * progress * (3 - 2 * progress); // smoothstep
       const start = hopStart.current;
       const yaw = start.yaw + shortestYawDelta(start.yaw, travelYaw) * eased;
       const pitch = start.pitch * (1 - eased); // level out while moving
       camera.quaternion.setFromEuler(dollyEuler.set(pitch, yaw, 0, "YXZ"));
+      if (camera instanceof PerspectiveCamera) {
+        camera.fov = start.fov + Math.sin(Math.PI * progress) * HOP_FOV_BREATH_DEG;
+        camera.updateProjectionMatrix();
+      }
       invalidate();
     } else if (progress <= 0 || progress >= 1) {
+      if (hopStart.current !== null && camera instanceof PerspectiveCamera) {
+        camera.fov = hopStart.current.fov;
+        camera.updateProjectionMatrix();
+        invalidate();
+      }
       hopStart.current = null;
     }
   });
@@ -398,6 +430,38 @@ function TwinModeControl({
   );
 }
 
+/**
+ * The initial-load shimmer's phases: "loading" while the FIRST node streams
+ * toward its base tier, "fading" while the hairline fades out, "done" once
+ * unmounted. Hops never re-arm it — the shimmer belongs to the opening
+ * moment only.
+ */
+export type TwinShimmerPhase = "loading" | "fading" | "done";
+
+/** Milliseconds the fading shimmer stays mounted for its CSS fade. */
+export const SHIMMER_FADE_MS = 450;
+
+/**
+ * Pure transition for the shimmer: a base-tier arrival on the initial node
+ * ends it, as does ANY tier report from a different node (the visitor walked
+ * on — the opening moment is over). Preview tiers on the initial node keep
+ * it shimmering. Exported for unit tests.
+ */
+export function shimmerPhaseAfterTier(
+  phase: TwinShimmerPhase,
+  reportedNodeId: string,
+  initialNodeId: string,
+  tier: "preview" | "base",
+): TwinShimmerPhase {
+  if (phase !== "loading") {
+    return phase;
+  }
+  if (reportedNodeId !== initialNodeId) {
+    return "fading";
+  }
+  return tier === "base" ? "fading" : phase;
+}
+
 export interface TwinViewerProps {
   readonly manifest: TwinManifest;
   /** Bundle base URL including the venue segment, e.g. `/twin/trades-hall`. */
@@ -409,6 +473,49 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
   const [yaw, setYaw] = useState(0);
+
+  // The opening: the canvas holds black until the first pano texture is on
+  // stage, then fades in (CSS, ~500 ms; reduced motion cuts straight in).
+  // The shimmer under the node label runs for the initial node's stream only.
+  const [stageLive, setStageLive] = useState(false);
+  const [shimmerPhase, setShimmerPhase] = useState<TwinShimmerPhase>("loading");
+  const initialNodeIdRef = useRef(walk.currentId);
+
+  const onPanoTier = useCallback((nodeId: string, tier: "preview" | "base") => {
+    setStageLive(true);
+    setShimmerPhase((phase) =>
+      shimmerPhaseAfterTier(phase, nodeId, initialNodeIdRef.current, tier),
+    );
+  }, []);
+
+  // Mesh modes paint their own stage — never hold the canvas dark for them
+  // (?mode=dollhouse deep links mount without any pano tier report).
+  useEffect(() => {
+    if (mode !== "walk") {
+      setStageLive(true);
+    }
+  }, [mode]);
+
+  // Walking off the initial node ends the opening even without a base tier
+  // (teleports and reduced-motion swaps land with no travelling report).
+  useEffect(() => {
+    if (walk.currentId !== initialNodeIdRef.current) {
+      setShimmerPhase((phase) => (phase === "loading" ? "fading" : phase));
+    }
+  }, [walk.currentId]);
+
+  // The fading shimmer unmounts once its CSS fade has played out.
+  useEffect(() => {
+    if (shimmerPhase !== "fading") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setShimmerPhase("done");
+    }, SHIMMER_FADE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [shimmerPhase]);
 
   // Hop smoothness: neighbours' full panos are cache-warmed while the
   // visitor lingers, so travel sharpens from disk, not the network.
@@ -534,7 +641,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   }
 
   return (
-    <div className="vv-twin-viewer">
+    <div className={stageLive ? "vv-twin-viewer vv-twin-viewer--live" : "vv-twin-viewer"}>
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
@@ -563,6 +670,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 assetBase={assetBase}
                 opacity={opacity}
                 imagery={manifest.imagery}
+                onTier={onPanoTier}
               />
             ))}
             {!hopping && (
@@ -618,7 +726,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       </Canvas>
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
-        {twinNodeLabel(walk.currentId, manifest.name)}
+        {/* Keyed span: node changes remount the text through a 200 ms fade. */}
+        <span key={walk.currentId} className="vv-twin-node-label-text">
+          {twinNodeLabel(walk.currentId, manifest.name)}
+        </span>
+        {shimmerPhase !== "done" && (
+          <span
+            aria-hidden
+            data-testid="twin-load-shimmer"
+            className={
+              shimmerPhase === "fading"
+                ? "vv-twin-load-shimmer vv-twin-load-shimmer--out"
+                : "vv-twin-load-shimmer"
+            }
+          />
+        )}
       </div>
       {hasMesh && <TwinModeControl mode={mode} setMode={setMode} />}
       {hasMesh && mode === "walk" && !hopping && (
