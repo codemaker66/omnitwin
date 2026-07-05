@@ -68,7 +68,7 @@ describe("twin/0 manifest schema", () => {
   it("locks faces and lods", () => {
     expect(TWIN_FACES).toEqual(["front", "back", "left", "right", "up", "down"]);
     expect(TWIN_LODS).toEqual([256, 1024]);
-    expect(TWIN_EQUIRECT_LODS).toEqual([512, 4096]);
+    expect(TWIN_EQUIRECT_LODS).toEqual([512, 4096, 8192]);
   });
 });
 
@@ -78,14 +78,14 @@ describe("twin/0 imagery modes", () => {
     expect(parsed.imagery).toBe("cube-faces");
   });
 
-  it("accepts an equirect manifest with lods [512, 4096]", () => {
+  it("accepts an equirect manifest with lods [512, 4096, 8192]", () => {
     const parsed = TwinManifestSchema.parse({
       ...validManifest,
       imagery: "equirect",
-      lods: [512, 4096],
+      lods: [512, 4096, 8192],
     });
     expect(parsed.imagery).toBe("equirect");
-    expect(parsed.lods).toEqual([512, 4096]);
+    expect(parsed.lods).toEqual([512, 4096, 8192]);
   });
 
   it("rejects an equirect manifest carrying cube-face lods", () => {
@@ -94,9 +94,21 @@ describe("twin/0 imagery modes", () => {
     ).toThrow();
   });
 
+  it("rejects the retired two-tier equirect lods [512, 4096]", () => {
+    // One current standard: pre-zoom-tier bundles must be re-forged, not
+    // half-parsed — the union no longer carries the two-entry tuple at all.
+    expect(() =>
+      TwinManifestSchema.parse({
+        ...validManifest,
+        imagery: "equirect",
+        lods: [512, 4096],
+      }),
+    ).toThrow();
+  });
+
   it("rejects a cube-faces manifest carrying equirect lods", () => {
     expect(() =>
-      TwinManifestSchema.parse({ ...validManifest, lods: [512, 4096] }),
+      TwinManifestSchema.parse({ ...validManifest, lods: [512, 4096, 8192] }),
     ).toThrow();
   });
 
@@ -109,6 +121,7 @@ describe("twin/0 imagery modes", () => {
   it("builds equirect pano paths", () => {
     expect(twinEquirectPath("scan_007", 4096)).toBe("tiles/scan_007/equirect_4096.webp");
     expect(twinEquirectPath("scan_007", 512)).toBe("tiles/scan_007/equirect_512.webp");
+    expect(twinEquirectPath("scan_007", 8192)).toBe("tiles/scan_007/equirect_8192.webp");
   });
 });
 

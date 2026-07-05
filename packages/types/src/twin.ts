@@ -10,10 +10,12 @@ import { z } from "zod";
 export const TWIN_SCHEMA_ID = "twin/0" as const;
 export const TWIN_FACES = ["front", "back", "left", "right", "up", "down"] as const;
 export const TWIN_LODS = [256, 1024] as const;
-/** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 4096×2048 full.
- *  4096 ⇒ 11.4 px/deg — sharpness parity with the legacy cube tiles; the
- *  first equirect ship at 2048 halved that and read as visibly soft. */
-export const TWIN_EQUIRECT_LODS = [512, 4096] as const;
+/** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 4096×2048 base,
+ *  8192×4096 zoom tier. The base streams on every node (11.4 px/deg); the
+ *  8192 tier (22.8 px/deg — the extractor's supersampled render, near the
+ *  ~45.5 px/deg native photos over a typical zoomed fov) loads on zoom
+ *  intent only, and only where the GPU's maxTextureSize admits it. */
+export const TWIN_EQUIRECT_LODS = [512, 4096, 8192] as const;
 
 export type TwinFace = (typeof TWIN_FACES)[number];
 export type TwinLod = (typeof TWIN_LODS)[number];
@@ -93,10 +95,10 @@ export const TwinManifestSchema = z
       z.literal("front"), z.literal("back"), z.literal("left"),
       z.literal("right"), z.literal("up"), z.literal("down"),
     ]),
-    /** Cube mode: face edge px [256, 1024]. Equirect mode: widths [512, 4096]. */
+    /** Cube mode: face edge px [256, 1024]. Equirect: widths [512, 4096, 8192]. */
     lods: z.union([
       z.tuple([z.literal(256), z.literal(1024)]),
-      z.tuple([z.literal(512), z.literal(4096)]),
+      z.tuple([z.literal(512), z.literal(4096), z.literal(8192)]),
     ]),
     generatedAt: z.string().datetime(),
     nodes: z.array(TwinScanNodeSchema).min(1),
@@ -107,8 +109,10 @@ export const TwinManifestSchema = z
     contentHashes: z.record(z.string(), z.string()).optional(),
   })
   .superRefine((manifest, ctx) => {
-    const expected = manifest.imagery === "equirect" ? TWIN_EQUIRECT_LODS : TWIN_LODS;
-    if (manifest.lods[0] !== expected[0] || manifest.lods[1] !== expected[1]) {
+    const expected: readonly number[] =
+      manifest.imagery === "equirect" ? TWIN_EQUIRECT_LODS : TWIN_LODS;
+    const lods: readonly number[] = manifest.lods;
+    if (lods.length !== expected.length || expected.some((lod, i) => lods[i] !== lod)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["lods"],

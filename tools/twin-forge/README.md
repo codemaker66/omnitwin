@@ -2,8 +2,9 @@
 
 Offline pipeline for **Venviewer Twin** bundles (`twin/0`). Converts a
 Matterport/Leica E57 capture's derived assets into the bundle the twin viewer
-streams: WebP tiles at two LODs, a schema-validated manifest, a K-nearest-
-neighbour nav graph, and SHA-256 content hashes (D-014 bundle shape).
+streams: WebP tiles at the mode's LOD ladder (equirect: 512 preview, 4096
+base, 8192 zoom tier), a schema-validated manifest, a K-nearest-neighbour nav
+graph, and SHA-256 content hashes (D-014 bundle shape).
 
 Two imagery modes:
 
@@ -21,7 +22,7 @@ Plan: `docs/superpowers/plans/2026-07-02-twin-phase1-walk.md`
 
 | Input | Shape |
 | --- | --- |
-| `--equirects <dir>` | `scan_NNN.jpg` (2048×1024 world-frame equirects from `extract_equirect.py`). Presence selects equirect mode and REPLACES `--cubemaps` |
+| `--equirects <dir>` | `scan_NNN.jpg` (4096×2048 base) **and** `scan_NNN_8192.jpg` (8192×4096 supersampled zoom source), both from `extract_equirect_v2.py`. Presence selects equirect mode and REPLACES `--cubemaps`; a node missing either source is reported missing |
 | `--cubemaps <dir>` | `scan_NNN_{front,back,left,right,up,down}.jpg` (square faces; legacy mode) |
 | `--poses <file>` | JSON `{ "<index>": { rotation: [w,x,y,z], translation: [x,y,z] } }` — E57 frame, Z-up, metres |
 | `--overrides <file>` | `{ "add": [["scan_a","scan_b"], …], "remove": [...] }` — hand-edited nav corrections (doorways, stairwells). Committed per venue under `nav-overrides/` |
@@ -30,7 +31,7 @@ Plan: `docs/superpowers/plans/2026-07-02-twin-phase1-walk.md`
 
 ```powershell
 pnpm --filter @omnitwin/twin-forge forge `
-  --equirects "F:\E57\equirect" `
+  --equirects "F:\E57\equirect_ss" `
   --poses "F:\E57\poses.json" `
   --out "C:\Users\blake\omnitwin2\packages\web\public\twin\trades-hall" `
   --venue trades-hall --name "Trades Hall Glasgow" `
@@ -40,9 +41,9 @@ pnpm --filter @omnitwin/twin-forge forge `
 
 Paths must be **absolute** (the CLI runs with the package as cwd). Idempotent:
 existing tiles are skipped, so re-runs after adding scans only pay for new work.
-2026-07-04 equirect reference run: 149 nodes, 357 edges, 298 tiles, 43 MB,
-0 missing, manifest `imagery: "equirect"`, lods `[512, 2048]`.
-(2026-07-02 cube reference run was 1,788 tiles / 136 MB.)
+2026-07-05 supersampled equirect reference run: 149 nodes, 357 edges,
+447 tiles (3 LODs/node), 0 missing, manifest `imagery: "equirect"`, lods
+`[512, 4096, 8192]`. (2026-07-02 cube reference run was 1,788 tiles / 136 MB.)
 
 The output directory is **gitignored** (`packages/web/public/twin/`) — bundles
 are data, not source. The dev server serves it at `/twin/<venue>/…`, which is
