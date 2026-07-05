@@ -10,8 +10,13 @@ import { e57PointToThree } from "./twin-basis.js";
 // toward it; W walks forward, A/D strafe, S backs up.
 // -----------------------------------------------------------------------------
 
-/** Travel cone half-angle: directions outside ~55° of a neighbour don't count. */
+/** Click cone half-angle: a click outside ~55° of a neighbour doesn't count.
+ *  Tight so clicking picks precisely the node you aimed at. */
 export const TRAVEL_CONE_COS = Math.cos((55 * Math.PI) / 180);
+/** Hold-to-walk cone half-angle: WASD is directional intent, not a pixel aim,
+ *  and a held key must flow around gentle corridor bends, so it uses a wider
+ *  ~72° tolerance (alignment still scores, so the most-forward node wins). */
+export const WASD_CONE_COS = Math.cos((85 * Math.PI) / 180);
 
 /**
  * Pick the best neighbour in the pointed direction, or null when nothing
@@ -20,13 +25,17 @@ export const TRAVEL_CONE_COS = Math.cos((55 * Math.PI) / 180);
  * Alignment dominates; a mild nearness bonus breaks ties between two nodes
  * down the same corridor so travel takes the *next* step, not a leap.
  * The vertical component is damped (×0.35) — pointing slightly at the floor
- * or ceiling should still walk you forward, matching Street View.
+ * or ceiling should still walk you forward, matching Street View. `coneCos`
+ * is the acceptance threshold (clicks tight, WASD wide); `excludeId` drops the
+ * node just departed so a wide cone can never bounce you straight back.
  */
 export function pickTravelTarget(
   fromThree: readonly [number, number, number],
   dirThree: readonly [number, number, number],
   neighborIds: readonly string[],
   nodesById: ReadonlyMap<string, TwinScanNode>,
+  coneCos: number = TRAVEL_CONE_COS,
+  excludeId: string | null = null,
 ): string | null {
   const dx = dirThree[0];
   const dy = dirThree[1] * 0.35;
@@ -40,6 +49,9 @@ export function pickTravelTarget(
   let bestId: string | null = null;
   let bestScore = -Infinity;
   for (const id of neighborIds) {
+    if (id === excludeId) {
+      continue;
+    }
     const node = nodesById.get(id);
     if (node === undefined) {
       continue;
@@ -53,7 +65,7 @@ export function pickTravelTarget(
       continue;
     }
     const align = (vx * d[0] + vy * d[1] + vz * d[2]) / dist;
-    if (align < TRAVEL_CONE_COS) {
+    if (align < coneCos) {
       continue;
     }
     // Alignment first; a gentle 1/dist bonus prefers the next step over a

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { TwinManifest } from "@omnitwin/types";
 import {
-  isSpringSettled,
   stepSpring,
   type SpringConfig,
   type SpringState,
@@ -27,8 +26,24 @@ import { prefersReducedMotion } from "./reduced-motion.js";
 // Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 9).
 // -----------------------------------------------------------------------------
 
-/** Hop spring — unhurried enough to read as walking, not snapping (~0.6 s). */
-export const HOP_SPRING: SpringConfig = { stiffness: 70, damping: 16 };
+/**
+ * Hop spring — a smooth, slightly-overdamped glide (~0.65 s of visible motion)
+ * so travel reads as gliding forward through the room, not a cut, yet stays
+ * brisk enough that hold-to-walk chains these glides into continuous, flowing
+ * game-feel movement. ζ≈1.0 (no wobble). The camera dolly, the two-pano
+ * crossfade and the fov breath all ride this one spring.
+ */
+export const HOP_SPRING: SpringConfig = { stiffness: 120, damping: 22 };
+
+/**
+ * Arrive when the crossfade is VISUALLY complete, not when the spring is
+ * mathematically settled. `isSpringSettled`'s 0.001 epsilon grinds a long
+ * invisible tail (0.99→0.999) — dead time that also blocks the next glide, so
+ * a held key can't chain. At 0.995 the target pano is fully opaque and the
+ * camera has effectively arrived; ending here makes hops crisp and hold-to-
+ * walk flow. Safe because the spring is overdamped (monotonic, no overshoot).
+ */
+const HOP_ARRIVE_VALUE = 0.995;
 
 export interface TwinWalk {
   /** The node you are standing on (the hop origin while one is in flight). */
@@ -165,7 +180,7 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
           lastTimestamp === null ? 1 / 60 : Math.max((timestamp - lastTimestamp) / 1000, 0);
         lastTimestamp = timestamp;
         stepSpring(spring, 1, dtSeconds, HOP_SPRING);
-        if (isSpringSettled(spring, 1)) {
+        if (spring.value >= HOP_ARRIVE_VALUE) {
           rafIdRef.current = null;
           arriveAt(id, "push");
           return;

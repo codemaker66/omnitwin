@@ -653,7 +653,8 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
             <WalkControls enabled={!hopping} />
             <CameraDolly dolly={dollyRef} />
             <TravelControls
-              enabled={!hopping}
+              enabled
+              hopping={hopping}
               currentNode={currentNode}
               neighbors={walk.neighbors}
               nodesById={nodesById}
