@@ -214,13 +214,30 @@ export function TwinMinimap({
         onKeyDown={onKeyDown}
       >
         {currentNode !== undefined && (
-          <path
-            className="twin-minimap-cone"
-            d={conePath(currentNode.pose.t[0], -currentNode.pose.t[1])}
-            fill={CURRENT_COLOR}
-            opacity={0.35}
-            transform={`rotate(${String(yawToMinimapRotationDeg(yaw))} ${String(currentNode.pose.t[0])} ${String(-currentNode.pose.t[1])})`}
-          />
+          <>
+            <defs>
+              {/* Soft-edged cone: gold at the standing point, breathing out to
+                  nothing at the arc — rotation-invariant because the gradient
+                  is centred on the node the cone pivots around. */}
+              <radialGradient
+                id="vv-twin-cone-grad"
+                gradientUnits="userSpaceOnUse"
+                cx={currentNode.pose.t[0]}
+                cy={-currentNode.pose.t[1]}
+                r={CONE_RADIUS}
+              >
+                <stop offset="0%" stopColor={CURRENT_COLOR} stopOpacity={0.62} />
+                <stop offset="55%" stopColor={CURRENT_COLOR} stopOpacity={0.38} />
+                <stop offset="100%" stopColor={CURRENT_COLOR} stopOpacity={0} />
+              </radialGradient>
+            </defs>
+            <path
+              className="twin-minimap-cone"
+              d={conePath(currentNode.pose.t[0], -currentNode.pose.t[1])}
+              fill="url(#vv-twin-cone-grad)"
+              transform={`rotate(${String(yawToMinimapRotationDeg(yaw))} ${String(currentNode.pose.t[0])} ${String(-currentNode.pose.t[1])})`}
+            />
+          </>
         )}
         {nodes.map((node) => {
           const isCurrent = node.id === currentId;
@@ -237,7 +254,23 @@ export function TwinMinimap({
                 onSelect(node.id);
               }}
             >
+              {isCurrent && (
+                // Decorative breath around the standing node — CSS keyframes
+                // scale it (reduced motion pins it static); never a target.
+                <circle
+                  className="twin-minimap-pulse"
+                  cx={node.pose.t[0]}
+                  cy={-node.pose.t[1]}
+                  r={CURRENT_DOT_RADIUS}
+                  fill="none"
+                  stroke={CURRENT_COLOR}
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="none"
+                />
+              )}
               <circle
+                className="twin-minimap-dot"
                 cx={node.pose.t[0]}
                 cy={-node.pose.t[1]}
                 r={isCurrent ? CURRENT_DOT_RADIUS : DOT_RADIUS}

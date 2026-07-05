@@ -120,6 +120,7 @@ interface DollhouseDotProps {
 
 function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
+  const gl = useThree((state) => state.gl);
   const groupRef = useRef<Group>(null);
   const materialRef = useRef<MeshStandardMaterial>(null);
   const hoverRef = useRef<{ spring: SpringState; target: number }>({
@@ -134,11 +135,14 @@ function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElem
     if (!hovered) {
       return undefined;
     }
-    document.body.style.cursor = "pointer";
+    // Inline style on the canvas itself — it must outrank the stylesheet's
+    // resting `cursor: grab` (document.body would lose that fight).
+    const element = gl.domElement;
+    element.style.cursor = "pointer";
     return () => {
-      document.body.style.cursor = "";
+      element.style.cursor = "";
     };
-  }, [hovered, invalidate]);
+  }, [hovered, invalidate, gl]);
 
   useFrame((state, delta) => {
     const { spring, target } = hoverRef.current;

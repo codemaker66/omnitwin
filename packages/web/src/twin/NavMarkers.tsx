@@ -38,8 +38,8 @@ export const NAV_MARKER_HIT_RADIUS = 0.7;
 
 /** Hover pulse spring — quick with a touch of bounce. */
 const HOVER_SPRING: SpringConfig = { stiffness: 170, damping: 18 };
-/** Scale gain at full hover (1 → 1.15). */
-const HOVER_SCALE_GAIN = 0.15;
+/** Scale gain at full hover (1 → 1.12 — a lean-in, not a lunge). */
+const HOVER_SCALE_GAIN = 0.12;
 
 interface NavMarkerProps {
   readonly node: TwinScanNode;
@@ -48,6 +48,7 @@ interface NavMarkerProps {
 
 function NavMarker({ node, onHop }: NavMarkerProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
+  const gl = useThree((state) => state.gl);
   const groupRef = useRef<Group>(null);
   const ringMaterialRef = useRef<MeshBasicMaterial>(null);
   const hoverRef = useRef<{ spring: SpringState; target: number }>({
@@ -62,11 +63,14 @@ function NavMarker({ node, onHop }: NavMarkerProps): ReactElement {
     if (!hovered) {
       return undefined;
     }
-    document.body.style.cursor = "pointer";
+    // Inline style on the canvas itself — it must outrank the stylesheet's
+    // resting `cursor: grab` (document.body would lose that fight).
+    const element = gl.domElement;
+    element.style.cursor = "pointer";
     return () => {
-      document.body.style.cursor = "";
+      element.style.cursor = "";
     };
-  }, [hovered, invalidate]);
+  }, [hovered, invalidate, gl]);
 
   useFrame((_, delta) => {
     const { spring, target } = hoverRef.current;

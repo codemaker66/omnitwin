@@ -4,8 +4,11 @@
  *
  * Same lighting design family as The Rite (rite.css): black hall, parchment
  * ink, flame gold. Phase 1 dresses the route states; the viewer canvas
- * (PanoStage, Task 7+) mounts inside `.vv-twin-main` later and inherits
- * the same palette.
+ * (PanoStage, Task 7+) mounts inside `.vv-twin-main` and inherits the same
+ * palette. The 2026-07-05 polish pass sets the HUD chrome: hairline gold
+ * pills, mono node label, quiet disclosure, breathing minimap — every new
+ * animation carries a prefers-reduced-motion counterpart (grouped at the
+ * bottom of this file).
  *
  * Plan: docs/superpowers/plans/2026-07-02-twin-phase1-walk.md (Task 6).
  * -------------------------------------------------------------------------- */
@@ -24,6 +27,7 @@
   /* — type — */
   --display: "Newsreader", "GT Sectra", "Times New Roman", serif;
   --ui: "Geist", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* — motion — */
   --settle: cubic-bezier(0.22, 1, 0.36, 1);
@@ -48,10 +52,14 @@
   color: var(--black);
 }
 
-/* Keyboard focus is a candle-glow halo, not a default ring. */
-.vv-twin :focus-visible {
+/* Keyboard focus is a candle-glow halo, not a default ring. The second
+ * selector restates the halo at (0,4,0) so global.css's planner-cyan rule
+ * for [tabindex] controls ((0,3,0)) can never reach into the twin. The halo
+ * follows each control's own border-radius, so pills stay pills and the
+ * minimap stays a soft card (its base radius lives on the element). */
+.vv-twin :focus-visible,
+.vv-twin [tabindex]:not([tabindex="-1"]):focus-visible {
   outline: none;
-  border-radius: 3px;
   box-shadow:
     0 0 0 2px rgba(240, 198, 107, 0.85),
     0 0 18px 4px rgba(215, 166, 75, 0.35);
@@ -96,8 +104,8 @@
   padding: 10px 26px;
   cursor: pointer;
   transition:
-    border-color 220ms var(--settle),
-    color 220ms var(--settle);
+    border-color 150ms var(--settle),
+    color 150ms var(--settle);
 }
 
 .vv-twin-retry:hover {
@@ -127,37 +135,103 @@
   inset: 0;
 }
 
+/* The opening: the canvas holds black until the first pano texture is on
+ * stage (TwinViewer flips --live), then blooms in. The stage behind is
+ * already --black-2, so there is never a white or void flash. */
 .vv-twin-viewer canvas {
   display: block;
   width: 100%;
   height: 100%;
+  cursor: grab;
+  opacity: 0;
 }
+
+.vv-twin-viewer--live canvas {
+  opacity: 1;
+  transition: opacity 500ms var(--settle);
+}
+
+/* — node label: quiet mono pill, top left — */
 
 .vv-twin-node-label {
   position: absolute;
-  top: 18px;
-  left: 18px;
+  top: calc(18px + env(safe-area-inset-top));
+  left: calc(18px + env(safe-area-inset-left));
   z-index: 2;
-  padding: 8px 14px;
+  padding: 7px 14px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: 999px;
   background: rgba(7, 16, 15, 0.72);
-  color: var(--ink-2);
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+}
+
+@keyframes vv-twin-text-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Node changes remount the keyed span — the name crossfades in. */
+.vv-twin-node-label-text {
+  display: inline-block;
+  animation: vv-twin-text-in 200ms var(--settle) both;
+}
+
+/* — initial-load shimmer: a 2 px hairline under the label, first node only — */
+
+.vv-twin-load-shimmer {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -7px;
+  height: 2px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: rgba(215, 166, 75, 0.22);
+  pointer-events: none;
+  transition: opacity 400ms var(--settle);
+}
+
+.vv-twin-load-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(240, 198, 107, 0.9),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: vv-twin-shimmer 1.4s var(--settle) infinite;
+}
+
+@keyframes vv-twin-shimmer {
+  to { transform: translateX(100%); }
+}
+
+.vv-twin-load-shimmer--out {
+  opacity: 0;
 }
 
 /* — view-mode segmented control (Phase 2, Task 5) — */
 
 .vv-twin-mode {
   position: absolute;
-  top: 18px;
-  right: 18px;
+  top: calc(18px + env(safe-area-inset-top));
+  right: calc(18px + env(safe-area-inset-right));
   z-index: 3;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
   background: rgba(7, 16, 15, 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--rule);
   border-radius: 999px;
 }
@@ -174,29 +248,45 @@
   padding: 6px 14px;
   cursor: pointer;
   transition:
-    color 220ms var(--settle),
-    background-color 220ms var(--settle);
+    color 150ms var(--settle),
+    background-color 150ms var(--settle);
 }
 
 .vv-twin-mode-option:hover {
   color: var(--ink-2);
 }
 
+/* Active segment: solid flame gold, hall-dark text — one true state. */
 .vv-twin-mode-option--active {
-  background: rgba(215, 166, 75, 0.18);
-  color: var(--gold-2);
-  box-shadow: inset 0 0 0 1px rgba(216, 174, 91, 0.45);
+  background: var(--gold);
+  color: var(--black-2);
+}
+
+.vv-twin-mode-option--active:hover {
+  color: var(--black-2);
+}
+
+/* Gold-on-gold needs separation: the active pill's focus halo keeps a dark
+ * gap ring so it reads against its own fill. Specificity (0,4,0) ties the
+ * hardened halo rule above; being later in the file, this wins. */
+.vv-twin .vv-twin-mode-option--active[tabindex]:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(7, 16, 15, 0.9),
+    0 0 0 4px rgba(240, 198, 107, 0.9),
+    0 0 18px 6px rgba(215, 166, 75, 0.4);
 }
 
 /* — Surface: the reverse dive, quiet under the mode control (Task 6) — */
 
 .vv-twin-surface {
   position: absolute;
-  top: 62px;
-  right: 18px;
+  top: calc(62px + env(safe-area-inset-top));
+  right: calc(18px + env(safe-area-inset-right));
   z-index: 3;
   appearance: none;
   background: rgba(7, 16, 15, 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--rule);
   border-radius: 999px;
   padding: 7px 15px;
@@ -206,8 +296,8 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   transition:
-    color 220ms var(--settle),
-    border-color 220ms var(--settle);
+    color 150ms var(--settle),
+    border-color 150ms var(--settle);
 }
 
 .vv-twin-surface:hover {
@@ -224,29 +314,46 @@
   text-align: center;
 }
 
-/* The viewer's always-visible disclosure sits along the bottom edge. */
+/* The viewer's always-visible disclosure: legally present, visually quiet. */
 .vv-twin-viewer-disclosure {
   position: absolute;
-  left: 18px;
-  bottom: 14px;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 2;
   max-width: 26rem;
   text-align: left;
+  font-size: 10.5px;
+  line-height: 1.55;
+  opacity: 0.8;
 }
 
 /* — minimap (Task 10) — */
 
+@keyframes vv-twin-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .vv-twin .twin-minimap {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
   z-index: 3;
   display: grid;
   gap: 8px;
   padding: 10px;
   background: rgba(7, 16, 15, 0.72);
-  border: 1px solid rgba(216, 174, 91, 0.28);
-  border-radius: 6px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  animation: vv-twin-rise 400ms var(--settle) both;
 }
 
 .vv-twin .twin-minimap-map {
@@ -254,10 +361,46 @@
   width: 200px;
   height: auto;
   max-height: 240px;
+  /* Rounds the keyboard-focus halo — invisible at rest (no fill/border). */
+  border-radius: 6px;
 }
 
 .vv-twin .twin-minimap-map [role="option"] {
   cursor: pointer;
+}
+
+/* Dot hover: a 1.4× lean-in, no tooltip clutter — the aria-label carries
+ * the name for assistive tech; sighted visitors read position. */
+.vv-twin .twin-minimap-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 150ms var(--settle);
+}
+
+.vv-twin .twin-minimap-map [role="option"]:hover .twin-minimap-dot {
+  transform: scale(1.4);
+}
+
+/* The standing node breathes — a 2 s ring exhale, subtle by design. */
+@keyframes vv-twin-minimap-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.vv-twin .twin-minimap-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vv-twin-minimap-pulse 2s var(--settle) infinite;
 }
 
 .vv-twin .twin-minimap-floors {
@@ -267,7 +410,7 @@
 
 .vv-twin .twin-minimap-floor {
   appearance: none;
-  border: 1px solid rgba(216, 174, 91, 0.28);
+  border: 1px solid var(--rule);
   border-radius: 999px;
   background: transparent;
   color: var(--ink-3);
@@ -276,11 +419,101 @@
   padding: 3px 10px;
   cursor: pointer;
   transition:
-    border-color 220ms var(--settle),
-    color 220ms var(--settle);
+    border-color 150ms var(--settle),
+    color 150ms var(--settle);
 }
 
 .vv-twin .twin-minimap-floor--active {
   color: var(--gold-2);
   border-color: var(--gold);
+}
+
+/* — mobile (≤ 480 px): the HUD shrinks, nothing overlaps, safe areas hold — */
+
+@media (max-width: 480px) {
+  .vv-twin-node-label {
+    top: calc(12px + env(safe-area-inset-top));
+    left: calc(12px + env(safe-area-inset-left));
+    padding: 5px 11px;
+    font-size: 10px;
+    /* 38vw keeps clear air between the label and the mode control. */
+    max-width: 38vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vv-twin-mode {
+    top: calc(12px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+  }
+
+  .vv-twin-mode-option {
+    font-size: 0.62rem;
+    padding: 5px 9px;
+  }
+
+  .vv-twin-surface {
+    top: calc(52px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+    font-size: 0.62rem;
+    padding: 6px 12px;
+  }
+
+  /* Minimap: ~40% smaller, lifted clear of the disclosure's two lines. */
+  .vv-twin .twin-minimap {
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    padding: 7px;
+    gap: 6px;
+  }
+
+  .vv-twin .twin-minimap-map {
+    width: 120px;
+    max-height: 144px;
+  }
+
+  /* The disclosure takes the freed bottom strip — full width, two lines. */
+  .vv-twin-viewer-disclosure {
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    max-width: none;
+  }
+}
+
+/* — reduced motion: every animation above resolves to a calm still — */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-viewer--live canvas {
+    transition: none;
+  }
+
+  .vv-twin-node-label-text {
+    animation: none;
+  }
+
+  .vv-twin-load-shimmer {
+    transition: none;
+  }
+
+  /* The hairline stays as a static presence; only the sweep stops. */
+  .vv-twin-load-shimmer::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  .vv-twin .twin-minimap {
+    animation: none;
+  }
+
+  .vv-twin .twin-minimap-pulse {
+    animation: none;
+    transform: scale(1.35);
+    opacity: 0.3;
+  }
+
+  .vv-twin .twin-minimap-dot {
+    transition: none;
+  }
 }

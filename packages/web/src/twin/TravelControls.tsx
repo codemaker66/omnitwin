@@ -178,7 +178,9 @@ export function TravelControls({
   return (
     <mesh ref={reticleRef} visible={false} rotation={[-Math.PI / 2, 0, 0]}>
       <ringGeometry args={[0.5, 0.62, 40]} />
-      <meshBasicMaterial color="#d7a64b" transparent opacity={0.5} depthWrite={false} />
+      {/* 0.75 — present enough to promise the destination, under the rings'
+          full-hover 1.0 so the committed target always reads brightest. */}
+      <meshBasicMaterial color="#d7a64b" transparent opacity={0.75} depthWrite={false} />
     </mesh>
   );
 }
