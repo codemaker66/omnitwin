@@ -5,6 +5,7 @@ import {
   Color,
   PerspectiveCamera,
   ShaderMaterial,
+  Vector3,
   type CubeTexture,
   type IUniform,
   type Texture,
@@ -52,6 +53,38 @@ export const PANO_CROWN_COLOR = "#07100f";
 /** Fraction of straight-down (world −Z / scanner −Z) where the crown fade begins. */
 export const PANO_CROWN_START = 0.82;
 
+/**
+ * Interior tone grade. The captures are dusk-lit (blue windows, low interior
+ * light); left raw the rooms read gloomy. This lifts the shadows and midtones
+ * while PINNING black and white (a gamma lift: 0→0, 1→1) so the chandeliers
+ * and windows never blow, then adds a whisper of saturation and warmth — a
+ * restrained interior grade, not a wash. Calibrated by eye against scan_035
+ * (the Grand Hall dome node) and a bright node to confirm no highlight clip.
+ * Every value is a shader uniform so this stays the single tuning surface.
+ */
+export const PANO_GRADE = {
+  /** 1/gamma; gamma 1.38 lifts mids/shadows, highlights stay pinned. */
+  invGamma: 1 / 1.38,
+  /** Rec.709 saturation gain — richness without garish. */
+  saturation: 1.12,
+  /** Per-channel warm tint (R up, B down) — candlelit, not clinical. */
+  warm: [1.025, 1.0, 0.975] as const,
+} as const;
+
+/** Shared grade function + its uniforms, prepended to both pano shaders. */
+const gradeGLSL = /* glsl */ `
+uniform float uInvGamma;
+uniform float uSaturation;
+uniform vec3 uWarm;
+vec3 twinGrade(vec3 c) {
+  c = pow(max(c, 0.0), vec3(uInvGamma));            // lift shadows/mids; 0→0, 1→1
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));   // Rec.709 luma
+  c = mix(vec3(l), c, uSaturation);                 // gentle saturation
+  c *= uWarm;                                        // subtle warmth
+  return clamp(c, 0.0, 1.0);
+}
+`;
+
 const panoVertexShader = /* glsl */ `
 varying vec3 vDir;
 void main() {
@@ -60,7 +93,7 @@ void main() {
 }
 `;
 
-const cubeFragmentShader = /* glsl */ `
+const cubeFragmentShader = /* glsl */ gradeGLSL + `
 uniform samplerCube uCube;
 uniform float uOpacity;
 uniform vec3 uCrownColor;
@@ -78,12 +111,13 @@ void main() {
   // entrance signage) folds that mirror back out: s = mirror_y ∘ Mᵀ · d.
   vec3 s = vec3(-d.z, d.x, d.y);
   vec4 c = textureCube(uCube, s);
+  vec3 g = twinGrade(c.rgb);
   float crown = smoothstep(uCrownStart, 0.98, max(-s.z, 0.0));
-  gl_FragColor = vec4(mix(c.rgb, uCrownColor, crown), uOpacity);
+  gl_FragColor = vec4(mix(g, uCrownColor, crown), uOpacity);
 }
 `;
 
-const equirectFragmentShader = /* glsl */ `
+const equirectFragmentShader = /* glsl */ gradeGLSL + `
 uniform sampler2D uMap;
 uniform float uOpacity;
 uniform vec3 uCrownColor;
@@ -103,13 +137,20 @@ void main() {
   float u = uUSign * az / (2.0 * PI) + uUOffset; // RepeatWrapping absorbs winding
   float v = 0.5 + asin(clamp(e.z, -1.0, 1.0)) / PI;
   vec4 c = texture2D(uMap, vec2(u, v));
+  vec3 g = twinGrade(c.rgb);
   float crown = smoothstep(uCrownStart, 0.98, max(-e.z, 0.0));
-  gl_FragColor = vec4(mix(c.rgb, uCrownColor, crown), uOpacity);
+  gl_FragColor = vec4(mix(g, uCrownColor, crown), uOpacity);
 }
 `;
 
 /** Typed uniform bag (house pattern from cockpit-overlay-materials). */
-interface CubePanoUniforms {
+interface GradeUniforms {
+  uInvGamma: IUniform<number>;
+  uSaturation: IUniform<number>;
+  uWarm: IUniform<Vector3>;
+}
+
+interface CubePanoUniforms extends GradeUniforms {
   [uniform: string]: IUniform;
   uCube: IUniform<CubeTexture | null>;
   uOpacity: IUniform<number>;
@@ -117,7 +158,7 @@ interface CubePanoUniforms {
   uCrownStart: IUniform<number>;
 }
 
-interface EquirectPanoUniforms {
+interface EquirectPanoUniforms extends GradeUniforms {
   [uniform: string]: IUniform;
   uMap: IUniform<Texture | null>;
   uOpacity: IUniform<number>;
@@ -125,6 +166,15 @@ interface EquirectPanoUniforms {
   uCrownStart: IUniform<number>;
   uUSign: IUniform<number>;
   uUOffset: IUniform<number>;
+}
+
+/** The grade uniform trio, fresh per material (Vector3 must not be shared). */
+function makeGradeUniforms(): GradeUniforms {
+  return {
+    uInvGamma: { value: PANO_GRADE.invGamma },
+    uSaturation: { value: PANO_GRADE.saturation },
+    uWarm: { value: new Vector3(PANO_GRADE.warm[0], PANO_GRADE.warm[1], PANO_GRADE.warm[2]) },
+  };
 }
 
 export interface PanoStageProps {
@@ -169,6 +219,7 @@ function CubePanoStage({
       uOpacity: { value: 1 },
       uCrownColor: { value: new Color(PANO_CROWN_COLOR) },
       uCrownStart: { value: PANO_CROWN_START },
+      ...makeGradeUniforms(),
     };
     return new ShaderMaterial({
       vertexShader: panoVertexShader,
@@ -258,6 +309,7 @@ function EquirectPanoStage({
       uCrownStart: { value: PANO_CROWN_START },
       uUSign: { value: EQUIRECT_U_FLIP ? -1 : 1 },
       uUOffset: { value: EQUIRECT_U_OFFSET },
+      ...makeGradeUniforms(),
     };
     return new ShaderMaterial({
       vertexShader: panoVertexShader,
