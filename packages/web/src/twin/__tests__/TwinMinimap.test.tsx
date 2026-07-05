@@ -76,6 +76,32 @@ describe("TwinMinimap — rendering", () => {
     expect(cone).not.toBeNull();
     expect(cone?.getAttribute("transform")).toBe("rotate(-90 0 0)");
   });
+
+  it("fills the cone from a node-centred radial gradient (soft edge)", () => {
+    mountMinimap();
+    const listbox = screen.getByRole("listbox", { name: "Scan positions" });
+    const cone = listbox.querySelector(".twin-minimap-cone");
+    expect(cone?.getAttribute("fill")).toBe("url(#vv-twin-cone-grad)");
+    const gradient = listbox.querySelector("#vv-twin-cone-grad");
+    expect(gradient).not.toBeNull();
+    // Centred on the current node so the yaw rotation cannot shear it.
+    expect(gradient?.getAttribute("cx")).toBe("0");
+    expect(gradient?.getAttribute("cy")).toBe("0");
+    expect(gradient?.getAttribute("gradientUnits")).toBe("userSpaceOnUse");
+  });
+
+  it("wears a breathing halo on the current node only, out of the hit path", () => {
+    mountMinimap();
+    const listbox = screen.getByRole("listbox", { name: "Scan positions" });
+    const pulses = listbox.querySelectorAll(".twin-minimap-pulse");
+    expect(pulses).toHaveLength(1);
+    const pulse = pulses[0];
+    expect(pulse?.getAttribute("pointer-events")).toBe("none");
+    expect(pulse?.getAttribute("fill")).toBe("none");
+    // It rides inside the current node's option group.
+    const currentOption = screen.getByRole("option", { name: "Go to scan 0" });
+    expect(currentOption.contains(pulse ?? null)).toBe(true);
+  });
 });
 
 describe("TwinMinimap — selection by pointer", () => {
