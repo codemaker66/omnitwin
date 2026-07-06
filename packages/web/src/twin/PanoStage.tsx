@@ -54,30 +54,44 @@ export const PANO_CROWN_COLOR = "#07100f";
 export const PANO_CROWN_START = 0.82;
 
 /**
- * Interior tone grade. The captures are dusk-lit (blue windows, low interior
- * light); left raw the rooms read gloomy. This lifts the shadows and midtones
- * while PINNING black and white (a gamma lift: 0→0, 1→1) so the chandeliers
- * and windows never blow, then adds a whisper of saturation and warmth — a
- * restrained interior grade, not a wash. Calibrated by eye against scan_035
- * (the Grand Hall dome node) and a bright node to confirm no highlight clip.
- * Every value is a shader uniform so this stays the single tuning surface.
+ * Interior tone grade — applied in DISPLAY (sRGB) space, on top of a colour-
+ * correct base. The panos are sampled as linear (sRGB textures the GPU
+ * decodes), so the shader must re-encode linear→sRGB before writing to the
+ * canvas; a raw ShaderMaterial does not do this automatically, and omitting it
+ * rendered every node ~2× too dark with crushed blacks (the true source of the
+ * "gloomy" look — the grade below was previously masking it). With the encode
+ * restored the base already reads like the source photograph, so this grade is
+ * now a gentle aesthetic layer: a light gamma lift (0→0, 1→1, so highlights
+ * never blow) plus a whisper of saturation and warmth. Calibrated by eye
+ * against the source JPEGs on dark (scan_035) and bright (scan_050) nodes.
+ * Every value is a shader uniform — the single tuning surface.
  */
 export const PANO_GRADE = {
-  /** 1/gamma; gamma 1.38 lifts mids/shadows, highlights stay pinned. */
-  invGamma: 1 / 1.38,
+  /** 1/gamma; gamma 1.12 is a light mid lift now the base is correct. */
+  invGamma: 1 / 1.12,
   /** Rec.709 saturation gain — richness without garish. */
-  saturation: 1.12,
+  saturation: 1.06,
   /** Per-channel warm tint (R up, B down) — candlelit, not clinical. */
-  warm: [1.025, 1.0, 0.975] as const,
+  warm: [1.015, 1.0, 0.99] as const,
 } as const;
 
-/** Shared grade function + its uniforms, prepended to both pano shaders. */
+/** Shared grade + colour-management helpers, prepended to both pano shaders. */
 const gradeGLSL = /* glsl */ `
 uniform float uInvGamma;
 uniform float uSaturation;
 uniform vec3 uWarm;
+// Linear working colour → display sRGB (the IEC 61966-2-1 OETF). Raw
+// ShaderMaterials get no automatic output encoding, so the pano shaders call
+// this explicitly before writing gl_FragColor.
+vec3 twinLinearToSRGB(vec3 c) {
+  c = max(c, vec3(0.0));
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+  return mix(hi, lo, step(c, vec3(0.0031308)));
+}
+// Gentle aesthetic grade in display space.
 vec3 twinGrade(vec3 c) {
-  c = pow(max(c, 0.0), vec3(uInvGamma));            // lift shadows/mids; 0→0, 1→1
+  c = pow(max(c, 0.0), vec3(uInvGamma));            // light mid lift; 0→0, 1→1
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));   // Rec.709 luma
   c = mix(vec3(l), c, uSaturation);                 // gentle saturation
   c *= uWarm;                                        // subtle warmth
@@ -111,9 +125,11 @@ void main() {
   // entrance signage) folds that mirror back out: s = mirror_y ∘ Mᵀ · d.
   vec3 s = vec3(-d.z, d.x, d.y);
   vec4 c = textureCube(uCube, s);
-  vec3 g = twinGrade(c.rgb);
+  // Linear sample → display sRGB → aesthetic grade; crown mixed in display
+  // space so it keeps its exact authored colour.
+  vec3 g = twinGrade(twinLinearToSRGB(c.rgb));
   float crown = smoothstep(uCrownStart, 0.98, max(-s.z, 0.0));
-  gl_FragColor = vec4(mix(g, uCrownColor, crown), uOpacity);
+  gl_FragColor = vec4(mix(g, twinLinearToSRGB(uCrownColor), crown), uOpacity);
 }
 `;
 
@@ -137,9 +153,11 @@ void main() {
   float u = uUSign * az / (2.0 * PI) + uUOffset; // RepeatWrapping absorbs winding
   float v = 0.5 + asin(clamp(e.z, -1.0, 1.0)) / PI;
   vec4 c = texture2D(uMap, vec2(u, v));
-  vec3 g = twinGrade(c.rgb);
+  // Linear sample → display sRGB → aesthetic grade; crown mixed in display
+  // space so it keeps its exact authored colour.
+  vec3 g = twinGrade(twinLinearToSRGB(c.rgb));
   float crown = smoothstep(uCrownStart, 0.98, max(-e.z, 0.0));
-  gl_FragColor = vec4(mix(g, uCrownColor, crown), uOpacity);
+  gl_FragColor = vec4(mix(g, twinLinearToSRGB(uCrownColor), crown), uOpacity);
 }
 `;
 
