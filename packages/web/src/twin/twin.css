@@ -161,10 +161,14 @@
   padding: 7px 14px;
   border: 1px solid var(--rule);
   border-radius: 999px;
-  background: rgba(7, 16, 15, 0.72);
+  background: rgba(7, 16, 15, 0.78);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  color: var(--ink-3);
+  /* Brighter ink + a faint halo so the pill reads crisply even parked over a
+   * blown-out window; the correctly sRGB-encoded panos are brighter than the
+   * grade this HUD was first tuned against (findings [11]/[15]). */
+  color: var(--ink-2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -229,7 +233,7 @@
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  background: rgba(7, 16, 15, 0.72);
+  background: rgba(7, 16, 15, 0.78);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--rule);
@@ -284,7 +288,7 @@
   right: calc(18px + env(safe-area-inset-right));
   z-index: 3;
   appearance: none;
-  background: rgba(7, 16, 15, 0.72);
+  background: rgba(7, 16, 15, 0.78);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--rule);
@@ -292,6 +296,7 @@
   padding: 7px 15px;
   cursor: pointer;
   color: var(--ink-3);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -314,7 +319,11 @@
   text-align: center;
 }
 
-/* The viewer's always-visible disclosure: legally present, visually quiet. */
+/* The viewer's always-visible disclosure: legally present, visually quiet —
+ * but it must stay READABLE. A faint grey with no backing (its old form) washed
+ * out entirely over the bright parquet once the sRGB fix lifted the panos, so
+ * it now carries light ink on a soft dark halo (the map-label trick): quiet on
+ * dark imagery, still legible on bright (findings [11]/[23]). */
 .vv-twin-viewer-disclosure {
   position: absolute;
   left: calc(18px + env(safe-area-inset-left));
@@ -324,7 +333,15 @@
   text-align: left;
   font-size: 10.5px;
   line-height: 1.55;
-  opacity: 0.8;
+  color: var(--ink-2);
+  opacity: 0.94;
+  /* A tight dark edge hugging each glyph (the 0 0 2px layer) keeps the fine
+   * print crisp even over the bright golden parquet of the entrance vestibule,
+   * where a soft drop shadow alone still read faint. */
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.92),
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 14px rgba(0, 0, 0, 0.5);
 }
 
 /* — minimap (Task 10) — */

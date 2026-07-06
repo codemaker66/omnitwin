@@ -32,9 +32,22 @@ export function twinStageLine(nodeCount: number): string {
   return `${String(nodeCount)} scan ${nodeCount === 1 ? "point" : "points"}, posed and waiting.`;
 }
 
-/** Viewer HUD label — the scan you are standing on (Task 9). */
+/**
+ * Viewer HUD label — where you are standing. Leads with the venue and an honest
+ * 1-based viewpoint index; it must NEVER lead with the raw scan id ("scan_035"
+ * reads like a debug tag at a guest — finding [1]/[22]). A real room name would
+ * be better still, but the nodes carry no verified roomSlug yet and inventing
+ * one would risk labelling the Saloon "Grand Hall"; when tagging lands, lead
+ * with the room here. The digits come off the node id (scan_NNN → viewpoint
+ * NNN+1); an id with no numeric suffix falls back to the venue name alone.
+ */
 export function twinNodeLabel(nodeId: string, venueName: string): string {
-  return `${nodeId} — ${venueName}`;
+  const digits = /(\d+)\s*$/.exec(nodeId)?.[1];
+  if (digits === undefined) {
+    return venueName;
+  }
+  const viewpoint = Number.parseInt(digits, 10) + 1;
+  return `${venueName} · Viewpoint ${String(viewpoint)}`;
 }
 
 /** View-mode segmented control (Phase 2, Task 5) — shown only with a mesh. */
