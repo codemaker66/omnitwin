@@ -408,9 +408,12 @@ const TWIN_MODE_OPTIONS: readonly { readonly id: TwinMode; readonly label: strin
 function TwinModeControl({
   mode,
   setMode,
+  onWarmMesh,
 }: {
   readonly mode: TwinMode;
   readonly setMode: (mode: TwinMode) => void;
+  /** Fired on hover/focus of the control — intent to view the mesh. */
+  readonly onWarmMesh?: () => void;
 }): ReactElement {
   const buttonsRef = useRef(new Map<TwinMode, HTMLButtonElement | null>());
 
@@ -441,6 +444,8 @@ function TwinModeControl({
       aria-label={TWIN_MODE_GROUP_LABEL}
       data-testid="twin-mode-control"
       onKeyDown={onKeyDown}
+      onPointerEnter={onWarmMesh}
+      onFocus={onWarmMesh}
     >
       {TWIN_MODE_OPTIONS.map(({ id, label }) => (
         <button
@@ -512,6 +517,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // The element the fullscreen button takes fullscreen — the viewer root, so
   // the canvas AND the HUD stay inside the fullscreen surface.
   const viewerRef = useRef<HTMLDivElement>(null);
+  // Dollhouse warm gating (finding [33]): only desktops with memory headroom
+  // pay the ~7 MB glb speculatively; everyone else waits for intent so a
+  // walk-only mobile visitor never downloads it.
+  const [warmMesh, setWarmMesh] = useState(false);
+  const desktopCanWarm = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    const mem = (navigator as { deviceMemory?: number }).deviceMemory;
+    return (mem === undefined || mem >= 4) && window.matchMedia("(pointer: fine)").matches;
+  }, []);
 
   // The opening: the canvas holds black until the first pano texture is on
   // stage, then fades in (CSS, ~500 ms; reduced motion cuts straight in).
@@ -588,20 +604,26 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const meshUrl = manifest.mesh === undefined ? null : `${assetBase}/${manifest.mesh.path}`;
   const extent = useMemo(() => nodeExtent(manifest.nodes), [manifest]);
 
-  // Warm the dollhouse once the walk has been on stage a beat: the Surface
-  // dive must never fly through an unloaded void, and the walk's own first
-  // paint must never pay the 7 MB (visual gate caught the black mid-flight).
+  // Warm the dollhouse so a Surface dive never flies through an unloaded void.
+  // Intent (a hover/focus on the mesh affordances) warms immediately; a capable
+  // desktop also warms speculatively after a beat so its dive is always instant
+  // — but a mobile / low-memory walk-only visitor never pays the 7 MB unless
+  // they reach for the mesh (finding [33]). The walk's own first paint still
+  // never competes with the fetch (the 2.5 s delay).
   useEffect(() => {
-    if (meshUrl === null) {
+    if (meshUrl === null || !(desktopCanWarm || warmMesh)) {
       return;
     }
-    const timer = window.setTimeout(() => {
-      preloadDollhouse(meshUrl);
-    }, 2500);
+    const timer = window.setTimeout(
+      () => {
+        preloadDollhouse(meshUrl);
+      },
+      warmMesh ? 0 : 2500,
+    );
     return () => {
       window.clearTimeout(timer);
     };
-  }, [meshUrl]);
+  }, [meshUrl, desktopCanWarm, warmMesh]);
 
   const nodesById = useMemo(
     () => new Map<string, TwinScanNode>(manifest.nodes.map((node) => [node.id, node])),
@@ -801,11 +823,27 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           />
         )}
       </div>
-      {hasMesh && <TwinModeControl mode={mode} setMode={setMode} />}
+      {hasMesh && (
+        <TwinModeControl
+          mode={mode}
+          setMode={setMode}
+          // Reaching for the view-mode switch is intent to see the mesh — warm
+          // the dollhouse now so the switch/dive is instant (finding [33]).
+          onWarmMesh={() => {
+            setWarmMesh(true);
+          }}
+        />
+      )}
       {hasMesh && mode === "walk" && !hopping && (
         <button
           type="button"
           className="vv-twin-surface"
+          onPointerEnter={() => {
+            setWarmMesh(true);
+          }}
+          onFocus={() => {
+            setWarmMesh(true);
+          }}
           onClick={() => {
             // Surfacing: same flight, reversed — the mode flips first so the
             // mesh is on stage, then the spring carries the camera up to the

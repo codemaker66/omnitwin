@@ -254,4 +254,12 @@ describe("resolveEquirectMaxLod", () => {
     expect(resolveEquirectMaxLod(4096, false)).toBe(4096);
     expect(resolveEquirectMaxLod(2048, true)).toBe(4096);
   });
+
+  it("withholds 8192 from a device that cannot afford the 134 MB (finding [32])", () => {
+    // Capable GPU + zoom intent, but the device gate denies it.
+    expect(resolveEquirectMaxLod(16384, true, false)).toBe(4096);
+    expect(resolveEquirectMaxLod(16384, true, true)).toBe(8192);
+    // The default keeps the two-arg capability × intent contract intact.
+    expect(resolveEquirectMaxLod(16384, true)).toBe(8192);
+  });
 });

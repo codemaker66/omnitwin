@@ -316,7 +316,21 @@ function EquirectPanoStage({
     }
   });
 
-  const maxLod = resolveEquirectMaxLod(gl.capabilities.maxTextureSize, zoomIntent);
+  // Only a non-mobile device with real memory headroom may pull the ~134 MB
+  // 8192 tier (finding [32]); mobile / low-memory GPUs stay on 4096 even under
+  // zoom intent. Firefox reports no deviceMemory — a fine pointer alone passes.
+  const canAfford8192 = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    const mem = (navigator as { deviceMemory?: number }).deviceMemory;
+    return (mem === undefined || mem >= 8) && window.matchMedia("(pointer: fine)").matches;
+  }, []);
+  const maxLod = resolveEquirectMaxLod(
+    gl.capabilities.maxTextureSize,
+    zoomIntent,
+    canAfford8192,
+  );
   const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
 
   const material = useMemo(() => {
@@ -347,12 +361,46 @@ function EquirectPanoStage({
   );
 
   useEffect(() => {
-    (material.uniforms as EquirectPanoUniforms).uMap.value = texture;
-    invalidate();
+    const uniforms = material.uniforms as EquirectPanoUniforms;
+    const apply = (): void => {
+      uniforms.uMap.value = texture;
+      invalidate();
+    };
+    // The 8192 zoom tier is a ~134 MB (8192×4096 RGBA) upload that three does
+    // lazily on the first paint after `needsUpdate` — inline, it hitches the
+    // look/travel springs on the swap frame. Force that upload during browser
+    // idle (gl.initTexture) and only THEN swap the uniform, so the swap frame
+    // draws an already-resident texture (finding [32]). The 512/4096 tiers are
+    // small enough to apply immediately.
+    let cancel: (() => void) | null = null;
+    if (texture !== null && lod === TWIN_EQUIRECT_LODS[2]) {
+      const warmThenApply = (): void => {
+        gl.initTexture(texture);
+        apply();
+      };
+      if (typeof requestIdleCallback === "function") {
+        const handle = requestIdleCallback(warmThenApply);
+        cancel = () => {
+          if (typeof cancelIdleCallback === "function") {
+            cancelIdleCallback(handle);
+          }
+        };
+      } else {
+        const handle = window.setTimeout(warmThenApply, 0);
+        cancel = () => {
+          window.clearTimeout(handle);
+        };
+      }
+    } else {
+      apply();
+    }
     if (texture !== null && lod !== 0) {
       onTierRef.current?.(nodeId, lod >= TWIN_EQUIRECT_LODS[1] ? "base" : "preview");
     }
-  }, [texture, lod, nodeId, material, invalidate]);
+    return () => {
+      cancel?.();
+    };
+  }, [texture, lod, nodeId, material, invalidate, gl]);
 
   useEffect(() => {
     (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacity;

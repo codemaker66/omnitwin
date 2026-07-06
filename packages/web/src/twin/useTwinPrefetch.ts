@@ -5,6 +5,12 @@ import { twinEquirectPath, type TwinEquirectLod } from "@omnitwin/types";
  *  on-demand (zoom intent on the current node), never speculative traffic. */
 const PREFETCH_LOD: TwinEquirectLod = 4096;
 
+/** Debounce (finding [34]): hold-to-walk chaining churns the neighbour set
+ *  every ~200-400ms, so an undebounced effect starts-and-aborts a fetch burst
+ *  each hop and rarely completes one. Waiting a hair past the inter-hop gap
+ *  collapses a chained walk to a single batch, fired once the walk pauses. */
+const PREFETCH_DEBOUNCE_MS = 250;
+
 /**
  * Cache-warm the base-resolution panos of the current node's graph
  * neighbours so travel starts from the HTTP cache instead of the network —
@@ -22,15 +28,18 @@ export function useTwinPrefetch(neighborIds: readonly string[], base: string): v
       return;
     }
     const controller = new AbortController();
-    for (const id of neighborIds) {
-      void fetch(`${base}/${twinEquirectPath(id, PREFETCH_LOD)}`, {
-        signal: controller.signal,
-        priority: "low",
-      } as RequestInit)
-        .then((response) => (response.ok ? response.blob() : null))
-        .catch(() => null);
-    }
+    const timer = window.setTimeout(() => {
+      for (const id of neighborIds) {
+        void fetch(`${base}/${twinEquirectPath(id, PREFETCH_LOD)}`, {
+          signal: controller.signal,
+          priority: "low",
+        } as RequestInit)
+          .then((response) => (response.ok ? response.blob() : null))
+          .catch(() => null);
+      }
+    }, PREFETCH_DEBOUNCE_MS);
     return () => {
+      window.clearTimeout(timer);
       controller.abort();
     };
   }, [neighborIds, base]);

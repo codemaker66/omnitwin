@@ -53,6 +53,24 @@ export const LOOK_SPRING: SpringConfig = { stiffness: 120, damping: 26 };
  */
 export const FOV_SPRING: SpringConfig = { stiffness: 160, damping: 26 };
 
+/** Keyboard look/zoom step per keydown (finding [9]). OS auto-repeat turns a
+ *  held key into continuous motion; the look/fov springs smooth each nudge. */
+export const KEY_LOOK_STEP_RAD = 0.06;
+export const KEY_FOV_STEP_DEG = 3;
+
+/** Does focus sit on a control that owns the keyboard (typing / the minimap
+ *  listbox)? Then look/zoom keys are left alone. Mirrors TravelControls. */
+function typingFocus(): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof HTMLElement &&
+    (active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      active.isContentEditable ||
+      active.getAttribute("role") === "listbox")
+  );
+}
+
 // — release inertia (the flick) —
 
 /** One pointer-motion sample used for release-velocity estimation. */
@@ -331,11 +349,56 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
       invalidate();
     };
 
+    // Keyboard look/zoom (finding [9]): a <canvas> is not focusable, so the
+    // handler lives on window (WASD/arrow travel is already global). Q/E turn,
+    // R/F (and PageUp/PageDown) tilt, +/− zoom — all clash-free with travel.
+    // Each key nudges the same spring targets the drag/wheel do, so the motion
+    // is identically smoothed; OS auto-repeat makes a held key glide.
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (typingFocus()) {
+        return;
+      }
+      const step = KEY_LOOK_STEP_RAD;
+      switch (event.key) {
+        case "q":
+        case "Q":
+          state.yawTarget += step; // grab-the-world: +yaw turns left
+          break;
+        case "e":
+        case "E":
+          state.yawTarget -= step;
+          break;
+        case "r":
+        case "R":
+        case "PageUp":
+          state.pitchTarget = clampPitch(state.pitchTarget + step); // look up
+          break;
+        case "f":
+        case "F":
+        case "PageDown":
+          state.pitchTarget = clampPitch(state.pitchTarget - step);
+          break;
+        case "+":
+        case "=":
+          state.fovTarget = clampFov(state.fovTarget - KEY_FOV_STEP_DEG); // zoom in
+          break;
+        case "-":
+        case "_":
+          state.fovTarget = clampFov(state.fovTarget + KEY_FOV_STEP_DEG); // zoom out
+          break;
+        default:
+          return; // not ours — leave it (travel keys, shortcuts, etc.)
+      }
+      event.preventDefault();
+      invalidate();
+    };
+
     element.addEventListener("pointerdown", onPointerDown);
     element.addEventListener("pointermove", onPointerMove);
     element.addEventListener("pointerup", onPointerEnd);
     element.addEventListener("pointercancel", onPointerEnd);
     element.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("keydown", onKeyDown);
 
     return () => {
       element.removeEventListener("pointerdown", onPointerDown);
@@ -343,6 +406,7 @@ export function WalkControls({ enabled }: WalkControlsProps): null {
       element.removeEventListener("pointerup", onPointerEnd);
       element.removeEventListener("pointercancel", onPointerEnd);
       element.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKeyDown);
       element.style.cursor = "";
       state.pointers.clear();
       state.pinchDistance = null;
