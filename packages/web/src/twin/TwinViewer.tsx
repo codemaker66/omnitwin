@@ -25,7 +25,10 @@ import {
   TWIN_MODE_PLAN_LABEL,
   TWIN_MODE_WALK_LABEL,
   TWIN_SURFACE_LABEL,
+  TWIN_VIEWER_ROLE,
   twinNodeLabel,
+  twinViewerLabel,
+  twinViewpointAnnouncement,
 } from "./twin-copy.js";
 import { TwinMinimap } from "./TwinMinimap.js";
 import { useDive, type DiveDirection } from "./useDive.js";
@@ -676,7 +679,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   }
 
   return (
-    <div className={stageLive ? "vv-twin-viewer vv-twin-viewer--live" : "vv-twin-viewer"}>
+    <div
+      className={stageLive ? "vv-twin-viewer vv-twin-viewer--live" : "vv-twin-viewer"}
+      // Named, described interactive region so a screen-reader user meets a
+      // real walkthrough — not an anonymous <canvas> (finding [12]). WASD /
+      // arrow travel already works by keyboard, which the application role
+      // signals; keyboard look/zoom is the remaining gap (finding [9]).
+      role="application"
+      aria-label={twinViewerLabel(manifest.name)}
+      aria-roledescription={TWIN_VIEWER_ROLE}
+    >
+      {/* Polite arrival announcement — where the walk just moved to (finding
+          [10]). Keyed span so identical text still re-announces on revisit. */}
+      <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
+        {twinViewpointAnnouncement(walk.currentId, manifest.nodes.length)}
+      </p>
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}

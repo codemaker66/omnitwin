@@ -32,22 +32,41 @@ export function twinStageLine(nodeCount: number): string {
   return `${String(nodeCount)} scan ${nodeCount === 1 ? "point" : "points"}, posed and waiting.`;
 }
 
+/** 1-based viewpoint number parsed off a scan id (scan_035 → 36), or null when
+ *  the id carries no numeric suffix. The manifest guarantees id ↔ index. */
+function viewpointNumber(nodeId: string): number | null {
+  const digits = /(\d+)\s*$/.exec(nodeId)?.[1];
+  return digits === undefined ? null : Number.parseInt(digits, 10) + 1;
+}
+
 /**
  * Viewer HUD label — where you are standing. Leads with the venue and an honest
  * 1-based viewpoint index; it must NEVER lead with the raw scan id ("scan_035"
  * reads like a debug tag at a guest — finding [1]/[22]). A real room name would
  * be better still, but the nodes carry no verified roomSlug yet and inventing
  * one would risk labelling the Saloon "Grand Hall"; when tagging lands, lead
- * with the room here. The digits come off the node id (scan_NNN → viewpoint
- * NNN+1); an id with no numeric suffix falls back to the venue name alone.
+ * with the room here. An id with no numeric suffix falls back to the venue name.
  */
 export function twinNodeLabel(nodeId: string, venueName: string): string {
-  const digits = /(\d+)\s*$/.exec(nodeId)?.[1];
-  if (digits === undefined) {
-    return venueName;
-  }
-  const viewpoint = Number.parseInt(digits, 10) + 1;
-  return `${venueName} · Viewpoint ${String(viewpoint)}`;
+  const viewpoint = viewpointNumber(nodeId);
+  return viewpoint === null ? venueName : `${venueName} · Viewpoint ${String(viewpoint)}`;
+}
+
+/** Accessible name for the walk region — announced when a screen-reader user
+ *  tabs into the 3D viewer (finding [12]). */
+export function twinViewerLabel(venueName: string): string {
+  return `Interactive walkthrough of ${venueName}`;
+}
+
+/** aria-roledescription that humanises the viewer's "application" role. */
+export const TWIN_VIEWER_ROLE = "Virtual walkthrough";
+
+/** Polite live-region line, spoken on each arrival so a screen-reader user
+ *  hears where the walk moved to (finding [10]). Empty when unparseable — an
+ *  empty live region stays silent rather than announcing nonsense. */
+export function twinViewpointAnnouncement(nodeId: string, nodeCount: number): string {
+  const viewpoint = viewpointNumber(nodeId);
+  return viewpoint === null ? "" : `Viewpoint ${String(viewpoint)} of ${String(nodeCount)}`;
 }
 
 /** View-mode segmented control (Phase 2, Task 5) — shown only with a mesh. */
@@ -70,6 +89,9 @@ export function allTwinCopy(): readonly string[] {
     twinStageLine(1),
     twinStageLine(149),
     twinNodeLabel("scan_000", "Trades Hall Glasgow"),
+    twinViewerLabel("Trades Hall Glasgow"),
+    twinViewpointAnnouncement("scan_000", 149),
+    TWIN_VIEWER_ROLE,
     TWIN_MODE_GROUP_LABEL,
     TWIN_MODE_WALK_LABEL,
     TWIN_MODE_DOLLHOUSE_LABEL,

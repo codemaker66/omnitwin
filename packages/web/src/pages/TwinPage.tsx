@@ -64,6 +64,10 @@ export function TwinPage(): ReactElement {
         }
         aria-label={TWIN_TITLE}
       >
+        {/* Document structure: a page needs an h1, but the twin is all imagery,
+            so it lives for screen readers only (finding [12]). */}
+        <h1 className="vv-sr-only">{TWIN_TITLE}</h1>
+
         {manifest.state === "loading" && (
           <section className="vv-twin-state" role="status" aria-live="polite">
             <p className="vv-twin-line">{TWIN_LOADING_LINE}</p>
