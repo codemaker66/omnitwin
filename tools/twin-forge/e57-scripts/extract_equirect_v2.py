@@ -109,6 +109,17 @@ SRC_SIZE = 4096
 # couple of px so neighbours overlap and the gap closes; nearest-camera-wins
 # still picks the better-aligned face everywhere but the hairline boundary.
 EDGE_PAD = 2.0
+# Hard nearest-camera-wins also baked a SECOND, subtler seam: each face is
+# sampled out to its 45-deg edge where lens vignetting leaves the photo edges a
+# few percent darker, and with no cross-fade the two dark edges butt into a thin
+# 2-4% dark LINE at every cube boundary (the eye's hyperacuity catches the sharp
+# step even though it is shallow). Instead of argmax we now accumulate every
+# covered face weighted by alignment z=cos(angle-to-axis) raised to BLEND_POWER:
+# away from boundaries the aligned face dominates (detail preserved), but across
+# each edge the two ~equal-z faces cross-fade, spreading the dip into an
+# imperceptible gradient. All six faces share one optical centre, so blending is
+# parallax-free (no ghosting).
+BLEND_POWER = 16.0
 # Supersampled render raster (SUPERSAMPLED RENDER, module docstring): render
 # at 8192 wide, deliver the LANCZOS-prefiltered 4096 base alongside it.
 SS_W, SS_H = 8192, 4096
@@ -301,44 +312,50 @@ def render_world_band(row0, rows, w, h, photos, cam_world, fx, cx, cy):
     just band-shaped. `cam_world` = per-photo world-frame camera matrices
     (columns fwd/right/down), precomputed once per sweep."""
     flat = world_equirect_band_dirs(w, h, row0, rows).reshape(-1, 3)
-    out = np.zeros((rows, w, 3), dtype=np.uint8)
-    best = np.full((rows, w), -1.0, dtype=np.float32)
+    n = rows * w
+    accum = np.zeros((n, 3), dtype=np.float32)  # alignment-weighted colour sum
+    wsum = np.zeros(n, dtype=np.float32)         # weight sum (for normalisation)
     for img, m in zip(photos, cam_world):
         zxy = flat @ m
-        z = zxy[:, 0].reshape(rows, w)
-        x = zxy[:, 1].reshape(rows, w)
-        y = zxy[:, 2].reshape(rows, w)
+        z = zxy[:, 0]
+        x = zxy[:, 1]
+        y = zxy[:, 2]
         del zxy
         with np.errstate(divide="ignore", invalid="ignore"):
             uu = fx * x / z + cx
             vv = fx * y / z + cy
         # EDGE_PAD overlap (see the constant): accept a couple px past each face
-        # edge so neighbours meet with no coverage gap. nearest-camera-wins (max
-        # z) still selects the aligned face away from the boundary.
+        # edge so neighbours meet with no coverage gap.
         valid = (z > 0.05) & (uu >= -EDGE_PAD) & (uu <= SRC_SIZE - 1 + EDGE_PAD) \
             & (vv >= -EDGE_PAD) & (vv <= SRC_SIZE - 1 + EDGE_PAD)
-        score = np.where(valid, z, -1.0)
-        take = score > best
-        if not take.any():
-            del z, x, y, uu, vv, valid, score, take
+        vi = np.nonzero(valid)[0]
+        if vi.size == 0:
+            del z, x, y, uu, vv, valid
             continue
+        # Alignment weight z^BLEND_POWER (see the constant): 1 at the face centre,
+        # ~0.707^p at its 45-deg edge, so the aligned face dominates away from
+        # boundaries and the two near-equal-z faces cross-fade across each edge.
+        weight = np.power(np.maximum(z[vi], 0.0), BLEND_POWER).astype(np.float32)
         # Clamp into the real texel range so a padded boundary ray reads the
         # face's EDGE texel (fu/fv stay in [0,1]) rather than extrapolating.
-        uu_t = np.clip(uu[take], 0.0, SRC_SIZE - 1.0)
-        vv_t = np.clip(vv[take], 0.0, SRC_SIZE - 1.0)
+        uu_t = np.clip(uu[vi], 0.0, SRC_SIZE - 1.0)
+        vv_t = np.clip(vv[vi], 0.0, SRC_SIZE - 1.0)
         u0 = np.clip(uu_t.astype(np.int32), 0, SRC_SIZE - 2)
         v0 = np.clip(vv_t.astype(np.int32), 0, SRC_SIZE - 2)
         fu = (uu_t - u0)[:, None]
         fv = (vv_t - v0)[:, None]
-        # Bilinear gather straight off the uint8 photo: the (n, 3) corner
-        # gathers promote against the float32 weights, so no full-frame
-        # float photo copy is ever materialised (band memory discipline).
+        # Bilinear gather straight off the uint8 photo (band memory discipline).
         sample = ((img[v0, u0] * (1 - fu) + img[v0, u0 + 1] * fu) * (1 - fv)
                   + (img[v0 + 1, u0] * (1 - fu) + img[v0 + 1, u0 + 1] * fu) * fv)
-        out[take] = np.clip(sample, 0, 255).astype(np.uint8)
-        best = np.where(take, score, best)
-        del z, x, y, uu, vv, valid, score, take, sample
-    return out
+        wcol = weight[:, None]
+        accum[vi] += wcol * sample.astype(np.float32)
+        wsum[vi] += weight
+        del z, x, y, uu, vv, valid, vi, weight, uu_t, vv_t, u0, v0, fu, fv, sample, wcol
+    out = np.zeros((n, 3), dtype=np.uint8)
+    covered = wsum > 1e-6
+    out[covered] = np.clip(
+        accum[covered] / wsum[covered, None], 0, 255).astype(np.uint8)
+    return out.reshape(rows, w, 3)
 
 
 def render_world_ss(photos, bases, r_scan, fx, cx, cy):
