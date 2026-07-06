@@ -5,7 +5,6 @@ import {
   type ReactElement,
   type RefObject,
 } from "react";
-import { Link } from "react-router-dom";
 import {
   TWIN_ENQUIRE_LABEL,
   TWIN_FULLSCREEN_ENTER,
@@ -14,6 +13,7 @@ import {
   TWIN_SHARE_LABEL,
   twinEnquireAria,
 } from "./twin-copy.js";
+import { TwinEnquiryModal } from "./TwinEnquiryModal.js";
 import { useFullscreen } from "./useFullscreen.js";
 
 // -----------------------------------------------------------------------------
@@ -73,6 +73,7 @@ export function TwinViewerControls({
   const fullscreen = useFullscreen(viewerRef);
   const [copied, setCopied] = useState(false);
   const [announce, setAnnounce] = useState("");
+  const [enquireOpen, setEnquireOpen] = useState(false);
   const revertTimer = useRef<number | null>(null);
 
   const onShare = useCallback((): void => {
@@ -94,25 +95,39 @@ export function TwinViewerControls({
   }, []);
 
   return (
-    <div className="vv-twin-controls">
-      <Link
-        className="vv-twin-enquire"
-        to={`/v/${venueSlug}/plan?enquire=1`}
-        aria-label={twinEnquireAria(venueName)}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="14"
-          height="14"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          aria-hidden
+    <>
+      {enquireOpen && (
+        <TwinEnquiryModal
+          venueSlug={venueSlug}
+          venueName={venueName}
+          onClose={() => {
+            setEnquireOpen(false);
+          }}
+        />
+      )}
+      <div className="vv-twin-controls">
+        <button
+          type="button"
+          className="vv-twin-enquire"
+          aria-label={twinEnquireAria(venueName)}
+          aria-haspopup="dialog"
+          onClick={() => {
+            setEnquireOpen(true);
+          }}
         >
-          <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
-        </svg>
-        {TWIN_ENQUIRE_LABEL}
-      </Link>
+          <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            aria-hidden
+          >
+            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
+          </svg>
+          {TWIN_ENQUIRE_LABEL}
+        </button>
 
       <button
         type="button"
@@ -186,13 +201,14 @@ export function TwinViewerControls({
         </button>
       )}
 
-      <p
-        className="vv-sr-only"
-        aria-live="polite"
-        data-testid="twin-share-status"
-      >
-        {announce}
-      </p>
-    </div>
+        <p
+          className="vv-sr-only"
+          aria-live="polite"
+          data-testid="twin-share-status"
+        >
+          {announce}
+        </p>
+      </div>
+    </>
   );
 }

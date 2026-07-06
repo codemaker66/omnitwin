@@ -106,4 +106,42 @@ describe("POST /public/enquiries", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  // Twin (venue-context) path — exactly one anchor is required. Distinct
+  // remoteAddress per case so each gets a fresh rate-limit bucket (the shared
+  // default bucket is spent by the config-path cases above; max 10/hour).
+  it("returns 400 when both configurationId and venueSlug are given (xor)", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/public/enquiries", remoteAddress: "10.20.0.1",
+      payload: { configurationId: CONFIG_ID, venueSlug: "trades-hall", email: "guest@example.com" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 when neither configurationId nor venueSlug is given", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/public/enquiries", remoteAddress: "10.20.0.2",
+      payload: { email: "guest@example.com" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("accepts a venueSlug-anchored twin submission (fails at DB)", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/public/enquiries", remoteAddress: "10.20.0.3",
+      payload: { venueSlug: "trades-hall", email: "walker@example.com", eventType: "Wedding" },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  // Opt-in gate: a slug that is not a published twin is 404 — indistinguishable
+  // from a non-existent venue, so tenants cannot be enumerated or spammed.
+  it("returns 404 for a venue slug that is not a published twin", async () => {
+    const res = await server.inject({
+      method: "POST", url: "/public/enquiries", remoteAddress: "10.20.0.4",
+      payload: { venueSlug: "some-unlisted-venue", email: "probe@example.com" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
 });

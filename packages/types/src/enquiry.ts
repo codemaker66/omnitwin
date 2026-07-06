@@ -107,14 +107,17 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 // ---------------------------------------------------------------------------
 // GuestEnquiry — fields accepted by the public /public/enquiries endpoint
 //
-// Differs from CreateEnquiry: guests identify themselves via the configuration
-// they viewed (configurationId), provide contact details directly (not sourced
-// from an auth session), and use `eventDate`/`guestCount` naming rather than
-// `preferredDate`/`estimatedGuests`.
+// Differs from CreateEnquiry: guests identify themselves either via the
+// configuration they viewed (configurationId — planner path) OR the venue they
+// walked (venueSlug — twin path); provide contact details directly (not sourced
+// from an auth session); and use `eventDate`/`guestCount` naming rather than
+// `preferredDate`/`estimatedGuests`. Exactly one of configurationId / venueSlug
+// is required — the server enforces that xor (a venue enquiry has no config).
 // ---------------------------------------------------------------------------
 
 export const GuestEnquirySchema = z.object({
-  configurationId: ConfigurationIdSchema,
+  configurationId: ConfigurationIdSchema.optional(),
+  venueSlug: z.string().trim().min(1).max(100).optional(),
   email: z.string().trim().email().max(255),
   phone: z.string().trim().max(30).optional(),
   name: z.string().trim().max(200).optional(),

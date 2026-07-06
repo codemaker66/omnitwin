@@ -101,6 +101,28 @@ export const TWIN_FULLSCREEN_EXIT = "Exit full screen";
 /** Minimap compass anchor — screen-up is E57 +Y = north (finding [6]). */
 export const TWIN_MINIMAP_NORTH = "N";
 
+// — in-twin enquiry modal (one-click, venue-context; no planner needed) —
+
+export const TWIN_ENQUIRE_EYEBROW = "Host your event here";
+export function twinEnquireTitle(venueName: string): string {
+  return `Enquire about ${venueName}`;
+}
+export const TWIN_ENQUIRE_SUBHEAD =
+  "No account needed. The events team will get back to you with availability and pricing.";
+export const TWIN_ENQUIRE_CTA = "Send to the events team";
+export const TWIN_ENQUIRE_SENDING = "Sending your enquiry…";
+export const TWIN_ENQUIRE_SUCCESS_TITLE = "Your enquiry is on its way";
+export function twinEnquireSuccessBody(venueName: string): string {
+  return `The ${venueName} events team has your enquiry and will be in touch at`;
+}
+export const TWIN_ENQUIRE_TRUST =
+  "Your details are shared only with the venue's events team. No spam, ever.";
+export const TWIN_ENQUIRE_EMAIL_INVALID =
+  "We need a valid email so the events team can reach you.";
+export const TWIN_ENQUIRE_GENERIC_ERROR = "Something went wrong — please try again.";
+export const TWIN_ENQUIRE_CLOSE = "Close";
+export const TWIN_ENQUIRE_DONE = "Back to the walkthrough";
+
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
   return [
@@ -128,5 +150,12 @@ export function allTwinCopy(): readonly string[] {
     TWIN_SHARE_COPIED,
     TWIN_FULLSCREEN_ENTER,
     TWIN_FULLSCREEN_EXIT,
+    TWIN_ENQUIRE_EYEBROW,
+    twinEnquireTitle("Trades Hall Glasgow"),
+    TWIN_ENQUIRE_SUBHEAD,
+    TWIN_ENQUIRE_CTA,
+    TWIN_ENQUIRE_SUCCESS_TITLE,
+    twinEnquireSuccessBody("Trades Hall Glasgow"),
+    TWIN_ENQUIRE_TRUST,
   ] as const;
 }

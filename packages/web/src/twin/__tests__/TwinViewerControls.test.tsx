@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { createRef } from "react";
 import { TwinViewerControls } from "../TwinViewerControls.js";
 
@@ -16,13 +15,11 @@ import { TwinViewerControls } from "../TwinViewerControls.js";
 function renderControls(): void {
   const ref = createRef<HTMLDivElement>();
   render(
-    <MemoryRouter>
-      <TwinViewerControls
-        venueSlug="trades-hall"
-        venueName="Trades Hall Glasgow"
-        viewerRef={ref}
-      />
-    </MemoryRouter>,
+    <TwinViewerControls
+      venueSlug="trades-hall"
+      venueName="Trades Hall Glasgow"
+      viewerRef={ref}
+    />,
   );
 }
 
@@ -46,10 +43,12 @@ describe("TwinViewerControls", () => {
     cleanup();
   });
 
-  it("points Enquire into the venue's real planner funnel", () => {
+  it("opens the in-twin enquiry modal from the Enquire button", () => {
     renderControls();
-    const link = screen.getByRole("link", { name: /enquire about hosting/i });
-    expect(link.getAttribute("href")).toBe("/v/trades-hall/plan?enquire=1");
+    // No modal until asked.
+    expect(screen.queryByTestId("twin-enquiry-form")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /enquire about hosting/i }));
+    expect(screen.getByTestId("twin-enquiry-form")).toBeTruthy();
   });
 
   it("copies the link and announces it politely on share", async () => {
