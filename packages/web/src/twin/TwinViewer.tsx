@@ -93,8 +93,26 @@ const dollyEuler = new Euler(0, 0, 0, "YXZ");
  * drift apart (house rule: springs, never tweens). Under
  * prefers-reduced-motion useTwinWalk teleports instead of springing, so no
  * travelling frame — and therefore no breath — ever runs.
+ *
+ * The surge is a *single-step* gesture only: on a chained hold-to-walk it is
+ * suppressed to zero (finding [28]). A held key fires a fresh hop the instant
+ * the last one settles, and a per-hop sin() would strobe the fov ~1.5×/s —
+ * seasick, not smooth. So a walk that flows node-to-node keeps a rock-steady
+ * fov (Street View / Matterport breathe none while travelling); only a
+ * deliberate, isolated click-step gets the surge.
  */
 export const HOP_FOV_BREATH_DEG = 4;
+
+/**
+ * A hop that begins within this long (ms) of the previous one being active is a
+ * chained hold-to-walk step, not a fresh intent — its fov surge is suppressed.
+ * The inter-hop gap is one React round-trip (settle → continue-on-settle effect
+ * → next hop), tens of ms; 250 ms clears it with margin while a deliberate
+ * second click a third of a second later still reads as isolated and surges.
+ * Measured on the wall clock, not frame delta: under the demand frameloop no
+ * frames render while idle, so a delta accumulator would stop counting.
+ */
+const HOP_CHAIN_WINDOW_MS = 250;
 
 /**
  * Camera position = lerp(from, to, progress), read from a ref each frame so
@@ -117,7 +135,12 @@ function CameraDolly({
     yaw: number;
     pitch: number;
     fov: number;
+    chained: boolean;
   } | null>(null);
+  // Wall-clock stamp (ms) of the most recent in-flight hop frame. A fresh hop
+  // that begins within HOP_CHAIN_WINDOW_MS of it is a hold-to-walk chain, so its
+  // fov surge is suppressed. Seeded −∞ so the first hop of a session surges.
+  const lastHopActiveMs = useRef(Number.NEGATIVE_INFINITY);
 
   useFrame(() => {
     const { from, to, progress, travelYaw, hopKey } = dolly.current;
@@ -130,6 +153,7 @@ function CameraDolly({
     }
 
     if (travelYaw !== null && progress > 0 && progress < 1) {
+      const now = performance.now();
       if (hopStart.current === null || hopStart.current.key !== hopKey) {
         dollyEuler.setFromQuaternion(camera.quaternion, "YXZ");
         hopStart.current = {
@@ -137,15 +161,22 @@ function CameraDolly({
           yaw: dollyEuler.y,
           pitch: dollyEuler.x,
           fov: camera instanceof PerspectiveCamera ? camera.fov : 75,
+          chained: now - lastHopActiveMs.current < HOP_CHAIN_WINDOW_MS,
         };
       }
+      lastHopActiveMs.current = now;
       const eased = progress * progress * (3 - 2 * progress); // smoothstep
       const start = hopStart.current;
       const yaw = start.yaw + shortestYawDelta(start.yaw, travelYaw) * eased;
-      const pitch = start.pitch * (1 - eased); // level out while moving
-      camera.quaternion.setFromEuler(dollyEuler.set(pitch, yaw, 0, "YXZ"));
+      // Pitch is the visitor's to keep — gazing up at the dome should stay
+      // gazing up as you walk. Only yaw eases, toward the heading of travel
+      // (finding [26]); the old code leveled pitch to 0 and yanked the view.
+      camera.quaternion.setFromEuler(dollyEuler.set(start.pitch, yaw, 0, "YXZ"));
       if (camera instanceof PerspectiveCamera) {
-        camera.fov = start.fov + Math.sin(Math.PI * progress) * HOP_FOV_BREATH_DEG;
+        // Isolated click-step surges; a chained hold-to-walk holds fov steady
+        // so the walk glides instead of strobing the zoom (finding [28]).
+        const surge = start.chained ? 0 : Math.sin(Math.PI * progress) * HOP_FOV_BREATH_DEG;
+        camera.fov = start.fov + surge;
         camera.updateProjectionMatrix();
       }
       invalidate();
@@ -493,6 +524,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   useEffect(() => {
     if (mode !== "walk") {
       setStageLive(true);
+      // No pano tier ever reports in a mesh mode, so the opening shimmer would
+      // spin forever (finding [21]); retire it the same way walking off the
+      // initial node does — advance loading → fading and let it play out.
+      setShimmerPhase((phase) => (phase === "loading" ? "fading" : phase));
     }
   }, [mode]);
 
