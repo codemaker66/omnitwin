@@ -6,6 +6,7 @@ import {
   type ReactElement,
 } from "react";
 import type { TwinScanNode } from "@omnitwin/types";
+import { TWIN_MINIMAP_NORTH } from "./twin-copy.js";
 
 // -----------------------------------------------------------------------------
 // TwinMinimap — the top-down scan graph, bottom-right (Twin Phase 1, Task 10).
@@ -183,6 +184,11 @@ export function TwinMinimap({
 
   return (
     <div className="twin-minimap">
+      {/* Static north anchor — screen-up is E57 +Y = north; the fixed reference
+          the rotating view cone turns against (finding [6]). */}
+      <span className="twin-minimap-north" aria-hidden>
+        {TWIN_MINIMAP_NORTH}
+      </span>
       {floors.length > 1 && (
         <div className="twin-minimap-floors" role="group" aria-label="Floors">
           {floors.map((floor) => (

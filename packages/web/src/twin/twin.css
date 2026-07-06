@@ -310,6 +310,78 @@
   border-color: var(--gold);
 }
 
+/* — utility rail: enquire / share / fullscreen, one governed right-edge column
+ *   (findings [2]/[4]/[5]). Sits below the mode + surface slots; the rail is
+ *   click-through so only the controls take the pointer. — */
+
+.vv-twin-controls {
+  position: absolute;
+  /* Clears mode (18–~48) + surface (62–~92) and RESERVES the surface slot so
+   * the rail never jumps when surface hides (hopping / dollhouse / plan). */
+  top: calc(106px + env(safe-area-inset-top));
+  right: calc(18px + env(safe-area-inset-right));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.vv-twin-controls > * {
+  pointer-events: auto;
+}
+
+/* Enquire — the way out into the venue's real planning + enquiry funnel; the
+ * one gold-filled HUD element (mirrors the active mode segment's gold-on-dark). */
+.vv-twin-enquire {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gold);
+  color: var(--black-2);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--settle),
+    border-color 150ms var(--settle);
+}
+
+.vv-twin-enquire:hover {
+  background: var(--gold-2);
+  border-color: var(--gold-2);
+}
+
+/* Share + fullscreen — quiet round glass buttons (surface's recipe). */
+.vv-twin-utility-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    color 150ms var(--settle),
+    border-color 150ms var(--settle);
+}
+
+.vv-twin-utility-btn:hover {
+  color: var(--gold-2);
+  border-color: var(--gold);
+}
+
 .vv-twin-disclosure {
   margin: 0;
   max-width: 40rem;
@@ -422,6 +494,20 @@
   border: 1px solid var(--rule);
   border-radius: 8px;
   animation: vv-twin-rise 400ms var(--settle) both;
+}
+
+/* North anchor — a quiet fixed reference the rotating view cone turns against. */
+.vv-twin .twin-minimap-north {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .vv-twin .twin-minimap-map {
@@ -547,6 +633,78 @@
     right: calc(12px + env(safe-area-inset-right));
     bottom: calc(10px + env(safe-area-inset-bottom));
     max-width: none;
+  }
+
+  /* Utility rail sits below the mobile surface slot; smaller controls. */
+  .vv-twin-controls {
+    top: calc(88px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+    gap: 8px;
+  }
+
+  .vv-twin-enquire {
+    font-size: 0.62rem;
+    padding: 7px 12px;
+  }
+
+  .vv-twin-utility-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  /* iOS Safari has no element fullscreen for non-video — hide the toggle
+   * rather than ship a no-op. Web Share IS native on phones, so [4] stays. */
+  .vv-twin-fullscreen {
+    display: none;
+  }
+}
+
+/* — forced-colors / Windows High Contrast: box-shadow halos and rgba fills are
+ *   dropped, so restore real system-coloured focus rings, pill outlines, and
+ *   selection/toggle cues (finding [16]). — */
+
+@media (forced-colors: active) {
+  .vv-twin :focus-visible,
+  .vv-twin [tabindex]:not([tabindex="-1"]):focus-visible,
+  .vv-twin .vv-twin-mode-option--active[tabindex]:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  /* Keep every HUD surface shaped once translucency is stripped. */
+  .vv-twin-node-label,
+  .vv-twin-mode,
+  .vv-twin-surface,
+  .vv-twin-controls > *,
+  .vv-twin-enquire,
+  .vv-twin-utility-btn,
+  .vv-twin .twin-minimap,
+  .vv-twin-coach {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  /* Selection + toggle state via ring, not fill. */
+  .vv-twin-mode-option--active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    color: Highlight;
+  }
+
+  .vv-twin-utility-btn[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* Preserve the minimap's brand colours so current-vs-other + the north cue
+   * stay legible where forced-colors would flatten them to one system colour. */
+  .vv-twin .twin-minimap-dot,
+  .vv-twin .twin-minimap-cone,
+  .vv-twin .twin-minimap-pulse,
+  .vv-twin .twin-minimap-north {
+    forced-color-adjust: none;
   }
 }
 

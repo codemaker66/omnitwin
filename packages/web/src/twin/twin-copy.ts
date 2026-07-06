@@ -81,6 +81,26 @@ export const TWIN_SURFACE_LABEL = "Surface";
  *  (finding [3]). Sentence case, gestures separated by middots. */
 export const TWIN_COACH_HINT = "Click to move · drag to look · WASD to walk";
 
+// — viewer controls cluster (fullscreen / share / enquire) —
+
+/** The primary CTA out of the twin — into the venue's real planning + enquiry
+ *  funnel. Short visible label; the aria label names the venue. */
+export const TWIN_ENQUIRE_LABEL = "Enquire";
+export function twinEnquireAria(venueName: string): string {
+  return `Enquire about hosting at ${venueName}`;
+}
+
+/** Share / copy-link control. `copied` is announced in a polite live region. */
+export const TWIN_SHARE_LABEL = "Copy link to this walkthrough";
+export const TWIN_SHARE_COPIED = "Link copied";
+
+/** Fullscreen toggle — label reflects the action the press will take. */
+export const TWIN_FULLSCREEN_ENTER = "Enter full screen";
+export const TWIN_FULLSCREEN_EXIT = "Exit full screen";
+
+/** Minimap compass anchor — screen-up is E57 +Y = north (finding [6]). */
+export const TWIN_MINIMAP_NORTH = "N";
+
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
   return [
@@ -102,5 +122,11 @@ export function allTwinCopy(): readonly string[] {
     TWIN_MODE_PLAN_LABEL,
     TWIN_SURFACE_LABEL,
     TWIN_COACH_HINT,
+    TWIN_ENQUIRE_LABEL,
+    twinEnquireAria("Trades Hall Glasgow"),
+    TWIN_SHARE_LABEL,
+    TWIN_SHARE_COPIED,
+    TWIN_FULLSCREEN_ENTER,
+    TWIN_FULLSCREEN_EXIT,
   ] as const;
 }

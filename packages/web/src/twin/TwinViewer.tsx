@@ -32,6 +32,7 @@ import {
 } from "./twin-copy.js";
 import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinMinimap } from "./TwinMinimap.js";
+import { TwinViewerControls } from "./TwinViewerControls.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
@@ -508,6 +509,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
   const [yaw, setYaw] = useState(0);
+  // The element the fullscreen button takes fullscreen — the viewer root, so
+  // the canvas AND the HUD stay inside the fullscreen surface.
+  const viewerRef = useRef<HTMLDivElement>(null);
 
   // The opening: the canvas holds black until the first pano texture is on
   // stage, then fades in (CSS, ~500 ms; reduced motion cuts straight in).
@@ -681,6 +685,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   return (
     <div
+      ref={viewerRef}
       className={stageLive ? "vv-twin-viewer vv-twin-viewer--live" : "vv-twin-viewer"}
       // Named, described interactive region so a screen-reader user meets a
       // real walkthrough — not an anonymous <canvas> (finding [12]). WASD /
@@ -813,6 +818,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           {TWIN_SURFACE_LABEL} <span aria-hidden>↑</span>
         </button>
       )}
+      <TwinViewerControls
+        venueSlug={manifest.venueSlug}
+        venueName={manifest.name}
+        viewerRef={viewerRef}
+      />
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
       {mode === "walk" && <TwinCoachHint />}
       {mode === "walk" && (
