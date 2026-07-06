@@ -77,6 +77,10 @@ export const TWIN_MODE_PLAN_LABEL = "Plan";
 /** Walk-mode HUD: the reverse dive back up to the dollhouse (Task 6). */
 export const TWIN_SURFACE_LABEL = "Surface";
 
+/** First-run coach hint — how to move, shown once until first interaction
+ *  (finding [3]). Sentence case, gestures separated by middots. */
+export const TWIN_COACH_HINT = "Click to move · drag to look · WASD to walk";
+
 /** Every user-visible twin string — the claim-guard sweep target. */
 export function allTwinCopy(): readonly string[] {
   return [
@@ -97,5 +101,6 @@ export function allTwinCopy(): readonly string[] {
     TWIN_MODE_DOLLHOUSE_LABEL,
     TWIN_MODE_PLAN_LABEL,
     TWIN_SURFACE_LABEL,
+    TWIN_COACH_HINT,
   ] as const;
 }

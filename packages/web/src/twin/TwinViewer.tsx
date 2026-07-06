@@ -30,6 +30,7 @@ import {
   twinViewerLabel,
   twinViewpointAnnouncement,
 } from "./twin-copy.js";
+import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinMinimap } from "./TwinMinimap.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
@@ -813,6 +814,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         </button>
       )}
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
+      {mode === "walk" && <TwinCoachHint />}
       {mode === "walk" && (
         <TwinMinimap
           nodes={manifest.nodes}
