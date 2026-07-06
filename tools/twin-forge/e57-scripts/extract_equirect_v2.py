@@ -101,6 +101,14 @@ OUT_DEFAULT = r"F:\E57\equirect"
 # parity with the legacy cube tiles Blake judged high-res; 2048 (the first
 # equirect ship) was half that and read as "terrible resolution".
 SRC_SIZE = 4096
+# Each skybox face is an EXACT 90-deg pinhole, so adjacent faces meet at 45 deg
+# with zero overlap. The strict `uu <= SRC_SIZE - 1` acceptance then left a
+# ~0.03-deg band BETWEEN neighbours that no face claimed; those pixels kept the
+# zero-init canvas and rendered as a thin BLACK seam along every cube edge (the
+# 2026-07 "stitching line" report). EDGE_PAD widens each face's acceptance by a
+# couple of px so neighbours overlap and the gap closes; nearest-camera-wins
+# still picks the better-aligned face everywhere but the hairline boundary.
+EDGE_PAD = 2.0
 # Supersampled render raster (SUPERSAMPLED RENDER, module docstring): render
 # at 8192 wide, deliver the LANCZOS-prefiltered 4096 base alongside it.
 SS_W, SS_H = 8192, 4096
@@ -304,16 +312,24 @@ def render_world_band(row0, rows, w, h, photos, cam_world, fx, cx, cy):
         with np.errstate(divide="ignore", invalid="ignore"):
             uu = fx * x / z + cx
             vv = fx * y / z + cy
-        valid = (z > 0.05) & (uu >= 0) & (uu <= SRC_SIZE - 1) & (vv >= 0) & (vv <= SRC_SIZE - 1)
+        # EDGE_PAD overlap (see the constant): accept a couple px past each face
+        # edge so neighbours meet with no coverage gap. nearest-camera-wins (max
+        # z) still selects the aligned face away from the boundary.
+        valid = (z > 0.05) & (uu >= -EDGE_PAD) & (uu <= SRC_SIZE - 1 + EDGE_PAD) \
+            & (vv >= -EDGE_PAD) & (vv <= SRC_SIZE - 1 + EDGE_PAD)
         score = np.where(valid, z, -1.0)
         take = score > best
         if not take.any():
             del z, x, y, uu, vv, valid, score, take
             continue
-        u0 = np.clip(uu[take].astype(np.int32), 0, SRC_SIZE - 2)
-        v0 = np.clip(vv[take].astype(np.int32), 0, SRC_SIZE - 2)
-        fu = (uu[take] - u0)[:, None]
-        fv = (vv[take] - v0)[:, None]
+        # Clamp into the real texel range so a padded boundary ray reads the
+        # face's EDGE texel (fu/fv stay in [0,1]) rather than extrapolating.
+        uu_t = np.clip(uu[take], 0.0, SRC_SIZE - 1.0)
+        vv_t = np.clip(vv[take], 0.0, SRC_SIZE - 1.0)
+        u0 = np.clip(uu_t.astype(np.int32), 0, SRC_SIZE - 2)
+        v0 = np.clip(vv_t.astype(np.int32), 0, SRC_SIZE - 2)
+        fu = (uu_t - u0)[:, None]
+        fv = (vv_t - v0)[:, None]
         # Bilinear gather straight off the uint8 photo: the (n, 3) corner
         # gathers promote against the float32 weights, so no full-frame
         # float photo copy is ever materialised (band memory discipline).
