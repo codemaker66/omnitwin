@@ -148,6 +148,17 @@ describe("useTwinWalk — initial node", () => {
     expect(result.current.walk.currentId).toBe("scan_000");
     expect(result.current.node).toBe("scan_000");
   });
+
+  it("opens on the manifest's entryNodeId (the hero viewpoint) when no node is named", () => {
+    const { result } = mountWalk("/twin", { ...fixtureManifest(), entryNodeId: "scan_002" });
+    expect(result.current.walk.currentId).toBe("scan_002");
+    expect(result.current.node).toBe("scan_002");
+  });
+
+  it("ignores an unknown entryNodeId and falls back to scan_000", () => {
+    const { result } = mountWalk("/twin", { ...fixtureManifest(), entryNodeId: "scan_999" });
+    expect(result.current.walk.currentId).toBe("scan_000");
+  });
 });
 
 describe("useTwinWalk — hopTo guards", () => {

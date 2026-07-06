@@ -89,6 +89,11 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
   }, [manifest]);
 
   const fallbackId = useMemo(() => {
+    // The manifest's hero viewpoint opens the walk when the URL names no node.
+    const entry = manifest.entryNodeId;
+    if (entry !== undefined && nodeIds.has(entry)) {
+      return entry;
+    }
     if (nodeIds.has("scan_000")) {
       return "scan_000";
     }

@@ -698,11 +698,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     return null;
   }
 
-  const stages: { node: TwinScanNode; opacity: number }[] = [
-    { node: currentNode, opacity: hopping ? 1 - walk.progress : 1 },
+  // Crossfade with NO black flash: the departing pano stays fully opaque
+  // UNDERNEATH (renderOrder 0) while the arriving pano fades in ON TOP
+  // (renderOrder 1). Once both textures are loaded this is identical to a
+  // cross-dissolve (opaque base + alpha-`progress` overlay = progress blend);
+  // but if the arriving node's texture is still streaming over the network the
+  // opaque departing pano keeps filling the view, so a hop can never flash black
+  // between nodes the way a symmetric 1−progress / progress fade did.
+  const stages: { node: TwinScanNode; opacity: number; renderOrder: number }[] = [
+    { node: currentNode, opacity: 1, renderOrder: 0 },
   ];
   if (targetNode !== undefined) {
-    stages.push({ node: targetNode, opacity: walk.progress });
+    stages.push({ node: targetNode, opacity: walk.progress, renderOrder: 1 });
   }
 
   return (
@@ -742,7 +749,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 walk.hopTo(id);
               }}
             />
-            {stages.map(({ node, opacity }) => (
+            {stages.map(({ node, opacity, renderOrder }) => (
               <PanoStage
                 key={node.id}
                 nodeId={node.id}
@@ -750,6 +757,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 quaternion={e57QuatToThree(node.pose.q)}
                 assetBase={assetBase}
                 opacity={opacity}
+                renderOrder={renderOrder}
                 imagery={manifest.imagery}
                 onTier={onPanoTier}
               />

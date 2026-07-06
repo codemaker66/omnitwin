@@ -1,15 +1,10 @@
 import { useEffect } from "react";
 import { twinEquirectPath, type TwinEquirectLod } from "@omnitwin/types";
 
-/** Prefetch warms the 4096 BASE tier only — the 8192 zoom tier is strictly
- *  on-demand (zoom intent on the current node), never speculative traffic. */
-const PREFETCH_LOD: TwinEquirectLod = 4096;
-
-/** Debounce (finding [34]): hold-to-walk chaining churns the neighbour set
- *  every ~200-400ms, so an undebounced effect starts-and-aborts a fetch burst
- *  each hop and rarely completes one. Waiting a hair past the inter-hop gap
- *  collapses a chained walk to a single batch, fired once the walk pauses. */
-const PREFETCH_DEBOUNCE_MS = 250;
+/** Warm the tiny PREVIEW first (so an arriving node paints almost instantly and
+ *  a hop never sits on black) then the 4096 BASE (sharpens it). The 8192 zoom
+ *  tier is strictly on-demand — never speculative traffic. */
+const PREFETCH_LODS: readonly TwinEquirectLod[] = [512, 4096];
 
 /**
  * Cache-warm the base-resolution panos of the current node's graph
@@ -27,19 +22,22 @@ export function useTwinPrefetch(neighborIds: readonly string[], base: string): v
     if (typeof fetch !== "function" || neighborIds.length === 0) {
       return;
     }
+    // Fired immediately on every arrival — no debounce. A held-key walk WANTS
+    // the next nodes warmed; the previous batch is simply aborted as you move
+    // on, and the node you actually hop to was already warmed as the prior
+    // node's neighbour, so it streams from cache and the crossfade stays smooth.
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      for (const id of neighborIds) {
-        void fetch(`${base}/${twinEquirectPath(id, PREFETCH_LOD)}`, {
+    for (const id of neighborIds) {
+      for (const lod of PREFETCH_LODS) {
+        void fetch(`${base}/${twinEquirectPath(id, lod)}`, {
           signal: controller.signal,
           priority: "low",
         } as RequestInit)
           .then((response) => (response.ok ? response.blob() : null))
           .catch(() => null);
       }
-    }, PREFETCH_DEBOUNCE_MS);
+    }
     return () => {
-      window.clearTimeout(timer);
       controller.abort();
     };
   }, [neighborIds, base]);

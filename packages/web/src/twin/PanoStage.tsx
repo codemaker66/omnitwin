@@ -207,6 +207,9 @@ export interface PanoStageProps {
   readonly assetBase: string;
   /** 0..1 crossfade opacity — the hop spring drives this. */
   readonly opacity: number;
+  /** Draw order among concurrent stages — the departing pano (0) renders under
+   *  the arriving pano (1) so the fade layers instead of flashing black. */
+  readonly renderOrder?: number;
   /** Imagery mode from the manifest — selects the pano pipeline. */
   readonly imagery: TwinImagery;
   /**
@@ -224,6 +227,7 @@ function CubePanoStage({
   quaternion,
   assetBase,
   opacity,
+  renderOrder = 0,
   onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
@@ -278,6 +282,7 @@ function CubePanoStage({
 
   return (
     <mesh
+      renderOrder={renderOrder}
       position={[position[0], position[1], position[2]]}
       quaternion={[quaternion[0], quaternion[1], quaternion[2], quaternion[3]]}
     >
@@ -292,6 +297,7 @@ function EquirectPanoStage({
   position,
   assetBase,
   opacity,
+  renderOrder = 0,
   onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
@@ -414,7 +420,7 @@ function EquirectPanoStage({
   // CRITICAL: no quaternion here. The pano is world-aligned by construction;
   // applying the pose rotation would double-rotate every equirect node.
   return (
-    <mesh position={[position[0], position[1], position[2]]}>
+    <mesh renderOrder={renderOrder} position={[position[0], position[1], position[2]]}>
       <sphereGeometry args={[PANO_SPHERE_RADIUS, 48, 32]} />
       <primitive object={material} attach="material" />
     </mesh>

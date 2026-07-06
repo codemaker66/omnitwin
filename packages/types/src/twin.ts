@@ -103,6 +103,9 @@ export const TwinManifestSchema = z
     generatedAt: z.string().datetime(),
     nodes: z.array(TwinScanNodeSchema).min(1),
     edges: z.array(TwinNavEdgeSchema),
+    /** The node the walk opens on — the venue's hero viewpoint. Absent (or an
+     *  unknown id) falls back to scan_000 / the first node. */
+    entryNodeId: z.string().optional(),
     /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
     mesh: TwinMeshSchema.optional(),
     /** SHA-256 per bundle entry, filled by twin-forge hash step (D-014 shape). */
