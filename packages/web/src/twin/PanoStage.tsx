@@ -10,7 +10,12 @@ import {
   type IUniform,
   type Texture,
 } from "three";
-import { TWIN_EQUIRECT_LODS, TWIN_LODS, type TwinImagery } from "@omnitwin/types";
+import {
+  TWIN_EQUIRECT_LODS,
+  TWIN_LODS,
+  type TwinEquirectLod,
+  type TwinImagery,
+} from "@omnitwin/types";
 import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
 import { useCubeTiles } from "./useCubeTiles.js";
 import {
@@ -48,10 +53,15 @@ import {
 // -----------------------------------------------------------------------------
 
 export const PANO_SPHERE_RADIUS = 50;
-/** Nadir crown colour — the Rite's deep green-black. */
-export const PANO_CROWN_COLOR = "#07100f";
-/** Fraction of straight-down (world −Z / scanner −Z) where the crown fade begins. */
-export const PANO_CROWN_START = 0.82;
+/** Nadir fill colour — a warm floor-toned greige that reads as a soft patch of
+ *  parquet under the viewer, NOT a dark disc. Only the small equirect pole
+ *  pinch straight down is covered; the real floor shows everywhere else. */
+export const PANO_CROWN_COLOR = "#a99a86";
+/** Downward cos where the nadir fill begins. 0.95 ≈ an 18° soft vignette — just
+ *  enough to hide the pole pinch. Was 0.82, a huge ~35° cone (the black disc
+ *  Blake saw underfoot); the fill also ramps to full only AT the pole now, so
+ *  it feathers into the floor instead of sitting as a hard-edged plate. */
+export const PANO_CROWN_START = 0.95;
 
 /**
  * Interior tone grade — applied in DISPLAY (sRGB) space, on top of a colour-
@@ -128,7 +138,7 @@ void main() {
   // Linear sample → display sRGB → aesthetic grade; crown mixed in display
   // space so it keeps its exact authored colour.
   vec3 g = twinGrade(twinLinearToSRGB(c.rgb));
-  float crown = smoothstep(uCrownStart, 0.98, max(-s.z, 0.0));
+  float crown = smoothstep(uCrownStart, 1.0, max(-s.z, 0.0));
   gl_FragColor = vec4(mix(g, twinLinearToSRGB(uCrownColor), crown), uOpacity);
 }
 `;
@@ -153,11 +163,22 @@ void main() {
   float u = uUSign * az / (2.0 * PI) + uUOffset; // RepeatWrapping absorbs winding
   float v = 0.5 + asin(clamp(e.z, -1.0, 1.0)) / PI;
   vec4 c = texture2D(uMap, vec2(u, v));
-  // Linear sample → display sRGB → aesthetic grade; crown mixed in display
-  // space so it keeps its exact authored colour.
+  // Nadir fill — the floor's own pole pinches to a swirl straight down (and the
+  // tripod blind-spot sits there). Blend the sample toward the AVERAGE of the
+  // nearest floor ring, so it reads as a soft patch of THIS room's actual floor
+  // (auto-matched per node — parquet, mosaic, carpet), not a black disc or a
+  // swirl. Feathers to full only AT the pole, so it melts into the real floor.
+  float crown = smoothstep(uCrownStart, 1.0, max(-e.z, 0.0));
+  if (crown > 0.0) {
+    vec3 floorRing = texture2D(uMap, vec2(0.0, 0.03)).rgb
+                   + texture2D(uMap, vec2(0.25, 0.03)).rgb
+                   + texture2D(uMap, vec2(0.5, 0.03)).rgb
+                   + texture2D(uMap, vec2(0.75, 0.03)).rgb;
+    c.rgb = mix(c.rgb, floorRing * 0.25, crown);
+  }
+  // Linear sample → display sRGB → aesthetic grade.
   vec3 g = twinGrade(twinLinearToSRGB(c.rgb));
-  float crown = smoothstep(uCrownStart, 0.98, max(-e.z, 0.0));
-  gl_FragColor = vec4(mix(g, twinLinearToSRGB(uCrownColor), crown), uOpacity);
+  gl_FragColor = vec4(g, uOpacity);
 }
 `;
 
@@ -210,6 +231,12 @@ export interface PanoStageProps {
   /** Draw order among concurrent stages — the departing pano (0) renders under
    *  the arriving pano (1) so the fade layers instead of flashing black. */
   readonly renderOrder?: number;
+  /** True while a hop is animating. The arriving pano then holds at its instant
+   *  512 preview and DEFERS the heavy 4096/8192 base upload (a ~50 ms
+   *  main-thread stall) to the settle — smooth motion, sharp on arrival
+   *  (finding [32]). The departing pano keeps its base (the stream never
+   *  downgrades). */
+  readonly hopping?: boolean;
   /** Imagery mode from the manifest — selects the pano pipeline. */
   readonly imagery: TwinImagery;
   /**
@@ -298,6 +325,7 @@ function EquirectPanoStage({
   assetBase,
   opacity,
   renderOrder = 0,
+  hopping = false,
   onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
@@ -332,11 +360,17 @@ function EquirectPanoStage({
     const mem = (navigator as { deviceMemory?: number }).deviceMemory;
     return (mem === undefined || mem >= 8) && window.matchMedia("(pointer: fine)").matches;
   }, []);
-  const maxLod = resolveEquirectMaxLod(
+  // While a hop animates, hold the ARRIVING node at its instant 512 preview and
+  // defer the ~34-134 MB base upload to the settle — that upload is the stutter
+  // you feel walking, and a still frame absorbs it invisibly. The departing
+  // node keeps its base: its stream slot already applied 4096, and a lower
+  // ceiling never downgrades a live tier.
+  const streamCeiling = resolveEquirectMaxLod(
     gl.capabilities.maxTextureSize,
     zoomIntent,
     canAfford8192,
   );
+  const maxLod: TwinEquirectLod = hopping ? TWIN_EQUIRECT_LODS[0] : streamCeiling;
   const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
 
   const material = useMemo(() => {
@@ -372,19 +406,26 @@ function EquirectPanoStage({
       uniforms.uMap.value = texture;
       invalidate();
     };
-    // The 8192 zoom tier is a ~134 MB (8192×4096 RGBA) upload that three does
-    // lazily on the first paint after `needsUpdate` — inline, it hitches the
-    // look/travel springs on the swap frame. Force that upload during browser
-    // idle (gl.initTexture) and only THEN swap the uniform, so the swap frame
-    // draws an already-resident texture (finding [32]). The 512/4096 tiers are
-    // small enough to apply immediately.
+    // The 4096 base (~34 MB) and 8192 zoom (~134 MB) tiers are large RGBA
+    // uploads that three does lazily on the first paint after `needsUpdate`.
+    // Inline, that upload hitches the look/travel springs on the swap frame —
+    // exactly the stutter/jump you feel walking node-to-node (the base lands
+    // mid-hop and freezes a frame). Force the upload during browser idle
+    // (gl.initTexture) and only THEN swap the uniform, so the swap frame draws
+    // an already-resident texture (finding [32]). Only the tiny 512 preview
+    // applies immediately — it paints the arriving node at once while the base
+    // warms behind it, so a hop is smooth even before it sharpens.
     let cancel: (() => void) | null = null;
-    if (texture !== null && lod === TWIN_EQUIRECT_LODS[2]) {
+    if (texture !== null && lod >= TWIN_EQUIRECT_LODS[1]) {
       const warmThenApply = (): void => {
         gl.initTexture(texture);
         apply();
       };
       if (typeof requestIdleCallback === "function") {
+        // No timeout: the base is only ever REQUESTED once the walk has settled
+        // (TwinViewer defers it via `hopping`/inMotion), so a genuine idle is
+        // already at hand — never force the ~50 ms upload into an animating
+        // frame-sliver, which is what re-introduced the stutter.
         const handle = requestIdleCallback(warmThenApply);
         cancel = () => {
           if (typeof cancelIdleCallback === "function") {

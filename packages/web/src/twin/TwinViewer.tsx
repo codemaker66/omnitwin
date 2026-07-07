@@ -633,6 +633,25 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const currentNode = nodesById.get(walk.currentId);
   const targetNode = walk.targetId === null ? undefined : nodesById.get(walk.targetId);
   const hopping = targetNode !== undefined;
+  // "In motion" holds true through the sub-frame gaps BETWEEN chained hops, so
+  // the arriving pano keeps deferring its heavy base upload for the whole walk —
+  // not just one hop — and fires it only once you actually stop (~250 ms after
+  // the last hop). Without this, a continuous hold-to-walk sneaks a ~50 ms base
+  // upload into each hop the instant `hopping` flickers false, re-introducing
+  // the stutter (finding [32]).
+  const [inMotion, setInMotion] = useState(false);
+  useEffect(() => {
+    if (hopping) {
+      setInMotion(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setInMotion(false);
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [hopping]);
   const diveNode = dive.target === null ? undefined : nodesById.get(dive.target);
 
   // Refresh the flight ref after every commit; DiveCamera reads it per frame.
@@ -758,6 +777,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 assetBase={assetBase}
                 opacity={opacity}
                 renderOrder={renderOrder}
+                hopping={inMotion}
                 imagery={manifest.imagery}
                 onTier={onPanoTier}
               />
