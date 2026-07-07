@@ -30,6 +30,7 @@ import {
   twinViewerLabel,
   twinViewpointAnnouncement,
 } from "./twin-copy.js";
+import { prefersReducedMotion } from "./reduced-motion.js";
 import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinMinimap } from "./TwinMinimap.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
@@ -833,6 +834,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           )
         )}
       </Canvas>
+
+      {/* Settle vignette — deepens a few percent in motion, relaxes on arrival.
+          Kept static at rest under reduced motion (never breathes). */}
+      <div
+        aria-hidden
+        className={
+          inMotion && !prefersReducedMotion()
+            ? "vv-twin-vignette vv-twin-vignette--motion"
+            : "vv-twin-vignette"
+        }
+      />
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
         {/* Keyed span: node changes remount the text through a 200 ms fade. */}

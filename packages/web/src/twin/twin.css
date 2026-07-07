@@ -151,6 +151,33 @@
   transition: opacity 500ms var(--settle);
 }
 
+/* Settle — a breath of vignette. The frame edges deepen a few percent WHILE
+ * moving and relax as the pano sharpens on arrival, drawing the eye to centre
+ * exactly as the base tier lands (reinforcing the shipped "smooth in motion,
+ * sharp on arrival" craft). The whole game is amplitude: this is a whisper
+ * (~6% edge at most) — anything a skeptic could name reads as an Instagram
+ * filter. Above the canvas, below every HUD chip; never intercepts a pointer. */
+.vv-twin-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.06) 100%);
+  opacity: 0.28;
+  transition: opacity 620ms var(--settle);
+}
+
+.vv-twin-vignette--motion {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Static at its rest whisper — never breathes. */
+  .vv-twin-vignette {
+    transition: none;
+  }
+}
+
 /* — node label: quiet mono pill, top left — */
 
 .vv-twin-node-label {
