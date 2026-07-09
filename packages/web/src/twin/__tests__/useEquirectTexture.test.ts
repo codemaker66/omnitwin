@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinearFilter, RepeatWrapping, SRGBColorSpace, Texture } from "three";
 import {
+  __resetEquirectRegistryForTests,
   resolveEquirectMaxLod,
   useEquirectTexture,
   type EquirectMaxLod,
@@ -50,6 +51,9 @@ async function completeLod(lod: 512 | 4096 | 8192): Promise<void> {
 
 describe("useEquirectTexture", () => {
   beforeEach(() => {
+    // Textures are shared module state by design (the registry) — cold-start
+    // every test so fetch-order assertions see their own loads.
+    __resetEquirectRegistryForTests();
     MockImage.instances = [];
     vi.stubGlobal("Image", MockImage);
     // happy-dom ships fetch/createImageBitmap; pin them off so the suite
@@ -64,15 +68,22 @@ describe("useEquirectTexture", () => {
   });
 
   it("prefers the off-thread bitmap path when the platform provides it", async () => {
-    const fakeBitmap = { width: 4096, height: 2048, close: vi.fn() };
+    const previewBitmap = { width: 512, height: 256, close: vi.fn() };
+    const baseBitmap = { width: 4096, height: 2048, close: vi.fn() };
+    const bitmaps = [
+      previewBitmap,
+      baseBitmap,
+    ];
     const blob = new Blob(["x"]);
-    vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(fakeBitmap));
+    vi.stubGlobal("createImageBitmap", vi.fn().mockImplementation(() =>
+      Promise.resolve(bitmaps.shift()),
+    ));
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) }),
     );
 
-    const { result } = renderHook(() => useEquirectTexture("scan_000", BASE));
+    const { result, unmount } = renderHook(() => useEquirectTexture("scan_000", BASE));
     await waitFor(() => {
       expect(result.current.lod).toBe(4096);
     });
@@ -82,6 +93,67 @@ describe("useEquirectTexture", () => {
     expect(MockImage.instances).toHaveLength(0);
     expect(result.current.texture?.flipY).toBe(false);
     expect(result.current.texture?.colorSpace).toBe(SRGBColorSpace);
+    // Preview ImageBitmap closed on the 4096 swap; the live bitmap closes on
+    // final release as well as Three's GPU texture.
+    expect(previewBitmap.close).toHaveBeenCalledTimes(1);
+    expect(baseBitmap.close).not.toHaveBeenCalled();
+    unmount();
+    expect(bitmaps).toHaveLength(0);
+    expect(baseBitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts an in-flight bitmap fetch on unmount without falling back to Image", async () => {
+    let requestedSignal: AbortSignal | undefined;
+    vi.stubGlobal("createImageBitmap", vi.fn());
+    vi.stubGlobal("fetch", vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      requestedSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        requestedSignal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      });
+    }));
+
+    const { unmount } = renderHook(() => useEquirectTexture("scan_abort", BASE));
+    await waitFor(() => { expect(requestedSignal).toBeDefined(); });
+    unmount();
+
+    await waitFor(() => { expect(requestedSignal?.aborted).toBe(true); });
+    await act(async () => { await Promise.resolve(); });
+    expect(MockImage.instances).toHaveLength(0);
+    expect(createImageBitmap).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent consumers and closes shared bitmaps only after final release", async () => {
+    const previewBitmap = { width: 512, height: 256, close: vi.fn() };
+    const baseBitmap = { width: 4096, height: 2048, close: vi.fn() };
+    const bitmaps = [previewBitmap, baseBitmap];
+    const blob = new Blob(["x"]);
+    vi.stubGlobal("createImageBitmap", vi.fn().mockImplementation(() =>
+      Promise.resolve(bitmaps.shift()),
+    ));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(blob),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, unmount } = renderHook(() => ({
+      first: useEquirectTexture("scan_shared", BASE),
+      second: useEquirectTexture("scan_shared", BASE),
+    }));
+    await waitFor(() => {
+      expect(result.current.first.lod).toBe(4096);
+      expect(result.current.second.lod).toBe(4096);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // one request per LOD, not per hook
+    expect(result.current.first.texture).toBe(result.current.second.texture);
+    expect(previewBitmap.close).toHaveBeenCalledTimes(1);
+    expect(baseBitmap.close).not.toHaveBeenCalled();
+
+    unmount();
+    expect(baseBitmap.close).toHaveBeenCalledTimes(1);
   });
 
   it("streams the 512 preview first, then swaps to the 4096 base — and never requests 8192 at the default maxLod", async () => {

@@ -20,6 +20,7 @@ import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
 import { useCubeTiles } from "./useCubeTiles.js";
 import {
   EQUIRECT_ZOOM_FOV_DEG,
+  isEquirectBaseWarm,
   resolveEquirectMaxLod,
   useEquirectTexture,
 } from "./useEquirectTexture.js";
@@ -382,7 +383,13 @@ function EquirectPanoStage({
     zoomIntent,
     canAfford8192,
   );
-  const maxLod: TwinEquirectLod = hopping ? TWIN_EQUIRECT_LODS[0] : streamCeiling;
+  // The 512 hold exists only to avoid a mid-hop GPU upload — when the
+  // neighbour warmer already has this node's base RESIDENT, a hop starts
+  // sharp with zero upload cost: no blur phase, no arrival pop.
+  const maxLod: TwinEquirectLod =
+    hopping && !isEquirectBaseWarm(nodeId, assetBase)
+      ? TWIN_EQUIRECT_LODS[0]
+      : streamCeiling;
   const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
 
   const material = useMemo(() => {

@@ -2,11 +2,17 @@ import { useEffect, useMemo, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
+  BatchedMesh,
+  Box3,
+  BufferGeometry,
   DoubleSide,
   Mesh,
+  Quaternion,
   ShaderMaterial,
   Vector3,
   type IUniform,
+  type Material,
+  type Object3D,
   type Texture,
 } from "three";
 import type { TwinScanNode } from "@omnitwin/types";
@@ -51,9 +57,15 @@ import { useEquirectTexture } from "./useEquirectTexture.js";
 // -----------------------------------------------------------------------------
 
 const parallaxVertexShader = /* glsl */ `
+#include <batching_pars_vertex>
 varying vec3 vWorld;
 void main() {
-  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  #include <batching_vertex>
+  vec4 localPosition = vec4(position, 1.0);
+  #ifdef USE_BATCHING
+    localPosition = batchingMatrix * localPosition;
+  #endif
+  vWorld = (modelMatrix * localPosition).xyz;
   gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
 }
 `;
@@ -108,6 +120,154 @@ function expVec(node: TwinScanNode): readonly [number, number, number] {
   return e === undefined
     ? [1, 1, 1]
     : [e.gain * e.wb[0], e.gain * e.wb[1], e.gain * e.wb[2]];
+}
+
+/** Geometry farther than this from the active hop cannot contribute useful
+ * walk parallax. Large primitives still qualify through their bounds radius. */
+export const PARALLAX_CORRIDOR_RADIUS_M = 8;
+const E57_TO_THREE_ROTATION = new Quaternion(...E57_TO_THREE_QUAT);
+const MESH_OFFSET = new Vector3(...MESH_OFFSET_M);
+
+interface ParallaxBatchInstance {
+  readonly id: number;
+  readonly center: Vector3;
+  readonly radius: number;
+}
+
+export interface ParallaxBatch {
+  readonly mesh: BatchedMesh;
+  readonly instances: readonly ParallaxBatchInstance[];
+  readonly sourceMeshCount: number;
+}
+
+interface SourceGeometry {
+  readonly mesh: GeometryMesh;
+  readonly geometry: BufferGeometry;
+}
+
+type GeometryMesh = Mesh;
+
+function isGeometryMesh(object: Object3D): object is GeometryMesh {
+  return object instanceof Mesh;
+}
+
+function collectSourceGeometry(scene: Object3D): SourceGeometry[] {
+  const sources: SourceGeometry[] = [];
+  scene.updateMatrixWorld(true);
+  scene.traverse((object) => {
+    if (!isGeometryMesh(object)) return;
+    if (!object.geometry.hasAttribute("position")) return;
+    sources.push({ mesh: object, geometry: object.geometry });
+  });
+  return sources;
+}
+
+/** Strip normals, UVs, tangents, and the 144 original materials: projective
+ * texturing needs position only. BatchedMesh then renders all qualifying GLB
+ * primitives through one multi-draw batch without cloning the scene graph. */
+function positionOnlyGeometry(
+  source: BufferGeometry,
+  keepIndex: boolean,
+): { readonly geometry: BufferGeometry; readonly temporary: BufferGeometry | null } {
+  const temporary = !keepIndex && source.getIndex() !== null
+    ? source.toNonIndexed()
+    : null;
+  const input = temporary ?? source;
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", input.getAttribute("position"));
+  if (keepIndex) geometry.setIndex(input.getIndex());
+  return { geometry, temporary };
+}
+
+export function buildParallaxBatch(
+  scene: Object3D,
+  material: Material,
+): ParallaxBatch | null {
+  const sources = collectSourceGeometry(scene);
+  if (sources.length === 0) return null;
+
+  // BatchedMesh requires one index policy. Keep compact GLTF indices when all
+  // primitives have them; normalize mixed input to non-indexed geometry.
+  const keepIndex = sources.every(({ geometry }) => geometry.getIndex() !== null);
+  const normalized = sources.map(({ geometry }) => positionOnlyGeometry(geometry, keepIndex));
+  const vertexCount = normalized.reduce(
+    (total, { geometry }) => total + geometry.getAttribute("position").count,
+    0,
+  );
+  const indexCount = keepIndex
+    ? normalized.reduce((total, { geometry }) => total + (geometry.getIndex()?.count ?? 0), 0)
+    : 0;
+  const batch = new BatchedMesh(sources.length, vertexCount, indexCount, material);
+  const instances: ParallaxBatchInstance[] = [];
+  const bounds = new Box3();
+
+  try {
+    for (let index = 0; index < sources.length; index += 1) {
+      const source = sources[index];
+      const prepared = normalized[index];
+      if (source === undefined || prepared === undefined) continue;
+
+      const geometryId = batch.addGeometry(prepared.geometry);
+      const instanceId = batch.addInstance(geometryId);
+      batch.setMatrixAt(instanceId, source.mesh.matrixWorld);
+
+      prepared.geometry.computeBoundingBox();
+      const geometryBounds = prepared.geometry.boundingBox;
+      if (geometryBounds === null) continue;
+      bounds.copy(geometryBounds);
+      bounds.applyMatrix4(source.mesh.matrixWorld);
+      const center = bounds.getCenter(new Vector3());
+      // The outer group rotates E57 Z-up into three Y-up. Rotation preserves
+      // radius, and the calibrated mesh offset is currently a translation.
+      center.applyQuaternion(E57_TO_THREE_ROTATION).add(MESH_OFFSET);
+      const size = bounds.getSize(new Vector3());
+      instances.push({ id: instanceId, center, radius: size.length() / 2 });
+    }
+    batch.computeBoundingBox();
+    batch.computeBoundingSphere();
+    return { mesh: batch, instances, sourceMeshCount: sources.length };
+  } catch (error) {
+    batch.dispose();
+    throw error;
+  } finally {
+    for (const { geometry, temporary } of normalized) {
+      geometry.dispose();
+      temporary?.dispose();
+    }
+  }
+}
+
+function distanceToSegmentSquared(point: Vector3, start: Vector3, end: Vector3): number {
+  const abX = end.x - start.x;
+  const abY = end.y - start.y;
+  const abZ = end.z - start.z;
+  const apX = point.x - start.x;
+  const apY = point.y - start.y;
+  const apZ = point.z - start.z;
+  const lengthSquared = abX * abX + abY * abY + abZ * abZ;
+  const t = lengthSquared === 0
+    ? 0
+    : Math.max(0, Math.min(1, (apX * abX + apY * abY + apZ * abZ) / lengthSquared));
+  const dx = point.x - (start.x + abX * t);
+  const dy = point.y - (start.y + abY * t);
+  const dz = point.z - (start.z + abZ * t);
+  return dx * dx + dy * dy + dz * dz;
+}
+
+export function updateParallaxCorridor(
+  batch: ParallaxBatch,
+  start: Vector3,
+  end: Vector3,
+  radius = PARALLAX_CORRIDOR_RADIUS_M,
+): number {
+  let visibleCount = 0;
+  for (const instance of batch.instances) {
+    const reach = radius + instance.radius;
+    const visible = distanceToSegmentSquared(instance.center, start, end) <= reach * reach;
+    batch.mesh.setVisibleAt(instance.id, visible);
+    if (visible) visibleCount += 1;
+  }
+  return visibleCount;
 }
 
 /** Streams one node's base pano into the given uniform slot (child component
@@ -189,18 +349,17 @@ export function ParallaxStage({
     [material],
   );
 
-  // One cloned scene graph (geometry SHARED by reference — no copy) with every
-  // material swapped for the projective shader. The glTF cache's original
-  // scene keeps its own materials for the dollhouse view.
+  // One position-only multi-draw batch. This avoids replaying every original
+  // GLTF primitive/material as a separate draw beside the two pano spheres.
   const projected = useMemo(() => {
-    const clone = gltf.scene.clone(true);
-    clone.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.material = material;
-      }
-    });
-    return clone;
+    return buildParallaxBatch(gltf.scene, material);
   }, [gltf.scene, material]);
+  useEffect(
+    () => () => {
+      projected?.mesh.dispose();
+    },
+    [projected],
+  );
 
   // Per-hop uniform writes ride the hop machine's own re-render per progress
   // step — no extra React state, no per-frame subscriptions.
@@ -213,6 +372,9 @@ export function ParallaxStage({
     uniforms.uPosB.value.set(b[0], b[1], b[2]);
     const expB = expVec(targetNode);
     uniforms.uExpB.value.set(expB[0], expB[1], expB[2]);
+    if (projected !== null) {
+      updateParallaxCorridor(projected, uniforms.uPosA.value, uniforms.uPosB.value);
+    }
   }
   // Until the target texture lands, hold on A (A projected alone still gives
   // true parallax against the dollying camera — no double image, no black).
@@ -223,7 +385,7 @@ export function ParallaxStage({
 
   return (
     <group quaternion={E57_TO_THREE_QUAT} position={MESH_OFFSET_M} visible={hopping}>
-      <primitive object={projected} />
+      {projected !== null && <primitive object={projected.mesh} />}
       <PanoFeed
         nodeId={currentNode.id}
         assetBase={assetBase}

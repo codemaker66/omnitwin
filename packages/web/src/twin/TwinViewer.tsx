@@ -52,6 +52,7 @@ import { TwinMinimap } from "./TwinMinimap.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
+import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinWalk } from "./useTwinWalk.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
@@ -430,6 +431,53 @@ function InitialLookRig({ look }: { readonly look: TwinLook | null }): null {
     invalidate();
   }, [camera, invalidate, look]);
 
+  return null;
+}
+
+/**
+ * At rest, decode AND GPU-upload the neighbours' base panos (shared texture
+ * registry), so the NEXT hop starts sharp on both sides — the walk never
+ * shows a loading photograph. Runs on idle after each arrival; the previous
+ * neighbour set's registry refs are released as the walk moves on.
+ */
+function NeighborWarmer({
+  neighbors,
+  assetBase,
+}: {
+  readonly neighbors: readonly string[];
+  readonly assetBase: string;
+}): null {
+  const gl = useThree((state) => state.gl);
+  useEffect(() => {
+    let disposed = false;
+    const releases: (() => void)[] = [];
+    const warm = (): void => {
+      for (const id of neighbors) {
+        void warmEquirectBase(id, assetBase, (texture) => {
+          gl.initTexture(texture);
+        }).then((release) => {
+          if (disposed) {
+            release();
+          } else {
+            releases.push(release);
+          }
+        });
+      }
+    };
+    const idle = typeof requestIdleCallback === "function";
+    const handle = idle ? requestIdleCallback(warm) : window.setTimeout(warm, 350);
+    return () => {
+      disposed = true;
+      if (idle && typeof cancelIdleCallback === "function") {
+        cancelIdleCallback(handle);
+      } else {
+        window.clearTimeout(handle);
+      }
+      for (const release of releases) {
+        release();
+      }
+    };
+  }, [neighbors, assetBase, gl]);
   return null;
 }
 
@@ -1114,6 +1162,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 a sliding crossfade. Invisible at rest (the spheres remain the
                 optically-perfect photograph); pixel-identical at both hop
                 endpoints by construction, so there is no seam to hide. */}
+            {parallaxReady && (
+              <NeighborWarmer neighbors={walk.neighbors} assetBase={assetBase} />
+            )}
             {parallaxReady && meshUrl !== null && (
               <Suspense fallback={null}>
                 <ParallaxStage
