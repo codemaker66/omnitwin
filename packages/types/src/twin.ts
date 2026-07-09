@@ -46,6 +46,15 @@ export const TwinScanNodeSchema = z.object({
   floor: z.number().int(),
   /** Link into the venue's room taxonomy when known; null until tagged. */
   roomSlug: z.string().nullable(),
+  /** Continuous-light correction (SS++): a small exposure gain + white-balance
+   *  multiplier solved over the nav graph so adjacent nodes match under one
+   *  light — the crossfade never pops. Absent = identity (old bundles parse). */
+  exposure: z
+    .object({
+      gain: z.number().finite(),
+      wb: z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]),
+    })
+    .optional(),
 });
 export type TwinScanNode = z.infer<typeof TwinScanNodeSchema>;
 

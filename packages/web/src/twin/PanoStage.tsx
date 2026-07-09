@@ -150,6 +150,9 @@ uniform vec3 uCrownColor;
 uniform float uCrownStart;
 uniform float uUSign;
 uniform float uUOffset;
+// Continuous light: per-node gain*wb, applied in LINEAR space so the physics
+// is right (a scanner exposure step is a linear scale). Identity when absent.
+uniform vec3 uExposure;
 varying vec3 vDir;
 const float PI = 3.141592653589793;
 void main() {
@@ -176,7 +179,9 @@ void main() {
                    + texture2D(uMap, vec2(0.75, 0.03)).rgb;
     c.rgb = mix(c.rgb, floorRing * 0.25, crown);
   }
-  // Linear sample → display sRGB → aesthetic grade.
+  // Continuous light, then linear → display sRGB → aesthetic grade. Applied
+  // after the ring blend so the nadir fill inherits the same correction.
+  c.rgb *= uExposure;
   vec3 g = twinGrade(twinLinearToSRGB(c.rgb));
   gl_FragColor = vec4(g, uOpacity);
 }
@@ -205,6 +210,7 @@ interface EquirectPanoUniforms extends GradeUniforms {
   uCrownStart: IUniform<number>;
   uUSign: IUniform<number>;
   uUOffset: IUniform<number>;
+  uExposure: IUniform<Vector3>;
 }
 
 /** The grade uniform trio, fresh per material (Vector3 must not be shared). */
@@ -237,6 +243,10 @@ export interface PanoStageProps {
    *  (finding [32]). The departing pano keeps its base (the stream never
    *  downgrades). */
   readonly hopping?: boolean;
+  /** Continuous-light correction for THIS node (manifest `exposure`): a small
+   *  gain + white balance applied in linear space, so adjacent nodes read as
+   *  one continuous light and the hop crossfade never pops. Absent = identity. */
+  readonly exposure?: { readonly gain: number; readonly wb: readonly [number, number, number] };
   /** Imagery mode from the manifest — selects the pano pipeline. */
   readonly imagery: TwinImagery;
   /**
@@ -326,6 +336,7 @@ function EquirectPanoStage({
   opacity,
   renderOrder = 0,
   hopping = false,
+  exposure,
   onTier,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
@@ -381,6 +392,7 @@ function EquirectPanoStage({
       uCrownStart: { value: PANO_CROWN_START },
       uUSign: { value: EQUIRECT_U_FLIP ? -1 : 1 },
       uUOffset: { value: EQUIRECT_U_OFFSET },
+      uExposure: { value: new Vector3(1, 1, 1) },
       ...makeGradeUniforms(),
     };
     return new ShaderMaterial({
@@ -453,6 +465,22 @@ function EquirectPanoStage({
     (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacity;
     invalidate();
   }, [opacity, material, invalidate]);
+
+  // Continuous light: premultiplied gain*wb as one vec3 (identity when the
+  // manifest carries no correction — old bundles keep rendering unchanged).
+  useEffect(() => {
+    const uniforms = material.uniforms as EquirectPanoUniforms;
+    if (exposure === undefined) {
+      uniforms.uExposure.value.set(1, 1, 1);
+    } else {
+      uniforms.uExposure.value.set(
+        exposure.gain * exposure.wb[0],
+        exposure.gain * exposure.wb[1],
+        exposure.gain * exposure.wb[2],
+      );
+    }
+    invalidate();
+  }, [exposure, material, invalidate]);
 
   if (texture === null) {
     return null;

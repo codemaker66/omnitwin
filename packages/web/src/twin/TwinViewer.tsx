@@ -1069,6 +1069,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 opacity={opacity}
                 renderOrder={renderOrder}
                 hopping={inMotion}
+                exposure={node.exposure}
                 imagery={manifest.imagery}
                 onTier={onPanoTier}
               />
@@ -1114,6 +1115,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   quaternion={e57QuatToThree(diveNode.pose.q)}
                   assetBase={assetBase}
                   opacity={(dive.progress - 0.45) / 0.55}
+                  exposure={diveNode.exposure}
                   imagery={manifest.imagery}
                 />
               )}
@@ -1124,6 +1126,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   quaternion={e57QuatToThree(diveNode.pose.q)}
                   assetBase={assetBase}
                   opacity={1 - dive.progress / 0.55}
+                  exposure={diveNode.exposure}
                   imagery={manifest.imagery}
                 />
               )}
