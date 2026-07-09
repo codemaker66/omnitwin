@@ -9,15 +9,30 @@ import {
   type MutableRefObject,
   type ReactElement,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Euler, PerspectiveCamera } from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
 import { DollhouseStage, preloadDollhouse } from "./DollhouseStage.js";
+import {
+  FIRST_LIGHT_FAILSAFE_MS,
+  FIRST_LIGHT_FOV_OFFSET_DEG,
+  FIRST_LIGHT_OVERLAY_MAX_OPACITY,
+  FIRST_LIGHT_PITCH_OFFSET_RAD,
+  FIRST_LIGHT_SPRING,
+  FIRST_LIGHT_YAW_OFFSET_RAD,
+  firstLightEligible,
+  firstLightSeen,
+  markFirstLightSeen,
+} from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
 import { TravelControls } from "./TravelControls.js";
 import { PanoStage } from "./PanoStage.js";
+import { stepSpring, type SpringState } from "../lib/springs.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
+import { decodeTwinLook, encodeTwinLook, type TwinLook } from "./twin-look.js";
+import { MAX_USHER_HOPS, shortestRoute } from "./travel-route.js";
 import {
   TWIN_DISCLOSURE,
   TWIN_MODE_DOLLHOUSE_LABEL,
@@ -261,12 +276,26 @@ const YAW_PROBE_MIN_DELTA_RAD = 0.05;
 /** Report cadence ceiling — ~10 Hz keeps minimap re-renders negligible. */
 const YAW_PROBE_MIN_INTERVAL_MS = 100;
 
+/** Live camera pose for event-time reads (the share link) — a ref, never state. */
+interface LiveLook {
+  yawRad: number;
+  pitchRad: number;
+  fovDeg: number;
+}
+
 /**
  * Lifts the camera yaw into React state for the minimap's view cone —
  * throttled to ~10 Hz and gated on a 0.05 rad change so look-drags never
- * flood React with renders.
+ * flood React with renders. Also mirrors the FULL pose (yaw/pitch/fov) into
+ * `lookRef` every frame — a plain ref write, read only at share-click time.
  */
-function YawProbe({ onYaw }: { readonly onYaw: (yaw: number) => void }): null {
+function YawProbe({
+  onYaw,
+  lookRef,
+}: {
+  readonly onYaw: (yaw: number) => void;
+  readonly lookRef: MutableRefObject<LiveLook>;
+}): null {
   const camera = useThree((state) => state.camera);
   const lastRef = useRef<{ yaw: number; at: number }>({ yaw: 0, at: 0 });
 
@@ -274,7 +303,10 @@ function YawProbe({ onYaw }: { readonly onYaw: (yaw: number) => void }): null {
     if (!(camera instanceof PerspectiveCamera)) {
       return;
     }
-    const { yaw } = lookStateFromCamera(camera);
+    const { yaw, pitch } = lookStateFromCamera(camera);
+    lookRef.current.yawRad = yaw;
+    lookRef.current.pitchRad = pitch;
+    lookRef.current.fovDeg = camera.fov;
     const now = performance.now();
     const last = lastRef.current;
     if (
@@ -285,6 +317,117 @@ function YawProbe({ onYaw }: { readonly onYaw: (yaw: number) => void }): null {
       onYaw(yaw);
     }
   });
+
+  return null;
+}
+
+/** Scratch Euler for the First-Light crane (module-scope, like dollyEuler). */
+const firstLightEuler = new Euler(0, 0, 0, "YXZ");
+
+/**
+ * FirstLightRig — drives the establishing reveal (SS++ phase 1).
+ *
+ * One critically-damped spring 0→1 carries the whole overture: the camera
+ * cranes down from a small lifted offset onto the resting hero frame, the fov
+ * relaxes a few degrees, and the cool iris overlay (a DOM sibling, written by
+ * ref) opens to nothing — all riding the SAME spring value so nothing can
+ * drift. WalkControls is disabled while this runs and re-adopts the camera at
+ * the end (its enable effect reads the live pose), so the handover is
+ * seamless. Deactivation mid-flight (visitor interacts) simply stops the rig:
+ * WalkControls adopts wherever the crane was — no snap.
+ */
+function FirstLightRig({
+  active,
+  overlayRef,
+  onDone,
+}: {
+  readonly active: boolean;
+  readonly overlayRef: MutableRefObject<HTMLDivElement | null>;
+  readonly onDone: () => void;
+}): null {
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+  const flightRef = useRef<{
+    spring: SpringState;
+    rest: { yaw: number; pitch: number; fov: number };
+  } | null>(null);
+
+  useFrame((_, delta) => {
+    if (!active || !(camera instanceof PerspectiveCamera)) {
+      return;
+    }
+    if (flightRef.current === null) {
+      // First active frame: the current pose IS the authored resting frame.
+      const { yaw, pitch } = lookStateFromCamera(camera);
+      flightRef.current = {
+        spring: { value: 0, velocity: 0 },
+        rest: { yaw, pitch, fov: camera.fov },
+      };
+    }
+    const flight = flightRef.current;
+    stepSpring(flight.spring, 1, Math.min(delta, 1 / 20), FIRST_LIGHT_SPRING);
+    const p = Math.min(flight.spring.value, 1);
+    const away = 1 - p;
+    camera.quaternion.setFromEuler(
+      firstLightEuler.set(
+        flight.rest.pitch + FIRST_LIGHT_PITCH_OFFSET_RAD * away,
+        flight.rest.yaw + FIRST_LIGHT_YAW_OFFSET_RAD * away,
+        0,
+        "YXZ",
+      ),
+    );
+    camera.fov = flight.rest.fov + FIRST_LIGHT_FOV_OFFSET_DEG * away;
+    camera.updateProjectionMatrix();
+    const overlay = overlayRef.current;
+    if (overlay !== null) {
+      overlay.style.opacity = String(FIRST_LIGHT_OVERLAY_MAX_OPACITY * away);
+    }
+    invalidate();
+    if (p >= 0.995) {
+      // Land exactly on the rest frame; WalkControls adopts it on re-enable.
+      camera.quaternion.setFromEuler(
+        firstLightEuler.set(flight.rest.pitch, flight.rest.yaw, 0, "YXZ"),
+      );
+      camera.fov = flight.rest.fov;
+      camera.updateProjectionMatrix();
+      onDone();
+    }
+  });
+
+  return null;
+}
+
+/**
+ * Seed the camera from a valid ?look= param, exactly once. Mounted BEFORE
+ * WalkControls in the walk fragment: React runs sibling effects in mount
+ * order, so this pose is on the camera by the time WalkControls' enable
+ * effect adopts it as spring rest — the recipient simply IS standing where
+ * the sender stood. (Canvas onCreated is NOT reliable for this: it can fire
+ * after child effects, letting WalkControls adopt the default pose first and
+ * spring straight back over the seed.)
+ */
+function InitialLookRig({ look }: { readonly look: TwinLook | null }): null {
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+  const appliedRef = useRef(false);
+
+  useEffect(() => {
+    if (appliedRef.current || look === null || !(camera instanceof PerspectiveCamera)) {
+      return;
+    }
+    appliedRef.current = true;
+    camera.quaternion.setFromEuler(
+      firstLightEuler.set(
+        (look.pitchDeg * Math.PI) / 180,
+        (look.yawDeg * Math.PI) / 180,
+        0,
+        "YXZ",
+      ),
+    );
+    camera.fov = look.fovDeg;
+    camera.updateProjectionMatrix();
+    invalidate();
+  }, [camera, invalidate, look]);
 
   return null;
 }
@@ -537,12 +680,105 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const [shimmerPhase, setShimmerPhase] = useState<TwinShimmerPhase>("loading");
   const initialNodeIdRef = useRef(walk.currentId);
 
+  // — the exact-view deep link (?look=): decoded ONCE from the pristine URL.
+  // Applied only when it names the node the walk actually opened on (the share
+  // button writes ?node= and &look= consistently; a tampered mismatch or a
+  // malformed value is simply ignored — never a broken load).
+  const [searchParams] = useSearchParams();
+  const initialLookRef = useRef(
+    (() => {
+      const look = decodeTwinLook(searchParams.get("look"));
+      if (look !== null && look.nodeId === walk.currentId) {
+        return look;
+      }
+      // No shared view: open on the AUTHORED hero frame. The first frame is
+      // the product — it faces the room's best view (the dome), never
+      // whatever direction the scanner happened to call north.
+      if (manifest.entryLook !== undefined && walk.currentId === manifest.entryNodeId) {
+        return { nodeId: walk.currentId, ...manifest.entryLook };
+      }
+      return null;
+    })(),
+  );
+
+  // Live camera pose, mirrored by YawProbe each frame — read at share-click
+  // time to mint the "stand where I'm standing" link.
+  const liveLookRef = useRef<LiveLook>({ yawRad: 0, pitchRad: 0, fovDeg: 75 });
+
+  // — First Light: the once-per-session establishing reveal. Decided from the
+  // PRISTINE first render (before useTwinWalk canonicalises ?node= into the
+  // URL): arrivals with intent (?node=/?look=/?mode=), reduced motion, and
+  // repeat visits this session all skip straight to "done".
+  const [firstLight, setFirstLight] = useState<"waiting" | "running" | "done">(() =>
+    firstLightEligible({
+      hasNodeParam: searchParams.get("node") !== null,
+      hasLookParam: searchParams.get("look") !== null,
+      hasModeParam: searchParams.get("mode") !== null,
+      reducedMotion: prefersReducedMotion(),
+      seenThisSession: firstLightSeen(),
+    })
+      ? "waiting"
+      : "done",
+  );
+  const firstLightOverlayRef = useRef<HTMLDivElement | null>(null);
+
+  // The Usher's pending route — state here (its consumer effect sits below,
+  // after the hop flag it needs); documentation lives at that effect.
+  const [usherQueue, setUsherQueue] = useState<readonly string[]>([]);
+
   const onPanoTier = useCallback((nodeId: string, tier: "preview" | "base") => {
     setStageLive(true);
     setShimmerPhase((phase) =>
       shimmerPhaseAfterTier(phase, nodeId, initialNodeIdRef.current, tier),
     );
+    // First Light arms only once the HERO's base tier is on stage — the
+    // overture never cranes over a soft preview.
+    if (tier === "base" && nodeId === initialNodeIdRef.current) {
+      setFirstLight((status) => {
+        if (status !== "waiting") {
+          return status;
+        }
+        markFirstLightSeen();
+        return "running";
+      });
+    }
   }, []);
+
+  // Any interaction dismisses the overture instantly — the visitor's intent
+  // always wins. WalkControls re-adopts the camera wherever the crane was
+  // (its enable effect reads the live pose), so there is never a snap.
+  useEffect(() => {
+    if (firstLight === "done") {
+      return;
+    }
+    const cancel = (): void => {
+      markFirstLightSeen();
+      setFirstLight("done");
+    };
+    window.addEventListener("pointerdown", cancel);
+    window.addEventListener("keydown", cancel);
+    window.addEventListener("wheel", cancel);
+    return () => {
+      window.removeEventListener("pointerdown", cancel);
+      window.removeEventListener("keydown", cancel);
+      window.removeEventListener("wheel", cancel);
+    };
+  }, [firstLight]);
+
+  // Never hold a slow connection hostage to choreography: if the hero base
+  // hasn't landed in time, skip the overture and just be a viewer.
+  useEffect(() => {
+    if (firstLight !== "waiting") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      markFirstLightSeen();
+      setFirstLight("done");
+    }, FIRST_LIGHT_FAILSAFE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [firstLight]);
 
   // Mesh modes paint their own stage — never hold the canvas dark for them
   // (?mode=dollhouse deep links mount without any pano tier report).
@@ -553,6 +789,8 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       // spin forever (finding [21]); retire it the same way walking off the
       // initial node does — advance loading → fading and let it play out.
       setShimmerPhase((phase) => (phase === "loading" ? "fading" : phase));
+      // Leaving the walk abandons any Usher ride mid-route.
+      setUsherQueue([]);
     }
   }, [mode]);
 
@@ -653,6 +891,25 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       window.clearTimeout(timer);
     };
   }, [hopping]);
+
+  // — The Usher (SS++ phase 1): a minimap pick GLIDES the real corridor route
+  // (shortest path over the nav graph) instead of teleport-cutting, building
+  // the visitor's mental model of how the building connects. The queue feeds
+  // the existing hop machine one neighbour at a time, so all the chained-hop
+  // craft (fov-surge suppression, base-tier deferral, seamless crossfade)
+  // applies automatically. A second pick mid-glide short-circuits straight to
+  // that target; any manual travel clears the ride.
+  useEffect(() => {
+    if (hopping || usherQueue.length === 0) {
+      return;
+    }
+    const [next, ...rest] = usherQueue;
+    if (next !== undefined && next !== walk.currentId) {
+      walk.hopTo(next);
+    }
+    setUsherQueue(rest);
+  }, [hopping, usherQueue, walk]);
+
   const diveNode = dive.target === null ? undefined : nodesById.get(dive.target);
 
   // Refresh the flight ref after every commit; DiveCamera reads it per frame.
@@ -713,6 +970,28 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     }
   });
 
+  // The share link carries the exact view (SS++ "the irresistible link"):
+  // ?node= keeps the walk's source of truth, &look= adds the camera, so the
+  // recipient lands standing where the sender stood, gazing at the same dome.
+  // Mesh modes share the plain location (a look param is a walk concept).
+  const shareUrl = useCallback((): string => {
+    const url = new URL(window.location.href);
+    if (mode === "walk") {
+      const live = liveLookRef.current;
+      url.searchParams.set("node", walk.currentId);
+      url.searchParams.set(
+        "look",
+        encodeTwinLook({
+          nodeId: walk.currentId,
+          yawDeg: (live.yawRad * 180) / Math.PI,
+          pitchDeg: (live.pitchRad * 180) / Math.PI,
+          fovDeg: live.fovDeg,
+        }),
+      );
+    }
+    return url.toString();
+  }, [mode, walk.currentId]);
+
   if (currentNode === undefined) {
     // Unreachable in practice: the walk only yields ids from this manifest.
     return null;
@@ -757,8 +1036,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       >
         {mode === "walk" ? (
           <>
-            <WalkControls enabled={!hopping} />
+            {/* Order matters: the look seed must land before WalkControls
+                adopts the camera as its spring rest. */}
+            <InitialLookRig look={initialLookRef.current} />
+            <WalkControls enabled={!hopping && firstLight !== "running"} />
             <CameraDolly dolly={dollyRef} />
+            <FirstLightRig
+              active={firstLight === "running"}
+              overlayRef={firstLightOverlayRef}
+              onDone={() => {
+                setFirstLight("done");
+              }}
+            />
             <TravelControls
               enabled
               hopping={hopping}
@@ -766,6 +1055,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               neighbors={walk.neighbors}
               nodesById={nodesById}
               onTravel={(id) => {
+                setUsherQueue([]); // manual travel always ends an Usher ride
                 walk.hopTo(id);
               }}
             />
@@ -784,9 +1074,16 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               />
             ))}
             {!hopping && (
-              <NavMarkers neighbors={walk.neighbors} nodesById={nodesById} onHop={walk.hopTo} />
+              <NavMarkers
+                neighbors={walk.neighbors}
+                nodesById={nodesById}
+                onHop={(id) => {
+                  setUsherQueue([]); // manual travel always ends an Usher ride
+                  walk.hopTo(id);
+                }}
+              />
             )}
-            <YawProbe onYaw={setYaw} />
+            <YawProbe onYaw={setYaw} lookRef={liveLookRef} />
           </>
         ) : (
           meshUrl !== null && (
@@ -846,6 +1143,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         }
       />
 
+      {/* First Light's iris — a cool wash the rig opens to nothing as the
+          camera cranes onto the hero frame. Mounted only while the overture
+          is pending or playing; the rig writes its opacity by ref. */}
+      {firstLight !== "done" && (
+        <div
+          ref={firstLightOverlayRef}
+          aria-hidden
+          data-testid="twin-first-light"
+          className="vv-twin-first-light"
+        />
+      )}
+
       <div className="vv-twin-node-label" data-testid="twin-node-label">
         {/* Keyed span: node changes remount the text through a 200 ms fade. */}
         <span key={walk.currentId} className="vv-twin-node-label-text">
@@ -900,16 +1209,37 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         venueSlug={manifest.venueSlug}
         venueName={manifest.name}
         viewerRef={viewerRef}
+        shareUrl={shareUrl}
       />
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
-      {mode === "walk" && <TwinCoachHint />}
+      {/* The coach waits in the wings until the overture has played. */}
+      {mode === "walk" && firstLight === "done" && <TwinCoachHint />}
       {mode === "walk" && (
         <TwinMinimap
           nodes={manifest.nodes}
           currentId={walk.currentId}
           yaw={yaw}
           onSelect={(id) => {
-            walk.hopTo(id, { teleport: true });
+            // The Usher: glide the real corridor route to the picked node.
+            // Reduced motion keeps the instant teleport (a chain of instant
+            // swaps would strobe); a second pick mid-ride short-circuits
+            // straight to that target; unreachable or marathon routes fall
+            // back to the teleport rather than trap the visitor.
+            if (prefersReducedMotion()) {
+              walk.hopTo(id, { teleport: true });
+              return;
+            }
+            if (usherQueue.length > 0) {
+              setUsherQueue([]);
+              walk.hopTo(id, { teleport: true });
+              return;
+            }
+            const route = shortestRoute(walk.currentId, id, manifest.edges);
+            if (route === null || route.length === 0 || route.length > MAX_USHER_HOPS) {
+              walk.hopTo(id, { teleport: true });
+              return;
+            }
+            setUsherQueue(route);
           }}
         />
       )}

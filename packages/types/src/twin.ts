@@ -106,6 +106,16 @@ export const TwinManifestSchema = z
     /** The node the walk opens on — the venue's hero viewpoint. Absent (or an
      *  unknown id) falls back to scan_000 / the first node. */
     entryNodeId: z.string().optional(),
+    /** The authored opening camera at the hero viewpoint — the first frame is
+     *  the product, so it faces the room's best view, never a default axis.
+     *  Angles in degrees; applied only when the walk opens on entryNodeId. */
+    entryLook: z
+      .object({
+        yawDeg: z.number().finite(),
+        pitchDeg: z.number().finite(),
+        fovDeg: z.number().finite(),
+      })
+      .optional(),
     /** Optional dollhouse mesh — bundles without one keep working (Phase 2). */
     mesh: TwinMeshSchema.optional(),
     /** SHA-256 per bundle entry, filled by twin-forge hash step (D-014 shape). */

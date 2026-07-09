@@ -171,6 +171,20 @@
   opacity: 1;
 }
 
+/* First Light — the establishing reveal's iris: a cool near-black wash the
+ * rig opens to nothing (it writes this element's opacity by ref, riding the
+ * same spring as the camera crane). Initial opacity matches
+ * FIRST_LIGHT_OVERLAY_MAX_OPACITY so the stage comes up dim until the hero
+ * base tier lands. Never mounted under reduced motion (eligibility gate). */
+.vv-twin-first-light {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: #050d0c;
+  opacity: 0.55;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Static at its rest whisper — never breathes. */
   .vv-twin-vignette {

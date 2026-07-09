@@ -63,12 +63,17 @@ export interface TwinViewerControlsProps {
   readonly venueName: string;
   /** The element to take fullscreen — the viewer root (canvas + HUD). */
   readonly viewerRef: RefObject<HTMLDivElement | null>;
+  /** Mints the link to share — the viewer passes the exact-view (?look=)
+   *  builder so the recipient lands standing where the sender stood.
+   *  Defaults to the plain location for callers without one. */
+  readonly shareUrl?: () => string;
 }
 
 export function TwinViewerControls({
   venueSlug,
   venueName,
   viewerRef,
+  shareUrl,
 }: TwinViewerControlsProps): ReactElement {
   const fullscreen = useFullscreen(viewerRef);
   const [copied, setCopied] = useState(false);
@@ -77,7 +82,8 @@ export function TwinViewerControls({
   const revertTimer = useRef<number | null>(null);
 
   const onShare = useCallback((): void => {
-    void shareOrCopyLink(window.location.href).then((outcome) => {
+    const url = shareUrl !== undefined ? shareUrl() : window.location.href;
+    void shareOrCopyLink(url).then((outcome) => {
       if (outcome !== "copied") {
         // "shared" carries the OS sheet's own confirmation; "failed" stays quiet.
         return;
@@ -92,7 +98,7 @@ export function TwinViewerControls({
         setAnnounce("");
       }, COPIED_REVERT_MS);
     });
-  }, []);
+  }, [shareUrl]);
 
   return (
     <>
