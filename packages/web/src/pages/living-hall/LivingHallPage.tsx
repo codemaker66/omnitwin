@@ -1,0 +1,179 @@
+import { useEffect, type ReactElement } from "react";
+import { Link } from "react-router-dom";
+import {
+  CAPACITY_FORMATS,
+  TRADES_HALL_ROOM_CAPACITIES,
+  TRADES_HALL_WEDDING_PRICING,
+  VENUE_TRUTH_PROVENANCE,
+  formatPriceGBP,
+} from "../../lib/trades-hall-venue-truth.js";
+import { publicRoomSelectionCards } from "../../lib/trades-hall-room-showcase.js";
+import {
+  FOOTER_EMAIL,
+  FOOTER_PHONE_DISPLAY,
+  FOOTER_PHONE_HREF,
+  RETURN_CTA_HREF,
+  enquiryMailtoHref,
+} from "../landing/rite-copy.js";
+import {
+  LH_ACTS,
+  LH_BRAND_NAME,
+  LH_BRAND_SMALL,
+  LH_CAPTURE_RECORD_LINES,
+  LH_CAPTURE_RECORD_TITLE,
+  LH_CHECK_DATE_LABEL,
+  LH_CTA_PLANNER_LABEL,
+  LH_CTA_TEAM_LABEL,
+  LH_ENQUIRE_LABEL,
+  LH_FOOTER_NOTE,
+  LH_HEADLINE,
+  LH_LEDE,
+  LH_LEGEND_CYAN,
+  LH_LEGEND_GOLD,
+  LH_META_TITLE,
+  LH_RATES_TITLE,
+  LH_ROOMS_TITLE,
+  LH_SKIP_LABEL,
+} from "./living-hall-copy.js";
+import "./living-hall.css";
+
+// -----------------------------------------------------------------------------
+// LivingHallPage — the P0 DOM-first document of the Living Hall.
+//
+// This is the semantic source of truth for every tier of the experience: the
+// scroll-driven 3D performance (P1+) layers onto these sections; Tier C is
+// this document styled; screen readers, scrapers, and search engines read it
+// as-is. Structural rules the tests enforce: one h1, one section + h2 per
+// act, act nav that resolves, skip link first, venue figures rendered only
+// from trades-hall-venue-truth, provenance only from the capture record.
+// -----------------------------------------------------------------------------
+
+const roomName = (slug: string): string =>
+  publicRoomSelectionCards.find((c) => (c.canonicalRoomSlug ?? c.id) === slug)?.name ?? slug;
+
+export function LivingHallPage(): ReactElement {
+  useEffect(() => {
+    document.title = LH_META_TITLE;
+  }, []);
+
+  return (
+    <div className="lh-root">
+      <a className="lh-skip" href="#rooms-and-rates">
+        {LH_SKIP_LABEL}
+      </a>
+
+      <header className="lh-header">
+        <div className="lh-brand">
+          <small>{LH_BRAND_SMALL}</small>
+          <b>{LH_BRAND_NAME}</b>
+        </div>
+        <nav aria-label="Page acts" className="lh-act-nav">
+          {LH_ACTS.map((act) => (
+            <a key={act.id} href={`#${act.id}`}>
+              {act.navLabel}
+            </a>
+          ))}
+        </nav>
+        <div className="lh-header-actions">
+          <a href="#rooms-and-rates" className="lh-header-quiet">
+            {LH_CHECK_DATE_LABEL}
+          </a>
+          <a href={enquiryMailtoHref()} className="lh-header-cta">
+            {LH_ENQUIRE_LABEL}
+          </a>
+        </div>
+      </header>
+
+      <main className="lh-main">
+        <div className="lh-hero">
+          <h1>{LH_HEADLINE}</h1>
+          <p className="lh-lede">{LH_LEDE}</p>
+        </div>
+
+        {LH_ACTS.map((act) => (
+          <section key={act.id} id={act.id} className="lh-act" aria-labelledby={`${act.id}-title`}>
+            <h2 id={`${act.id}-title`}>{act.title}</h2>
+            {act.narration.map((line) => (
+              <p key={line.slice(0, 32)}>{line}</p>
+            ))}
+
+            {act.id === "the-plan" && (
+              <>
+                <aside className="lh-legend" aria-label="How to read the plan">
+                  <span className="lh-legend-gold">{LH_LEGEND_GOLD}</span>
+                  <span className="lh-legend-cyan">{LH_LEGEND_CYAN}</span>
+                </aside>
+                <dl className="lh-record" data-capture-record>
+                  <dt>{LH_CAPTURE_RECORD_TITLE}</dt>
+                  {LH_CAPTURE_RECORD_LINES.map((line) => (
+                    <dd key={line.slice(0, 32)}>{line}</dd>
+                  ))}
+                </dl>
+              </>
+            )}
+
+            {act.id === "rooms-and-rates" && (
+              <>
+                <h3>{LH_ROOMS_TITLE}</h3>
+                <table className="lh-capacities">
+                  <thead>
+                    <tr>
+                      <th scope="col">Room</th>
+                      {CAPACITY_FORMATS.map((f) => (
+                        <th key={f.key} scope="col">
+                          {f.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(TRADES_HALL_ROOM_CAPACITIES).map(([slug, cap]) => (
+                      <tr key={slug} data-room-row={slug}>
+                        <th scope="row">{roomName(slug)}</th>
+                        {CAPACITY_FORMATS.map((f) => (
+                          <td key={f.key}>{cap[f.key]}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="lh-provenance">{VENUE_TRUTH_PROVENANCE.capacities}</p>
+
+                <h3>{LH_RATES_TITLE}</h3>
+                <p className="lh-rates-scope">{TRADES_HALL_WEDDING_PRICING.scope}</p>
+                {TRADES_HALL_WEDDING_PRICING.seasons.map((season) => (
+                  <dl className="lh-rates" key={season.years}>
+                    <dt>{season.years}</dt>
+                    {season.rates.map((rate) => (
+                      <dd key={rate.packageName} data-rate-row>
+                        <span>{rate.packageName}</span>
+                        <span>{formatPriceGBP(rate.priceGBP)}</span>
+                      </dd>
+                    ))}
+                  </dl>
+                ))}
+                <p className="lh-provenance">{VENUE_TRUTH_PROVENANCE.pricing}</p>
+
+                <div className="lh-threshold">
+                  <Link className="lh-cta" to={RETURN_CTA_HREF}>
+                    {LH_CTA_PLANNER_LABEL} <span aria-hidden>→</span>
+                  </Link>
+                  <a className="lh-cta-quiet" href={FOOTER_PHONE_HREF}>
+                    {LH_CTA_TEAM_LABEL} · {FOOTER_PHONE_DISPLAY}
+                  </a>
+                  <a className="lh-cta-quiet" href={enquiryMailtoHref()}>
+                    {FOOTER_EMAIL}
+                  </a>
+                </div>
+              </>
+            )}
+          </section>
+        ))}
+      </main>
+
+      <footer className="lh-footer">
+        <span>{LH_FOOTER_NOTE}</span>
+      </footer>
+    </div>
+  );
+}

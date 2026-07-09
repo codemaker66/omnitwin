@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Color, FrontSide } from "three";
@@ -6,9 +6,44 @@ import { textSplats } from "@sparkjsdev/spark";
 import { useSearchParams } from "react-router-dom";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import {
+  SparkSplatLayer,
+  type SparkSplatErrorEvent,
+  type SparkSplatLoadEvent,
+} from "../components/scene/SparkSplatLayer.js";
+import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
+
+// P0 ingestion probe bridge (dev route only): headless checks read load
+// results per URL from this window global instead of scraping the canvas.
+interface SplatFixtureBridge {
+  status: "loading" | "loaded" | "error";
+  startedAtMs: number;
+  results: {
+    url: string;
+    ok: boolean;
+    splatCount?: number;
+    bounds?: SparkSplatLoadEvent["localBounds"];
+    error?: string;
+    elapsedMs: number;
+  }[];
+}
+
+declare global {
+  interface Window {
+    __splatFixture?: SplatFixtureBridge;
+  }
+}
+
+function fixtureBridge(): SplatFixtureBridge {
+  window.__splatFixture ??= {
+    status: "loading",
+    startedAtMs: performance.now(),
+    results: [],
+  };
+  return window.__splatFixture;
+}
 
 function SparkTextSplat(): React.ReactElement {
   const splat = useMemo(() => {
@@ -37,9 +72,63 @@ function SparkTextSplat(): React.ReactElement {
   return <primitive object={splat} />;
 }
 
+function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.ReactElement {
+  const expected = urls.length;
+
+  const settle = useCallback((entry: SplatFixtureBridge["results"][number]) => {
+    const bridge = fixtureBridge();
+    bridge.results.push(entry);
+    if (bridge.results.length >= expected) {
+      bridge.status = bridge.results.every((r) => r.ok) ? "loaded" : "error";
+    }
+  }, [expected]);
+
+  const onLoad = useCallback((event: SparkSplatLoadEvent) => {
+    settle({
+      url: event.url,
+      ok: true,
+      splatCount: event.splatCount,
+      bounds: event.localBounds,
+      elapsedMs: performance.now() - fixtureBridge().startedAtMs,
+    });
+  }, [settle]);
+
+  const onError = useCallback((event: SparkSplatErrorEvent) => {
+    settle({
+      url: event.url,
+      ok: false,
+      error: event.error.message,
+      elapsedMs: performance.now() - fixtureBridge().startedAtMs,
+    });
+  }, [settle]);
+
+  useEffect(() => {
+    fixtureBridge();
+  }, []);
+
+  return (
+    <>
+      {urls.map((url, index) => (
+        <SparkSplatLayer
+          key={url}
+          url={url}
+          includeRendererHost={index === 0}
+          onLoad={onLoad}
+          onError={onError}
+        />
+      ))}
+    </>
+  );
+}
+
 export function SplatFixturePage(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
+  const splatUrls = useMemo(() => {
+    const raw = searchParams.get("splatUrl");
+    if (raw === null || raw.trim() === "") return null;
+    return raw.split(",").map((u) => u.trim()).filter((u) => u !== "");
+  }, [searchParams]);
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
       surface: "spark_fixture",
@@ -65,12 +154,23 @@ export function SplatFixturePage(): React.ReactElement {
         <color attach="background" args={["#101217"]} />
         <hemisphereLight args={["#fff4d8", "#30243a", 1.8]} />
         <directionalLight position={[2, 4, 3]} intensity={1.1} />
-        <SparkTextSplat />
-        <mesh position={[0, -0.85, -2.9]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1.35, 1.38, 96]} />
-          <meshBasicMaterial color="#6f5c3a" transparent opacity={0.6} side={FrontSide} />
-        </mesh>
-        <OrbitControls enablePan={false} minDistance={2.4} maxDistance={5.2} target={[0, -0.1, -2.8]} />
+        {splatUrls === null ? (
+          <>
+            <SparkTextSplat />
+            <mesh position={[0, -0.85, -2.9]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[1.35, 1.38, 96]} />
+              <meshBasicMaterial color="#6f5c3a" transparent opacity={0.6} side={FrontSide} />
+            </mesh>
+          </>
+        ) : (
+          <UrlSplatScene urls={splatUrls} />
+        )}
+        <OrbitControls
+          enablePan={splatUrls !== null}
+          minDistance={splatUrls === null ? 2.4 : 0.2}
+          maxDistance={splatUrls === null ? 5.2 : 40}
+          target={splatUrls === null ? [0, -0.1, -2.8] : [0, 0, 0]}
+        />
       </Canvas>
 
       <div style={{

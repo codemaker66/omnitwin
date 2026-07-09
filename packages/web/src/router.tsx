@@ -83,6 +83,11 @@ const EventDayOpsPage = lazy(() =>
 const RoomShowcasePage = lazy(() =>
   import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
 );
+const LivingHallPage = lazy(() =>
+  import("./pages/living-hall/LivingHallPage.js").then((m) => ({
+    default: m.LivingHallPage,
+  })),
+);
 const TwinPage = lazy(() =>
   import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage })),
 );
@@ -126,6 +131,14 @@ export const router = createBrowserRouter([
     // already shared to /welcome keep working.
     path: "/welcome",
     element: withSuspense(<SpotlightLandingPage />),
+  },
+  {
+    // The Living Hall — P0 DOM-first document (spec:
+    // docs/superpowers/specs/2026-07-09-living-hall-landing-plan.md).
+    // Dev/preview route while the 3D tiers are built; intended to take `/`
+    // when the minimum-viable narrative ships.
+    path: "/living-hall",
+    element: withSuspense(<LivingHallPage />),
   },
   {
     path: "/login",

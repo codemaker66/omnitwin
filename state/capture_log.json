@@ -1,1 +1,88 @@
-{"version": 1, "captures": []}
+{
+  "version": 1,
+  "captures": [
+    {
+      "room": "Grand Hall",
+      "slug": "grand-hall",
+      "capturedAt": "2026-05-31T10:18:37",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/The_Grand_Hall_2026-05-31-101837",
+      "sourceSizeBytes": 41095196672,
+      "runtimeStatus": "raw capture only — Lixel processing pending (compute negotiation)",
+      "notes": "Second bright-walls pass exists (2026-05-31T11:51:12, 5.6GB)."
+    },
+    {
+      "room": "The Saloon",
+      "slug": "saloon",
+      "capturedAt": "2026-05-29T14:23:25",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/The_Saloon_2026-05-29-142325",
+      "sourceSizeBytes": 29058994176,
+      "runtimeStatus": "raw capture only — processing pending"
+    },
+    {
+      "room": "Robert Adam Room",
+      "slug": "robert-adam-room",
+      "capturedAt": "2026-05-29T10:24:04",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/Robert_Adam_Room_2026-05-29-102404",
+      "sourceSizeBytes": 14190903296,
+      "runtimeStatus": "raw capture only — processing pending"
+    },
+    {
+      "room": "Reception Room",
+      "slug": "reception-room",
+      "capturedAt": "2026-06-01T15:06:18",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/Reception_Room_2026-06-01-150618",
+      "sourceSizeBytes": 8696471552,
+      "runtimeStatus": "LCC2 runtime export built — web ingestion unverified",
+      "build": {
+        "builtAt": "2026-06-08T16:04:14",
+        "buildDuration": "04:12:57",
+        "scanDurationSeconds": 908,
+        "splatCount": 2002122,
+        "lccQuality": 3,
+        "runtimePath": "F:/VENVIEWER -- TH PROJECT SPLAT OUTPUTS/lcc2-result",
+        "runtimeFormat": "LCC2 tiled SOG (7 tiles + env)",
+        "runtimeTotalBytes": 63540226
+      }
+    },
+    {
+      "room": "Deacon Convener's Room",
+      "slug": "deacon-convener-room",
+      "capturedAt": "2026-05-31T15:02:45",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/DC_Room_2026-05-31-150245",
+      "sourceSizeBytes": 8870318080,
+      "runtimeStatus": "raw capture only — processing pending"
+    },
+    {
+      "room": "Lady Convenor's Room",
+      "slug": "lady-convenors-room",
+      "capturedAt": "2026-05-31T14:50:27",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/Lady_Conveynor_2026-05-31-145027",
+      "sourceSizeBytes": 3260510208,
+      "runtimeStatus": "raw capture only — processing pending"
+    },
+    {
+      "room": "North Gallery",
+      "slug": "north-gallery",
+      "capturedAt": "2026-06-01T16:04:07",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/North_Gallery_2026-06-01-160407",
+      "sourceSizeBytes": 4932739072,
+      "runtimeStatus": "raw capture only — processing pending"
+    },
+    {
+      "room": "South Gallery",
+      "slug": "south-gallery",
+      "capturedAt": "2026-06-01T15:44:29",
+      "device": "XGRIDS PortalCam",
+      "sourceProject": "F:/gaussian splat -- xgrids/model/South_Gallery_2026-06-01-154429",
+      "sourceSizeBytes": 5114126336,
+      "runtimeStatus": "raw capture only — processing pending"
+    }
+  ]
+}
