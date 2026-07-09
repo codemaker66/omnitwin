@@ -27,6 +27,7 @@ import {
   markFirstLightSeen,
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
+import { ParallaxStage } from "./ParallaxStage.js";
 import { TravelControls } from "./TravelControls.js";
 import { PanoStage } from "./PanoStage.js";
 import { stepSpring, type SpringState } from "../lib/springs.js";
@@ -872,6 +873,40 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const currentNode = nodesById.get(walk.currentId);
   const targetNode = walk.targetId === null ? undefined : nodesById.get(walk.targetId);
   const hopping = targetNode !== undefined;
+  // Parallax hops (the moonshot): mount the projective mesh stage only on a
+  // fine-pointer device, and only once the stage is live AND the browser has
+  // idled — the ~7 MB dollhouse glb must never compete with the panos for
+  // first paint (finding [33] still holds: no speculative download before the
+  // visitor is actually walking).
+  const [parallaxReady, setParallaxReady] = useState(false);
+  useEffect(() => {
+    if (!stageLive || parallaxReady) {
+      return;
+    }
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function" ||
+      !window.matchMedia("(pointer: fine)").matches
+    ) {
+      return;
+    }
+    if (typeof requestIdleCallback === "function") {
+      const handle = requestIdleCallback(() => {
+        setParallaxReady(true);
+      });
+      return () => {
+        if (typeof cancelIdleCallback === "function") {
+          cancelIdleCallback(handle);
+        }
+      };
+    }
+    const timer = window.setTimeout(() => {
+      setParallaxReady(true);
+    }, 1500);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [stageLive, parallaxReady]);
   // "In motion" holds true through the sub-frame gaps BETWEEN chained hops, so
   // the arriving pano keeps deferring its heavy base upload for the whole walk —
   // not just one hop — and fires it only once you actually stop (~250 ms after
@@ -1074,6 +1109,22 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 onTier={onPanoTier}
               />
             ))}
+            {/* The moonshot: during hops the panos are projected onto the real
+                building geometry, so movement carries TRUE parallax instead of
+                a sliding crossfade. Invisible at rest (the spheres remain the
+                optically-perfect photograph); pixel-identical at both hop
+                endpoints by construction, so there is no seam to hide. */}
+            {parallaxReady && meshUrl !== null && (
+              <Suspense fallback={null}>
+                <ParallaxStage
+                  meshUrl={meshUrl}
+                  assetBase={assetBase}
+                  currentNode={currentNode}
+                  targetNode={targetNode}
+                  progress={walk.progress}
+                />
+              </Suspense>
+            )}
             {!hopping && (
               <NavMarkers
                 neighbors={walk.neighbors}

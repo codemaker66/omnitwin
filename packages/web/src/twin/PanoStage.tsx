@@ -85,8 +85,9 @@ export const PANO_GRADE = {
   warm: [1.015, 1.0, 0.99] as const,
 } as const;
 
-/** Shared grade + colour-management helpers, prepended to both pano shaders. */
-const gradeGLSL = /* glsl */ `
+/** Shared grade + colour-management helpers, prepended to both pano shaders
+ *  (and to ParallaxStage's projective shader — one colour pipeline). */
+export const gradeGLSL = /* glsl */ `
 uniform float uInvGamma;
 uniform float uSaturation;
 uniform vec3 uWarm;
@@ -188,7 +189,7 @@ void main() {
 `;
 
 /** Typed uniform bag (house pattern from cockpit-overlay-materials). */
-interface GradeUniforms {
+export interface GradeUniforms {
   uInvGamma: IUniform<number>;
   uSaturation: IUniform<number>;
   uWarm: IUniform<Vector3>;
@@ -214,7 +215,7 @@ interface EquirectPanoUniforms extends GradeUniforms {
 }
 
 /** The grade uniform trio, fresh per material (Vector3 must not be shared). */
-function makeGradeUniforms(): GradeUniforms {
+export function makeGradeUniforms(): GradeUniforms {
   return {
     uInvGamma: { value: PANO_GRADE.invGamma },
     uSaturation: { value: PANO_GRADE.saturation },
