@@ -72,6 +72,14 @@ function SparkTextSplat(): React.ReactElement {
   return <primitive object={splat} />;
 }
 
+/** "x,y,z" → tuple, or null when absent/malformed. */
+function parseVec3(raw: string | null): readonly [number, number, number] | null {
+  if (raw === null) return null;
+  const parts = raw.split(",").map((p) => Number.parseFloat(p.trim()));
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+}
+
 function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.ReactElement {
   const expected = urls.length;
 
@@ -129,6 +137,13 @@ export function SplatFixturePage(): React.ReactElement {
     if (raw === null || raw.trim() === "") return null;
     return raw.split(",").map((u) => u.trim()).filter((u) => u !== "");
   }, [searchParams]);
+  // Content axis + framing controls for real-capture probes (P1). LCC exports
+  // are Z-up; zUp=1 rotates the splat group into three.js Y-up. cam/look are
+  // world-space (post-rotation) tuples; fov defaults tighter for interiors.
+  const zUp = searchParams.get("zUp") === "1";
+  const cam = useMemo(() => parseVec3(searchParams.get("cam")), [searchParams]);
+  const look = useMemo(() => parseVec3(searchParams.get("look")), [searchParams]);
+  const fov = Number.parseFloat(searchParams.get("fov") ?? "") || (splatUrls ? 60 : 48);
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
       surface: "spark_fixture",
@@ -148,7 +163,12 @@ export function SplatFixturePage(): React.ReactElement {
     }}>
       <Canvas
         dpr={[1, 2]}
-        camera={{ fov: 48, near: 0.1, far: 80, position: [0, 0.6, 3.4] }}
+        camera={{
+          fov,
+          near: 0.1,
+          far: 120,
+          position: cam ?? [0, 0.6, 3.4],
+        }}
         gl={{ antialias: true, powerPreference: "high-performance" }}
       >
         <color attach="background" args={["#101217"]} />
@@ -163,13 +183,15 @@ export function SplatFixturePage(): React.ReactElement {
             </mesh>
           </>
         ) : (
-          <UrlSplatScene urls={splatUrls} />
+          <group rotation={zUp ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}>
+            <UrlSplatScene urls={splatUrls} />
+          </group>
         )}
         <OrbitControls
           enablePan={splatUrls !== null}
           minDistance={splatUrls === null ? 2.4 : 0.2}
           maxDistance={splatUrls === null ? 5.2 : 40}
-          target={splatUrls === null ? [0, -0.1, -2.8] : [0, 0, 0]}
+          target={look ?? (splatUrls === null ? [0, -0.1, -2.8] : [0, 0, 0])}
         />
       </Canvas>
 
