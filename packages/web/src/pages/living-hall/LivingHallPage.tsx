@@ -1,5 +1,6 @@
-import { useEffect, type ReactElement } from "react";
-import { Link } from "react-router-dom";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useReducedMotion } from "../landing/useReducedMotion.js";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
@@ -51,13 +52,42 @@ import "./living-hall.css";
 const roomName = (slug: string): string =>
   publicRoomSelectionCards.find((c) => (c.canonicalRoomSlug ?? c.id) === slug)?.name ?? slug;
 
+// The 3D layer ships in its own chunk: Tier C visitors (and scrapers) never
+// download Spark/three. The document below is complete without it.
+const LivingHallScene = lazy(() =>
+  import("./LivingHallScene.js").then((m) => ({ default: m.LivingHallScene })),
+);
+
+function webGl2Available(): boolean {
+  try {
+    return document.createElement("canvas").getContext("webgl2") !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function LivingHallPage(): ReactElement {
+  const [searchParams] = useSearchParams();
+  const reducedMotion = useReducedMotion();
+  const [sceneFailed, setSceneFailed] = useState(false);
+  const sceneRequested = searchParams.get("scene") !== "0";
+  const sceneCapable = useMemo(() => webGl2Available(), []);
+  const sceneActive = sceneRequested && sceneCapable && !sceneFailed;
+  const handleSceneFailed = useCallback(() => {
+    setSceneFailed(true);
+  }, []);
+
   useEffect(() => {
     document.title = LH_META_TITLE;
   }, []);
 
   return (
-    <div className="lh-root">
+    <div className={`lh-root${sceneActive ? " has-scene" : ""}`}>
+      {sceneActive && (
+        <Suspense fallback={null}>
+          <LivingHallScene reducedMotion={reducedMotion} onSceneFailed={handleSceneFailed} />
+        </Suspense>
+      )}
       <a className="lh-skip" href="#rooms-and-rates">
         {LH_SKIP_LABEL}
       </a>

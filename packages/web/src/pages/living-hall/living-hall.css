@@ -325,6 +325,76 @@
   text-align: center;
 }
 
+/* ————————————————— the scene: the real room behind the document ————————— */
+
+.lh-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--lh-bg);
+  pointer-events: none;
+}
+.lh-scene canvas {
+  position: absolute;
+  inset: 0;
+}
+.lh-scene-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity 1.4s ease-out;
+}
+.lh-scene-poster.is-sharpened {
+  opacity: 0;
+}
+
+/* With the room live behind, the page becomes ink on glass: content floats
+   as scrim panels (contrast guaranteed by --lh-scrim), acts breathe apart so
+   the dolly has road, and the root lets the scene show through. */
+.lh-root.has-scene {
+  background: transparent;
+}
+.lh-root.has-scene .lh-main,
+.lh-root.has-scene .lh-footer {
+  position: relative;
+  z-index: 1;
+}
+.lh-root.has-scene .lh-hero {
+  min-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Text over a live bright room needs guaranteed contrast, not luck: a
+     graded foot-scrim rises under the hero block (the scrim token promise). */
+  padding: 48px 30px 34px;
+  margin: 0 -30px;
+  background: linear-gradient(
+    180deg,
+    rgba(5, 8, 7, 0) 0%,
+    rgba(5, 8, 7, 0.55) 42%,
+    rgba(5, 8, 7, 0.88) 100%
+  );
+  border-radius: 10px;
+}
+.lh-root.has-scene .lh-hero h1,
+.lh-root.has-scene .lh-lede {
+  text-shadow: 0 1px 18px rgba(3, 6, 5, 0.85);
+}
+.lh-root.has-scene .lh-act {
+  margin-top: 68vh;
+  padding: 26px 30px 30px;
+  border: 1px solid var(--lh-rule-faint);
+  border-radius: 10px;
+  background: var(--lh-scrim);
+  backdrop-filter: blur(10px);
+}
+.lh-root.has-scene .lh-footer {
+  background: var(--lh-scrim);
+}
+
 /* ————————————————— small viewports ————————————————— */
 
 @media (max-width: 760px) {
