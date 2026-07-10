@@ -16,12 +16,16 @@ const {
   mockCreateEventArchitectRun,
   mockGetEventArchitectRun,
   mockSelectEventArchitectCandidate,
+  mockGetEventArchitectOpsReview,
+  mockCreateEventArchitectOpsReview,
   mockGetVenue,
   mockListVenues,
 } = vi.hoisted(() => ({
   mockCreateEventArchitectRun: vi.fn(),
   mockGetEventArchitectRun: vi.fn(),
   mockSelectEventArchitectCandidate: vi.fn(),
+  mockGetEventArchitectOpsReview: vi.fn(),
+  mockCreateEventArchitectOpsReview: vi.fn(),
   mockGetVenue: vi.fn(),
   mockListVenues: vi.fn(),
 }));
@@ -30,6 +34,8 @@ vi.mock("../api/event-architect.js", () => ({
   createEventArchitectRun: mockCreateEventArchitectRun,
   getEventArchitectRun: mockGetEventArchitectRun,
   selectEventArchitectCandidate: mockSelectEventArchitectCandidate,
+  getEventArchitectOpsReview: mockGetEventArchitectOpsReview,
+  createEventArchitectOpsReview: mockCreateEventArchitectOpsReview,
 }));
 
 vi.mock("../api/spaces.js", () => ({
@@ -168,6 +174,16 @@ beforeEach(() => {
   mockCreateEventArchitectRun.mockReset();
   mockGetEventArchitectRun.mockReset();
   mockSelectEventArchitectCandidate.mockReset();
+  mockGetEventArchitectOpsReview.mockReset();
+  mockCreateEventArchitectOpsReview.mockReset();
+  mockGetEventArchitectOpsReview.mockImplementation((candidateId: string) => Promise.resolve({
+    candidateId,
+    status: "open",
+    blockingForOpsCompilation: true,
+    requiredData: ["surveyed_door_positions", "reviewed_route_model", "venue_operations_signoff"],
+    activeArtifact: null,
+    history: [],
+  }));
   mockGetVenue.mockReset();
   mockListVenues.mockReset();
   mockGetVenue.mockResolvedValue(VENUE);
@@ -306,6 +322,12 @@ describe("EventArchitectPage", () => {
     expect(plannerLink.getAttribute("href")).toBe(selection.plannerPath);
     expect(screen.getByText("Exact snapshot saved to a planner configuration.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Balanced selected" })).toHaveProperty("disabled", true);
+    expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
+    expect(screen.getByText("Planner access is read-only.", { exact: false })).toBeTruthy();
+    expect(mockGetEventArchitectOpsReview).toHaveBeenCalledWith(
+      candidate.candidateId,
+      expect.any(AbortSignal),
+    );
   });
 
   it("shows missing pricing as an open review gate instead of a budget pass", async () => {

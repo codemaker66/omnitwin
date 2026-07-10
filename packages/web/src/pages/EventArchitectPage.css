@@ -827,6 +827,129 @@
   animation: event-architect-spin 1s linear infinite;
 }
 
+.event-architect-ops-review {
+  background: linear-gradient(145deg, rgba(15, 31, 28, 0.98), rgba(8, 18, 17, 0.98));
+  border: 1px solid rgba(129, 216, 197, 0.28);
+  margin: 28px 0;
+  padding: 24px;
+}
+
+.event-architect-ops-review > header {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.event-architect-ops-review > header p {
+  color: var(--ea-mint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.event-architect-ops-review h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 400;
+  margin: 0;
+}
+
+.event-architect-ops-status {
+  align-items: center;
+  border: 1px solid var(--ea-line);
+  display: inline-flex;
+  font-size: 0.73rem;
+  font-weight: 800;
+  gap: 8px;
+  padding: 9px 12px;
+  text-transform: uppercase;
+}
+
+.event-architect-ops-status svg {
+  height: 15px;
+  width: 15px;
+}
+
+.event-architect-ops-status--approved { border-color: var(--ea-mint); color: var(--ea-mint-bright); }
+.event-architect-ops-status--rejected { border-color: var(--ea-rose); color: var(--ea-rose); }
+.event-architect-ops-status--expired { border-color: var(--ea-gold); color: var(--ea-gold); }
+
+.event-architect-ops-summary {
+  align-items: start;
+  background: rgba(129, 216, 197, 0.07);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto 1fr auto;
+  margin: 22px 0;
+  padding: 16px;
+}
+
+.event-architect-ops-summary > svg { color: var(--ea-mint); height: 22px; width: 22px; }
+.event-architect-ops-summary strong { display: block; margin-bottom: 4px; }
+.event-architect-ops-summary p { color: var(--ea-muted); font-size: 0.78rem; line-height: 1.55; margin: 0; }
+.event-architect-ops-summary code { color: var(--ea-gold); font-size: 0.7rem; }
+
+.event-architect-ops-loading,
+.event-architect-ops-error,
+.event-architect-ops-readonly,
+.event-architect-ops-immutability {
+  align-items: center;
+  color: var(--ea-muted);
+  display: flex;
+  font-size: 0.78rem;
+  gap: 8px;
+}
+
+.event-architect-ops-error { color: var(--ea-rose); }
+.event-architect-ops-loading svg,
+.event-architect-ops-error svg,
+.event-architect-ops-readonly svg,
+.event-architect-ops-immutability svg { height: 16px; width: 16px; }
+
+.event-architect-ops-latest {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 22px;
+}
+
+.event-architect-ops-latest div { background: rgba(255, 255, 255, 0.035); padding: 12px; }
+.event-architect-ops-latest dt { color: var(--ea-faint); font-size: 0.65rem; text-transform: uppercase; }
+.event-architect-ops-latest dd { font-size: 0.78rem; margin: 6px 0 0; text-transform: capitalize; }
+
+.event-architect-ops-form { border-top: 1px solid var(--ea-line); padding-top: 22px; }
+.event-architect-ops-decision-row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+.event-architect-ops-form label { display: grid; gap: 7px; }
+.event-architect-ops-form label > span { color: var(--ea-muted); font-size: 0.69rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.event-architect-ops-form input,
+.event-architect-ops-form select,
+.event-architect-ops-form textarea {
+  background: rgba(3, 10, 9, 0.75);
+  border: 1px solid var(--ea-line);
+  color: var(--ea-ink);
+  font: inherit;
+  padding: 10px;
+}
+
+.event-architect-ops-witnesses {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 16px 0;
+}
+
+.event-architect-ops-witnesses fieldset { border: 1px solid var(--ea-line); display: grid; gap: 11px; min-width: 0; padding: 14px; }
+.event-architect-ops-witnesses legend { align-items: center; color: var(--ea-gold); display: flex; font-size: 0.74rem; font-weight: 800; gap: 7px; padding: 0 5px; }
+.event-architect-ops-witnesses legend svg { height: 15px; width: 15px; }
+.event-architect-ops-note { margin-bottom: 14px; }
+.event-architect-ops-form > button { align-items: center; background: var(--ea-mint); border: 0; color: #06100e; display: inline-flex; font-weight: 900; gap: 9px; padding: 13px 17px; }
+.event-architect-ops-form > button svg { height: 17px; width: 17px; }
+.event-architect-ops-form > button:disabled { opacity: 0.55; }
+.event-architect-ops-immutability { margin: 12px 0 0; }
+
 @keyframes event-architect-spin {
   to { transform: rotate(360deg); }
 }
@@ -843,6 +966,8 @@
   .event-architect-candidates {
     grid-template-columns: 1fr;
   }
+
+  .event-architect-ops-witnesses { grid-template-columns: 1fr; }
 
   .event-architect-candidate {
     display: grid;
@@ -919,6 +1044,11 @@
   .event-architect-method {
     grid-template-columns: 1fr;
   }
+
+  .event-architect-ops-review > header,
+  .event-architect-ops-summary { display: flex; flex-direction: column; }
+  .event-architect-ops-decision-row,
+  .event-architect-ops-latest { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 540px) {

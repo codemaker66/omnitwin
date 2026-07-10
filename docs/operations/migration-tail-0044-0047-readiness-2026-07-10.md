@@ -1,4 +1,4 @@
-# Migration tail 0044-0047 readiness — 2026-07-10
+# Migration tail 0044-0048 readiness — 2026-07-10
 
 Status: **blocked pending explicit production migration authority**. This is a
 read-only readiness record; no migration or database write was performed.
@@ -8,16 +8,19 @@ read-only readiness record; no migration or database write was performed.
 Catalog-only queries were run against the database configured in
 `packages/api/.env`. Credentials and row data were not printed.
 
-The retained, secret-free machine-readable report is
-[`migration-tail-readiness-2026-07-10.json`](./migration-tail-readiness-2026-07-10.json).
+The retained, secret-free machine-readable report
+[`migration-tail-readiness-2026-07-10.json`](./migration-tail-readiness-2026-07-10.json)
+captures the database catalogue before additive migration 0048 was authored.
+The database has not changed; the local journal now has one additional entry.
 
 - Drizzle migrations applied: 42.
-- Local journal entries: 46.
+- Local journal entries: 47.
 - Pending, in order:
   1. `0044_placed_objects_render_to_real`
   2. `0045_event_scenario_phase_scope`
   3. `0046_event_mission_control`
   4. `0047_event_architect_proof`
+  5. `0048_event_architect_ops_reviews`
 - `event_missions` present: no.
 - `event_architect_runs` present: no.
 - `placed_objects.coordinate_space` present: no.
@@ -40,7 +43,7 @@ coordinates from render space to real metres, backfills write tokens, and
 installs a trigger that rejects the old coordinate-write protocol. It is not a
 schema-only change and has no automatic down migration.
 
-Migrations 0046 and 0047 are additive, but they cannot be cherry-picked ahead
+Migrations 0046 through 0048 are additive, but they cannot be cherry-picked ahead
 of 0044/0045 through the journal-driven deploy path. Shipping any commit that
 contains this pending journal tail can therefore cause the production deploy
 workflow to execute 0044 automatically.
@@ -74,15 +77,15 @@ Application, only after those gates:
 
 1. Run the canonical journal-driven command from the exact release commit:
    `pnpm --filter @omnitwin/api db:migrate`.
-2. Re-run the read-only verifier. Require 46 applied migrations, an exact
+2. Re-run the read-only verifier. Require 47 applied migrations, an exact
    journal prefix match, all target tables/constraints/indexes present, zero
    legacy placement rows, zero missing write tokens, and zero scenario/phase
    mismatches.
 3. Verify `/health/live`, `/health/ready`, and `/health/version` on the API
    release carrying the matching coordinate contract.
-4. Smoke-test configuration create/save, Event Architect run/select, approved
-   snapshot compilation gates, and Mission Control start/read/replay using
-   authorized non-fixture records.
+4. Smoke-test configuration create/save, Event Architect run/select/review,
+   expiry and rejection behavior, approved snapshot compilation gates, and
+   Mission Control start/read/replay using authorized non-fixture records.
 5. End the maintenance window only after catalog checks and smoke tests pass.
 
 If application or smoke verification fails, stop writes and restore or branch

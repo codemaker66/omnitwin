@@ -66,6 +66,10 @@ import {
   taskGroups,
 } from "../db/schema.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
+import {
+  EventArchitectOpsReviewEvidenceIntegrityError,
+  getEventArchitectOpsReviewGate,
+} from "./event-architect.js";
 
 type SnapshotRow = typeof configurationSheetSnapshots.$inferSelect;
 type HandoffPackRow = typeof handoffPacks.$inferSelect;
@@ -837,14 +841,23 @@ async function assertEventArchitectOpsCompilationReady(
 
   const candidate = EventArchitectCandidateSchema.safeParse(row.payload);
   if (!candidate.success) throw new OpsHandoffEvidenceIntegrityError(configId);
-  // The candidate payload is immutable evidence and its v0 guest-flow gate is
-  // literally blocking. It cannot self-approve. A future, separately persisted
-  // reviewed-evidence artifact must be joined here before this boundary can
-  // admit an Event Architect candidate to Ops compilation.
+  // The candidate payload remains immutable planning evidence and cannot
+  // approve itself. Only a current, separately persisted, digest-bound review
+  // artifact can resolve the gate at this boundary.
   const gate = eventArchitectOpsCompilationReviewGate(
     candidate.data.guestFlowEvidence.reviewGate,
   );
-  if (gate !== null) throw new OpsHandoffBlockingReviewGateError(gate);
+  if (gate === null) return;
+  try {
+    const review = await getEventArchitectOpsReviewGate(db, candidate.data.candidateId);
+    if (review?.status === "approved" && !review.blockingForOpsCompilation) return;
+  } catch (error: unknown) {
+    if (error instanceof EventArchitectOpsReviewEvidenceIntegrityError) {
+      throw new OpsHandoffEvidenceIntegrityError(configId);
+    }
+    throw error;
+  }
+  throw new OpsHandoffBlockingReviewGateError(gate);
 }
 
 async function loadEventGraph(db: Database, eventId: string): Promise<EventPhaseGraph> {

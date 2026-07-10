@@ -8,9 +8,26 @@ describe("proof-carrying Event Architect integration", () => {
     expect(source).toContain('server.post("/runs", { preHandler: [authenticate] }');
     expect(source).toContain('server.get("/runs/:runId", { preHandler: [authenticate] }');
     expect(source).toContain('server.post("/candidates/:candidateId/select", { preHandler: [authenticate] }');
+    expect(source).toContain('server.get("/candidates/:candidateId/ops-review", { preHandler: [authenticate] }');
+    expect(source).toContain('server.post("/candidates/:candidateId/ops-review", { preHandler: [authenticate] }');
     expect(source).toContain("CreateEventArchitectRunInputSchema.safeParse(request.body)");
+    expect(source).toContain("CreateEventArchitectOpsReviewInputSchema.safeParse(request.body)");
     expect(source).not.toContain("EventArchitectRequestSchema.safeParse(request.body)");
     expect(source).toContain('code: "NOT_FOUND"');
+  });
+
+  it("records review authority separately and keeps Ops admission fail closed", async () => {
+    const [architectService, opsService, sql] = await Promise.all([
+      readFile(resolve("src/services/event-architect.ts"), "utf8"),
+      readFile(resolve("src/services/ops-compiler.ts"), "utf8"),
+      readFile(resolve("drizzle/0048_event_architect_ops_reviews.sql"), "utf8"),
+    ]);
+    expect(architectService).toContain("tx.insert(eventArchitectOpsReviews)");
+    expect(architectService).toContain("artifactDigest");
+    expect(architectService).toContain("validityMs");
+    expect(opsService).toContain('review?.status === "approved"');
+    expect(opsService).toContain("review.blockingForOpsCompilation");
+    expect(sql).toContain("append-only");
   });
 
   it("materialises candidates, snapshots, validation, and revisions atomically", async () => {

@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   CreateEventArchitectRunInputSchema,
+  CreateEventArchitectOpsReviewInputSchema,
   EventArchitectCandidateSelectionSchema,
+  EventArchitectCandidateSchema,
+  EventArchitectOpsReviewArtifactSchema,
+  EventArchitectOpsReviewGateSchema,
   EventArchitectRequestSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
@@ -13,8 +17,13 @@ import {
   stableCanonicalJson,
   type CanonicalJsonValue,
   type CreateEventArchitectRunInput,
+  type CreateEventArchitectOpsReviewInput,
   type EventArchitectCandidate,
   type EventArchitectCandidateSelection,
+  type EventArchitectOpsEvidenceWitness,
+  type EventArchitectOpsReviewArtifact,
+  type EventArchitectOpsReviewGate,
+  type EventArchitectOpsReviewerAuthority,
   type EventArchitectRequest,
   type PersistedEventArchitectRun,
   type SelectEventArchitectCandidateInput,
@@ -27,7 +36,9 @@ import {
   configurationLayoutRevisions,
   configurations,
   eventArchitectCandidates,
+  eventArchitectOpsReviews,
   eventArchitectRuns,
+  generalAuditLog,
   layoutValidationRuns,
   placedObjects,
   runtimePackages,
@@ -36,6 +47,7 @@ import {
 } from "../db/schema.js";
 
 type EventArchitectRunRow = typeof eventArchitectRuns.$inferSelect;
+type EventArchitectOpsReviewRow = typeof eventArchitectOpsReviews.$inferSelect;
 
 const POLICY_DEFINITION: CanonicalJsonValue = {
   policyBundleId: "venviewer.internal-planning-policy.v0",
@@ -73,6 +85,11 @@ export class EventArchitectCatalogueNotReadyError extends Error {
 export class EventArchitectSelectionConflictError extends Error {}
 export class EventArchitectRequestDigestConflictError extends Error {}
 export class EventArchitectIdempotencyConflictError extends Error {}
+export class EventArchitectOpsReviewCandidateNotSelectedError extends Error {}
+export class EventArchitectOpsReviewDigestConflictError extends Error {}
+export class EventArchitectOpsReviewIdempotencyConflictError extends Error {}
+export class EventArchitectOpsReviewValidityError extends Error {}
+export class EventArchitectOpsReviewEvidenceIntegrityError extends Error {}
 
 function toCanonicalJson(value: unknown): CanonicalJsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
@@ -497,5 +514,231 @@ export async function selectEventArchitectCandidate(
       plannerPath: `/plan/${joined.candidate.configurationId}`,
       selectedAt: now.toISOString(),
     });
+  });
+}
+
+const OPS_REVIEW_MIN_VALIDITY_MS = 60 * 60 * 1000;
+const OPS_REVIEW_MAX_VALIDITY_MS = 90 * 24 * 60 * 60 * 1000;
+
+function orderedOpsWitnesses(
+  witnesses: readonly EventArchitectOpsEvidenceWitness[],
+): readonly EventArchitectOpsEvidenceWitness[] {
+  return [...witnesses].sort((left, right) => left.kind.localeCompare(right.kind));
+}
+
+function serializeOpsReview(row: EventArchitectOpsReviewRow): EventArchitectOpsReviewArtifact {
+  return EventArchitectOpsReviewArtifactSchema.parse({
+    schemaVersion: "venviewer.event-architect-ops-review.v0",
+    artifactId: row.id,
+    artifactDigest: row.artifactDigest,
+    candidateId: row.candidateId,
+    runId: row.runId,
+    venueId: row.venueId,
+    configurationId: row.configurationId,
+    decision: row.decision,
+    reviewerUserId: row.reviewerUserId,
+    reviewerAuthority: row.reviewerAuthority,
+    requestDigest: row.requestDigest,
+    snapshotDigest: row.snapshotDigest,
+    proofDigest: row.proofDigest,
+    guestFlowArtifactHash: row.guestFlowArtifactHash,
+    witnesses: row.witnesses,
+    note: row.note,
+    reviewedAt: row.reviewedAt.toISOString(),
+    validUntil: row.validUntil.toISOString(),
+  });
+}
+
+function reviewInputMatches(
+  row: EventArchitectOpsReviewRow,
+  input: CreateEventArchitectOpsReviewInput,
+  reviewerAuthority: EventArchitectOpsReviewerAuthority,
+): boolean {
+  return row.reviewerAuthority === reviewerAuthority &&
+    row.decision === input.decision &&
+    row.requestDigest === input.expectedRequestDigest &&
+    row.snapshotDigest === input.expectedSnapshotDigest &&
+    row.proofDigest === input.expectedProofDigest &&
+    row.guestFlowArtifactHash === input.expectedGuestFlowArtifactHash &&
+    row.note === input.note &&
+    row.validUntil.getTime() === new Date(input.validUntil).getTime() &&
+    stableCanonicalJson(toCanonicalJson(row.witnesses)) ===
+      stableCanonicalJson(toCanonicalJson(orderedOpsWitnesses(input.witnesses)));
+}
+
+async function loadOpsReviewCandidate(
+  db: Database,
+  candidateId: string,
+) {
+  const [joined] = await db.select({
+    candidate: eventArchitectCandidates,
+    run: eventArchitectRuns,
+  }).from(eventArchitectCandidates)
+    .innerJoin(eventArchitectRuns, eq(eventArchitectCandidates.runId, eventArchitectRuns.id))
+    .where(eq(eventArchitectCandidates.id, candidateId))
+    .limit(1);
+  return joined ?? null;
+}
+
+export async function getEventArchitectOpsReviewGate(
+  db: Database,
+  candidateId: string,
+  now = new Date(),
+): Promise<EventArchitectOpsReviewGate | null> {
+  const joined = await loadOpsReviewCandidate(db, candidateId);
+  if (joined === null) return null;
+  const candidate = EventArchitectCandidateSchema.safeParse(joined.candidate.payload);
+  if (!candidate.success) throw new EventArchitectOpsReviewEvidenceIntegrityError();
+
+  const rows = await db.select().from(eventArchitectOpsReviews).where(and(
+    eq(eventArchitectOpsReviews.candidateId, candidateId),
+    eq(eventArchitectOpsReviews.runId, joined.run.id),
+    eq(eventArchitectOpsReviews.venueId, joined.run.venueId),
+    eq(eventArchitectOpsReviews.configurationId, joined.candidate.configurationId),
+    eq(eventArchitectOpsReviews.requestDigest, joined.run.requestDigest),
+    eq(eventArchitectOpsReviews.snapshotDigest, joined.candidate.snapshotDigest),
+    eq(eventArchitectOpsReviews.proofDigest, joined.candidate.proofDigest),
+    eq(
+      eventArchitectOpsReviews.guestFlowArtifactHash,
+      candidate.data.guestFlowEvidence.artifactHash,
+    ),
+  )).orderBy(desc(eventArchitectOpsReviews.reviewedAt));
+
+  const history = rows.map(serializeOpsReview);
+  const latest = history[0] ?? null;
+  const active = latest !== null && new Date(latest.validUntil) > now ? latest : null;
+  const status = latest === null
+    ? "open"
+    : active === null
+      ? "expired"
+      : active.decision;
+
+  return EventArchitectOpsReviewGateSchema.parse({
+    candidateId,
+    status,
+    blockingForOpsCompilation: status !== "approved",
+    requiredData: [
+      "surveyed_door_positions",
+      "reviewed_route_model",
+      "venue_operations_signoff",
+    ],
+    activeArtifact: active,
+    history,
+  });
+}
+
+export async function createEventArchitectOpsReview(
+  db: Database,
+  candidateId: string,
+  input: CreateEventArchitectOpsReviewInput,
+  actor: EventArchitectActor & {
+    readonly reviewerAuthority: EventArchitectOpsReviewerAuthority;
+  },
+): Promise<EventArchitectOpsReviewGate> {
+  const parsed = CreateEventArchitectOpsReviewInputSchema.parse(input);
+  const witnesses = orderedOpsWitnesses(parsed.witnesses);
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${candidateId}:${actor.userId}:${parsed.idempotencyKey}`}, 0))`);
+    const joined = await loadOpsReviewCandidate(tx, candidateId);
+    if (joined === null) throw new EventArchitectCandidateNotFoundError();
+    const candidate = EventArchitectCandidateSchema.safeParse(joined.candidate.payload);
+    if (!candidate.success) throw new EventArchitectOpsReviewEvidenceIntegrityError();
+
+    const [existing] = await tx.select().from(eventArchitectOpsReviews).where(and(
+      eq(eventArchitectOpsReviews.candidateId, candidateId),
+      eq(eventArchitectOpsReviews.reviewerUserId, actor.userId),
+      eq(eventArchitectOpsReviews.idempotencyKey, parsed.idempotencyKey),
+    )).limit(1);
+    if (existing !== undefined) {
+      if (!reviewInputMatches(existing, parsed, actor.reviewerAuthority)) {
+        throw new EventArchitectOpsReviewIdempotencyConflictError();
+      }
+      const gate = await getEventArchitectOpsReviewGate(tx, candidateId);
+      if (gate === null) throw new EventArchitectCandidateNotFoundError();
+      return gate;
+    }
+
+    if (joined.run.selectedCandidateId !== candidateId) {
+      throw new EventArchitectOpsReviewCandidateNotSelectedError();
+    }
+    if (
+      joined.run.requestDigest !== parsed.expectedRequestDigest ||
+      joined.candidate.snapshotDigest !== parsed.expectedSnapshotDigest ||
+      joined.candidate.proofDigest !== parsed.expectedProofDigest ||
+      candidate.data.guestFlowEvidence.artifactHash !== parsed.expectedGuestFlowArtifactHash
+    ) {
+      throw new EventArchitectOpsReviewDigestConflictError();
+    }
+
+    const reviewedAt = new Date();
+    const validUntil = new Date(parsed.validUntil);
+    const validityMs = validUntil.getTime() - reviewedAt.getTime();
+    if (
+      !Number.isFinite(validityMs) ||
+      validityMs < OPS_REVIEW_MIN_VALIDITY_MS ||
+      validityMs > OPS_REVIEW_MAX_VALIDITY_MS ||
+      witnesses.some((witness) => new Date(witness.observedAt) > reviewedAt)
+    ) {
+      throw new EventArchitectOpsReviewValidityError();
+    }
+
+    const artifactDigest = sha256Hex(stableCanonicalJson(toCanonicalJson({
+      schemaVersion: "venviewer.event-architect-ops-review.v0",
+      candidateId,
+      runId: joined.run.id,
+      venueId: joined.run.venueId,
+      configurationId: joined.candidate.configurationId,
+      reviewerUserId: actor.userId,
+      reviewerAuthority: actor.reviewerAuthority,
+      decision: parsed.decision,
+      requestDigest: joined.run.requestDigest,
+      snapshotDigest: joined.candidate.snapshotDigest,
+      proofDigest: joined.candidate.proofDigest,
+      guestFlowArtifactHash: candidate.data.guestFlowEvidence.artifactHash,
+      witnesses,
+      note: parsed.note,
+      reviewedAt: reviewedAt.toISOString(),
+      validUntil: validUntil.toISOString(),
+    })));
+
+    const [created] = await tx.insert(eventArchitectOpsReviews).values({
+      candidateId,
+      runId: joined.run.id,
+      venueId: joined.run.venueId,
+      configurationId: joined.candidate.configurationId,
+      reviewerUserId: actor.userId,
+      reviewerAuthority: actor.reviewerAuthority,
+      idempotencyKey: parsed.idempotencyKey,
+      decision: parsed.decision,
+      requestDigest: joined.run.requestDigest,
+      snapshotDigest: joined.candidate.snapshotDigest,
+      proofDigest: joined.candidate.proofDigest,
+      guestFlowArtifactHash: candidate.data.guestFlowEvidence.artifactHash,
+      artifactDigest,
+      witnesses,
+      note: parsed.note,
+      reviewedAt,
+      validUntil,
+    }).returning();
+    if (created === undefined) throw new Error("Event Architect Ops review insertion returned no row.");
+
+    await tx.insert(generalAuditLog).values({
+      actorUserId: actor.userId,
+      action: "event_architect.ops_review_recorded",
+      targetType: "event_architect_candidate",
+      targetId: candidateId,
+      summary: "Append-only Event Architect Ops review evidence recorded.",
+      metadata: {
+        artifactId: created.id,
+        artifactDigest,
+        decision: parsed.decision,
+        validUntil: validUntil.toISOString(),
+      },
+    });
+
+    const gate = await getEventArchitectOpsReviewGate(tx, candidateId, reviewedAt);
+    if (gate === null) throw new EventArchitectCandidateNotFoundError();
+    return gate;
   });
 }

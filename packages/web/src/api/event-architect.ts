@@ -1,10 +1,14 @@
 import {
   CreateEventArchitectRunInputSchema,
+  CreateEventArchitectOpsReviewInputSchema,
   EventArchitectCandidateSelectionSchema,
+  EventArchitectOpsReviewGateSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
   type CreateEventArchitectRunInput,
+  type CreateEventArchitectOpsReviewInput,
   type EventArchitectCandidateSelection,
+  type EventArchitectOpsReviewGate,
   type PersistedEventArchitectRun,
   type SelectEventArchitectCandidateInput,
 } from "@omnitwin/types";
@@ -40,5 +44,28 @@ export async function selectEventArchitectCandidate(
     SelectEventArchitectCandidateInputSchema.parse(input),
     false,
     EventArchitectCandidateSelectionSchema,
+  );
+}
+
+export async function getEventArchitectOpsReview(
+  candidateId: string,
+  signal?: AbortSignal,
+): Promise<EventArchitectOpsReviewGate> {
+  return api.get(
+    `/event-architect/candidates/${candidateId}/ops-review`,
+    EventArchitectOpsReviewGateSchema,
+    signal,
+  );
+}
+
+export async function createEventArchitectOpsReview(
+  candidateId: string,
+  input: CreateEventArchitectOpsReviewInput,
+): Promise<EventArchitectOpsReviewGate> {
+  return api.post(
+    `/event-architect/candidates/${candidateId}/ops-review`,
+    CreateEventArchitectOpsReviewInputSchema.parse(input),
+    false,
+    EventArchitectOpsReviewGateSchema,
   );
 }

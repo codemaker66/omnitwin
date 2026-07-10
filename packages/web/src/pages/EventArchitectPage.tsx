@@ -33,6 +33,7 @@ import {
   selectEventArchitectCandidate,
 } from "../api/event-architect.js";
 import { getVenue, listVenues, type Space, type Venue } from "../api/spaces.js";
+import { EventArchitectOpsReviewPanel } from "../components/event-architect/EventArchitectOpsReviewPanel.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import "./EventArchitectPage.css";
 
@@ -562,6 +563,13 @@ export function EventArchitectPage(): ReactElement {
       ? null
       : `/plan/${persisted.selectedConfigurationId}`);
   const selectionLocked = selectedCandidateId !== null;
+  const selectedCandidate = persisted?.run.candidates.find(
+    (candidate) => candidate.candidateId === selectedCandidateId,
+  ) ?? null;
+  const canRecordOpsReview = user?.platformRole === "admin" ||
+    user?.role === "admin" ||
+    user?.role === "staff" ||
+    user?.role === "hallkeeper";
 
   return (
     <main className="event-architect-page" aria-label="Event Architect workspace">
@@ -707,6 +715,14 @@ export function EventArchitectPage(): ReactElement {
               <div><strong>Exact snapshot saved to a planner configuration.</strong><span>The snapshot and proof digests remain the selection record. This configuration stays draft until venue review, approval, and event binding.</span></div>
               <Link to={plannerPath}>Open in planner <ArrowRight aria-hidden="true" /></Link>
             </div>
+          )}
+
+          {selectedCandidate === null ? null : (
+            <EventArchitectOpsReviewPanel
+              candidate={selectedCandidate}
+              requestDigest={persisted.run.requestDigest}
+              canReview={canRecordOpsReview}
+            />
           )}
 
           <div className="event-architect-candidates">

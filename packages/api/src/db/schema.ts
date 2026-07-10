@@ -46,6 +46,9 @@ import type {
   EventMissionStatus,
   EventMissionTask,
   EventArchitectCandidate,
+  EventArchitectOpsEvidenceWitness,
+  EventArchitectOpsReviewDecision,
+  EventArchitectOpsReviewerAuthority,
   EventArchitectRequest,
   EventArchitectRun,
   EventArchitectStrategy,
@@ -2720,9 +2723,49 @@ export const eventArchitectCandidates = pgTable("event_architect_candidates", {
   selectedAt: timestamp("selected_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  unique("event_architect_candidates_id_run_unique").on(table.id, table.runId),
   unique("event_architect_candidates_run_rank_unique").on(table.runId, table.rank),
   unique("event_architect_candidates_configuration_unique").on(table.configurationId),
   unique("event_architect_candidates_snapshot_unique").on(table.snapshotId),
   unique("event_architect_candidates_validation_unique").on(table.validationRunId),
   index("event_architect_candidates_run_strategy_idx").on(table.runId, table.strategy),
+]);
+
+// Append-only venue review evidence that can resolve the Event Architect
+// guest-flow gate at the Ops Compiler boundary. Application code never updates
+// or deletes these rows; migration 0048 enforces the same rule with triggers.
+export const eventArchitectOpsReviews = pgTable("event_architect_ops_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  candidateId: uuid("candidate_id").notNull(),
+  runId: uuid("run_id").notNull(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "restrict" }),
+  reviewerUserId: uuid("reviewer_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reviewerAuthority: varchar("reviewer_authority", { length: 40 }).$type<EventArchitectOpsReviewerAuthority>().notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  decision: varchar("decision", { length: 20 }).$type<EventArchitectOpsReviewDecision>().notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  guestFlowArtifactHash: varchar("guest_flow_artifact_hash", { length: 64 }).notNull(),
+  artifactDigest: varchar("artifact_digest", { length: 64 }).notNull(),
+  witnesses: jsonb("witnesses").$type<readonly EventArchitectOpsEvidenceWitness[]>().notNull(),
+  note: text("note").notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+  validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_ops_reviews_artifact_digest_unique").on(table.artifactDigest),
+  unique("event_architect_ops_reviews_reviewer_idempotency_unique").on(
+    table.candidateId,
+    table.reviewerUserId,
+    table.idempotencyKey,
+  ),
+  index("event_architect_ops_reviews_candidate_reviewed_idx").on(table.candidateId, table.reviewedAt),
+  index("event_architect_ops_reviews_valid_until_idx").on(table.validUntil),
+  foreignKey({
+    columns: [table.candidateId, table.runId],
+    foreignColumns: [eventArchitectCandidates.id, eventArchitectCandidates.runId],
+    name: "event_architect_ops_reviews_candidate_run_fk",
+  }),
 ]);

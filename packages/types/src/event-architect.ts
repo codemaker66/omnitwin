@@ -274,3 +274,112 @@ export const EventArchitectCandidateSelectionSchema = z.object({
 export type EventArchitectCandidateSelection = z.infer<
   typeof EventArchitectCandidateSelectionSchema
 >;
+
+export const EVENT_ARCHITECT_OPS_REVIEW_SCHEMA_VERSION =
+  "venviewer.event-architect-ops-review.v0";
+
+export const EVENT_ARCHITECT_OPS_EVIDENCE_KINDS = [
+  "surveyed_door_positions",
+  "reviewed_route_model",
+  "venue_operations_signoff",
+] as const;
+export const EventArchitectOpsEvidenceKindSchema = z.enum(
+  EVENT_ARCHITECT_OPS_EVIDENCE_KINDS,
+);
+export type EventArchitectOpsEvidenceKind = z.infer<
+  typeof EventArchitectOpsEvidenceKindSchema
+>;
+
+export const EventArchitectOpsEvidenceWitnessSchema = z.object({
+  kind: EventArchitectOpsEvidenceKindSchema,
+  sourceLabel: z.string().trim().min(3).max(200),
+  sourceReference: z.string().trim().min(3).max(500),
+  contentDigest: z.string().regex(SHA256_HEX),
+  observedAt: z.string().datetime(),
+}).strict();
+export type EventArchitectOpsEvidenceWitness = z.infer<
+  typeof EventArchitectOpsEvidenceWitnessSchema
+>;
+
+export const EventArchitectOpsEvidenceWitnessesSchema = z.array(
+  EventArchitectOpsEvidenceWitnessSchema,
+).length(EVENT_ARCHITECT_OPS_EVIDENCE_KINDS.length).superRefine((witnesses, ctx) => {
+  for (const kind of EVENT_ARCHITECT_OPS_EVIDENCE_KINDS) {
+    if (witnesses.filter((witness) => witness.kind === kind).length !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Exactly one ${kind} witness is required.`,
+      });
+    }
+  }
+});
+
+export const EventArchitectOpsReviewDecisionSchema = z.enum(["approved", "rejected"]);
+export type EventArchitectOpsReviewDecision = z.infer<
+  typeof EventArchitectOpsReviewDecisionSchema
+>;
+
+export const EventArchitectOpsReviewerAuthoritySchema = z.enum([
+  "venue_staff",
+  "venue_hallkeeper",
+  "venue_admin",
+  "platform_admin",
+]);
+export type EventArchitectOpsReviewerAuthority = z.infer<
+  typeof EventArchitectOpsReviewerAuthoritySchema
+>;
+
+export const CreateEventArchitectOpsReviewInputSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(160),
+  expectedRequestDigest: z.string().regex(SHA256_HEX),
+  expectedSnapshotDigest: z.string().regex(SHA256_HEX),
+  expectedProofDigest: z.string().regex(SHA256_HEX),
+  expectedGuestFlowArtifactHash: z.string().regex(SHA256_HEX),
+  decision: EventArchitectOpsReviewDecisionSchema,
+  note: z.string().trim().min(10).max(2000),
+  validUntil: z.string().datetime(),
+  witnesses: EventArchitectOpsEvidenceWitnessesSchema,
+}).strict();
+export type CreateEventArchitectOpsReviewInput = z.infer<
+  typeof CreateEventArchitectOpsReviewInputSchema
+>;
+
+export const EventArchitectOpsReviewArtifactSchema = z.object({
+  schemaVersion: z.literal(EVENT_ARCHITECT_OPS_REVIEW_SCHEMA_VERSION),
+  artifactId: z.string().uuid(),
+  artifactDigest: z.string().regex(SHA256_HEX),
+  candidateId: z.string().uuid(),
+  runId: z.string().uuid(),
+  venueId: VenueIdSchema,
+  configurationId: ConfigurationIdSchema,
+  decision: EventArchitectOpsReviewDecisionSchema,
+  reviewerUserId: UserIdSchema,
+  reviewerAuthority: EventArchitectOpsReviewerAuthoritySchema,
+  requestDigest: z.string().regex(SHA256_HEX),
+  snapshotDigest: z.string().regex(SHA256_HEX),
+  proofDigest: z.string().regex(SHA256_HEX),
+  guestFlowArtifactHash: z.string().regex(SHA256_HEX),
+  witnesses: EventArchitectOpsEvidenceWitnessesSchema,
+  note: z.string().trim().min(10).max(2000),
+  reviewedAt: z.string().datetime(),
+  validUntil: z.string().datetime(),
+}).strict();
+export type EventArchitectOpsReviewArtifact = z.infer<
+  typeof EventArchitectOpsReviewArtifactSchema
+>;
+
+export const EventArchitectOpsReviewGateSchema = z.object({
+  candidateId: z.string().uuid(),
+  status: z.enum(["open", "approved", "rejected", "expired"]),
+  blockingForOpsCompilation: z.boolean(),
+  requiredData: z.tuple([
+    z.literal("surveyed_door_positions"),
+    z.literal("reviewed_route_model"),
+    z.literal("venue_operations_signoff"),
+  ]),
+  activeArtifact: EventArchitectOpsReviewArtifactSchema.nullable(),
+  history: z.array(EventArchitectOpsReviewArtifactSchema),
+}).strict();
+export type EventArchitectOpsReviewGate = z.infer<
+  typeof EventArchitectOpsReviewGateSchema
+>;

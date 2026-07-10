@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CANONICAL_ASSETS } from "../asset-catalogue.js";
 import { canonicalLayoutSnapshotDigest } from "../canonical-layout-snapshot.js";
 import {
+  CreateEventArchitectOpsReviewInputSchema,
   EventArchitectRunSchema,
   type EventArchitectRequest,
 } from "../event-architect.js";
@@ -271,5 +272,38 @@ describe("Event Architect deterministic engine", () => {
       expect(evidencePayload).not.toContain("certified");
       expect(evidencePayload).not.toContain("approved for occupancy");
     }
+  });
+
+  it("requires one digest-bound witness for every Ops review authority input", () => {
+    const digest = "a".repeat(64);
+    const baseWitness = {
+      sourceLabel: "Controlled evidence register",
+      sourceReference: "evidence://trades-hall/review/1",
+      contentDigest: digest,
+      observedAt: "2026-07-10T12:00:00.000Z",
+    };
+    const input = {
+      idempotencyKey: "ops-review-one",
+      expectedRequestDigest: digest,
+      expectedSnapshotDigest: digest,
+      expectedProofDigest: digest,
+      expectedGuestFlowArtifactHash: digest,
+      decision: "approved",
+      note: "Venue operations reviewed all three evidence sources.",
+      validUntil: "2026-07-17T12:00:00.000Z",
+      witnesses: [
+        { ...baseWitness, kind: "surveyed_door_positions" },
+        { ...baseWitness, kind: "reviewed_route_model" },
+        { ...baseWitness, kind: "venue_operations_signoff" },
+      ],
+    };
+    expect(CreateEventArchitectOpsReviewInputSchema.safeParse(input).success).toBe(true);
+    expect(CreateEventArchitectOpsReviewInputSchema.safeParse({
+      ...input,
+      witnesses: input.witnesses.map((witness) => ({
+        ...witness,
+        kind: "reviewed_route_model",
+      })),
+    }).success).toBe(false);
   });
 });

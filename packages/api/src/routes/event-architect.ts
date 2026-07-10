@@ -2,9 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   CreateEventArchitectRunInputSchema,
+  CreateEventArchitectOpsReviewInputSchema,
   EventArchitectCandidateSelectionSchema,
+  EventArchitectOpsReviewGateSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
+  type EventArchitectOpsReviewerAuthority,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
@@ -12,10 +15,17 @@ import {
   EventArchitectCandidateNotFoundError,
   EventArchitectCatalogueNotReadyError,
   EventArchitectIdempotencyConflictError,
+  EventArchitectOpsReviewCandidateNotSelectedError,
+  EventArchitectOpsReviewDigestConflictError,
+  EventArchitectOpsReviewEvidenceIntegrityError,
+  EventArchitectOpsReviewIdempotencyConflictError,
+  EventArchitectOpsReviewValidityError,
   EventArchitectRequestDigestConflictError,
   EventArchitectSelectionConflictError,
   EventArchitectSourceNotFoundError,
   createEventArchitectRun,
+  createEventArchitectOpsReview,
+  getEventArchitectOpsReviewGate,
   getEventArchitectRun,
   loadEventArchitectCandidateScope,
   loadEventArchitectRunScope,
@@ -52,6 +62,26 @@ function requireArchitectAccess(
   return false;
 }
 
+function requireOpsReviewAuthority(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  venueId: string,
+): EventArchitectOpsReviewerAuthority | null {
+  if (isPlatformAdmin(request.user)) return "platform_admin";
+  if (request.user.venueId !== venueId) {
+    void reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
+    return null;
+  }
+  if (request.user.role === "admin") return "venue_admin";
+  if (request.user.role === "hallkeeper") return "venue_hallkeeper";
+  if (request.user.role === "staff") return "venue_staff";
+  void reply.status(403).send({
+    error: "Event Architect Ops review requires venue operations authority",
+    code: "FORBIDDEN",
+  });
+  return null;
+}
+
 function architectError(reply: FastifyReply, error: unknown): FastifyReply | null {
   if (
     error instanceof EventArchitectSourceNotFoundError ||
@@ -82,6 +112,36 @@ function architectError(reply: FastifyReply, error: unknown): FastifyReply | nul
     return reply.status(409).send({
       error: "That idempotency key already belongs to a different Event Architect brief",
       code: "IDEMPOTENCY_KEY_REUSED",
+    });
+  }
+  if (error instanceof EventArchitectOpsReviewCandidateNotSelectedError) {
+    return reply.status(409).send({
+      error: "Select this candidate before recording its Ops review",
+      code: "CANDIDATE_NOT_SELECTED",
+    });
+  }
+  if (error instanceof EventArchitectOpsReviewDigestConflictError) {
+    return reply.status(409).send({
+      error: "The candidate evidence changed before this review was recorded",
+      code: "REVIEW_EVIDENCE_DIGEST_CONFLICT",
+    });
+  }
+  if (error instanceof EventArchitectOpsReviewIdempotencyConflictError) {
+    return reply.status(409).send({
+      error: "That idempotency key already belongs to a different Ops review",
+      code: "IDEMPOTENCY_KEY_REUSED",
+    });
+  }
+  if (error instanceof EventArchitectOpsReviewValidityError) {
+    return reply.status(400).send({
+      error: "Ops review validity must be between one hour and 90 days",
+      code: "INVALID_REVIEW_VALIDITY",
+    });
+  }
+  if (error instanceof EventArchitectOpsReviewEvidenceIntegrityError) {
+    return reply.status(409).send({
+      error: "The persisted Event Architect evidence could not be verified",
+      code: "SOURCE_EVIDENCE_INVALID",
     });
   }
   return null;
@@ -150,5 +210,39 @@ export async function eventArchitectRoutes(
     ));
     if ("statusCode" in result) return result;
     return { data: EventArchitectCandidateSelectionSchema.parse(result) };
+  });
+
+  server.get("/candidates/:candidateId/ops-review", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = CandidateParamsSchema.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const scope = await loadEventArchitectCandidateScope(db, params.data.candidateId);
+    if (scope === null || !requireArchitectAccess(request, reply, scope.venueId)) {
+      if (scope === null) return reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
+      return;
+    }
+    const gate = await getEventArchitectOpsReviewGate(db, params.data.candidateId);
+    if (gate === null) return reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
+    return { data: EventArchitectOpsReviewGateSchema.parse(gate) };
+  });
+
+  server.post("/candidates/:candidateId/ops-review", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = CandidateParamsSchema.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const body = CreateEventArchitectOpsReviewInputSchema.safeParse(request.body);
+    if (!body.success) return validationError(reply, body.error.issues);
+    const scope = await loadEventArchitectCandidateScope(db, params.data.candidateId);
+    if (scope === null) {
+      return reply.status(404).send({ error: "Event Architect resource not found", code: "NOT_FOUND" });
+    }
+    const reviewerAuthority = requireOpsReviewAuthority(request, reply, scope.venueId);
+    if (reviewerAuthority === null) return;
+    const result = await runArchitectCommand(reply, () => createEventArchitectOpsReview(
+      db,
+      params.data.candidateId,
+      body.data,
+      { userId: request.user.id, reviewerAuthority },
+    ));
+    if ("statusCode" in result) return result;
+    return reply.status(201).send({ data: EventArchitectOpsReviewGateSchema.parse(result) });
   });
 }

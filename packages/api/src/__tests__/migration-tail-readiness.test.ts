@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   canonicalLayoutSnapshots,
   eventArchitectCandidates,
+  eventArchitectOpsReviews,
   eventArchitectRuns,
   eventMissionAcknowledgements,
   eventMissionEvents,
@@ -60,6 +61,7 @@ const EXPECTED_TAIL = [
   "0045_event_scenario_phase_scope",
   "0046_event_mission_control",
   "0047_event_architect_proof",
+  "0048_event_architect_ops_reviews",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -122,12 +124,25 @@ describe("migration tail rollout readiness", () => {
     }
   });
 
+  it("keeps migration 0048 columns aligned and the Ops review artifact append-only", async () => {
+    const sql = await readMigration("0048_event_architect_ops_reviews");
+    expect(
+      extractCreatedTableColumns(sql, getTableName(eventArchitectOpsReviews)),
+    ).toEqual(drizzleColumnNames(eventArchitectOpsReviews));
+    expect(sql).toContain("event_architect_ops_reviews_candidate_run_fk");
+    expect(sql).toContain("event_architect_ops_reviews_no_update");
+    expect(sql).toContain("event_architect_ops_reviews_no_delete");
+    expect(sql).toContain("event_architect_ops_reviews_validity_window");
+    expect(sql).toContain("event_architect_ops_reviews_required_witnesses");
+  });
+
   it("keeps both feature migrations additive and pins their cross-table integrity boundaries", async () => {
-    const [missionSql, architectSql] = await Promise.all([
+    const [missionSql, architectSql, opsReviewSql] = await Promise.all([
       readMigration("0046_event_mission_control"),
       readMigration("0047_event_architect_proof"),
+      readMigration("0048_event_architect_ops_reviews"),
     ]);
-    const combined = `${missionSql}\n${architectSql}`;
+    const combined = `${missionSql}\n${architectSql}\n${opsReviewSql}`;
 
     expect(combined).not.toMatch(/\b(?:DROP|TRUNCATE|RENAME)\b/i);
     expect(combined).not.toMatch(/\bDELETE\s+FROM\b/i);
@@ -144,6 +159,9 @@ describe("migration tail rollout readiness", () => {
       "event_architect_runs_actor_idempotency_unique",
       "event_architect_runs_selection_complete",
       "event_architect_candidates_rank_range",
+      "event_architect_candidates_id_run_unique",
+      "event_architect_ops_reviews_reviewer_idempotency_unique",
+      "event_architect_ops_reviews_candidate_run_fk",
     ]) {
       expect(combined).toContain(requiredBoundary);
     }
