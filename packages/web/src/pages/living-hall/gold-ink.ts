@@ -204,6 +204,235 @@ export function drawnSegments(geometry: InkGeometry, actProgress: number): numbe
   return lo;
 }
 
+// ————————————————————————————————————————————————————————————————————————————
+// Beat two — the event-type programs and the floor fill.
+//
+// The first table is drawn lovingly, in full; the fill that follows is the
+// draftsman's quicker hand (rim, four drapes, a plate ring, seat squares).
+// Seat ceilings come exclusively from trades-hall-venue-truth — the tick can
+// never contradict the venue's published numbers because it has no numbers
+// of its own.
+// ————————————————————————————————————————————————————————————————————————————
+
+export type DressingEventType = "wedding" | "dinner" | "conference";
+
+export interface InkElement {
+  /** Seats this element contributes when the pen completes it. */
+  readonly seats: number;
+  /** Index of the element's last stroke in the program's stroke list. */
+  readonly lastStrokeIndex: number;
+}
+
+export interface DressingProgram {
+  readonly eventType: DressingEventType;
+  readonly strokes: readonly InkStroke[];
+  readonly elements: readonly InkElement[];
+  readonly totalSeats: number;
+  /** Venue-truth ceiling for this format, and its published format name. */
+  readonly seatCeiling: number;
+  readonly ceilingFormat: "dinner" | "theatre";
+}
+
+/** A round of eight in the pen's shorthand: rim, four drapes, plate ring,
+ *  eight seat squares. */
+function shorthandRound(cfg: FirstTableConfig, cx: number, cz: number): InkStroke[] {
+  const strokes: InkStroke[] = [];
+  strokes.push(circleStroke(cx, cfg.tabletopY, cz, cfg.radius, "company", 32));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    strokes.push(
+      lineStroke(
+        [cx + Math.cos(a) * cfg.radius, cfg.tabletopY, cz + Math.sin(a) * cfg.radius],
+        [cx + Math.cos(a) * cfg.radius, cfg.hemY, cz + Math.sin(a) * cfg.radius],
+        "company",
+      ),
+    );
+  }
+  strokes.push(circleStroke(cx, cfg.tabletopY + 0.005, cz, cfg.radius - 0.28, "company", 24));
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const sx = cx + Math.cos(a) * (cfg.radius + 0.38);
+    const sz = cz + Math.sin(a) * (cfg.radius + 0.38);
+    const h = 0.19;
+    const seatY = cfg.floorY + 0.46;
+    strokes.push(
+      rect(
+        [
+          [sx - h, seatY, sz - h],
+          [sx + h, seatY, sz - h],
+          [sx + h, seatY, sz + h],
+          [sx - h, seatY, sz + h],
+        ],
+        "company",
+      ),
+    );
+  }
+  return strokes;
+}
+
+/** A seat square + back line — the shorthand chair for banquets and rows. */
+function shorthandChair(cx: number, cz: number, facing: number, floorY: number): InkStroke[] {
+  const h = 0.19;
+  const seatY = floorY + 0.46;
+  const backY = floorY + 0.9;
+  // Back edge sits opposite the facing direction.
+  const bx = cx - Math.cos(facing) * h;
+  const bz = cz - Math.sin(facing) * h;
+  const sideX = -Math.sin(facing);
+  const sideZ = Math.cos(facing);
+  return [
+    rect(
+      [
+        [cx - sideX * h - Math.cos(facing) * h, seatY, cz - sideZ * h - Math.sin(facing) * h],
+        [cx + sideX * h - Math.cos(facing) * h, seatY, cz + sideZ * h - Math.sin(facing) * h],
+        [cx + sideX * h + Math.cos(facing) * h, seatY, cz + sideZ * h + Math.sin(facing) * h],
+        [cx - sideX * h + Math.cos(facing) * h, seatY, cz - sideZ * h + Math.sin(facing) * h],
+      ],
+      "company",
+    ),
+    {
+      points: [
+        [bx - sideX * h, seatY, bz - sideZ * h],
+        [bx - sideX * h, backY, bz - sideZ * h],
+        [bx + sideX * h, backY, bz + sideZ * h],
+        [bx + sideX * h, seatY, bz + sideZ * h],
+      ],
+      beat: "company",
+    },
+  ];
+}
+
+/** Positions for the six shorthand rounds around the first table. */
+const WEDDING_ROUND_CENTRES: readonly (readonly [number, number])[] = [
+  [-4.6, 5.2],
+  [0.6, 5.2],
+  [-4.6, 9.5],
+  [0.6, 9.5],
+  [-2.0, 10.6],
+  [-2.0, 4.2],
+];
+
+function weddingProgram(cfg: FirstTableConfig): { strokes: InkStroke[]; elements: InkElement[] } {
+  const strokes: InkStroke[] = [...buildFirstTableStrokes(cfg)];
+  const elements: InkElement[] = [{ seats: cfg.covers, lastStrokeIndex: strokes.length - 1 }];
+  for (const [cx, cz] of WEDDING_ROUND_CENTRES) {
+    strokes.push(...shorthandRound(cfg, cx, cz));
+    elements.push({ seats: 8, lastStrokeIndex: strokes.length - 1 });
+  }
+  return { strokes, elements };
+}
+
+function dinnerProgram(cfg: FirstTableConfig): { strokes: InkStroke[]; elements: InkElement[] } {
+  const strokes: InkStroke[] = [];
+  const elements: InkElement[] = [];
+  const runs: readonly (readonly [number, number])[] = [
+    [-4.3, 0], // banquet centre x
+    [0.9, 0],
+  ];
+  const z0 = 2.6;
+  const z1 = 10.6;
+  const halfW = 0.5;
+  for (const [bx] of runs) {
+    // Tabletop and hem outlines, then four corner drapes.
+    for (const y of [cfg.tabletopY, cfg.hemY]) {
+      strokes.push(
+        rect(
+          [
+            [bx - halfW, y, z0],
+            [bx + halfW, y, z0],
+            [bx + halfW, y, z1],
+            [bx - halfW, y, z1],
+          ],
+          "company",
+        ),
+      );
+    }
+    for (const [dx, dz] of [
+      [-halfW, z0],
+      [halfW, z0],
+      [-halfW, z1],
+      [halfW, z1],
+    ] as const) {
+      strokes.push(lineStroke([bx + dx, cfg.tabletopY, dz], [bx + dx, cfg.hemY, dz], "company"));
+    }
+    elements.push({ seats: 0, lastStrokeIndex: strokes.length - 1 });
+    // 15 chairs a side, facing the table.
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 15; i++) {
+        const cz = z0 + 0.35 + (i * (z1 - z0 - 0.7)) / 14;
+        const cx = bx + side * (halfW + 0.32);
+        strokes.push(...shorthandChair(cx, cz, side > 0 ? Math.PI : 0, cfg.floorY));
+        elements.push({ seats: 1, lastStrokeIndex: strokes.length - 1 });
+      }
+    }
+  }
+  return { strokes, elements };
+}
+
+function conferenceProgram(cfg: FirstTableConfig): { strokes: InkStroke[]; elements: InkElement[] } {
+  const strokes: InkStroke[] = [];
+  const elements: InkElement[] = [];
+  // Eight rows of ten, facing the window wall (+z).
+  for (let row = 0; row < 8; row++) {
+    const cz = 3.0 + row * 0.95;
+    for (let i = 0; i < 10; i++) {
+      const cx = -4.75 + i * 0.85;
+      strokes.push(...shorthandChair(cx, cz, Math.PI / 2, cfg.floorY));
+      elements.push({ seats: 1, lastStrokeIndex: strokes.length - 1 });
+    }
+  }
+  return { strokes, elements };
+}
+
+export function buildDressingProgram(
+  eventType: DressingEventType,
+  capacities: { readonly dinner: number; readonly theatre: number },
+  cfg: FirstTableConfig = FIRST_TABLE,
+): DressingProgram {
+  const built =
+    eventType === "wedding"
+      ? weddingProgram(cfg)
+      : eventType === "dinner"
+        ? dinnerProgram(cfg)
+        : conferenceProgram(cfg);
+  const totalSeats = built.elements.reduce((n, e) => n + e.seats, 0);
+  const ceilingFormat = eventType === "conference" ? "theatre" : "dinner";
+  return {
+    eventType,
+    strokes: built.strokes,
+    elements: built.elements,
+    totalSeats,
+    seatCeiling: ceilingFormat === "theatre" ? capacities.theatre : capacities.dinner,
+    ceilingFormat,
+  };
+}
+
+/** Per-element last-SEGMENT indices for a program's stroke list — segment
+ *  ordering matches strokesToInkGeometry. */
+export function elementSegmentEnds(program: DressingProgram): readonly number[] {
+  const segmentsPerStroke = program.strokes.map((s) => s.points.length - 1);
+  const ends: number[] = [];
+  for (const element of program.elements) {
+    let count = 0;
+    for (let i = 0; i <= element.lastStrokeIndex; i++) count += segmentsPerStroke[i] ?? 0;
+    ends.push(count);
+  }
+  return ends;
+}
+
+/** Seats completed once `segments` segments are drawn. */
+export function seatsAtSegments(
+  program: DressingProgram,
+  segmentEnds: readonly number[],
+  segments: number,
+): number {
+  let seats = 0;
+  for (let i = 0; i < program.elements.length; i++) {
+    if ((segmentEnds[i] ?? Infinity) <= segments) seats += program.elements[i]?.seats ?? 0;
+  }
+  return seats;
+}
+
 /** The pen nib's position: the end point of the last drawn segment. */
 export function penHead(geometry: InkGeometry, segments: number): InkPoint | null {
   if (segments <= 0 || segments > geometry.segmentCount) return null;

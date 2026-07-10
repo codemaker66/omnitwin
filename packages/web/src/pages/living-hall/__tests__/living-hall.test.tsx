@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { LivingHallPage } from "../LivingHallPage.js";
@@ -93,6 +93,34 @@ describe("venue truth rendered, never restated", () => {
     const record = document.querySelector("[data-capture-record]");
     expect(record?.textContent).toContain("PortalCam");
     expect(record?.textContent).toContain("2,002,122");
+  });
+});
+
+describe("the dressing choice — the visitor owns the goal", () => {
+  it("offers three event shapes with exactly one pressed", () => {
+    mount();
+    const buttons = ["Wedding", "Dinner", "Conference"].map((label) =>
+      screen.getByRole("button", { name: label }),
+    );
+    expect(buttons.filter((b) => b.getAttribute("aria-pressed") === "true")).toHaveLength(1);
+  });
+
+  it("re-programs the tick's ceiling from venue truth when the choice changes", () => {
+    mount();
+    const tick = document.querySelector("[data-dressing-tick]");
+    const caps = TRADES_HALL_ROOM_CAPACITIES["reception-room"];
+    expect(tick?.textContent).toContain(String(caps.dinner)); // wedding default
+    fireEvent.click(screen.getByRole("button", { name: "Conference" }));
+    expect(screen.getByRole("button", { name: "Conference" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(tick?.textContent).toContain(String(caps.theatre));
+  });
+
+  it("starts the count at zero — seats only exist once the pen draws them", () => {
+    mount();
+    const tick = document.querySelector("[data-dressing-tick]");
+    expect(tick?.textContent?.trim().startsWith("0")).toBe(true);
   });
 });
 

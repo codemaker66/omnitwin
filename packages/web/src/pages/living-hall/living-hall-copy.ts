@@ -74,6 +74,23 @@ export const LH_ACTS: readonly LivingHallAct[] = [
 export const LH_LEGEND_GOLD = "Gold — placed by the plan.";
 export const LH_LEGEND_CYAN = "Cyan — simulated movement and guidance, always labelled.";
 
+/** Beat two — the visitor chooses the evening's shape; the pen obeys. */
+export const LH_EVENT_CHOICE_LEGEND = "The shape of your evening";
+export const LH_EVENT_TYPES = [
+  { key: "wedding", label: "Wedding" },
+  { key: "dinner", label: "Dinner" },
+  { key: "conference", label: "Conference" },
+] as const;
+
+/** The tick: live seats under the pen, ceiling from venue truth. Rendered
+ *  as `«n» seated · the room takes up to «ceiling» at «format»`. */
+export const LH_TICK_SEATED = "seated";
+export const LH_TICK_CEILING_PREFIX = "the room takes up to";
+export const LH_TICK_FORMAT_LABEL: Record<"dinner" | "theatre", string> = {
+  dinner: "at dinner",
+  theatre: "theatre style",
+};
+
 /** Mirrors state/capture_log.json (reception-room) — pinned by test. */
 export const RECEPTION_CAPTURE_RECORD = {
   room: "Reception Room",
@@ -114,6 +131,12 @@ export function allLivingHallCopy(): readonly string[] {
     ...LH_ACTS.flatMap((act) => [act.navLabel, act.title, ...act.narration]),
     LH_LEGEND_GOLD,
     LH_LEGEND_CYAN,
+    LH_EVENT_CHOICE_LEGEND,
+    ...LH_EVENT_TYPES.map((t) => t.label),
+    LH_TICK_SEATED,
+    LH_TICK_CEILING_PREFIX,
+    LH_TICK_FORMAT_LABEL.dinner,
+    LH_TICK_FORMAT_LABEL.theatre,
     LH_CAPTURE_RECORD_TITLE,
     ...LH_CAPTURE_RECORD_LINES,
     LH_ROOMS_TITLE,

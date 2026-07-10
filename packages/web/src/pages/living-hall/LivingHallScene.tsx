@@ -6,6 +6,7 @@ import {
   type SparkSplatErrorEvent,
 } from "../../components/scene/SparkSplatLayer.js";
 import { GoldInkTable } from "./GoldInkTable.js";
+import type { DressingEventType } from "./gold-ink.js";
 import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
   MIN_GAZE_DISTANCE_M,
@@ -109,12 +110,14 @@ function DollyRig({ reducedMotion }: { readonly reducedMotion: boolean }): null 
 
 export interface LivingHallSceneProps {
   readonly reducedMotion: boolean;
+  /** The visitor's chosen shape of the evening — programs the pen. */
+  readonly eventType: DressingEventType;
   /** Fires once if the scene cannot run (WebGL/tile failure) — the page
    *  reverts to the plain document styling. */
   readonly onSceneFailed?: () => void;
 }
 
-export function LivingHallScene({ reducedMotion, onSceneFailed }: LivingHallSceneProps): ReactElement {
+export function LivingHallScene({ reducedMotion, eventType, onSceneFailed }: LivingHallSceneProps): ReactElement {
   const [loadedTiles, setLoadedTiles] = useState(0);
   const [failed, setFailed] = useState(false);
   const urls = useMemo(() => receptionTileUrls(), []);
@@ -161,7 +164,7 @@ export function LivingHallScene({ reducedMotion, onSceneFailed }: LivingHallScen
           </group>
           {/* The pen draws in world space (Y-up) — outside the Z-up group.
               Ink only exists once the room is real (all tiles arrived). */}
-          {allLoaded && <GoldInkTable />}
+          {allLoaded && <GoldInkTable eventType={eventType} />}
           <DollyRig reducedMotion={reducedMotion} />
         </Canvas>
       )}

@@ -51,8 +51,28 @@ reverse; the visitor owns the clock in both directions.
 - The document narration for this act already tells the story in prose; the
   canvas stays `aria-hidden`.
 
-## Deferred (later beats of the Dressing)
+## Beat two — the choice, and the floor (2026-07-10)
 
-Event-type toggle (wedding / dinner / conference), the full-floor fill with
-the rising crane, capacity tick from the engine, placement thud (sound), room
-mesh depth-prepass for ink occlusion behind the column, Grand Hall variant.
+**The visitor owns the goal**: three quiet choices head the act — *wedding ·
+dinner · conference*. The choice re-programs the pen and updates a live
+figures line in the document (so the toggle is real content on Tier C too).
+
+**The pen gains confidence**: the first table is drawn lovingly, in full
+(beat one, wedding). The fill that follows is drawn in shorthand — rim, four
+drapes, a plate ring, seat squares — the draftsman's quicker hand. This is
+the narrative AND the stroke budget.
+
+| Type | Fill | Seats | Ceiling (venue truth) |
+|---|---|---|---|
+| Wedding | first table full + 6 shorthand rounds of 8 | 56 | dinner · 60 |
+| Dinner | two long banquets along the room, 15 a side | 60 | dinner · 60 |
+| Conference | eight theatre rows of ten, facing the windows | 80 | theatre · 80 |
+
+**The tick**: "«n» seated · the room takes up to «ceiling»" counts up as
+elements complete under the pen — n derives from element completion lengths,
+ceiling only from `trades-hall-venue-truth` (tests pin both; nothing is
+typed by hand). Window: choice zone 0.00–0.10 of the act; the pen runs
+0.10–0.95 as before; fill begins after the opener (~0.45 for wedding).
+
+Still deferred: placement thud (sound), depth-prepass occlusion, rising-crane
+camera for the fill, Grand Hall variant, per-table linen colour choices.

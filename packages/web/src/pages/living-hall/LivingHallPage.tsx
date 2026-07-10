@@ -2,6 +2,15 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactEl
 import { Link, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "../landing/useReducedMotion.js";
 import {
+  buildDressingProgram,
+  drawnSegments,
+  elementSegmentEnds,
+  seatsAtSegments,
+  strokesToInkGeometry,
+  type DressingEventType,
+} from "./gold-ink.js";
+import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
+import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
@@ -26,6 +35,8 @@ import {
   LH_CTA_PLANNER_LABEL,
   LH_CTA_TEAM_LABEL,
   LH_ENQUIRE_LABEL,
+  LH_EVENT_CHOICE_LEGEND,
+  LH_EVENT_TYPES,
   LH_FOOTER_NOTE,
   LH_HEADLINE,
   LH_LEDE,
@@ -35,6 +46,9 @@ import {
   LH_RATES_TITLE,
   LH_ROOMS_TITLE,
   LH_SKIP_LABEL,
+  LH_TICK_CEILING_PREFIX,
+  LH_TICK_FORMAT_LABEL,
+  LH_TICK_SEATED,
 } from "./living-hall-copy.js";
 import "./living-hall.css";
 
@@ -51,6 +65,47 @@ import "./living-hall.css";
 
 const roomName = (slug: string): string =>
   publicRoomSelectionCards.find((c) => (c.canonicalRoomSlug ?? c.id) === slug)?.name ?? slug;
+
+/** The live seat count under the pen. Computed from the same pure gold-ink
+ *  functions the scene uses — consistent by construction, no canvas coupling.
+ *  The number is never animated (it changes constantly under scroll); the
+ *  figures are engine-derived, never typed here. */
+function DressingTick({ eventType }: { readonly eventType: DressingEventType }): ReactElement {
+  const derived = useMemo(() => {
+    const program = buildDressingProgram(
+      eventType,
+      TRADES_HALL_ROOM_CAPACITIES["reception-room"],
+    );
+    return {
+      program,
+      geometry: strokesToInkGeometry(program.strokes),
+      ends: elementSegmentEnds(program),
+    };
+  }, [eventType]);
+  const [seats, setSeats] = useState(0);
+
+  const applyProgress = useCallback(
+    (p: number) => {
+      const segments = drawnSegments(derived.geometry, p);
+      const next = seatsAtSegments(derived.program, derived.ends, segments);
+      setSeats((prev) => (prev === next ? prev : next));
+    },
+    [derived],
+  );
+  const progressRef = useSectionScrollProgress("the-dressing", applyProgress);
+
+  useEffect(() => {
+    // Event type changed: recount at the current scroll position.
+    applyProgress(progressRef.current);
+  }, [applyProgress, progressRef]);
+
+  return (
+    <p className="lh-tick" data-dressing-tick>
+      <b>{seats}</b> {LH_TICK_SEATED} · {LH_TICK_CEILING_PREFIX}{" "}
+      <b>{derived.program.seatCeiling}</b> {LH_TICK_FORMAT_LABEL[derived.program.ceilingFormat]}
+    </p>
+  );
+}
 
 // The 3D layer ships in its own chunk: Tier C visitors (and scrapers) never
 // download Spark/three. The document below is complete without it.
@@ -69,6 +124,7 @@ function webGl2Available(): boolean {
 export function LivingHallPage(): ReactElement {
   const [searchParams] = useSearchParams();
   const reducedMotion = useReducedMotion();
+  const [eventType, setEventType] = useState<DressingEventType>("wedding");
   const [sceneFailed, setSceneFailed] = useState(false);
   const sceneRequested = searchParams.get("scene") !== "0";
   const sceneCapable = useMemo(() => webGl2Available(), []);
@@ -85,7 +141,11 @@ export function LivingHallPage(): ReactElement {
     <div className={`lh-root${sceneActive ? " has-scene" : ""}`}>
       {sceneActive && (
         <Suspense fallback={null}>
-          <LivingHallScene reducedMotion={reducedMotion} onSceneFailed={handleSceneFailed} />
+          <LivingHallScene
+            reducedMotion={reducedMotion}
+            eventType={eventType}
+            onSceneFailed={handleSceneFailed}
+          />
         </Suspense>
       )}
       <a className="lh-skip" href="#rooms-and-rates">
@@ -123,9 +183,27 @@ export function LivingHallPage(): ReactElement {
         {LH_ACTS.map((act) => (
           <section key={act.id} id={act.id} className="lh-act" aria-labelledby={`${act.id}-title`}>
             <h2 id={`${act.id}-title`}>{act.title}</h2>
+            {act.id === "the-dressing" && (
+              <fieldset className="lh-event-choice">
+                <legend>{LH_EVENT_CHOICE_LEGEND}</legend>
+                {LH_EVENT_TYPES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    aria-pressed={eventType === t.key}
+                    onClick={() => {
+                      setEventType(t.key);
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </fieldset>
+            )}
             {act.narration.map((line) => (
               <p key={line.slice(0, 32)}>{line}</p>
             ))}
+            {act.id === "the-dressing" && <DressingTick eventType={eventType} />}
 
             {act.id === "the-plan" && (
               <>

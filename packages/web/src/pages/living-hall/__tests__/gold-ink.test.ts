@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { TRADES_HALL_ROOM_CAPACITIES } from "../../../lib/trades-hall-venue-truth.js";
 import {
   FIRST_TABLE,
   INK_WINDOW,
+  buildDressingProgram,
   buildFirstTableStrokes,
   drawnSegments,
+  elementSegmentEnds,
   penHead,
+  seatsAtSegments,
   strokesToInkGeometry,
+  type DressingEventType,
 } from "../gold-ink.js";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +92,68 @@ describe("constant pen speed", () => {
     const midLength = ink.cumulativeLengths[mid - 1] ?? 0;
     expect(midLength / ink.totalLength).toBeGreaterThan(0.45);
     expect(midLength / ink.totalLength).toBeLessThan(0.55);
+  });
+});
+
+describe("dressing programs — beat two, figures from venue truth only", () => {
+  const caps = TRADES_HALL_ROOM_CAPACITIES["reception-room"];
+
+  it("wedding: the full first table then six shorthand rounds — 56 seats under the dinner ceiling", () => {
+    const program = buildDressingProgram("wedding", caps);
+    expect(program.totalSeats).toBe(56);
+    expect(program.elements).toHaveLength(7);
+    expect(program.seatCeiling).toBe(caps.dinner);
+    expect(program.ceilingFormat).toBe("dinner");
+    // The opener is beat one verbatim: same strokes prefix.
+    const opener = buildFirstTableStrokes();
+    expect(program.strokes.slice(0, opener.length)).toEqual(opener);
+  });
+
+  it("dinner: two banquets of fifteen a side — exactly the dinner ceiling", () => {
+    const program = buildDressingProgram("dinner", caps);
+    expect(program.totalSeats).toBe(60);
+    expect(program.totalSeats).toBe(caps.dinner);
+    expect(program.ceilingFormat).toBe("dinner");
+  });
+
+  it("conference: eight rows of ten — exactly the theatre ceiling", () => {
+    const program = buildDressingProgram("conference", caps);
+    expect(program.totalSeats).toBe(80);
+    expect(program.totalSeats).toBe(caps.theatre);
+    expect(program.ceilingFormat).toBe("theatre");
+  });
+
+  it("no program ever exceeds its venue-truth ceiling", () => {
+    for (const t of ["wedding", "dinner", "conference"] as DressingEventType[]) {
+      const program = buildDressingProgram(t, caps);
+      expect(program.totalSeats).toBeLessThanOrEqual(program.seatCeiling);
+    }
+  });
+
+  it("the tick counts from zero to the full total, monotonically", () => {
+    for (const t of ["wedding", "dinner", "conference"] as DressingEventType[]) {
+      const program = buildDressingProgram(t, caps);
+      const geometry = strokesToInkGeometry(program.strokes);
+      const ends = elementSegmentEnds(program);
+      expect(seatsAtSegments(program, ends, 0)).toBe(0);
+      expect(seatsAtSegments(program, ends, geometry.segmentCount)).toBe(program.totalSeats);
+      let prev = 0;
+      for (let p = 0; p <= 1.0001; p += 0.02) {
+        const seats = seatsAtSegments(program, ends, drawnSegments(geometry, Math.min(1, p)));
+        expect(seats).toBeGreaterThanOrEqual(prev);
+        prev = seats;
+      }
+    }
+  });
+
+  it("element segment ends align with the geometry's segment count", () => {
+    const program = buildDressingProgram("wedding", caps);
+    const geometry = strokesToInkGeometry(program.strokes);
+    const ends = elementSegmentEnds(program);
+    expect(ends[ends.length - 1]).toBe(geometry.segmentCount);
+    for (let i = 1; i < ends.length; i++) {
+      expect(ends[i] ?? 0).toBeGreaterThan(ends[i - 1] ?? 0);
+    }
   });
 });
 

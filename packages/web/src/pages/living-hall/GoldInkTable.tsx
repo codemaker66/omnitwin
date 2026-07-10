@@ -9,13 +9,15 @@ import {
   MeshBasicMaterial,
   SphereGeometry,
 } from "three";
+import { TRADES_HALL_ROOM_CAPACITIES } from "../../lib/trades-hall-venue-truth.js";
 import {
   INK_GOLD,
   INK_GOLD_BRIGHT,
-  buildFirstTableStrokes,
+  buildDressingProgram,
   drawnSegments,
   penHead,
   strokesToInkGeometry,
+  type DressingEventType,
 } from "./gold-ink.js";
 import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
 
@@ -23,17 +25,21 @@ import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
 // GoldInkTable — the drafting pen performing the storyboard.
 //
 // One LineSegments whose drawRange is the pen's odometer: scroll through the
-// Dressing act and the first table draws itself, stroke by stroke, at
-// constant pen speed; scroll back and it un-draws. The nib — a 1.5cm bright
-// point, the page's only permitted glint — rides the last drawn segment and
-// leaves when the drawing is done. World-space (Y-up): mounted OUTSIDE the
-// Z-up splat group. Scroll progress lives in a ref; its onChange invalidates
-// the demand loop and useFrame applies the odometer before each render.
+// Dressing act and the chosen program draws itself — the first table in full,
+// then the floor in the pen's shorthand — at constant speed; scroll back and
+// it un-draws. The nib (a 1.5cm bright point, the page's only glint) rides
+// the stroke head. World-space (Y-up): mounted OUTSIDE the Z-up splat group.
+// The program's seat figures derive from venue truth inside gold-ink.ts;
+// nothing here carries a number of its own.
 // -----------------------------------------------------------------------------
 
 export const DRESSING_SECTION_ID = "the-dressing";
 
-export function GoldInkTable(): ReactElement {
+export interface GoldInkTableProps {
+  readonly eventType: DressingEventType;
+}
+
+export function GoldInkTable({ eventType }: GoldInkTableProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
   const progressRef = useSectionScrollProgress(
     DRESSING_SECTION_ID,
@@ -42,7 +48,13 @@ export function GoldInkTable(): ReactElement {
     }, [invalidate]),
   );
 
-  const ink = useMemo(() => strokesToInkGeometry(buildFirstTableStrokes()), []);
+  const ink = useMemo(() => {
+    const program = buildDressingProgram(
+      eventType,
+      TRADES_HALL_ROOM_CAPACITIES["reception-room"],
+    );
+    return strokesToInkGeometry(program.strokes);
+  }, [eventType]);
 
   const objects = useMemo(() => {
     const geometry = new BufferGeometry();
@@ -52,7 +64,7 @@ export function GoldInkTable(): ReactElement {
       geometry,
       new LineBasicMaterial({ color: INK_GOLD, transparent: true, opacity: 0.95 }),
     );
-    lines.frustumCulled = false; // drawRange animates; keep the whole table drawable
+    lines.frustumCulled = false; // drawRange animates; keep the whole floor drawable
     const nib = new Mesh(
       new SphereGeometry(0.0075, 8, 8),
       new MeshBasicMaterial({ color: INK_GOLD_BRIGHT }),
@@ -75,13 +87,16 @@ export function GoldInkTable(): ReactElement {
   });
 
   useEffect(() => {
+    // New program (event type changed): reapply the odometer immediately.
+    lastCount.current = -1;
+    invalidate();
     return () => {
       objects.geometry.dispose();
       objects.lines.material.dispose();
       objects.nib.geometry.dispose();
       objects.nib.material.dispose();
     };
-  }, [objects]);
+  }, [invalidate, objects]);
 
   return (
     <>
