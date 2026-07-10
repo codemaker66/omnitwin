@@ -3,6 +3,7 @@ import { getCatalogueItem } from "../../lib/catalogue.js";
 import type { PlacedItem } from "../../lib/placement.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
 import {
   computeCapacityIntelligence,
@@ -13,6 +14,7 @@ import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
+import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 
 interface HudStats {
   readonly roundTables: number;
@@ -67,6 +69,27 @@ function recommendationColor(severity: RecommendationSeverity): string {
     case "praise": return "#54c98e";
   }
 }
+
+const HUD_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
+  type: "anchor",
+  anchor: "top-right",
+  offsetX: 22,
+  offsetY: 104,
+};
+
+const HUD_AVOID_SELECTORS = [
+  ".planner-status-header",
+  ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
+  "[data-floating-widget-id='cockpit-minimap']",
+  ".planner-command-deck",
+  ".planner-section-slider-dock",
+  "[data-testid='truth-mode-indicator']",
+  "[data-testid='truth-mode-popover']",
+  "[data-testid='save-send-panel']",
+  "[data-testid='cockpit-bottom']",
+] as const;
 
 const gradePanelBaseStyle: React.CSSProperties = {
   display: "grid",
@@ -154,6 +177,7 @@ function gradeRecommendationStyle(color: string): React.CSSProperties {
 export function PlannerSpatialHud(): React.ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const stats = useMemo(() => computeHudStats(placedItems), [placedItems]);
 
   // Room dimensions are render-space (metres × RENDER_SCALE on X/Z); divide
@@ -208,118 +232,136 @@ export function PlannerSpatialHud(): React.ReactElement {
     : recommendationColor(topRecommendation.severity);
 
   return (
-    <aside className="planner-spatial-hud" data-testid="planner-spatial-hud" aria-label="Layout summary">
-      <section
-        className="planner-spatial-hud__panel planner-spatial-hud__panel--grade"
-        data-testid="planner-layout-grade"
-        aria-label={`Layout grade ${grade.band}, ${String(grade.score)} out of 100. ${grade.headline}`}
-        style={{
-          ...gradePanelBaseStyle,
-          "--layout-grade-color": gradeColor,
-          "--layout-recommendation-color": topRecommendationColor,
-        } as React.CSSProperties}
+    <FloatingWidgetFrame
+      id="planner-spatial-hud"
+      title="Layout intelligence"
+      compactLabel={`Grade ${grade.band}`}
+      className="planner-spatial-hud-widget"
+      bodyClassName="planner-spatial-hud-widget__body"
+      defaultPlacement={HUD_DEFAULT_PLACEMENT}
+      avoidSelectors={HUD_AVOID_SELECTORS}
+      avoidPaddingPx={14}
+      zIndex={33}
+      autoCompact={cameraInteractionActive}
+    >
+      <aside
+        className="planner-spatial-hud"
+        data-testid="planner-spatial-hud"
+        data-has-layout={hasLayout ? "true" : "false"}
+        aria-label="Layout summary"
       >
-        <div className="planner-spatial-hud__title">Layout grade</div>
-        <div className="planner-spatial-hud__grade-row" style={gradeRowStyle}>
-          <span className="planner-spatial-hud__grade-badge" style={gradeBadgeStyle(gradeColor)} aria-hidden="true">
-            {grade.band}
-          </span>
-          <span className="planner-spatial-hud__grade-copy" style={gradeCopyStyle}>
-            <strong className="planner-spatial-hud__grade-score" style={gradeScoreStyle(gradeColor)}>
-              {grade.score}
-              <span className="planner-spatial-hud__grade-score-denominator" style={gradeScoreDenominatorStyle}>/100</span>
-            </strong>
-            <span className="planner-spatial-hud__grade-headline" style={gradeHeadlineStyle}>{grade.headline}</span>
-          </span>
-        </div>
-        {topRecommendation !== undefined && (
-          <div
-            className="planner-spatial-hud__grade-recommendation"
-            style={gradeRecommendationStyle(topRecommendationColor)}
-          >
-            {topRecommendation.message}
-          </div>
-        )}
-      </section>
-
-      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--spaces">
-        <div className="planner-spatial-hud__title">Spaces</div>
-        <div className="planner-spatial-hud__list">
-          <HudRow color="#f08a21" label="Dining rounds" detail={plural(stats.roundTables, "round table")} />
-          <HudRow color="#dcc64d" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
-          <HudRow color="#32b77a" label="Seating" detail={plural(stats.chairs, "chair")} />
-          <HudRow
-            color="#be8fc1"
-            label="Stage / service"
-            detail={stats.stagedObjects > 0 ? plural(stats.stagedObjects, "object") : "Open floor"}
-          />
-        </div>
-      </section>
-
-      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--capacity" data-testid="planner-capacity-panel">
-        <div className="planner-spatial-hud__title">Capacity</div>
-        <div
-          className="planner-spatial-hud__gauge"
-          style={{ "--capacity": `${String(gaugeFill)}%` } as React.CSSProperties}
-          aria-label={`${String(stats.chairs)} seats planned, comfortable planning capacity about ${String(capacity.comfortableCapacity)} guests`}
+        <section
+          className="planner-spatial-hud__panel planner-spatial-hud__panel--grade"
+          data-testid="planner-layout-grade"
+          aria-label={`Layout grade ${grade.band}, ${String(grade.score)} out of 100. ${grade.headline}`}
+          style={{
+            ...gradePanelBaseStyle,
+            "--layout-grade-color": gradeColor,
+            "--layout-recommendation-color": topRecommendationColor,
+          } as React.CSSProperties}
         >
-          <div className="planner-spatial-hud__gauge-inner">
-            <span>{stats.chairs.toLocaleString("en-GB")}</span>
-            <small>/ {capacity.comfortableCapacity.toLocaleString("en-GB")}</small>
+          <div className="planner-spatial-hud__title">Layout grade</div>
+          <div className="planner-spatial-hud__grade-row" style={gradeRowStyle}>
+            <span className="planner-spatial-hud__grade-badge" style={gradeBadgeStyle(gradeColor)} aria-hidden="true">
+              {grade.band}
+            </span>
+            <span className="planner-spatial-hud__grade-copy" style={gradeCopyStyle}>
+              <strong className="planner-spatial-hud__grade-score" style={gradeScoreStyle(gradeColor)}>
+                {grade.score}
+                <span className="planner-spatial-hud__grade-score-denominator" style={gradeScoreDenominatorStyle}>/100</span>
+              </strong>
+              <span className="planner-spatial-hud__grade-headline" style={gradeHeadlineStyle}>{grade.headline}</span>
+            </span>
           </div>
-        </div>
-        <div className="planner-spatial-hud__caption">
-          {hasLayout
-            ? comfortBandLabel(capacity.band)
-            : "Start placing furniture to build capacity"}
-        </div>
-        {hasLayout && capacity.spacePerGuestM2 !== null && (
-          <div className="planner-spatial-hud__subcaption">
-            {capacity.spacePerGuestM2.toFixed(1)} m²/guest · {styleLabel} · ~{capacity.comfortableCapacity.toLocaleString("en-GB")} comfortable
-          </div>
-        )}
-        {circulation.band !== "open" && circulation.tightestGapM !== null && (
-          <div
-            className="planner-spatial-hud__subcaption"
-            style={
-              circulation.band === "tight" || circulation.band === "blocked"
-                ? { color: "#d98324" }
-                : undefined
-            }
-          >
-            Tightest table aisle {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
-          </div>
-        )}
-        {circulation.problemGaps.length > 1 && (
-          <div className="planner-spatial-hud__subcaption" style={{ color: "#d98324" }}>
-            {circulation.problemGaps.length} aisles below comfortable — flagged in the scene
-          </div>
-        )}
-        <div className="planner-spatial-hud__subcaption">
-          {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
-        </div>
-        <div className="planner-spatial-hud__subcaption" style={{ opacity: 0.66, fontSize: 12 }}>
-          Planning-grade estimate · human review required · final capacity confirmed by venue team
-        </div>
-      </section>
+          {topRecommendation !== undefined && (
+            <div
+              className="planner-spatial-hud__grade-recommendation"
+              style={gradeRecommendationStyle(topRecommendationColor)}
+            >
+              {topRecommendation.message}
+            </div>
+          )}
+        </section>
 
-      <section className="planner-spatial-hud__panel planner-spatial-hud__panel--revenue">
-        <div className="planner-spatial-hud__title">Revenue</div>
-        <div style={{ display: "grid", gap: 6 }}>
-          <strong style={{ color: hasLayout ? "#54c98e" : "#b8ad92", fontSize: 16 }}>
-            {hasLayout ? "Scenario-ready layout" : "No quote linked"}
-          </strong>
-          <span style={{ color: "#d8d0c4", fontSize: 12, lineHeight: 1.35 }}>
+        <section className="planner-spatial-hud__panel planner-spatial-hud__panel--spaces">
+          <div className="planner-spatial-hud__title">Spaces</div>
+          <div className="planner-spatial-hud__list">
+            <HudRow color="#f08a21" label="Dining rounds" detail={plural(stats.roundTables, "round table")} />
+            <HudRow color="#dcc64d" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
+            <HudRow color="#32b77a" label="Seating" detail={plural(stats.chairs, "chair")} />
+            <HudRow
+              color="#be8fc1"
+              label="Stage / service"
+              detail={stats.stagedObjects > 0 ? plural(stats.stagedObjects, "object") : "Open floor"}
+            />
+          </div>
+        </section>
+
+        <section className="planner-spatial-hud__panel planner-spatial-hud__panel--capacity" data-testid="planner-capacity-panel">
+          <div className="planner-spatial-hud__title">Capacity</div>
+          <div
+            className="planner-spatial-hud__gauge"
+            style={{ "--capacity": `${String(gaugeFill)}%` } as React.CSSProperties}
+            aria-label={`${String(stats.chairs)} seats planned, comfortable planning capacity about ${String(capacity.comfortableCapacity)} guests`}
+          >
+            <div className="planner-spatial-hud__gauge-inner">
+              <span>{stats.chairs.toLocaleString("en-GB")}</span>
+              <small>/ {capacity.comfortableCapacity.toLocaleString("en-GB")}</small>
+            </div>
+          </div>
+          <div className="planner-spatial-hud__caption">
             {hasLayout
-              ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
-              : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
-          </span>
-          <span style={{ color: "#b8ad92", fontSize: 12, lineHeight: 1.35 }}>
-            Comfort status {capacity.band}; review constraints remain visible before commercial recommendations.
-          </span>
-        </div>
-      </section>
-    </aside>
+              ? comfortBandLabel(capacity.band)
+              : "Start placing furniture to build capacity"}
+          </div>
+          {hasLayout && capacity.spacePerGuestM2 !== null && (
+            <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--capacity-detail">
+              {capacity.spacePerGuestM2.toFixed(1)} m²/guest · {styleLabel} · ~{capacity.comfortableCapacity.toLocaleString("en-GB")} comfortable
+            </div>
+          )}
+          {circulation.band !== "open" && circulation.tightestGapM !== null && (
+            <div
+              className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--circulation"
+              style={
+                circulation.band === "tight" || circulation.band === "blocked"
+                  ? { color: "#d98324" }
+                  : undefined
+              }
+            >
+              Tightest table aisle {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
+            </div>
+          )}
+          {circulation.problemGaps.length > 1 && (
+            <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--circulation" style={{ color: "#d98324" }}>
+              {circulation.problemGaps.length} aisles below comfortable — flagged in the scene
+            </div>
+          )}
+          <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--secondary">
+            {stats.dressedTables > 0 ? `${plural(stats.dressedTables, "table")} dressed` : "No dressed tables yet"}
+          </div>
+          <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--disclosure" style={{ opacity: 0.66, fontSize: 12 }}>
+            Planning-grade estimate · human review required · final capacity confirmed by venue team
+          </div>
+        </section>
+
+        <section className="planner-spatial-hud__panel planner-spatial-hud__panel--revenue">
+          <div className="planner-spatial-hud__title">Revenue</div>
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong style={{ color: hasLayout ? "#54c98e" : "#b8ad92", fontSize: 16 }}>
+              {hasLayout ? "Scenario-ready layout" : "No quote linked"}
+            </strong>
+            <span style={{ color: "#d8d0c4", fontSize: 12, lineHeight: 1.35 }}>
+              {hasLayout
+                ? `${stats.chairs.toLocaleString("en-GB")} seats can feed a revenue scenario once quote or event data is linked.`
+                : "Place furniture and link quote/event data to calculate exact commercial scenarios."}
+            </span>
+            <span style={{ color: "#b8ad92", fontSize: 12, lineHeight: 1.35 }}>
+              Comfort status {capacity.band}; review constraints remain visible before commercial recommendations.
+            </span>
+          </div>
+        </section>
+      </aside>
+    </FloatingWidgetFrame>
   );
 }
 

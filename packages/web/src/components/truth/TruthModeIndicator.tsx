@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Info, ShieldQuestion, X } from "lucide-react";
 import { TRUTH_MODE_TOKENS } from "@omnitwin/types";
 import type { TruthModeSceneSummary } from "../../lib/truth-mode-summary.js";
@@ -7,6 +7,8 @@ import {
   formatEvidenceState,
   formatStalenessState,
 } from "../../lib/truth-mode-summary.js";
+import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 
 export interface TruthModeIndicatorProps {
   readonly summary: TruthModeSceneSummary;
@@ -15,73 +17,108 @@ export interface TruthModeIndicatorProps {
 const shellToken = TRUTH_MODE_TOKENS["known-unknown"];
 const observedToken = TRUTH_MODE_TOKENS.observed;
 const warningToken = TRUTH_MODE_TOKENS.contested;
-const dockLeft = "clamp(12px, 7vw, 80px)";
 
-const rootStyle: CSSProperties = {
-  position: "fixed",
-  left: dockLeft,
-  top: "calc(env(safe-area-inset-top, 0px) + 84px)",
-  zIndex: 38,
-  width: "calc(100vw - 24px)",
-  maxWidth: 320,
-  boxSizing: "border-box",
-  fontFamily: "'Inter', system-ui, sans-serif",
-  pointerEvents: "none",
+const DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
+  type: "percent",
+  xPercent: 0.12,
+  yPercent: 0.1,
+};
+
+const AVOID_SELECTORS = [
+  ".planner-status-header",
+  ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
+  "[data-floating-widget-id='planner-spatial-hud']",
+  "[data-floating-widget-id='cockpit-minimap']",
+  "[data-floating-widget-id='placement-coach']",
+  ".planner-command-deck",
+  ".planner-section-slider-dock",
+  "[data-testid='cockpit-bottom']",
+] as const;
+
+const contentStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  width: "min(320px, calc(100vw - 24px))",
+  fontFamily: "\"Inter\", system-ui, sans-serif",
 };
 
 const indicatorButtonStyle: CSSProperties = {
+  display: "flex",
   width: "100%",
   boxSizing: "border-box",
-  display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "10px 12px",
-  borderRadius: 10,
+  gap: 9,
+  minWidth: 0,
   border: `1px solid ${shellToken.border}`,
-  background: "rgba(16, 18, 23, 0.88)",
+  borderRadius: 8,
+  background:
+    "linear-gradient(150deg, rgba(19, 21, 24, 0.96), rgba(11, 12, 13, 0.94))",
+  boxShadow: "inset 0 1px 0 rgba(255, 247, 221, 0.07)",
   color: "#f7efe2",
-  backdropFilter: "blur(14px)",
-  boxShadow: "0 14px 34px rgba(0,0,0,0.34)",
   cursor: "pointer",
+  padding: "10px 11px",
   textAlign: "left",
-  pointerEvents: "auto",
 };
 
-const popoverStyle: CSSProperties = {
-  position: "fixed",
-  left: dockLeft,
-  top: "calc(env(safe-area-inset-top, 0px) + 184px)",
-  width: "calc(100vw - 24px)",
-  maxWidth: 320,
-  boxSizing: "border-box",
-  borderRadius: 12,
+const compactStatusLineStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  columnGap: 8,
+  rowGap: 3,
+  marginTop: 5,
+  color: "rgba(247, 239, 226, 0.72)",
+  fontSize: 10.5,
+  fontWeight: 720,
+  lineHeight: 1.25,
+};
+
+const compactStatusItemStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minWidth: 0,
+  whiteSpace: "normal",
+};
+
+const compactStatusDotStyle: CSSProperties = {
+  width: 4,
+  height: 4,
+  flex: "0 0 auto",
+  marginRight: 5,
+  borderRadius: "50%",
+  background: "#d8ad4a",
+  boxShadow: "0 0 8px rgba(216, 173, 74, 0.55)",
+};
+
+const detailsStyle: CSSProperties = {
+  overflow: "hidden",
   border: `1px solid ${shellToken.border}`,
-  background: "rgba(247, 242, 232, 0.98)",
-  color: "#1d1a16",
-  boxShadow: "0 18px 50px rgba(0,0,0,0.38)",
-  maxHeight: "calc(100dvh - 200px)",
-  overflowY: "auto",
-  overflowX: "hidden",
-  pointerEvents: "auto",
+  borderRadius: 8,
+  background:
+    "linear-gradient(180deg, rgba(22, 24, 27, 0.98), rgba(10, 11, 12, 0.98))",
+  color: "#f7efe2",
+  boxShadow: "inset 0 1px 0 rgba(255, 247, 221, 0.06)",
 };
 
 const labelStyle: CSSProperties = {
   margin: 0,
+  color: "#d8ad4a",
   fontSize: 10,
-  fontWeight: 800,
+  fontWeight: 820,
   letterSpacing: "0.11em",
+  lineHeight: 1.1,
   textTransform: "uppercase",
-  color: shellToken.foreground,
 };
 
 const bodyTextStyle: CSSProperties = {
   margin: "3px 0 0",
+  color: "rgba(247, 239, 226, 0.76)",
   fontSize: 12,
   lineHeight: 1.45,
-  color: "#373029",
 };
 
-function StatusDot({ summary }: { readonly summary: TruthModeSceneSummary }): React.ReactElement {
+function StatusDot({ summary }: { readonly summary: TruthModeSceneSummary }): ReactElement {
   const token = summary.measuredRuntimeAssetsLoaded ? observedToken : shellToken;
   return (
     <span
@@ -99,7 +136,7 @@ function StatusDot({ summary }: { readonly summary: TruthModeSceneSummary }): Re
   );
 }
 
-function Chip({ children, tone }: { readonly children: React.ReactNode; readonly tone: "neutral" | "warning" }): React.ReactElement {
+function Chip({ children, tone }: { readonly children: ReactNode; readonly tone: "neutral" | "warning" }): ReactElement {
   const token = tone === "warning" ? warningToken : shellToken;
   return (
     <span
@@ -113,7 +150,7 @@ function Chip({ children, tone }: { readonly children: React.ReactNode; readonly
         background: token.background,
         color: token.foreground,
         fontSize: 11,
-        fontWeight: 700,
+        fontWeight: 740,
         lineHeight: 1.2,
         whiteSpace: "normal",
       }}
@@ -123,22 +160,38 @@ function Chip({ children, tone }: { readonly children: React.ReactNode; readonly
   );
 }
 
-function SummaryRow({ label, children }: { readonly label: string; readonly children: React.ReactNode }): React.ReactElement {
+function CompactStatusItem({ children }: { readonly children: ReactNode }): ReactElement {
   return (
-    <section style={{ padding: "10px 12px", borderTop: "1px solid rgba(79, 86, 97, 0.18)" }}>
+    <span style={compactStatusItemStyle}>
+      <span aria-hidden="true" style={compactStatusDotStyle} />
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function SummaryRow({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
+  return (
+    <section style={{ padding: "10px 12px", borderTop: "1px solid rgba(247, 239, 226, 0.1)" }}>
       <p style={labelStyle}>{label}</p>
       <div style={bodyTextStyle}>{children}</div>
     </section>
   );
 }
 
-export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): React.ReactElement {
+export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactElement {
   const [open, setOpen] = useState(false);
-  const popoverId = useId();
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const detailsId = useId();
   const issueCount = summary.knownIssues.length;
+  const collapsedSourceLabel = summary.generatedOrProceduralContent ? "Procedural" : "Measured";
+  const collapsedRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Runtime loaded" : "Runtime not loaded";
+  const collapsedIssueLabel = issueCount > 0 ? `${String(issueCount)} issues` : "No issues";
+  const fullSourceLabel = summary.generatedOrProceduralContent ? "Procedural content present" : "Measured source only";
+  const fullRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Measured runtime loaded" : "Measured runtime not loaded";
+  const fullIssueLabel = issueCount > 0 ? `${String(issueCount)} known issues` : "No known issues";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         setOpen(false);
@@ -151,129 +204,121 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): React.
   }, [open]);
 
   return (
-    <div data-testid="truth-mode-indicator" style={rootStyle}>
-      {open && (
-        <div id={popoverId} role="dialog" aria-label="Truth Mode summary" style={popoverStyle} data-testid="truth-mode-popover">
-          <header style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 12px 10px" }}>
-            <Info size={17} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto", marginTop: 2 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={labelStyle}>Truth Mode L2</p>
-              <p style={{ ...bodyTextStyle, fontWeight: 700, color: "#1d1a16" }}>
-                {summary.truthStatusLabel}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Close Truth Mode summary"
-              onClick={() => { setOpen(false); }}
-              style={{
-                width: 28,
-                height: 28,
-                display: "inline-grid",
-                placeItems: "center",
-                border: "1px solid rgba(79, 86, 97, 0.22)",
-                borderRadius: 7,
-                background: "transparent",
-                color: "#1d1a16",
-                cursor: "pointer",
-              }}
+    <FloatingWidgetFrame
+      id="truth-mode-indicator"
+      title="Truth Mode"
+      compactLabel={collapsedIssueLabel}
+      className="truth-mode-widget"
+      bodyClassName="truth-mode-widget__body"
+      strategy="fixed"
+      testId="truth-mode-indicator"
+      defaultPlacement={DEFAULT_PLACEMENT}
+      avoidSelectors={AVOID_SELECTORS}
+      avoidPaddingPx={12}
+      storageScope="planner-truth-mode-v1"
+      zIndex={38}
+      autoCompact={cameraInteractionActive}
+    >
+      <div style={contentStyle}>
+        <button
+          type="button"
+          data-testid="truth-mode-toggle"
+          aria-label={open ? "Hide Truth Mode summary" : "Open Truth Mode summary"}
+          aria-expanded={open}
+          aria-controls={detailsId}
+          onClick={() => { setOpen((value) => !value); }}
+          style={indicatorButtonStyle}
+        >
+          <ShieldQuestion size={18} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto" }} />
+          <StatusDot summary={summary} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", color: "#d8ad4a", fontSize: 10, fontWeight: 820, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+              Truth Mode L1
+            </span>
+            <span style={{ display: "block", marginTop: 2, fontSize: 13, fontWeight: 800, lineHeight: 1.25 }}>
+              {summary.modeLabel}: {summary.truthStatusLabel}
+            </span>
+            <span
+              data-testid="truth-mode-status-line"
+              style={compactStatusLineStyle}
+              aria-label={[fullSourceLabel, fullRuntimeLabel, fullIssueLabel].join(", ")}
             >
-              <X size={15} aria-hidden="true" />
-            </button>
-          </header>
+              <CompactStatusItem>{collapsedSourceLabel}</CompactStatusItem>
+              <CompactStatusItem>{collapsedRuntimeLabel}</CompactStatusItem>
+              <CompactStatusItem>{collapsedIssueLabel}</CompactStatusItem>
+            </span>
+          </span>
+        </button>
 
-          <SummaryRow label="Source / evidence">
-            <p style={bodyTextStyle}>{summary.evidenceSummary}</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-              {summary.sourceStates.map((state) => (
-                <Chip key={state} tone={state === "procedural_runtime" ? "warning" : "neutral"}>
-                  {formatEvidenceState(state)}
-                </Chip>
-              ))}
-            </div>
-          </SummaryRow>
+        {open && (
+          <div id={detailsId} role="dialog" aria-label="Truth Mode summary" style={detailsStyle} data-testid="truth-mode-popover">
+            <header style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 12px 10px" }}>
+              <Info size={17} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto", marginTop: 2 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={labelStyle}>Truth Mode L2</p>
+                <p style={{ ...bodyTextStyle, color: "#f7efe2", fontWeight: 760 }}>{summary.truthStatusLabel}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close Truth Mode summary"
+                onClick={() => { setOpen(false); }}
+                style={{
+                  width: 28,
+                  height: 28,
+                  display: "inline-grid",
+                  placeItems: "center",
+                  border: "1px solid rgba(247, 239, 226, 0.14)",
+                  borderRadius: 7,
+                  background: "rgba(255, 255, 255, 0.045)",
+                  color: "#f7efe2",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            </header>
 
-          <SummaryRow label="Verification">
-            {summary.verificationSummary}
-          </SummaryRow>
-
-          <SummaryRow label="Confidence">
-            {summary.confidenceSummary}
-            <div style={{ marginTop: 8 }}>
-              <Chip tone="neutral">{formatConfidenceTier(summary.confidenceTier)}</Chip>
-            </div>
-          </SummaryRow>
-
-          <SummaryRow label="Freshness">
-            <Chip tone="neutral">{formatStalenessState(summary.stalenessState)}</Chip>
-          </SummaryRow>
-
-          {issueCount > 0 && (
-            <SummaryRow label="Known issues">
-              <ul style={{ margin: "6px 0 0", paddingLeft: 17 }}>
-                {summary.knownIssues.map((issue) => (
-                  <li key={issue.id} style={{ marginBottom: 5 }}>{issue.message}</li>
+            <SummaryRow label="Source / evidence">
+              <p style={bodyTextStyle}>{summary.evidenceSummary}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {summary.sourceStates.map((state) => (
+                  <Chip key={state} tone={state === "procedural_runtime" ? "warning" : "neutral"}>
+                    {formatEvidenceState(state)}
+                  </Chip>
                 ))}
-              </ul>
+              </div>
             </SummaryRow>
-          )}
 
-          <div style={{ padding: "10px 12px 12px", borderTop: "1px solid rgba(79, 86, 97, 0.18)" }}>
-            <button
-              type="button"
-              disabled
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                borderRadius: 8,
-                border: "1px solid rgba(79, 86, 97, 0.22)",
-                background: "#f3eee5",
-                color: "#6c6259",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "not-allowed",
-              }}
-            >
-              Provenance drawer unavailable
-            </button>
+            <SummaryRow label="Verification">{summary.verificationSummary}</SummaryRow>
+
+            <SummaryRow label="Confidence">
+              {summary.confidenceSummary}
+              <div style={{ marginTop: 8 }}>
+                <Chip tone="neutral">{formatConfidenceTier(summary.confidenceTier)}</Chip>
+              </div>
+            </SummaryRow>
+
+            <SummaryRow label="Freshness">
+              <Chip tone="neutral">{formatStalenessState(summary.stalenessState)}</Chip>
+            </SummaryRow>
+
+            {issueCount > 0 && (
+              <SummaryRow label="Known issues">
+                <ul style={{ margin: "6px 0 0", paddingLeft: 17 }}>
+                  {summary.knownIssues.map((issue) => (
+                    <li key={issue.id} style={{ marginBottom: 5 }}>{issue.message}</li>
+                  ))}
+                </ul>
+              </SummaryRow>
+            )}
+
+            <section style={{ padding: "10px 12px 12px", borderTop: "1px solid rgba(247, 239, 226, 0.1)" }}>
+              <p style={labelStyle}>Next action</p>
+              <p style={bodyTextStyle}>Open the Evidence lens for provenance records, review gates, and sign-off state.</p>
+            </section>
           </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        data-testid="truth-mode-toggle"
-        aria-label={open ? "Hide Truth Mode summary" : "Open Truth Mode summary"}
-        aria-expanded={open}
-        aria-controls={popoverId}
-        onClick={() => { setOpen((value) => !value); }}
-        style={{
-          ...indicatorButtonStyle,
-          pointerEvents: open ? "none" : "auto",
-        }}
-      >
-        <ShieldQuestion size={18} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto" }} />
-        <StatusDot summary={summary} />
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: "block", color: "#d8ad4a", fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            Truth Mode L1
-          </span>
-          <span style={{ display: "block", marginTop: 2, fontSize: 13, fontWeight: 800, lineHeight: 1.25 }}>
-            {summary.modeLabel}: {summary.truthStatusLabel}
-          </span>
-          <span style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
-            <Chip tone={summary.generatedOrProceduralContent ? "warning" : "neutral"}>
-              {summary.generatedOrProceduralContent ? "Procedural content present" : "Measured source only"}
-            </Chip>
-            <Chip tone={summary.measuredRuntimeAssetsLoaded ? "neutral" : "warning"}>
-              {summary.measuredRuntimeAssetsLoaded ? "Measured runtime loaded" : "Measured runtime not loaded"}
-            </Chip>
-            <Chip tone={issueCount > 0 ? "warning" : "neutral"}>
-              {issueCount > 0 ? `${String(issueCount)} known issues` : "No known issues"}
-            </Chip>
-          </span>
-        </span>
-      </button>
-    </div>
+        )}
+      </div>
+    </FloatingWidgetFrame>
   );
 }

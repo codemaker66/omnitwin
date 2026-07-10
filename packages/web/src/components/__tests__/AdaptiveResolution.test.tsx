@@ -43,14 +43,23 @@ describe("AdaptiveResolution", () => {
   it("drops the pixel ratio while the camera is regressing (moving)", () => {
     r3f.current = 0.65;
     render(<AdaptiveResolution />);
-    // 0.65 * 1.2 — roughly half the fragment cost during motion.
-    expect(r3f.setDpr).toHaveBeenCalledWith(0.78);
+    // Binary motion DPR avoids repeatedly resizing WebGLRenderer during orbit.
+    expect(r3f.setDpr).toHaveBeenCalledWith(0.5);
   });
 
   it("requests a frame on every resolution change so demand-mode repaints", () => {
     r3f.current = 1;
     render(<AdaptiveResolution />);
     expect(r3f.invalidate).toHaveBeenCalled();
+  });
+
+  it("does not call setDpr again when the target DPR has not changed", () => {
+    r3f.current = 0.65;
+    const { rerender } = render(<AdaptiveResolution />);
+    expect(r3f.setDpr).toHaveBeenCalledTimes(1);
+
+    rerender(<AdaptiveResolution />);
+    expect(r3f.setDpr).toHaveBeenCalledTimes(1);
   });
 
   it("clamps adaptive DPR to the route budget", () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
@@ -276,6 +277,7 @@ export async function publicConfigRoutes(
             positionX: String(obj.positionX), positionY: String(obj.positionY), positionZ: String(obj.positionZ),
             rotationX: String(obj.rotationX), rotationY: String(obj.rotationY), rotationZ: String(obj.rotationZ),
             scale: String(obj.scale), sortOrder: obj.sortOrder, metadata: obj.metadata ?? null,
+            coordinateWriteToken: randomUUID(),
           })
           .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
           .returning();
@@ -290,6 +292,7 @@ export async function publicConfigRoutes(
             positionX: String(obj.positionX), positionY: String(obj.positionY), positionZ: String(obj.positionZ),
             rotationX: String(obj.rotationX), rotationY: String(obj.rotationY), rotationZ: String(obj.rotationZ),
             scale: String(obj.scale), sortOrder: obj.sortOrder, metadata: obj.metadata ?? null,
+            coordinateWriteToken: randomUUID(),
           })))
           .returning();
         txResults.push(...inserted);

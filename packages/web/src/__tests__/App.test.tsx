@@ -78,14 +78,14 @@ describe("App", () => {
     expect(props["frameloop"]).toBe("demand");
   });
 
-  it("caps DPR at [1, 1] to preserve the 60fps desktop frame budget", () => {
+  it("caps DPR at [0.75, 0.75] to preserve the 60fps desktop frame budget", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();
-    expect(props["dpr"]).toEqual([1, 1]);
+    expect(props["dpr"]).toEqual([0.75, 0.75]);
   });
 
-  it("enables DPR regression during camera motion (performance.min < 1)", () => {
+  it("keeps R3F performance regression metadata available without changing the fixed canvas DPR", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();

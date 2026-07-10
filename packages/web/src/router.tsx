@@ -65,8 +65,17 @@ const SplatFixturePage = lazy(() =>
 const TradesHallVisualPage = lazy(() =>
   import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage })),
 );
+const TradesHouseLeafletPage = lazy(() =>
+  import("./pages/TradesHouseLeafletPage.js").then((m) => ({ default: m.TradesHouseLeafletPage })),
+);
+const TradesHouseCraftQuizPage = lazy(() =>
+  import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
+);
 const TradesHallAssetStatusPage = lazy(() =>
   import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage })),
+);
+const CaptureIntakePage = lazy(() =>
+  import("./pages/CaptureIntakePage.js").then((m) => ({ default: m.CaptureIntakePage })),
 );
 const ProposalPage = lazy(() =>
   import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage })),
@@ -79,6 +88,9 @@ const OpsHandoffPage = lazy(() =>
 );
 const EventDayOpsPage = lazy(() =>
   import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage })),
+);
+const EventArchitectPage = lazy(() =>
+  import("./pages/EventArchitectPage.js").then((m) => ({ default: m.EventArchitectPage })),
 );
 const RoomShowcasePage = lazy(() =>
   import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
@@ -247,10 +259,36 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/event-architect",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        <EventArchitectPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
+    path: "/event-architect/runs/:runId",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        <EventArchitectPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     // Public SaaS pricing page. Entry point for prospective venues;
     // CTAs route to registration until the Stripe+onboarding phases ship.
     path: "/pricing",
     element: withSuspense(<PricingPage />),
+  },
+  {
+    // T-483 campaign preview. This is venue collateral and deliberately
+    // remains separate from the T-091 captured-runtime evidence routes.
+    path: "/trades-house",
+    element: <Navigate to="/trades-house/leaflet" replace />,
+  },
+  {
+    path: "/trades-hall-leaflet",
+    element: <Navigate to="/trades-house/leaflet" replace />,
   },
   {
     // Dev smoke route for T-087: proves the production renderer stack imports
@@ -271,6 +309,22 @@ export const router = createBrowserRouter([
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
         <TradesHallAssetStatusPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
+    path: "/trades-house/leaflet",
+    element: withSuspense(<TradesHouseLeafletPage />),
+  },
+  {
+    path: "/trades-house/discover-your-craft",
+    element: withSuspense(<TradesHouseCraftQuizPage />),
+  },
+  {
+    path: "/dev/capture-intake",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+        <CaptureIntakePage />
       </ProtectedRoute>,
     ),
   },

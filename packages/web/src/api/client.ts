@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import { API_URL } from "../config/env.js";
 import { getTokenGetter } from "./auth-bridge.js";
 
@@ -64,9 +64,12 @@ interface RequestOptions {
   readonly path: string;
   readonly body?: unknown;
   readonly skipAuth?: boolean;
+  readonly signal?: AbortSignal;
 }
 
-async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T> {
+type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
+
+async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -82,6 +85,10 @@ async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T>
     method: opts.method,
     headers,
   };
+
+  if (opts.signal !== undefined) {
+    fetchOpts.signal = opts.signal;
+  }
 
   if (opts.body !== undefined) {
     fetchOpts.body = JSON.stringify(opts.body);
@@ -149,13 +156,13 @@ async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T>
 // ---------------------------------------------------------------------------
 
 export const api = {
-  get: <T>(path: string, schema?: ZodType<T>): Promise<T> =>
-    request<T>({ method: "GET", path }, schema),
+  get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
+    request<T>({ method: "GET", path, signal }, schema),
 
-  post: <T>(path: string, body?: unknown, skipAuth?: boolean, schema?: ZodType<T>): Promise<T> =>
+  post: <T>(path: string, body?: unknown, skipAuth?: boolean, schema?: ResponseSchema<T>): Promise<T> =>
     request<T>({ method: "POST", path, body, skipAuth }, schema),
 
-  patch: <T>(path: string, body: unknown, schema?: ZodType<T>): Promise<T> =>
+  patch: <T>(path: string, body: unknown, schema?: ResponseSchema<T>): Promise<T> =>
     request<T>({ method: "PATCH", path, body }, schema),
 
   delete: <T = void>(path: string): Promise<T> =>

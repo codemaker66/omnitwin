@@ -404,6 +404,22 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     const eventRow = await requireEventAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
+    if (parsed.data.phaseId !== undefined && parsed.data.phaseId !== null) {
+      const [phase] = await db.select({ id: eventPhases.id })
+        .from(eventPhases)
+        .where(and(
+          eq(eventPhases.id, parsed.data.phaseId),
+          eq(eventPhases.eventId, eventRow.id),
+        ))
+        .limit(1);
+      if (phase === undefined) {
+        return reply.status(422).send({
+          error: "Scenario phase must belong to the event",
+          code: "EVENT_PHASE_MISMATCH",
+        });
+      }
+    }
+
     const [scenario] = await db.insert(eventScenarios).values({
       eventId: eventRow.id,
       phaseId: parsed.data.phaseId ?? null,
@@ -436,6 +452,12 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
       }
       if (!canAccessResource(request.user, config.userId, config.venueId)) {
         return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+      if (config.venueId !== eventRow.venueId) {
+        return reply.status(409).send({
+          error: "A layout variant configuration must belong to the event venue",
+          code: "CONFIGURATION_VENUE_MISMATCH",
+        });
       }
     }
 

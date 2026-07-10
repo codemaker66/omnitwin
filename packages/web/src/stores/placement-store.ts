@@ -14,6 +14,7 @@ import {
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
 import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
 import { planBanquetLayout } from "../lib/auto-layout.js";
+import { planTheatreLayout } from "../lib/theatre-layout.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
@@ -86,6 +87,11 @@ export interface PlacementState {
    * whole room.
    */
   readonly autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => void;
+  /**
+   * Auto-fill the room with theatre-style rows of chairs facing a stage at one
+   * end. A target of 0 fills the room. Replaces the current layout.
+   */
+  readonly autoArrangeTheatre: (chairItemId: string, targetGuests: number) => void;
   /** Break a single item out of its group (set groupId to null). */
   readonly breakFromGroup: (id: string) => void;
   /** Move all items in the same group as the given item by a delta. */
@@ -415,6 +421,27 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     if (placedItems.length === 0) return;
 
+    set({ placedItems });
+  },
+
+  autoArrangeTheatre: (chairItemId: string, targetGuests: number) => {
+    const chairItem = getCatalogueItem(chairItemId);
+    if (chairItem === undefined || chairItem.category !== "chair") return;
+
+    const dims = useRoomDimensionsStore.getState().dimensions;
+    const plan = planTheatreLayout(
+      // Room dimensions are render-space; the engine works in metres.
+      toRealWorld(dims.width),
+      toRealWorld(dims.length),
+      { targetGuests: targetGuests > 0 ? targetGuests : undefined },
+    );
+    if (plan.seats.length === 0) return;
+
+    // Each planned seat (metres, room-centred, facing the stage) → a floor-level
+    // chair in render space. No groups — theatre chairs stand alone.
+    const placedItems = plan.seats.map((s) =>
+      createPlacedItem(chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
+    );
     set({ placedItems });
   },
 

@@ -10,7 +10,6 @@ export default defineConfig({
     setupFiles: ["./src/test/vitest-setup.ts"],
     globals: false,
     environment: "happy-dom",
-    passWithNoTests: true,
     // The web suite has 140+ heavy `await import(...)` smoke tests that pull in
     // the full R3F/three editor dependency graph and transform it on demand.
     // Under machine load (parallel forks, slow Windows IO) a single import can

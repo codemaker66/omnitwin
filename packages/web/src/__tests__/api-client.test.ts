@@ -33,6 +33,16 @@ beforeEach(() => {
 });
 
 describe("api.get", () => {
+  it("forwards an AbortSignal to fetch", async () => {
+    const controller = new AbortController();
+    fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));
+
+    await api.get("/test", IdSchema, controller.signal);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBe(controller.signal);
+  });
+
   it("attaches Authorization header when Clerk token available", async () => {
     setTokenGetter(() => Promise.resolve("clerk-session-token"));
     fetchMock.mockResolvedValue(jsonResponse({ data: { id: 1 } }));

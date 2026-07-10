@@ -3,6 +3,7 @@ import {
   buildSheetApproval,
   parseStoredSnapshotPayload,
 } from "../../services/hallkeeper-sheet-v2-data.js";
+import { LEGACY_RENDER_COORDINATE_SPACE } from "../../db/coordinate-space.js";
 
 // ---------------------------------------------------------------------------
 // parseStoredSnapshotPayload — pure unit tests
@@ -67,6 +68,40 @@ describe("parseStoredSnapshotPayload", () => {
     const result = parseStoredSnapshotPayload(approved);
     expect(result?.approval?.version).toBe(3);
     expect(result?.approval?.approverName).toBe("Catherine Tait");
+  });
+
+  it("normalizes legacy frozen positions without mutating the stored payload", () => {
+    const legacy = {
+      ...VALID_PAYLOAD,
+      phases: [{
+        phase: "furniture",
+        zones: [{
+          zone: "North wall",
+          rows: [{
+            key: "furniture|North wall|Table|0",
+            name: "Table",
+            category: "table",
+            qty: 1,
+            afterDepth: 0,
+            isAccessory: false,
+            notes: "",
+            positions: [{
+              objectId: "00000000-0000-0000-0000-000000000001",
+              x: 12,
+              z: -8,
+              rotationY: 0.5,
+            }],
+          }],
+        }],
+      }],
+    };
+
+    const result = parseStoredSnapshotPayload(legacy, LEGACY_RENDER_COORDINATE_SPACE);
+    const position = result?.phases[0]?.zones[0]?.rows[0]?.positions[0];
+    expect(position).toMatchObject({ x: 6, z: -4, rotationY: 0.5 });
+    expect(
+      (legacy.phases[0]?.zones[0]?.rows[0]?.positions[0] as { x: number }).x,
+    ).toBe(12);
   });
 
   it("returns null for a null input (malformed jsonb read)", () => {

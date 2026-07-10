@@ -56,6 +56,12 @@
   transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
 }
 
+.dashboard-layout-nav-link {
+  align-items: center;
+  display: flex;
+  text-decoration: none;
+}
+
 .dashboard-layout-nav-item:hover,
 .dashboard-layout-nav-item:focus-visible {
   color: #fff7e8;

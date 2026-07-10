@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
@@ -164,6 +165,7 @@ export async function placedObjectRoutes(
       scale: String(parsed.data.scale),
       sortOrder: parsed.data.sortOrder,
       metadata: parsed.data.metadata ?? null,
+      coordinateWriteToken: randomUUID(),
     }).returning();
 
     return reply.status(201).send({ data: obj });
@@ -216,6 +218,9 @@ export async function placedObjectRoutes(
     if (parsed.data.positionX !== undefined) updateData["positionX"] = String(parsed.data.positionX);
     if (parsed.data.positionY !== undefined) updateData["positionY"] = String(parsed.data.positionY);
     if (parsed.data.positionZ !== undefined) updateData["positionZ"] = String(parsed.data.positionZ);
+    if (parsed.data.positionX !== undefined || parsed.data.positionZ !== undefined) {
+      updateData["coordinateWriteToken"] = randomUUID();
+    }
     if (parsed.data.rotationX !== undefined) updateData["rotationX"] = String(parsed.data.rotationX);
     if (parsed.data.rotationY !== undefined) updateData["rotationY"] = String(parsed.data.rotationY);
     if (parsed.data.rotationZ !== undefined) updateData["rotationZ"] = String(parsed.data.rotationZ);
@@ -357,6 +362,7 @@ export async function placedObjectRoutes(
             scale: String(obj.scale),
             sortOrder: obj.sortOrder,
             metadata: obj.metadata ?? null,
+            coordinateWriteToken: randomUUID(),
           })
           .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
           .returning();
@@ -378,6 +384,7 @@ export async function placedObjectRoutes(
             scale: String(obj.scale),
             sortOrder: obj.sortOrder,
             metadata: obj.metadata ?? null,
+            coordinateWriteToken: randomUUID(),
           })))
           .returning();
         txResults.push(...inserted);

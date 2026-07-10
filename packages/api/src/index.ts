@@ -37,6 +37,9 @@ import { aiAssistantRoutes } from "./routes/ai-assistant.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
+import { captureIntakeRoutes } from "./routes/capture-intake.js";
+import { eventArchitectRoutes } from "./routes/event-architect.js";
+import { eventMissionEventRoutes, eventMissionRoutes } from "./routes/event-mission-control.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
@@ -318,12 +321,19 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
   await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
+  await server.register(captureIntakeRoutes, {
+    inspectionPath: env.CAPTURE_INTAKE_INSPECTION_PATH,
+    stageManifestPath: env.CAPTURE_INTAKE_STAGE_MANIFEST_PATH,
+  });
   await server.register(onboardingRoutes, { db, prefix: "/onboarding" });
   await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
+  await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
+  await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });
+  await server.register(eventArchitectRoutes, { db, prefix: "/event-architect" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
   await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });
@@ -344,9 +354,15 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
   // --- WebSocket ---
-  await server.register(websocket);
-  server.websocketServer.setMaxListeners(50);
-  await registerAutoSave(server, db);
+  // Keep the websocket plugin and its route in one encapsulated scope. When
+  // registered on the root instance, Fastify inherits the plugin's preClose
+  // hook into every existing plugin context; one shutdown then calls the same
+  // WebSocketServer.close() dozens of times. Scoping retains the plugin-owned
+  // upgrade-listener cleanup and gives the websocket server one close hook.
+  await server.register(async (websocketScope) => {
+    await websocketScope.register(websocket);
+    await registerAutoSave(websocketScope, db);
+  });
 
   // Register default event-bus subscribers (structured-logging /
   // audit observers). Additional subscribers can attach at any time.

@@ -46,8 +46,6 @@ if (E2E_ENABLED) {
   })));
 }
 
-await initBrowserSentry();
-
 // ---------------------------------------------------------------------------
 // AppRoot — public routes stay auth-provider-free. Routes that need Clerk are
 // wrapped lazily in router.tsx so client-facing planning surfaces do not pay
@@ -75,3 +73,8 @@ createRoot(rootElement).render(
     </AppErrorBoundary>
   </StrictMode>,
 );
+
+// Monitoring is optional and its SDK is a large deferred chunk. Start it only
+// after React owns the root so a slow import can never hold the first screen
+// blank. The error boundary shares the same idempotent initializer.
+void initBrowserSentry();

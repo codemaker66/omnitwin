@@ -7,7 +7,11 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { classifyTriangleTowardPoint, type Vec3 } from "../interior-winding.js";
 import { optimizeMesh } from "../mesh.js";
+
+const CAPTURE_POSITION: Vec3 = [0.5, 0.5, 1];
+const CAPTURE_POSITIONS: readonly Vec3[] = [CAPTURE_POSITION];
 
 /**
  * Deterministic 64×64 noise PNG. Noise keeps the lossless PNG large so the
@@ -43,7 +47,9 @@ async function writeSourceGlb(dir: string): Promise<string> {
   const indices = doc
     .createAccessor()
     .setType("SCALAR")
-    .setArray(new Uint16Array([0, 1, 2, 2, 1, 3]))
+    // First triangle faces +Z toward the capture; second is deliberately
+    // reversed so the optimizer must repair it without touching positions/UVs.
+    .setArray(new Uint16Array([0, 1, 2, 2, 3, 1]))
     .setBuffer(buffer);
   const texture = doc.createTexture("noise").setImage(await noisePng()).setMimeType("image/png");
   const material = doc.createMaterial("mat").setBaseColorTexture(texture);
@@ -66,7 +72,7 @@ describe("optimizeMesh", () => {
     const out = mkdtempSync(join(tmpdir(), "forge-mesh-out-"));
     const src = await writeSourceGlb(srcDir);
 
-    const first = await optimizeMesh(src, out);
+    const first = await optimizeMesh(src, out, CAPTURE_POSITIONS);
     const dest = join(out, "mesh", "dollhouse.glb");
     expect(existsSync(dest)).toBe(true);
     expect(first.sourceName).toBe("trades-hall-web.glb");
@@ -79,12 +85,29 @@ describe("optimizeMesh", () => {
       .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
     const reread = await io.read(dest);
     expect(reread.getRoot().listMeshes().length).toBe(1);
+    const primitive = reread.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    const position = primitive?.getAttribute("POSITION");
+    const indices = primitive?.getIndices();
+    expect(position).not.toBeNull();
+    expect(indices?.getCount()).toBe(6);
+    if (position === null || position === undefined || indices === null || indices === undefined) {
+      throw new Error("optimized fixture is missing indexed positions");
+    }
+    for (let offset = 0; offset < indices.getCount(); offset += 3) {
+      const a: [number, number, number] = [0, 0, 0];
+      const b: [number, number, number] = [0, 0, 0];
+      const c: [number, number, number] = [0, 0, 0];
+      position.getElement(indices.getScalar(offset), a);
+      position.getElement(indices.getScalar(offset + 1), b);
+      position.getElement(indices.getScalar(offset + 2), c);
+      expect(classifyTriangleTowardPoint(a, b, c, CAPTURE_POSITION)).toBe("keep");
+    }
     const { json } = await io.readAsJSON(dest);
     expect(json.extensionsUsed).toContain("EXT_meshopt_compression");
     expect(json.extensionsUsed).toContain("EXT_texture_webp");
 
     const mtimeBefore = (await stat(dest)).mtimeMs;
-    const second = await optimizeMesh(src, out);
+    const second = await optimizeMesh(src, out, CAPTURE_POSITIONS);
     expect(second).toEqual(first);
     expect((await stat(dest)).mtimeMs).toBe(mtimeBefore); // no rewrite
   });

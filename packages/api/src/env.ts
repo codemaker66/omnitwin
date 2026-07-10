@@ -50,6 +50,11 @@ const EnvSchema = z.object({
   AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
   AI_ASSISTANT_BASE_URL: z.string().url().optional(),
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
+  // Local/operator-only capture ledgers produced by tools/capture-factory.
+  // When absent the protected status route returns an explicit unavailable
+  // state; production does not assume a developer workstation path.
+  CAPTURE_INTAKE_INSPECTION_PATH: z.string().min(1).optional(),
+  CAPTURE_INTAKE_STAGE_MANIFEST_PATH: z.string().min(1).optional(),
   // Prometheus scrape token. When unset, /metrics returns 404 — the
   // endpoint is not even discoverable. Production deployments set
   // this + configure the scraper's Authorization header. Minimum 16

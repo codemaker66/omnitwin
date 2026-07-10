@@ -5,6 +5,7 @@ import { VerticalToolbox } from "../VerticalToolbox.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
+import { useBookmarkStore } from "../../../stores/bookmark-store.js";
 
 // ---------------------------------------------------------------------------
 // VerticalToolbox undo/redo — must drive the editor-store history timeline
@@ -13,9 +14,18 @@ import { useSelectionStore } from "../../../stores/selection-store.js";
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  window.localStorage.clear();
   useEditorStore.getState().reset();
   usePlacementStore.setState({ placedItems: [] });
   useSelectionStore.getState().clearSelection();
+  useBookmarkStore.setState({
+    bookmarks: [],
+    pendingNavigationId: null,
+    activeReferenceId: null,
+    transition: null,
+    tour: null,
+    nextId: 1,
+  });
 });
 
 afterEach(() => {
@@ -32,6 +42,56 @@ function renderToolbox(): void {
 }
 
 describe("VerticalToolbox undo buttons", () => {
+  it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
+    renderToolbox();
+
+    const coach = screen.getByTestId("planner-onboarding-widget");
+    expect(coach.getAttribute("data-floating-widget-id")).toBe("planner-onboarding");
+    expect(screen.getByRole("button", { name: "Move Planner start" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Planner start" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open furniture" }));
+
+    expect(await screen.findByTestId("furniture-panel")).toBeTruthy();
+    expect(screen.queryByTestId("planner-onboarding-widget")).toBeNull();
+  });
+
+  it("renders the laser diagram controls as a movable and minimizable widget", async () => {
+    renderToolbox();
+
+    fireEvent.click(screen.getByRole("button", { name: "Laser Diagram" }));
+
+    const panel = await screen.findByTestId("markup-panel");
+    expect(panel.getAttribute("data-floating-widget-id")).toBe("planner-markup-panel");
+    expect(panel.textContent).toContain("Draw notes");
+    expect(screen.getByRole("button", { name: "Move Laser diagram" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Laser diagram" })).toBeTruthy();
+  });
+
+  it("renders camera views as a movable widget and still requests bookmark navigation", async () => {
+    useBookmarkStore.setState({
+      bookmarks: [{
+        id: "bookmark-entrance",
+        name: "Entrance view",
+        kind: "custom",
+        position: [0, 1.7, 5],
+        target: [0, 1.2, 0],
+      }],
+    });
+    renderToolbox();
+
+    fireEvent.click(screen.getByRole("button", { name: "Camera Views" }));
+
+    const panel = await screen.findByTestId("camera-views-panel");
+    expect(panel.getAttribute("data-floating-widget-id")).toBe("planner-camera-views");
+    expect(screen.getByRole("button", { name: "Move Camera views" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Minimize Camera views" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Entrance view/u }));
+
+    expect(useBookmarkStore.getState().pendingNavigationId).toBe("bookmark-entrance");
+  });
+
   it("disables undo and redo while the editor history is empty", () => {
     renderToolbox();
 

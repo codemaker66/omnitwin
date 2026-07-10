@@ -7,7 +7,7 @@ import { z } from "zod";
 // basis conversion is the viewer's job (packages/web twin-basis).
 // -----------------------------------------------------------------------------
 
-export const TWIN_SCHEMA_ID = "twin/0" as const;
+export const TWIN_SCHEMA_ID = "twin/0";
 export const TWIN_FACES = ["front", "back", "left", "right", "up", "down"] as const;
 export const TWIN_LODS = [256, 1024] as const;
 /** Equirect LODs are WIDTHS (2:1 aspect): 512×256 preview, 4096×2048 base,

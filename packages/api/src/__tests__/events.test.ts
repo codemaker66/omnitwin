@@ -119,4 +119,37 @@ describe("event routes", () => {
     expect(source).not.toContain("certified safe");
     expect(source).not.toContain("fire approved");
   });
+
+  it("scopes scenario phase lookup to the event in the request path", async () => {
+    const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
+    const scenarioRoute = source.slice(
+      source.indexOf('server.post("/:id/scenarios"'),
+      source.indexOf('server.post("/:id/layout-variants"'),
+    );
+    expect(scenarioRoute).toContain("eq(eventPhases.id, parsed.data.phaseId)");
+    expect(scenarioRoute).toContain("eq(eventPhases.eventId, eventRow.id)");
+    expect(scenarioRoute).toContain("EVENT_PHASE_MISMATCH");
+  });
+
+  it("rejects cross-venue configuration links before writing an event variant", async () => {
+    const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
+    const variantRoute = source.slice(source.indexOf('server.post("/:id/layout-variants"'));
+    expect(variantRoute).toContain("config.venueId !== eventRow.venueId");
+    expect(variantRoute).toContain('code: "CONFIGURATION_VENUE_MISMATCH"');
+    expect(variantRoute.indexOf("config.venueId !== eventRow.venueId"))
+      .toBeLessThan(variantRoute.indexOf("tx.insert(layoutVariants)"));
+  });
+
+  it("pins event/phase ownership at the database boundary", async () => {
+    const [schema, migration] = await Promise.all([
+      readFile(resolve("src/db/schema.ts"), "utf-8"),
+      readFile(resolve("drizzle/0045_event_scenario_phase_scope.sql"), "utf-8"),
+    ]);
+    expect(schema).toContain("event_phases_event_id_id_unique");
+    expect(schema).toContain("event_scenarios_event_phase_fk");
+    expect(migration).toContain('UNIQUE ("event_id", "id")');
+    expect(migration).toContain('FOREIGN KEY ("event_id", "phase_id")');
+    expect(migration).toContain('REFERENCES "event_phases" ("event_id", "id")');
+    expect(migration).toContain('ON DELETE SET NULL ("phase_id")');
+  });
 });

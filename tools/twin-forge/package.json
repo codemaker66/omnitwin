@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "forge": "tsx src/cli.ts"
   },

@@ -15,6 +15,8 @@ interface ClientSearchViewProps {
 const cardStyle: React.CSSProperties = {
   background: "#fff", borderRadius: 8, padding: 12, border: "1px solid #e5e7eb",
   cursor: "pointer", transition: "box-shadow 0.15s", fontSize: 13,
+  width: "100%", boxSizing: "border-box", textAlign: "left",
+  color: "inherit", fontFamily: "inherit",
 };
 
 export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSearchViewProps): React.ReactElement {
@@ -81,13 +83,13 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Registered Users</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {results.users.map((u) => (
-              <div key={u.id} style={cardStyle} onClick={() => { onViewProfile(u.id); }}>
+              <button key={u.id} type="button" style={cardStyle} onClick={() => { onViewProfile(u.id); }}>
                 <div style={{ fontWeight: 600 }}>{u.displayName ?? u.email}</div>
                 {u.organizationName !== null && <div style={{ color: "#666" }}>{u.organizationName}</div>}
                 <div style={{ color: "#999", marginTop: 4 }}>
                   {u.email} · {String(u.configurationCount)} configs · {String(u.enquiryCount)} enquiries
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -98,13 +100,13 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Guest Leads</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {results.guestLeads.map((l) => (
-              <div key={l.id} style={cardStyle} onClick={() => { onViewLeadProfile(l.id); }}>
+              <button key={l.id} type="button" style={cardStyle} onClick={() => { onViewLeadProfile(l.id); }}>
                 <div style={{ fontWeight: 600 }}>{l.name ?? l.email}</div>
                 <div style={{ color: "#999", marginTop: 4 }}>
                   {l.email} · {String(l.enquiryCount)} enquiries
                   {l.convertedToUserId !== null && <span style={{ marginLeft: 8, color: "#22c55e" }}>Converted</span>}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import { GuestEnquirySchema } from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -10,27 +10,7 @@ import { newEnquiryNotification } from "../services/email-templates.js";
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-const GuestEnquiryBody = z
-  .object({
-    // Exactly one anchor: a public-preview config (planner path) OR a venue
-    // slug (twin walkthrough path). The refine below enforces the xor.
-    configurationId: z.string().uuid().optional(),
-    venueSlug: z.string().trim().min(1).max(100).optional(),
-    email: z.string().trim().email().max(255),
-    phone: z.string().trim().max(30).optional(),
-    name: z.string().trim().max(200).optional(),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    eventType: z.string().trim().max(100).optional(),
-    // Bounded to keep it within the 32-bit `estimated_guests` column (matches
-    // @omnitwin/types MAX_GUEST_COUNT) — an unbounded value passed Zod and then
-    // overflowed the column on insert (2026-07 security review, Low).
-    guestCount: z.number().int().nonnegative().max(10000).optional(),
-    message: z.string().max(2000).optional(),
-  })
-  .refine(
-    (v) => (v.configurationId === undefined) !== (v.venueSlug === undefined),
-    { message: "Provide exactly one of configurationId or venueSlug", path: ["configurationId"] },
-  );
+const GuestEnquiryBody = GuestEnquirySchema;
 
 /** Marks a venue-wide twin enquiry so the events team can re-scope the space
  *  (a twin enquiry has no config and is anchored to the venue's flagship). */

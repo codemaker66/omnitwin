@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+import type { ClerkUserUpdate, ClerkWebhookPersistence } from "../routes/webhooks.js";
 
 // ---------------------------------------------------------------------------
 // Webhook route tests — punch list #30 (missing route tests)
@@ -60,6 +61,78 @@ describe("POST /webhooks/clerk", () => {
     // May get 200 (processed), 500 (mock DB), or other server state
     // depending on test ordering, but never 400 (malformed body).
     expect(res.statusCode).not.toBe(400);
+  });
+});
+
+describe("Clerk webhook runtime contract", () => {
+  it("rejects a malformed supported event instead of trusting a type assertion", async () => {
+    const { parseClerkWebhookPayload } = await import("../routes/webhooks.js");
+    expect(parseClerkWebhookPayload({
+      type: "user.updated",
+      data: { id: "clerk_user_123", email_addresses: "not-an-array" },
+    }).kind).toBe("invalid");
+  });
+
+  it("accepts Clerk's minimal deleted-user payload", async () => {
+    const { parseClerkWebhookPayload } = await import("../routes/webhooks.js");
+    expect(parseClerkWebhookPayload({
+      type: "user.deleted",
+      data: { id: "clerk_user_123", object: "user", deleted: true },
+    })).toMatchObject({ kind: "supported" });
+  });
+
+  it("processes repeated user.updated delivery idempotently", async () => {
+    const { parseClerkWebhookPayload, processClerkWebhookEvent } = await import("../routes/webhooks.js");
+    const parsed = parseClerkWebhookPayload({
+      type: "user.updated",
+      data: {
+        id: "clerk_user_123",
+        email_addresses: [{
+          id: "email_1",
+          email_address: "person@example.com",
+          verification: { status: "verified" },
+        }],
+        primary_email_address_id: "email_1",
+        first_name: "Ada",
+        last_name: "Lovelace",
+        phone_numbers: [{ phone_number: "+44 7700 900000" }],
+        public_metadata: {},
+        username: "ada-lovelace",
+      },
+    });
+    expect(parsed.kind).toBe("supported");
+    if (parsed.kind !== "supported") return;
+
+    const applied: Record<string, unknown> = {};
+    const persistence = {
+      resolveCreatedUser: (): Promise<{ readonly id: string } | null> => Promise.resolve(null),
+      updateUserById: (): Promise<void> => Promise.resolve(),
+      updateUserByClerkId: (_clerkId: string, values: ClerkUserUpdate): Promise<void> => {
+        Object.assign(applied, values);
+        return Promise.resolve();
+      },
+      unlinkUser: (): Promise<void> => Promise.resolve(),
+    } satisfies ClerkWebhookPersistence;
+    const now = new Date("2026-07-10T00:00:00.000Z");
+
+    await processClerkWebhookEvent(parsed.event, persistence, now);
+    const first = { ...applied };
+    await processClerkWebhookEvent(parsed.event, persistence, now);
+    expect(applied).toEqual(first);
+    expect(applied).toMatchObject({
+      email: "person@example.com",
+      name: "Ada Lovelace",
+      username: "ada-lovelace",
+    });
+  });
+
+  it("keeps processing failures retryable at the HTTP boundary", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/routes/webhooks.ts"), "utf-8");
+    expect(source).toContain("status(503)");
+    expect(source).toContain("WEBHOOK_PROCESSING_FAILED");
+    expect(source).not.toContain("Return 200 to avoid Clerk retries");
   });
 });
 

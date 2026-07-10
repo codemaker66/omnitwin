@@ -8,6 +8,7 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLightingRigStore } from "../../../stores/lighting-rig-store.js";
 import { buildOpsSetupPlan, formatSetupDuration } from "../../../lib/cockpit-ops-model.js";
 import { compileOpsHandoffPack } from "../../../api/ops-handoff.js";
+import { ApiError } from "../../../api/client.js";
 
 // ---------------------------------------------------------------------------
 // OpsLensPanel — run-of-show setup planning (Epic 0, fifth real lens panel).
@@ -23,6 +24,20 @@ import { compileOpsHandoffPack } from "../../../api/ops-handoff.js";
 // ---------------------------------------------------------------------------
 
 type OpsPhase = "idle" | "compiling" | "error";
+
+const ACTIONABLE_OPS_ERROR_CODES = new Set([
+  "APPROVED_SNAPSHOT_REQUIRED",
+  "BLOCKING_REVIEW_GATE",
+  "EVENT_CONFIGURATION_BINDING_REQUIRED",
+  "SOURCE_EVIDENCE_INVALID",
+]);
+
+function opsCompilationErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && ACTIONABLE_OPS_ERROR_CODES.has(error.code)) {
+    return error.message;
+  }
+  return "Couldn't compile the handoff pack. Check the connection and try again, or use Ops in your dashboard.";
+}
 
 export function OpsLensPanel(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
@@ -51,8 +66,8 @@ export function OpsLensPanel(): ReactElement {
     setError(null);
     compileOpsHandoffPack({ configId })
       .then((bundle) => { setPack(bundle); setPhase("idle"); })
-      .catch(() => {
-        setError("Couldn't compile the handoff pack. Check the connection and try again, or use Ops in your dashboard.");
+      .catch((error: unknown) => {
+        setError(opsCompilationErrorMessage(error));
         setPhase("error");
       });
   };

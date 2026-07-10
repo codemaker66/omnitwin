@@ -1,254 +1,284 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getCatalogueItem } from "../lib/catalogue.js";
 import { useCatalogueStore } from "../stores/catalogue-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
+import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "./shared/FloatingWidgetFrame.js";
 
 // ---------------------------------------------------------------------------
-// PlacementHint — contextual shortcut bar + invalid placement feedback
+// PlacementHint - contextual placement coach + invalid placement feedback.
+//
+// It deliberately reuses the shared floating-widget frame so guidance can be
+// moved, minimized, reset, and persisted like the other planner overlays.
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "omni-placement-hint-dismissed";
+const REASON_DISPLAY_MS = 2_200;
+
+const DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
+  type: "anchor",
+  anchor: "bottom-left",
+  offsetX: 204,
+  offsetY: 276,
+};
+
+const AVOID_SELECTORS = [
+  ".planner-status-header",
+  ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
+  "[data-floating-widget-id='planner-spatial-hud']",
+  "[data-floating-widget-id='cockpit-minimap']",
+  ".planner-command-deck",
+  ".planner-section-slider-dock",
+  "[data-testid='truth-mode-indicator']",
+  "[data-testid='truth-mode-popover']",
+  "[data-testid='cockpit-bottom']",
+] as const;
 
 const GOLD = "#c9a84c";
-const AMBER = "#f59e0b";
+const CYAN = "#62d7df";
+const AMBER = "#f0a33a";
 
-// Inject animation keyframes once
-const STYLE_ID = "omni-placement-hint";
-if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === null) {
-  const s = document.createElement("style");
-  s.id = STYLE_ID;
-  s.textContent = `
-    @keyframes omni-hint-in {
-      0%   { opacity: 0; transform: translateX(-50%) translateY(12px); filter: blur(6px); }
-      100% { opacity: 1; transform: translateX(-50%) translateY(0); filter: blur(0); }
-    }
-    @keyframes omni-hint-out {
-      0%   { opacity: 1; transform: translateX(-50%) translateY(0); filter: blur(0); }
-      100% { opacity: 0; transform: translateX(-50%) translateY(8px); filter: blur(4px); }
-    }
-    @keyframes omni-hint-shake {
-      0%, 100% { transform: translateX(0); }
-      20%  { transform: translateX(-3px); }
-      40%  { transform: translateX(3px); }
-      60%  { transform: translateX(-2px); }
-      80%  { transform: translateX(2px); }
-    }
-  `;
-  document.head.appendChild(s);
+function readDismissedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
-const barStyle: React.CSSProperties = {
-  position: "fixed",
-  bottom: 32,
-  left: "50%",
-  transform: "translateX(-50%)",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: 6,
-  zIndex: 50,
-  pointerEvents: "auto",
-  userSelect: "none",
+function writeDismissedPreference(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, "1");
+  } catch {
+    // Storage is a convenience. The in-session state still dismisses it.
+  }
+}
+
+const coachBodyStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 10,
+  minWidth: 300,
+  maxWidth: 360,
+  padding: "12px 14px 14px",
+  fontFamily: "\"Inter\", system-ui, sans-serif",
 };
 
-const hintPillStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 16,
-  padding: "10px 22px",
-  background: "linear-gradient(145deg, rgba(16,16,16,0.95), rgba(22,22,22,0.95))",
-  backdropFilter: "blur(16px)",
-  WebkitBackdropFilter: "blur(16px)",
-  border: "1px solid rgba(201,168,76,0.15)",
-  borderRadius: 14,
-  boxShadow: "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(201,168,76,0.08)",
-  fontFamily: "'Inter', system-ui, sans-serif",
-  fontSize: 13,
-  fontWeight: 500,
-  color: "rgba(255,255,255,0.7)",
-  whiteSpace: "nowrap" as const,
+const statusStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  minWidth: 0,
 };
 
-const kbdStyle: React.CSSProperties = {
-  display: "inline-block",
-  padding: "2px 7px",
-  borderRadius: 4,
-  background: "rgba(201,168,76,0.12)",
-  border: "1px solid rgba(201,168,76,0.2)",
+const eyebrowStyle: React.CSSProperties = {
   color: GOLD,
-  fontSize: 11,
-  fontWeight: 700,
-  fontFamily: "'Inter', system-ui, sans-serif",
-  lineHeight: 1.4,
-};
-
-const dotStyle: React.CSSProperties = {
-  color: "rgba(255,255,255,0.2)",
   fontSize: 10,
+  fontWeight: 820,
+  letterSpacing: "0.14em",
+  lineHeight: 1,
+  textTransform: "uppercase",
 };
 
-const dismissBtnStyle: React.CSSProperties = {
-  marginLeft: 6,
-  padding: "7px 14px",
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.08)",
-  borderRadius: 10,
-  color: "rgba(255,255,255,0.3)",
-  fontSize: 11,
-  fontWeight: 500,
-  fontFamily: "'Inter', system-ui, sans-serif",
-  cursor: "pointer",
-  transition: "all 0.2s ease",
-  whiteSpace: "nowrap" as const,
-  letterSpacing: 0.2,
+const titleStyle: React.CSSProperties = {
+  overflow: "hidden",
+  color: "#fff7e8",
+  fontFamily: "Georgia, \"Times New Roman\", serif",
+  fontSize: 19,
+  fontWeight: 650,
+  letterSpacing: 0,
+  lineHeight: 1.06,
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
-const reasonPillStyle: React.CSSProperties = {
-  padding: "6px 16px",
-  borderRadius: 10,
-  background: "rgba(245,158,11,0.1)",
-  border: "1px solid rgba(245,158,11,0.25)",
-  fontFamily: "'Inter', system-ui, sans-serif",
+const detailStyle: React.CSSProperties = {
+  color: "rgba(246, 239, 227, 0.68)",
   fontSize: 12,
-  fontWeight: 600,
-  color: AMBER,
-  whiteSpace: "nowrap" as const,
-  transition: "opacity 0.2s ease",
+  fontWeight: 650,
+  letterSpacing: 0,
+  lineHeight: 1.35,
+};
+
+const invalidReasonStyle: React.CSSProperties = {
+  border: `1px solid rgba(240, 163, 58, 0.35)`,
+  borderRadius: 8,
+  background: "rgba(240, 163, 58, 0.1)",
+  color: "#ffd49a",
+  fontSize: 12,
+  fontWeight: 760,
+  letterSpacing: 0,
+  lineHeight: 1.25,
+  padding: "8px 10px",
+};
+
+const shortcutGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 7,
+};
+
+function shortcutStyle(accent: string): React.CSSProperties {
+  return {
+    display: "grid",
+    gap: 4,
+    minWidth: 0,
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: 8,
+    background: "rgba(255, 255, 255, 0.045)",
+    padding: "8px 8px 9px",
+    color: "rgba(246, 239, 227, 0.72)",
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: 1.15,
+    textAlign: "center",
+    boxShadow: `inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 1px ${accent}12`,
+  };
+}
+
+function keycapStyle(accent: string): React.CSSProperties {
+  return {
+    justifySelf: "center",
+    minWidth: 30,
+    border: `1px solid ${accent}55`,
+    borderRadius: 5,
+    background: `${accent}1f`,
+    color: accent,
+    fontSize: 11,
+    fontWeight: 840,
+    lineHeight: "19px",
+    padding: "0 7px",
+  };
+}
+
+const dismissButtonStyle: React.CSSProperties = {
+  justifySelf: "start",
+  minHeight: 30,
+  border: "1px solid rgba(255, 255, 255, 0.1)",
+  borderRadius: 7,
+  background: "rgba(255, 255, 255, 0.045)",
+  color: "rgba(246, 239, 227, 0.62)",
+  cursor: "pointer",
+  font: "760 11px/1 \"Inter\", system-ui, sans-serif",
+  letterSpacing: 0,
+  padding: "0 10px",
 };
 
 export function PlacementHint(): React.ReactElement | null {
-  const selectedItemId = useCatalogueStore((s) => s.selectedItemId);
-  const ghostInvalidReason = usePlacementStore((s) => s.ghostInvalidReason);
+  const selectedItemId = useCatalogueStore((state) => state.selectedItemId);
+  const ghostInvalidReason = usePlacementStore((state) => state.ghostInvalidReason);
+  const snapEnabled = usePlacementStore((state) => state.snapEnabled);
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const isTouch = useIsCoarsePointer();
   const isNarrow = useIsNarrowViewport();
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [exiting, setExiting] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [dismissed, setDismissed] = useState(readDismissedPreference);
   const [shownReason, setShownReason] = useState<string | null>(null);
   const reasonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shakeKeyRef = useRef(0);
+
+  const selectedItem = useMemo(
+    () => (selectedItemId === null ? undefined : getCatalogueItem(selectedItemId)),
+    [selectedItemId],
+  );
 
   const isActive = selectedItemId !== null;
-  const showHints = isActive && !dismissed;
   const suppressedForViewport = isTouch || isNarrow;
 
-  // Show reason when it appears, auto-clear after 2s
   useEffect(() => {
-    if (suppressedForViewport) {
-      if (reasonTimerRef.current !== null) clearTimeout(reasonTimerRef.current);
+    if (reasonTimerRef.current !== null) {
+      clearTimeout(reasonTimerRef.current);
+      reasonTimerRef.current = null;
+    }
+
+    if (suppressedForViewport || !isActive || ghostInvalidReason === null) {
       setShownReason(null);
       return undefined;
     }
-    if (ghostInvalidReason !== null && isActive) {
-      setShownReason(ghostInvalidReason);
-      shakeKeyRef.current += 1;
-      if (reasonTimerRef.current !== null) clearTimeout(reasonTimerRef.current);
-      reasonTimerRef.current = setTimeout(() => { setShownReason(null); }, 2000);
-    } else {
+
+    setShownReason(ghostInvalidReason);
+    reasonTimerRef.current = setTimeout(() => {
       setShownReason(null);
-    }
-    return () => { if (reasonTimerRef.current !== null) clearTimeout(reasonTimerRef.current); };
+      reasonTimerRef.current = null;
+    }, REASON_DISPLAY_MS);
+
+    return () => {
+      if (reasonTimerRef.current !== null) {
+        clearTimeout(reasonTimerRef.current);
+        reasonTimerRef.current = null;
+      }
+    };
   }, [ghostInvalidReason, isActive, suppressedForViewport]);
 
-  // Mount / unmount with exit animation
-  useEffect(() => {
-    if (suppressedForViewport) {
-      setExiting(false);
-      setMounted(false);
-      return undefined;
-    }
-    if (isActive) {
-      setExiting(false);
-      setMounted(true);
-    } else if (mounted) {
-      setExiting(true);
-      const timer = setTimeout(() => { setMounted(false); setExiting(false); }, 250);
-      return () => { clearTimeout(timer); };
-    }
-    return undefined;
-  }, [isActive, mounted, suppressedForViewport]);
+  if (suppressedForViewport || !isActive) return null;
 
-  if (!mounted) return null;
-
-  if (suppressedForViewport) return null;
+  const showShortcutCoach = !dismissed;
+  if (!showShortcutCoach && shownReason === null) return null;
 
   const handleDismiss = (): void => {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // Storage unavailable — still dismiss for this session
-    }
+    writeDismissedPreference();
     setDismissed(true);
   };
 
+  const itemName = selectedItem?.name ?? "selected item";
+  const snapCopy = snapEnabled ? "Grid snap is on" : "Free placement is on";
+
   return (
-    <div
-      data-testid="placement-hint"
-      style={{
-        ...barStyle,
-        animation: exiting
-          ? "omni-hint-out 0.25s ease forwards"
-          : "omni-hint-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-      }}
+    <FloatingWidgetFrame
+      id="placement-coach"
+      title="Placement coach"
+      compactLabel="Place"
+      className="placement-coach-widget"
+      bodyClassName="placement-coach-widget__body"
+      defaultPlacement={DEFAULT_PLACEMENT}
+      avoidSelectors={AVOID_SELECTORS}
+      avoidPaddingPx={14}
+      zIndex={50}
+      autoCompact={cameraInteractionActive}
     >
-      {/* Invalid placement reason */}
-      {shownReason !== null && (
-        <div
-          key={shakeKeyRef.current}
-          style={{
-            ...reasonPillStyle,
-            animation: "omni-hint-shake 0.4s ease",
-          }}
-        >
-          {shownReason}
-        </div>
-      )}
-
-      {/* Key hints row */}
-      {showHints && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-start",
-          gap: 0,
-          width: "auto",
-        }}>
-          <div style={{
-            ...hintPillStyle,
-          }}>
-            <span><span style={kbdStyle}>Click</span> Place</span>
-            <span style={dotStyle}>&bull;</span>
-            <span><span style={kbdStyle}>Q</span> <span style={kbdStyle}>E</span> Rotate</span>
-            <span style={dotStyle}>&bull;</span>
-            <span><span style={kbdStyle}>Esc</span> Cancel</span>
+      <div data-testid="placement-hint" style={coachBodyStyle}>
+        <div style={statusStyle}>
+          <div style={eyebrowStyle}>Placing now</div>
+          <div style={titleStyle}>{itemName}</div>
+          <div style={detailStyle}>
+            Click a valid floor point. {snapCopy}; use the Snap button when you need freehand placement.
           </div>
-
-          <button
-            type="button"
-            aria-label="Don't show placement tip again"
-            style={dismissBtnStyle}
-            onClick={handleDismiss}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = "rgba(255,255,255,0.6)";
-              e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
-              e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "rgba(255,255,255,0.3)";
-              e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
-              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-            }}
-          >
-            Don't show again
-          </button>
         </div>
-      )}
-    </div>
+
+        {shownReason !== null && (
+          <div role="status" data-testid="placement-invalid-reason" style={invalidReasonStyle}>
+            {shownReason}
+          </div>
+        )}
+
+        {showShortcutCoach && (
+          <>
+            <div style={shortcutGridStyle} aria-label="Placement shortcuts">
+              <div style={shortcutStyle(CYAN)}>
+                <span style={keycapStyle(CYAN)}>Click</span>
+                Place
+              </div>
+              <div style={shortcutStyle(GOLD)}>
+                <span style={keycapStyle(GOLD)}>Q / E</span>
+                Rotate
+              </div>
+              <div style={shortcutStyle(AMBER)}>
+                <span style={keycapStyle(AMBER)}>Esc</span>
+                Cancel
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Don't show placement tip again"
+              style={dismissButtonStyle}
+              onClick={handleDismiss}
+            >
+              Don't show again
+            </button>
+          </>
+        )}
+      </div>
+    </FloatingWidgetFrame>
   );
 }

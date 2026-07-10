@@ -98,7 +98,7 @@ describe("PublicRoomRuntimeCanvas", () => {
     const canvas = screen.getByTestId("room-showcase-runtime-canvas");
     expect(canvas.className).toBe("room-showcase-runtime-canvas");
     expect(canvas.getAttribute("data-frameloop")).toBe("demand");
-    expect(canvas.getAttribute("data-dpr")).toBe("[1,1.5]");
+    expect(canvas.getAttribute("data-dpr")).toBe("[1,1]");
     expect(canvas.getAttribute("data-power-preference")).toBe("high-performance");
     expect(canvas.getAttribute("data-alpha")).toBe("true");
     expect(canvas.getAttribute("data-performance-min")).toBe("0.7");

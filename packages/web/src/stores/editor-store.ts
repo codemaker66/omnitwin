@@ -9,6 +9,7 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import { generatePlacedId } from "../lib/placement.js";
 import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
@@ -82,9 +83,12 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
   const editorObject: EditorObject = {
     id: p.id,
     assetDefinitionId: p.assetDefinitionId,
-    positionX: parseFloat(p.positionX),
+    // Wire/DB is the real-metre source of truth; the editor store and R3F
+    // scene work in render space (× RENDER_SCALE). Convert X/Z on the way in;
+    // height (Y) is never render-scaled.
+    positionX: toRenderSpace(parseFloat(p.positionX)),
     positionY: parseFloat(p.positionY),
-    positionZ: parseFloat(p.positionZ),
+    positionZ: toRenderSpace(parseFloat(p.positionZ)),
     rotationX: parseFloat(p.rotationX),
     rotationY: parseFloat(p.rotationY),
     rotationZ: parseFloat(p.rotationZ),
@@ -112,9 +116,12 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
   return {
     id: o.id.startsWith("local-") ? undefined : o.id,
     assetDefinitionId: catalogueItem?.id ?? o.assetDefinitionId,
-    positionX: o.positionX,
+    // Store/scene is render space; the DB is the real-metre source of truth
+    // (space polygon, widthM, and every server consumer are real metres).
+    // Convert X/Z on the way out; height (Y) is never render-scaled.
+    positionX: toRealWorld(o.positionX),
     positionY: o.positionY,
-    positionZ: o.positionZ,
+    positionZ: toRealWorld(o.positionZ),
     rotationX: o.rotationX,
     rotationY: o.rotationY,
     rotationZ: o.rotationZ,

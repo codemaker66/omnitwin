@@ -66,6 +66,14 @@ describe("CockpitSceneOverlays", () => {
     expect(screen.getByText(/Heritage & wall buffer/)).toBeTruthy();
   });
 
+  it("pauses replay-heavy spatial overlays while the planner camera is moving", () => {
+    useCockpitStore.getState().setMode("flow");
+    useCockpitStore.getState().setCameraInteractionActive(true);
+    render(<CockpitSceneOverlays />);
+    expect(screen.getByText(/Heritage & wall buffer/)).toBeTruthy();
+    expect(screen.queryByText(/Simulated ·/)).toBeNull();
+  });
+
   it("shows only the labelled lighting placeholder in the Lighting lens", () => {
     useCockpitStore.getState().setMode("lighting");
     render(<CockpitSceneOverlays />);

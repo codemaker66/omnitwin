@@ -1,97 +1,161 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { TwinTierSchema } from "@omnitwin/types";
-import { buildManifest, type RawPoses } from "./build-manifest.js";
-import { convertEquirectTiles } from "./equirect-tiles.js";
-import { convertTiles } from "./tiles.js";
-import { hashBundle } from "./hashes.js";
-import { optimizeMesh } from "./mesh.js";
+import { z } from "zod";
+import {
+  forgeBundle,
+  refreshBundleManifest,
+  refreshBundleMesh,
+  type ForgeBundleResult,
+} from "./forge.js";
 
-/** Program spec §6 Phase 2: optimized dollhouse GLB must stay ≤ 8 MB. */
-const MESH_BUDGET_BYTES = 8 * 1024 * 1024;
+const CLI_OPTIONS = {
+  cubemaps: { type: "string" },
+  equirects: { type: "string" },
+  poses: { type: "string" },
+  out: { type: "string" },
+  venue: { type: "string" },
+  name: { type: "string" },
+  tier: { type: "string", default: "ops-grade-2cm" },
+  overrides: { type: "string" },
+  mesh: { type: "string" },
+  "refresh-manifest": { type: "boolean", default: false },
+  "refresh-mesh": { type: "boolean", default: false },
+} as const;
 
-const { values } = parseArgs({
-  options: {
-    cubemaps: { type: "string" },
-    // Equirect imagery mode: directory of scan_NNN.jpg world-frame panos
-    // (extract_equirect.py). When present it REPLACES --cubemaps.
-    equirects: { type: "string" },
-    poses: { type: "string" },
-    out: { type: "string" },
-    venue: { type: "string" },
-    name: { type: "string" },
-    tier: { type: "string", default: "ops-grade-2cm" },
-    overrides: { type: "string" },
-    mesh: { type: "string" },
-  },
-});
+const CanonicalPoseIndexSchema = z.string().regex(/^(0|[1-9]\d*)$/);
+const FiniteNumberSchema = z.number().finite();
+const RawPosesSchema = z
+  .record(
+    CanonicalPoseIndexSchema,
+    z
+      .object({
+        rotation: z.tuple([
+          FiniteNumberSchema,
+          FiniteNumberSchema,
+          FiniteNumberSchema,
+          FiniteNumberSchema,
+        ]),
+        translation: z.tuple([FiniteNumberSchema, FiniteNumberSchema, FiniteNumberSchema]),
+      })
+      .strict(),
+  )
+  .refine((poses) => Object.keys(poses).length > 0, "poses file must contain at least one scan");
 
-function req(name: string, v: string | undefined): string {
-  if (v === undefined) throw new Error(`--${name} is required`);
-  return v;
+const ScanIdSchema = z.string().regex(/^scan_\d{3}$/);
+const OverridePairSchema = z
+  .tuple([ScanIdSchema, ScanIdSchema])
+  .refine(([a, b]) => a !== b, "navigation overrides cannot reference the same scan twice");
+const OverridesSchema = z
+  .object({
+    add: z.array(OverridePairSchema).optional(),
+    remove: z.array(OverridePairSchema).optional(),
+  })
+  .strict();
+
+function req(name: string, value: string | undefined): string {
+  if (value === undefined || value.trim() === "") throw new Error(`--${name} is required`);
+  return value;
 }
 
-const posesRaw = JSON.parse(await readFile(req("poses", values.poses), "utf8")) as RawPoses;
-const overrides = values.overrides === undefined
-  ? undefined
-  : (JSON.parse(await readFile(values.overrides, "utf8")) as {
-      add?: [string, string][];
-      remove?: [string, string][];
-    });
+async function readJson(path: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch (error: unknown) {
+    throw new Error(`cannot read JSON input ${path}`, { cause: error });
+  }
+}
 
-// Validate the raw CLI string against the schema's own enum so a typo fails
-// with a purposeful message instead of a zod stack from deep inside parse.
-const tierResult = TwinTierSchema.safeParse(values.tier);
-if (!tierResult.success) {
+function parseCliArgs(args: readonly string[]) {
+  return parseArgs({
+    args,
+    options: CLI_OPTIONS,
+    strict: true,
+    allowPositionals: false,
+  }).values;
+}
+
+function parseTier(value: string | undefined) {
+  const result = TwinTierSchema.safeParse(value);
+  if (result.success) return result.data;
   throw new Error(
-    `--tier must be one of ${TwinTierSchema.options.join(", ")} (got "${String(values.tier)}")`,
+    `--tier must be one of ${TwinTierSchema.options.join(", ")} (got "${String(value)}")`,
   );
 }
 
-const out = req("out", values.out);
-
-// Mesh step runs before the manifest so the descriptor can ride along.
-const meshResult = values.mesh === undefined ? undefined : await optimizeMesh(values.mesh, out);
-if (meshResult !== undefined) {
-  process.stdout.write(`mesh: ${String(meshResult.bytes)} bytes from ${meshResult.sourceName}\n`);
-  if (meshResult.bytes > MESH_BUDGET_BYTES) {
-    process.stdout.write("WARN mesh exceeds 8 MB budget\n");
-  }
-}
-
-const imagery = values.equirects === undefined ? ("cube-faces" as const) : ("equirect" as const);
-
-const manifest = buildManifest(posesRaw, {
-  venueSlug: req("venue", values.venue),
-  name: req("name", values.name),
-  tier: tierResult.data,
-  generatedAt: new Date().toISOString(),
-  nav: { overrides },
-  imagery,
-  ...(meshResult === undefined
-    ? {}
-    : {
-        mesh: {
-          path: "mesh/dollhouse.glb" as const,
-          bytes: meshResult.bytes,
-          sourceName: meshResult.sourceName,
-        },
-      }),
-});
-const nodeIds = manifest.nodes.map((n) => n.id);
-const onTileProgress = (done: number, total: number): void => {
+function reportProgress(done: number, total: number): void {
   if (done % 60 === 0 || done === total) {
     process.stdout.write(`tiles ${String(done)}/${String(total)}\n`);
   }
-};
-const report =
-  values.equirects === undefined
-    ? await convertTiles(req("cubemaps", values.cubemaps), out, nodeIds, onTileProgress)
-    : await convertEquirectTiles(values.equirects, out, nodeIds, onTileProgress);
+}
 
-manifest.contentHashes = await hashBundle(out);
-await writeFile(`${out}/manifest.json`, JSON.stringify(manifest, null, 2));
-process.stdout.write(
-  `forge complete: ${String(manifest.nodes.length)} nodes, ${String(manifest.edges.length)} edges, ` +
-  `${String(report.written)} tiles written, ${String(report.skipped)} skipped, ${String(report.missing.length)} missing\n`,
-);
+function writeSummary(result: ForgeBundleResult): void {
+  if (result.manifest.mesh !== undefined) {
+    process.stdout.write(
+      `mesh: ${String(result.manifest.mesh.bytes)} bytes from ${result.manifest.mesh.sourceName}\n`,
+    );
+  }
+  process.stdout.write(
+    `forge complete: ${String(result.manifest.nodes.length)} nodes, ` +
+      `${String(result.manifest.edges.length)} edges, ${String(result.report.written)} tiles written, ` +
+      `${String(result.report.skipped)} skipped\n`,
+  );
+}
+
+async function main(args: readonly string[]): Promise<void> {
+  const values = parseCliArgs(args);
+  const posesPath = req("poses", values.poses);
+  const rawPoses = RawPosesSchema.parse(await readJson(posesPath));
+  const overrides =
+    values.overrides === undefined
+      ? undefined
+      : OverridesSchema.parse(await readJson(values.overrides));
+  if (values["refresh-manifest"] && values["refresh-mesh"]) {
+    throw new Error("--refresh-manifest and --refresh-mesh are mutually exclusive");
+  }
+  if (values["refresh-mesh"]) {
+    const result = await refreshBundleMesh({
+      rawPoses,
+      outDir: req("out", values.out),
+      meshPath: req("mesh", values.mesh),
+      ...(overrides === undefined ? {} : { overrides }),
+    });
+    writeSummary(result);
+    return;
+  }
+  if (values["refresh-manifest"]) {
+    const result = await refreshBundleManifest({
+      rawPoses,
+      outDir: req("out", values.out),
+      ...(overrides === undefined ? {} : { overrides }),
+    });
+    writeSummary(result);
+    return;
+  }
+
+  const result = await forgeBundle({
+    rawPoses,
+    outDir: req("out", values.out),
+    venueSlug: req("venue", values.venue),
+    name: req("name", values.name),
+    tier: parseTier(values.tier),
+    ...(values.cubemaps === undefined ? {} : { cubemapsDir: values.cubemaps }),
+    ...(values.equirects === undefined ? {} : { equirectDir: values.equirects }),
+    ...(values.mesh === undefined ? {} : { meshPath: values.mesh }),
+    ...(overrides === undefined ? {} : { overrides }),
+    protectedInputPaths: [
+      posesPath,
+      ...(values.overrides === undefined ? [] : [values.overrides]),
+    ],
+    onProgress: reportProgress,
+  });
+  writeSummary(result);
+}
+
+try {
+  await main(process.argv.slice(2));
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`forge failed: ${message}\n`);
+  process.exitCode = 1;
+}

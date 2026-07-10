@@ -1,5 +1,6 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { useClerk } from "@clerk/react";
+import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
@@ -116,6 +117,16 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             </button>
           );
         })}
+        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "")) && (
+          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/event-architect">
+            Event Architect
+          </Link>
+        )}
+        {user?.platformRole === "admin" && (
+          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/dev/capture-intake">
+            Capture Factory
+          </Link>
+        )}
         <div className="dashboard-layout-spacer" />
         <div className="dashboard-layout-account">
           {user?.email ?? ""}

@@ -9,6 +9,7 @@ vi.mock("../../../../api/ops-handoff.js", async (importOriginal) => {
 });
 
 import { OpsLensPanel } from "../OpsLensPanel.js";
+import { ApiError } from "../../../../api/client.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
@@ -115,5 +116,22 @@ describe("OpsLensPanel", () => {
 
     await waitFor(() => { expect(screen.getByTestId("ops-error")).toBeTruthy(); });
     expect(screen.queryByTestId("ops-pack-result")).toBeNull();
+  });
+
+  it("shows an actionable server review gate instead of a generic connection error", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID });
+    mocks.compileOpsHandoffPack.mockRejectedValue(new ApiError(
+      409,
+      "Ops compilation remains blocked until a separate reviewed guest-flow evidence artifact is attached",
+      "BLOCKING_REVIEW_GATE",
+    ));
+
+    render(<OpsLensPanel />);
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ops-error").textContent).toMatch(/separate reviewed guest-flow evidence artifact/i);
+    });
   });
 });

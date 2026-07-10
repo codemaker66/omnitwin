@@ -14,10 +14,13 @@
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "clean": "pnpm -r run clean",
+    "capture:factory": "pnpm --filter @omnitwin/capture-factory capture --",
     "postinstall": "node ./packages/types/node_modules/typescript/bin/tsc --project packages/types/tsconfig.build.json"
   },
   "pnpm": {
     "overrides": {
+      "@babel/core": "7.29.7",
+      "@eslint/plugin-kit": "0.3.4",
       "brace-expansion@<2": "1.1.13",
       "brace-expansion@>=4 <5.0.6": "5.0.6",
       "esbuild": "0.25.0",

@@ -40,11 +40,13 @@ const MINIMAP_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
   type: "anchor",
   anchor: "top-left",
   offsetX: 84,
-  offsetY: 96,
+  offsetY: 112,
 };
 const MINIMAP_AVOID_SELECTORS = [
   ".planner-status-header",
   ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
   ".planner-command-deck",
   ".planner-section-slider-dock",
   "[data-testid='truth-mode-indicator']",
@@ -81,6 +83,7 @@ export function CockpitMinimap(): ReactElement {
   const requestFocus = useCockpitStore((state) => state.requestFocus);
   const activeMode = useCockpitStore((state) => state.activeMode);
   const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
 
   const layout = useMemo(() => minimapLayout(dimensions, MINIMAP_MAX_PX), [dimensions]);
   const layers = useMemo(
@@ -135,6 +138,7 @@ export function CockpitMinimap(): ReactElement {
       avoidSelectors={MINIMAP_AVOID_SELECTORS}
       avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
       zIndex={36}
+      autoCompact={cameraInteractionActive}
     >
       <aside className="cockpit-minimap" aria-label="Plan view minimap">
         <button

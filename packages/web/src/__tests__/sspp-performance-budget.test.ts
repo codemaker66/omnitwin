@@ -6,6 +6,40 @@ async function read(relPath: string): Promise<string> {
   return readFile(resolve(relPath), "utf-8");
 }
 
+function cssBlock(source: string, selector: string): string {
+  const selectorStart = source.indexOf(`${selector} {`);
+
+  if (selectorStart < 0) {
+    throw new Error(`Missing CSS selector: ${selector}`);
+  }
+
+  const blockStart = source.indexOf("{", selectorStart);
+
+  if (blockStart < 0) {
+    throw new Error(`Missing CSS block for selector: ${selector}`);
+  }
+
+  let depth = 0;
+
+  for (let index = blockStart; index < source.length; index += 1) {
+    const character = source[index];
+
+    if (character === "{") {
+      depth += 1;
+    }
+
+    if (character === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return source.slice(blockStart + 1, index);
+      }
+    }
+  }
+
+  throw new Error(`Unterminated CSS block for selector: ${selector}`);
+}
+
 describe("SS++ performance and visual hardening guardrails", () => {
   it("documents route, bundle, splat, planner frame, and large-layout budgets", async () => {
     const doc = await read("../../docs/operations/performance-budgets.md");
@@ -66,5 +100,49 @@ describe("SS++ performance and visual hardening guardrails", () => {
     expect(cockpitCss).toContain("-webkit-backdrop-filter: none !important");
     expect(cockpitCss).toContain("backdrop-filter: none !important");
     expect(cockpitCss).toContain("filter: none !important");
+  });
+
+  it("keeps the planner canvas hot path free of CSS compositor penalties", async () => {
+    const appCss = await read("src/App.css");
+    const stageBlock = cssBlock(appCss, ".planner-canvas-stage");
+    const stageScrimBlock = cssBlock(appCss, ".planner-canvas-stage::before");
+    const canvasBlock = cssBlock(appCss, ".planner-canvas-stage canvas");
+    const canvasHostBlock = cssBlock(appCss, ".planner-scene-canvas-host");
+
+    expect(stageBlock).toContain("touch-action: none");
+    expect(stageBlock).toContain("overscroll-behavior: contain");
+    expect(stageScrimBlock).not.toContain("mix-blend-mode");
+    expect(canvasHostBlock).toContain("width: 100%");
+    expect(canvasHostBlock).toContain("height: 100%");
+    expect(canvasBlock).not.toMatch(/(^|\s)filter\s*:/u);
+    expect(canvasBlock).toContain("touch-action: none");
+    expect(canvasBlock).toContain("overscroll-behavior: contain");
+  });
+
+  it("measures the real planner camera gesture instead of left-drag selection", async () => {
+    const frameBudgetScript = await read("scripts/frame-budget-pass.mjs");
+
+    expect(frameBudgetScript).toContain("dispatchCdpMouseDrag");
+    expect(frameBudgetScript).toContain('Input.dispatchMouseEvent');
+    expect(frameBudgetScript).toContain('"right"');
+    expect(frameBudgetScript).toContain('kind: "cdp-right-drag-camera-orbit"');
+    expect(frameBudgetScript).toContain("pickCanvasPoint");
+    expect(frameBudgetScript).toContain("elementFromPoint");
+    expect(frameBudgetScript).toContain('FRAME_BUDGET_WARMUP_INTERACTION !== "false"');
+    expect(frameBudgetScript).toContain("warmupInteraction: WARMUP_INTERACTION");
+  });
+
+  it("keeps planner performance and visual harnesses mocked for public and authenticated config routes", async () => {
+    const frameBudgetScript = await read("scripts/frame-budget-pass.mjs");
+    const visualCheckScript = await read("scripts/visual-check.mjs");
+
+    for (const script of [frameBudgetScript, visualCheckScript]) {
+      expect(script).toContain("/public/configurations/cfg-perf-grand-hall");
+      expect(script).toContain("/configurations/cfg-perf-grand-hall");
+      expect(script).toContain('/venues/${VENUE_ID}/spaces/${SPACE_ID}');
+    }
+
+    expect(visualCheckScript).toContain("/public/configurations/cfg-perf-grand-hall/objects/batch");
+    expect(visualCheckScript).toContain("/configurations/cfg-perf-grand-hall/objects/batch");
   });
 });

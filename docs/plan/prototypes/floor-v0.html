@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Venviewer · the Floor — playable concept v0</title>
+<style>
+  :root{
+    --bg0:#0B0A09; --bg1:rgba(19,17,16,.78); --bg2:#1B1917;
+    --hair:rgba(245,240,232,.10); --hair2:rgba(245,240,232,.22);
+    --t1:#F4EFE6; --t2:rgba(244,239,230,.62); --t3:rgba(244,239,230,.38);
+    --brass:#C6A15B; --sage:#8FAE8B; --amber:#C99A5B; --violet:#9D8BC9; --cyan:#6FB7C9;
+    --mono:"Berkeley Mono","SF Mono","Cascadia Code",Consolas,monospace;
+    --sans:"Söhne","Neue Haas Grotesk",Geist,Inter,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg0);color:var(--t1);font:13px/1.45 var(--sans)}
+  canvas{display:block}
+  .glass{background:var(--bg1);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--hair);border-radius:12px}
+  #topbar{position:fixed;top:14px;left:14px;right:14px;height:44px;display:flex;align-items:center;gap:14px;padding:0 14px;z-index:10}
+  #crumb{color:var(--t2);white-space:nowrap}
+  #crumb b{color:var(--t1);font-weight:500}
+  #pillwrap{flex:1;display:flex;justify-content:center}
+  #pill{width:min(420px,44vw);height:28px;border-radius:14px;background:var(--bg2);border:1px solid var(--hair2);color:var(--t1);padding:0 14px;font:12px var(--sans);outline:none;transition:border-color .15s}
+  #pill:focus{border-color:var(--brass)}
+  #pill::placeholder{color:var(--t3)}
+  .chip{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 12px;border-radius:13px;border:1px solid;background:transparent;font-size:11.5px;cursor:pointer;color:var(--amber);border-color:rgba(201,154,91,.5)}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+  #you{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--brass);color:var(--brass);display:flex;align-items:center;justify-content:center;font-size:9px}
+  #present{height:26px;padding:0 14px;border-radius:13px;border:0;background:var(--brass);color:#141210;font:600 11.5px var(--sans);cursor:pointer}
+  #answer{position:fixed;top:66px;left:50%;transform:translateX(-50%);max-width:560px;padding:8px 16px;border-radius:15px;color:var(--t2);font-size:12px;z-index:10;display:none}
+  #bands{position:fixed;left:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:2px;padding:10px;z-index:10}
+  #bands div{padding:5px 10px;border-radius:8px;color:var(--t3);font-size:11px;cursor:pointer;transition:color .2s,background .2s}
+  #bands div.on{color:var(--t1);background:rgba(198,161,91,.14)}
+  #bands span{display:block;font:10px var(--mono);color:var(--t3)}
+  #vitals{position:fixed;right:14px;bottom:96px;text-align:right;font:12px var(--mono);z-index:10;padding:12px 14px}
+  #vitals div{margin-top:5px;color:var(--t2)}
+  #vitals div:first-child{margin-top:0}
+  #gv{color:var(--brass);border-bottom:1px dotted rgba(198,161,91,.6);cursor:ew-resize;user-select:none}
+  #cl.ok{color:var(--sage)} #cl.bad{color:var(--amber)}
+  #fl{color:var(--t2)} #fl em{font-style:normal;color:var(--t3)}
+  #timeline{position:fixed;left:14px;right:14px;bottom:14px;height:64px;display:flex;align-items:center;gap:10px;padding:0 14px;z-index:10}
+  #play{width:30px;height:30px;border-radius:50%;border:1px solid var(--hair2);background:transparent;color:var(--t1);cursor:pointer;font-size:11px}
+  .ph{position:relative;height:30px;border:1px solid var(--hair2);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:11.5px;background:var(--bg2)}
+  .ph.on{border-color:var(--brass);color:var(--t1);background:rgba(198,161,91,.12)}
+  #phC{flex:3} #phD{flex:4}
+  #gap{flex:1.2;border:1px dashed rgba(201,154,91,.65);color:var(--amber);background:transparent}
+  #track{position:absolute;left:58px;right:14px;bottom:8px;height:2px}
+  #scrub{flex:0 0 auto;position:fixed;left:74px;right:22px;bottom:14px;height:64px;opacity:0;cursor:ew-resize;z-index:11;-webkit-appearance:none;appearance:none;background:transparent}
+  #playhead{position:fixed;bottom:12px;width:2px;height:68px;background:var(--brass);z-index:12;pointer-events:none}
+  #playhead::after{content:"";position:absolute;top:-6px;left:-5px;border:6px solid transparent;border-top-color:var(--brass)}
+  #flipnote{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);padding:7px 14px;font:11.5px var(--mono);color:var(--amber);z-index:10;display:none}
+  #hint{position:fixed;bottom:88px;left:14px;padding:7px 12px;color:var(--t3);font-size:11.5px;z-index:10}
+  #hint b{color:var(--t2);font-weight:500}
+  #drawer{position:fixed;top:70px;right:14px;width:300px;padding:16px;z-index:20;display:none}
+  #drawer h3{font-size:13px;font-weight:500;margin-bottom:2px}
+  #drawer .h{font:10px var(--sans);letter-spacing:1.5px;color:var(--t3);margin:12px 0 4px}
+  #drawer p{color:var(--t2);font-size:12px;margin-top:2px}
+  #drawer .sg{color:var(--sage)} #drawer .am{color:var(--amber)}
+  #endcard{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:rgba(11,10,9,.35)}
+  #endcard>div{padding:26px 34px;text-align:center}
+  #endcard h2{font-weight:500;font-size:18px;margin-bottom:8px}
+  #endcard p{color:var(--t2);font-size:13px}
+  #endcard small{display:block;margin-top:14px;color:var(--t3)}
+  #endbtn{position:fixed;top:14px;right:14px;display:none}
+  .lbl{position:fixed;transform:translate(-50%,-50%);font:10px var(--mono);color:rgba(244,239,230,.55);pointer-events:none;z-index:5}
+  #dim{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);font:11px var(--mono);color:rgba(198,161,91,.9);z-index:5;display:none}
+</style>
+</head>
+<body>
+<div id="topbar" class="glass">
+  <span id="crumb">Trades Hall / Concept Room / <b>the Floor · v0</b></span>
+  <div id="pillwrap"><input id="pill" placeholder="Ask or command…   ⌘K   (try: dinner for 140 · will 180 fit?)"></div>
+  <button class="chip" id="evchip"><span class="dot"></span>Concept · simulated data</button>
+  <div id="you">YOU</div>
+  <button id="present">Present ▸</button>
+</div>
+<div id="answer" class="glass"></div>
+<div id="bands" class="glass">
+  <div data-a="0.06">Eye<span>1</span></div>
+  <div data-a="0.38">Room<span>2</span></div>
+  <div data-a="0.66" class="on">Dollhouse<span>3</span></div>
+  <div data-a="1.0">Plan<span>4</span></div>
+</div>
+<div id="vitals" class="glass">
+  <div>Guests <span id="gv">120</span><span style="color:var(--t3)">/220</span></div>
+  <div id="cl" class="ok">Clearance ✓</div>
+  <div id="fl">Flip est <span id="flv">33m</span> <em>· assumption</em></div>
+  <div id="pr">£10,060</div>
+</div>
+<div id="timeline" class="glass">
+  <button id="play">▶</button>
+  <div class="ph" id="phC">Ceremony · rows</div>
+  <div class="ph" id="gap">Flip</div>
+  <div class="ph on" id="phD">Dinner · rounds</div>
+</div>
+<input id="scrub" type="range" min="0" max="1000" value="1000">
+<div id="playhead"></div>
+<div id="flipnote" class="glass">Flip · window 25m · est <span id="fln">33m</span> ▲ assumption</div>
+<div id="hint" class="glass"><b>Scroll</b> altitude · <b>drag</b> a table · <b>drag the Guests number</b> · <b>⌘K</b> command · <b>space</b> play</div>
+<div id="drawer" class="glass">
+  <h3>Evidence — this prototype</h3>
+  <div style="font:10px var(--mono);color:var(--t3)">floor-v0 · interaction physics only</div>
+  <div class="h">SOURCE</div>
+  <p>Procedural geometry — <span class="am">not a captured room</span>. The product loads signed room runtime packages; this file demonstrates feel.</p>
+  <div class="h">CHECKS</div>
+  <p class="sg">Table spacing heuristic — machine checked (prototype-grade)</p>
+  <p class="am">Exit routes, capacity guidance — not modeled here</p>
+  <div class="h">ASSUMPTIONS</div>
+  <p>10 seats/table · 2.2 m table pitch minimum · flip crew of 4</p>
+  <div class="h">LIMITS</div>
+  <p>No splat layer, no proxy collision, no review gates. Honest fallback aesthetic per plan 01 §13.</p>
+</div>
+<div id="endcard" ><div class="glass"><h2>Tonight on the Floor</h2><p id="delta">You seated 120 · clearance ✓ · flip est 33m</p><small>peak-end moment · click to return</small></div></div>
+<button id="endbtn" class="chip">End session ◦</button>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from "three";
+
+/* ---------- constants ---------- */
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ROOM = { w: 18, d: 12, h: 5.2 };            // x: -9..9, z: -6..6, north wall z=-6
+const ZONE = { x0: -7.4, x1: 7.4, z0: -3.2, z1: 4.6 };
+const DANCE = { x0: 3.4, x1: 7.9, z0: 1.6, z1: 5.4 };
+const SEATS = 10, PITCH_MIN = 2.2, PITCH_OK = 2.55;
+const C = {
+  bg: 0x0B0A09, floor: 0x151210, clay: 0xB9AE9C, clayDark: 0x8F8574,
+  ink: 0xF4EFE6, brass: 0xC6A15B, violet: 0x9D8BC9, sage: 0x8FAE8B, amber: 0xC99A5B
+};
+
+/* ---------- renderer / scene ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(C.bg);
+scene.fog = new THREE.Fog(C.bg, 30, 62);
+
+const hemi = new THREE.HemisphereLight(0xfff1da, 0x141210, 0.75);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffe8c4, 1.15);
+key.position.set(10, 9, 4);
+scene.add(key);
+
+/* ---------- room (atelier: clay + ink) ---------- */
+const room = new THREE.Group(); scene.add(room);
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(ROOM.w, ROOM.d),
+  new THREE.MeshLambertMaterial({ color: C.floor })
+);
+floor.rotation.x = -Math.PI / 2; room.add(floor);
+
+const grid = new THREE.GridHelper(ROOM.w, 18, C.ink, C.ink);
+grid.material.transparent = true; grid.material.opacity = 0.05;
+grid.position.y = 0.005; grid.scale.z = ROOM.d / ROOM.w; room.add(grid);
+
+const inkMat = new THREE.LineBasicMaterial({ color: C.ink, transparent: true, opacity: 0.28 });
+function inkLines(points, closed = false) {
+  const g = new THREE.BufferGeometry().setFromPoints(points);
+  const l = closed ? new THREE.LineLoop(g, inkMat) : new THREE.Line(g, inkMat);
+  room.add(l); return l;
+}
+const { w, d, h } = ROOM, X = w / 2, Z = d / 2;
+inkLines([new THREE.Vector3(-X,0,-Z), new THREE.Vector3(X,0,-Z), new THREE.Vector3(X,0,Z), new THREE.Vector3(-X,0,Z)], true);
+inkLines([new THREE.Vector3(-X,h,-Z), new THREE.Vector3(X,h,-Z), new THREE.Vector3(X,h,Z), new THREE.Vector3(-X,h,Z)], true);
+for (const [x,z] of [[-X,-Z],[X,-Z],[X,Z],[-X,Z]])
+  inkLines([new THREE.Vector3(x,0,z), new THREE.Vector3(x,h,z)]);
+/* window arches on north wall */
+for (const wx of [-5.4, 0, 5.4]) {
+  const pts = [];
+  pts.push(new THREE.Vector3(wx-1.1, 0.9, -Z));
+  pts.push(new THREE.Vector3(wx-1.1, 3.1, -Z));
+  const arc = new THREE.EllipseCurve(wx, 3.1, 1.1, 1.1, Math.PI, 0, true);
+  for (const p of arc.getPoints(20)) pts.push(new THREE.Vector3(p.x, p.y, -Z));
+  pts.push(new THREE.Vector3(wx+1.1, 0.9, -Z));
+  inkLines(pts);
+}
+/* stage platform (persists across phases) */
+const stage = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 2.4),
+  new THREE.MeshLambertMaterial({ color: C.clayDark }));
+stage.position.set(0, 0.2, -Z + 1.5); room.add(stage);
+const stageEdge = new THREE.LineSegments(new THREE.EdgesGeometry(stage.geometry),
+  new THREE.LineBasicMaterial({ color: C.ink, transparent: true, opacity: 0.35 }));
+stageEdge.position.copy(stage.position); room.add(stageEdge);
+
+/* ---------- shared geometries ---------- */
+const GEO = {
+  top:   new THREE.CylinderGeometry(0.92, 0.92, 0.06, 28),
+  base:  new THREE.CylinderGeometry(0.10, 0.28, 0.72, 12),
+  chair: new THREE.BoxGeometry(0.42, 0.5, 0.42),
+  halo:  new THREE.RingGeometry(1.28, 1.42, 40)
+};
+function makeMats(ghost) {
+  return {
+    top:   new THREE.MeshLambertMaterial({ color: ghost ? C.violet : C.clay,     transparent: true, opacity: ghost ? 0.3 : 1 }),
+    base:  new THREE.MeshLambertMaterial({ color: ghost ? C.violet : C.clayDark, transparent: true, opacity: ghost ? 0.3 : 1 }),
+    chair: new THREE.MeshLambertMaterial({ color: ghost ? C.violet : C.clayDark, transparent: true, opacity: ghost ? 0.3 : 1 })
+  };
+}
+/* ---------- tween helper ---------- */
+const tweens = [];
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+function tween(dur, fn, done) {
+  if (RM) { fn(1); done && done(); return; }
+  tweens.push({ t0: performance.now(), dur, fn, done });
+}
+function stepTweens(now) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i], k = Math.min(1, (now - tw.t0) / tw.dur);
+    tw.fn(easeOut(k));
+    if (k === 1) { tweens.splice(i, 1); tw.done && tw.done(); }
+  }
+}
+
+/* ---------- builders ---------- */
+function makeTable(x, z, seats, mats) {
+  const g = new THREE.Group();
+  const top = new THREE.Mesh(GEO.top, mats.top); top.position.y = 0.75;
+  const base = new THREE.Mesh(GEO.base, mats.base); base.position.y = 0.36;
+  g.add(top, base);
+  for (let i = 0; i < seats; i++) {
+    const a = (i / seats) * Math.PI * 2;
+    const ch = new THREE.Mesh(GEO.chair, mats.chair);
+    ch.position.set(Math.cos(a) * 1.38, 0.25, Math.sin(a) * 1.38);
+    ch.rotation.y = -a;
+    g.add(ch);
+  }
+  const halo = new THREE.Mesh(GEO.halo,
+    new THREE.MeshBasicMaterial({ color: C.sage, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+  halo.rotation.x = -Math.PI / 2; halo.position.y = 0.02; halo.name = "halo";
+  g.add(halo);
+  g.position.set(x, 0, z);
+  g.userData = { kind: "table", top };
+  return g;
+}
+function inDance(x, z, m = 1.1) {
+  return x > DANCE.x0 - m && x < DANCE.x1 + m && z > DANCE.z0 - m && z < DANCE.z1 + m;
+}
+function dinnerPositions(G) {
+  const N = Math.ceil(G / SEATS);
+  const zw = ZONE.x1 - ZONE.x0, zd = ZONE.z1 - ZONE.z0;
+  let cols = Math.max(2, Math.ceil(Math.sqrt(N * (zw / zd))));
+  for (;; cols++) {
+    const rows = Math.ceil((N * 1.35) / cols);
+    const sx = zw / cols, sz = zd / rows;
+    const pitch = Math.min(sx, sz);
+    const pos = [];
+    outer: for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = ZONE.x0 + sx * (c + 0.5), z = ZONE.z0 + sz * (r + 0.5);
+        if (inDance(x, z)) continue;
+        pos.push([x, z]);
+        if (pos.length === N) break outer;
+      }
+    }
+    if (pos.length >= N) return { pos, pitch, tight: pitch < PITCH_OK, overflow: pitch < PITCH_MIN };
+    if (Math.min(zw / (cols + 1), zd / Math.ceil((N * 1.35) / (cols + 1))) < 1.7)
+      return { pos, pitch, tight: true, overflow: true };
+  }
+}
+let disposables = [];
+function buildDinner(G, ghost) {
+  const { pos, pitch, tight, overflow } = dinnerPositions(G);
+  const mats = makeMats(ghost); disposables.push(mats);
+  const group = new THREE.Group(); const tables = [];
+  let left = G;
+  for (const [x, z] of pos) {
+    const t = makeTable(x, z, Math.min(SEATS, left), mats);
+    left -= SEATS; group.add(t); tables.push(t);
+  }
+  /* dancefloor */
+  const dw = DANCE.x1 - DANCE.x0, dd = DANCE.z1 - DANCE.z0;
+  const df = new THREE.Mesh(new THREE.PlaneGeometry(dw, dd),
+    new THREE.MeshBasicMaterial({ color: ghost ? C.violet : 0x211d18, transparent: true, opacity: ghost ? 0.12 : 0.9 }));
+  df.rotation.x = -Math.PI / 2;
+  df.position.set((DANCE.x0 + DANCE.x1) / 2, 0.012, (DANCE.z0 + DANCE.z1) / 2);
+  const dfEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(dw, dd)),
+    new THREE.LineBasicMaterial({ color: ghost ? C.violet : C.brass, transparent: true, opacity: ghost ? 0.5 : 0.4 }));
+  dfEdge.rotation.x = -Math.PI / 2; dfEdge.position.copy(df.position).setY(0.013);
+  group.add(df, dfEdge);
+  return { group, tables, mats, pitch, tight, overflow };
+}
+function buildCeremony(G) {
+  const mats = makeMats(false); disposables.push(mats);
+  const group = new THREE.Group();
+  const perRow = 14, aisle = 1.4, pitchZ = 0.95, pitchX = 0.62;
+  const rows = Math.ceil(G / perRow);
+  let placed = 0;
+  for (let r = 0; r < rows && placed < G; r++) {
+    const z = -1.9 + r * pitchZ;
+    for (let c = 0; c < perRow && placed < G; c++) {
+      const half = perRow / 2;
+      const off = c < half ? -(aisle / 2) - (half - c - 0.5) * pitchX : (aisle / 2) + (c - half + 0.5) * pitchX;
+      const ch = new THREE.Mesh(GEO.chair, mats.chair);
+      ch.position.set(off, 0.25, z);
+      group.add(ch); placed++;
+    }
+  }
+  return { group, mats, chairs: placed };
+}
+
+/* ---------- state ---------- */
+const S = {
+  guests: 120, tl: 1, azim: -0.55, azimT: -0.55, alt: 0.66, altT: 0.66,
+  dragTable: null, ghost: null, playing: false, presenting: false
+};
+let dinner = buildDinner(S.guests, false); scene.add(dinner.group);
+let ceremony = buildCeremony(S.guests); scene.add(ceremony.group);
+
+function rebuildSolid(G) {
+  scene.remove(dinner.group); scene.remove(ceremony.group);
+  dinner = buildDinner(G, false); scene.add(dinner.group);
+  ceremony = buildCeremony(G); scene.add(ceremony.group);
+  applyPhase(); setVitals();
+}
+function setGhost(G) {
+  clearGhost();
+  S.ghost = buildDinner(G, true);
+  S.ghost.G = G;
+  scene.add(S.ghost.group);
+}
+function clearGhost() {
+  if (!S.ghost) return;
+  scene.remove(S.ghost.group); S.ghost = null;
+}
+function materializeGhost() {
+  if (!S.ghost) return;
+  const G = S.ghost.G; clearGhost();
+  S.guests = G; rebuildSolid(G);
+  dinner.group.position.y = -0.35;
+  tween(240, k => { dinner.group.position.y = -0.35 * (1 - k); });
+}
+
+/* ---------- phase morph ---------- */
+function applyPhase() {
+  const t = S.tl, tc = 1 - t;
+  ceremony.group.position.y = -0.65 * t;
+  ceremony.group.visible = tc > 0.02;
+  for (const m of Object.values(ceremony.mats)) m.opacity = tc;
+  dinner.group.visible = t > 0.02;
+  const dy = dinner.group.position.y;
+  dinner.group.position.y = Math.min(dy, 0) ;
+  for (const m of Object.values(dinner.mats)) m.opacity = t;
+  if (!S.ghost) { /* halos only meaningful in dinner */ }
+  phC.classList.toggle("on", t < 0.4);
+  phD.classList.toggle("on", t > 0.6);
+  gap.style.background = t >= 0.3 && t <= 0.7 ? "rgba(201,154,91,.12)" : "transparent";
+  flipnote.style.display = t > 0.3 && t < 0.7 ? "block" : "none";
+}
+
+/* ---------- clearance + vitals ---------- */
+function clearance() {
+  const pts = dinner.tables.map(t => t.position);
+  let worst = Infinity;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
+    worst = Math.min(worst, pts[i].distanceTo(pts[j]));
+  const wallBad = pts.some(p => Math.abs(p.x) > X - 1.5 || Math.abs(p.z) > Z - 1.5);
+  return { ok: worst >= PITCH_MIN && !wallBad && !dinner.overflow, worst };
+}
+function flipMinutes() {
+  return Math.round(ceremony.chairs * 0.14 + dinner.tables.length * 1.9 + 8);
+}
+function setVitals() {
+  gv.textContent = S.ghost ? S.ghost.G : S.guests;
+  const cl = document.getElementById("cl");
+  const c = clearance();
+  const tightNow = S.ghost ? S.ghost.tight : (dinner.tight || !c.ok);
+  cl.textContent = tightNow ? "Clearance ▲ tight" : "Clearance ✓";
+  cl.className = tightNow ? "bad" : "ok";
+  const fm = flipMinutes();
+  flv.textContent = fm + "m"; fln.textContent = fm + "m";
+  pr.textContent = "£" + (68 * (S.ghost ? S.ghost.G : S.guests) + 1900).toLocaleString("en-GB");
+  for (const t of dinner.tables) {
+    const halo = t.getObjectByName("halo");
+    halo.material.color.setHex(tightNow ? C.amber : C.sage);
+    halo.material.opacity = tightNow ? 0.55 : (S.dragTable === t ? 0.55 : 0);
+  }
+}
+/* ---------- camera / altitude ---------- */
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 220);
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function updateCamera() {
+  const a = S.alt;
+  const planW = smooth(0.8, 0.985, a);
+  const polar = 1.38 * Math.pow(1 - a, 1.15) + 0.02;
+  const dist = 6.5 + 21 * a * a;
+  const fov = 58 - 49 * Math.pow(a, 1.6);
+  const ty = 1.5 * (1 - a);
+  const az = S.azim * (1 - planW);
+  const target = new THREE.Vector3(0, ty, 0.4);
+  camera.position.set(
+    target.x + dist * Math.sin(polar) * Math.sin(az),
+    target.y + dist * Math.cos(polar),
+    target.z + dist * Math.sin(polar) * Math.cos(az)
+  );
+  camera.fov = fov; camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix(); camera.lookAt(target);
+  /* the blueprint develops: ink up, light flattens */
+  inkMat.opacity = 0.28 + 0.55 * planW;
+  grid.material.opacity = 0.05 + 0.32 * planW;
+  stageEdge.material.opacity = 0.35 + 0.45 * planW;
+  hemi.intensity = 0.75 + 0.55 * planW;
+  key.intensity = 1.15 * (1 - 0.8 * planW);
+  dim.style.display = planW > 0.5 ? "block" : "none";
+  const names = [...bands.children];
+  const idx = a < 0.22 ? 0 : a < 0.52 ? 1 : a < 0.85 ? 2 : 3;
+  names.forEach((el, i) => el.classList.toggle("on", i === idx));
+  return planW;
+}
+[...bands.children].forEach(el =>
+  el.addEventListener("click", () => { S.altT = parseFloat(el.dataset.a); }));
+
+/* ---------- pointer: orbit, drag, scrub ---------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let orbiting = null;
+function pick(e, objs) {
+  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObjects(objs, true)[0];
+}
+renderer.domElement.addEventListener("pointerdown", e => {
+  if (S.tl > 0.5) {
+    const hit = pick(e, dinner.tables);
+    if (hit) {
+      let g = hit.object; while (g.parent && !g.userData.kind) g = g.parent;
+      S.dragTable = g; setVitals();
+      renderer.domElement.setPointerCapture(e.pointerId);
+      return;
+    }
+  }
+  orbiting = { x: e.clientX };
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+addEventListener("pointermove", e => {
+  if (S.dragTable) {
+    const hit = pick(e, [floor]);
+    if (hit) {
+      const p = hit.point;
+      S.dragTable.position.x = Math.min(X - 1.3, Math.max(-X + 1.3, p.x));
+      S.dragTable.position.z = Math.min(Z - 1.3, Math.max(-Z + 1.3, p.z));
+      const halo = S.dragTable.getObjectByName("halo");
+      let near = Infinity;
+      for (const t of dinner.tables) if (t !== S.dragTable)
+        near = Math.min(near, t.position.distanceTo(S.dragTable.position));
+      const bad = near < PITCH_MIN;
+      halo.material.color.setHex(bad ? C.amber : C.sage);
+      halo.material.opacity = 0.6;
+    }
+  } else if (orbiting) {
+    S.azimT += (e.clientX - orbiting.x) * -0.005;
+    orbiting.x = e.clientX;
+  }
+});
+addEventListener("pointerup", () => {
+  if (S.dragTable) {
+    const t = S.dragTable; S.dragTable = null;
+    tween(220, k => { t.position.y = Math.sin(k * Math.PI) * 0.06; }, () => { t.position.y = 0; setVitals(); });
+  }
+  orbiting = null;
+});
+addEventListener("wheel", e => {
+  if (e.target.closest && e.target.closest(".glass,#drawer")) return;
+  S.altT = Math.min(1, Math.max(0.02, S.altT + e.deltaY * 0.00075));
+  e.preventDefault();
+}, { passive: false });
+
+/* guests vital scrub (P4: live numbers, ghost-first) */
+let gs = null;
+gv.addEventListener("pointerdown", e => {
+  gs = { x: e.clientX, g0: S.guests }; gv.setPointerCapture(e.pointerId);
+  if (S.tl < 0.5) { S.tl = 1; scrub.value = 1000; applyPhase(); }
+  e.preventDefault();
+});
+gv.addEventListener("pointermove", e => {
+  if (!gs) return;
+  const G = Math.min(220, Math.max(20, gs.g0 + Math.round((e.clientX - gs.x) / 5)));
+  if (!S.ghost || S.ghost.G !== G) { setGhost(G); setVitals(); }
+});
+gv.addEventListener("pointerup", () => { gs = null; materializeGhost(); setVitals(); });
+
+/* ---------- command pill ---------- */
+function say(html, ms = 6000) {
+  answer.innerHTML = html; answer.style.display = "block";
+  clearTimeout(say.t); say.t = setTimeout(() => answer.style.display = "none", ms);
+}
+function guidance(n) {
+  const probe = dinnerPositions(n);
+  const rounds = Math.ceil(n / SEATS);
+  if (probe.overflow) return `Planning guidance: <b>${n} exceeds comfortable capacity here</b> (${rounds} rounds) — human review required. · <span style="color:var(--violet)">✦ prototype, simulated data</span>`;
+  if (probe.tight) return `Planning guidance: <b>${n} fits, tight at aisle minimums</b> (${rounds} rounds) — human review required. · <span style="color:var(--violet)">✦ prototype, simulated data</span>`;
+  return `Planning guidance: <b>${n} fits comfortably</b> (${rounds} rounds) — human review required. · <span style="color:var(--violet)">✦ prototype, simulated data</span>`;
+}
+pill.addEventListener("keydown", e => {
+  if (e.key === "Escape") { pill.blur(); clearGhost(); setVitals(); return; }
+  if (e.key !== "Enter") return;
+  const v = pill.value.trim();
+  let m;
+  if (!v && S.ghost) { materializeGhost(); setVitals(); say("Materialized."); return; }
+  if ((m = v.match(/dinner for (\d+)/i)) || (m = v.match(/(\d+)\s*guests/i))) {
+    const G = +m[1]; if (S.tl < 0.5) { S.tl = 1; scrub.value = 1000; applyPhase(); }
+    setGhost(Math.min(220, Math.max(20, G))); setVitals();
+    say(`Ghost staged for <b>${G}</b> — <b>Enter</b> to materialize · <b>Esc</b> to dismiss ${guidance(G).split("·")[0]}`);
+  } else if ((m = v.match(/add (\d+) rounds?(?: of (\d+))?/i))) {
+    const G = +m[1] * (+(m[2] || SEATS));
+    if (S.tl < 0.5) { S.tl = 1; scrub.value = 1000; applyPhase(); }
+    setGhost(Math.min(220, Math.max(20, G))); setVitals();
+    say(`Ghost staged: ${m[1]} rounds — <b>Enter</b> to materialize.`);
+  } else if ((m = v.match(/will (\d+) fit/i))) {
+    setGhost(Math.min(220, Math.max(20, +m[1])));
+    say(guidance(+m[1]), 9000);
+  } else if (/ceremony/i.test(v)) {
+    tween(700, k => { S.tl = 1 - k; scrub.value = S.tl * 1000; applyPhase(); }); say("Ceremony.");
+  } else if (/dinner|rounds/i.test(v)) {
+    tween(700, k => { S.tl = k; scrub.value = S.tl * 1000; applyPhase(); }); say("Dinner.");
+  } else if (/check/i.test(v)) {
+    say(clearance().ok && !dinner.tight ? `<span style="color:var(--sage)">Spacing check passed — machine checked, prototype-grade.</span>` : `<span style="color:var(--amber)">Spacing tight — see halos.</span>`);
+  } else say("Try: <b>dinner for 140</b> · <b>add 12 rounds</b> · <b>will 180 fit?</b> · <b>arrange ceremony</b> · <b>check clearance</b>");
+  pill.value = "";
+});
+addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); pill.focus(); return; }
+  if (document.activeElement === pill) return;
+  if (e.key === "Escape") { clearGhost(); setVitals(); drawer.style.display = "none"; endPresent(); }
+  if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  if (e.key === "[") tween(500, k => { S.tl = S.tl * (1 - k); scrub.value = S.tl * 1000; applyPhase(); });
+  if (e.key === "]") tween(500, k => { S.tl = S.tl + (1 - S.tl) * k; scrub.value = S.tl * 1000; applyPhase(); });
+  if (e.key >= "1" && e.key <= "4") S.altT = [0.06, 0.38, 0.66, 1.0][+e.key - 1];
+});
+
+/* ---------- timeline ---------- */
+scrub.addEventListener("input", () => { S.tl = scrub.value / 1000; S.playing = false; play.textContent = "▶"; applyPhase(); });
+function togglePlay() {
+  if (S.tl >= 0.999) { S.tl = 0; }
+  S.playing = !S.playing; play.textContent = S.playing ? "❚❚" : "▶";
+}
+play.addEventListener("click", togglePlay);
+function placePlayhead() {
+  const r = document.getElementById("timeline").getBoundingClientRect();
+  playhead.style.left = (r.left + 66 + (r.width - 92) * S.tl) + "px";
+}
+
+/* ---------- chrome ---------- */
+evchip.addEventListener("click", () => {
+  drawer.style.display = drawer.style.display === "block" ? "none" : "block";
+});
+const chromeEls = [bands, vitals, document.getElementById("timeline"), hint, flipnote, drawer, playhead, scrub];
+function endPresent() {
+  if (!S.presenting) return;
+  S.presenting = false; present.textContent = "Present ▸";
+  chromeEls.forEach(el => el.style.visibility = "visible");
+}
+present.addEventListener("click", () => {
+  S.presenting = !S.presenting;
+  present.textContent = S.presenting ? "Exit ◂" : "Present ▸";
+  chromeEls.forEach(el => el.style.visibility = S.presenting ? "hidden" : "visible");
+  if (S.presenting) say("Presenting — chrome hidden. Esc to exit.", 3500);
+});
+endbtn.style.display = "inline-flex";
+endbtn.addEventListener("click", () => {
+  const c = clearance().ok && !dinner.tight ? "clearance ✓" : "clearance ▲";
+  delta.textContent = `You seated ${S.guests} · ${c} · flip est ${flipMinutes()}m`;
+  endcard.style.display = "flex";
+  if (!RM) tween(3000, k => { S.azimT = S.azim + k * Math.PI * 0.7; });
+});
+endcard.addEventListener("click", () => endcard.style.display = "none");
+
+/* ---------- table labels (dollhouse/plan) ---------- */
+const pool = [];
+for (let i = 0; i < 26; i++) {
+  const el = document.createElement("div"); el.className = "lbl";
+  el.style.display = "none"; document.body.appendChild(el); pool.push(el);
+}
+const v3 = new THREE.Vector3();
+function labels(planW) {
+  const show = S.alt > 0.5 && S.tl > 0.5 && !S.presenting;
+  dinner.tables.forEach((t, i) => {
+    const el = pool[i]; if (!el) return;
+    if (!show) { el.style.display = "none"; return; }
+    v3.copy(t.position); v3.y = 0.9; v3.project(camera);
+    el.style.display = "block";
+    el.style.left = ((v3.x + 1) / 2 * innerWidth) + "px";
+    el.style.top = ((-v3.y + 1) / 2 * innerHeight) + "px";
+    el.textContent = "T" + (i + 1);
+  });
+  for (let i = dinner.tables.length; i < pool.length; i++) pool[i].style.display = "none";
+}
+
+/* ---------- loop ---------- */
+addEventListener("resize", () => renderer.setSize(innerWidth, innerHeight));
+const dimEl = dim; dimEl.textContent = "18.0 m × 12.0 m · prototype scale";
+let last = performance.now();
+applyPhase(); setVitals();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const k = RM ? 1 : 1 - Math.exp(-dt * 5.5);
+  S.alt += (S.altT - S.alt) * k;
+  S.azim += (S.azimT - S.azim) * (RM ? 1 : 1 - Math.exp(-dt * 7));
+  if (S.playing) {
+    S.tl = Math.min(1, S.tl + dt / 7);
+    scrub.value = S.tl * 1000; applyPhase();
+    if (S.tl >= 1) { S.playing = false; play.textContent = "▶"; }
+  }
+  if (S.ghost) {
+    const b = RM ? 0.3 : 0.3 + 0.045 * Math.sin(now / 480);
+    for (const m of Object.values(S.ghost.mats)) m.opacity = b;
+  }
+  const planW = updateCamera();
+  placePlayhead(); labels(planW); stepTweens(now);
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

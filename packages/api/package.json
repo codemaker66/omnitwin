@@ -19,6 +19,7 @@
     "cleanup": "tsx src/scripts/run-cleanup.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:verify-tail": "tsx src/scripts/verify-migration-tail-readiness.ts",
     "db:seed": "tsx src/db/seed.ts",
     "platform-admin:bootstrap": "tsx src/scripts/bootstrap-platform-admin.ts",
     "assets:build-capture-control-source-from-runtime-control": "tsx src/scripts/build-capture-control-source-from-runtime-control.ts",

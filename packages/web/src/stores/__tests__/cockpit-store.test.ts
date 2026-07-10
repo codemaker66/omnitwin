@@ -55,6 +55,7 @@ describe("cockpit-store", () => {
     const s = useCockpitStore.getState();
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();
+    expect(s.cameraInteractionActive).toBe(false);
   });
 
   it("setBeam / clearBeam raise and dismiss the world-anchored evidence beam", () => {
@@ -76,6 +77,13 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().focusRequest?.nonce).toBe(2);
   });
 
+  it("tracks whether camera navigation is currently active", () => {
+    useCockpitStore.getState().setCameraInteractionActive(true);
+    expect(useCockpitStore.getState().cameraInteractionActive).toBe(true);
+    useCockpitStore.getState().setCameraInteractionActive(false);
+    expect(useCockpitStore.getState().cameraInteractionActive).toBe(false);
+  });
+
   it("reset restores defaults", () => {
     const api = useCockpitStore.getState();
     api.setMode("ops");
@@ -86,6 +94,7 @@ describe("cockpit-store", () => {
     api.toggleLayers();
     api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
     api.requestFocus(1, 1);
+    api.setCameraInteractionActive(true);
     api.setPlannedGuestCount(200);
     api.setFlowArrivalMinutes(90);
     api.reset();
@@ -98,6 +107,7 @@ describe("cockpit-store", () => {
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();
+    expect(s.cameraInteractionActive).toBe(false);
     expect(s.plannedGuestCount).toBeNull();
     expect(s.flowArrivalMinutes).toBe(30);
   });

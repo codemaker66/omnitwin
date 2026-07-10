@@ -41,6 +41,11 @@ function mount(): void {
 }
 
 describe("SpotlightLandingPage — the hero", () => {
+  it("exposes the hero as the named main landmark", () => {
+    mount();
+    expect(screen.getByRole("main", { name: SPOTLIGHT_META_TITLE })).toBeTruthy();
+  });
+
   it("renders both headline lines inside a single h1", () => {
     mount();
     const h1 = screen.getByRole("heading", { level: 1 });

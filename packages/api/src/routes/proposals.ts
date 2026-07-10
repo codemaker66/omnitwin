@@ -42,6 +42,7 @@ import {
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -1050,7 +1051,9 @@ async function buildClientSafeProposal(db: Database, proposal: ProposalRecord): 
     layoutSummary: payload.data.layoutSummary ?? null,
     packageSummary: payload.data.packageSummary ?? [],
     quote: payload.data.quote,
-    layoutSnapshot: payload.data.layoutSnapshot ?? null,
+    layoutSnapshot: canRenderPersistedLayout(version.coordinateSpace)
+      ? (payload.data.layoutSnapshot ?? null)
+      : null,
     version: version.version,
     comments,
     packages,
@@ -1111,7 +1114,9 @@ export async function publicProposalRoutes(
         layoutSummary: payload.data.layoutSummary ?? null,
         packageSummary: payload.data.packageSummary ?? [],
         quote: payload.data.quote,
-        layoutSnapshot: payload.data.layoutSnapshot ?? null,
+        layoutSnapshot: canRenderPersistedLayout(version.coordinateSpace)
+          ? (payload.data.layoutSnapshot ?? null)
+          : null,
         version: version.version,
       },
     };

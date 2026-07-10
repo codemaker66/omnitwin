@@ -410,7 +410,7 @@ describe("POST /webhooks/clerk", () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it("responds 200 to user.deleted event", async () => {
+  it("returns a retryable 503 when user.deleted persistence fails", async () => {
     const signed = signedWebhookPayload({
       type: "user.deleted",
       data: {
@@ -428,7 +428,11 @@ describe("POST /webhooks/clerk", () => {
       headers: signed.headers,
       payload: signed.payload,
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(503);
+    expect(JSON.parse(res.payload)).toMatchObject({
+      code: "WEBHOOK_PROCESSING_FAILED",
+      retryable: true,
+    });
   });
 
   it("responds 200 to unknown event type", async () => {
@@ -439,6 +443,20 @@ describe("POST /webhooks/clerk", () => {
       payload: signed.payload,
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("returns 400 for a signed malformed supported event", async () => {
+    const signed = signedWebhookPayload({
+      type: "user.updated",
+      data: { id: "clerk_test_123", email_addresses: "invalid" },
+    });
+    const res = await server.inject({
+      method: "POST", url: "/webhooks/clerk",
+      headers: signed.headers,
+      payload: signed.payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.payload)).toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
 

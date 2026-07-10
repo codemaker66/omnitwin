@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { readFile } from "node:fs/promises";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
@@ -36,22 +37,23 @@ const {
 
 describe("PlannerScene", () => {
   it("mounts an R3F canvas host", () => {
-    const { getByTestId } = render(<PlannerScene />);
+    const { container, getByTestId } = render(<PlannerScene />);
+    expect(container.querySelector(".planner-scene-canvas-host")).not.toBeNull();
     expect(getByTestId("r3f-canvas")).toBeTruthy();
   });
 
   it("caps planner canvas DPR across mobile, tablet, and desktop viewports", () => {
-    expect(plannerCanvasDprForViewportWidth(390)).toEqual([1, 1]);
+    expect(plannerCanvasDprForViewportWidth(390)).toEqual([0.75, 0.75]);
     expect(plannerCanvasDprForViewportWidth(768)).toEqual([0.75, 0.75]);
     expect(plannerCanvasDprForViewportWidth(1024)).toEqual([0.75, 0.75]);
-    expect(plannerCanvasDprForViewportWidth(1440)).toEqual([1, 1]);
+    expect(plannerCanvasDprForViewportWidth(1440)).toEqual([0.75, 0.75]);
   });
 
-  it("keeps adaptive DPR disabled on fixed lean planner viewports", () => {
+  it("keeps adaptive DPR disabled during planner camera movement to avoid renderer resize stalls", () => {
     expect(plannerAdaptiveResolutionForViewportWidth(390)).toEqual({
       enabled: false,
-      minDpr: 1,
-      maxDpr: 1,
+      minDpr: 0.75,
+      maxDpr: 0.75,
     });
     expect(plannerAdaptiveResolutionForViewportWidth(768)).toEqual({
       enabled: false,
@@ -59,9 +61,9 @@ describe("PlannerScene", () => {
       maxDpr: 0.75,
     });
     expect(plannerAdaptiveResolutionForViewportWidth(1440)).toEqual({
-      enabled: true,
-      minDpr: 0.5,
-      maxDpr: 1,
+      enabled: false,
+      minDpr: 0.75,
+      maxDpr: 0.75,
     });
   });
 
@@ -97,4 +99,14 @@ describe("PlannerScene", () => {
     expect(shouldRenderPlannerSceneOverlays(1024)).toBe(false);
     expect(shouldRenderPlannerSceneOverlays(1440)).toBe(true);
   });
+
+  it("precompiles the planner scene so shader setup stays in the load window", async () => {
+    const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
+
+    expect(source).toContain("function PlannerScenePrecompiler");
+    expect(source).toContain("await gl.compileAsync(scene, camera)");
+    expect(source).toContain("gl.compile(scene, camera)");
+    expect(source).toContain("<PlannerScenePrecompiler signature={sceneWarmupSignature} />");
+  });
+
 });

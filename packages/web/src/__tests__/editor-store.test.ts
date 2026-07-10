@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { RENDER_SCALE } from "../constants/scale.js";
 
 // ---------------------------------------------------------------------------
 // Editor store tests — mock API modules
@@ -66,7 +67,9 @@ describe("loadConfiguration", () => {
     expect(s.configRevision).toBe(1);
     expect(s.isPublicPreview).toBe(true);
     expect(s.objects).toHaveLength(1);
-    expect(s.objects[0]?.positionX).toBe(1.0);
+    // Wire positions are real metres; the store is render-space (× RENDER_SCALE).
+    expect(s.objects[0]?.positionX).toBe(1.0 * RENDER_SCALE);
+    expect(s.objects[0]?.positionZ).toBe(2.0 * RENDER_SCALE);
     expect(s.isDirty).toBe(false);
     expect(s.isLoading).toBe(false);
   });

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
@@ -151,6 +152,9 @@ export function EditorPage(): React.ReactElement {
     return { role: authRole, venueId: authVenueId };
   }, [authRole, authVenueId, isAuthenticated]);
   const wantedSpaceSlug = searchParams.get("space") ?? DEFAULT_SPACE_SLUG;
+  const requestedConfigIsPending = urlConfigId !== undefined
+    && urlConfigId !== storeConfigId
+    && error === null;
 
   // Load config from URL on mount. The first load uses the current
   // isAuthenticated value (false before Clerk resolves). For public configs
@@ -277,7 +281,7 @@ export function EditorPage(): React.ReactElement {
   }
 
   // Loading config
-  if (isLoading) {
+  if (isLoading || requestedConfigIsPending) {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
@@ -357,11 +361,13 @@ function PlannerCommsLayer(): React.ReactElement {
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
   const mobile = isNarrow || isTouch;
+  const showStandaloneTruthIndicator = truthModeEnabled && (mobile || viewMode !== "3d");
   return (
     <>
       <EditorBridge />
       <div
         data-testid="planner-3d-shell"
+        data-planner-config-id={configId ?? undefined}
         style={{
           height: "100dvh",
           minHeight: "100dvh",
@@ -410,7 +416,7 @@ function PlannerCommsLayer(): React.ReactElement {
       <ObjectNotePanel />
       <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} />
       <SubmitForReviewPanel />
-      {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
+      {showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
@@ -514,6 +520,13 @@ function ViewModeToggle({
   onChange: (m: "3d" | "2d") => void;
   isMobile: boolean;
 }): React.ReactElement {
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const avoidSelectors = isMobile
+    ? undefined
+    : [
+        "[data-testid='planner-toolbar']",
+        "[data-testid='truth-mode-indicator']",
+      ] as const;
   const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
     const active = mode === value;
     return (
@@ -546,10 +559,14 @@ function ViewModeToggle({
       defaultPlacement={{
         type: "anchor",
         anchor: "top-left",
-        offsetX: isMobile ? 10 : 112,
+        offsetX: isMobile ? 10 : 176,
         offsetY: isMobile ? 10 : 82,
       }}
+      avoidSelectors={avoidSelectors}
+      avoidPaddingPx={12}
+      storageScope={isMobile ? "mobile" : "desktop-cockpit-v3"}
       zIndex={31}
+      autoCompact={cameraInteractionActive}
     >
       <div
         role="group"

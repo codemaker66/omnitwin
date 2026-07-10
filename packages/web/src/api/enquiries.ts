@@ -48,21 +48,27 @@ export type StatusHistoryEntry = z.infer<typeof StatusHistoryEntrySchema>;
 // API functions
 // ---------------------------------------------------------------------------
 
-export async function listEnquiries(status?: string): Promise<Enquiry[]> {
+export async function listEnquiries(
+  status?: string,
+  signal?: AbortSignal,
+): Promise<Enquiry[]> {
   const params = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
-  return api.get(`/enquiries${params}`, z.array(EnquirySchema));
+  return api.get(`/enquiries${params}`, z.array(EnquirySchema), signal);
 }
 
-export async function getEnquiry(id: string): Promise<Enquiry> {
-  return api.get(`/enquiries/${id}`, EnquirySchema);
+export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enquiry> {
+  return api.get(`/enquiries/${id}`, EnquirySchema, signal);
 }
 
 export async function transitionEnquiry(id: string, status: string, note?: string): Promise<Enquiry> {
   return api.post(`/enquiries/${id}/transition`, { status, note }, undefined, EnquirySchema);
 }
 
-export async function getEnquiryHistory(id: string): Promise<StatusHistoryEntry[]> {
-  return api.get(`/enquiries/${id}/history`, z.array(StatusHistoryEntrySchema));
+export async function getEnquiryHistory(
+  id: string,
+  signal?: AbortSignal,
+): Promise<StatusHistoryEntry[]> {
+  return api.get(`/enquiries/${id}/history`, z.array(StatusHistoryEntrySchema), signal);
 }
 
 // NOTE: Per-enquiry hallkeeper PDF removed when the review workflow

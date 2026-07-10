@@ -8,6 +8,10 @@ vi.mock("../App.js", () => ({
   App: () => <div data-testid="mock-editor-3d" />,
 }));
 
+vi.mock("../components/editor/cockpit/PlannerCockpit.js", () => ({
+  PlannerCockpit: () => <div data-testid="mock-planner-cockpit" />,
+}));
+
 vi.mock("../pages/BlueprintPage.js", () => ({
   BlueprintPage: () => <div data-testid="mock-blueprint" />,
 }));

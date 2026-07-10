@@ -6,13 +6,15 @@ import type {
   Timing,
   SetupPhase,
 } from "@omnitwin/types";
-import { HallkeeperSheetV2Schema, hasInstructionContent } from "@omnitwin/types";
+import { hasInstructionContent } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
   spaces, venues, enquiries, configurationSheetSnapshots, users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
 import { generateManifestV2, type ManifestObjectV2, type AccessoryRule } from "./manifest-generator-v2.js";
+import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
@@ -261,7 +263,10 @@ async function loadLatestApprovedSnapshotPayload(
   db: Database,
   configId: string,
 ): Promise<HallkeeperSheetV2 | null> {
-  const [snap] = await db.select({ payload: configurationSheetSnapshots.payload })
+  const [snap] = await db.select({
+    payload: configurationSheetSnapshots.payload,
+    coordinateSpace: configurationSheetSnapshots.coordinateSpace,
+  })
     .from(configurationSheetSnapshots)
     .where(and(
       eq(configurationSheetSnapshots.configurationId, configId),
@@ -271,7 +276,7 @@ async function loadLatestApprovedSnapshotPayload(
     .limit(1);
 
   if (snap === undefined) return null;
-  return parseStoredSnapshotPayload(snap.payload);
+  return parseStoredSnapshotPayload(snap.payload, snap.coordinateSpace);
 }
 
 /**
@@ -290,11 +295,11 @@ async function loadLatestApprovedSnapshotPayload(
  * before validation. The upstream caller overlays a real approval
  * from live DB, so the placeholder never reaches consumers.
  */
-export function parseStoredSnapshotPayload(raw: unknown): HallkeeperSheetV2 | null {
-  if (raw === null || typeof raw !== "object") return null;
-  const candidate = "approval" in raw ? raw : { ...raw, approval: null };
-  const parsed = HallkeeperSheetV2Schema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
+export function parseStoredSnapshotPayload(
+  raw: unknown,
+  coordinateSpace: LayoutCoordinateSpace = REAL_METRE_COORDINATE_SPACE,
+): HallkeeperSheetV2 | null {
+  return parseHallkeeperSnapshotPayload(raw, coordinateSpace);
 }
 
 /**

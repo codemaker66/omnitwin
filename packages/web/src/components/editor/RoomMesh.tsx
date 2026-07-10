@@ -6,6 +6,7 @@ import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
 import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
 import { sectionClipPlanes, noClipPlanes } from "../SectionPlane.js";
 import { useVisibilityStore, type WallKey } from "../../stores/visibility-store.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { BrickWall } from "../BrickWall.js";
 import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
 import { GrandHallDome } from "../GrandHallDome.js";
@@ -247,7 +248,12 @@ interface RoomMeshProps {
   readonly detail?: RoomMeshDetail;
 }
 
-export function shouldUseRoomMeshLeanShell(detail: RoomMeshDetail, viewportWidth: number): boolean {
+export function shouldUseRoomMeshLeanShell(
+  detail: RoomMeshDetail,
+  viewportWidth: number,
+  cameraInteractionActive = false,
+): boolean {
+  if (cameraInteractionActive) return true;
   if (detail === "lean") return true;
   if (detail === "detailed") return false;
   return shouldUseLeanPlannerRoomShell(viewportWidth);
@@ -255,12 +261,13 @@ export function shouldUseRoomMeshLeanShell(detail: RoomMeshDetail, viewportWidth
 
 export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: RoomMeshProps): React.ReactElement {
   const { size } = useThree();
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
   const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
   const bounds = useMemo(() => computeRenderBounds(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
   const isGrandHall = variant === "grand-hall";
-  const useLeanRoomShell = shouldUseRoomMeshLeanShell(detail, size.width);
+  const useLeanRoomShell = shouldUseRoomMeshLeanShell(detail, size.width, cameraInteractionActive);
   const renderGrandHallOrnaments = shouldRenderGrandHallOrnaments({
     isGrandHall,
     viewportWidth: size.width,

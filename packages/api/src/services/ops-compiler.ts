@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   BeoDocumentSchema,
+  EventArchitectCandidateSchema,
   EventConfigurationLinkSchema,
   EventPhaseGraphSchema,
   EventPhaseSchema,
@@ -26,6 +27,8 @@ import {
   type ConfigurationSheetSnapshot,
   type EventPhase,
   type EventPhaseGraph,
+  type EventMissionSpatialAnchor,
+  type EventArchitectGuestFlowEvidence,
   type FurniturePickList,
   type HandoffPack,
   type OpsHandoffPackBundle,
@@ -44,6 +47,7 @@ import {
   breakdownSequences,
   configurationSheetSnapshots,
   configurations,
+  eventArchitectCandidates,
   eventConfigurationLinks,
   eventPhases,
   eventScenarios,
@@ -61,6 +65,7 @@ import {
   supplierInstructions,
   taskGroups,
 } from "../db/schema.js";
+import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 
 type SnapshotRow = typeof configurationSheetSnapshots.$inferSelect;
 type HandoffPackRow = typeof handoffPacks.$inferSelect;
@@ -96,6 +101,57 @@ export class OpsHandoffEventNotFoundError extends Error {
   }
 }
 
+export interface OpsHandoffBlockingReviewGate {
+  readonly source: "event_architect_guest_flow";
+  readonly reason: EventArchitectGuestFlowEvidence["reviewGate"]["reason"];
+  readonly requiredData: EventArchitectGuestFlowEvidence["reviewGate"]["requiredData"];
+  readonly resolution: "reviewed_evidence_artifact_required";
+}
+
+export class OpsHandoffBlockingReviewGateError extends Error {
+  constructor(readonly gate: OpsHandoffBlockingReviewGate) {
+    super("Event Architect review evidence blocks Ops handoff compilation.");
+    this.name = "OpsHandoffBlockingReviewGateError";
+  }
+}
+
+export class OpsHandoffEvidenceIntegrityError extends Error {
+  constructor(readonly configId: string) {
+    super(`Event Architect evidence for configuration ${configId} is not valid.`);
+    this.name = "OpsHandoffEvidenceIntegrityError";
+  }
+}
+
+export class OpsHandoffEventBindingRequiredError extends Error {
+  constructor(readonly configId: string, readonly eventId: string) {
+    super(`Configuration ${configId} is not bound to event ${eventId} in the same venue.`);
+    this.name = "OpsHandoffEventBindingRequiredError";
+  }
+}
+
+export function eventArchitectOpsCompilationReviewGate(
+  reviewGate: EventArchitectGuestFlowEvidence["reviewGate"] | null,
+): OpsHandoffBlockingReviewGate | null {
+  if (reviewGate === null) return null;
+  return {
+    source: "event_architect_guest_flow",
+    reason: reviewGate.reason,
+    requiredData: reviewGate.requiredData,
+    resolution: "reviewed_evidence_artifact_required",
+  };
+}
+
+export function eventGraphBindsConfiguration(
+  graph: EventPhaseGraph,
+  configId: string,
+  venueId: string,
+): boolean {
+  if (graph.event.venueId !== venueId) return false;
+  return graph.configurationLinks.some((link) =>
+    link.eventId === graph.event.id && link.configurationId === configId
+  );
+}
+
 interface DraftTaskGroup {
   readonly key: string;
   readonly title: string;
@@ -112,6 +168,7 @@ interface DraftOpsTask {
   readonly sortOrder: number;
   readonly dueLabel: string | null;
   readonly sourceRef: string | null;
+  readonly spatialAnchors: readonly EventMissionSpatialAnchor[];
 }
 
 interface DraftPickListItem {
@@ -196,11 +253,15 @@ function titleCase(value: string): string {
 }
 
 function hydrateSnapshot(row: SnapshotRow): ConfigurationSheetSnapshot {
+  const payload = parseHallkeeperSnapshotPayload(row.payload, row.coordinateSpace);
+  if (payload === null) {
+    throw new Error(`Stored sheet snapshot ${row.id} failed payload validation`);
+  }
   return {
     id: row.id,
     configurationId: row.configurationId,
     version: row.version,
-    payload: row.payload as ConfigurationSheetSnapshot["payload"],
+    payload,
     diagramUrl: row.diagramUrl,
     pdfUrl: row.pdfUrl,
     sourceHash: row.sourceHash,
@@ -458,6 +519,17 @@ function compileSetupTasks(snapshot: ConfigurationSheetSnapshot): readonly Draft
           sortOrder: tasks.length,
           dueLabel: null,
           sourceRef: row.key,
+          spatialAnchors: row.positions.map((position) => ({
+            coordinateSpace: "real_m_v1",
+            configurationId: snapshot.configurationId,
+            snapshotId: snapshot.id,
+            objectId: position.objectId,
+            xM: position.x,
+            zM: position.z,
+            floorLabel: null,
+            label: safeOpsText(`${row.name} - ${zoneLabel}`, 200),
+            source: "frozen_snapshot",
+          })),
         });
       }
     }
@@ -477,6 +549,7 @@ function compileBreakdownTasks(snapshot: ConfigurationSheetSnapshot): readonly D
       sortOrder: index,
       dueLabel: null,
       sourceRef: `${entry.category}:${entry.name}`,
+      spatialAnchors: [],
     }));
 }
 
@@ -623,6 +696,7 @@ function compileRoomFlipTasks(plans: readonly DraftRoomFlipPlan[]): readonly Dra
     sortOrder: index,
     dueLabel: plan.durationMinutes > 0 ? `${String(plan.durationMinutes)} min planning window` : null,
     sourceRef: plan.phaseId,
+    spatialAnchors: [],
   }));
 }
 
@@ -688,6 +762,7 @@ export function compileOpsHandoffDraft(input: {
     sortOrder: index,
     dueLabel: instruction.arrivalWindow,
     sourceRef: instruction.sourceRef,
+    spatialAnchors: [],
   }));
   const allTasks = [
     ...setupTasks,
@@ -748,6 +823,28 @@ async function latestApprovedSnapshots(
     .orderBy(desc(configurationSheetSnapshots.version))
     .limit(2);
   return rows.map(hydrateSnapshot);
+}
+
+async function assertEventArchitectOpsCompilationReady(
+  db: Database,
+  configId: string,
+): Promise<void> {
+  const [row] = await db.select({ payload: eventArchitectCandidates.payload })
+    .from(eventArchitectCandidates)
+    .where(eq(eventArchitectCandidates.configurationId, configId))
+    .limit(1);
+  if (row === undefined) return;
+
+  const candidate = EventArchitectCandidateSchema.safeParse(row.payload);
+  if (!candidate.success) throw new OpsHandoffEvidenceIntegrityError(configId);
+  // The candidate payload is immutable evidence and its v0 guest-flow gate is
+  // literally blocking. It cannot self-approve. A future, separately persisted
+  // reviewed-evidence artifact must be joined here before this boundary can
+  // admit an Event Architect candidate to Ops compilation.
+  const gate = eventArchitectOpsCompilationReviewGate(
+    candidate.data.guestFlowEvidence.reviewGate,
+  );
+  if (gate !== null) throw new OpsHandoffBlockingReviewGateError(gate);
 }
 
 async function loadEventGraph(db: Database, eventId: string): Promise<EventPhaseGraph> {
@@ -913,7 +1010,10 @@ export async function compileOpsHandoffPackFromConfiguration(
     readonly actorUserId: string | null;
   },
 ): Promise<OpsHandoffPackBundle> {
-  const [config] = await db.select({ id: configurations.id })
+  const [config] = await db.select({
+    id: configurations.id,
+    venueId: configurations.venueId,
+  })
     .from(configurations)
     .where(and(eq(configurations.id, input.configId), isNull(configurations.deletedAt)))
     .limit(1);
@@ -923,7 +1023,14 @@ export async function compileOpsHandoffPackFromConfiguration(
   const snapshot = snapshots[0] ?? null;
   if (snapshot === null) throw new OpsHandoffApprovedSnapshotRequiredError(input.configId);
 
+  await assertEventArchitectOpsCompilationReady(db, input.configId);
   const eventGraph = input.eventId === null ? null : await loadEventGraph(db, input.eventId);
+  if (
+    eventGraph !== null &&
+    !eventGraphBindsConfiguration(eventGraph, input.configId, config.venueId)
+  ) {
+    throw new OpsHandoffEventBindingRequiredError(input.configId, eventGraph.event.id);
+  }
   const draft = compileOpsHandoffDraft({
     snapshot,
     previousSnapshot: snapshots[1] ?? null,
@@ -976,6 +1083,7 @@ export async function compileOpsHandoffPackFromConfiguration(
         sortOrder: task.sortOrder,
         dueLabel: task.dueLabel,
         sourceRef: task.sourceRef,
+        spatialAnchors: [...task.spatialAnchors],
       })));
     }
 

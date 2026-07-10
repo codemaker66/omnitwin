@@ -3,11 +3,11 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import { TWIN_FACES, TWIN_LODS, twinTilePath } from "@omnitwin/types";
+import { assertSourceFiles } from "./source-preflight.js";
 
 export interface TileReport {
   written: number;
   skipped: number;
-  missing: string[];
 }
 
 /**
@@ -21,7 +21,13 @@ export async function convertTiles(
   nodeIds: readonly string[],
   onProgress?: (done: number, total: number) => void,
 ): Promise<TileReport> {
-  const report: TileReport = { written: 0, skipped: 0, missing: [] };
+  await assertSourceFiles(
+    cubemapsDir,
+    nodeIds.flatMap((nodeId) => TWIN_FACES.map((face) => `${nodeId}_${face}.jpg`)),
+    "cubemap",
+  );
+
+  const report: TileReport = { written: 0, skipped: 0 };
   const total = nodeIds.length * TWIN_FACES.length;
   let done = 0;
 
@@ -31,10 +37,6 @@ export async function convertTiles(
       const srcName = `${nodeId}_${face}.jpg`;
       const src = join(cubemapsDir, srcName);
       done += 1;
-      if (!existsSync(src)) {
-        report.missing.push(srcName);
-        continue;
-      }
       for (const lod of TWIN_LODS) {
         const dest = join(outDir, twinTilePath(nodeId, face, lod));
         if (existsSync(dest)) {

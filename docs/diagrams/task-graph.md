@@ -13,6 +13,8 @@ Regenerate after each `tasks.md` change.
 - **A2** — this week, ops baseline + audit fixes
 - **A3** — this week, viewer presentation polish + trust doctrine
 - **A4** — strategy readiness
+- **A5** — July authority, migration, Twin, and gate hardening closure
+- **A6** — completed Capture-to-Truth, proof architect, and mission-control programme
 - **B** — next 2 weeks, gap closing + ops follow-on
 - **C** — weeks 3–6, reconstruction + edge cases
 - **D** — Tier 3, Geass cluster
@@ -146,6 +148,27 @@ flowchart TD
 
     subgraph A4 [a4 · strategy readiness]
         T412(["T-412 - OpenAI/FDE readiness memo"])
+    end
+
+    subgraph A5 [a5 · july hardening closure]
+        T469(["T-469 - interaction audit"])
+        T470(["T-470 - production Clerk live mode"])
+        T471(["T-471 - platform admin authority"])
+        T472(["T-472 - WebSocket authority + CAS"])
+        T473(["T-473 - coordinate migration safety"])
+        T474(["T-474 - Twin floor navigation"])
+        T475(["T-475 - atomic Twin publication"])
+        T476(["T-476 - event/webhook integrity"])
+        T477(["T-477 - Twin GPU/decode lifecycle"])
+        T478(["T-478 - dashboard async/a11y"])
+        T479(["T-479 - repository gates"])
+    end
+
+    subgraph A6 [a6 · completed verified venue operating loop]
+        T160(["T-160 - deterministic validator"])
+        T480(["T-480 - Capture-to-Truth factory"])
+        T481(["T-481 - proof-carrying architect"])
+        T482(["T-482 - 4D mission control"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -460,15 +483,41 @@ flowchart TD
     T463 --> T462
     T451 --> T462
 
+    T464 --> T469
+    T465 --> T469
+    T466 --> T469
+    T469 --> T470
+    T470 --> T471
+    T096 --> T472
+    T471 --> T472
+    T096 --> T473
+    T087 --> T474
+    T087 --> T475
+    T088 --> T476
+    T087 --> T477
+    T421 --> T478
+    T472 --> T479
+    T473 --> T479
+    T474 --> T479
+    T475 --> T479
+    T476 --> T479
+    T477 --> T479
+    T478 --> T479
+    T475 --> T480
+    T160 --> T481
+    T107 --> T481
+    T107 --> T482
+    T471 --> T482
+
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
     classDef deferred fill:#3a3a3a,color:#f4ede0
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467 done
-    class T001,T453 inprogress
-    class T060,T092 blocked
+    class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467,T471,T472,T473,T474,T475,T476,T477,T478,T479 done
+    class T001,T060,T092,T118,T453,T469,T470 blocked
+    class T160,T480,T481,T482 done
     class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
@@ -477,6 +526,23 @@ flowchart TD
 is queued for the moment T-018 lands. Edge `T-018 → T-053` carries the
 label "unblocks" because it expresses the activation trigger, not a
 code-level dependency.
+
+Subgraph A5 records the July 2026 hardening sweep and keeps its remaining
+external blockers visible: T-469 waits for the signed real-room evidence path
+tracked by T-453, while T-470 still requires the owner-side Clerk dashboard
+verification and a real production staff session. T-472 through T-479 are
+closed with the verification evidence recorded in `docs/state/tasks.md`.
+
+Subgraph A6 records the completed user-authorized 2026-07-10 implementation
+programme. T-480 closes at the verified internal candidate-source-stage
+boundary and does not bypass T-091's reconstruction, RunPod, signing, runtime
+QA, or human-evidence gates. T-160/T-481 close the bounded deterministic
+validator and draft Event Architect path; simulated guest-flow artifacts stay
+separate from validator facts and carry a blocking Ops review gate. T-482 closes
+the persisted Event Ops mission/replay loop with advisory presence, not a claim
+to the deferred multiplayer T-105 capability or a certified crowd-simulation
+backend. Exact evidence and remaining gates are recorded in
+`docs/sessions/2026-07-10.md`.
 
 `T-464` records the 2026-06-17 runtime-canvas performance hardening slice:
 the mostly static internal visual and public runtime canvases now demand-render

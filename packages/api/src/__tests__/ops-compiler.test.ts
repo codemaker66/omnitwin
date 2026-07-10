@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { ConfigurationSheetSnapshot, EventPhaseGraph } from "@omnitwin/types";
-import { compileOpsHandoffDraft } from "../services/ops-compiler.js";
+import {
+  compileOpsHandoffDraft,
+  eventArchitectOpsCompilationReviewGate,
+  eventGraphBindsConfiguration,
+} from "../services/ops-compiler.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -258,6 +262,56 @@ afterAll(async () => {
 });
 
 describe("ops compiler services", () => {
+  it("requires an explicit same-venue event binding before event-bound compilation", () => {
+    const graph = eventGraph();
+    expect(eventGraphBindsConfiguration(graph, CONFIG_ID, VENUE_ID)).toBe(false);
+    expect(eventGraphBindsConfiguration({
+      ...graph,
+      configurationLinks: [{
+        id: "00000000-0000-4000-8000-000000000313",
+        eventId: EVENT_ID,
+        configurationId: CONFIG_ID,
+        layoutVariantId: null,
+        linkType: "approved_snapshot_source",
+        createdAt: NOW,
+      }],
+    }, CONFIG_ID, VENUE_ID)).toBe(true);
+    expect(eventGraphBindsConfiguration({
+      ...graph,
+      configurationLinks: [{
+        id: "00000000-0000-4000-8000-000000000313",
+        eventId: EVENT_ID,
+        configurationId: CONFIG_ID,
+        layoutVariantId: null,
+        linkType: "approved_snapshot_source",
+        createdAt: NOW,
+      }],
+    }, CONFIG_ID, "00000000-0000-4000-8000-000000000399")).toBe(false);
+  });
+
+  it("keeps Event Architect blocked until a separate reviewed evidence artifact exists", () => {
+    expect(eventArchitectOpsCompilationReviewGate(null)).toBeNull();
+    expect(eventArchitectOpsCompilationReviewGate({
+      status: "requires_human_review",
+      reason: "planning_assumptions_and_simplified_crowd_model",
+      requiredData: [
+        "surveyed_door_positions",
+        "reviewed_route_model",
+        "venue_operations_signoff",
+      ],
+      blockingForOpsCompilation: true,
+    })).toEqual({
+      source: "event_architect_guest_flow",
+      reason: "planning_assumptions_and_simplified_crowd_model",
+      requiredData: [
+        "surveyed_door_positions",
+        "reviewed_route_model",
+        "venue_operations_signoff",
+      ],
+      resolution: "reviewed_evidence_artifact_required",
+    });
+  });
+
   it("compiles deterministic handoff output", () => {
     const left = compileOpsHandoffDraft({
       snapshot: snapshot(),
@@ -396,5 +450,7 @@ describe("ops handoff routes", () => {
     expect(source).not.toMatch(/\bguaranteed accessible\b/iu);
     expect(source).not.toMatch(/\bBlack Label\b/u);
     expect(source).not.toMatch(/\bphotoreal digital twin\b/iu);
+    expect(source).toContain('code: "BLOCKING_REVIEW_GATE"');
+    expect(source).toContain('code: "EVENT_CONFIGURATION_BINDING_REQUIRED"');
   });
 });

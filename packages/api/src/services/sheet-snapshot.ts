@@ -3,7 +3,6 @@ import {
   ConfigurationMetadataSchema,
   type ConfigurationMetadata,
   type ConfigurationSheetSnapshot,
-  type HallkeeperSheetV2,
   type SetupPhase,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -23,6 +22,7 @@ import type {
   AccessoryMap,
   ManifestObjectV2,
 } from "./manifest-generator-v2.js";
+import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 
 // ---------------------------------------------------------------------------
 // Sheet Snapshot Service — the immutability boundary between the live
@@ -107,11 +107,15 @@ export function isUniqueViolation(err: unknown): boolean {
 type SnapshotRow = typeof configurationSheetSnapshots.$inferSelect;
 
 function hydrateSnapshotRow(row: SnapshotRow): ConfigurationSheetSnapshot {
+  const payload = parseHallkeeperSnapshotPayload(row.payload, row.coordinateSpace);
+  if (payload === null) {
+    throw new Error(`Stored sheet snapshot ${row.id} failed payload validation`);
+  }
   return {
     id: row.id,
     configurationId: row.configurationId,
     version: row.version,
-    payload: row.payload as HallkeeperSheetV2,
+    payload,
     diagramUrl: row.diagramUrl,
     pdfUrl: row.pdfUrl,
     sourceHash: row.sourceHash,

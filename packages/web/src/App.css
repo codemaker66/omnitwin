@@ -37,6 +37,8 @@
 }
 
 .planner-canvas-stage {
+  touch-action: none;
+  overscroll-behavior: contain;
   background:
     radial-gradient(120% 92% at 58% 44%, rgba(255, 241, 208, 0.24), rgba(255, 241, 208, 0.04) 36%, transparent 62%),
     linear-gradient(180deg, rgba(246, 241, 231, 0.98), rgba(221, 208, 184, 0.86) 58%, rgba(18, 13, 9, 0.24));
@@ -53,9 +55,8 @@
 .planner-canvas-stage::before {
   z-index: 2;
   background:
-    linear-gradient(90deg, rgba(5, 5, 4, 0.18), transparent 14%, transparent 86%, rgba(5, 5, 4, 0.2)),
-    linear-gradient(180deg, rgba(5, 5, 4, 0.2), transparent 12%, transparent 80%, rgba(5, 5, 4, 0.26));
-  mix-blend-mode: multiply;
+    linear-gradient(90deg, rgba(3, 3, 2, 0.28), rgba(3, 3, 2, 0.035) 14%, rgba(3, 3, 2, 0.025) 86%, rgba(3, 3, 2, 0.3)),
+    linear-gradient(180deg, rgba(3, 3, 2, 0.3), transparent 12%, transparent 80%, rgba(3, 3, 2, 0.36));
 }
 
 .planner-canvas-stage::after {
@@ -68,7 +69,16 @@
 
 .planner-canvas-stage canvas {
   display: block;
-  filter: saturate(1.06) contrast(1.03) brightness(0.99);
+  touch-action: none;
+  overscroll-behavior: contain;
+  -webkit-user-drag: none;
+}
+
+.planner-scene-canvas-host {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .planner-status-header {
@@ -454,17 +464,38 @@
   transform: translateY(-50%);
 }
 
+.planner-spatial-hud-widget {
+  width: clamp(260px, 20vw, 288px);
+}
+
+.planner-spatial-hud-widget__body {
+  display: grid;
+  padding: 0;
+}
+
+.placement-coach-widget {
+  width: min(360px, calc(100% - 16px));
+}
+
+.placement-coach-widget__body {
+  padding: 0;
+}
+
+.truth-mode-widget {
+  width: min(336px, calc(100% - 16px));
+}
+
+.truth-mode-widget__body {
+  padding: 0;
+}
+
 .planner-spatial-hud {
-  position: fixed;
-  top: max(112px, calc(env(safe-area-inset-top) + 104px));
-  right: 22px;
-  z-index: 33;
   display: grid;
   gap: 14px;
-  width: clamp(260px, 20vw, 288px);
+  width: 100%;
   color: #f6efe3;
   font-family: "Inter", system-ui, sans-serif;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .planner-spatial-hud__panel {
@@ -692,6 +723,144 @@
   text-transform: uppercase;
 }
 
+.cockpit-stage .planner-spatial-hud-widget {
+  width: clamp(248px, 22vw, 272px);
+  max-height: calc(100% - 168px);
+}
+
+.cockpit-stage .planner-spatial-hud {
+  gap: 10px;
+  align-content: start;
+}
+
+.cockpit-stage .planner-spatial-hud__panel--revenue {
+  display: none;
+}
+
+.cockpit-stage .planner-spatial-hud__panel--grade {
+  min-height: 0;
+  padding: 14px 16px;
+}
+
+.cockpit-stage .planner-spatial-hud__panel--spaces {
+  padding: 14px 15px;
+}
+
+.cockpit-stage .planner-spatial-hud__panel--capacity {
+  padding: 14px 14px 15px;
+}
+
+.cockpit-stage .planner-spatial-hud__title {
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.cockpit-stage .planner-spatial-hud__panel--grade .planner-spatial-hud__title {
+  margin-bottom: 0;
+}
+
+.cockpit-stage .planner-spatial-hud__list {
+  gap: 10px;
+}
+
+.cockpit-stage .planner-spatial-hud__gauge {
+  width: 104px;
+  height: 104px;
+}
+
+.cockpit-stage .planner-spatial-hud__gauge-inner {
+  width: 74px;
+  height: 74px;
+}
+
+.cockpit-stage .planner-spatial-hud__gauge-inner span {
+  font-size: 25px;
+}
+
+.cockpit-stage .planner-spatial-hud__caption {
+  max-width: 100%;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+}
+
+.cockpit-stage .planner-spatial-hud__subcaption {
+  max-width: 100%;
+  margin-top: 6px;
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+}
+
+@media (max-height: 1120px), (max-width: 1540px) {
+  .cockpit-stage .planner-spatial-hud-widget {
+    width: 258px;
+    max-height: calc(100% - 254px);
+  }
+
+  .cockpit-stage .planner-spatial-hud__panel--spaces,
+  .cockpit-stage .planner-spatial-hud__subcaption--secondary,
+  .cockpit-stage .planner-spatial-hud__subcaption--disclosure {
+    display: none;
+  }
+
+  .cockpit-stage .planner-spatial-hud__panel--grade {
+    padding: 13px 15px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__panel--capacity {
+    padding: 13px 13px 14px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__gauge {
+    width: 96px;
+    height: 96px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__gauge-inner {
+    width: 68px;
+    height: 68px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__gauge-inner span {
+    font-size: 24px;
+  }
+}
+
+@media (max-height: 860px) {
+  .cockpit-stage .planner-spatial-hud-widget {
+    width: 244px;
+    max-height: calc(100% - 230px);
+  }
+
+  .cockpit-stage .planner-spatial-hud__panel--grade {
+    padding: 12px 14px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__grade-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__grade-badge {
+    width: 46px;
+    height: 46px;
+    font-size: 18px;
+  }
+
+  .cockpit-stage .planner-spatial-hud__grade-recommendation {
+    -webkit-line-clamp: 1;
+  }
+
+  .cockpit-stage .planner-spatial-hud__subcaption--capacity-detail {
+    display: none;
+  }
+}
+
+@media (max-height: 760px) {
+  .cockpit-stage .planner-spatial-hud[data-has-layout="false"] .planner-spatial-hud__panel--capacity {
+    display: none;
+  }
+}
+
 @media (max-width: 1700px) {
   .planner-status-header {
     grid-template-columns: minmax(270px, 1.05fr) minmax(170px, 0.72fr) minmax(230px, 0.98fr) auto minmax(140px, 0.62fr) minmax(220px, 0.95fr);
@@ -716,6 +885,10 @@
   }
 
   .planner-spatial-hud {
+    display: none;
+  }
+
+  .planner-spatial-hud-widget {
     display: none;
   }
 

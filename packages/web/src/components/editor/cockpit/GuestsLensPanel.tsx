@@ -13,6 +13,8 @@ import {
 } from "../../../lib/cockpit-guests-model.js";
 import { styleFitLabel, type StyleFit } from "../../../lib/room-capacity.js";
 import type { ComfortBand } from "../../../lib/layout-capacity.js";
+import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import type { LayoutStyle } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // GuestsLensPanel — guests & seating (Epic 0, fourth real lens panel).
@@ -93,6 +95,24 @@ export function GuestsLensPanel(): ReactElement {
   const comfort = comfortChip(model.band);
   const meterPct = Math.min(100, Math.max(0, model.utilizationPercent));
 
+  // One-click layouts for the styles we can generate. Only offered on a blank
+  // floor so it never wipes work in progress (auto-arrange replaces the layout).
+  const canBuild = placedItems.length === 0;
+  const buildRoom = (style: LayoutStyle): void => {
+    const guests = model.guestCount ?? 0;
+    if (style === "dinner-rounds") {
+      const table = getCatalogueItemBySlug("round-table-6ft");
+      if (table !== undefined) usePlacementStore.getState().autoArrangeBanquet(table.id, guests, 8);
+    } else {
+      const chair = getCatalogueItemBySlug("banquet-chair");
+      if (chair !== undefined) usePlacementStore.getState().autoArrangeTheatre(chair.id, guests);
+    }
+  };
+  const buildable: ReadonlyArray<{ readonly style: LayoutStyle; readonly label: string }> = [
+    { style: "dinner-rounds", label: "Banquet rounds" },
+    { style: "theatre", label: "Theatre" },
+  ];
+
   return (
     <LensPanel
       eyebrow="Guests lens"
@@ -163,6 +183,31 @@ export function GuestsLensPanel(): ReactElement {
             )}
           </div>
         ))}
+      </LensPanelSection>
+
+      <LensPanelSection label="Build this room">
+        {canBuild ? (
+          <>
+            <p className="lens-panel__field-hint">
+              Lay out the whole room in one click{model.guestCount !== null ? ` for ${String(model.guestCount)} guests` : ""} — then tune from there.
+            </p>
+            <div className="lens-panel__share-buttons">
+              {buildable.map((b) => (
+                <button
+                  key={b.style}
+                  type="button"
+                  className="lens-panel__chip-link"
+                  onClick={() => { buildRoom(b.style); }}
+                  data-testid={`guests-build-${b.style}`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="lens-panel__field-hint" data-testid="guests-build-blocked">Clear the floor to lay out a fresh room.</p>
+        )}
       </LensPanelSection>
     </LensPanel>
   );

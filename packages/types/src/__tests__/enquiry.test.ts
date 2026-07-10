@@ -489,9 +489,21 @@ describe("GuestEnquirySchema", () => {
     }).success).toBe(true);
   });
 
-  it("rejects missing configurationId", () => {
+  it("accepts venueSlug instead of configurationId", () => {
+    const { configurationId: _, ...noConfig } = validGuest;
+    expect(GuestEnquirySchema.safeParse({ ...noConfig, venueSlug: "trades-hall" }).success).toBe(true);
+  });
+
+  it("rejects a missing enquiry anchor", () => {
     const { configurationId: _, ...noConfig } = validGuest;
     expect(GuestEnquirySchema.safeParse(noConfig).success).toBe(false);
+  });
+
+  it("rejects both enquiry anchors", () => {
+    expect(GuestEnquirySchema.safeParse({
+      ...validGuest,
+      venueSlug: "trades-hall",
+    }).success).toBe(false);
   });
 
   it("rejects missing email", () => {

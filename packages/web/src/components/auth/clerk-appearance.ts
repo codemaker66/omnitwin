@@ -60,6 +60,17 @@ export const VENVIEWER_CLERK_APPEARANCE = {
     },
     socialButtonsBlockButton: {
       display: isClerkGoogleSignInEnabled() ? "flex" : "none",
+      minHeight: "44px",
+      border: "1px solid rgba(82, 230, 224, 0.32)",
+      borderRadius: "8px",
+      background: "linear-gradient(180deg, rgba(7, 19, 19, 0.96), rgba(4, 11, 11, 0.98))",
+      color: "#fff7e8",
+      boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.05)",
+      fontWeight: "800",
+    },
+    socialButtonsBlockButtonText: {
+      color: "#fff7e8",
+      fontWeight: "800",
     },
     dividerRow: {
       display: isClerkGoogleSignInEnabled() ? "flex" : "none",

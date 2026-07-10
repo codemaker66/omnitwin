@@ -44,6 +44,7 @@ interface CockpitState {
   readonly layersOpen: boolean;
   readonly beam: CockpitBeam | null;
   readonly focusRequest: CockpitFocusRequest | null;
+  readonly cameraInteractionActive: boolean;
   /** Planned guest count driving the Flow lens simulation (null → builder default). */
   readonly plannedGuestCount: number | null;
   /** Arrival-window minutes for the Flow lens scenario (phase duration). */
@@ -61,6 +62,7 @@ interface CockpitState {
   readonly setBeam: (beam: CockpitBeam | null) => void;
   readonly clearBeam: () => void;
   readonly requestFocus: (x: number, z: number) => void;
+  readonly setCameraInteractionActive: (active: boolean) => void;
   readonly reset: () => void;
 }
 
@@ -73,6 +75,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   layersOpen: false,
   beam: null,
   focusRequest: null,
+  cameraInteractionActive: false,
   plannedGuestCount: null,
   flowArrivalMinutes: 30,
   setMode: (mode) => { set({ activeMode: mode }); },
@@ -98,6 +101,9 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   requestFocus: (x, z) => {
     set((state) => ({ focusRequest: { x, z, nonce: (state.focusRequest?.nonce ?? 0) + 1 } }));
   },
+  setCameraInteractionActive: (active) => {
+    set({ cameraInteractionActive: active });
+  },
   reset: () => {
     set({
       activeMode: "design",
@@ -108,6 +114,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
       layersOpen: false,
       beam: null,
       focusRequest: null,
+      cameraInteractionActive: false,
       plannedGuestCount: null,
       flowArrivalMinutes: 30,
     });

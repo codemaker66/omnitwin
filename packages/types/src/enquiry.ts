@@ -112,19 +112,28 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 // walked (venueSlug — twin path); provide contact details directly (not sourced
 // from an auth session); and use `eventDate`/`guestCount` naming rather than
 // `preferredDate`/`estimatedGuests`. Exactly one of configurationId / venueSlug
-// is required — the server enforces that xor (a venue enquiry has no config).
+// is required. Keeping the xor in the shared contract prevents API clients and
+// server routes from drifting on this security-sensitive anchor choice.
 // ---------------------------------------------------------------------------
 
-export const GuestEnquirySchema = z.object({
-  configurationId: ConfigurationIdSchema.optional(),
-  venueSlug: z.string().trim().min(1).max(100).optional(),
-  email: z.string().trim().email().max(255),
-  phone: z.string().trim().max(30).optional(),
-  name: z.string().trim().max(200).optional(),
-  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  eventType: z.string().trim().max(100).optional(),
-  guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
-  message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
-});
+export const GuestEnquirySchema = z
+  .object({
+    configurationId: ConfigurationIdSchema.optional(),
+    venueSlug: z.string().trim().min(1).max(100).optional(),
+    email: z.string().trim().email().max(255),
+    phone: z.string().trim().max(30).optional(),
+    name: z.string().trim().max(200).optional(),
+    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    eventType: z.string().trim().max(100).optional(),
+    guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
+    message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
+  })
+  .refine(
+    (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),
+    {
+      message: "Provide exactly one of configurationId or venueSlug",
+      path: ["configurationId"],
+    },
+  );
 
 export type GuestEnquiry = z.infer<typeof GuestEnquirySchema>;

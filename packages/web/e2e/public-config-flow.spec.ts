@@ -22,6 +22,13 @@ const SPACE_ID = "e2e-space-001";
 const CONFIG_ID = "e2e-config-001";
 const WIDGET_COLLISION_ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-widget-collision-2026-06-22";
 
+// Every active test in this file boots the real R3F planner. Running those
+// canvases concurrently in separate Chromium workers contends for the shared
+// GPU process and can starve both React and Playwright polling even though the
+// page eventually becomes interactive. Keep this WebGL-heavy flow serial;
+// Playwright can still run other spec files in parallel around it.
+test.describe.configure({ mode: "serial" });
+
 // ---------------------------------------------------------------------------
 // Typed mock fixtures
 // ---------------------------------------------------------------------------
@@ -63,11 +70,27 @@ interface CollisionSnapshot {
   readonly status: "measured";
   readonly bottomOverlap: number;
   readonly capacityOverlap: number;
+  readonly capacityBottomOverlap: number;
+  readonly capacityChildrenFit: boolean;
+  readonly capacityCommandDeckGap: number;
+  readonly capacityCommandDeckOverlap: number;
+  readonly minimapCapacityGap: number;
+  readonly standaloneTruthAttached: boolean;
+  readonly truthChildrenFit: boolean;
+  readonly truthMinimapHorizontalOverlap: number;
+  readonly truthMinimapVerticalGap: number;
   readonly truthOverlap: number;
+  readonly truthStatusLineFits: boolean;
+  readonly truthToolbarOverlap: number;
+  readonly viewModeMinimapOverlap: number;
+  readonly viewModeToolbarOverlap: number;
   readonly bottom: RectSnapshot;
   readonly capacity: RectSnapshot;
+  readonly commandDeck: RectSnapshot;
   readonly minimap: RectSnapshot;
-  readonly truth: RectSnapshot;
+  readonly toolbar: RectSnapshot;
+  readonly truth: RectSnapshot | null;
+  readonly viewMode: RectSnapshot;
 }
 
 interface MissingCollisionTarget {
@@ -126,6 +149,25 @@ function mockRoundTables(count: number): readonly MockPlacedObject[] {
   }));
 }
 
+function mockSeatedRoundTables(tableCount: number, chairsPerTable: number): readonly MockPlacedObject[] {
+  const tables = mockRoundTables(tableCount);
+  const chairs = Array.from({ length: tableCount * chairsPerTable }, (_, i) => {
+    const tableIndex = Math.floor(i / chairsPerTable);
+    const seatIndex = i % chairsPerTable;
+    const angle = (Math.PI * 2 * seatIndex) / chairsPerTable;
+    const tableX = tableIndex * 8;
+    return {
+      ...MOCK_OBJECT,
+      id: `e2e-banquet-chair-${String(i + 1)}`,
+      assetDefinitionId: "banquet-chair",
+      positionX: (tableX + Math.cos(angle) * 1.45).toFixed(2),
+      positionZ: (Math.sin(angle) * 1.45).toFixed(2),
+      sortOrder: tableCount + i,
+    };
+  });
+  return [...tables, ...chairs];
+}
+
 const MOCK_CONFIG_EMPTY: MockConfig = {
   id: CONFIG_ID,
   spaceId: SPACE_ID,
@@ -162,6 +204,22 @@ async function mockSpacePickerApis(page: Page): Promise<void> {
   await page.route(`${API}/venues/${VENUE_ID}/spaces/${SPACE_ID}`, (route) => {
     void route.fulfill({ json: { data: MOCK_SPACE } });
   });
+}
+
+/**
+ * Wait for the requested configuration to own the interactive planner shell.
+ *
+ * A visible canvas is not an editor-readiness signal: R3F may replace it while
+ * WebGL starts, and the planner deliberately keeps its non-3D controls usable
+ * independently of renderer warm-up. The configuration id proves bootstrap
+ * completed for the requested draft; the toolbar proves its actions are ready.
+ */
+async function waitForPlannerReady(page: Page, configId = CONFIG_ID): Promise<void> {
+  const plannerShell = page.getByTestId("planner-3d-shell");
+  await expect(plannerShell).toHaveAttribute("data-planner-config-id", configId, {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("planner-toolbar")).toBeVisible({ timeout: 15_000 });
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +273,7 @@ test.describe.skip("Config creation from space picker", () => {
 
     // After config creation the router navigates to /editor/:configId
     await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
     await expect(page.locator("canvas")).toBeVisible();
   });
 });
@@ -233,12 +291,12 @@ test.describe("Grand Hall public blank draft", () => {
 
     await page.goto("/plan");
     await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
 
     await expect(page.getByTestId("planner-spatial-hud")).toBeVisible({ timeout: 8_000 });
     await expect(page.getByTestId("save-send-panel")).not.toBeAttached();
-    await expect(page.getByText("Start placing furniture to build capacity")).toBeVisible();
-    await expect(page.getByText("0 chairs")).toBeVisible();
+    await expect(page.getByText("Start placing furniture to grade your layout")).toBeVisible();
+    await expect(page.getByText("0 placed items")).toBeVisible();
   });
 });
 
@@ -250,7 +308,7 @@ test.describe("Editor with empty config", () => {
   test.beforeEach(async ({ page }) => {
     await mockConfigLoad(page);
     await page.goto(`/plan/${CONFIG_ID}`);
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
   });
 
   test("Save Layout toolbar button is visible in the editor", async ({ page }) => {
@@ -308,7 +366,7 @@ test.describe("Editor with placed objects", () => {
   test.beforeEach(async ({ page }) => {
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
     await page.goto(`/plan/${CONFIG_ID}`);
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
   });
 
   test("SaveSendPanel becomes visible when the loaded config has placed objects", async ({ page }) => {
@@ -337,9 +395,9 @@ test.describe("Editor with placed objects", () => {
 
   test("Layout grade card keeps long recommendation copy inside the panel", async ({ page }) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
-    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockRoundTables(18) });
+    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await page.goto(`/plan/${CONFIG_ID}`);
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
     await expect(page.getByTestId("planner-layout-grade")).toBeVisible({ timeout: 5_000 });
 
     const layout = await page.evaluate(() => {
@@ -395,12 +453,16 @@ test.describe("Editor with placed objects", () => {
     await page.evaluate(() => {
       window.localStorage.removeItem("venviewer:floating-widget:cockpit-minimap:v2");
     });
-    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockRoundTables(18) });
+    await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await page.goto(`/plan/${CONFIG_ID}`);
-    await page.waitForSelector("canvas", { timeout: 15_000 });
+    await waitForPlannerReady(page);
 
     const minimap = page.locator("[data-floating-widget-id='cockpit-minimap']");
+    const viewMode = page.locator("[data-floating-widget-id='planner-view-mode']");
     await expect(minimap).toBeVisible({ timeout: 5_000 });
+    await expect(viewMode).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("truth-mode-indicator")).not.toBeAttached();
+    await expect(page.getByTestId("cockpit-truth-rail")).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId("planner-capacity-panel")).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId("cockpit-bottom")).toBeVisible({ timeout: 5_000 });
 
@@ -425,6 +487,43 @@ test.describe("Editor with placed objects", () => {
         return Math.max(0, right - left) * Math.max(0, bottom - top);
       }
 
+      function childrenFitInside(parentSelector: string, inset: number): boolean {
+        const parent = document.querySelector<HTMLElement>(parentSelector);
+        if (parent === null) return false;
+        const parentRect = parent.getBoundingClientRect();
+        const children = Array.from(parent.children);
+        return children.every((child) => {
+          const rect = child.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) return true;
+          return rect.left >= parentRect.left + inset
+            && rect.right <= parentRect.right - inset
+            && rect.top >= parentRect.top + inset
+            && rect.bottom <= parentRect.bottom - inset;
+        });
+      }
+
+      function elementFitsInside(parentSelector: string, childSelector: string, inset: number): boolean {
+        const parent = document.querySelector<HTMLElement>(parentSelector);
+        const child = document.querySelector<HTMLElement>(childSelector);
+        if (parent === null || child === null) return false;
+        const parentRect = parent.getBoundingClientRect();
+        const rect = child.getBoundingClientRect();
+        return rect.left >= parentRect.left + inset
+          && rect.right <= parentRect.right - inset
+          && rect.top >= parentRect.top + inset
+          && rect.bottom <= parentRect.bottom - inset;
+      }
+
+      function horizontalOverlap(a: RectSnapshot, b: RectSnapshot): number {
+        return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+      }
+
+      function axisClearance(a: RectSnapshot, b: RectSnapshot): number {
+        const horizontalGap = Math.max(a.left - b.right, b.left - a.right);
+        const verticalGap = Math.max(a.top - b.bottom, b.top - a.bottom);
+        return Math.max(horizontalGap, verticalGap);
+      }
+
       const minimapRect = snapshot("[data-floating-widget-id='cockpit-minimap']");
       if (minimapRect === null) return { status: "missing-target", missing: "cockpit-minimap" };
 
@@ -432,10 +531,18 @@ test.describe("Editor with placed objects", () => {
       if (capacityRect === null) return { status: "missing-target", missing: "planner-capacity-panel" };
 
       const truthRect = snapshot("[data-testid='truth-mode-indicator']");
-      if (truthRect === null) return { status: "missing-target", missing: "truth-mode-indicator" };
 
       const bottomRect = snapshot("[data-testid='cockpit-bottom']");
       if (bottomRect === null) return { status: "missing-target", missing: "cockpit-bottom" };
+
+      const commandDeckRect = snapshot("[data-testid='planner-command-deck']");
+      if (commandDeckRect === null) return { status: "missing-target", missing: "planner-command-deck" };
+
+      const toolbarRect = snapshot("[data-testid='planner-toolbar']");
+      if (toolbarRect === null) return { status: "missing-target", missing: "planner-toolbar" };
+
+      const viewModeRect = snapshot("[data-floating-widget-id='planner-view-mode']");
+      if (viewModeRect === null) return { status: "missing-target", missing: "planner-view-mode" };
 
       return {
         status: "measured",
@@ -443,8 +550,28 @@ test.describe("Editor with placed objects", () => {
         capacity: capacityRect,
         truth: truthRect,
         bottom: bottomRect,
+        commandDeck: commandDeckRect,
+        toolbar: toolbarRect,
+        viewMode: viewModeRect,
         capacityOverlap: overlapArea(minimapRect, capacityRect),
-        truthOverlap: overlapArea(minimapRect, truthRect),
+        capacityBottomOverlap: overlapArea(capacityRect, bottomRect),
+        capacityChildrenFit: childrenFitInside("[data-testid='planner-capacity-panel']", 6),
+        capacityCommandDeckGap: axisClearance(capacityRect, commandDeckRect),
+        capacityCommandDeckOverlap: overlapArea(capacityRect, commandDeckRect),
+        minimapCapacityGap: axisClearance(minimapRect, capacityRect),
+        standaloneTruthAttached: truthRect !== null,
+        truthChildrenFit: truthRect === null || childrenFitInside("[data-testid='truth-mode-toggle']", 4),
+        truthMinimapHorizontalOverlap: truthRect === null ? 0 : horizontalOverlap(minimapRect, truthRect),
+        truthMinimapVerticalGap: truthRect === null ? Number.POSITIVE_INFINITY : minimapRect.top - truthRect.bottom,
+        truthOverlap: truthRect === null ? 0 : overlapArea(minimapRect, truthRect),
+        truthStatusLineFits: truthRect === null || elementFitsInside(
+          "[data-testid='truth-mode-toggle']",
+          "[data-testid='truth-mode-status-line']",
+          4,
+        ),
+        truthToolbarOverlap: truthRect === null ? 0 : overlapArea(truthRect, toolbarRect),
+        viewModeMinimapOverlap: overlapArea(viewModeRect, minimapRect),
+        viewModeToolbarOverlap: overlapArea(viewModeRect, toolbarRect),
         bottomOverlap: overlapArea(minimapRect, bottomRect),
       };
     });
@@ -462,8 +589,22 @@ test.describe("Editor with placed objects", () => {
       expect(collision.capacityOverlap).toBe(0);
       expect(collision.truthOverlap).toBe(0);
       expect(collision.bottomOverlap).toBe(0);
-      expect(collision.minimap.right).toBeLessThanOrEqual(collision.capacity.left - 8);
+      expect(collision.capacityBottomOverlap).toBe(0);
+      expect(collision.capacityCommandDeckOverlap).toBe(0);
+      expect(collision.capacityCommandDeckGap).toBeGreaterThanOrEqual(8);
+      expect(collision.capacityChildrenFit).toBe(true);
+      expect(collision.minimapCapacityGap).toBeGreaterThanOrEqual(8);
+      expect(collision.standaloneTruthAttached).toBe(false);
+      expect(collision.truthChildrenFit).toBe(true);
+      expect(collision.truthStatusLineFits).toBe(true);
+      expect(collision.truthToolbarOverlap).toBe(0);
+      expect(collision.viewModeToolbarOverlap).toBe(0);
+      expect(collision.viewModeMinimapOverlap).toBe(0);
+      if (collision.truthMinimapHorizontalOverlap > 0) {
+        expect(collision.truthMinimapVerticalGap).toBeGreaterThanOrEqual(16);
+      }
       expect(collision.minimap.bottom).toBeLessThanOrEqual(collision.bottom.top - 8);
+      expect(collision.capacity.bottom).toBeLessThanOrEqual(collision.bottom.top - 8);
     }
   });
 

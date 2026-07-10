@@ -7,11 +7,11 @@ import {
   twinEquirectPath,
   type TwinEquirectLod,
 } from "@omnitwin/types";
+import { assertSourceFiles } from "./source-preflight.js";
 
 export interface EquirectTileReport {
   written: number;
   skipped: number;
-  missing: string[];
 }
 
 /** Per-LOD WebP quality: the 8192 zoom tier trades a couple of quality
@@ -43,7 +43,13 @@ export async function convertEquirectTiles(
   nodeIds: readonly string[],
   onProgress?: (done: number, total: number) => void,
 ): Promise<EquirectTileReport> {
-  const report: EquirectTileReport = { written: 0, skipped: 0, missing: [] };
+  await assertSourceFiles(
+    equirectDir,
+    nodeIds.flatMap((nodeId) => [`${nodeId}.jpg`, `${nodeId}_8192.jpg`]),
+    "equirect",
+  );
+
+  const report: EquirectTileReport = { written: 0, skipped: 0 };
   const total = nodeIds.length;
   let done = 0;
 
@@ -53,14 +59,6 @@ export async function convertEquirectTiles(
     const baseSrc = join(equirectDir, baseName);
     const ssSrc = join(equirectDir, ssName);
     done += 1;
-    const missingHere = [
-      ...(existsSync(baseSrc) ? [] : [baseName]),
-      ...(existsSync(ssSrc) ? [] : [ssName]),
-    ];
-    if (missingHere.length > 0) {
-      report.missing.push(...missingHere);
-      continue;
-    }
     await mkdir(join(outDir, "tiles", nodeId), { recursive: true });
     for (const lod of TWIN_EQUIRECT_LODS) {
       const dest = join(outDir, twinEquirectPath(nodeId, lod));

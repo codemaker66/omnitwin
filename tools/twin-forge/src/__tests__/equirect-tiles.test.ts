@@ -24,15 +24,14 @@ async function makeFakeEquirect(
 }
 
 describe("convertEquirectTiles", () => {
-  it("writes 512+4096+8192 webp per complete pano pair and reports missing sources", async () => {
+  it("writes 512+4096+8192 webp per complete pano pair", async () => {
     const src = mkdtempSync(join(tmpdir(), "forge-eq-src-"));
     const out = mkdtempSync(join(tmpdir(), "forge-eq-out-"));
     await makeFakeEquirect(src, "scan_000.jpg", 64, 32);
     await makeFakeEquirect(src, "scan_000_8192.jpg", 128, 64);
 
-    const report = await convertEquirectTiles(src, out, ["scan_000", "scan_001"]);
+    const report = await convertEquirectTiles(src, out, ["scan_000"]);
     expect(report.written).toBe(3); // one pano pair × three lods
-    expect(report.missing).toEqual(["scan_001.jpg", "scan_001_8192.jpg"]);
 
     // The 2:1 tile contract is exact regardless of source dimensions.
     for (const lod of [512, 4096, 8192] as const) {
@@ -52,14 +51,16 @@ describe("convertEquirectTiles", () => {
     expect(hashes["tiles/scan_000/equirect_8192.webp"]).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("skips a node whole when only its 8192 source is missing", async () => {
+  it("preflights every declared pair and writes nothing when any source is missing", async () => {
     const src = mkdtempSync(join(tmpdir(), "forge-eq-src-"));
     const out = mkdtempSync(join(tmpdir(), "forge-eq-out-"));
-    await makeFakeEquirect(src, "scan_002.jpg", 64, 32); // base only
+    await makeFakeEquirect(src, "scan_000.jpg", 64, 32);
+    await makeFakeEquirect(src, "scan_000_8192.jpg", 128, 64);
+    await makeFakeEquirect(src, "scan_001.jpg", 64, 32); // base only
 
-    const report = await convertEquirectTiles(src, out, ["scan_002"]);
-    expect(report.written).toBe(0); // no partial LOD ladder
-    expect(report.missing).toEqual(["scan_002_8192.jpg"]);
-    expect(existsSync(join(out, "tiles", "scan_002"))).toBe(false);
+    await expect(convertEquirectTiles(src, out, ["scan_000", "scan_001"])).rejects.toThrow(
+      "scan_001_8192.jpg",
+    );
+    expect(existsSync(join(out, "tiles"))).toBe(false);
   });
 });

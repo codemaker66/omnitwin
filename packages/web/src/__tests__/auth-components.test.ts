@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { readFile } from "node:fs/promises";
@@ -15,6 +15,15 @@ interface CapturedClerkProviderProps {
     readonly elements?: {
       readonly socialButtonsBlockButton?: {
         readonly display?: string;
+        readonly minHeight?: string;
+        readonly border?: string;
+        readonly background?: string;
+        readonly color?: string;
+        readonly fontWeight?: string;
+      };
+      readonly socialButtonsBlockButtonText?: {
+        readonly color?: string;
+        readonly fontWeight?: string;
       };
       readonly dividerRow?: {
         readonly display?: string;
@@ -150,6 +159,11 @@ describe("ProtectedRoute", () => {
   });
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
+
 describe("UserMenu", () => {
   it("exports a component", async () => {
     const { UserMenu } = await import("../components/auth/UserMenu.js");
@@ -176,6 +190,24 @@ describe("ClerkRouteProvider", () => {
     expect(props?.localization?.signUp?.start?.title).toBe("Create your Venviewer account");
     expect(props?.appearance?.elements?.socialButtonsBlockButton?.display).toBe("none");
     expect(props?.appearance?.elements?.dividerRow?.display).toBe("none");
+  });
+
+  it("gives enabled Google social sign-in a visible Venviewer control treatment", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_CLERK_GOOGLE_SIGN_IN_ENABLED", "true");
+    const { VENVIEWER_CLERK_APPEARANCE } = await import("../components/auth/clerk-appearance.js");
+
+    const socialButton = VENVIEWER_CLERK_APPEARANCE.elements.socialButtonsBlockButton;
+    const socialButtonText = VENVIEWER_CLERK_APPEARANCE.elements.socialButtonsBlockButtonText;
+
+    expect(socialButton.display).toBe("flex");
+    expect(socialButton.minHeight).toBe("44px");
+    expect(socialButton.border).toContain("82, 230, 224");
+    expect(socialButton.background).toContain("linear-gradient");
+    expect(socialButton.color).toBe("#fff7e8");
+    expect(socialButton.fontWeight).toBe("800");
+    expect(socialButtonText.color).toBe("#fff7e8");
+    expect(socialButtonText.fontWeight).toBe("800");
   });
 });
 

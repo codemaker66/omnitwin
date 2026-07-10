@@ -19,6 +19,7 @@ import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { toRenderSpace } from "../constants/scale.js";
@@ -41,8 +42,11 @@ import { TABLE_CLOTH_COLORS, tableGroupedChairCount } from "../lib/table-dressin
 export const LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH = 1100;
 export const MAX_LEAN_CONSTRAINT_VIOLATION_SKINS: number = 0;
 
-export function shouldUseLeanPlannerFurniture(viewportWidth: number): boolean {
-  return viewportWidth < LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH;
+export function shouldUseLeanPlannerFurniture(
+  viewportWidth: number,
+  cameraInteractionActive = false,
+): boolean {
+  return cameraInteractionActive || viewportWidth < LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH;
 }
 
 export function visibleConstraintViolationIds(
@@ -719,7 +723,8 @@ export function PlacedFurniture(): React.ReactElement {
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
   const activeReferenceId = useBookmarkStore((s) => s.activeReferenceId);
   const roomDims = useRoomDimensionsStore((s) => s.dimensions);
-  const useLeanFurniture = shouldUseLeanPlannerFurniture(size.width);
+  const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
+  const useLeanFurniture = shouldUseLeanPlannerFurniture(size.width, cameraInteractionActive);
 
   // Track which items are currently animating their cloth unfurl
   const [animatingIds, setAnimatingIds] = useState<ReadonlySet<string>>(new Set());
@@ -774,8 +779,9 @@ export function PlacedFurniture(): React.ReactElement {
     return ids;
   }, [bookmarks]);
   const canRenderLeanItemDetail = useCallback((placedId: string): boolean => (
-    !useLeanFurniture || selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId)
-  ), [cameraReferenceItemIds, selectedIds, useLeanFurniture]);
+    !cameraInteractionActive
+    && (!useLeanFurniture || selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId))
+  ), [cameraInteractionActive, cameraReferenceItemIds, selectedIds, useLeanFurniture]);
 
   const activeReferenceItemId = useMemo(() => {
     if (activeReferenceId === null) return null;

@@ -12,12 +12,14 @@ import {
   date,
   index,
   unique,
+  foreignKey,
   primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
   AgentTrajectory,
   AnalyticsSnapshotPayload,
+  CanonicalLayoutSnapshotV0,
   ComfortConstraintInput,
   CaptureControlSourceRecord,
   DensityHeatmapCell,
@@ -32,12 +34,34 @@ import type {
   EventPlanRiskLevel,
   EventPlanSourceKind,
   EventPlanNotificationSeverity,
+  EventMissionBaseline,
+  EventMissionEventKind,
+  EventMissionEventPayload,
+  EventMissionEntityType,
+  EventMissionIncidentSeverity,
+  EventMissionIncidentStatus,
+  EventMissionPhaseStatus,
+  EventMissionPresence,
+  EventMissionSpatialAnchor,
+  EventMissionStatus,
+  EventMissionTask,
+  EventArchitectCandidate,
+  EventArchitectRequest,
+  EventArchitectRun,
+  EventArchitectStrategy,
+  LayoutValidatorRun,
   PricingAssumptionInput,
   ProposalVersionPayload,
   RuntimePackageManifestJson,
   RuntimeQaRecordV0,
   TransformArtifactV0,
 } from "@omnitwin/types";
+// Keep the runtime schema self-contained so drizzle-kit can load this .ts file
+// directly. The type-only imports preserve the canonical coordinate contract
+// without leaving a runtime `./coordinate-space.js` require for drizzle-kit.
+type LayoutCoordinateSpace = import("./coordinate-space.js").LayoutCoordinateSpace;
+type RealMetreCoordinateSpace = typeof import("./coordinate-space.js").REAL_METRE_COORDINATE_SPACE;
+const REAL_METRE_COORDINATE_SPACE: RealMetreCoordinateSpace = "real_m_v1";
 
 // ---------------------------------------------------------------------------
 // 1. venues
@@ -424,6 +448,10 @@ export const configurationLayoutRevisions = pgTable("configuration_layout_revisi
   source: varchar("source", { length: 40 }).notNull(),
   actorUserId: uuid("actor_user_id").references(() => users.id),
   payload: jsonb("payload").notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("configuration_layout_revisions_config_revision_unique").on(table.configurationId, table.revision),
@@ -488,6 +516,10 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
   configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   payload: jsonb("payload").notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   diagramUrl: text("diagram_url"),
   pdfUrl: text("pdf_url"),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
@@ -518,6 +550,13 @@ export const placedObjects = pgTable("placed_objects", {
   scale: numeric("scale", { precision: 5, scale: 3 }).notNull().default("1.000"),
   sortOrder: integer("sort_order").notNull().default(0),
   metadata: jsonb("metadata"),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
+  // Application-generated on every X/Z write. Migration 0044's trigger uses
+  // this nonce to reject stale render-space writers during a rolling deploy.
+  coordinateWriteToken: uuid("coordinate_write_token").notNull(),
 }, (table) => [
   index("placed_objects_configuration_id_idx").on(table.configurationId),
 ]);
@@ -1116,6 +1155,7 @@ export const events = pgTable("events", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
+  unique("events_id_venue_unique").on(table.id, table.venueId),
   index("events_venue_status_idx").on(table.venueId, table.status),
   index("events_created_by_idx").on(table.createdBy),
 ]);
@@ -1148,6 +1188,7 @@ export const eventPhases = pgTable("event_phases", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("event_phases_event_template_unique").on(table.eventId, table.templateKey),
+  unique("event_phases_event_id_id_unique").on(table.eventId, table.id),
   index("event_phases_event_order_idx").on(table.eventId, table.sortOrder),
 ]);
 
@@ -1166,6 +1207,14 @@ export const eventScenarios = pgTable("event_scenarios", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  // Migration 0045 applies PostgreSQL's column-targeted
+  // `ON DELETE SET NULL (phase_id)`. Drizzle 0.45 cannot encode the target
+  // column list, so the migration is authoritative for that delete action.
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_scenarios_event_phase_fk",
+  }),
   index("event_scenarios_event_idx").on(table.eventId),
   index("event_scenarios_phase_idx").on(table.phaseId),
 ]);
@@ -1220,6 +1269,10 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   objectCount: integer("object_count").notNull().default(0),
   guestCount: integer("guest_count"),
   payload: jsonb("payload").$type<Record<string, unknown> | null>(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   frozenAt: timestamp("frozen_at", { withTimezone: true }),
 }, (table) => [
@@ -1415,6 +1468,7 @@ export const handoffPacks = pgTable("handoff_packs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("handoff_packs_snapshot_version_unique").on(table.snapshotId, table.version),
+  unique("handoff_packs_event_id_id_unique").on(table.eventId, table.id),
   index("handoff_packs_config_idx").on(table.configId),
   index("handoff_packs_event_idx").on(table.eventId),
   index("handoff_packs_status_idx").on(table.status),
@@ -1443,9 +1497,11 @@ export const opsTasks = pgTable("ops_tasks", {
   sortOrder: integer("sort_order").notNull().default(0),
   dueLabel: varchar("due_label", { length: 120 }),
   sourceRef: varchar("source_ref", { length: 300 }),
+  spatialAnchors: jsonb("spatial_anchors").$type<EventMissionSpatialAnchor[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  unique("ops_tasks_handoff_id_unique").on(table.handoffPackId, table.id),
   index("ops_tasks_pack_order_idx").on(table.handoffPackId, table.sortOrder),
   index("ops_tasks_group_idx").on(table.taskGroupId),
   index("ops_tasks_status_idx").on(table.status),
@@ -1921,6 +1977,10 @@ export const proposalVersions = pgTable("proposal_versions", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   payload: jsonb("payload").$type<ProposalVersionPayload>().notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2348,4 +2408,321 @@ export const integrationEvents = pgTable("integration_events", {
 }, (table) => [
   index("integration_events_venue_created_idx").on(table.venueId, table.createdAt),
   index("integration_events_connection_idx").on(table.integrationConnectionId),
+]);
+
+// ---------------------------------------------------------------------------
+// 26. event mission control — authoritative event-day execution and replay.
+//
+// The compiled handoff remains immutable. Mission phase/task rows are mutable
+// read projections guarded by entity revisions; event_mission_events is the
+// append-only audit/replay source. Presence rows are advisory and deliberately
+// excluded from replay.
+// ---------------------------------------------------------------------------
+
+export const eventMissions = pgTable("event_missions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id),
+  sourceSnapshotHash: varchar("source_snapshot_hash", { length: 64 }).notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionStatus>().notNull().default("live"),
+  baseline: jsonb("baseline").$type<EventMissionBaseline>().notNull(),
+  baselineHash: varchar("baseline_hash", { length: 64 }).notNull(),
+  lastSequence: bigint("last_sequence", { mode: "number" }).notNull().default(0),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_missions_id_event_unique").on(table.id, table.eventId),
+  unique("event_missions_id_event_handoff_unique").on(table.id, table.eventId, table.handoffPackId),
+  index("event_missions_event_created_idx").on(table.eventId, table.createdAt),
+  index("event_missions_venue_status_idx").on(table.venueId, table.status),
+  foreignKey({
+    columns: [table.eventId, table.venueId],
+    foreignColumns: [events.id, events.venueId],
+    name: "event_missions_event_venue_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.handoffPackId],
+    foreignColumns: [handoffPacks.eventId, handoffPacks.id],
+    name: "event_missions_event_handoff_fk",
+  }),
+]);
+
+export const eventMissionPhases = pgTable("event_mission_phases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  phaseId: uuid("phase_id").notNull().references(() => eventPhases.id),
+  name: varchar("name", { length: 100 }).notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionPhaseStatus>().notNull().default("pending"),
+  revision: integer("revision").notNull().default(1),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualEndedAt: timestamp("actual_ended_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_phases_mission_phase_unique").on(table.missionId, table.phaseId),
+  unique("event_mission_phases_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_phases_mission_order_idx").on(table.missionId, table.sortOrder),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_phases_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_phases_event_phase_fk",
+  }),
+]);
+
+export const eventMissionTasks = pgTable("event_mission_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id),
+  opsTaskId: uuid("ops_task_id").notNull().references(() => opsTasks.id),
+  phaseId: uuid("phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 30 }).$type<EventMissionTask["kind"]>().notNull(),
+  title: varchar("title", { length: 240 }).notNull(),
+  detail: text("detail").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionTask["status"]>().notNull().default("todo"),
+  revision: integer("revision").notNull().default(1),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  assigneeLabel: varchar("assignee_label", { length: 160 }),
+  spatialAnchors: jsonb("spatial_anchors").$type<EventMissionSpatialAnchor[]>().notNull().default([]),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualEndedAt: timestamp("actual_ended_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_tasks_mission_task_unique").on(table.missionId, table.opsTaskId),
+  unique("event_mission_tasks_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_tasks_mission_status_idx").on(table.missionId, table.status),
+  index("event_mission_tasks_assignee_idx").on(table.assignedTo),
+  foreignKey({
+    columns: [table.missionId, table.eventId, table.handoffPackId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId, eventMissions.handoffPackId],
+    name: "event_mission_tasks_mission_scope_fk",
+  }),
+  foreignKey({
+    columns: [table.handoffPackId, table.opsTaskId],
+    foreignColumns: [opsTasks.handoffPackId, opsTasks.id],
+    name: "event_mission_tasks_handoff_task_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_tasks_event_phase_fk",
+  }),
+]);
+
+export const eventMissionIncidents = pgTable("event_mission_incidents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  phaseId: uuid("phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  missionTaskId: uuid("mission_task_id").references(() => eventMissionTasks.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 180 }).notNull(),
+  detail: text("detail").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionIncidentStatus>().notNull().default("open"),
+  severity: varchar("severity", { length: 20 }).$type<EventMissionIncidentSeverity>().notNull().default("attention"),
+  spatialAnchor: jsonb("spatial_anchor").$type<EventMissionSpatialAnchor | null>(),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  reportedBy: uuid("reported_by").references(() => users.id, { onDelete: "set null" }),
+  revision: integer("revision").notNull().default(1),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_incidents_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_incidents_mission_status_idx").on(table.missionId, table.status),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_incidents_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.missionId, table.missionTaskId],
+    foreignColumns: [eventMissionTasks.missionId, eventMissionTasks.id],
+    name: "event_mission_incidents_mission_task_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_incidents_event_phase_fk",
+  }),
+]);
+
+export const eventMissionEvents = pgTable("event_mission_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
+  kind: varchar("kind", { length: 40 }).$type<EventMissionEventKind>().notNull(),
+  entityType: varchar("entity_type", { length: 30 }).$type<EventMissionEntityType>().notNull(),
+  entityId: uuid("entity_id"),
+  entityRevision: integer("entity_revision"),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorRole: varchar("actor_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  actorLabel: varchar("actor_label", { length: 160 }).notNull(),
+  actorKey: varchar("actor_key", { length: 200 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requiresAcknowledgement: boolean("requires_acknowledgement").notNull().default(false),
+  payload: jsonb("payload").$type<EventMissionEventPayload>().notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_events_mission_sequence_unique").on(table.missionId, table.sequence),
+  unique("event_mission_events_mission_id_unique").on(table.missionId, table.id),
+  unique("event_mission_events_idempotency_unique").on(table.missionId, table.actorKey, table.idempotencyKey),
+  index("event_mission_events_mission_created_idx").on(table.missionId, table.createdAt),
+  index("event_mission_events_entity_idx").on(table.entityType, table.entityId),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_events_mission_event_fk",
+  }),
+]);
+
+export const eventMissionAcknowledgements = pgTable("event_mission_acknowledgements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  acknowledgedEventId: uuid("acknowledged_event_id").notNull().references(() => eventMissionEvents.id, { onDelete: "cascade" }),
+  acknowledgedBy: uuid("acknowledged_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  acknowledgedByRole: varchar("acknowledged_by_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_ack_event_user_unique").on(table.missionId, table.acknowledgedEventId, table.acknowledgedBy),
+  index("event_mission_ack_mission_created_idx").on(table.missionId, table.createdAt),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_ack_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.missionId, table.acknowledgedEventId],
+    foreignColumns: [eventMissionEvents.missionId, eventMissionEvents.id],
+    name: "event_mission_ack_target_fk",
+  }),
+]);
+
+export const eventMissionSessions = pgTable("event_mission_sessions", {
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  displayName: varchar("display_name", { length: 160 }).notNull(),
+  role: varchar("role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  activePhaseId: uuid("active_phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  activeTaskId: uuid("active_task_id").references(() => eventMissionTasks.id, { onDelete: "set null" }),
+  view: varchar("view", { length: 20 }).$type<EventMissionPresence["view"]>().notNull().default("board"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.missionId, table.sessionId, table.userId] }),
+  index("event_mission_sessions_active_idx").on(table.missionId, table.lastSeenAt),
+  foreignKey({
+    columns: [table.missionId, table.activeTaskId],
+    foreignColumns: [eventMissionTasks.missionId, eventMissionTasks.id],
+    name: "event_mission_sessions_mission_task_fk",
+  }),
+]);
+
+// ---------------------------------------------------------------------------
+// 27. proof-carrying Event Architect.
+//
+// Every generated candidate is materialised as a real private draft
+// configuration in the same transaction as its canonical snapshot and
+// validator run. The browser never supplies frozen geometry, timestamps,
+// policy references, or evidence digests.
+// ---------------------------------------------------------------------------
+
+export const canonicalLayoutSnapshots = pgTable("canonical_layout_snapshots", {
+  id: uuid("id").primaryKey(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  schemaVersion: varchar("schema_version", { length: 60 }).notNull(),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  sourceKind: varchar("source_kind", { length: 40 }).notNull().default("event_architect_candidate"),
+  payload: jsonb("payload").$type<CanonicalLayoutSnapshotV0>().notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("canonical_layout_snapshots_config_unique").on(table.configurationId),
+  unique("canonical_layout_snapshots_digest_unique").on(table.snapshotDigest),
+  index("canonical_layout_snapshots_venue_created_idx").on(table.venueId, table.createdAt),
+  index("canonical_layout_snapshots_space_created_idx").on(table.spaceId, table.createdAt),
+]);
+
+export const layoutValidationRuns = pgTable("layout_validation_runs", {
+  id: uuid("id").primaryKey(),
+  snapshotId: uuid("snapshot_id").notNull().references(() => canonicalLayoutSnapshots.id, { onDelete: "cascade" }),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  validatorVersion: varchar("validator_version", { length: 40 }).notNull(),
+  validatorDigest: varchar("validator_digest", { length: 64 }).notNull(),
+  contextDigest: varchar("context_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  payload: jsonb("payload").$type<LayoutValidatorRun>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("layout_validation_runs_snapshot_unique").on(table.snapshotId),
+  unique("layout_validation_runs_proof_unique").on(table.proofDigest),
+  index("layout_validation_runs_snapshot_digest_idx").on(table.snapshotDigest),
+]);
+
+export const eventArchitectRuns = pgTable("event_architect_runs", {
+  id: uuid("id").primaryKey(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  engineVersion: varchar("engine_version", { length: 40 }).notNull(),
+  engineDigest: varchar("engine_digest", { length: 64 }).notNull(),
+  requestPayload: jsonb("request_payload").$type<EventArchitectRequest>().notNull(),
+  runPayload: jsonb("run_payload").$type<EventArchitectRun>().notNull(),
+  selectedCandidateId: uuid("selected_candidate_id"),
+  selectedConfigurationId: uuid("selected_configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  selectedSnapshotDigest: varchar("selected_snapshot_digest", { length: 64 }),
+  selectedProofDigest: varchar("selected_proof_digest", { length: 64 }),
+  selectionIdempotencyKey: varchar("selection_idempotency_key", { length: 160 }),
+  selectedBy: uuid("selected_by").references(() => users.id, { onDelete: "set null" }),
+  selectedAt: timestamp("selected_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_runs_actor_idempotency_unique").on(table.createdBy, table.idempotencyKey),
+  index("event_architect_runs_venue_created_idx").on(table.venueId, table.createdAt),
+  index("event_architect_runs_space_created_idx").on(table.spaceId, table.createdAt),
+]);
+
+export const eventArchitectCandidates = pgTable("event_architect_candidates", {
+  id: uuid("id").primaryKey(),
+  runId: uuid("run_id").notNull().references(() => eventArchitectRuns.id, { onDelete: "cascade" }),
+  rank: integer("rank").notNull(),
+  strategy: varchar("strategy", { length: 40 }).$type<EventArchitectStrategy>().notNull(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  snapshotId: uuid("snapshot_id").notNull().references(() => canonicalLayoutSnapshots.id, { onDelete: "cascade" }),
+  validationRunId: uuid("validation_run_id").notNull().references(() => layoutValidationRuns.id, { onDelete: "cascade" }),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  payload: jsonb("payload").$type<EventArchitectCandidate>().notNull(),
+  selectedBy: uuid("selected_by").references(() => users.id, { onDelete: "set null" }),
+  selectedAt: timestamp("selected_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_candidates_run_rank_unique").on(table.runId, table.rank),
+  unique("event_architect_candidates_configuration_unique").on(table.configurationId),
+  unique("event_architect_candidates_snapshot_unique").on(table.snapshotId),
+  unique("event_architect_candidates_validation_unique").on(table.validationRunId),
+  index("event_architect_candidates_run_strategy_idx").on(table.runId, table.strategy),
 ]);
