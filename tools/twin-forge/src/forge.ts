@@ -214,6 +214,29 @@ async function removeFailedStage(stageDir: string, originalError: unknown): Prom
   throw originalError;
 }
 
+interface CopiedBundleStage {
+  readonly rootDir: string;
+  readonly bundleDir: string;
+}
+
+/**
+ * Copy a published bundle into a fresh child of a unique sibling directory.
+ * Node's `cp` requires the destination itself not to exist when
+ * `errorOnExist` is enabled on POSIX, while Windows permits an existing empty
+ * destination. Keeping the unique parent and copying into its absent child
+ * gives both platforms the same semantics and keeps promotion on one volume.
+ */
+async function createCopiedBundleStage(outDir: string): Promise<CopiedBundleStage> {
+  const rootDir = await mkdtemp(join(dirname(outDir), `.${basename(outDir)}.forge-stage-`));
+  const bundleDir = join(rootDir, "bundle");
+  try {
+    await cp(outDir, bundleDir, { recursive: true, force: false, errorOnExist: true });
+    return { rootDir, bundleDir };
+  } catch (error: unknown) {
+    return removeFailedStage(rootDir, error);
+  }
+}
+
 function imagerySourcePaths(
   imagery: TwinManifest["imagery"],
   nodeIds: readonly string[],
@@ -377,9 +400,8 @@ export async function refreshBundleManifest(
   const existing = await parsePersistedManifest(join(outDir, "manifest.json"));
   await assertReplaceableOutput(outDir, existing.venueSlug);
 
-  const stageDir = await mkdtemp(join(dirname(outDir), `.${basename(outDir)}.forge-stage-`));
+  const stage = await createCopiedBundleStage(outDir);
   try {
-    await cp(outDir, stageDir, { recursive: true, force: false, errorOnExist: true });
     const manifest = buildManifest(options.rawPoses, {
       venueSlug: existing.venueSlug,
       name: existing.name,
@@ -389,10 +411,11 @@ export async function refreshBundleManifest(
       imagery: existing.imagery,
       ...(existing.mesh === undefined ? {} : { mesh: existing.mesh }),
     });
-    const persisted = await promoteRefreshedStage(stageDir, outDir, manifest);
+    const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
+    await rm(stage.rootDir, { recursive: true, force: true });
     return { manifest: persisted, report: refreshedTileReport(persisted) };
   } catch (error: unknown) {
-    return removeFailedStage(stageDir, error);
+    return removeFailedStage(stage.rootDir, error);
   }
 }
 
@@ -414,15 +437,14 @@ export async function refreshBundleMesh(
   const existing = await parsePersistedManifest(join(outDir, "manifest.json"));
   await assertReplaceableOutput(outDir, existing.venueSlug);
 
-  const stageDir = await mkdtemp(join(dirname(outDir), `.${basename(outDir)}.forge-stage-`));
+  const stage = await createCopiedBundleStage(outDir);
   try {
-    await cp(outDir, stageDir, { recursive: true, force: false, errorOnExist: true });
     if (existing.mesh !== undefined) {
-      await rm(join(stageDir, existing.mesh.path));
+      await rm(join(stage.bundleDir, existing.mesh.path));
     }
     const mesh = await optimizeMesh(
       meshPath,
-      stageDir,
+      stage.bundleDir,
       orderedCapturePositions(options.rawPoses),
     );
     assertMeshBudget(mesh.bytes);
@@ -435,9 +457,10 @@ export async function refreshBundleMesh(
       imagery: existing.imagery,
       mesh: { path: "mesh/dollhouse.glb", bytes: mesh.bytes, sourceName: mesh.sourceName },
     });
-    const persisted = await promoteRefreshedStage(stageDir, outDir, manifest);
+    const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
+    await rm(stage.rootDir, { recursive: true, force: true });
     return { manifest: persisted, report: refreshedTileReport(persisted) };
   } catch (error: unknown) {
-    return removeFailedStage(stageDir, error);
+    return removeFailedStage(stage.rootDir, error);
   }
 }
