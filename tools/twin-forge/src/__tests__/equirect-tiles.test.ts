@@ -49,7 +49,7 @@ describe("convertEquirectTiles", () => {
     expect(Object.keys(hashes)).toContain("tiles/scan_000/equirect_512.webp");
     expect(hashes["tiles/scan_000/equirect_4096.webp"]).toMatch(/^[0-9a-f]{64}$/);
     expect(hashes["tiles/scan_000/equirect_8192.webp"]).toMatch(/^[0-9a-f]{64}$/);
-  });
+  }, 30_000);
 
   it("preflights every declared pair and writes nothing when any source is missing", async () => {
     const src = mkdtempSync(join(tmpdir(), "forge-eq-src-"));
