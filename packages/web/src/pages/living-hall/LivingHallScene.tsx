@@ -5,8 +5,10 @@ import {
   SparkSplatLayer,
   type SparkSplatErrorEvent,
 } from "../../components/scene/SparkSplatLayer.js";
-import { GoldInkTable } from "./GoldInkTable.js";
+import { DRESSING_SECTION_ID, GoldInkTable } from "./GoldInkTable.js";
+import { CRANE_POSE, craneWeight } from "./crane.js";
 import type { DressingEventType } from "./gold-ink.js";
+import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
 import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
   MIN_GAZE_DISTANCE_M,
@@ -84,9 +86,20 @@ function DollyRig({ reducedMotion }: { readonly reducedMotion: boolean }): null 
   const progressRef = useLivingHallScroll(useCallback(() => {
     invalidate();
   }, [invalidate]));
+  // The crane reads the Dressing act's own progress — same clock as the pen.
+  const dressingRef = useSectionScrollProgress(
+    DRESSING_SECTION_ID,
+    useCallback(() => {
+      invalidate();
+    }, [invalidate]),
+  );
   const tRef = useRef(0);
   const curves = useMemo(() => buildDollyCurves(RECEPTION_DOLLY_STATIONS), []);
   const scratch = useMemo(() => ({ pos: new Vector3(), look: new Vector3() }), []);
+  const crane = useMemo(
+    () => ({ pos: new Vector3(...CRANE_POSE.position), look: new Vector3(...CRANE_POSE.look) }),
+    [],
+  );
 
   useFrame((_state, delta) => {
     const target = progressRef.current;
@@ -97,6 +110,15 @@ function DollyRig({ reducedMotion }: { readonly reducedMotion: boolean }): null 
     tRef.current = next;
 
     sampleDolly(curves, next, scratch);
+    // The rising crane: as the floor fills, lift off the dolly toward the
+    // probed high vantage, hold, and hand back before the act ends. The
+    // weight follows scroll directly (identical under reduced motion), and
+    // blending two smooth poses keeps the whole path smooth.
+    const w = craneWeight(dressingRef.current);
+    if (w > 0) {
+      scratch.pos.lerp(crane.pos, w);
+      scratch.look.lerp(crane.look, w);
+    }
     camera.position.copy(scratch.pos);
     camera.lookAt(scratch.look);
 

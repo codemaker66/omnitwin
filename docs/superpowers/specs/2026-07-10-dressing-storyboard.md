@@ -74,5 +74,22 @@ ceiling only from `trades-hall-venue-truth` (tests pin both; nothing is
 typed by hand). Window: choice zone 0.00–0.10 of the act; the pen runs
 0.10–0.95 as before; fill begins after the opener (~0.45 for wedding).
 
-Still deferred: placement thud (sound), depth-prepass occlusion, rising-crane
-camera for the fill, Grand Hall variant, per-table linen colour choices.
+## The crane (2026-07-10)
+
+During the fill the camera lifts off the dolly to a high three-quarter
+vantage and the choreography becomes legible from above; it hands back
+before the act ends, landing the visitor at eye height inside the finished
+plan. Weight bell over act progress: grounded ≤ 0.35 (the intimate opener is
+eye-level by design), rise 0.35 → 0.7, hold through 0.9, return by 1.0 —
+scroll is the only clock, identical under reduced motion.
+
+**Empirical gate (probed 2026-07-10):** splats collapse (a) at any height
+above ~+0.85 over capture height — the ceiling shell — and (b) at ANY height
+over ground the scanner never walked. The crane therefore rises strictly
+vertically above the walked arrival station, locked at +0.75 (≈2.35 m over
+the floor), bracketed by clean proofs at +0.60 and +0.85; +1.25 and two
+off-path corners rendered as garbage and are recorded in the probe shots.
+Tests pin the pose to the walked station and the clean band.
+
+Still deferred: placement thud (sound), depth-prepass occlusion,
+Grand Hall variant, per-table linen colour choices.
