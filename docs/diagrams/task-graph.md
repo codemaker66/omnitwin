@@ -811,7 +811,8 @@ multi-property customer") is omitted as effectively dormant.
 
 `T-483` is a completed, standalone Tier 3 collateral integration with no task
 dependency edges. It is included in A6 as completed delivery context and
-remains authoritative in `docs/state/tasks.md`.
+remains authoritative in `docs/state/tasks.md`; its corrective responsive pass
+preserves the source's centred 520px portrait frame across viewport classes.
 
 Subgraphs A2 and B contain 12 and 14 nodes respectively — both busy
 enough that another node would hurt readability. F contains 11 nodes —

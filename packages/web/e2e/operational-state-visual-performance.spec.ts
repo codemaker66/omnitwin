@@ -1313,6 +1313,15 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.getByTestId("comment-input").fill("Could we keep the main-door route wider for older guests?");
     await page.getByTestId("comment-submit").click();
     await expect(page.getByRole("alert")).toContainText("We couldn't post your comment");
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await expect.poll(async () => page.evaluate(
+      () => Math.abs(
+        window.scrollY - (document.documentElement.scrollHeight - window.innerHeight),
+      ) <= 1,
+    )).toBe(true);
 
     await recordFrameAndVisualState(page, problems, "proposal-share-comment-error", "desktop", async () => {
       await page.mouse.move(720, 730);

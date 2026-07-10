@@ -11,8 +11,15 @@ The user supplied `C:\Users\blake\Downloads\Copy of Copy of Trade's House Glasgo
 - Leaflet source SHA-256: `aee00543011b33a6b4b266d34acce4fa0d404c8eb445c33ac71c4302405e6b17`
 - Selected quiz source: `Discover Your Craft Quiz v2.dc.html`
 - Quiz source SHA-256: `0e7ed301a2b5fa941a28e1d2d74eea0dbbcce021c0e23d6bb74dbc8062b9c2ab`
+- Corrective quiz reference: `C:\Users\blake\Downloads\Discover Your Craft Quiz.html`
+- Corrective quiz reference SHA-256: `e9aca33f4726036b7efb4d7110766aab7e9e833c1e0cda4275d3636eeb450be6`
 
 Only the 27 files under the archive's curated `assets/` directory were imported. The 118 unreferenced draft files under `uploads/` were not imported.
+
+The corrective reference confirms that the quiz has no responsive breakpoint:
+its portrait frame is always centred, `width: 100%`, and capped at `520px`.
+The Craft rails remain absolutely positioned inside that frame at every
+viewport width; no full-width desktop reinterpretation is part of the source.
 
 ## Implementation boundary
 
