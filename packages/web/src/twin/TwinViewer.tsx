@@ -490,7 +490,7 @@ const ORBIT_MIN_DISTANCE_M = 2;
 /** Smallest orbit radius — tiny bundles still get a readable dollhouse. */
 const ORBIT_MIN_RADIUS_M = 4;
 /** Visual-gate value for the Trades Hall camera-facing dollhouse section. */
-export const TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M = 2;
+export const TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M = 3.5;
 
 /** Keep the presentation treatment venue-scoped until another scan is reviewed. */
 export function dollhouseCutawayInsetForVenue(venueSlug: string): number | undefined {

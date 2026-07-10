@@ -13,7 +13,7 @@ describe("dollhouse cutaway venue gate", () => {
     expect(dollhouseCutawayInsetForVenue("trades-hall")).toBe(
       TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
     );
-    expect(TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M).toBe(2);
+    expect(TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M).toBe(3.5);
     expect(dollhouseCutawayInsetForVenue("another-venue")).toBeUndefined();
   });
 });
