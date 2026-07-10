@@ -79,7 +79,7 @@ const modeButtonBase: React.CSSProperties = {
   borderRadius: 4,
   cursor: "pointer",
   fontFamily: "inherit",
-  transition: "all 0.15s",
+  transition: "background 0.15s, color 0.15s, border-color 0.15s",
 };
 
 const dividerStyle: React.CSSProperties = {

@@ -125,9 +125,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .jackie-larkin-heart-overlay {
+    animation-duration: 4.08s !important;
+    animation-iteration-count: 1 !important;
+  }
+
   .jackie-larkin-heart-burst,
   .jackie-larkin-heart-ring {
-    animation-timing-function: ease-out;
+    animation: none !important;
   }
 }
 

@@ -44,7 +44,10 @@ export function CockpitSplatLayer({ urls, transform, active }: CockpitSplatLayer
       return;
     }
     let raf = 0;
-    const step = (): void => {
+    let last = performance.now();
+    const step = (now: number): void => {
+      const dt = Math.min(Math.max((now - last) / 1000, 0), 0.1);
+      last = now;
       const current = opacityRef.current;
       const delta = target - current;
       if (Math.abs(delta) <= DISSOLVE_SNAP) {
@@ -53,7 +56,7 @@ export function CockpitSplatLayer({ urls, transform, active }: CockpitSplatLayer
         invalidate();
         return;
       }
-      const next = current + delta * DISSOLVE_EASE;
+      const next = current + delta * (1 - Math.pow(1 - DISSOLVE_EASE, dt * 60));
       opacityRef.current = next;
       setOpacity(next);
       invalidate();

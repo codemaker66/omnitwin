@@ -113,11 +113,22 @@
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes bp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* Override the app-shell's global golden cursor + hover/press animations. */
 .bp-root { cursor: auto; }
 .bp-root button,
 .bp-root [role="button"] {
-  transition: background .18s, border-color .18s, color .18s !important;
+  transition: background .18s, border-color .18s, color .18s, transform 120ms cubic-bezier(0.23, 1, 0.32, 1) !important;
 }
 .bp-root button:hover:not(:disabled) { transform: none; filter: none; }
-.bp-root button:active:not(:disabled) { transform: none; filter: none; }
+.bp-root button:active:not(:disabled) { transform: scale(0.97); filter: none; }

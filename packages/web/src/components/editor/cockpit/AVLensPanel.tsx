@@ -81,7 +81,7 @@ export function AVLensPanel(): ReactElement {
           <span className={`lens-panel__chip lens-panel__chip--${status.tone}`} data-testid="av-status">{status.label}</span>
         </div>
         <div className="lens-panel__meter" aria-hidden="true">
-          <div className={`lens-panel__meter-fill lens-panel__meter-fill--${status.tone}`} style={{ width: `${String(meterPct)}%` }} />
+          <div className={`lens-panel__meter-fill lens-panel__meter-fill--${status.tone}`} style={{ transform: `scaleX(${String(meterPct / 100)})` }} />
         </div>
         <LensPanelMetric label="SPL at listener" value={`${String(Math.round(c.splAtListenerDb))} dB`} />
         <LensPanelMetric label="Coverage width" value={`${c.coverageWidthM.toFixed(1)} m at ${String(listenerDistanceM)} m`} />

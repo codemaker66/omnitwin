@@ -83,7 +83,7 @@
   font: 700 9px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  transition: background 160ms ease, color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .cockpit-rail__button:hover { color: #f3ddb0; background: rgba(201, 168, 76, 0.08); }
 .cockpit-rail__button:active { transform: scale(0.97); }

@@ -43,6 +43,16 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       0%, 100% { box-shadow: 0 0 40px rgba(201,168,76,0.08), 0 24px 80px rgba(0,0,0,0.5); }
       50%      { box-shadow: 0 0 60px rgba(201,168,76,0.15), 0 28px 90px rgba(0,0,0,0.6); }
     }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes omni-enq-in {
+        0%   { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes omni-enq-success {
+        0%   { opacity: 0; }
+        100% { opacity: 1; }
+      }
+    }
     .omni-enq-input {
       width: 100%; padding: 11px 14px; font-size: 14px; font-family: 'Inter', system-ui, sans-serif;
       background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
@@ -275,7 +285,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               border: `1px solid ${copied === "success" ? "rgba(34,197,94,0.3)" : copied === "fail" ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
               borderRadius: 12, cursor: "pointer",
               color: copied === "success" ? "#22c55e" : copied === "fail" ? "#ef4444" : "rgba(255,255,255,0.7)",
-              transition: "all 0.25s ease", marginBottom: 10,
+              transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease", marginBottom: 10,
               letterSpacing: 0.2,
             }}
             onClick={() => { void handleCopy(); }}
@@ -293,7 +303,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               border: "none", borderRadius: 12, cursor: "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
               boxShadow: `0 4px 20px rgba(201,168,76,0.25)`,
-              transition: "all 0.2s ease",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
             }}
             onClick={onClose}
             onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; }}
@@ -332,7 +342,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           borderRadius: 24, padding: "36px 36px 32px", width: 480, maxWidth: "90vw",
           maxHeight: "90vh", overflowY: "auto",
           border: "1px solid rgba(201,168,76,0.15)",
-          animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards, omni-enq-glow 4s ease-in-out 1s infinite",
+          boxShadow: "0 0 40px rgba(201,168,76,0.08), 0 24px 80px rgba(0,0,0,0.5)",
+          animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}
         onClick={(e) => { e.stopPropagation(); }}
         onKeyDown={handleKeyDown}
@@ -569,7 +580,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               border: "none", borderRadius: 12, cursor: isSubmitting ? "wait" : "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
               boxShadow: `0 4px 24px rgba(201,168,76,0.25)`,
-              transition: "all 0.2s ease",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
             }}
             onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; } }}
             onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201,168,76,0.25)`; e.currentTarget.style.transform = ""; }}

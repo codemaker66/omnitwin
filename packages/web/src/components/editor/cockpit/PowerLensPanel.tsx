@@ -131,7 +131,7 @@ export function PowerLensPanel(): ReactElement {
                   <span className="lens-panel__metric-value">{p.amps.toFixed(1)} A</span>
                 </div>
                 <div className="lens-panel__meter" aria-hidden="true">
-                  <div className={`lens-panel__meter-fill lens-panel__meter-fill--${phaseTone(p.amps, breakerA)}`} style={{ width: `${String(pct)}%` }} />
+                  <div className={`lens-panel__meter-fill lens-panel__meter-fill--${phaseTone(p.amps, breakerA)}`} style={{ transform: `scaleX(${String(pct / 100)})` }} />
                 </div>
                 <span className="lens-panel__field-hint">
                   {formatWatts(p.watts)} · {String(p.fixtures)} fixtures · {String(p.circuits.length)} {p.circuits.length === 1 ? "way" : "ways"}
@@ -144,7 +144,7 @@ export function PowerLensPanel(): ReactElement {
                         <span className="lens-panel__circuit-bar" aria-hidden="true">
                           <span
                             className={`lens-panel__circuit-fill lens-panel__circuit-fill--${loadTone(c.utilisationPercent)}`}
-                            style={{ width: `${String(Math.min(100, c.utilisationPercent))}%` }}
+                            style={{ transform: `scaleX(${String(Math.min(100, c.utilisationPercent) / 100)})` }}
                           />
                         </span>
                         <span className="lens-panel__circuit-load">{c.amps.toFixed(1)} A · {String(c.fixtures)}</span>

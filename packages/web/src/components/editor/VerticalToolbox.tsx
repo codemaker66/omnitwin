@@ -551,7 +551,7 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       100% { opacity: 0; transform: scale(0.9) translateY(-8px); filter: blur(4px); }
     }
     .omni-asset-row {
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
       user-select: none;
       -webkit-user-select: none;
       -webkit-user-drag: none;
@@ -562,34 +562,65 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       -webkit-user-select: none;
       -webkit-user-drag: none;
     }
-    .omni-asset-row:hover {
-      background: linear-gradient(90deg, rgba(201,168,76,0.14), rgba(255,255,255,0.035)) !important;
-      padding-left: 16px !important;
-      border-left: 2px solid rgba(230,195,92,0.72) !important;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 12px 24px rgba(0,0,0,0.18);
+    @media (hover: hover) and (pointer: fine) {
+      .omni-asset-row:hover {
+        background: linear-gradient(90deg, rgba(201,168,76,0.14), rgba(255,255,255,0.035)) !important;
+        transform: translateX(6px) !important;
+        border-left: 2px solid rgba(230,195,92,0.72) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 12px 24px rgba(0,0,0,0.18);
+      }
     }
     .omni-asset-row:active {
       transform: scale(0.97);
       background: rgba(201,168,76,0.15) !important;
     }
-    [data-testid="planner-toolbar"] button:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 12px 26px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
+    @media (hover: hover) and (pointer: fine) {
+      [data-testid="planner-toolbar"] button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 26px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.08);
+      }
     }
     [data-testid="planner-toolbar"] button:focus-visible {
       outline: 2px solid rgba(226,193,93,0.72);
       outline-offset: 2px;
     }
+    [data-testid="planner-toolbar"] button:active:not(:disabled) {
+      transform: scale(0.96);
+    }
     .omni-catalogue-dragging .omni-asset-row {
       cursor: grabbing !important;
     }
-    .omni-cam-item {
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes omni-panel-slide {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes omni-panel-slide-out {
+        0% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes omni-dropdown-pop {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes omni-dropdown-pop-out {
+        0% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes omni-panel-item {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
     }
-    .omni-cam-item:hover {
-      background: rgba(201,168,76,0.1) !important;
-      padding-left: 20px !important;
-      color: #dfc06a !important;
+    .omni-cam-item {
+      transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .omni-cam-item:hover {
+        background: rgba(201,168,76,0.1) !important;
+        transform: translateX(6px) !important;
+        color: #dfc06a !important;
+      }
     }
   `;
   document.head.appendChild(ps);
@@ -764,8 +795,8 @@ function ToolBtn({
           zIndex: 100,
           pointerEvents: "none",
           animation: exiting
-            ? "omni-tt-pop-out 0.25s cubic-bezier(0.55, 0, 1, 0.45) forwards"
-            : "omni-tt-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            ? "omni-tt-pop-out 0.18s cubic-bezier(0.55, 0, 1, 0.45) forwards"
+            : "omni-tt-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}>
           {/* Arrow — large, gold-tinted */}
           <div style={{
@@ -786,7 +817,7 @@ function ToolBtn({
             padding: "18px 24px 16px",
             minWidth: 240,
             maxWidth: 300,
-            animation: "omni-tt-glow 3s ease-in-out infinite",
+            boxShadow: "0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.04)",
           }}>
             {/* Gold accent bar at top */}
             <div style={{

@@ -350,7 +350,9 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
               onDrop={(e) => { e.preventDefault(); handleDrop(p.id); }}
               style={{
                 background: "rgba(255,247,232,0.05)", borderRadius: 8, overflow: "hidden", cursor: "grab",
-                border: dragOverId === p.id && dragId !== p.id ? "2px solid #68d8d2" : "1px solid rgba(215,181,109,0.22)",
+                border: "1px solid rgba(215,181,109,0.22)",
+                outline: dragOverId === p.id && dragId !== p.id ? "2px solid #68d8d2" : "none",
+                outlineOffset: "-2px",
                 opacity: dragId === p.id ? 0.5 : 1,
                 transition: "border-color 0.15s, opacity 0.15s",
               }}>

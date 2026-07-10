@@ -394,7 +394,20 @@
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
   color: #fff7e8;
   outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .planner-command-deck__button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+}
+
+.planner-command-deck__button:focus-visible {
   transform: translateY(-1px);
+}
+
+.planner-command-deck__button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
 .planner-command-deck__button:disabled {

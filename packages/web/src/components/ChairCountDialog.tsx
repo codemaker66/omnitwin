@@ -75,8 +75,17 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       50% { box-shadow: 0 8px 48px rgba(201,168,76,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
     }
     @keyframes omni-v2-line {
-      0% { width: 0; opacity: 0; }
-      100% { width: 64px; opacity: 1; }
+      0% { transform: scaleX(0); opacity: 0; }
+      100% { transform: scaleX(1); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes omni-v2-panel {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+      @keyframes omni-v2-pop {
+        0%, 100% { transform: scale(1); }
+      }
     }
     .omni-v2-stepper-btn:hover:not(:disabled) {
       background: rgba(201,168,76,0.12) !important;
@@ -86,9 +95,11 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       background: rgba(201,168,76,0.22) !important;
       transform: scale(0.92);
     }
-    .omni-v2-cta:hover {
-      transform: translateY(-2px) scale(1.02) !important;
-      box-shadow: 0 12px 48px rgba(201,168,76,0.5), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+    @media (hover: hover) and (pointer: fine) {
+      .omni-v2-cta:hover {
+        transform: translateY(-2px) scale(1.02) !important;
+        box-shadow: 0 12px 48px rgba(201,168,76,0.5), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+      }
     }
     .omni-v2-cta:active {
       transform: translateY(0) scale(0.97) !important;
@@ -197,7 +208,7 @@ export function ChairCountDialog({
           color: "#fff",
           minWidth: 380,
           border: "1px solid rgba(201, 168, 76, 0.15)",
-          animation: "omni-v2-panel 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+          animation: "omni-v2-panel 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         onClick={(e) => { e.stopPropagation(); }}
       >
@@ -247,7 +258,7 @@ export function ChairCountDialog({
               fontSize: 28, fontWeight: 400, cursor: count <= 1 ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               userSelect: "none",
-              transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              transition: "background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
             onClick={(e) => { e.preventDefault(); }}
             onPointerDown={minusRepeat.onPointerDown}
@@ -285,7 +296,6 @@ export function ChairCountDialog({
                 outline: "none",
                 appearance: "textfield", MozAppearance: "textfield", WebkitAppearance: "none",
                 padding: 0, fontFamily: "'Inter', system-ui, sans-serif",
-                animation: "omni-v2-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)",
               }}
             />
           </div>
@@ -302,7 +312,7 @@ export function ChairCountDialog({
               fontSize: 28, fontWeight: 400, cursor: count >= maxChairs ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               userSelect: "none",
-              transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              transition: "background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
             onClick={(e) => { e.preventDefault(); }}
             onPointerDown={plusRepeat.onPointerDown}
@@ -334,9 +344,8 @@ export function ChairCountDialog({
             background: `linear-gradient(135deg, ${GOLD_DARK} 0%, ${GOLD} 40%, ${GOLD_LIGHT} 100%)`,
             color: "#0e0e0e", fontSize: 17, fontWeight: 700,
             cursor: "pointer", letterSpacing: 0.6,
-            transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+            transition: "transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
             boxShadow: "0 6px 32px rgba(201,168,76,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-            animation: "omni-v2-glow 4s ease-in-out infinite",
           }}
           onClick={() => { onConfirm(count); }}
         >
@@ -353,7 +362,7 @@ export function ChairCountDialog({
               border: "1px solid rgba(201, 168, 76, 0.18)",
               background: "transparent", color: GOLD,
               fontSize: 14, fontWeight: 500, cursor: "pointer",
-              letterSpacing: 0.3, transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+              letterSpacing: 0.3, transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease",
             }}
             onClick={() => { onConfirm(0); }}
           >
@@ -367,7 +376,7 @@ export function ChairCountDialog({
               border: "1px solid rgba(255,255,255,0.06)",
               background: "transparent", color: "#555",
               fontSize: 14, fontWeight: 500, cursor: "pointer",
-              letterSpacing: 0.3, transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+              letterSpacing: 0.3, transition: "color 0.25s ease, border-color 0.25s ease",
             }}
             onClick={onCancel}
           >

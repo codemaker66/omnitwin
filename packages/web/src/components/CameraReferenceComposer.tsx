@@ -119,9 +119,7 @@ function heightButtonStyle(active: boolean): CSSProperties {
     minHeight: 48,
     borderRadius: 12,
     border: active ? `1px solid ${GOLD}` : "1px solid rgba(255,255,255,0.12)",
-    background: active
-      ? "linear-gradient(145deg, rgba(201,168,76,0.28), rgba(201,168,76,0.12))"
-      : "rgba(255,255,255,0.04)",
+    background: active ? "rgba(201,168,76,0.2)" : "rgba(255,255,255,0.04)",
     color: active ? "#fff7df" : "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: 750,

@@ -456,11 +456,20 @@ function BlackHoleOverlay({ anim }: { readonly anim: BlackHoleAnimState }): Reac
       // Object size shrinks as it enters the hole
       const scale = Math.max(0, 1 - eased * 0.6);
 
-      obj.style.transform =
-        `translate(${String(x)}px, ${String(y)}px) ` +
-        `rotate(${String(rotation)}deg) ` +
-        `scale(${String(squashX * scale)}, ${String(stretchY * scale)})`;
-      obj.style.opacity = String(opacity);
+      const reduceMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduceMotion) {
+        // Reduced motion: no spiral/stretch — settle at the trash and fade.
+        obj.style.transform = `translate(${String(anim.toX)}px, ${String(anim.toY)}px) scale(${String(scale)})`;
+        obj.style.opacity = String(1 - t);
+      } else {
+        obj.style.transform =
+          `translate(${String(x)}px, ${String(y)}px) ` +
+          `rotate(${String(rotation)}deg) ` +
+          `scale(${String(squashX * scale)}, ${String(stretchY * scale)})`;
+        obj.style.opacity = String(opacity);
+      }
 
       // Vortex ring: grows from 0, peaks at t=0.5, fades
       const vortexScale = Math.sin(t * Math.PI) * 2.5;
@@ -733,9 +742,12 @@ export function CatalogueDrawer(): React.ReactElement | null {
               startTime: performance.now(),
             });
 
+            // Commit the deletion immediately — the swallow overlay is
+            // decorative and must not gate the state change.
+            usePlacementStore.getState().removeItems(selectedIds);
+            useSelectionStore.getState().clearSelection();
+
             setTimeout(() => {
-              usePlacementStore.getState().removeItems(selectedIds);
-              useSelectionStore.getState().clearSelection();
               setBlackHoleAnim(null);
 
               // Close the lid

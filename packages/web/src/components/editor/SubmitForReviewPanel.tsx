@@ -51,7 +51,7 @@ const pill: React.CSSProperties = {
 const primaryBtn: React.CSSProperties = {
   padding: "9px 20px", fontSize: 13, fontWeight: 500, letterSpacing: 0.3,
   border: "1px solid rgba(201,168,76,0.3)", borderRadius: 6,
-  cursor: "pointer", transition: "all 0.2s",
+  cursor: "pointer", transition: "opacity 0.2s ease",
   background: "linear-gradient(135deg, #c9a84c 0%, #a8893e 100%)",
   color: "#1a1a1a", boxShadow: "0 2px 12px rgba(201,168,76,0.2)",
 };

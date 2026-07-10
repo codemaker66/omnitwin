@@ -52,8 +52,12 @@
   text-align: left;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
-.cockpit-phase:hover { transform: translateY(-2px); border-color: rgba(201, 168, 76, 0.3); }
+.cockpit-phase:hover { border-color: rgba(201, 168, 76, 0.3); }
+@media (hover: hover) and (pointer: fine) {
+  .cockpit-phase:hover { transform: translateY(-2px); }
+}
 .cockpit-phase:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+.cockpit-phase:active { transform: translateY(0) scale(0.98); }
 .cockpit-phase.is-active {
   border-color: rgba(255, 239, 177, 0.6);
   background: linear-gradient(155deg, rgba(229, 194, 92, 0.2), rgba(128, 91, 24, 0.16));
@@ -126,8 +130,11 @@
   text-align: left;
   transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
-.cockpit-insight:hover { transform: translateY(-2px); }
+@media (hover: hover) and (pointer: fine) {
+  .cockpit-insight:hover { transform: translateY(-2px); }
+}
 .cockpit-insight:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+.cockpit-insight:active { transform: translateY(0) scale(0.98); }
 .cockpit-insight__icon {
   grid-area: icon;
   align-self: center;

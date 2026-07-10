@@ -752,8 +752,10 @@ export function HallkeeperPage(): React.ReactElement {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ flex: 1, height: 4, background: BORDER, borderRadius: 2, overflow: "hidden" }}>
             <div style={{
-              height: "100%", borderRadius: 2, transition: "width 0.3s ease",
-              width: `${String(counts.totalRows > 0 ? (counts.checkedRows / counts.totalRows) * 100 : 0)}%`,
+              height: "100%", borderRadius: 2, width: "100%",
+              transformOrigin: "left",
+              transform: `scaleX(${String(counts.totalRows > 0 ? counts.checkedRows / counts.totalRows : 0)})`,
+              transition: "transform 0.3s ease",
               background: counts.allDone ? GREEN : GOLD,
             }} />
           </div>
@@ -862,7 +864,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                         : highlighted
                           ? `2px solid ${GOLD}`
                           : "2px solid transparent",
-                      transition: "all 0.12s",
+                      transition: "background 0.12s, border-color 0.12s",
                       minHeight: 44, // touch target — whole row is tap-to-tick
                       cursor: "pointer",
                     }}
@@ -875,7 +877,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
                         width: 16, height: 16, borderRadius: 3, flexShrink: 0,
                         border: `1.5px solid ${done ? GREEN : TEXT_MUT}`,
                         background: done ? GREEN : "transparent",
-                        fontSize: 10, color: "#fff", transition: "all 0.15s",
+                        fontSize: 10, color: "#fff", transition: "background 0.15s, border-color 0.15s",
                       }}>{done ? "✓" : ""}</span>
                       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>

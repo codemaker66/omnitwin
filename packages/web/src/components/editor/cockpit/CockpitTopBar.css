@@ -3,7 +3,7 @@
   --tb-amber-bright: #f1ce78;
   position: relative;
   isolation: isolate;
-  animation: cockpit-topbar-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cockpit-topbar-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes cockpit-topbar-in {
   from { opacity: 0; transform: translateY(-8px); }
@@ -160,8 +160,12 @@
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
-.cockpit-topbar__layers-btn:hover { background: rgba(201, 168, 76, 0.14); transform: translateY(-1px); }
+.cockpit-topbar__layers-btn:hover { background: rgba(201, 168, 76, 0.14); }
+@media (hover: hover) and (pointer: fine) {
+  .cockpit-topbar__layers-btn:hover { transform: translateY(-1px); }
+}
 .cockpit-topbar__layers-btn:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+.cockpit-topbar__layers-btn:active { transform: translateY(0) scale(0.97); }
 .cockpit-topbar__layers-btn.is-open {
   border-color: rgba(255, 239, 177, 0.6);
   background: linear-gradient(145deg, rgba(229, 194, 92, 0.24), rgba(128, 91, 24, 0.18));
@@ -180,6 +184,7 @@
   background: linear-gradient(155deg, rgba(16, 16, 16, 0.97), rgba(31, 29, 24, 0.97));
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(20px) saturate(1.1);
+  transform-origin: top right;
   animation: cockpit-menu-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes cockpit-menu-pop {

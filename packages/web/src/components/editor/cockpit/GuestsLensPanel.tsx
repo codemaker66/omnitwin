@@ -138,7 +138,7 @@ export function GuestsLensPanel(): ReactElement {
         <div className="lens-panel__meter" aria-hidden="true">
           <div
             className={`lens-panel__meter-fill lens-panel__meter-fill--${meterTone(model.band)}`}
-            style={{ width: `${String(meterPct)}%` }}
+            style={{ transform: `scaleX(${String(meterPct / 100)})` }}
           />
         </div>
         <LensPanelMetric label="Comfortable capacity" value={`${String(model.comfortableCapacity)} · ${model.styleLabel}`} />

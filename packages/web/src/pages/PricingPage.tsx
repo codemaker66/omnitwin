@@ -45,21 +45,23 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
       0% { opacity: 0; transform: translateY(24px); }
       100% { opacity: 1; transform: translateY(0); }
     }
-    .pricing-cta-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 32px rgba(201,168,76,0.4);
+    @media (hover: hover) and (pointer: fine) {
+      .pricing-cta-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(201,168,76,0.4);
+      }
+      .pricing-addon-card:hover {
+        border-color: rgba(201,168,76,0.4);
+        transform: translateY(-4px);
+      }
+      .pricing-scan-card:hover {
+        border-color: rgba(201,168,76,0.4);
+        transform: translateY(-4px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      }
     }
     .pricing-cta-primary:active {
       transform: translateY(0);
-    }
-    .pricing-addon-card:hover {
-      border-color: rgba(201,168,76,0.4);
-      transform: translateY(-4px);
-    }
-    .pricing-scan-card:hover {
-      border-color: rgba(201,168,76,0.4);
-      transform: translateY(-4px);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
     }
     .pricing-faq-item[open] summary {
       color: ${GOLD};
@@ -197,7 +199,7 @@ function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React
               fontSize: 14,
               fontWeight: active ? 600 : 500,
               cursor: "pointer",
-              transition: "all 0.2s",
+              transition: "background 0.2s ease, color 0.2s ease",
               letterSpacing: 0.3,
             }}
           >
@@ -468,7 +470,7 @@ export function PricingPage(): React.ReactElement {
               letterSpacing: 0.5,
               cursor: "pointer",
               fontFamily: BODY,
-              transition: "all 0.2s",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
               boxShadow: "0 8px 24px rgba(201,168,76,0.25)",
               textAlign: "center",
               textDecoration: "none",
@@ -510,7 +512,7 @@ export function PricingPage(): React.ReactElement {
                 border: "1px solid rgba(255,255,255,0.06)",
                 borderRadius: 16,
                 padding: "28px 28px 32px",
-                transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                transition: "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease",
               }}
             >
               <div style={{ fontSize: 13, color: GOLD, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600, marginBottom: 12 }}>
@@ -561,7 +563,7 @@ export function PricingPage(): React.ReactElement {
                 borderRadius: 20,
                 padding: "36px 32px 40px",
                 position: "relative",
-                transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                transition: "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease",
               }}
             >
               {scan.highlight && (
@@ -646,7 +648,7 @@ export function PricingPage(): React.ReactElement {
                 letterSpacing: 0.5,
                 cursor: "pointer",
                 fontFamily: BODY,
-                transition: "all 0.2s",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
                 whiteSpace: "nowrap",
                 textAlign: "center",
                 textDecoration: "none",
@@ -810,7 +812,7 @@ export function PricingPage(): React.ReactElement {
             letterSpacing: 0.5,
             cursor: "pointer",
             fontFamily: BODY,
-            transition: "all 0.2s",
+            transition: "transform 0.2s ease, box-shadow 0.2s ease",
             boxShadow: "0 12px 32px rgba(201,168,76,0.3)",
             textAlign: "center",
             textDecoration: "none",

@@ -130,7 +130,7 @@ export function RiggingLensPanel(): ReactElement {
           <span className={`lens-panel__chip lens-panel__chip--${statusChip.tone}`} data-testid="rig-status">{statusChip.label}</span>
         </div>
         <div className="lens-panel__meter" aria-hidden="true">
-          <div className={`lens-panel__meter-fill lens-panel__meter-fill--${meterTone}`} style={{ width: `${String(meterPct)}%` }} />
+          <div className={`lens-panel__meter-fill lens-panel__meter-fill--${meterTone}`} style={{ transform: `scaleX(${String(meterPct / 100)})` }} />
         </div>
         <LensPanelMetric label="Leg tension" value={`${String(Math.round(a.legTensionKg))} kg`} />
         <LensPanelMetric label="Utilisation" value={`${String(a.utilizationPercent)}% of WLL`} />

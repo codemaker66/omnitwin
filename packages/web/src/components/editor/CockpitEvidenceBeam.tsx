@@ -49,7 +49,10 @@ export function CockpitEvidenceBeam(): ReactElement | null {
       return;
     }
     let raf = 0;
-    const step = (): void => {
+    let last = performance.now();
+    const step = (now: number): void => {
+      const dt = Math.min(Math.max((now - last) / 1000, 0), 0.1);
+      last = now;
       const current = intensityRef.current;
       const delta = target - current;
       if (Math.abs(delta) <= SNAP) {
@@ -58,7 +61,7 @@ export function CockpitEvidenceBeam(): ReactElement | null {
         invalidate();
         return;
       }
-      const next = current + delta * EASE;
+      const next = current + delta * (1 - Math.pow(1 - EASE, dt * 60));
       intensityRef.current = next;
       setIntensity(next);
       invalidate();

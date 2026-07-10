@@ -267,6 +267,18 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
         return;
       }
 
+      // Escape also cancels an in-flight bookmark transition: the camera
+      // stops at its current (presentation) pose and control returns
+      // instantly — a camera move must never lock input behind a
+      // non-interruptible animation. Reference (POV) transitions keep the
+      // exit-key path below, which also restores the saved planner pose.
+      if (event.code === "Escape" && store.transition !== null && store.activeReferenceId === null) {
+        event.preventDefault();
+        useBookmarkStore.setState({ transition: null, pendingNavigationId: null });
+        invalidateRef.current();
+        return;
+      }
+
       const canExitHumanPov =
         humanPovActiveRef.current ||
         humanPovRestorePoseRef.current !== null ||
@@ -510,8 +522,14 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     const controls = controlsRef.current;
     if (controls === null) return;
 
-    // Skip normal camera controls while a bookmark transition is active
-    if (!controls.enabled) return;
+    // Skip normal camera controls while a bookmark transition is active.
+    // Drop banked/coasting zoom velocity while something else owns the
+    // camera (transition, tour, human POV) — wheel input received during a
+    // locked move must be discarded, not replayed as a lurch on handback.
+    if (!controls.enabled) {
+      zoomVelocity.current = 0;
+      return;
+    }
 
     if (
       (typeof document !== "undefined" && isCameraKeyboardInputLocked(document.activeElement)) ||

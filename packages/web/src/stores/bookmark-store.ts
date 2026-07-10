@@ -146,12 +146,21 @@ export const useBookmarkStore = create<BookmarkState>()((set, get) => ({
     currentPosition: readonly [number, number, number],
     currentTarget: readonly [number, number, number],
   ) => {
-    const duration = computeTransitionDuration(
-      currentPosition,
-      bookmark.position,
-      currentTarget,
-      bookmark.target,
-    );
+    // Honour prefers-reduced-motion by snapping instead of flying — the
+    // full-viewport camera traversal is the app's strongest vestibular
+    // motion. duration 0 samples as an instant, settled arrival, matching
+    // the CockpitCameraFocus / CockpitPlanningCamera reduced-motion idiom.
+    const reducedMotion = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const duration = reducedMotion
+      ? 0
+      : computeTransitionDuration(
+        currentPosition,
+        bookmark.position,
+        currentTarget,
+        bookmark.target,
+      );
     const transition: CameraTransition = {
       fromPosition: currentPosition,
       fromTarget: currentTarget,

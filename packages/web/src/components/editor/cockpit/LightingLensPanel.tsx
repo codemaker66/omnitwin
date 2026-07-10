@@ -366,7 +366,7 @@ export function LightingLensPanel(): ReactElement {
                   <span className="lens-panel__metric-value">{String(u.channelsUsed)} / {String(DMX_UNIVERSE_SIZE)} ch</span>
                 </div>
                 <div className="lens-panel__meter" aria-hidden="true">
-                  <div className="lens-panel__meter-fill lens-panel__meter-fill--ok" style={{ width: `${String(pct)}%` }} />
+                  <div className="lens-panel__meter-fill lens-panel__meter-fill--ok" style={{ transform: `scaleX(${String(pct / 100)})` }} />
                 </div>
                 <span className="lens-panel__field-hint">{String(u.fixtures.length)} fixtures · {String(u.channelsFree)} ch free</span>
               </div>

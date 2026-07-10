@@ -135,8 +135,8 @@ export function FileUploader({ context, contextId, onUploaded }: FileUploaderPro
                 {u.file.name}
               </span>
               {u.status === "uploading" && (
-                <div style={{ width: 80, height: 6, background: "rgba(255,247,232,0.12)", borderRadius: 3 }}>
-                  <div style={{ width: `${String(u.progress)}%`, height: "100%", background: "#68d8d2", borderRadius: 3, transition: "none" }} />
+                <div style={{ width: 80, height: 6, background: "rgba(255,247,232,0.12)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ width: "100%", height: "100%", background: "#68d8d2", transformOrigin: "left center", transform: `scaleX(${String(u.progress / 100)})`, transition: "transform 200ms linear" }} />
                 </div>
               )}
               {u.status === "done" && <span style={{ color: "#22c55e" }}>Done</span>}

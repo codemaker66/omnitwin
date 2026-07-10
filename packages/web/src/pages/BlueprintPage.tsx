@@ -1421,7 +1421,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
             ? undefined
             : `translate(${String(pan.x)}px, ${String(pan.y)}px) scale(${String(zoom)})`,
           transformOrigin: "center center",
-          transition: pinchRef.current === null && panRef.current === null ? "transform 0.12s ease" : "none",
+          transition: pinchRef.current === null && panRef.current === null ? "transform 120ms cubic-bezier(0.23, 1, 0.32, 1)" : "none",
           cursor: panRef.current !== null ? "grabbing" : zoom > 1 ? "grab" : "default",
         }}
         preserveAspectRatio="xMidYMid meet"
@@ -2672,6 +2672,7 @@ const toastStyle: CSSProperties = {
   bottom: 80,
   left: "50%",
   transform: "translateX(-50%)",
+  animation: "bp-toast-in 200ms cubic-bezier(0.23, 1, 0.32, 1)",
   background: INK,
   color: PAPER,
   padding: "12px 18px",

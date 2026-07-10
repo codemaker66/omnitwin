@@ -160,6 +160,13 @@
 }
 .vv-spotlight .sp-menu.is-open {
   display: flex;
+  transition: opacity 0.2s var(--sp-settle), transform 0.2s var(--sp-settle);
+}
+@starting-style {
+  .vv-spotlight .sp-menu.is-open {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
 }
 .vv-spotlight .sp-menu a {
   font-family: var(--sp-ui);
@@ -326,12 +333,15 @@
     transform 0.3s var(--sp-settle),
     box-shadow 0.3s var(--sp-settle);
 }
-.vv-spotlight .sp-cta:hover {
-  transform: translateY(-1px) scale(1.03);
-  box-shadow: 0 12px 32px rgba(216, 174, 91, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .vv-spotlight .sp-cta:hover {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 12px 32px rgba(216, 174, 91, 0.35);
+  }
 }
 .vv-spotlight .sp-cta:active {
   transform: scale(0.97);
+  transition-duration: 0.15s;
 }
 
 /* ————————————————————————— entrance ————————————————————————— */

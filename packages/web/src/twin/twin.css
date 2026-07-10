@@ -253,7 +253,7 @@
     transparent
   );
   transform: translateX(-100%);
-  animation: vv-twin-shimmer 1.4s var(--settle) infinite;
+  animation: vv-twin-shimmer 1.4s linear infinite;
 }
 
 @keyframes vv-twin-shimmer {
@@ -391,12 +391,17 @@
   cursor: pointer;
   transition:
     background-color 150ms var(--settle),
-    border-color 150ms var(--settle);
+    border-color 150ms var(--settle),
+    transform 160ms var(--settle);
 }
 
 .vv-twin-enquire:hover {
   background: var(--gold-2);
   border-color: var(--gold-2);
+}
+
+.vv-twin-enquire:active {
+  transform: scale(0.97);
 }
 
 /* Share + fullscreen — quiet round glass buttons (surface's recipe). */
@@ -629,11 +634,17 @@
   border: 1px solid var(--gold);
   border-radius: 999px;
   cursor: pointer;
-  transition: background-color 150ms var(--settle);
+  transition:
+    background-color 150ms var(--settle),
+    transform 160ms var(--settle);
 }
 
 .vv-twin-enq-submit:hover:not(:disabled) {
   background: var(--gold-2);
+}
+
+.vv-twin-enq-submit:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .vv-twin-enq-submit:disabled {
@@ -805,8 +816,10 @@
   transition: transform 150ms var(--settle);
 }
 
-.vv-twin .twin-minimap-map [role="option"]:hover .twin-minimap-dot {
-  transform: scale(1.4);
+@media (hover: hover) and (pointer: fine) {
+  .vv-twin .twin-minimap-map [role="option"]:hover .twin-minimap-dot {
+    transform: scale(1.4);
+  }
 }
 
 /* The standing node breathes — a 2 s ring exhale, subtle by design. */
