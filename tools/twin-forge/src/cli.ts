@@ -2,12 +2,7 @@ import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { TwinTierSchema } from "@omnitwin/types";
 import { z } from "zod";
-import {
-  forgeBundle,
-  refreshBundleManifest,
-  refreshBundleMesh,
-  type ForgeBundleResult,
-} from "./forge.js";
+import { forgeBundle, refreshBundleManifest, type ForgeBundleResult } from "./forge.js";
 
 const CLI_OPTIONS = {
   cubemaps: { type: "string" },
@@ -20,7 +15,6 @@ const CLI_OPTIONS = {
   overrides: { type: "string" },
   mesh: { type: "string" },
   "refresh-manifest": { type: "boolean", default: false },
-  "refresh-mesh": { type: "boolean", default: false },
 } as const;
 
 const CanonicalPoseIndexSchema = z.string().regex(/^(0|[1-9]\d*)$/);
@@ -110,19 +104,6 @@ async function main(args: readonly string[]): Promise<void> {
     values.overrides === undefined
       ? undefined
       : OverridesSchema.parse(await readJson(values.overrides));
-  if (values["refresh-manifest"] && values["refresh-mesh"]) {
-    throw new Error("--refresh-manifest and --refresh-mesh are mutually exclusive");
-  }
-  if (values["refresh-mesh"]) {
-    const result = await refreshBundleMesh({
-      rawPoses,
-      outDir: req("out", values.out),
-      meshPath: req("mesh", values.mesh),
-      ...(overrides === undefined ? {} : { overrides }),
-    });
-    writeSummary(result);
-    return;
-  }
   if (values["refresh-manifest"]) {
     const result = await refreshBundleManifest({
       rawPoses,

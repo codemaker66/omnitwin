@@ -21,7 +21,6 @@ import {
 } from "./bundle-integrity.js";
 import { convertEquirectTiles } from "./equirect-tiles.js";
 import { listBundleFiles } from "./hashes.js";
-import type { Vec3 } from "./interior-winding.js";
 import { optimizeMesh } from "./mesh.js";
 import type { NavGraphOptions } from "./nav-graph.js";
 import { assertSourceFiles } from "./source-preflight.js";
@@ -57,10 +56,6 @@ export interface RefreshManifestOptions {
   readonly generatedAt?: string;
 }
 
-export interface RefreshMeshOptions extends RefreshManifestOptions {
-  readonly meshPath: string;
-}
-
 export function assertMeshBudget(bytes: number): void {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) {
     throw new Error(`optimized mesh byte count must be a positive safe integer (got ${String(bytes)})`);
@@ -70,13 +65,6 @@ export function assertMeshBudget(bytes: number): void {
       `optimized mesh is ${String(bytes)} bytes; the hard publishing budget is 8 MiB (${String(MESH_BUDGET_BYTES)} bytes)`,
     );
   }
-}
-
-/** Stable E57-frame capture witnesses for interior-facing mesh winding. */
-export function orderedCapturePositions(rawPoses: RawPoses): Vec3[] {
-  return Object.entries(rawPoses)
-    .sort(([left], [right]) => Number(left) - Number(right))
-    .map(([, pose]) => pose.translation);
 }
 
 function assertNoUnexpectedPaths(
@@ -302,13 +290,7 @@ async function buildStagedBundle(
   stageDir: string,
 ): Promise<ForgeBundleResult> {
   const meshResult =
-    options.meshPath === undefined
-      ? undefined
-      : await optimizeMesh(
-          options.meshPath,
-          stageDir,
-          orderedCapturePositions(options.rawPoses),
-        );
+    options.meshPath === undefined ? undefined : await optimizeMesh(options.meshPath, stageDir);
   if (meshResult !== undefined) {
     assertMeshBudget(meshResult.bytes);
   }
@@ -410,52 +392,6 @@ export async function refreshBundleManifest(
       nav: { overrides: options.overrides },
       imagery: existing.imagery,
       ...(existing.mesh === undefined ? {} : { mesh: existing.mesh }),
-    });
-    const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
-    await rm(stage.rootDir, { recursive: true, force: true });
-    return { manifest: persisted, report: refreshedTileReport(persisted) };
-  } catch (error: unknown) {
-    return removeFailedStage(stage.rootDir, error);
-  }
-}
-
-/**
- * Rebuild only the MatterPak fallback mesh while preserving the verified
- * imagery set. The complete bundle is copied into staging, the old mesh is
- * replaced there, and every content hash is recomputed before promotion.
- */
-export async function refreshBundleMesh(
-  options: RefreshMeshOptions,
-): Promise<ForgeBundleResult> {
-  const outDir = resolve(options.outDir);
-  const meshPath = resolve(options.meshPath);
-  if (!existsSync(outDir)) {
-    throw new Error(`cannot refresh mesh for absent twin bundle ${outDir}`);
-  }
-  assertOutputDoesNotContainInputs(outDir, [meshPath]);
-  await assertSourceFiles(dirname(meshPath), [basename(meshPath)], "mesh");
-  const existing = await parsePersistedManifest(join(outDir, "manifest.json"));
-  await assertReplaceableOutput(outDir, existing.venueSlug);
-
-  const stage = await createCopiedBundleStage(outDir);
-  try {
-    if (existing.mesh !== undefined) {
-      await rm(join(stage.bundleDir, existing.mesh.path));
-    }
-    const mesh = await optimizeMesh(
-      meshPath,
-      stage.bundleDir,
-      orderedCapturePositions(options.rawPoses),
-    );
-    assertMeshBudget(mesh.bytes);
-    const manifest = buildManifest(options.rawPoses, {
-      venueSlug: existing.venueSlug,
-      name: existing.name,
-      tier: existing.tier,
-      generatedAt: options.generatedAt ?? new Date().toISOString(),
-      nav: { overrides: options.overrides },
-      imagery: existing.imagery,
-      mesh: { path: "mesh/dollhouse.glb", bytes: mesh.bytes, sourceName: mesh.sourceName },
     });
     const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
     await rm(stage.rootDir, { recursive: true, force: true });

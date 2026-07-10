@@ -45,6 +45,9 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
+        // Venue-facing visual and date assertions must not depend on the CI
+        // runner's host timezone. Trades Hall operates in Europe/London.
+        timezoneId: "Europe/London",
         ...(BROWSER_CHANNEL === undefined ? {} : { channel: BROWSER_CHANNEL }),
       },
     },

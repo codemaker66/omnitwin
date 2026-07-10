@@ -165,18 +165,22 @@ test.describe("Public Editor", () => {
     await page.getByRole("button", { name: "Laser Diagram" }).click();
     const panel = page.getByTestId("markup-panel");
     await expect(panel).toBeVisible({ timeout: 5_000 });
-    await expect(panel).toContainText("Draw on the floor");
+    await expect(panel).toContainText("Routes, staging notes, and camera marks.");
     await expect(page.getByText("Click to add furniture")).toHaveCount(0);
 
     const canvasBox = await page.locator("canvas").boundingBox();
     expect(canvasBox).not.toBeNull();
     if (canvasBox === null) return;
 
-    const startX = canvasBox.x + canvasBox.width * 0.56;
-    const startY = canvasBox.y + canvasBox.height * 0.22;
+    // Stay in the exposed floor corridor between the floating plan and
+    // intelligence panels. The previous coordinates landed beneath cockpit
+    // chrome after the desktop planner redesign, so the canvas never received
+    // the pointer sequence.
+    const startX = canvasBox.x + canvasBox.width * 0.61;
+    const startY = canvasBox.y + canvasBox.height * 0.4;
     await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX + 120, startY + 46, { steps: 8 });
+    await page.mouse.move(startX + 48, startY + 24, { steps: 8 });
     await page.mouse.up();
 
     await expect.poll(async () => page.evaluate(() => {
@@ -328,8 +332,8 @@ test.describe("Public Editor", () => {
     expect(box).not.toBeNull();
     if (box === null) return;
 
-    const clickX = box.x + Math.floor(box.width * 0.56);
-    const clickY = box.y + Math.floor(box.height * 0.23);
+    const clickX = box.x + Math.floor(box.width * 0.61);
+    const clickY = box.y + Math.floor(box.height * 0.4);
     await page.mouse.move(clickX, clickY);
     await page.mouse.down({ button: "right" });
     await page.mouse.up({ button: "right" });

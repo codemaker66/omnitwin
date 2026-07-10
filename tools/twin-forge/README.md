@@ -26,7 +26,7 @@ Plan: `docs/superpowers/plans/2026-07-02-twin-phase1-walk.md`
 | `--cubemaps <dir>` | `scan_NNN_{front,back,left,right,up,down}.jpg` (square faces; legacy mode) |
 | `--poses <file>` | JSON `{ "<index>": { rotation: [w,x,y,z], translation: [x,y,z] } }` — E57 frame, Z-up, metres |
 | `--overrides <file>` | `{ "add": [["scan_a","scan_b"], …], "remove": [...] }` — reviewed, hand-edited nav corrections (doorways and the only permitted cross-floor/stair links). Committed per venue under `nav-overrides/` |
-| `--mesh <file>` | Source dollhouse GLB. Indexed triangles are oriented toward the nearest E57 capture position before compression so exterior viewpoints retain the interior face; its optimized output must be no larger than the hard 8 MiB publishing budget |
+| `--mesh <file>` | Source dollhouse GLB. Its optimized output must be no larger than the hard 8 MiB publishing budget |
 
 ## Verified-stage reconstruction inputs
 
@@ -104,24 +104,6 @@ pnpm --filter @omnitwin/twin-forge forge --refresh-manifest `
   --out "C:\Users\blake\omnitwin2\packages\web\public\twin\trades-hall" `
   --overrides "C:\Users\blake\omnitwin2\tools\twin-forge\nav-overrides\trades-hall.json"
 ```
-
-When the verified imagery is unchanged but the MatterPak fallback mesh needs a
-presentation repair, rebuild only that mesh through the same isolated staging,
-hash verification, byte-budget, and atomic promotion path:
-
-```powershell
-pnpm --filter @omnitwin/twin-forge forge --refresh-mesh `
-  --poses "F:\VenviewerReconstructionWork\trades-hall-2026-07-10\staged-e57-poses\poses.json" `
-  --out "C:\Users\blake\omnitwin2\packages\web\public\twin\trades-hall" `
-  --overrides "C:\Users\blake\omnitwin2\tools\twin-forge\nav-overrides\trades-hall.json" `
-  --mesh "F:\downloads (some very important)\mp_matterpak_TH_T9pXgB4ygNf\trades-hall-web.glb"
-```
-
-`--refresh-mesh` preserves the existing tile bytes, re-derives navigation from
-the supplied canonical poses, regenerates `mesh/dollhouse.glb`, and recomputes
-all `contentHashes`. The MatterPak output remains a presentation/reference
-fallback under D-024; this repair does not make it an E57-derived room shell or
-close T-091/T-118.
 
 ## Publishing to production (Cloudflare R2)
 

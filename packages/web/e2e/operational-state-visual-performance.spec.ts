@@ -981,6 +981,9 @@ async function mockProposalShareRoutes(page: Page): Promise<void> {
 }
 
 async function mockEventDayRoutes(page: Page): Promise<void> {
+  await page.route(`${API}/events/${EVENT_ID}/mission`, (route) => {
+    void route.fulfill({ status: 404, json: { error: "No mission has been started." } });
+  });
   await page.route(`${API}/events/${EVENT_ID}/ops-board`, (route) => {
     void route.fulfill({ json: { data: eventDayBoardFixture() } });
   });
@@ -1328,6 +1331,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
 
     await page.goto(`/ops/events/${EVENT_ID}`);
     await expect(page.getByRole("heading", { name: "Wilson wedding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start Mission Control" })).toBeVisible();
     await page.getByRole("button", { name: "Acknowledge change" }).click();
     await expect(page.getByText("Change acknowledgement could not be saved.")).toBeVisible();
 

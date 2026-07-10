@@ -2,9 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   HOP_FOV_BREATH_DEG,
   SHIMMER_FADE_MS,
+  TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
+  dollhouseCutawayInsetForVenue,
   shimmerPhaseAfterTier,
   type TwinShimmerPhase,
 } from "../TwinViewer.js";
+
+describe("dollhouse cutaway venue gate", () => {
+  it("enables the visually reviewed inset for Trades Hall only", () => {
+    expect(dollhouseCutawayInsetForVenue("trades-hall")).toBe(
+      TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
+    );
+    expect(TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M).toBe(2);
+    expect(dollhouseCutawayInsetForVenue("another-venue")).toBeUndefined();
+  });
+});
 
 // -----------------------------------------------------------------------------
 // TwinViewer — pure polish-pass logic (2026-07-05).

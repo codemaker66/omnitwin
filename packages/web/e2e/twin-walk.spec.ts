@@ -40,6 +40,7 @@ import {
 const TWIN_PATH = "/venues/trades-hall/twin";
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
 const TILE_ROUTE = "**/twin/trades-hall/tiles/**";
+const MESH_ROUTE = "**/twin/trades-hall/mesh/dollhouse.glb";
 
 const VENUE_NAME = TWIN_FIXTURE_MANIFEST_EQUIRECT.name;
 
@@ -47,6 +48,26 @@ const TILE_BYTES = Buffer.from(
   TWIN_FIXTURE_TILE_DATA_URI.slice(TWIN_FIXTURE_TILE_DATA_URI.indexOf(",") + 1),
   "base64",
 );
+
+/** A valid GLB 2.0 scene with no geometry, used to exercise mesh warm-up. */
+function minimalGlbBytes(): Buffer {
+  const json = Buffer.from(JSON.stringify({
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{}],
+  }), "utf8");
+  const padding = (4 - (json.byteLength % 4)) % 4;
+  const jsonChunk = Buffer.concat([json, Buffer.alloc(padding, 0x20)]);
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(header.byteLength + jsonChunk.byteLength, 8);
+  header.writeUInt32LE(jsonChunk.byteLength, 12);
+  header.writeUInt32LE(0x4e4f534a, 16);
+  return Buffer.concat([header, jsonChunk]);
+}
+
+const MESH_BYTES = minimalGlbBytes();
 
 interface ViewportSpec {
   readonly label: string;
@@ -99,6 +120,9 @@ test.beforeEach(async ({ page }) => {
   );
   await page.route(TILE_ROUTE, (route) =>
     route.fulfill({ status: 200, contentType: "image/webp", body: TILE_BYTES }),
+  );
+  await page.route(MESH_ROUTE, (route) =>
+    route.fulfill({ status: 200, contentType: "model/gltf-binary", body: MESH_BYTES }),
   );
 });
 

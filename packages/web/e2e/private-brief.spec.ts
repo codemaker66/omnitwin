@@ -29,7 +29,9 @@ test.describe("private brief exposure", () => {
     const response = await page.goto(PRIVATE_BRIEF_PATH);
 
     expect(response?.status() ?? 200).toBeLessThan(500);
-    await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /See your evening before it happens/i }),
+    ).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
 
     const bodyText = await page.locator("body").innerText();

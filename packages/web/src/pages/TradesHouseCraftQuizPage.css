@@ -1,5 +1,22 @@
 @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap");
 
+@keyframes craft-rays-turn {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes craft-ember-float {
+  0% { opacity: 0; transform: translateY(26px); }
+  25% { opacity: 0.85; }
+  70% { opacity: 0.5; }
+  100% { opacity: 0; transform: translateY(-84px); }
+}
+
+@keyframes craft-glow-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
 .trades-house-craft-quiz-page {
   --craft-cream: #f4eee1;
   --craft-gold: #cda85f;
@@ -589,7 +606,8 @@
   }
 }
 
-@media (max-width: 520px) {
+/* The supplied experience is a portrait canvas at every screen width. */
+@media screen {
   .trades-house-craft-quiz-page {
     align-items: flex-start;
     background: #070d17;
@@ -599,18 +617,14 @@
     padding: 16px 12px;
   }
 
-  .trades-house-craft-quiz-page::before {
-    background: url("/trades-house-media/assets/tartan.jpg") center / 420px;
-    inset: 16px 12px;
-    opacity: 0.1;
+  .trades-house-craft-quiz-page,
+  .trades-house-craft-quiz-page * {
+    box-sizing: border-box;
   }
 
+  .trades-house-craft-quiz-page::before,
   .trades-house-craft-quiz-page::after {
-    background:
-      radial-gradient(100% 68% at 50% 114%, rgba(238, 166, 60, 0.55), rgba(214, 146, 56, 0.2) 42%, transparent 70%),
-      radial-gradient(120% 55% at 50% -5%, rgba(44, 70, 106, 0.45), transparent 55%),
-      radial-gradient(150% 108% at 50% 40%, transparent 54%, rgba(4, 8, 16, 0.6) 100%);
-    inset: 16px 12px;
+    content: none;
   }
 
   .trades-house-craft-quiz-shell {
@@ -624,7 +638,7 @@
     box-shadow: 0 0 60px rgba(0, 0, 0, 0.7), 0 0 120px rgba(216, 150, 60, 0.08);
     max-width: 520px;
     min-height: calc(100dvh - 32px);
-    overflow: hidden;
+    overflow: visible;
     width: 100%;
   }
 
@@ -646,15 +660,14 @@
     border: 0;
     bottom: -9px;
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.45);
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 0;
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(7, minmax(0, 1fr));
     order: initial;
     padding: 14px 0;
     position: absolute;
     top: -9px;
-    width: clamp(70px, 19vw, 92px);
+    width: min(19vw, 92px);
     z-index: 2;
   }
 
@@ -672,7 +685,8 @@
     border-top: 1px solid rgba(205, 168, 95, 0.3);
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    flex: 1;
+    gap: 4px;
     justify-content: center;
     min-height: 0;
     padding: 5px 3px;
@@ -685,18 +699,23 @@
 
   .craft-quiz-rail-item img {
     filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.7));
-    height: clamp(45px, 12vw, 56px);
-    width: clamp(45px, 12vw, 56px);
+    height: min(12vw, 56px);
+    width: min(12vw, 56px);
   }
 
   .craft-quiz-rail-item span {
     color: #e6cf9b;
     display: block;
     font-family: Cinzel, serif;
-    font-size: clamp(6.5px, 1.75vw, 8.5px);
+    font-size: 8.5px;
     font-weight: 600;
     letter-spacing: 0.45px;
     line-height: 1.25;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  }
+
+  .craft-quiz-rail-item.is-long span {
+    font-size: 7px;
   }
 
   .craft-quiz-rail-item i {
@@ -716,9 +735,28 @@
   .craft-quiz-achievement {
     height: auto;
     margin-bottom: 0;
-    max-height: min(45dvh, 390px);
+    max-height: none;
     max-width: 100%;
+    position: relative;
     width: min(46vw, 215px);
+  }
+
+  .craft-quiz-achievement-wrap {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    width: 100%;
+  }
+
+  .craft-quiz-achievement-wrap::before {
+    background:
+      radial-gradient(50% 6% at 50% 48.5%, rgba(246, 208, 130, 0.38), rgba(240, 190, 105, 0.16) 52%, transparent 82%),
+      radial-gradient(48% 40% at 50% 46%, rgba(242, 198, 118, 0.16), rgba(240, 192, 108, 0.12) 22%, rgba(236, 182, 96, 0.07) 46%, rgba(230, 172, 84, 0.03) 66%, transparent 82%),
+      radial-gradient(72% 62% at 50% 50%, rgba(220, 162, 76, 0.08), rgba(220, 162, 76, 0.05) 40%, transparent 75%);
+    content: "";
+    inset: -7% -16% -5%;
+    pointer-events: none;
+    position: absolute;
   }
 
   .craft-quiz-intro h1 {
@@ -736,6 +774,10 @@
 
   .craft-quiz-intro h1 span {
     font-size: min(7vw, 30px);
+  }
+
+  .craft-quiz-intro h1 span:last-child {
+    font-size: min(7.5vw, 32px);
   }
 
   .craft-quiz-intro h1 strong {
@@ -924,8 +966,16 @@
     text-transform: uppercase;
   }
 
+  .craft-quiz-option:nth-child(4) {
+    padding-block: 19px;
+  }
+
+  .craft-quiz-option:nth-child(4) small {
+    max-width: 250px;
+  }
+
   .craft-quiz-question .craft-quiz-divider {
-    margin: 36px 0 0;
+    margin: 33px 0 0;
     opacity: 0.55;
     width: 60%;
   }
@@ -935,7 +985,7 @@
     font-family: Cinzel, serif;
     font-size: 9px;
     letter-spacing: 3px;
-    margin: 10px 0 0;
+    margin: 8px 0 0;
     text-transform: uppercase;
     white-space: nowrap;
   }
@@ -967,15 +1017,79 @@
   }
 
   .craft-result-rays {
+    animation: craft-rays-turn 80s linear infinite;
     background: repeating-conic-gradient(from 0deg, rgba(232, 196, 120, 0.13) 0deg 5deg, transparent 5deg 13deg);
     inset: -30px;
     mask-image: radial-gradient(circle, #000 26%, transparent 66%);
+    border-radius: 0;
+  }
+
+  .craft-result-glow {
+    animation: craft-glow-pulse 5s ease-in-out infinite;
+    background: radial-gradient(circle at 50% 52%, rgba(216, 160, 70, 0.32), transparent 58%);
+    inset: 0;
+    position: absolute;
+  }
+
+  .craft-result-ember {
+    animation: craft-ember-float 4.2s ease-in-out infinite;
+    background: #f0c878;
+    border-radius: 50%;
+    bottom: 18%;
+    height: 4px;
+    left: 22%;
+    position: absolute;
+    width: 4px;
+  }
+
+  .craft-result-ember.is-two {
+    animation-delay: -1.4s;
+    animation-duration: 5.1s;
+    bottom: 22%;
+    height: 3px;
+    left: 74%;
+    width: 3px;
+  }
+
+  .craft-result-ember.is-three {
+    animation-delay: -2.6s;
+    animation-duration: 4.7s;
+    bottom: 12%;
+    height: 3px;
+    left: 48%;
+    width: 3px;
+  }
+
+  .craft-result-ember.is-four {
+    animation-delay: -3.2s;
+    animation-duration: 5.6s;
+    bottom: 26%;
+    height: 2.5px;
+    left: 32%;
+    width: 2.5px;
+  }
+
+  .craft-result-ember.is-five {
+    animation-delay: -0.8s;
+    animation-duration: 4.4s;
+    bottom: 10%;
+    height: 2.5px;
+    left: 64%;
+    width: 2.5px;
+  }
+
+  .craft-result-laurel ellipse:nth-of-type(odd) {
+    fill: #d9b56b;
+  }
+
+  .craft-result-laurel ellipse:nth-of-type(even) {
+    fill: #b9903f;
   }
 
   .craft-result-medallion img {
-    height: 55%;
-    inset: 22.5%;
-    width: 55%;
+    height: 48%;
+    inset: 26%;
+    width: 48%;
   }
 
   .craft-quiz-result h1 {
@@ -988,7 +1102,7 @@
     font-weight: 700;
     letter-spacing: 2.4px;
     margin: 6px 0 0;
-    padding: 13px 34px;
+    padding: 14.5px 34px;
     position: relative;
     white-space: nowrap;
     z-index: 1;
@@ -1019,7 +1133,7 @@
     color: #cda85f;
     font-family: "Cormorant Garamond", Georgia, serif;
     font-size: 22px;
-    margin: 13px 0 0;
+    margin: 17px 0 0;
   }
 
   .craft-result-essence {
@@ -1152,5 +1266,11 @@
   .craft-result-introduction,
   .craft-result-retake {
     transition: none;
+  }
+
+  .craft-result-rays,
+  .craft-result-glow,
+  .craft-result-ember {
+    animation: none;
   }
 }

@@ -16,6 +16,7 @@ const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
 const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-production-live-route-pass-2026-06-21";
+const LIVE_BASE_URL = process.env["E2E_BASE_URL"];
 const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 const NOW = "2026-06-21T15:00:00.000Z";
 const HASH = "c".repeat(64);
@@ -532,6 +533,11 @@ test.afterAll(async () => {
 });
 
 test.describe("T-469 production-live route pass", () => {
+  test.skip(
+    LIVE_BASE_URL === undefined || !LIVE_BASE_URL.startsWith("https://"),
+    "Production-live route pass requires an explicit HTTPS E2E_BASE_URL.",
+  );
+
   test("public room pages stay live, accessible, controlled, and within frame budget", async ({ page }) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width: 1440, height: 900 });

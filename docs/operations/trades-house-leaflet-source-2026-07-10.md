@@ -34,3 +34,15 @@ The `up to 250 guests` statement aligns with `TRADES_HALL_ROOM_CAPACITIES.grand-
 ## Print boundary
 
 The artifact is browser-print faithful at A4 landscape. It is not described as press-ready: the supplied design has no bleed, crop marks, CMYK profile, or fold compensation, and no commercial prepress approval has been performed.
+
+## Delivered surfaces
+
+- Leaflet wrapper: `/trades-house/leaflet`
+- Native Craft experience: `/trades-house/discover-your-craft`
+- Standalone print source: `packages/web/public/trades-house-media/leaflet.html`
+- Local handoff PDF: `output/pdf/trades-house-glasgow-leaflet.pdf`
+
+The PDF was rendered from the same standalone source and verified as two tagged
+A4 landscape pages at 841.92 by 594.96 points. Poppler renders of both pages were
+visually inspected; this confirms browser-print fidelity only and does not alter
+the prepress or venue-approval boundary above.

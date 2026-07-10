@@ -80,6 +80,19 @@ function watchVisualRouteIssues(page: Page): VisualRouteIssues {
   return issues;
 }
 
+test.beforeEach(async ({ page }) => {
+  const unauthenticated = {
+    error: "Authentication required",
+    code: "UNAUTHORIZED",
+  };
+  await page.route(`${API}/ai/status`, (route) => {
+    void route.fulfill({ status: 401, json: unauthenticated });
+  });
+  await page.route(`${API}/truth-mode/summary*`, (route) => {
+    void route.fulfill({ status: 401, json: unauthenticated });
+  });
+});
+
 test.describe("Trades Hall internal visual layer route", () => {
   test.describe("procedural fallback", () => {
     test.beforeEach(async ({ page }) => {

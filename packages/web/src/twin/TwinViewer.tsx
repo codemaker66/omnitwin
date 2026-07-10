@@ -489,6 +489,13 @@ const PLAN_MAX_POLAR_RAD = (30 * Math.PI) / 180;
 const ORBIT_MIN_DISTANCE_M = 2;
 /** Smallest orbit radius — tiny bundles still get a readable dollhouse. */
 const ORBIT_MIN_RADIUS_M = 4;
+/** Visual-gate value for the Trades Hall camera-facing dollhouse section. */
+export const TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M = 2;
+
+/** Keep the presentation treatment venue-scoped until another scan is reviewed. */
+export function dollhouseCutawayInsetForVenue(venueSlug: string): number | undefined {
+  return venueSlug === "trades-hall" ? TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M : undefined;
+}
 
 interface NodeExtent {
   readonly center: [number, number, number];
@@ -891,6 +898,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   const meshUrl = manifest.mesh === undefined ? null : `${assetBase}/${manifest.mesh.path}`;
   const extent = useMemo(() => nodeExtent(manifest.nodes), [manifest]);
+  const dollhouseCutawayInsetM = dollhouseCutawayInsetForVenue(manifest.venueSlug);
 
   // Warm the dollhouse so a Surface dive never flies through an unloaded void.
   // Intent (a hover/focus on the mesh affordances) warms immediately; a capable
@@ -1196,6 +1204,15 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   meshUrl={meshUrl}
                   nodes={manifest.nodes}
                   currentId={walk.currentId}
+                  cutaway={
+                    dollhouseCutawayInsetM === undefined
+                      ? undefined
+                      : {
+                          enabled: mode === "dollhouse" && !dive.diving,
+                          target: extent.center,
+                          insetM: dollhouseCutawayInsetM,
+                        }
+                  }
                   onDive={(id) => {
                     dive.dive(id, {
                       position: [...orbitPosRef.current],

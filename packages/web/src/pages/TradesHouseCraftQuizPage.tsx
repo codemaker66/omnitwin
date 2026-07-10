@@ -30,10 +30,11 @@ function CraftRail({ craftIds, side }: CraftRailProps): ReactElement {
     <aside className={`craft-quiz-rail is-${side}`} aria-label={`${side} Craft crests`}>
       {craftIds.map((craftId) => {
         const craft = CRAFT_PROFILES[craftId];
+        const label = railLabel(craft.name);
         return (
-          <div className="craft-quiz-rail-item" key={craftId}>
+          <div className={`craft-quiz-rail-item${label.length > 12 ? " is-long" : ""}`} key={craftId}>
             <img data-testid="craft-rail-crest" src={craft.crest} alt={craft.name} />
-            <span>{railLabel(craft.name)}</span>
+            <span>{label}</span>
             <i aria-hidden="true">◆</i>
           </div>
         );
@@ -52,11 +53,13 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
       <CraftRail craftIds={CRAFT_ORDER.slice(0, 7)} side="left" />
       <CraftRail craftIds={CRAFT_ORDER.slice(7)} side="right" />
       <div className="craft-quiz-intro-core">
-        <img
-          className="craft-quiz-achievement"
-          src="/trades-house-media/assets/achievement.png"
-          alt="Trades House of Glasgow — Union is Strength"
-        />
+        <div className="craft-quiz-achievement-wrap">
+          <img
+            className="craft-quiz-achievement"
+            src="/trades-house-media/assets/achievement.png"
+            alt="Trades House of Glasgow — Union is Strength"
+          />
+        </div>
         <h1 id="craft-quiz-title" aria-label="Which Craft is yours?">
           <span>Which&nbsp;</span>
           <strong>Craft</strong>
@@ -174,6 +177,12 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
       <p className="craft-result-kicker"><span />The Chain has chosen<span /></p>
       <div className="craft-result-medallion">
         <div className="craft-result-rays" />
+        <div className="craft-result-glow" />
+        <span className="craft-result-ember is-one" />
+        <span className="craft-result-ember is-two" />
+        <span className="craft-result-ember is-three" />
+        <span className="craft-result-ember is-four" />
+        <span className="craft-result-ember is-five" />
         <ResultLaurel />
         <img src={craft.crest} alt={`${craft.name} crest`} />
       </div>

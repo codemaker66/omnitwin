@@ -86,6 +86,9 @@ describe("Trades House leaflet experience", () => {
     expect(decodeURIComponent(introduction.getAttribute("href") ?? "")).toContain(
       "Craft introduction — THE HAMMERMEN",
     );
+    expect(
+      screen.getByRole("link", { name: "View the visitor leaflet" }).getAttribute("href"),
+    ).toBe("/trades-house/leaflet");
 
     fireEvent.click(screen.getByRole("button", { name: "Retake the questions" }));
     expect(screen.getByRole("button", { name: "Begin the Craft quiz" })).toBeTruthy();

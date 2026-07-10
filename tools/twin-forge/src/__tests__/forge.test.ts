@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { Document, NodeIO } from "@gltf-transform/core";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { TwinManifestSchema } from "@omnitwin/types";
@@ -13,9 +12,7 @@ import {
   assertMeshBudget,
   forgeBundle,
   isRetryableRenameError,
-  orderedCapturePositions,
   refreshBundleManifest,
-  refreshBundleMesh,
 } from "../forge.js";
 
 const RAW_POSES = {
@@ -35,27 +32,6 @@ async function makeCompleteCube(dir: string): Promise<void> {
   for (const face of ["front", "back", "left", "right", "up", "down"]) {
     await makeFace(dir, `scan_000_${face}.jpg`);
   }
-}
-
-async function writeSourceMesh(dir: string): Promise<string> {
-  const doc = new Document();
-  const buffer = doc.createBuffer();
-  const position = doc
-    .createAccessor()
-    .setType("VEC3")
-    .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]))
-    .setBuffer(buffer);
-  const indices = doc
-    .createAccessor()
-    .setType("SCALAR")
-    .setArray(new Uint16Array([0, 2, 1]))
-    .setBuffer(buffer);
-  const primitive = doc.createPrimitive().setIndices(indices).setAttribute("POSITION", position);
-  const node = doc.createNode("reversed-triangle").setMesh(doc.createMesh().addPrimitive(primitive));
-  doc.createScene().addChild(node);
-  const path = join(dir, "trades-hall-web.glb");
-  await new NodeIO().write(path, doc);
-  return path;
 }
 
 function baseOptions(cubemapsDir: string, outDir: string, generatedAt: string) {
@@ -89,18 +65,6 @@ async function runCli(args: readonly string[]): Promise<{ code: number | null; s
 }
 
 describe("forgeBundle", () => {
-  it("orders capture witnesses by canonical scan index", () => {
-    expect(
-      orderedCapturePositions({
-        "10": { rotation: [1, 0, 0, 0], translation: [10, 0, 1.5] },
-        "2": { rotation: [1, 0, 0, 0], translation: [2, 0, 1.5] },
-      }),
-    ).toEqual([
-      [2, 0, 1.5],
-      [10, 0, 1.5],
-    ]);
-  });
-
   it("retries only transient Windows directory-rename errors", () => {
     expect(isRetryableRenameError({ code: "EPERM" })).toBe(true);
     expect(isRetryableRenameError({ code: "EBUSY" })).toBe(true);
@@ -178,54 +142,9 @@ describe("forgeBundle", () => {
       assertMeshBudget(MESH_BUDGET_BYTES + 1);
     }).toThrow("8 MiB");
   });
-
-  it("atomically refreshes only the mesh while preserving verified imagery", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "forge-refresh-mesh-"));
-    const src = join(parent, "source");
-    const meshDir = join(parent, "mesh-source");
-    const out = join(parent, "published");
-    await mkdir(src);
-    await mkdir(meshDir);
-    await makeCompleteCube(src);
-    const meshPath = await writeSourceMesh(meshDir);
-    const initial = await forgeBundle(baseOptions(src, out, "2026-07-10T00:00:00.000Z"));
-    const initialTileHashes = { ...initial.manifest.contentHashes };
-
-    const refreshed = await refreshBundleMesh({
-      outDir: out,
-      rawPoses: RAW_POSES,
-      meshPath,
-      generatedAt: "2026-07-10T00:05:00.000Z",
-    });
-
-    expect(refreshed.manifest.mesh?.sourceName).toBe("trades-hall-web.glb");
-    expect(refreshed.manifest.contentHashes?.["mesh/dollhouse.glb"]).toMatch(/^[a-f0-9]{64}$/);
-    expect(refreshed.report).toEqual({ written: 0, skipped: 12 });
-    for (const [path, hash] of Object.entries(initialTileHashes)) {
-      expect(refreshed.manifest.contentHashes?.[path]).toBe(hash);
-    }
-    expect((await readdir(parent)).filter((name) => name.includes(".forge-"))).toEqual([]);
-  });
 });
 
 describe("forge CLI", () => {
-  it("requires an explicit mesh source for the mesh-only refresh path", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "forge-cli-refresh-mesh-"));
-    const out = join(parent, "published");
-    const poses = join(parent, "poses.json");
-    await writeFile(poses, JSON.stringify(RAW_POSES));
-
-    const result = await runCli([
-      "--refresh-mesh",
-      "--poses", poses,
-      "--out", out,
-    ]);
-
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("--mesh is required");
-    expect(existsSync(out)).toBe(false);
-  });
-
   it("exits non-zero without creating an output directory when preflight finds missing input", async () => {
     const parent = await mkdtemp(join(tmpdir(), "forge-cli-"));
     const src = join(parent, "source");
