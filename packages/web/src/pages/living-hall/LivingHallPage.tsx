@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "../landing/useReducedMotion.js";
 import {
@@ -45,6 +45,9 @@ import {
   LH_META_TITLE,
   LH_RATES_TITLE,
   LH_ROOMS_TITLE,
+  LH_SANDBOX_DONE,
+  LH_SANDBOX_HINT,
+  LH_SANDBOX_START,
   LH_SKIP_LABEL,
   LH_TICK_CEILING_PREFIX,
   LH_TICK_FORMAT_LABEL,
@@ -125,11 +128,32 @@ export function LivingHallPage(): ReactElement {
   const [searchParams] = useSearchParams();
   const reducedMotion = useReducedMotion();
   const [eventType, setEventType] = useState<DressingEventType>("wedding");
+  const [sandboxActive, setSandboxActive] = useState(false);
+  const sandboxButtonRef = useRef<HTMLButtonElement | null>(null);
   const [sceneFailed, setSceneFailed] = useState(false);
+
+  const exitSandbox = useCallback(() => {
+    setSandboxActive(false);
+    sandboxButtonRef.current?.focus();
+  }, []);
+
+  // Escape always ends the sandbox — page-level, so the contract holds on
+  // every tier and never depends on the canvas having focus.
+  useEffect(() => {
+    if (!sandboxActive) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") exitSandbox();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [exitSandbox, sandboxActive]);
   const sceneRequested = searchParams.get("scene") !== "0";
   const sceneCapable = useMemo(() => webGl2Available(), []);
   const sceneActive = sceneRequested && sceneCapable && !sceneFailed;
   const handleSceneFailed = useCallback(() => {
+    setSandboxActive(false);
     setSceneFailed(true);
   }, []);
 
@@ -144,6 +168,8 @@ export function LivingHallPage(): ReactElement {
           <LivingHallScene
             reducedMotion={reducedMotion}
             eventType={eventType}
+            sandboxActive={sandboxActive}
+            onSandboxExit={exitSandbox}
             onSceneFailed={handleSceneFailed}
           />
         </Suspense>
@@ -204,6 +230,22 @@ export function LivingHallPage(): ReactElement {
               <p key={line.slice(0, 32)}>{line}</p>
             ))}
             {act.id === "the-dressing" && <DressingTick eventType={eventType} />}
+            {act.id === "the-plan" && sceneActive && (
+              <div className="lh-sandbox">
+                <button
+                  ref={sandboxButtonRef}
+                  type="button"
+                  aria-pressed={sandboxActive}
+                  onClick={() => {
+                    if (sandboxActive) exitSandbox();
+                    else setSandboxActive(true);
+                  }}
+                >
+                  {sandboxActive ? LH_SANDBOX_DONE : LH_SANDBOX_START}
+                </button>
+                {sandboxActive && <p className="lh-sandbox-hint">{LH_SANDBOX_HINT}</p>}
+              </div>
+            )}
 
             {act.id === "the-plan" && (
               <>

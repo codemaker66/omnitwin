@@ -82,6 +82,12 @@ export const LH_EVENT_TYPES = [
   { key: "conference", label: "Conference" },
 ] as const;
 
+/** The Turn's sandbox — the first thing on the page the visitor owns. */
+export const LH_SANDBOX_START = "Move the table yourself";
+export const LH_SANDBOX_DONE = "Done — the table stays where you left it";
+export const LH_SANDBOX_HINT =
+  "Drag it, or use the arrow keys. Esc to finish. The cyan ring is a clearance guide — a planning aid.";
+
 /** The tick: live seats under the pen, ceiling from venue truth. Rendered
  *  as `«n» seated · the room takes up to «ceiling» at «format»`. */
 export const LH_TICK_SEATED = "seated";
@@ -133,6 +139,9 @@ export function allLivingHallCopy(): readonly string[] {
     LH_LEGEND_CYAN,
     LH_EVENT_CHOICE_LEGEND,
     ...LH_EVENT_TYPES.map((t) => t.label),
+    LH_SANDBOX_START,
+    LH_SANDBOX_DONE,
+    LH_SANDBOX_HINT,
     LH_TICK_SEATED,
     LH_TICK_CEILING_PREFIX,
     LH_TICK_FORMAT_LABEL.dinner,

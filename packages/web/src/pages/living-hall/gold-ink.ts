@@ -234,8 +234,9 @@ export interface DressingProgram {
 }
 
 /** A round of eight in the pen's shorthand: rim, four drapes, plate ring,
- *  eight seat squares. */
-function shorthandRound(cfg: FirstTableConfig, cx: number, cz: number): InkStroke[] {
+ *  eight seat squares. Exported for the Turn's movable table, which is the
+ *  same table the fill draws — one visual vocabulary. */
+export function shorthandRound(cfg: FirstTableConfig, cx: number, cz: number): InkStroke[] {
   const strokes: InkStroke[] = [];
   strokes.push(circleStroke(cx, cfg.tabletopY, cz, cfg.radius, "company", 32));
   for (let i = 0; i < 4; i++) {
@@ -431,6 +432,34 @@ export function seatsAtSegments(
     if ((segmentEnds[i] ?? Infinity) <= segments) seats += program.elements[i]?.seats ?? 0;
   }
   return seats;
+}
+
+/** The planner's sheet for the Turn: the observed floor's boundary plus a
+ *  hairline grid. Not pen-drawn — the sheet materialises as the mode
+ *  changes; the pen remains the Dressing's voice. */
+export function planSheetStrokes(
+  bounds: { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number; readonly floorY: number },
+  spacing = 1,
+): readonly InkStroke[] {
+  const strokes: InkStroke[] = [];
+  const y = bounds.floorY + 0.01;
+  strokes.push({
+    points: [
+      [bounds.minX, y, bounds.minZ],
+      [bounds.maxX, y, bounds.minZ],
+      [bounds.maxX, y, bounds.maxZ],
+      [bounds.minX, y, bounds.maxZ],
+      [bounds.minX, y, bounds.minZ],
+    ],
+    beat: "centre",
+  });
+  for (let x = Math.ceil(bounds.minX / spacing) * spacing; x < bounds.maxX; x += spacing) {
+    strokes.push(lineStroke([x, y, bounds.minZ], [x, y, bounds.maxZ], "centre"));
+  }
+  for (let z = Math.ceil(bounds.minZ / spacing) * spacing; z < bounds.maxZ; z += spacing) {
+    strokes.push(lineStroke([bounds.minX, y, z], [bounds.maxX, y, z], "centre"));
+  }
+  return strokes;
 }
 
 /** The pen nib's position: the end point of the last drawn segment. */

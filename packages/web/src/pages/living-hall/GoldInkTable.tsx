@@ -19,6 +19,7 @@ import {
   strokesToInkGeometry,
   type DressingEventType,
 } from "./gold-ink.js";
+import { TURN_RENDER_ORDER } from "./TurnSheet.js";
 import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
 
 // -----------------------------------------------------------------------------
@@ -65,11 +66,13 @@ export function GoldInkTable({ eventType }: GoldInkTableProps): ReactElement {
       new LineBasicMaterial({ color: INK_GOLD, transparent: true, opacity: 0.95 }),
     );
     lines.frustumCulled = false; // drawRange animates; keep the whole floor drawable
+    lines.renderOrder = TURN_RENDER_ORDER.ink; // ink holds its light through the Turn's scrim
     const nib = new Mesh(
       new SphereGeometry(0.0075, 8, 8),
       new MeshBasicMaterial({ color: INK_GOLD_BRIGHT }),
     );
     nib.visible = false;
+    nib.renderOrder = TURN_RENDER_ORDER.ink;
     return { geometry, lines, nib };
   }, [ink]);
 

@@ -8,6 +8,7 @@ import { LivingHallPage } from "../LivingHallPage.js";
 import {
   LH_ACTS,
   LH_META_TITLE,
+  LH_SANDBOX_START,
   RECEPTION_CAPTURE_RECORD,
   allLivingHallCopy,
 } from "../living-hall-copy.js";
@@ -121,6 +122,19 @@ describe("the dressing choice — the visitor owns the goal", () => {
     mount();
     const tick = document.querySelector("[data-dressing-tick]");
     expect(tick?.textContent?.trim().startsWith("0")).toBe(true);
+  });
+});
+
+describe("the plan sandbox", () => {
+  it("does not offer canvas interaction when WebGL2 is unavailable", () => {
+    mount();
+    expect(screen.queryByRole("button", { name: LH_SANDBOX_START })).toBeNull();
+  });
+
+  it("keeps pointer ownership opt-in at the scene boundary", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/pages/living-hall/living-hall.css"), "utf8");
+    expect(css).toMatch(/\.lh-scene\s*\{[\s\S]*?pointer-events:\s*none/);
+    expect(css).toMatch(/\.lh-scene\.is-interactive\s*\{[\s\S]*?pointer-events:\s*auto/);
   });
 });
 

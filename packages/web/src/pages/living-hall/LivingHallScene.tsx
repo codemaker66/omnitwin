@@ -6,6 +6,8 @@ import {
   type SparkSplatErrorEvent,
 } from "../../components/scene/SparkSplatLayer.js";
 import { DRESSING_SECTION_ID, GoldInkTable } from "./GoldInkTable.js";
+import { TurnSheet } from "./TurnSheet.js";
+import { YourTable } from "./YourTable.js";
 import { CRANE_POSE, craneWeight } from "./crane.js";
 import type { DressingEventType } from "./gold-ink.js";
 import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
@@ -134,12 +136,23 @@ export interface LivingHallSceneProps {
   readonly reducedMotion: boolean;
   /** The visitor's chosen shape of the evening — programs the pen. */
   readonly eventType: DressingEventType;
+  /** The Turn's sandbox: while true the canvas accepts the pointer and the
+   *  visitor's table can be moved. */
+  readonly sandboxActive: boolean;
+  /** Escape from the sandbox — the page returns focus to its button. */
+  readonly onSandboxExit: () => void;
   /** Fires once if the scene cannot run (WebGL/tile failure) — the page
    *  reverts to the plain document styling. */
   readonly onSceneFailed?: () => void;
 }
 
-export function LivingHallScene({ reducedMotion, eventType, onSceneFailed }: LivingHallSceneProps): ReactElement {
+export function LivingHallScene({
+  reducedMotion,
+  eventType,
+  sandboxActive,
+  onSandboxExit,
+  onSceneFailed,
+}: LivingHallSceneProps): ReactElement {
   const [loadedTiles, setLoadedTiles] = useState(0);
   const [failed, setFailed] = useState(false);
   const urls = useMemo(() => receptionTileUrls(), []);
@@ -160,7 +173,11 @@ export function LivingHallScene({ reducedMotion, eventType, onSceneFailed }: Liv
   const station0 = RECEPTION_DOLLY_STATIONS[0];
 
   return (
-    <div className="lh-scene" aria-hidden data-scene-state={failed ? "failed" : allLoaded ? "live" : "loading"}>
+    <div
+      className={`lh-scene${sandboxActive ? " is-interactive" : ""}`}
+      aria-hidden={!sandboxActive}
+      data-scene-state={failed ? "failed" : allLoaded ? "live" : "loading"}
+    >
       {!failed && (
         <Canvas
           frameloop="demand"
@@ -187,6 +204,8 @@ export function LivingHallScene({ reducedMotion, eventType, onSceneFailed }: Liv
           {/* The pen draws in world space (Y-up) — outside the Z-up group.
               Ink only exists once the room is real (all tiles arrived). */}
           {allLoaded && <GoldInkTable eventType={eventType} />}
+          {allLoaded && <TurnSheet />}
+          {allLoaded && <YourTable active={sandboxActive} onExit={onSandboxExit} />}
           <DollyRig reducedMotion={reducedMotion} />
         </Canvas>
       )}
