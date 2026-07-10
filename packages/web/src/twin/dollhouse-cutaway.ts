@@ -105,7 +105,10 @@ function hasMaterial(object: Object3D): object is ObjectWithMaterial {
  * remain shared/read-only; the source scene and its globally cached materials
  * are never mutated by venue-specific clipping.
  */
-export function cloneSceneWithCutawayPlane(source: Object3D, plane: Plane): CutawaySceneClone {
+export function cloneSceneWithCutawayPlanes(
+  source: Object3D,
+  planes: readonly Plane[],
+): CutawaySceneClone {
   const scene = source.clone(true);
   const clones = new Map<Material, Material>();
   const cloneMaterial = (material: Material): Material => {
@@ -114,10 +117,33 @@ export function cloneSceneWithCutawayPlane(source: Object3D, plane: Plane): Cuta
       return existing;
     }
     const cloned = material.clone();
-    const clippingPlanes = cloned.clippingPlanes ?? [];
-    cloned.clippingPlanes = clippingPlanes.includes(plane)
-      ? [...clippingPlanes]
-      : [...clippingPlanes, plane];
+    const clippingPlanes = [...(cloned.clippingPlanes ?? [])];
+    const inheritedPlaneCount = clippingPlanes.length;
+    const replacedInheritedPlanes = new Set<number>();
+    for (const plane of planes) {
+      if (clippingPlanes.includes(plane)) {
+        continue;
+      }
+      const equalInheritedIndex = clippingPlanes.findIndex(
+        (existing, index) =>
+          index < inheritedPlaneCount &&
+          !replacedInheritedPlanes.has(index) &&
+          existing.equals(plane),
+      );
+      if (equalInheritedIndex !== -1) {
+        // Material.clone() clones its existing Plane values. Replace an equal
+        // clone with the supplied live plane so per-frame mutations reach the
+        // shader instead of leaving a frozen snapshot behind.
+        clippingPlanes[equalInheritedIndex] = plane;
+        replacedInheritedPlanes.add(equalInheritedIndex);
+      } else {
+        // Distinct supplied planes may intentionally begin with equal inert
+        // coefficients. Preserve both live identities so they can diverge on
+        // the first frame (for example, the vertical and floor cutaways).
+        clippingPlanes.push(plane);
+      }
+    }
+    cloned.clippingPlanes = clippingPlanes;
     clones.set(material, cloned);
     return cloned;
   };
@@ -134,7 +160,11 @@ export function cloneSceneWithCutawayPlane(source: Object3D, plane: Plane): Cuta
   return { scene, materials: [...clones.values()] };
 }
 
-/** Dispose only the material clones owned by cloneSceneWithCutawayPlane(). */
+export function cloneSceneWithCutawayPlane(source: Object3D, plane: Plane): CutawaySceneClone {
+  return cloneSceneWithCutawayPlanes(source, [plane]);
+}
+
+/** Dispose only the material clones owned by the cutaway scene clone. */
 export function disposeCutawayScene(sceneClone: CutawaySceneClone): void {
   for (const material of sceneClone.materials) {
     material.dispose();

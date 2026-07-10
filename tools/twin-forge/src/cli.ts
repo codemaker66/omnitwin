@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { TwinTierSchema } from "@omnitwin/types";
 import { z } from "zod";
-import { forgeBundle, refreshBundleManifest, type ForgeBundleResult } from "./forge.js";
+import {
+  forgeBundle,
+  refreshBundleManifest,
+  replaceBundleMesh,
+  type ForgeBundleResult,
+} from "./forge.js";
 
 const CLI_OPTIONS = {
   cubemaps: { type: "string" },
@@ -14,6 +19,7 @@ const CLI_OPTIONS = {
   tier: { type: "string", default: "ops-grade-2cm" },
   overrides: { type: "string" },
   mesh: { type: "string" },
+  "replace-mesh": { type: "string" },
   "refresh-manifest": { type: "boolean", default: false },
 } as const;
 
@@ -98,6 +104,17 @@ function writeSummary(result: ForgeBundleResult): void {
 
 async function main(args: readonly string[]): Promise<void> {
   const values = parseCliArgs(args);
+  if (values["replace-mesh"] !== undefined) {
+    if (values["refresh-manifest"] || values.mesh !== undefined) {
+      throw new Error("--replace-mesh cannot be combined with --refresh-manifest or --mesh");
+    }
+    const result = await replaceBundleMesh({
+      outDir: req("out", values.out),
+      preparedMeshPath: req("replace-mesh", values["replace-mesh"]),
+    });
+    writeSummary(result);
+    return;
+  }
   const posesPath = req("poses", values.poses);
   const rawPoses = RawPosesSchema.parse(await readJson(posesPath));
   const overrides =

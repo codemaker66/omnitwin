@@ -10,6 +10,7 @@ import {
 } from "three";
 import {
   cloneSceneWithCutawayPlane,
+  cloneSceneWithCutawayPlanes,
   disposeCutawayScene,
   setInertCutawayPlane,
   updateVerticalCutawayPlane,
@@ -142,6 +143,49 @@ describe("cutaway scene material isolation", () => {
     }
     expect(shared.clippingPlanes).toEqual([existingPlane]);
     expect((clonedMeshes[2]?.material as MeshStandardMaterial[])[0]).toBe(firstMaterial);
+  });
+
+  it("adds both camera-facing and floor-section planes without duplicating existing planes", () => {
+    const sourceMaterial = new MeshStandardMaterial();
+    const existing = new Plane(new Vector3(0, 0, 1), 4);
+    const vertical = new Plane(new Vector3(-1, 0, 0), 2);
+    const floor = new Plane(new Vector3(0, 1, 0), 0.78);
+    sourceMaterial.clippingPlanes = [existing, vertical];
+    const source = new Mesh(new BoxGeometry(), sourceMaterial);
+
+    const cloned = cloneSceneWithCutawayPlanes(source, [vertical, floor]);
+    const material = (cloned.scene as Mesh).material as MeshStandardMaterial;
+
+    expect(material.clippingPlanes).toEqual([existing, vertical, floor]);
+    expect(material.clippingPlanes?.[1]).toBe(vertical);
+    expect(material.clippingPlanes?.[2]).toBe(floor);
+    vertical.constant = 9;
+    floor.constant = 1.25;
+    expect(material.clippingPlanes?.[1]?.constant).toBe(9);
+    expect(material.clippingPlanes?.[2]?.constant).toBe(1.25);
+    expect(sourceMaterial.clippingPlanes).toEqual([existing, vertical]);
+  });
+
+  it("preserves distinct live planes that begin with equal inert coefficients", () => {
+    const sourceMaterial = new MeshStandardMaterial();
+    const vertical = new Plane();
+    const floor = new Plane();
+    setInertCutawayPlane(vertical);
+    setInertCutawayPlane(floor);
+    const source = new Mesh(new BoxGeometry(), sourceMaterial);
+
+    const cloned = cloneSceneWithCutawayPlanes(source, [vertical, floor]);
+    const material = (cloned.scene as Mesh).material as MeshStandardMaterial;
+
+    expect(material.clippingPlanes).toHaveLength(2);
+    expect(material.clippingPlanes?.[0]).toBe(vertical);
+    expect(material.clippingPlanes?.[1]).toBe(floor);
+    vertical.setComponents(1, 0, 0, 2);
+    floor.setComponents(0, 1, 0, 3);
+    expect(material.clippingPlanes?.[0]).toBe(vertical);
+    expect(material.clippingPlanes?.[0]?.normal.x).toBe(1);
+    expect(material.clippingPlanes?.[1]).toBe(floor);
+    expect(material.clippingPlanes?.[1]?.normal.y).toBe(1);
   });
 
   it("disposes only the owned material clones", () => {

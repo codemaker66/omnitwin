@@ -7,12 +7,14 @@ import { join } from "node:path";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { TwinManifestSchema } from "@omnitwin/types";
+import type { TwinManifest } from "@omnitwin/types";
 import {
   MESH_BUDGET_BYTES,
   assertMeshBudget,
   forgeBundle,
   isRetryableRenameError,
   refreshBundleManifest,
+  replaceBundleMesh,
 } from "../forge.js";
 
 const RAW_POSES = {
@@ -62,6 +64,18 @@ async function runCli(args: readonly string[]): Promise<{ code: number | null; s
     child.once("close", resolve);
   });
   return { code, stderr };
+}
+
+function preservedManifestFields(manifest: TwinManifest): Record<string, unknown> {
+  const preserved = structuredClone(manifest) as Record<string, unknown>;
+  Reflect.deleteProperty(preserved, "generatedAt");
+  Reflect.deleteProperty(preserved, "mesh");
+  Reflect.deleteProperty(preserved, "contentHashes");
+  return preserved;
+}
+
+function forgeResidue(parent: string): Promise<string[]> {
+  return readdir(parent).then((names) => names.filter((name) => name.includes(".forge-")));
 }
 
 describe("forgeBundle", () => {
@@ -144,6 +158,105 @@ describe("forgeBundle", () => {
   });
 });
 
+describe("replaceBundleMesh", () => {
+  it("copies a reviewed mesh byte-for-byte and preserves every unrelated manifest field", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "forge-replace-mesh-"));
+    const src = join(parent, "source");
+    const out = join(parent, "published");
+    const initialMesh = join(parent, "initial.glb");
+    const prepared = join(parent, "reviewed-cleanup.glb");
+    await mkdir(src);
+    await makeCompleteCube(src);
+    await forgeBundle(baseOptions(src, out, "2026-07-10T00:00:00.000Z"));
+    const initialBytes = Buffer.from([0x67, 0x6c, 0x54, 0x46, 9, 8, 7, 6]);
+    await writeFile(initialMesh, initialBytes);
+    const first = await replaceBundleMesh({
+      outDir: out,
+      preparedMeshPath: initialMesh,
+      generatedAt: "2026-07-10T00:01:00.000Z",
+    });
+    const preparedBytes = Buffer.from([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
+    await writeFile(prepared, preparedBytes);
+
+    const replaced = await replaceBundleMesh({
+      outDir: out,
+      preparedMeshPath: prepared,
+      generatedAt: "2026-07-10T00:05:00.000Z",
+    });
+
+    expect(await readFile(join(out, "mesh", "dollhouse.glb"))).toEqual(preparedBytes);
+    expect(preservedManifestFields(replaced.manifest)).toEqual(
+      preservedManifestFields(first.manifest),
+    );
+    for (const [path, digest] of Object.entries(first.manifest.contentHashes ?? {})) {
+      if (path === "mesh/dollhouse.glb") {
+        expect(replaced.manifest.contentHashes?.[path]).not.toBe(digest);
+      } else {
+        expect(replaced.manifest.contentHashes?.[path]).toBe(digest);
+      }
+    }
+    expect(replaced.manifest.generatedAt).toBe("2026-07-10T00:05:00.000Z");
+    expect(replaced.manifest.mesh).toEqual({
+      path: "mesh/dollhouse.glb",
+      bytes: preparedBytes.byteLength,
+      sourceName: "reviewed-cleanup.glb",
+    });
+    expect(replaced.report).toEqual({ written: 0, skipped: 12 });
+    expect(await forgeResidue(parent)).toEqual([]);
+  });
+
+  it("rejects a corrupt published bundle without changing it or leaving stage residue", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "forge-replace-corrupt-"));
+    const src = join(parent, "source");
+    const out = join(parent, "published");
+    const initialMesh = join(parent, "initial.glb");
+    const prepared = join(parent, "reviewed-cleanup.glb");
+    await mkdir(src);
+    await makeCompleteCube(src);
+    await forgeBundle(baseOptions(src, out, "2026-07-10T00:00:00.000Z"));
+    const initialBytes = Buffer.from([0x67, 0x6c, 0x54, 0x46, 5, 4, 3, 2]);
+    await writeFile(initialMesh, initialBytes);
+    const first = await replaceBundleMesh({ outDir: out, preparedMeshPath: initialMesh });
+    const manifestBytes = await readFile(join(out, "manifest.json"));
+    const firstPath = Object.keys(first.manifest.contentHashes ?? {}).find(
+      (path) => path !== "mesh/dollhouse.glb",
+    );
+    if (firstPath === undefined) throw new Error("fixture bundle has no content files");
+    await writeFile(join(out, firstPath), "corrupt");
+    await writeFile(prepared, Buffer.from([1, 2, 3]));
+
+    await expect(
+      replaceBundleMesh({ outDir: out, preparedMeshPath: prepared }),
+    ).rejects.toThrow(`SHA-256 mismatch for ${firstPath}`);
+    expect(await readFile(join(out, "manifest.json"))).toEqual(manifestBytes);
+    expect(await readFile(join(out, "mesh", "dollhouse.glb"))).toEqual(initialBytes);
+    expect(await forgeResidue(parent)).toEqual([]);
+  });
+
+  it("rejects an oversized candidate without changing the published bundle", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "forge-replace-large-"));
+    const src = join(parent, "source");
+    const out = join(parent, "published");
+    const initialMesh = join(parent, "initial.glb");
+    const prepared = join(parent, "too-large.glb");
+    await mkdir(src);
+    await makeCompleteCube(src);
+    await forgeBundle(baseOptions(src, out, "2026-07-10T00:00:00.000Z"));
+    const initialBytes = Buffer.from([0x67, 0x6c, 0x54, 0x46, 1, 3, 5, 7]);
+    await writeFile(initialMesh, initialBytes);
+    await replaceBundleMesh({ outDir: out, preparedMeshPath: initialMesh });
+    const manifestBytes = await readFile(join(out, "manifest.json"));
+    await writeFile(prepared, Buffer.alloc(MESH_BUDGET_BYTES + 1));
+
+    await expect(
+      replaceBundleMesh({ outDir: out, preparedMeshPath: prepared }),
+    ).rejects.toThrow("8 MiB");
+    expect(await readFile(join(out, "manifest.json"))).toEqual(manifestBytes);
+    expect(await readFile(join(out, "mesh", "dollhouse.glb"))).toEqual(initialBytes);
+    expect(await forgeResidue(parent)).toEqual([]);
+  });
+});
+
 describe("forge CLI", () => {
   it("exits non-zero without creating an output directory when preflight finds missing input", async () => {
     const parent = await mkdtemp(join(tmpdir(), "forge-cli-"));
@@ -164,5 +277,35 @@ describe("forge CLI", () => {
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("Missing cubemap source files");
     expect(existsSync(out)).toBe(false);
+  });
+
+  it("replaces a prepared mesh without poses and rejects ambiguous mode combinations", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "forge-cli-replace-"));
+    const src = join(parent, "source");
+    const out = join(parent, "published");
+    const prepared = join(parent, "reviewed.glb");
+    await mkdir(src);
+    await makeCompleteCube(src);
+    await forgeBundle(baseOptions(src, out, "2026-07-10T00:00:00.000Z"));
+    await writeFile(prepared, Buffer.from([9, 8, 7, 6]));
+
+    const result = await runCli(["--replace-mesh", prepared, "--out", out]);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(await readFile(join(out, "mesh", "dollhouse.glb"))).toEqual(
+      Buffer.from([9, 8, 7, 6]),
+    );
+
+    for (const conflict of [["--refresh-manifest"], ["--mesh", prepared]]) {
+      const failed = await runCli([
+        "--replace-mesh",
+        prepared,
+        "--out",
+        out,
+        ...conflict,
+      ]);
+      expect(failed.code).not.toBe(0);
+      expect(failed.stderr).toContain("cannot be combined");
+    }
   });
 });

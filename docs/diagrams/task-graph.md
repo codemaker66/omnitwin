@@ -537,8 +537,9 @@ external blockers visible: T-469 waits for the signed real-room evidence path
 tracked by T-453, while T-470 still requires the owner-side Clerk dashboard
 verification and a real production staff session. T-472 through T-479 are
 closed with the verification evidence recorded in `docs/state/tasks.md`.
-T-484 closes the Trades-Hall-scoped Dollhouse presentation cutaway without
-changing Walk/Plan behaviour or promoting the underlying capture evidence.
+T-484 closes the Trades-Hall-scoped Dollhouse camera-facing/current-floor
+presentation cutaway plus reviewed detached-floater cleanup without changing
+Walk/Plan behaviour or promoting the underlying capture evidence.
 
 Subgraph A6 records the completed user-authorized 2026-07-10 implementation
 programme. T-480 closes at the verified internal candidate-source-stage

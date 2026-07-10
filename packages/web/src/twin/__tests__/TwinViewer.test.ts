@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { TwinScanNode } from "@omnitwin/types";
+import { DOLLHOUSE_DOT_RADIUS_M } from "../DollhouseStage.js";
 import {
   HOP_FOV_BREATH_DEG,
   SHIMMER_FADE_MS,
   TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
   dollhouseCutawayInsetForVenue,
+  lowerFloorSectionMinimumY,
   shimmerPhaseAfterTier,
   type TwinShimmerPhase,
 } from "../TwinViewer.js";
@@ -13,8 +16,37 @@ describe("dollhouse cutaway venue gate", () => {
     expect(dollhouseCutawayInsetForVenue("trades-hall")).toBe(
       TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
     );
-    expect(TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M).toBe(3.5);
+    expect(TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M).toBe(4);
     expect(dollhouseCutawayInsetForVenue("another-venue")).toBeUndefined();
+  });
+
+  it("uses the lowest current-storey pose to suppress lower-floor slab scraps", () => {
+    const node = (id: string, floor: number, z: number): TwinScanNode => ({
+      id,
+      index: Number(id.slice(-3)),
+      pose: { q: [1, 0, 0, 0], t: [0, 0, z] },
+      floor,
+      roomSlug: null,
+    });
+    const scan080 = node("scan_080", 0, -0.21);
+    const scan146 = node("scan_146", 0, -0.21);
+    const nodes = [
+      node("scan_000", -1, -2.1),
+      node("scan_001", -1, -1.35),
+      scan080,
+      scan146,
+      node("scan_028", 0, 1.72),
+    ];
+
+    const minimumY = lowerFloorSectionMinimumY(nodes, 0);
+    expect(minimumY).toBeCloseTo(-0.39);
+    for (const lowestCurrent of [scan080, scan146]) {
+      expect(lowestCurrent.pose.t[2] - (minimumY ?? Number.NaN)).toBeGreaterThanOrEqual(
+        DOLLHOUSE_DOT_RADIUS_M,
+      );
+    }
+    expect(lowerFloorSectionMinimumY(nodes, -1)).toBeUndefined();
+    expect(lowerFloorSectionMinimumY(nodes, 99)).toBeUndefined();
   });
 });
 

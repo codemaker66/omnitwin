@@ -10,7 +10,13 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { GLTFLoader } from "three-stdlib";
-import { Mesh as ThreeMesh, Plane, Vector3, type Group, type MeshStandardMaterial } from "three";
+import {
+  Mesh as ThreeMesh,
+  Plane,
+  Vector3,
+  type Group,
+  type MeshStandardMaterial,
+} from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import {
   isSpringSettled,
@@ -20,7 +26,7 @@ import {
 } from "../lib/springs.js";
 import { E57_TO_THREE_QUAT, MESH_OFFSET_M, e57PointToThree } from "./twin-basis.js";
 import {
-  cloneSceneWithCutawayPlane,
+  cloneSceneWithCutawayPlanes,
   disposeCutawayScene,
   setInertCutawayPlane,
   updateVerticalCutawayPlane,
@@ -105,7 +111,7 @@ export function preloadDollhouse(meshUrl: string): void {
 
 interface DollhouseMeshProps {
   readonly meshUrl: string;
-  readonly cutawayPlane: Plane | null;
+  readonly cutawayPlanes: readonly Plane[] | null;
 }
 
 /**
@@ -115,14 +121,14 @@ interface DollhouseMeshProps {
  * stays on as well so the loader is covered even if drei reorders its
  * extension hooks. WebP textures decode natively; no KTX2/basis transcoder.
  */
-function DollhouseMesh({ meshUrl, cutawayPlane }: DollhouseMeshProps): ReactElement {
+function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
   const preparedScene = useMemo(
     () =>
-      cutawayPlane === null
+      cutawayPlanes === null
         ? { scene: gltf.scene, materials: [] }
-        : cloneSceneWithCutawayPlane(gltf.scene, cutawayPlane),
-    [gltf.scene, cutawayPlane],
+        : cloneSceneWithCutawayPlanes(gltf.scene, cutawayPlanes),
+    [gltf.scene, cutawayPlanes],
   );
   useEffect(
     () => () => {
@@ -141,18 +147,22 @@ function DollhouseMesh({ meshUrl, cutawayPlane }: DollhouseMeshProps): ReactElem
 
 interface DollhouseCutawayControllerProps {
   readonly plane: Plane;
+  readonly floorPlane: Plane;
   readonly enabled: boolean;
   readonly target: readonly [number, number, number];
   readonly witnesses: readonly Vector3[];
   readonly insetM: number;
+  readonly minimumY?: number;
 }
 
 function DollhouseCutawayController({
   plane,
+  floorPlane,
   enabled,
   target,
   witnesses,
   insetM,
+  minimumY,
 }: DollhouseCutawayControllerProps): null {
   const gl = useThree((state) => state.gl);
   const wasEnabled = useRef(false);
@@ -173,11 +183,17 @@ function DollhouseCutawayController({
     if (!enabled) {
       if (wasEnabled.current) {
         setInertCutawayPlane(plane);
+        setInertCutawayPlane(floorPlane);
         wasEnabled.current = false;
       }
       return;
     }
     wasEnabled.current = true;
+    if (minimumY === undefined || !Number.isFinite(minimumY)) {
+      setInertCutawayPlane(floorPlane);
+    } else {
+      floorPlane.setComponents(0, 1, 0, -minimumY);
+    }
     updateVerticalCutawayPlane(plane, {
       cameraPosition: camera.position,
       target: targetPoint,
@@ -194,7 +210,7 @@ interface DollhouseDotProps {
   readonly isCurrent: boolean;
   readonly onDive: (id: string) => void;
   readonly cutawayEnabled: boolean;
-  readonly cutawayPlane: Plane | null;
+  readonly cutawayPlanes: readonly Plane[] | null;
   readonly clippingPlanes: Plane[] | null;
 }
 
@@ -203,7 +219,7 @@ function DollhouseDot({
   isCurrent,
   onDive,
   cutawayEnabled,
-  cutawayPlane,
+  cutawayPlanes,
   clippingPlanes,
 }: DollhouseDotProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
@@ -240,8 +256,10 @@ function DollhouseDot({
   useFrame((state, delta) => {
     const visible =
       !cutawayEnabled ||
-      cutawayPlane === null ||
-      cutawayPlane.distanceToPoint(cutawayPoint) >= DOLLHOUSE_DOT_RADIUS_M;
+      cutawayPlanes === null ||
+      cutawayPlanes.every(
+        (plane) => plane.distanceToPoint(cutawayPoint) >= DOLLHOUSE_DOT_RADIUS_M,
+      );
     const group = groupRef.current;
     if (group !== null && group.visible !== visible) {
       group.visible = visible;
@@ -331,6 +349,7 @@ export interface DollhouseStageProps {
     readonly enabled: boolean;
     readonly target: readonly [number, number, number];
     readonly insetM: number;
+    readonly minimumY?: number;
   };
 }
 
@@ -346,11 +365,15 @@ export function DollhouseStage({
     setInertCutawayPlane(plane);
     return plane;
   }, []);
+  const floorPlane = useMemo(() => {
+    const plane = new Plane();
+    setInertCutawayPlane(plane);
+    return plane;
+  }, []);
   const cutawayConfigured = cutaway !== undefined;
-  const clippingPlane = cutawayConfigured ? cutawayPlane : null;
   const clippingPlanes = useMemo(
-    () => (cutawayConfigured ? [cutawayPlane] : null),
-    [cutawayConfigured, cutawayPlane],
+    () => (cutawayConfigured ? [cutawayPlane, floorPlane] : null),
+    [cutawayConfigured, cutawayPlane, floorPlane],
   );
   const cutawayWitnesses = useMemo(
     () =>
@@ -367,14 +390,16 @@ export function DollhouseStage({
           simply exposes them, the low directional adds facade legibility. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <DollhouseMesh meshUrl={meshUrl} cutawayPlane={clippingPlane} />
+      <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} />
       {cutaway !== undefined && (
         <DollhouseCutawayController
           plane={cutawayPlane}
+          floorPlane={floorPlane}
           enabled={cutaway.enabled}
           target={cutaway.target}
           witnesses={cutawayWitnesses}
           insetM={cutaway.insetM}
+          {...(cutaway.minimumY === undefined ? {} : { minimumY: cutaway.minimumY })}
         />
       )}
       <group>
@@ -385,7 +410,7 @@ export function DollhouseStage({
             isCurrent={node.id === currentId}
             onDive={onDive}
             cutawayEnabled={cutaway?.enabled === true}
-            cutawayPlane={clippingPlane}
+            cutawayPlanes={clippingPlanes}
             clippingPlanes={clippingPlanes}
           />
         ))}

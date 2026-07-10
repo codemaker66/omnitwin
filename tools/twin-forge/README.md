@@ -105,6 +105,24 @@ pnpm --filter @omnitwin/twin-forge forge --refresh-manifest `
   --overrides "C:\Users\blake\omnitwin2\tools\twin-forge\nav-overrides\trades-hall.json"
 ```
 
+When a GLB has already passed a separate geometry/material/visual review, replace
+only that prepared mesh without re-running simplification or texture encoding:
+
+```powershell
+pnpm --filter @omnitwin/twin-forge forge `
+  --replace-mesh "C:\path\to\reviewed\dollhouse.glb" `
+  --out "C:\Users\blake\omnitwin2\packages\web\public\twin\trades-hall"
+```
+
+`--replace-mesh` copies the supplied GLB byte-for-byte into an isolated copy of
+the existing bundle, preserves the current manifest wholesale except for its
+timestamp, mesh descriptor, and recomputed content hashes, verifies both the
+source bundle and staged result, then promotes by the normal atomic rename path.
+It performs no geometry transformation and cannot be combined with `--mesh` or
+`--refresh-manifest`. The preparation/review evidence remains responsible for
+GLB structural validity. Replacing a MatterPak presentation mesh does not grant
+E57 room-shell authority, signing, or promotion status under D-024.
+
 ## Publishing to production (Cloudflare R2)
 
 Decision of record: R2 (zero egress). One-time setup Blake does in the

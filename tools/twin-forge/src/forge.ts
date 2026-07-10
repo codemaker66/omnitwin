@@ -4,11 +4,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   lstat,
   cp,
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -53,6 +55,13 @@ export interface RefreshManifestOptions {
   readonly outDir: string;
   readonly rawPoses: RawPoses;
   readonly overrides?: NavGraphOptions["overrides"];
+  readonly generatedAt?: string;
+}
+
+export interface ReplaceBundleMeshOptions {
+  readonly outDir: string;
+  /** Final, already-reviewed GLB. This path is copied byte-for-byte. */
+  readonly preparedMeshPath: string;
   readonly generatedAt?: string;
 }
 
@@ -392,6 +401,61 @@ export async function refreshBundleManifest(
       nav: { overrides: options.overrides },
       imagery: existing.imagery,
       ...(existing.mesh === undefined ? {} : { mesh: existing.mesh }),
+    });
+    const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
+    await rm(stage.rootDir, { recursive: true, force: true });
+    return { manifest: persisted, report: refreshedTileReport(persisted) };
+  } catch (error: unknown) {
+    return removeFailedStage(stage.rootDir, error);
+  }
+}
+
+/**
+ * Atomically replace only an existing bundle's prepared dollhouse GLB.
+ * Unlike full forging this performs no geometry or texture transform: the
+ * reviewed input is copied byte-for-byte, all existing manifest metadata is
+ * preserved, hashes are rebuilt, and the complete staged bundle is verified
+ * before rename promotion.
+ */
+export async function replaceBundleMesh(
+  options: ReplaceBundleMeshOptions,
+): Promise<ForgeBundleResult> {
+  const outDir = resolve(options.outDir);
+  const preparedMeshPath = resolve(options.preparedMeshPath);
+  if (!existsSync(outDir)) {
+    throw new Error(`cannot replace mesh in absent twin bundle ${outDir}`);
+  }
+  if (isWithin(outDir, preparedMeshPath)) {
+    throw new Error("prepared mesh must be outside the published twin bundle");
+  }
+  await assertSourceFiles(
+    dirname(preparedMeshPath),
+    [basename(preparedMeshPath)],
+    "prepared mesh",
+  );
+
+  const existing = await parsePersistedManifest(join(outDir, "manifest.json"));
+  await assertReplaceableOutput(outDir, existing.venueSlug);
+  await verifyBundleContent(outDir, existing);
+
+  const stage = await createCopiedBundleStage(outDir);
+  try {
+    await verifyBundleContent(stage.bundleDir, existing);
+    const stagedMeshDir = join(stage.bundleDir, "mesh");
+    const stagedMeshPath = join(stagedMeshDir, "dollhouse.glb");
+    await mkdir(stagedMeshDir, { recursive: true });
+    await copyFile(preparedMeshPath, stagedMeshPath);
+    const bytes = (await stat(stagedMeshPath)).size;
+    assertMeshBudget(bytes);
+
+    const manifest = TwinManifestSchema.parse({
+      ...existing,
+      generatedAt: options.generatedAt ?? new Date().toISOString(),
+      mesh: {
+        path: "mesh/dollhouse.glb",
+        bytes,
+        sourceName: basename(preparedMeshPath),
+      },
     });
     const persisted = await promoteRefreshedStage(stage.bundleDir, outDir, manifest);
     await rm(stage.rootDir, { recursive: true, force: true });
