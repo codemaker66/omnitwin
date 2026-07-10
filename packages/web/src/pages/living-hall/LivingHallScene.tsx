@@ -5,6 +5,7 @@ import {
   SparkSplatLayer,
   type SparkSplatErrorEvent,
 } from "../../components/scene/SparkSplatLayer.js";
+import { GoldInkTable } from "./GoldInkTable.js";
 import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
   MIN_GAZE_DISTANCE_M,
@@ -158,6 +159,9 @@ export function LivingHallScene({ reducedMotion, onSceneFailed }: LivingHallScen
               />
             ))}
           </group>
+          {/* The pen draws in world space (Y-up) — outside the Z-up group.
+              Ink only exists once the room is real (all tiles arrived). */}
+          {allLoaded && <GoldInkTable />}
           <DollyRig reducedMotion={reducedMotion} />
         </Canvas>
       )}

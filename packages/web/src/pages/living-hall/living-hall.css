@@ -395,6 +395,16 @@
   background: var(--lh-scrim);
 }
 
+/* The Dressing's panel steps aside on wide viewports: the table being drawn
+   is the stage, the narration is the caption beside it. */
+@media (min-width: 1100px) {
+  .lh-root.has-scene #the-dressing {
+    max-width: 460px;
+    margin-left: 0;
+    transform: translateX(calc(-1 * clamp(0px, 18vw, 300px)));
+  }
+}
+
 /* ————————————————— small viewports ————————————————— */
 
 @media (max-width: 760px) {

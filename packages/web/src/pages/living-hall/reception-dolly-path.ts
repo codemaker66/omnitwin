@@ -23,10 +23,12 @@ export const RECEPTION_DOLLY_STATIONS: readonly DollyStation[] = [
   { position: [-2.372, 0.035, 1.046], look: [-0.996, -0.071, 7.102] },
   // pose 1268 (28%) — along the sconce wall
   { position: [-5.748, -0.038, 3.606], look: [-6.02, -0.005, 3.08] },
-  // pose 1856 (41%) — mid-room, gazing across the floor
-  { position: [1.497, -0.116, 6.9], look: [-5.521, -0.068, 8.088] },
-  // pose 2400 (53%) — deep corner, looking back
-  { position: [-2.432, -0.053, 10.148], look: [1.484, -0.127, 9.745] },
+  // pose 1856 (41%) — mid-room; gaze authored onto the first table
+  // (gold-ink FIRST_TABLE at [-2, ·, 7.5]) so the camera arcs around the
+  // drawing while the Dressing act plays. Position stays on the capture path.
+  { position: [1.497, -0.116, 6.9], look: [-2.0, -0.5, 7.5] },
+  // pose 2400 (53%) — deep corner; gaze still held on the table
+  { position: [-2.432, -0.053, 10.148], look: [-2.0, -0.6, 7.5] },
   // pose 2943 (65%) — the glazed double doors
   { position: [-5.663, 0.504, 5.025], look: [-5.724, 0.347, 4.172] },
   // pose 3532 (78%) — toward the far windows
