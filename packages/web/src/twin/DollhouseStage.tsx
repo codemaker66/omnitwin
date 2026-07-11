@@ -1,9 +1,22 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { GLTFLoader } from "three-stdlib";
-import type { Group, MeshStandardMaterial } from "three";
+import {
+  Mesh as ThreeMesh,
+  Plane,
+  Vector3,
+  type Group,
+  type MeshStandardMaterial,
+} from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import {
   isSpringSettled,
@@ -12,6 +25,12 @@ import {
   type SpringState,
 } from "../lib/springs.js";
 import { E57_TO_THREE_QUAT, MESH_OFFSET_M, e57PointToThree } from "./twin-basis.js";
+import {
+  cloneSceneWithCutawayPlanes,
+  disposeCutawayScene,
+  setInertCutawayPlane,
+  updateVerticalCutawayPlane,
+} from "./dollhouse-cutaway.js";
 
 // -----------------------------------------------------------------------------
 // DollhouseStage — the orbitable mesh of the hall with posed node dots
@@ -92,6 +111,7 @@ export function preloadDollhouse(meshUrl: string): void {
 
 interface DollhouseMeshProps {
   readonly meshUrl: string;
+  readonly cutawayPlanes: readonly Plane[] | null;
 }
 
 /**
@@ -101,33 +121,122 @@ interface DollhouseMeshProps {
  * stays on as well so the loader is covered even if drei reorders its
  * extension hooks. WebP textures decode natively; no KTX2/basis transcoder.
  */
-function DollhouseMesh({ meshUrl }: DollhouseMeshProps): ReactElement {
+function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
+  const preparedScene = useMemo(
+    () =>
+      cutawayPlanes === null
+        ? { scene: gltf.scene, materials: [] }
+        : cloneSceneWithCutawayPlanes(gltf.scene, cutawayPlanes),
+    [gltf.scene, cutawayPlanes],
+  );
+  useEffect(
+    () => () => {
+      disposeCutawayScene(preparedScene);
+    },
+    [preparedScene],
+  );
   // Markers ride Object3D.name — NEVER data-* props: R3F pierces dashed prop
   // names as nested paths (data-x → object.data.x) and crashes on real nodes.
   return (
     <group name="twin-mesh-root" quaternion={E57_TO_THREE_QUAT} position={MESH_OFFSET_M}>
-      <primitive object={gltf.scene} />
+      <primitive object={preparedScene.scene} />
     </group>
   );
+}
+
+interface DollhouseCutawayControllerProps {
+  readonly plane: Plane;
+  readonly floorPlane: Plane;
+  readonly enabled: boolean;
+  readonly target: readonly [number, number, number];
+  readonly witnesses: readonly Vector3[];
+  readonly insetM: number;
+  readonly minimumY?: number;
+}
+
+function DollhouseCutawayController({
+  plane,
+  floorPlane,
+  enabled,
+  target,
+  witnesses,
+  insetM,
+  minimumY,
+}: DollhouseCutawayControllerProps): null {
+  const gl = useThree((state) => state.gl);
+  const wasEnabled = useRef(false);
+  const targetPoint = useMemo(
+    () => new Vector3(target[0], target[1], target[2]),
+    [target[0], target[1], target[2]],
+  );
+
+  useLayoutEffect(() => {
+    const previous = gl.localClippingEnabled;
+    gl.localClippingEnabled = true;
+    return () => {
+      gl.localClippingEnabled = previous;
+    };
+  }, [gl]);
+
+  useFrame(({ camera }) => {
+    if (!enabled) {
+      if (wasEnabled.current) {
+        setInertCutawayPlane(plane);
+        setInertCutawayPlane(floorPlane);
+        wasEnabled.current = false;
+      }
+      return;
+    }
+    wasEnabled.current = true;
+    if (minimumY === undefined || !Number.isFinite(minimumY)) {
+      setInertCutawayPlane(floorPlane);
+    } else {
+      floorPlane.setComponents(0, 1, 0, -minimumY);
+    }
+    updateVerticalCutawayPlane(plane, {
+      cameraPosition: camera.position,
+      target: targetPoint,
+      witnesses,
+      insetM,
+    });
+  }, -0.5);
+
+  return null;
 }
 
 interface DollhouseDotProps {
   readonly node: TwinScanNode;
   readonly isCurrent: boolean;
   readonly onDive: (id: string) => void;
+  readonly cutawayEnabled: boolean;
+  readonly cutawayPlanes: readonly Plane[] | null;
+  readonly clippingPlanes: Plane[] | null;
 }
 
-function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElement {
+function DollhouseDot({
+  node,
+  isCurrent,
+  onDive,
+  cutawayEnabled,
+  cutawayPlanes,
+  clippingPlanes,
+}: DollhouseDotProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
   const gl = useThree((state) => state.gl);
   const groupRef = useRef<Group>(null);
+  const hitRef = useRef<ThreeMesh>(null);
   const materialRef = useRef<MeshStandardMaterial>(null);
   const hoverRef = useRef<{ spring: SpringState; target: number }>({
     spring: { value: 0, velocity: 0 },
     target: 0,
   });
   const [hovered, setHovered] = useState(false);
+  const position = e57PointToThree(node.pose.t);
+  const cutawayPoint = useMemo(
+    () => new Vector3(position[0], position[1], position[2]),
+    [position[0], position[1], position[2]],
+  );
 
   useEffect(() => {
     hoverRef.current.target = hovered ? 1 : 0;
@@ -145,6 +254,34 @@ function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElem
   }, [hovered, invalidate, gl]);
 
   useFrame((state, delta) => {
+    const visible =
+      !cutawayEnabled ||
+      cutawayPlanes === null ||
+      cutawayPlanes.every(
+        (plane) => plane.distanceToPoint(cutawayPoint) >= DOLLHOUSE_DOT_RADIUS_M,
+      );
+    const group = groupRef.current;
+    if (group !== null && group.visible !== visible) {
+      group.visible = visible;
+      const hit = hitRef.current;
+      if (hit !== null) {
+        if (visible) {
+          hit.layers.set(0);
+        } else {
+          hit.layers.mask = 0;
+        }
+      }
+      if (!visible) {
+        hoverRef.current.target = 0;
+        if (hovered) {
+          setHovered(false);
+        }
+      }
+      invalidate();
+    }
+    if (!visible) {
+      return;
+    }
     const { spring, target } = hoverRef.current;
     if (!isSpringSettled(spring, target)) {
       stepSpring(spring, target, delta, HOVER_SPRING);
@@ -163,14 +300,13 @@ function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElem
     }
   });
 
-  const position = e57PointToThree(node.pose.t);
-
   return (
     <group ref={groupRef} position={position} name={`twin-dot-${node.id}`}>
       <mesh>
         <sphereGeometry args={[DOLLHOUSE_DOT_RADIUS_M, 24, 16]} />
         <meshStandardMaterial
           ref={materialRef}
+          clippingPlanes={clippingPlanes}
           color={DOLLHOUSE_DOT_COLOR}
           emissive={DOLLHOUSE_DOT_COLOR}
           emissiveIntensity={isCurrent ? DOLLHOUSE_DOT_PULSE_BASE : DOLLHOUSE_DOT_IDLE_EMISSIVE}
@@ -178,6 +314,7 @@ function DollhouseDot({ node, isCurrent, onDive }: DollhouseDotProps): ReactElem
       </mesh>
       {/* Invisible oversized hit sphere — the forgiving click target. */}
       <mesh
+        ref={hitRef}
         name="twin-dot-hit"
         onClick={(event: ThreeEvent<MouseEvent>) => {
           diveClickGuard(event, () => {
@@ -207,6 +344,13 @@ export interface DollhouseStageProps {
   readonly currentId: string;
   /** Dot click (drag-guarded) — Task 6 wires this into the dive flight. */
   readonly onDive: (id: string) => void;
+  /** Optional venue-scoped camera-facing section treatment. */
+  readonly cutaway?: {
+    readonly enabled: boolean;
+    readonly target: readonly [number, number, number];
+    readonly insetM: number;
+    readonly minimumY?: number;
+  };
 }
 
 export function DollhouseStage({
@@ -214,14 +358,50 @@ export function DollhouseStage({
   nodes,
   currentId,
   onDive,
+  cutaway,
 }: DollhouseStageProps): ReactElement {
+  const cutawayPlane = useMemo(() => {
+    const plane = new Plane();
+    setInertCutawayPlane(plane);
+    return plane;
+  }, []);
+  const floorPlane = useMemo(() => {
+    const plane = new Plane();
+    setInertCutawayPlane(plane);
+    return plane;
+  }, []);
+  const cutawayConfigured = cutaway !== undefined;
+  const clippingPlanes = useMemo(
+    () => (cutawayConfigured ? [cutawayPlane, floorPlane] : null),
+    [cutawayConfigured, cutawayPlane, floorPlane],
+  );
+  const cutawayWitnesses = useMemo(
+    () =>
+      nodes.map((node) => {
+        const position = e57PointToThree(node.pose.t);
+        return new Vector3(position[0], position[1], position[2]);
+      }),
+    [nodes],
+  );
+
   return (
     <group>
       {/* Matterport bakes its lighting into the textures; the ambient wash
           simply exposes them, the low directional adds facade legibility. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <DollhouseMesh meshUrl={meshUrl} />
+      <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} />
+      {cutaway !== undefined && (
+        <DollhouseCutawayController
+          plane={cutawayPlane}
+          floorPlane={floorPlane}
+          enabled={cutaway.enabled}
+          target={cutaway.target}
+          witnesses={cutawayWitnesses}
+          insetM={cutaway.insetM}
+          {...(cutaway.minimumY === undefined ? {} : { minimumY: cutaway.minimumY })}
+        />
+      )}
       <group>
         {nodes.map((node) => (
           <DollhouseDot
@@ -229,6 +409,9 @@ export function DollhouseStage({
             node={node}
             isCurrent={node.id === currentId}
             onDive={onDive}
+            cutawayEnabled={cutaway?.enabled === true}
+            cutawayPlanes={clippingPlanes}
+            clippingPlanes={clippingPlanes}
           />
         ))}
       </group>

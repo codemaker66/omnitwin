@@ -14,7 +14,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Euler, PerspectiveCamera } from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
-import { DollhouseStage, preloadDollhouse } from "./DollhouseStage.js";
+import {
+  DOLLHOUSE_DOT_RADIUS_M,
+  DollhouseStage,
+  preloadDollhouse,
+} from "./DollhouseStage.js";
 import {
   FIRST_LIGHT_FAILSAFE_MS,
   FIRST_LIGHT_FOV_OFFSET_DEG,
@@ -489,6 +493,38 @@ const PLAN_MAX_POLAR_RAD = (30 * Math.PI) / 180;
 const ORBIT_MIN_DISTANCE_M = 2;
 /** Smallest orbit radius — tiny bundles still get a readable dollhouse. */
 const ORBIT_MIN_RADIUS_M = 4;
+/** Visual-gate value for the Trades Hall camera-facing dollhouse section. */
+export const TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M = 4;
+
+/** Keep the presentation treatment venue-scoped until another scan is reviewed. */
+export function dollhouseCutawayInsetForVenue(venueSlug: string): number | undefined {
+  return venueSlug === "trades-hall" ? TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M : undefined;
+}
+
+/**
+ * Section boundary between the current storey and the nearest storey below.
+ * Scan poses sit at camera height. The lowest pose classified on the current
+ * storey is a conservative lower bound for occupied current-floor content.
+ * One marker radius of clearance keeps the lowest current-floor dot visible.
+ */
+export function lowerFloorSectionMinimumY(
+  nodes: readonly TwinScanNode[],
+  currentFloor: number,
+): number | undefined {
+  let nearestLowerFloor = Number.NEGATIVE_INFINITY;
+  let currentMinimumY = Number.POSITIVE_INFINITY;
+  for (const node of nodes) {
+    if (node.floor === currentFloor) {
+      currentMinimumY = Math.min(currentMinimumY, node.pose.t[2]);
+    } else if (node.floor < currentFloor) {
+      nearestLowerFloor = Math.max(nearestLowerFloor, node.floor);
+    }
+  }
+  if (!Number.isFinite(currentMinimumY) || !Number.isFinite(nearestLowerFloor)) {
+    return undefined;
+  }
+  return currentMinimumY - DOLLHOUSE_DOT_RADIUS_M;
+}
 
 interface NodeExtent {
   readonly center: [number, number, number];
@@ -891,6 +927,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   const meshUrl = manifest.mesh === undefined ? null : `${assetBase}/${manifest.mesh.path}`;
   const extent = useMemo(() => nodeExtent(manifest.nodes), [manifest]);
+  const dollhouseCutawayInsetM = dollhouseCutawayInsetForVenue(manifest.venueSlug);
 
   // Warm the dollhouse so a Surface dive never flies through an unloaded void.
   // Intent (a hover/focus on the mesh affordances) warms immediately; a capable
@@ -920,6 +957,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   const currentNode = nodesById.get(walk.currentId);
   const targetNode = walk.targetId === null ? undefined : nodesById.get(walk.targetId);
+  const dollhouseCutawayMinimumY =
+    dollhouseCutawayInsetM === undefined || currentNode === undefined
+      ? undefined
+      : lowerFloorSectionMinimumY(manifest.nodes, currentNode.floor);
   const hopping = targetNode !== undefined;
   // Parallax hops (the moonshot): mount the projective mesh stage only on a
   // fine-pointer device, and only once the stage is live AND the browser has
@@ -1196,6 +1237,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   meshUrl={meshUrl}
                   nodes={manifest.nodes}
                   currentId={walk.currentId}
+                  cutaway={
+                    dollhouseCutawayInsetM === undefined
+                      ? undefined
+                      : {
+                          enabled: mode === "dollhouse" && !dive.diving,
+                          target: extent.center,
+                          insetM: dollhouseCutawayInsetM,
+                          ...(dollhouseCutawayMinimumY === undefined
+                            ? {}
+                            : { minimumY: dollhouseCutawayMinimumY }),
+                        }
+                  }
                   onDive={(id) => {
                     dive.dive(id, {
                       position: [...orbitPosRef.current],

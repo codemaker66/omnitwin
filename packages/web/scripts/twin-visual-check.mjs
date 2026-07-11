@@ -224,7 +224,7 @@ try {
   // ~1.5 m above the floor slabs, none outside the walls. Any uniform offset
   // is calibrated through MESH_OFFSET_M in twin-basis.ts — nowhere else.
   // The manifest may lack a mesh (forge run without --mesh): skip cleanly.
-  await page.goto(`${BASE}/venues/trades-hall/twin?mode=dollhouse`, {
+  await page.goto(`${BASE}/venues/trades-hall/twin?node=scan_028&mode=dollhouse`, {
     waitUntil: "domcontentloaded", timeout: 60000,
   });
   await page.getByTestId("twin-node-label").waitFor({ timeout: 30000 });
@@ -238,7 +238,29 @@ try {
     await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => undefined);
     await page.waitForTimeout(4000);
     await page.screenshot({ path: join(OUT, "twin-10-dollhouse-orbit.png") });
-    report.steps.push("dollhouse orbit (mesh/dot alignment gate)");
+    report.steps.push("scan_028 dollhouse orbit (mesh/dot alignment + cutaway gate)");
+
+    // Trades Hall cutaway regression: orbit through three more headings. The
+    // camera-facing section must follow the orbit so the near exterior shell
+    // stays absent, while the interior, dome, stairs, fixtures, and node dots
+    // remain intact from every side.
+    for (const [index, delta] of [-420, -420, -420].entries()) {
+      await dragLook(page, delta);
+      await page.screenshot({
+        path: join(OUT, `twin-${17 + index}-scan028-cutaway-heading.png`),
+      });
+    }
+    report.steps.push("scan_028 camera-facing cutaway (four orbit headings)");
+
+    // Plan deliberately disables the vertical cutaway: this checks mode
+    // isolation and proves the Dollhouse treatment does not leak elsewhere.
+    await page.getByRole("radio", { name: "Plan" }).click();
+    await page.waitForTimeout(1800);
+    await page.screenshot({ path: join(OUT, "twin-20-scan028-plan.png") });
+    if (!page.url().includes("mode=plan")) {
+      report.errors.push("Plan mode did not update the URL");
+    }
+    report.steps.push("scan_028 Plan mode isolation");
 
     // The dive, surfacing direction (deterministic via the DOM button):
     // walk → Surface → mid-flight frame → settled dollhouse vantage.
