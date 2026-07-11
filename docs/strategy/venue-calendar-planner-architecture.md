@@ -353,3 +353,19 @@ Timeline UI (P0 remainder, next slice) · websocket command channel (Canon §9) 
 | day | venue-local midnight→midnight | 96 | colour + title + times + chips |
 | week | Monday→Monday | 18 | colour + title (+times ≥ 90px width) |
 | month | 1st→1st | 3 (72/day) | colour bars + title when it fits |
+
+---
+
+## 11. Slice 3 — drawer, enquiry→hold, live channel (T-495–T-497)
+
+**Scope:** close the working loop. (1) The **booking drawer**: create pencil/ink/block, edit fields, and perform role-gated lifecycle transitions from the Board (Enter opens the drawer; Space lifts for keyboard drag — key split replaces Slice 2's Enter-lift). (2) **Enquiry→hold conversion** (Canon §12 P0 "enquiry→hold"): the tray gains the venue's open enquiries; "Pencil in…" opens the drawer in convert mode prefilled from the enquiry (spaceId, preferredDate, eventType, guest name) and submits `POST /bookings/from-enquiry` — hygiene enforced, provenance kept via new `bookings.enquiry_id`. (3) **Live channel** (Canon §9/§15 first tranche): `/ws/diary` — first-message auth (auto-save convention), presence per venue, 20-second heartbeat with stale termination, and `diary.event` broadcasts fanned out from the house event bus; every successful booking mutation emits `diary.changed` AFTER its transaction commits. The Board subscribes (`useDiaryLive`): events → debounced refetch; presence → header chips; exponential-backoff reconnect with fresh snapshot on reconnect (refetch on open).
+
+| Decision | Why |
+|---|---|
+| Mutations stay REST; the ws carries **events + presence**, not command envelopes yet | The Canon's correctness core (validate in a transaction, exclusion constraint arbitrates, commit → broadcast) is preserved; migrating the write path to command envelopes is the explicit remaining §9 step, deferred until offline queueing needs it. Flagged, not silent |
+| `bookings.enquiry_id` (migration 0051, additive, SET NULL) | conversion provenance; the Slice-1 parity pin becomes `0050 CREATE columns + 0051 ALTER additions` — documented maintenance |
+| Conversion does NOT move the enquiry's own status | the commitment axis and the enquiry axis stay independent (Canon §1); staff may pencil an enquiry still under review |
+| Hub state is a single-process registry | Canon §15: fine until a second replica; Redis backplane is that precondition, restated here |
+| Presence is advisory display only | never a correctness mechanism (Canon §9) |
+
+File map: `api/src/services/diary-events.ts` (emit helper + EventMap extension in `observability/event-bus.ts`) · `api/src/ws/diary-live.ts` (`DiaryLiveHub` pure-ish core + `registerDiaryLive`) · `api/drizzle/0051_diary_enquiry_link.sql` + journal + EXPECTED_TAIL · `api/src/routes/bookings.ts` (+from-enquiry route, + event emissions) · web: `pages/diary/components/BookingDrawer.tsx`, `lib/drawer-form.ts` (pure form⇄payload mapping + venue-local datetime helpers in board-time), `hooks/useDiaryLive.ts` (+ pure `live-protocol.ts` message reducer), tray + page wiring. Tests per unit, house patterns.
