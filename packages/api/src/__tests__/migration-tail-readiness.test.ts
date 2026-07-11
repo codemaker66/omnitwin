@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { getTableColumns, getTableName } from "drizzle-orm";
-import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core";
+import { getTableConfig, type AnyPgColumn, type PgTable } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -19,6 +19,14 @@ import {
   eventMissions,
   layoutValidationRuns,
   opsTasks,
+  reconstructionReleaseAttestations,
+  reconstructionReleaseChannelEvents,
+  reconstructionReleaseChannels,
+  reconstructionReleasePublications,
+  reconstructionReleaseQaRuns,
+  reconstructionReleaseReviews,
+  reconstructionReleases,
+  reconstructionReviewEvidenceArtifacts,
 } from "../db/schema.js";
 import {
   compareMigrationJournals,
@@ -56,12 +64,25 @@ const ARCHITECT_TABLES = [
   eventArchitectCandidates,
 ] as const;
 
+const RECONSTRUCTION_FOUNDRY_TABLES = [
+  reconstructionReleases,
+  reconstructionReleaseQaRuns,
+  reconstructionReleaseReviews,
+  reconstructionReviewEvidenceArtifacts,
+  reconstructionReleaseAttestations,
+  reconstructionReleasePublications,
+  reconstructionReleaseChannels,
+  reconstructionReleaseChannelEvents,
+] as const;
+
 const EXPECTED_TAIL = [
   "0044_placed_objects_render_to_real",
   "0045_event_scenario_phase_scope",
   "0046_event_mission_control",
   "0047_event_architect_proof",
   "0048_event_architect_ops_reviews",
+  "0049_reconstruction_foundry",
+  "0050_diary_bookings",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -76,6 +97,19 @@ function extractCreatedTableColumns(sql: string, tableName: string): string[] {
 function drizzleColumnNames(table: PgTable): string[] {
   const columns = Object.values(getTableColumns(table)) as AnyPgColumn[];
   return columns.map((column) => column.name);
+}
+
+function drizzleForeignKeyShape(
+  table: PgTable,
+  name: string,
+): { readonly columns: readonly string[]; readonly foreignColumns: readonly string[] } {
+  const key = getTableConfig(table).foreignKeys.find((candidate) => candidate.getName() === name);
+  if (key === undefined) throw new Error(`Drizzle table is missing foreign key ${name}`);
+  const reference = key.reference();
+  return {
+    columns: reference.columns.map((column) => column.name),
+    foreignColumns: reference.foreignColumns.map((column) => column.name),
+  };
 }
 
 async function readMigration(tag: string): Promise<string> {
@@ -134,6 +168,166 @@ describe("migration tail rollout readiness", () => {
     expect(sql).toContain("event_architect_ops_reviews_no_delete");
     expect(sql).toContain("event_architect_ops_reviews_validity_window");
     expect(sql).toContain("event_architect_ops_reviews_required_witnesses");
+  });
+
+  it("keeps migration 0049 aligned, append-only, and CAS-controlled", async () => {
+    const sql = await readMigration("0049_reconstruction_foundry");
+    for (const table of RECONSTRUCTION_FOUNDRY_TABLES) {
+      const tableName = getTableName(table);
+      expect(extractCreatedTableColumns(sql, tableName), tableName).toEqual(drizzleColumnNames(table));
+    }
+    expect(sql).not.toMatch(/\b(?:DROP|RENAME)\b/iu);
+    expect(sql).not.toMatch(/\bTRUNCATE\s+(?:TABLE\s+)?"/iu);
+    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
+    for (const requiredBoundary of [
+      "reconstruction_reviews_public_approval_evidence",
+      "reconstruction_reviews_release_sequence_unique",
+      "reconstruction_reviews_release_supersedes_unique",
+      "reconstruction_reviews_supersedes_release_fk",
+      "reconstruction_reviews_sequence",
+      "reconstruction_reviews_id_exact_evidence_unique",
+      "reconstruction_review_evidence_venue_kind_id_digest_unique",
+      "reconstruction_review_evidence_actor_idempotency_unique",
+      "reconstruction_review_evidence_kind",
+      "reconstruction_review_evidence_artifact_digest_shape",
+      "reconstruction_review_evidence_object_digest_shape",
+      "reconstruction_review_evidence_request_digest_shape",
+      "reconstruction_review_evidence_digest_binding",
+      "reconstruction_review_evidence_object_key",
+      "reconstruction_review_evidence_size",
+      "reconstruction_review_evidence_schema_version",
+      "reconstruction_review_evidence_idempotency_key",
+      "reconstruction_review_evidence_no_update",
+      "reconstruction_review_evidence_no_delete",
+      "reconstruction_attestations_id_exact_evidence_unique",
+      "reconstruction_attestations_qa_fk",
+      "reconstruction_publications_release_review_attestation_unique",
+      "reconstruction_publications_id_release_scope_digest_unique",
+      "reconstruction_publications_qa_fk",
+      "reconstruction_channels_active_release_fk",
+      "reconstruction_channels_active_publication_fk",
+      "reconstruction_channel_events_revision_unique",
+      "reconstruction_channel_events_idempotency_unique",
+      "reconstruction_channel_events_resulting_revision",
+      "reconstruction_releases_no_update",
+      "reconstruction_releases_no_truncate",
+      "reconstruction_qa_no_update",
+      "reconstruction_qa_no_truncate",
+      "reconstruction_reviews_no_update",
+      "reconstruction_reviews_no_truncate",
+      "reconstruction_review_evidence_no_truncate",
+      "reconstruction_attestations_no_update",
+      "reconstruction_attestations_no_truncate",
+      "reconstruction_publications_no_update",
+      "reconstruction_publications_no_truncate",
+      "reconstruction_channel_events_no_update",
+      "reconstruction_channel_events_no_truncate",
+    ]) {
+      expect(sql).toContain(requiredBoundary);
+    }
+    const compactSql = sql.replace(/\s+/gu, " ");
+    for (const exactCompositeBoundary of [
+      'CONSTRAINT "reconstruction_review_evidence_digest_binding" CHECK ( "artifact_digest" = "object_sha256" )',
+      'CONSTRAINT "reconstruction_review_evidence_size" CHECK ( "size_bytes" > 0 AND "size_bytes" <= 4194304 )',
+      'CONSTRAINT "reconstruction_reviews_qa_fk" FOREIGN KEY("qa_run_id", "release_id", "venue_slug", "release_kind", "qa_report_digest") REFERENCES "reconstruction_release_qa_runs"("id", "release_id", "venue_slug", "release_kind", "report_digest")',
+      'CONSTRAINT "reconstruction_reviews_supersedes_release_fk" FOREIGN KEY("supersedes_review_id", "release_id") REFERENCES "reconstruction_release_reviews"("id", "release_id")',
+      'CONSTRAINT "reconstruction_attestations_review_fk" FOREIGN KEY("review_id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "review_digest") REFERENCES "reconstruction_release_reviews"("id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "request_digest")',
+      'CONSTRAINT "reconstruction_publications_review_fk" FOREIGN KEY("review_id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "review_digest") REFERENCES "reconstruction_release_reviews"("id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "request_digest")',
+      'CONSTRAINT "reconstruction_publications_attestation_fk" FOREIGN KEY("attestation_id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "review_id", "review_digest", "attestation_envelope_sha256") REFERENCES "reconstruction_release_attestations"("id", "release_id", "venue_slug", "release_kind", "release_digest", "qa_report_digest", "review_id", "review_digest", "envelope_sha256")',
+      'CONSTRAINT "reconstruction_channels_active_publication_fk" FOREIGN KEY("active_publication_id", "active_release_id", "venue_slug", "release_kind", "active_release_digest") REFERENCES "reconstruction_release_publications"("id", "release_id", "venue_slug", "release_kind", "release_digest")',
+      'CONSTRAINT "reconstruction_channel_events_from_publication_fk" FOREIGN KEY("from_publication_id", "from_release_id", "venue_slug", "release_kind", "from_release_digest") REFERENCES "reconstruction_release_publications"("id", "release_id", "venue_slug", "release_kind", "release_digest")',
+      'CONSTRAINT "reconstruction_channel_events_to_publication_fk" FOREIGN KEY("to_publication_id", "to_release_id", "venue_slug", "release_kind", "to_release_digest") REFERENCES "reconstruction_release_publications"("id", "release_id", "venue_slug", "release_kind", "release_digest")',
+    ]) {
+      expect(compactSql).toContain(exactCompositeBoundary);
+    }
+    for (const appendOnlyTable of [
+      "reconstruction_releases",
+      "reconstruction_release_qa_runs",
+      "reconstruction_release_reviews",
+      "reconstruction_review_evidence_artifacts",
+      "reconstruction_release_attestations",
+      "reconstruction_release_publications",
+      "reconstruction_release_channel_events",
+    ]) {
+      expect(compactSql).toContain(`BEFORE TRUNCATE ON "${appendOnlyTable}" FOR EACH STATEMENT`);
+    }
+    expect(drizzleForeignKeyShape(
+      reconstructionReleaseAttestations,
+      "reconstruction_attestations_review_fk",
+    )).toEqual({
+      columns: [
+        "review_id",
+        "release_id",
+        "venue_slug",
+        "release_kind",
+        "release_digest",
+        "qa_report_digest",
+        "review_digest",
+      ],
+      foreignColumns: [
+        "id",
+        "release_id",
+        "venue_slug",
+        "release_kind",
+        "release_digest",
+        "qa_report_digest",
+        "request_digest",
+      ],
+    });
+    expect(drizzleForeignKeyShape(
+      reconstructionReleasePublications,
+      "reconstruction_publications_attestation_fk",
+    )).toEqual({
+      columns: [
+        "attestation_id",
+        "release_id",
+        "venue_slug",
+        "release_kind",
+        "release_digest",
+        "qa_report_digest",
+        "review_id",
+        "review_digest",
+        "attestation_envelope_sha256",
+      ],
+      foreignColumns: [
+        "id",
+        "release_id",
+        "venue_slug",
+        "release_kind",
+        "release_digest",
+        "qa_report_digest",
+        "review_id",
+        "review_digest",
+        "envelope_sha256",
+      ],
+    });
+    expect(drizzleForeignKeyShape(
+      reconstructionReleaseChannels,
+      "reconstruction_channels_active_publication_fk",
+    )).toEqual({
+      columns: [
+        "active_publication_id",
+        "active_release_id",
+        "venue_slug",
+        "release_kind",
+        "active_release_digest",
+      ],
+      foreignColumns: ["id", "release_id", "venue_slug", "release_kind", "release_digest"],
+    });
+    expect(drizzleForeignKeyShape(
+      reconstructionReleaseChannelEvents,
+      "reconstruction_channel_events_to_publication_fk",
+    )).toEqual({
+      columns: [
+        "to_publication_id",
+        "to_release_id",
+        "venue_slug",
+        "release_kind",
+        "to_release_digest",
+      ],
+      foreignColumns: ["id", "release_id", "venue_slug", "release_kind", "release_digest"],
+    });
+    expect(sql).not.toContain('BEFORE UPDATE ON "reconstruction_release_channels"');
   });
 
   it("keeps both feature migrations additive and pins their cross-table integrity boundaries", async () => {

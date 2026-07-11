@@ -19,6 +19,9 @@ import {
 import type {
   AgentTrajectory,
   AnalyticsSnapshotPayload,
+  BookingKind,
+  BookingLiveness,
+  BookingState,
   CanonicalLayoutSnapshotV0,
   ComfortConstraintInput,
   CaptureControlSourceRecord,
@@ -55,6 +58,10 @@ import type {
   LayoutValidatorRun,
   PricingAssumptionInput,
   ProposalVersionPayload,
+  ReconstructionQaReport,
+  ReconstructionReleaseArtifactRef,
+  ReconstructionReleaseManifest,
+  ReconstructionVisualEvidence,
   RuntimePackageManifestJson,
   RuntimeQaRecordV0,
   TransformArtifactV0,
@@ -133,6 +140,9 @@ export const spaces = pgTable("spaces", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   unique("spaces_venue_slug_unique").on(table.venueId, table.slug),
+  // Composite identity for tenant-integrity FKs (bookings_space_venue_fk) —
+  // the same move migration 0046 made on events. Added by migration 0050.
+  unique("spaces_id_venue_unique").on(table.id, table.venueId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1163,17 @@ export const events = pgTable("events", {
   endsAt: timestamp("ends_at", { withTimezone: true }),
   guestCount: integer("guest_count").notNull().default(0),
   clientName: varchar("client_name", { length: 200 }),
+  // CRM spine linkage (Canon §2.4, T-487) — events join the Sell→Hold journey
+  // instead of floating free of the pipeline. clientName stays as the legacy
+  // denormalised label; these FKs are authoritative where present.
+  clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  // Headcount triple (Canon §2.4, R2): guaranteed = contract floor, expected
+  // = working number, setFor = what the room is physically set for. The
+  // legacy single guestCount remains for existing consumers.
+  headcountGuaranteed: integer("headcount_guaranteed"),
+  headcountExpected: integer("headcount_expected"),
+  headcountSetFor: integer("headcount_set_for"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1161,6 +1182,8 @@ export const events = pgTable("events", {
   unique("events_id_venue_unique").on(table.id, table.venueId),
   index("events_venue_status_idx").on(table.venueId, table.status),
   index("events_created_by_idx").on(table.createdBy),
+  index("events_client_account_idx").on(table.clientAccountId),
+  index("events_opportunity_idx").on(table.opportunityId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1174,6 +1197,10 @@ export const events = pgTable("events", {
 export const eventPhases = pgTable("event_phases", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  // Keystone Diary migration (Canon §2.3, T-487): phases become room-scoped —
+  // the Occupancy Footprint. Nullable: existing rows stay venue-global and
+  // are excluded from room lanes until scoped.
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "set null" }),
   templateKey: varchar("template_key", { length: 40 }),
   name: varchar("name", { length: 100 }).notNull(),
   sortOrder: integer("sort_order").notNull(),
@@ -1193,6 +1220,7 @@ export const eventPhases = pgTable("event_phases", {
   unique("event_phases_event_template_unique").on(table.eventId, table.templateKey),
   unique("event_phases_event_id_id_unique").on(table.eventId, table.id),
   index("event_phases_event_order_idx").on(table.eventId, table.sortOrder),
+  index("event_phases_space_idx").on(table.spaceId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -2768,4 +2796,439 @@ export const eventArchitectOpsReviews = pgTable("event_architect_ops_reviews", {
     foreignColumns: [eventArchitectCandidates.id, eventArchitectCandidates.runId],
     name: "event_architect_ops_reviews_candidate_run_fk",
   }),
+]);
+
+// Evidence-to-Runtime Reconstruction Foundry. All records below except the
+// channel pointer are made append-only by migration 0049.
+export const reconstructionReleases = pgTable("reconstruction_releases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  sourceManifestSha256: varchar("source_manifest_sha256", { length: 64 }).notNull(),
+  releaseManifestSha256: varchar("release_manifest_sha256", { length: 64 }).notNull(),
+  candidateBucket: varchar("candidate_bucket", { length: 255 }).notNull(),
+  candidatePrefix: text("candidate_prefix").notNull(),
+  releaseManifestKey: text("release_manifest_key").notNull(),
+  fileCount: integer("file_count").notNull(),
+  totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+  manifestJson: jsonb("manifest_json").$type<ReconstructionReleaseManifest>().notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_releases_venue_kind_digest_unique").on(table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_releases_manifest_key_unique").on(table.candidateBucket, table.releaseManifestKey),
+  unique("reconstruction_releases_actor_idempotency_unique").on(table.createdBy, table.idempotencyKey),
+  unique("reconstruction_releases_id_venue_kind_unique").on(table.id, table.venueSlug, table.releaseKind),
+  unique("reconstruction_releases_id_scope_digest_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_releases_id_scope_digest_manifest_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest, table.releaseManifestSha256),
+  unique("reconstruction_releases_id_scope_digest_source_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest, table.sourceManifestSha256),
+  unique("reconstruction_releases_id_digest_manifest_unique").on(table.id, table.releaseDigest, table.releaseManifestSha256),
+  unique("reconstruction_releases_id_digest_source_unique").on(table.id, table.releaseDigest, table.sourceManifestSha256),
+  index("reconstruction_releases_venue_created_idx").on(table.venueSlug, table.createdAt),
+]);
+
+export const reconstructionReleaseQaRuns = pgTable("reconstruction_release_qa_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  qaProfileVersion: varchar("qa_profile_version", { length: 80 }).notNull(),
+  qaProfileDigest: varchar("qa_profile_digest", { length: 64 }).notNull(),
+  outcome: varchar("outcome", { length: 20 }).$type<"passed" | "failed">().notNull(),
+  reportDigest: varchar("report_digest", { length: 64 }).notNull(),
+  reportKey: text("report_key").notNull(),
+  reportJson: jsonb("report_json").$type<ReconstructionQaReport>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind],
+    name: "reconstruction_qa_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_qa_release_report_unique").on(table.releaseId, table.reportDigest),
+  unique("reconstruction_qa_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_qa_id_release_report_unique").on(table.id, table.releaseId, table.reportDigest),
+  unique("reconstruction_qa_release_scope_report_unique").on(table.releaseId, table.venueSlug, table.releaseKind, table.reportDigest),
+  unique("reconstruction_qa_id_release_scope_report_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.reportDigest),
+  index("reconstruction_qa_release_created_idx").on(table.releaseId, table.createdAt),
+]);
+
+export const reconstructionReleaseReviews = pgTable("reconstruction_release_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  qaRunId: uuid("qa_run_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  reviewerUserId: uuid("reviewer_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reviewerAuthority: varchar("reviewer_authority", { length: 40 }).$type<"platform_admin">().notNull(),
+  decision: varchar("decision", { length: 20 }).$type<"approved" | "rejected">().notNull(),
+  targetExposure: varchar("target_exposure", { length: 30 }).$type<"expert_review" | "public">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  releaseManifestSha256: varchar("release_manifest_sha256", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  visualEvidence: jsonb("visual_evidence").$type<readonly ReconstructionVisualEvidence[]>().notNull(),
+  transformArtifactRefs: jsonb("transform_artifact_refs").$type<readonly ReconstructionReleaseArtifactRef[]>().notNull().default([]),
+  sceneAuthorityRefs: jsonb("scene_authority_refs").$type<readonly ReconstructionReleaseArtifactRef[]>().notNull().default([]),
+  note: text("note").notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  reviewSequence: integer("review_sequence").notNull(),
+  supersedesReviewId: uuid("supersedes_review_id"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind],
+    name: "reconstruction_reviews_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.releaseManifestSha256],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest, reconstructionReleases.releaseManifestSha256],
+    name: "reconstruction_reviews_release_digest_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.qaRunId, table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.id, reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_reviews_qa_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.supersedesReviewId, table.releaseId],
+    foreignColumns: [table.id, table.releaseId],
+    name: "reconstruction_reviews_supersedes_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_reviews_reviewer_idempotency_unique").on(table.reviewerUserId, table.idempotencyKey),
+  unique("reconstruction_reviews_release_sequence_unique").on(table.releaseId, table.reviewSequence),
+  unique("reconstruction_reviews_release_supersedes_unique").on(table.releaseId, table.supersedesReviewId),
+  unique("reconstruction_reviews_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_reviews_id_release_digest_unique").on(table.id, table.releaseId, table.requestDigest),
+  unique("reconstruction_reviews_id_exact_evidence_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.requestDigest),
+  index("reconstruction_reviews_release_reviewed_idx").on(table.releaseId, table.reviewedAt),
+]);
+
+export const reconstructionReviewEvidenceArtifacts = pgTable("reconstruction_review_evidence_artifacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  artifactKind: varchar("artifact_kind", { length: 50 }).$type<"transform_artifact_v0" | "scene_authority_map_v0">().notNull(),
+  artifactId: varchar("artifact_id", { length: 160 }).notNull(),
+  artifactDigest: varchar("artifact_digest", { length: 64 }).notNull(),
+  objectKey: text("object_key").notNull(),
+  objectSha256: varchar("object_sha256", { length: 64 }).notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 80 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  registeredBy: uuid("registered_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_review_evidence_venue_kind_id_digest_unique").on(
+    table.venueSlug,
+    table.artifactKind,
+    table.artifactId,
+    table.artifactDigest,
+  ),
+  unique("reconstruction_review_evidence_actor_idempotency_unique").on(
+    table.registeredBy,
+    table.idempotencyKey,
+  ),
+  index("reconstruction_review_evidence_venue_kind_registered_idx").on(
+    table.venueSlug,
+    table.artifactKind,
+    table.registeredAt,
+  ),
+  index("reconstruction_review_evidence_object_digest_idx").on(table.objectSha256),
+]);
+
+export const reconstructionReleaseAttestations = pgTable("reconstruction_release_attestations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  attestationType: varchar("attestation_type", { length: 50 }).$type<"in_toto_dsse_ed25519">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  reviewId: uuid("review_id").notNull(),
+  reviewDigest: varchar("review_digest", { length: 64 }).notNull(),
+  keyId: varchar("key_id", { length: 160 }).notNull(),
+  publicKeyFingerprint: varchar("public_key_fingerprint", { length: 64 }).notNull(),
+  statementSha256: varchar("statement_sha256", { length: 64 }).notNull(),
+  envelopeSha256: varchar("envelope_sha256", { length: 64 }).notNull(),
+  r2Key: text("r2_key").notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  verifiedBy: uuid("verified_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_attestations_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_attestations_qa_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_attestations_release_envelope_unique").on(table.releaseId, table.envelopeSha256),
+  unique("reconstruction_attestations_release_key_unique").on(table.releaseId, table.r2Key),
+  unique("reconstruction_attestations_actor_idempotency_unique").on(table.verifiedBy, table.idempotencyKey),
+  unique("reconstruction_attestations_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_attestations_id_release_envelope_unique").on(table.id, table.releaseId, table.envelopeSha256),
+  unique("reconstruction_attestations_id_exact_evidence_unique").on(
+    table.id,
+    table.releaseId,
+    table.venueSlug,
+    table.releaseKind,
+    table.releaseDigest,
+    table.qaReportDigest,
+    table.reviewId,
+    table.reviewDigest,
+    table.envelopeSha256,
+  ),
+  foreignKey({
+    columns: [table.reviewId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewDigest],
+    foreignColumns: [reconstructionReleaseReviews.id, reconstructionReleaseReviews.releaseId, reconstructionReleaseReviews.venueSlug, reconstructionReleaseReviews.releaseKind, reconstructionReleaseReviews.releaseDigest, reconstructionReleaseReviews.qaReportDigest, reconstructionReleaseReviews.requestDigest],
+    name: "reconstruction_attestations_review_fk",
+  }).onDelete("restrict"),
+  index("reconstruction_attestations_release_verified_idx").on(table.releaseId, table.verifiedAt),
+]);
+
+export const reconstructionReleasePublications = pgTable("reconstruction_release_publications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  reviewId: uuid("review_id").notNull(),
+  reviewDigest: varchar("review_digest", { length: 64 }).notNull(),
+  attestationId: uuid("attestation_id").notNull(),
+  attestationEnvelopeSha256: varchar("attestation_envelope_sha256", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  note: text("note").notNull(),
+  candidatePrefix: text("candidate_prefix").notNull(),
+  releaseBucket: varchar("release_bucket", { length: 255 }).notNull(),
+  releasePrefix: text("release_prefix").notNull(),
+  publicManifestKey: text("public_manifest_key").notNull(),
+  publicBaseUrl: text("public_base_url").notNull(),
+  manifestUrl: text("manifest_url").notNull(),
+  manifestSha256: varchar("manifest_sha256", { length: 64 }).notNull(),
+  verificationDigest: varchar("verification_digest", { length: 64 }).notNull(),
+  objectCount: integer("object_count").notNull(),
+  totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+  publishedBy: uuid("published_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_publications_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_publications_release_review_attestation_unique").on(table.releaseId, table.reviewId, table.attestationId),
+  unique("reconstruction_publications_id_release_scope_digest_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_publications_actor_idempotency_unique").on(table.publishedBy, table.idempotencyKey),
+  index("reconstruction_publications_release_published_idx").on(table.releaseId, table.publishedAt),
+  index("reconstruction_publications_prefix_idx").on(table.releaseBucket, table.releasePrefix),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.manifestSha256],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest, reconstructionReleases.sourceManifestSha256],
+    name: "reconstruction_publications_release_digest_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_publications_qa_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.reviewId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewDigest],
+    foreignColumns: [reconstructionReleaseReviews.id, reconstructionReleaseReviews.releaseId, reconstructionReleaseReviews.venueSlug, reconstructionReleaseReviews.releaseKind, reconstructionReleaseReviews.releaseDigest, reconstructionReleaseReviews.qaReportDigest, reconstructionReleaseReviews.requestDigest],
+    name: "reconstruction_publications_review_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.attestationId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewId, table.reviewDigest, table.attestationEnvelopeSha256],
+    foreignColumns: [reconstructionReleaseAttestations.id, reconstructionReleaseAttestations.releaseId, reconstructionReleaseAttestations.venueSlug, reconstructionReleaseAttestations.releaseKind, reconstructionReleaseAttestations.releaseDigest, reconstructionReleaseAttestations.qaReportDigest, reconstructionReleaseAttestations.reviewId, reconstructionReleaseAttestations.reviewDigest, reconstructionReleaseAttestations.envelopeSha256],
+    name: "reconstruction_publications_attestation_fk",
+  }).onDelete("restrict"),
+]);
+
+export const reconstructionReleaseChannels = pgTable("reconstruction_release_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  channel: varchar("channel", { length: 30 }).$type<"production">().notNull(),
+  activeReleaseId: uuid("active_release_id").notNull(),
+  activeReleaseDigest: varchar("active_release_digest", { length: 64 }).notNull(),
+  activePublicationId: uuid("active_publication_id").notNull(),
+  revision: integer("revision").notNull(),
+  updatedBy: uuid("updated_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_channels_venue_kind_channel_unique").on(table.venueSlug, table.releaseKind, table.channel),
+  unique("reconstruction_channels_id_scope_unique").on(table.id, table.venueSlug, table.releaseKind, table.channel),
+  foreignKey({
+    columns: [table.activeReleaseId, table.venueSlug, table.releaseKind, table.activeReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channels_active_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.activePublicationId, table.activeReleaseId, table.venueSlug, table.releaseKind, table.activeReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channels_active_publication_fk",
+  }).onDelete("restrict"),
+]);
+
+export const reconstructionReleaseChannelEvents = pgTable("reconstruction_release_channel_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channelId: uuid("channel_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  channel: varchar("channel", { length: 30 }).$type<"production">().notNull(),
+  action: varchar("action", { length: 20 }).$type<"promote" | "rollback">().notNull(),
+  fromReleaseId: uuid("from_release_id"),
+  fromReleaseDigest: varchar("from_release_digest", { length: 64 }),
+  fromPublicationId: uuid("from_publication_id"),
+  toReleaseId: uuid("to_release_id").notNull(),
+  toReleaseDigest: varchar("to_release_digest", { length: 64 }).notNull(),
+  toPublicationId: uuid("to_publication_id").notNull(),
+  expectedRevision: integer("expected_revision").notNull(),
+  resultingRevision: integer("resulting_revision").notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.channelId, table.venueSlug, table.releaseKind, table.channel],
+    foreignColumns: [reconstructionReleaseChannels.id, reconstructionReleaseChannels.venueSlug, reconstructionReleaseChannels.releaseKind, reconstructionReleaseChannels.channel],
+    name: "reconstruction_channel_events_channel_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.fromReleaseId, table.venueSlug, table.releaseKind, table.fromReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channel_events_from_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.toReleaseId, table.venueSlug, table.releaseKind, table.toReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channel_events_to_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.fromPublicationId, table.fromReleaseId, table.venueSlug, table.releaseKind, table.fromReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channel_events_from_publication_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.toPublicationId, table.toReleaseId, table.venueSlug, table.releaseKind, table.toReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channel_events_to_publication_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_channel_events_idempotency_unique").on(table.channelId, table.actorUserId, table.idempotencyKey),
+  unique("reconstruction_channel_events_revision_unique").on(table.channelId, table.resultingRevision),
+  index("reconstruction_channel_events_channel_created_idx").on(table.channelId, table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 30. Diary — bookings (the commitment axis; Canon §1–§3, T-487).
+//
+// A booking is space-time commitment truth. `kind` = what the commitment IS
+// (prospect | hold | ink | internal_block) and mutates only on promotion;
+// `status` = liveness (active | released | expired | cancelled | lost) and
+// mutates only on exit. The Canon's flat lifecycle state is derived
+// (deriveBookingState in @omnitwin/types), so a released hold remains
+// knowably a hold — wash-rate analytics depend on that provenance.
+//
+// The ink hard floor lives in the database: migration 0050 adds a btree_gist
+// partial EXCLUDE constraint (bookings_ink_no_overlap) so two active inks can
+// never overlap in one space. Drizzle cannot express EXCLUDE — the raw
+// migration is authoritative for it, together with the row CHECK constraints.
+// Holds and prospects overlap by design (the option ladder). Composite
+// (id, venue_id) FKs pin bookings to events and spaces of the SAME venue at
+// the DB boundary (the Mission Control tenant-integrity pattern).
+// ---------------------------------------------------------------------------
+
+export const bookings = pgTable("bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 20 }).$type<BookingKind>().notNull(),
+  status: varchar("status", { length: 20 }).$type<BookingLiveness>().notNull().default("active"),
+  title: varchar("title", { length: 200 }).notNull(),
+  eventType: varchar("event_type", { length: 80 }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  // Option-ladder position; holds only (bookings_rank_hold_only CHECK).
+  // Cleared on promotion to ink — the ladder is resolved.
+  rank: integer("rank"),
+  jointFlag: boolean("joint_flag").notNull().default(false),
+  decisionAt: timestamp("decision_at", { withTimezone: true }),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  nextAction: varchar("next_action", { length: 500 }),
+  nextActionDueAt: timestamp("next_action_due_at", { withTimezone: true }),
+  // Day-one nullable series group id (Canon §2.1); a series table arrives
+  // with recurrence work, not this slice.
+  seriesId: uuid("series_id"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  unique("bookings_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({
+    columns: [table.eventId, table.venueId],
+    foreignColumns: [events.id, events.venueId],
+    name: "bookings_event_venue_fk",
+  }),
+  foreignKey({
+    columns: [table.spaceId, table.venueId],
+    foreignColumns: [spaces.id, spaces.venueId],
+    name: "bookings_space_venue_fk",
+  }),
+  index("bookings_venue_starts_idx").on(table.venueId, table.startsAt),
+  index("bookings_space_starts_idx").on(table.spaceId, table.startsAt),
+  index("bookings_event_idx").on(table.eventId),
+  index("bookings_venue_kind_status_idx").on(table.venueId, table.kind, table.status),
+  index("bookings_venue_decision_idx").on(table.venueId, table.decisionAt),
+  index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
+]);
+
+// House status-history convention (enquiry_status_history pattern). Rows
+// store DERIVED states (Canon §1 vocabulary), so history reads as the
+// lifecycle: "hold → ink", "hold → released", never a kind/status tuple.
+export const bookingStatusHistory = pgTable("booking_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  fromState: varchar("from_state", { length: 20 }).$type<BookingState>().notNull(),
+  toState: varchar("to_state", { length: 20 }).$type<BookingState>().notNull(),
+  changedBy: uuid("changed_by").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("booking_status_history_booking_idx").on(table.bookingId),
+]);
+
+// Minimal turnaround rules v0 (Canon §2.3 tail) — shaped like pricing_rules.
+// Null spaceId = venue-wide default; null eventType = all event types. The
+// conflict engine resolves the most specific active rule and, on specificity
+// ties, the largest minutes (fail-safe direction). Pairs no rule covers are
+// reported not_checked — never OK (Canon §4 honesty pattern).
+export const turnaroundRules = pgTable("turnaround_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").references(() => spaces.id),
+  eventType: varchar("event_type", { length: 80 }),
+  name: varchar("name", { length: 200 }).notNull(),
+  minutes: integer("minutes").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("turnaround_rules_venue_space_idx").on(table.venueId, table.spaceId),
 ]);
