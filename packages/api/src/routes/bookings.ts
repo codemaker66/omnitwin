@@ -295,7 +295,24 @@ export async function bookingRoutes(
       }
     }
 
+    // Cross-lane move (the Board): the target room must belong to the same
+    // venue — the composite bookings_space_venue_fk backs this at the DB.
+    if (patch.spaceId !== undefined && patch.spaceId !== row.spaceId) {
+      const [space] = await db
+        .select({ id: spaces.id, venueId: spaces.venueId })
+        .from(spaces)
+        .where(and(eq(spaces.id, patch.spaceId), isNull(spaces.deletedAt)))
+        .limit(1);
+      if (space === undefined || space.venueId !== row.venueId) {
+        return reply.status(400).send({
+          error: "The space does not belong to this venue",
+          code: "SPACE_VENUE_MISMATCH",
+        });
+      }
+    }
+
     const next = {
+      spaceId: patch.spaceId ?? row.spaceId,
       eventId: patch.eventId === undefined ? row.eventId : patch.eventId,
       title: patch.title ?? row.title,
       eventType: patch.eventType === undefined ? row.eventType : patch.eventType,

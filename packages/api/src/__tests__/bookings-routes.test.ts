@@ -250,6 +250,13 @@ describe("booking routes — source contract", () => {
     expect(source).toContain('row.status !== "active"');
   });
 
+  it("validates a cross-lane move's target space against the venue (the Board)", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    expect(source).toContain("patch.spaceId !== undefined");
+    expect(source).toContain("eq(spaces.id, patch.spaceId)");
+    expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
+  });
+
   it("scopes diary writes to staff/admin while reads keep the shared venue policy", async () => {
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
     expect(source).toContain('new Set(["staff", "admin"])');

@@ -200,6 +200,8 @@ export type CreateBookingInput = z.infer<typeof CreateBookingSchema>;
  */
 export const UpdateBookingSchema = z
   .object({
+    // Cross-lane move (the Board): a booking may change room, never lose one.
+    spaceId: z.string().uuid().optional(),
     eventId: z.string().uuid().nullable().optional(),
     title: z.string().trim().min(1).max(200).optional(),
     eventType: z.string().trim().min(1).max(80).nullable().optional(),

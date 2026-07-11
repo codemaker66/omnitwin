@@ -239,6 +239,22 @@ describe("UpdateBookingSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts a cross-lane move (spaceId change) — the Board's room reassignment", () => {
+    expect(UpdateBookingSchema.safeParse({ spaceId: SPACE_ID }).success).toBe(true);
+    expect(
+      UpdateBookingSchema.safeParse({
+        spaceId: SPACE_ID,
+        startsAt: "2026-09-19T18:00:00.000Z",
+        endsAt: "2026-09-20T00:30:00.000Z",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects clearing or malforming the space — a booking always occupies a room", () => {
+    expect(UpdateBookingSchema.safeParse({ spaceId: null }).success).toBe(false);
+    expect(UpdateBookingSchema.safeParse({ spaceId: "not-a-uuid" }).success).toBe(false);
+  });
+
   it("rejects kind or status changes through the edit surface", () => {
     expect(UpdateBookingSchema.safeParse({ kind: "ink" }).success).toBe(false);
     expect(UpdateBookingSchema.safeParse({ status: "released" }).success).toBe(false);
