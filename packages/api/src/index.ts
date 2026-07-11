@@ -42,8 +42,15 @@ import { eventArchitectRoutes } from "./routes/event-architect.js";
 import { eventMissionEventRoutes, eventMissionRoutes } from "./routes/event-mission-control.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
+import { bookingRoutes } from "./routes/bookings.js";
+import { calendarRoutes } from "./routes/calendar.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
+import {
+  adminReconstructionFoundryRoutes,
+  publicReconstructionReleaseRoutes,
+} from "./routes/reconstruction-foundry.js";
+import { createReconstructionFoundryService } from "./services/reconstruction-foundry-integrations.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
@@ -258,6 +265,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Database ---
   const db = createDb(env.DATABASE_URL);
+  const reconstructionFoundryService = createReconstructionFoundryService(db, env);
 
   // --- DB-probe health check ---
   // Separate from /health so process liveness stays DB-independent.
@@ -313,10 +321,18 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(clientRoutes, { db, prefix: "/clients" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
+  await server.register(adminReconstructionFoundryRoutes, {
+    service: reconstructionFoundryService,
+    prefix: "/admin/reconstruction-foundry",
+  });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
+  await server.register(publicReconstructionReleaseRoutes, {
+    service: reconstructionFoundryService,
+    prefix: "/assets/reconstruction-releases",
+  });
   await server.register(integrationRoutes, { db, prefix: "/integrations" });
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
@@ -327,6 +343,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
   await server.register(onboardingRoutes, { db, prefix: "/onboarding" });
   await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
+  await server.register(bookingRoutes, { db, prefix: "/bookings" });
+  await server.register(calendarRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
