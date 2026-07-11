@@ -121,11 +121,19 @@ function useRevealOnce(): (node: HTMLElement | null) => void {
  *  Below APERTURE_MIN_ASPECT the cover crop becomes height-determined and
  *  the width math no longer holds, so the aperture stands down and the
  *  plain top-anchored crop (dome fully in frame) carries the hero. */
-const DOME_X = 0.533; // dome centre as a fraction of the photo's width
-const DOME_REVEAL = 0.105; // reveal line, as a fraction of frame width
-const DOME_APERTURE_R = 0.068; // fanlight radius, fraction of frame width
+/** Pixel-measured from the photograph itself (region-grow over the cap's
+ *  patina, 2026-07-12): the 1536×864 source holds the cap centred at
+ *  x 0.554, spanning 0.066–0.127 of frame width vertically on screen.
+ *  The arch is derived from those measurements — centred on the cap, a
+ *  snug halo of its width, apex just clear of the tip — so the dome
+ *  fills its aperture instead of drifting inside an oversized one. */
+const DOME_X = 0.554; // cap centre, fraction of frame width
+const DOME_TIP = 0.0664; // cap tip y, fraction of frame width
+const DOME_APERTURE_R = 0.0326; // arch radius: ~1.4× the cap's half-width
+const APEX_GAP = 0.007; // clearance between arch apex and cap tip
+const DOME_REVEAL = DOME_TIP - APEX_GAP + DOME_APERTURE_R; // spring line
 const APERTURE_CORNER = 0.07; // top-right corner sweep on the reveal line
-const APERTURE_MIN_ASPECT = 1.55; // photo is 3:2; only wider frames qualify
+const APERTURE_MIN_ASPECT = 1.85; // photo is 16:9 (1536×864); wider only
 
 interface DomeApertureRefs {
   readonly frameRef: (node: HTMLDivElement | null) => void;
@@ -168,7 +176,7 @@ function useDomeAperture(): DomeApertureRefs {
     svgEl.querySelector("[data-fanlight]")?.setAttribute("d", edge.join(" "));
     svgEl
       .querySelector("[data-keystone]")
-      ?.setAttribute("d", `M ${String(cx)} ${String(reveal - r - 8)} v 5`);
+      ?.setAttribute("d", `M ${String(cx)} ${String(reveal - r - 6)} v 5`);
   }, []);
 
   useEffect(() => {
@@ -277,7 +285,7 @@ export function FreshPage(): ReactElement {
               src={FRESH_HERO_IMAGE}
               alt={FRESH_HERO_ALT}
               width={1536}
-              height={1024}
+              height={864}
               fetchPriority="high"
               decoding="async"
               ref={aperture.imgRef}
