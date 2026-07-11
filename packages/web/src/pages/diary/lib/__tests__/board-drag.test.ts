@@ -175,6 +175,34 @@ describe("dropDrag", () => {
     expect(outcome.state.phase).toBe("idle");
   });
 
+  it("re-validates at drop time — a conflict that appeared mid-drag rejects the drop", () => {
+    let state = lifted({ isInk: true, blockId: "ink-self", title: "Chamber dinner" });
+    // LANE_C is clear when the ghost is positioned…
+    state = moveGhostTo(state, LANE_C, T18, env({ isInk: true }));
+    // …but a new ink lands in LANE_C before the drop (board refreshed).
+    const changed = env({
+      isInk: true,
+      inksByLane: new Map([[LANE_C, [{ id: "ink-new", startMs: T18, endMs: T23, title: "New ink" }]]]),
+    });
+    const outcome = dropDrag(state, changed);
+    expect(outcome.effect).toBe("rejected");
+    expect(outcome.state.phase).toBe("idle");
+  });
+
+  it("re-validates a CONFIRMED ink drop too — the dialog window is not a loophole", () => {
+    let state = lifted({ isInk: true, blockId: "ink-self", title: "Chamber dinner" });
+    state = moveGhostTo(state, LANE_C, T18, env({ isInk: true }));
+    const pending = dropDrag(state, env({ isInk: true }));
+    expect(pending.effect).toBe("confirm-required");
+    const changed = env({
+      isInk: true,
+      inksByLane: new Map([[LANE_C, [{ id: "ink-new", startMs: T18, endMs: T23, title: "New ink" }]]]),
+    });
+    const outcome = dropDrag(pending.state, changed);
+    expect(outcome.effect).toBe("rejected");
+    expect(outcome.state.phase).toBe("idle");
+  });
+
   it("ink resists: a valid ink drop asks for explicit confirmation first", () => {
     let state = lifted({ isInk: true, blockId: "ink-self", title: "Chamber dinner" });
     state = moveGhostTo(state, LANE_C, T18, env({ isInk: true }));

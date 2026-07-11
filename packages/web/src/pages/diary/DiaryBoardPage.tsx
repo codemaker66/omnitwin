@@ -18,7 +18,13 @@ import {
 } from "./lib/board-time.js";
 import { filterBoardEntries, needsAction } from "./lib/board-layout.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
-import { popMove, pushMove, type MoveSnapshot, type UndoEntry } from "./lib/undo-stack.js";
+import {
+  popMove,
+  pushMove,
+  rollbackOverride,
+  type MoveSnapshot,
+  type UndoEntry,
+} from "./lib/undo-stack.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { BoardGrid } from "./components/BoardGrid.js";
@@ -181,11 +187,9 @@ export function DiaryBoardPage(): ReactElement {
           refetch();
         })
         .catch((caught: unknown) => {
-          setOverrides((previous) => {
-            const next = new Map(previous);
-            next.delete(bookingId);
-            return next;
-          });
+          // Compare-and-delete (review P1): only roll back the override THIS
+          // call wrote — a newer move on the same booking must survive.
+          setOverrides((previous) => rollbackOverride(previous, bookingId, patch));
           const raced =
             caught instanceof ApiError &&
             (caught.code === "INK_SLOT_TAKEN" || caught.code === "BOOKING_STATE_CHANGED");
@@ -249,10 +253,15 @@ export function DiaryBoardPage(): ReactElement {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
+      const target = event.target;
+      // Skip only TEXT-entry surfaces — a focused checkbox still gets t/d/w/m.
+      if (target instanceof HTMLTextAreaElement) return;
+      if (target instanceof HTMLElement && target.isContentEditable) return;
       if (
-        target !== null &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+        target instanceof HTMLInputElement &&
+        target.type !== "checkbox" &&
+        target.type !== "radio" &&
+        target.type !== "button"
       ) {
         return;
       }

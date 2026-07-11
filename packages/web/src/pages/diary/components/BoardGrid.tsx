@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { ReactElement } from "react";
 import type {
   CalendarEntry,
@@ -71,6 +72,12 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
   const ticks = range.view === "day" ? hourTicks(range) : [];
   const nowVisible = nowMs >= range.fromMs && nowMs < range.toMs;
   const ghost = drag.ghost;
+  // Packing depends only on the entries — never recompute it per pointermove
+  // while the drag prop churns (review P2).
+  const lanes = useMemo(
+    () => new Map(rooms.map((room) => [room.id, layoutLane(entries, room.id)])),
+    [rooms, entries],
+  );
 
   return (
     <div className="diary-scroll" role="region" aria-label={BOARD_COPY.title} tabIndex={0}>
@@ -107,7 +114,7 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
 
         <div className="diary-lanes">
           {rooms.map((room) => {
-            const lane = layoutLane(entries, room.id);
+            const lane = lanes.get(room.id) ?? layoutLane([], room.id);
             const laneHeight = lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2;
             const activeBookings = lane.blocks.filter((block) => block.entry.status === "active");
             const inkCount = activeBookings.filter((block) => block.entry.kind === "ink").length;

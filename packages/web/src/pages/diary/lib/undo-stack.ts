@@ -24,6 +24,23 @@ export interface UndoEntry {
 
 export const UNDO_STACK_LIMIT = 20;
 
+/**
+ * Compare-and-delete for optimistic overrides (review P1): a failed PATCH may
+ * only roll back the exact override IT wrote. If the user has already moved
+ * the same booking again (a newer override object sits under the key), the
+ * older failure must not clobber the newer intent.
+ */
+export function rollbackOverride<T>(
+  overrides: ReadonlyMap<string, T>,
+  bookingId: string,
+  expected: T,
+): ReadonlyMap<string, T> {
+  if (overrides.get(bookingId) !== expected) return overrides;
+  const next = new Map(overrides);
+  next.delete(bookingId);
+  return next;
+}
+
 export function pushMove(
   stack: readonly UndoEntry[],
   entry: UndoEntry,

@@ -189,6 +189,12 @@ export function commitPayload(context: DragContext, ghost: GhostRect): CommitPay
 export function dropDrag(state: DragState, env: DragEnv): DropOutcome {
   if (state.phase === "idle") return { state, effect: "noop" };
   if (state.phase === "confirming") {
+    // The board may have refreshed while the confirmation sat open — a newly
+    // blocked slot rejects locally instead of sending a doomed PATCH.
+    const confirmedValidity = ghostValidity(state.ghost, env, state.context.blockId);
+    if (confirmedValidity.kind === "blocked") {
+      return { state: { phase: "idle" }, effect: "rejected" };
+    }
     return {
       state: { phase: "idle" },
       effect: "commit",

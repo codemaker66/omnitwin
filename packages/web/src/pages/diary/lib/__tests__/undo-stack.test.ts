@@ -33,3 +33,25 @@ describe("undo stack", () => {
     expect(popMove([]).entry).toBeNull();
   });
 });
+
+describe("rollbackOverride (review P1 — failed PATCH must not clobber a newer move)", () => {
+  const snapshotA = { spaceId: "a", startsAt: "2026-09-18T17:00:00.000Z", endsAt: "2026-09-18T23:00:00.000Z" };
+  const snapshotB = { spaceId: "b", startsAt: "2026-09-18T18:00:00.000Z", endsAt: "2026-09-19T00:00:00.000Z" };
+
+  it("removes the override when it is still the one this call wrote", async () => {
+    const { rollbackOverride } = await import("../undo-stack.js");
+    const map = new Map([["booking-1", snapshotA]]);
+    const next = rollbackOverride(map, "booking-1", snapshotA);
+    expect(next.has("booking-1")).toBe(false);
+    expect(map.has("booking-1")).toBe(true); // input untouched
+  });
+
+  it("leaves a NEWER override in place when an older PATCH fails", async () => {
+    const { rollbackOverride } = await import("../undo-stack.js");
+    // PATCH-1 wrote A, the user re-dragged and PATCH-2 wrote B, then PATCH-1 failed.
+    const map = new Map([["booking-1", snapshotB]]);
+    const next = rollbackOverride(map, "booking-1", snapshotA);
+    expect(next.get("booking-1")).toBe(snapshotB);
+    expect(next).toBe(map); // no-op returns the same map
+  });
+});

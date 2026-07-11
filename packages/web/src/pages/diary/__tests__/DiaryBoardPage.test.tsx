@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
@@ -183,6 +183,34 @@ describe("DiaryBoardPage", () => {
     screen.getByRole("button", { name: "Try again" }).click();
     expect(await screen.findByText("Grand Hall")).toBeDefined();
     expect(getCalendarMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keyboard-moves a pencil and PATCHes the snapped window (review P2 coverage)", async () => {
+    moveBookingMock.mockResolvedValue({});
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: "Enter" }); // lift
+    fireEvent.keyDown(block, { key: "ArrowRight" }); // +15 minutes
+    fireEvent.keyDown(block, { key: "Enter" }); // drop → commit
+    // The page PATCHes the full snapshot (undo symmetry); the API treats an
+    // unchanged spaceId as a no-op.
+    expect(moveBookingMock).toHaveBeenCalledWith(HOLD_ID, {
+      spaceId: GRAND_HALL,
+      startsAt: "2026-09-18T18:15:00.000Z",
+      endsAt: "2026-09-18T23:15:00.000Z",
+    });
+    expect(await screen.findByText("Moved MacLeod wedding.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDefined();
+  });
+
+  it("restores the board and says so when a move fails to save", async () => {
+    moveBookingMock.mockRejectedValue(new Error("boom"));
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: "Enter" });
+    fireEvent.keyDown(block, { key: "ArrowRight" });
+    fireEvent.keyDown(block, { key: "Enter" });
+    expect(await screen.findByText(/could not be saved/)).toBeDefined();
   });
 
   it("tells an unassigned account that it has no venue", () => {

@@ -74,7 +74,8 @@ interface PointerSession {
 function laneFromPoint(clientX: number, clientY: number): string | null {
   const stack = document.elementsFromPoint(clientX, clientY);
   for (const element of stack) {
-    const laneId = (element as HTMLElement).dataset["diaryLane"];
+    if (!(element instanceof HTMLElement)) continue;
+    const laneId = element.dataset["diaryLane"];
     if (laneId !== undefined) return laneId;
   }
   return null;

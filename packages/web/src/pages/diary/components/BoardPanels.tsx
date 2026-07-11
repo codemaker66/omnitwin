@@ -1,4 +1,5 @@
-import type { ReactElement } from "react";
+import { useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import type { CalendarConflict, ConflictReport, ConflictSeverity } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
 import type { NeedsActionItem } from "../lib/board-layout.js";
@@ -136,22 +137,53 @@ export interface InkConfirmProps {
 }
 
 export function InkConfirm({ onConfirm, onCancel }: InkConfirmProps): ReactElement {
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+
+  // Escape dismisses (WAI-ARIA alertdialog convention) and Tab cycles inside
+  // the two-button dialog while it is open (review P2).
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const first = confirmRef.current;
+    const last = cancelRef.current;
+    if (first === null || last === null) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div
       className="diary-ink-confirm"
       role="alertdialog"
       aria-label={BOARD_COPY.confirmInk.title}
       aria-describedby="diary-ink-confirm-body"
+      onKeyDown={onKeyDown}
     >
       <h2 className="diary-ink-confirm-title">{BOARD_COPY.confirmInk.title}</h2>
       <p id="diary-ink-confirm-body" className="diary-ink-confirm-body">
         {BOARD_COPY.confirmInk.body}
       </p>
       <div className="diary-ink-confirm-actions">
-        <button type="button" className="diary-button is-primary" onClick={onConfirm} autoFocus>
+        <button
+          type="button"
+          className="diary-button is-primary"
+          onClick={onConfirm}
+          ref={confirmRef}
+          autoFocus
+        >
           {BOARD_COPY.confirmInk.confirm}
         </button>
-        <button type="button" className="diary-button" onClick={onCancel}>
+        <button type="button" className="diary-button" onClick={onCancel} ref={cancelRef}>
           {BOARD_COPY.confirmInk.cancel}
         </button>
       </div>
