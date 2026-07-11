@@ -108,6 +108,107 @@ function useRevealOnce(): (node: HTMLElement | null) => void {
   }, []);
 }
 
+/** The dome aperture — the hero's frame-break.
+ *
+ *  The aerial photograph is top-anchored (object-position 50% 0), so on any
+ *  frame wider than the photo's 3:2 the cover crop is width-determined: the
+ *  dome sits at a fixed fraction of the frame's width. That makes a
+ *  frame-break stable by construction. The photo's top edge is clipped down
+ *  to a drawn reveal line — except over the dome, where a fanlight arc lets
+ *  the skyline push up through the page. One image, one computed clip:
+ *  no cutouts, no second copy, nothing that can drift.
+ *
+ *  Below APERTURE_MIN_ASPECT the cover crop becomes height-determined and
+ *  the width math no longer holds, so the aperture stands down and the
+ *  plain top-anchored crop (dome fully in frame) carries the hero. */
+const DOME_X = 0.533; // dome centre as a fraction of the photo's width
+const DOME_REVEAL = 0.105; // reveal line, as a fraction of frame width
+const DOME_APERTURE_R = 0.068; // fanlight radius, fraction of frame width
+const APERTURE_CORNER = 0.07; // top-right corner sweep on the reveal line
+const APERTURE_MIN_ASPECT = 1.55; // photo is 3:2; only wider frames qualify
+
+interface DomeApertureRefs {
+  readonly frameRef: (node: HTMLDivElement | null) => void;
+  readonly imgRef: (node: HTMLImageElement | null) => void;
+  readonly svgRef: (node: SVGSVGElement | null) => void;
+}
+
+function useDomeAperture(): DomeApertureRefs {
+  const frame = useRef<HTMLDivElement | null>(null);
+  const img = useRef<HTMLImageElement | null>(null);
+  const svg = useRef<SVGSVGElement | null>(null);
+
+  const apply = useCallback(() => {
+    const frameEl = frame.current;
+    const imgEl = img.current;
+    const svgEl = svg.current;
+    if (!frameEl || !imgEl || !svgEl) return;
+    const w = frameEl.clientWidth;
+    const h = frameEl.clientHeight;
+    if (w === 0 || h === 0 || w / h < APERTURE_MIN_ASPECT) {
+      imgEl.style.clipPath = "";
+      svgEl.style.display = "none";
+      return;
+    }
+    const cx = DOME_X * w;
+    const reveal = DOME_REVEAL * w;
+    const r = DOME_APERTURE_R * w;
+    const corner = APERTURE_CORNER * w;
+    const edge = [
+      `M 0 ${String(reveal)}`,
+      `L ${String(cx - r)} ${String(reveal)}`,
+      `A ${String(r)} ${String(r)} 0 0 1 ${String(cx + r)} ${String(reveal)}`,
+      `L ${String(w - corner)} ${String(reveal)}`,
+      `A ${String(corner)} ${String(corner)} 0 0 1 ${String(w)} ${String(reveal + corner)}`,
+    ];
+    const outline = [...edge, `L ${String(w)} ${String(h)}`, `L 0 ${String(h)}`, "Z"];
+    imgEl.style.clipPath = `path("${outline.join(" ")}")`;
+    svgEl.style.display = "";
+    svgEl.setAttribute("viewBox", `0 0 ${String(w)} ${String(h)}`);
+    svgEl.querySelector("[data-fanlight]")?.setAttribute("d", edge.join(" "));
+    svgEl
+      .querySelector("[data-keystone]")
+      ?.setAttribute("d", `M ${String(cx)} ${String(reveal - r - 8)} v 5`);
+  }, []);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") {
+      apply();
+      return;
+    }
+    const observer = new ResizeObserver(apply);
+    if (frame.current) observer.observe(frame.current);
+    apply();
+    return () => {
+      observer.disconnect();
+    };
+  }, [apply]);
+
+  return {
+    frameRef: useCallback(
+      (node: HTMLDivElement | null) => {
+        frame.current = node;
+        apply();
+      },
+      [apply],
+    ),
+    imgRef: useCallback(
+      (node: HTMLImageElement | null) => {
+        img.current = node;
+        apply();
+      },
+      [apply],
+    ),
+    svgRef: useCallback(
+      (node: SVGSVGElement | null) => {
+        svg.current = node;
+        apply();
+      },
+      [apply],
+    ),
+  };
+}
+
 const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
   CAPACITY_FORMATS.map(
     (f) => `${f.label} ${String(TRADES_HALL_ROOM_CAPACITIES[slug][f.key])}`,
@@ -116,6 +217,7 @@ const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
 export function FreshPage(): ReactElement {
   const [theme, setTheme] = useState<FreshTheme>(() => loadTheme());
   const reveal = useRevealOnce();
+  const aperture = useDomeAperture();
 
   useEffect(() => {
     document.title = FRESH_META_TITLE;
@@ -169,15 +271,24 @@ export function FreshPage(): ReactElement {
       <main>
         {/* ——— hero: the photograph, and the breathing word ——— */}
         <section className="fr-hero" aria-labelledby="fr-headline">
-          <img
-            className="fr-hero-photo"
-            src={FRESH_HERO_IMAGE}
-            alt={FRESH_HERO_ALT}
-            width={1536}
-            height={1024}
-            fetchPriority="high"
-            decoding="async"
-          />
+          <div className="fr-hero-frame" ref={aperture.frameRef}>
+            <img
+              className="fr-hero-photo"
+              src={FRESH_HERO_IMAGE}
+              alt={FRESH_HERO_ALT}
+              width={1536}
+              height={1024}
+              fetchPriority="high"
+              decoding="async"
+              ref={aperture.imgRef}
+            />
+            {/* The photo's drawn top edge: flat, then a fanlight over the
+                real dome, then the corner sweep — with a keystone tick. */}
+            <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
+              <path data-fanlight d="" />
+              <path data-keystone d="" />
+            </svg>
+          </div>
           <div className="fr-hero-panel">
             <h1 id="fr-headline">
               <span className="fr-w">{FRESH_HEADLINE_BEFORE}</span>{" "}
@@ -209,14 +320,18 @@ export function FreshPage(): ReactElement {
                 ref={reveal}
               >
                 <img
-                  className={room.portrait ? "is-portrait" : undefined}
+                  className={room.portrait === true ? "is-portrait" : undefined}
                   src={room.image}
                   alt={room.alt}
                   loading="lazy"
                   decoding="async"
                   width={room.width}
                   height={room.height}
-                  style={room.focus ? { objectPosition: room.focus } : undefined}
+                  style={
+                    room.focus === undefined
+                      ? undefined
+                      : { objectPosition: room.focus }
+                  }
                 />
                 <div className="fr-room-words">
                   <h3>{room.name}</h3>

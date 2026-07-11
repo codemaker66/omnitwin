@@ -189,13 +189,38 @@
   position: relative;
   padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 44px) 0;
 }
+.fr-hero-frame {
+  position: relative;
+}
 .fr-hero-photo {
   display: block;
   width: 100%;
-  height: clamp(380px, 62vh, 640px);
+  height: clamp(380px, 66vh, 700px);
   object-fit: cover;
-  object-position: center 38%;
+  /* Top-anchored: on any hero wider than the photo's 3:2, the cover crop
+     becomes width-determined, so the dome's on-screen position is a pure
+     function of frame width — which is what lets the aperture clip align
+     exactly at every size. */
+  object-position: 50% 0;
   border-radius: 0 clamp(48px, 12vw, 160px) 0 0 / 0 clamp(36px, 9vw, 120px) 0 0;
+}
+/* The fanlight: the photo's drawn top edge, lifting over the real dome. */
+.fr-hero-fanlight {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.fr-hero-fanlight [data-fanlight] {
+  fill: none;
+  stroke: var(--fr-rule);
+  stroke-width: 1;
+}
+.fr-hero-fanlight [data-keystone] {
+  fill: none;
+  stroke: var(--fr-ochre);
+  stroke-width: 1.5;
 }
 .fr-hero-panel {
   position: relative;
