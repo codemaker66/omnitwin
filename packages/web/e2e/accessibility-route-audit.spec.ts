@@ -371,9 +371,9 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
 
 const routeSpecs: readonly RouteSpec[] = [
   {
-    routeName: "public landing (the living hall)",
+    routeName: "public landing (spotlight)",
     path: "/",
-    readyText: "The hall is real.",
+    readyText: "before it happens.",
     mockRoutes: mockNoRoutes,
   },
   {
