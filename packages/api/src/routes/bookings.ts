@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, eq, gt, isNull, lt, ne } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   BookingSchema,
   CreateBookingSchema,
@@ -14,11 +14,11 @@ import {
 import { z } from "zod";
 import { bookings, bookingStatusHistory, events, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, type JwtUser } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
 import { canTransitionBooking } from "../state-machines/booking.js";
 import {
-  resequenceHolds,
+  resequenceLaddersAfterExit,
   type ResequenceResult,
 } from "../services/hold-hygiene.js";
 
@@ -73,6 +73,15 @@ function pgErrorCode(error: unknown): string | null {
 
 const PG_EXCLUSION_VIOLATION = "23P01";
 const PG_CHECK_VIOLATION = "23514";
+
+// Diary writes are staff/admin only — hallkeeper is a read-facing ops role
+// here, matching the state machine's role policy (review finding: the shared
+// canManageVenue helper includes hallkeeper and stays that way for reads).
+const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
+
+function canWriteBookings(user: JwtUser, venueId: string): boolean {
+  return DIARY_WRITE_ROLES.has(user.role) && user.venueId === venueId;
+}
 
 function inkSlotTaken(reply: FastifyReply): FastifyReply {
   return reply.status(409).send({
@@ -160,7 +169,7 @@ export async function bookingRoutes(
     if (!parsed.success) return validationError(reply, parsed.error.issues);
     const input = parsed.data;
 
-    if (!canManageVenue(request.user, input.venueId)) {
+    if (!canWriteBookings(request.user, input.venueId)) {
       return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
     }
 
@@ -247,8 +256,24 @@ export async function bookingRoutes(
     const parsed = UpdateBookingSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
     const patch = parsed.data;
+
+    // Role gate before any data access — hallkeeper reads the diary but
+    // never edits it (venue scope is verified against the row below).
+    if (!DIARY_WRITE_ROLES.has(request.user.role)) {
+      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+
     const row = await requireBookingAccess(db, request, reply, params.data.id);
     if (row === null) return;
+
+    // Exited bookings are history, and history does not get rewritten —
+    // booking_status_history has no field snapshots to audit such an edit.
+    if (row.status !== "active") {
+      return reply.status(409).send({
+        error: `This booking has exited the diary (${row.status}) — exited bookings are records, not editable plans.`,
+        code: "BOOKING_NOT_ACTIVE",
+      });
+    }
 
     if (patch.rank !== undefined && row.kind !== "hold") {
       return validationError(reply, [
@@ -362,6 +387,31 @@ export async function bookingRoutes(
 
     try {
       const outcome = await db.transaction(async (tx) => {
+        let ladderRows: BookingRow[] = [];
+        if (holdExited) {
+          // Deterministic lock acquisition (id order) across ALL of this
+          // space's active ladder rows: concurrent exits serialize instead
+          // of deadlocking, and the waiter re-reads committed state
+          // (READ COMMITTED + FOR UPDATE re-evaluation).
+          ladderRows = await tx
+            .select()
+            .from(bookings)
+            .where(
+              and(
+                eq(bookings.spaceId, row.spaceId),
+                eq(bookings.kind, "hold"),
+                eq(bookings.status, "active"),
+                isNull(bookings.deletedAt),
+              ),
+            )
+            .orderBy(asc(bookings.id))
+            .for("update");
+        }
+
+        // Compare-and-set on the columns the transition was derived from:
+        // if another transaction moved this booking between our read and
+        // this write, zero rows match and the conflict is reported honestly
+        // instead of double-exiting or resurrecting the row.
         const [updated] = await tx
           .update(bookings)
           .set({
@@ -372,9 +422,16 @@ export async function bookingRoutes(
             rank: toState === "ink" ? null : row.rank,
             updatedAt: new Date(),
           })
-          .where(eq(bookings.id, row.id))
+          .where(
+            and(
+              eq(bookings.id, row.id),
+              eq(bookings.kind, row.kind),
+              eq(bookings.status, row.status),
+              isNull(bookings.deletedAt),
+            ),
+          )
           .returning();
-        if (updated === undefined) return null;
+        if (updated === undefined) return "stale" as const;
 
         await tx.insert(bookingStatusHistory).values({
           bookingId: row.id,
@@ -386,21 +443,8 @@ export async function bookingRoutes(
 
         let resequence: ResequenceResult | null = null;
         if (holdExited) {
-          const survivors = await tx
-            .select()
-            .from(bookings)
-            .where(
-              and(
-                eq(bookings.spaceId, row.spaceId),
-                eq(bookings.kind, "hold"),
-                eq(bookings.status, "active"),
-                isNull(bookings.deletedAt),
-                ne(bookings.id, row.id),
-                lt(bookings.startsAt, row.endsAt),
-                gt(bookings.endsAt, row.startsAt),
-              ),
-            );
-          resequence = resequenceHolds(
+          const survivors = ladderRows.filter((survivor) => survivor.id !== row.id);
+          resequence = resequenceLaddersAfterExit(
             survivors.map((survivor) => ({
               id: survivor.id,
               title: survivor.title,
@@ -408,7 +452,10 @@ export async function bookingRoutes(
               rank: survivor.rank,
               jointFlag: survivor.jointFlag,
               createdAt: survivor.createdAt,
+              startsAt: survivor.startsAt,
+              endsAt: survivor.endsAt,
             })),
+            { startsAt: row.startsAt, endsAt: row.endsAt },
           );
           for (const change of resequence.changes) {
             await tx
@@ -421,10 +468,12 @@ export async function bookingRoutes(
         return { updated, resequence };
       });
 
-      if (outcome === null) {
-        return await reply
-          .status(500)
-          .send({ error: "Failed to transition booking", code: "BOOKING_TRANSITION_FAILED" });
+      if (outcome === "stale") {
+        return await reply.status(409).send({
+          error:
+            "This booking changed while you were working — reload the diary and try again.",
+          code: "BOOKING_STATE_CHANGED",
+        });
       }
       return {
         data: serializeBooking(outcome.updated),

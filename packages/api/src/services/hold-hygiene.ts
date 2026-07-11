@@ -111,6 +111,70 @@ export function resequenceHolds(holds: readonly LadderHold[]): ResequenceResult 
   return { changes, promotedToFirst };
 }
 
+export interface WindowedLadderHold extends LadderHold {
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+}
+
+/**
+ * Component-scoped resequencing after a hold exits (review finding: pairwise
+ * overlap with the departed hold is the WRONG ladder relation).
+ *
+ * The survivors of one space are clustered into connected components of
+ * their own overlap graph (half-open intervals; touching edges contest
+ * nothing and stay separate). Every component containing at least one member
+ * that overlapped the departed window is one contested slot and is
+ * resequenced independently from rank 1 — so an overlap CHAIN promotes
+ * contiguously even when its tail never touched the departed hold, and two
+ * clusters bridged only by the departed hold each gain their own 1st option.
+ * Components in unrelated windows are untouched.
+ */
+export function resequenceLaddersAfterExit(
+  survivors: readonly WindowedLadderHold[],
+  departed: { readonly startsAt: Date; readonly endsAt: Date },
+): ResequenceResult {
+  const sorted = [...survivors].sort((a, b) => {
+    const byStart = a.startsAt.getTime() - b.startsAt.getTime();
+    if (byStart !== 0) return byStart;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  const departedStart = departed.startsAt.getTime();
+  const departedEnd = departed.endsAt.getTime();
+
+  const changes: ResequenceChange[] = [];
+  const promotedToFirst: PromotedHold[] = [];
+
+  let clusterMembers: WindowedLadderHold[] = [];
+  let clusterEnd = Number.NEGATIVE_INFINITY;
+  let clusterTouchesDeparted = false;
+
+  const flush = (): void => {
+    if (clusterMembers.length === 0 || !clusterTouchesDeparted) return;
+    const result = resequenceHolds(clusterMembers);
+    changes.push(...result.changes);
+    promotedToFirst.push(...result.promotedToFirst);
+  };
+
+  for (const survivor of sorted) {
+    const startMs = survivor.startsAt.getTime();
+    const endMs = survivor.endsAt.getTime();
+    if (clusterMembers.length > 0 && startMs >= clusterEnd) {
+      flush();
+      clusterMembers = [];
+      clusterEnd = Number.NEGATIVE_INFINITY;
+      clusterTouchesDeparted = false;
+    }
+    clusterMembers.push(survivor);
+    clusterEnd = Math.max(clusterEnd, endMs);
+    if (startMs < departedEnd && departedStart < endMs) {
+      clusterTouchesDeparted = true;
+    }
+  }
+  flush();
+
+  return { changes, promotedToFirst };
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REMINDER_DAYS_BEFORE = [7, 3, 1] as const;
 

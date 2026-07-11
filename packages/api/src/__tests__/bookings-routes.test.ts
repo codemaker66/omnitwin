@@ -34,6 +34,9 @@ function signToken(payload: {
 const staffToken = (venueId: string = VENUE_ID): string =>
   signToken({ id: OWNER_ID, email: "staff@test.com", role: "staff", venueId });
 
+const hallkeeperToken = (): string =>
+  signToken({ id: OWNER_ID, email: "keeper@test.com", role: "hallkeeper", venueId: VENUE_ID });
+
 function validHoldPayload(): Record<string, unknown> {
   return {
     venueId: VENUE_ID,
@@ -127,6 +130,35 @@ describe("booking routes — auth and validation boundary", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("refuses hallkeeper writes — the diary is staff/admin territory (review P1)", async () => {
+    const created = await server.inject({
+      method: "POST",
+      url: "/bookings",
+      headers: { authorization: `Bearer ${hallkeeperToken()}` },
+      payload: validHoldPayload(),
+    });
+    expect(created.statusCode).toBe(403);
+    expect((JSON.parse(created.body) as { code: string }).code).toBe("FORBIDDEN");
+
+    const patched = await server.inject({
+      method: "PATCH",
+      url: `/bookings/${BOOKING_ID}`,
+      headers: { authorization: `Bearer ${hallkeeperToken()}` },
+      payload: { title: "Renamed" },
+    });
+    expect(patched.statusCode).toBe(403);
+  });
+
+  it("keeps hallkeeper reads open (read-facing ops role)", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/bookings/${BOOKING_ID}`,
+      headers: { authorization: `Bearer ${hallkeeperToken()}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
   it("refuses cross-venue creation before touching booking data", async () => {
     const res = await server.inject({
       method: "POST",
@@ -179,10 +211,10 @@ describe("booking routes — source contract", () => {
     expect(source).toContain("first to confirm wins");
   });
 
-  it("checks venue authority before any booking write", async () => {
+  it("checks write authority before any booking write", async () => {
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    expect(source.indexOf("canManageVenue(request.user, input.venueId)")).toBeGreaterThan(-1);
-    expect(source.indexOf("canManageVenue(request.user, input.venueId)")).toBeLessThan(
+    expect(source.indexOf("canWriteBookings(request.user, input.venueId)")).toBeGreaterThan(-1);
+    expect(source.indexOf("canWriteBookings(request.user, input.venueId)")).toBeLessThan(
       source.indexOf(".insert(bookings)"),
     );
   });
@@ -193,8 +225,37 @@ describe("booking routes — source contract", () => {
     expect(txStart).toBeGreaterThan(-1);
     const txBody = source.slice(txStart);
     expect(txBody).toContain("tx.insert(bookingStatusHistory)");
-    expect(txBody).toContain("resequenceHolds(");
+    expect(txBody).toContain("resequenceLaddersAfterExit(");
     expect(source).toContain("bookingStateToColumns(toState, row.kind)");
+  });
+
+  it("serialises concurrent hold exits: ordered FOR UPDATE lock + compare-and-set write (review P1)", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const txStart = source.indexOf("db.transaction(async (tx) =>");
+    const txBody = source.slice(txStart);
+    // Deterministic lock order across the space's ladder rows.
+    expect(txBody).toContain('.for("update")');
+    expect(txBody).toContain("orderBy(asc(bookings.id))");
+    // The lock precedes the state write inside the transaction.
+    expect(txBody.indexOf('.for("update")')).toBeLessThan(txBody.indexOf(".update(bookings)"));
+    // CAS: the write re-asserts the kind/status the transition was derived from.
+    expect(txBody).toContain("eq(bookings.kind, row.kind)");
+    expect(txBody).toContain("eq(bookings.status, row.status)");
+    expect(source).toContain("BOOKING_STATE_CHANGED");
+  });
+
+  it("treats exited bookings as history — PATCH refuses them (review P2)", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    expect(source).toContain("BOOKING_NOT_ACTIVE");
+    expect(source).toContain('row.status !== "active"');
+  });
+
+  it("scopes diary writes to staff/admin while reads keep the shared venue policy", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    expect(source).toContain('new Set(["staff", "admin"])');
+    expect(source).toContain("canWriteBookings(request.user, input.venueId)");
+    // Reads still use the shared helper (hallkeeper stays read-facing).
+    expect(source).toContain("canManageVenue(request.user, row.venueId)");
   });
 
   it("enforces hold hygiene on edits of live holds", async () => {

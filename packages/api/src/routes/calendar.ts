@@ -111,62 +111,65 @@ export async function calendarRoutes(
       return { data: emptyResponse };
     }
 
-    const bookingRows = await db
-      .select()
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.venueId, query.venueId),
-          isNull(bookings.deletedAt),
-          inArray(bookings.spaceId, laneSpaceIds),
-          lt(bookings.startsAt, to),
-          gt(bookings.endsAt, from),
-        ),
-      )
-      .orderBy(asc(bookings.startsAt), asc(bookings.id));
-
-    // Room-scoped, timed phases joined to their event: endsAt is derived from
-    // durationMinutes in SQL so the overlap window stays half-open and exact.
-    const phaseRows = await db
-      .select({
-        id: eventPhases.id,
-        spaceId: eventPhases.spaceId,
-        name: eventPhases.name,
-        sortOrder: eventPhases.sortOrder,
-        startsAt: eventPhases.startsAt,
-        durationMinutes: eventPhases.durationMinutes,
-        eventId: events.id,
-        eventName: events.name,
-        eventType: events.eventType,
-      })
-      .from(eventPhases)
-      .innerJoin(events, eq(eventPhases.eventId, events.id))
-      .where(
-        and(
-          eq(events.venueId, query.venueId),
-          isNull(events.deletedAt),
-          isNotNull(eventPhases.spaceId),
-          isNotNull(eventPhases.startsAt),
-          inArray(eventPhases.spaceId, laneSpaceIds),
-          lt(eventPhases.startsAt, to),
-          gt(
-            sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`,
-            from,
+    // The three reads are independent — one round-trip of latency, not three
+    // (review finding: this is the endpoint every calendar view polls).
+    const [bookingRows, phaseRows, ruleRows] = await Promise.all([
+      db
+        .select()
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.venueId, query.venueId),
+            isNull(bookings.deletedAt),
+            inArray(bookings.spaceId, laneSpaceIds),
+            lt(bookings.startsAt, to),
+            gt(bookings.endsAt, from),
           ),
-        ),
-      )
-      .orderBy(asc(eventPhases.startsAt), asc(eventPhases.id));
-
-    const ruleRows = await db
-      .select({
-        spaceId: turnaroundRules.spaceId,
-        eventType: turnaroundRules.eventType,
-        name: turnaroundRules.name,
-        minutes: turnaroundRules.minutes,
-        isActive: turnaroundRules.isActive,
-      })
-      .from(turnaroundRules)
-      .where(and(eq(turnaroundRules.venueId, query.venueId), isNull(turnaroundRules.deletedAt)));
+        )
+        .orderBy(asc(bookings.startsAt), asc(bookings.id)),
+      // Room-scoped, timed phases joined to their event: endsAt is derived
+      // from durationMinutes in SQL so the overlap window stays half-open
+      // and exact.
+      db
+        .select({
+          id: eventPhases.id,
+          spaceId: eventPhases.spaceId,
+          name: eventPhases.name,
+          sortOrder: eventPhases.sortOrder,
+          startsAt: eventPhases.startsAt,
+          durationMinutes: eventPhases.durationMinutes,
+          eventId: events.id,
+          eventName: events.name,
+          eventType: events.eventType,
+        })
+        .from(eventPhases)
+        .innerJoin(events, eq(eventPhases.eventId, events.id))
+        .where(
+          and(
+            eq(events.venueId, query.venueId),
+            isNull(events.deletedAt),
+            isNotNull(eventPhases.spaceId),
+            isNotNull(eventPhases.startsAt),
+            inArray(eventPhases.spaceId, laneSpaceIds),
+            lt(eventPhases.startsAt, to),
+            gt(
+              sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`,
+              from,
+            ),
+          ),
+        )
+        .orderBy(asc(eventPhases.startsAt), asc(eventPhases.id)),
+      db
+        .select({
+          spaceId: turnaroundRules.spaceId,
+          eventType: turnaroundRules.eventType,
+          name: turnaroundRules.name,
+          minutes: turnaroundRules.minutes,
+          isActive: turnaroundRules.isActive,
+        })
+        .from(turnaroundRules)
+        .where(and(eq(turnaroundRules.venueId, query.venueId), isNull(turnaroundRules.deletedAt))),
+    ]);
 
     const conflictBookings: ConflictBookingInput[] = bookingRows.map((row) => ({
       id: row.id,
