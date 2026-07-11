@@ -157,8 +157,9 @@ describe("CreateBookingSchema — hold hygiene (Canon §3, §17 universal law)",
   it.each(["decisionAt", "ownerUserId", "nextAction", "nextActionDueAt"] as const)(
     "rejects a hold missing %s",
     (field) => {
-      const input = validHoldInput();
-      delete input[field];
+      const input = Object.fromEntries(
+        Object.entries(validHoldInput()).filter(([key]) => key !== field),
+      );
       const result = CreateBookingSchema.safeParse(input);
       expect(result.success).toBe(false);
       if (!result.success) {

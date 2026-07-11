@@ -9,6 +9,10 @@ import {
   assetDefinitions,
   assetAccessories,
   pricingRules,
+  bookings,
+  events,
+  eventPhases,
+  turnaroundRules,
 } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -262,6 +266,221 @@ async function seed(): Promise<void> {
   const insertedRules = await db.insert(pricingRules).values(ruleValues).returning();
   console.log(`  Pricing rules: ${String(insertedRules.length)} created`);
   console.log("    Note: Breakout rooms get 10% discount on additional room charge");
+
+  // --- 6. Diary seed (T-492; Canon §12 P0) ---
+  // A believable week of mixed commitments across all six rooms, several per
+  // room per day: inks (never overlapping in one space — the exclusion
+  // constraint enforces it), ranked hold ladders incl. a joint first pair,
+  // a non-blocking prospect, an internal block, and one linked event whose
+  // room-scoped phases form an Occupancy Footprint. Two ink gaps are
+  // deliberately shorter than the applicable turnaround rule so the calendar
+  // shows real, honest warnings out of the box.
+  //
+  // Times: the week of Mon 14 Sep 2026, expressed as Europe/London wall
+  // clock (BST, UTC+1 all week) and stored as UTC instants.
+  const weekLabel = "week of Mon 14 Sep 2026";
+  const bst = (day: number, hour: number, minute = 0): Date =>
+    new Date(Date.UTC(2026, 8, 14 + day, hour - 1, minute));
+
+  const adminUser = insertedUsers.find((u) => u.role === "admin");
+  if (adminUser === undefined) throw new Error("Diary seed requires the admin user");
+
+  const requireSpace = (name: string): string => {
+    const id = spaceIdByName.get(name);
+    if (id === undefined) throw new Error(`Space not found: ${name}`);
+    return id;
+  };
+
+  const grandHall = requireSpace("Grand Hall");
+  const saloon = requireSpace("Saloon");
+  const receptionRoom = requireSpace("Reception Room");
+  const robertAdam = requireSpace("Robert Adam Room");
+  const northGallery = requireSpace("North Gallery");
+  const southGallery = requireSpace("South Gallery");
+
+  const insertedTurnarounds = await db.insert(turnaroundRules).values([
+    { venueId: venue.id, spaceId: null, eventType: null, name: "House default turnaround", minutes: 90 },
+    { venueId: venue.id, spaceId: grandHall, eventType: null, name: "Grand Hall reset", minutes: 120 },
+    { venueId: venue.id, spaceId: grandHall, eventType: "wedding", name: "Grand Hall wedding reset", minutes: 180 },
+    { venueId: venue.id, spaceId: northGallery, eventType: null, name: "Gallery light reset", minutes: 30 },
+    { venueId: venue.id, spaceId: southGallery, eventType: null, name: "Gallery light reset", minutes: 30 },
+  ]).returning();
+  console.log(`  Turnaround rules: ${String(insertedTurnarounds.length)} created`);
+
+  // One linked event with a room-scoped footprint (Canon §2.3): the Saturday
+  // wedding occupies the Grand Hall as setup → live → teardown phases inside
+  // its ink booking window.
+  const [weddingEvent] = await db.insert(events).values({
+    venueId: venue.id,
+    createdBy: adminUser.id,
+    name: "Mackenzie–Ross wedding",
+    eventType: "wedding",
+    status: "in_planning",
+    startsAt: bst(5, 13, 0),
+    endsAt: bst(6, 0, 30),
+    guestCount: 120,
+    clientName: "Mackenzie & Ross",
+    headcountGuaranteed: 110,
+    headcountExpected: 120,
+    headcountSetFor: 126,
+  }).returning();
+  if (weddingEvent === undefined) throw new Error("Failed to seed the wedding event");
+
+  await db.insert(eventPhases).values([
+    {
+      eventId: weddingEvent.id,
+      spaceId: grandHall,
+      templateKey: null,
+      name: "Setup",
+      sortOrder: 0,
+      startsAt: bst(5, 9, 0),
+      durationMinutes: 240,
+    },
+    {
+      eventId: weddingEvent.id,
+      spaceId: grandHall,
+      templateKey: null,
+      name: "Ceremony & reception",
+      sortOrder: 1,
+      startsAt: bst(5, 13, 0),
+      durationMinutes: 690,
+    },
+    {
+      eventId: weddingEvent.id,
+      spaceId: grandHall,
+      templateKey: null,
+      name: "Teardown",
+      sortOrder: 2,
+      startsAt: bst(6, 0, 30),
+      durationMinutes: 90,
+    },
+  ]);
+  console.log(`  Event footprint: ${weddingEvent.name} (3 Grand Hall phases)`);
+
+  // Hold hygiene (Canon §3): every hold carries a decision date, an owner,
+  // and a dated next action — the seed obeys the same law the API enforces.
+  const hygiene = (decisionAt: Date, nextAction: string): {
+    decisionAt: Date;
+    ownerUserId: string;
+    nextAction: string;
+    nextActionDueAt: Date;
+  } => ({
+    decisionAt,
+    ownerUserId: adminUser.id,
+    nextAction,
+    nextActionDueAt: new Date(decisionAt.getTime() - 7 * 24 * 60 * 60 * 1000),
+  });
+
+  const insertedBookings = await db.insert(bookings).values([
+    // --- Grand Hall ---------------------------------------------------------
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "ink", title: "Chamber of Commerce conference",
+      eventType: "conference", startsAt: bst(0, 9, 0), endsAt: bst(0, 17, 0), createdBy: adminUser.id,
+    },
+    {
+      // 90-minute gap after the conference vs the 120-minute Grand Hall reset
+      // rule → an honest turnaround warning in the seeded calendar.
+      venueId: venue.id, spaceId: grandHall, kind: "ink", title: "Charity ceilidh",
+      eventType: "ceilidh", startsAt: bst(0, 18, 30), endsAt: bst(0, 23, 30), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "prospect", title: "Design fair enquiry",
+      eventType: "exhibition", startsAt: bst(1, 10, 0), endsAt: bst(1, 16, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, title: "MacLeod wedding",
+      eventType: "wedding", startsAt: bst(4, 17, 0), endsAt: bst(4, 23, 30), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-21T12:00:00.000Z"), "Call Fiona MacLeod about the decision date."),
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 2, title: "Robertson ceilidh",
+      eventType: "ceilidh", startsAt: bst(4, 18, 0), endsAt: bst(4, 23, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-28T12:00:00.000Z"), "Confirm band availability with the Robertsons."),
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, eventId: weddingEvent.id, kind: "ink",
+      title: "Mackenzie–Ross wedding", eventType: "wedding",
+      startsAt: bst(5, 9, 0), endsAt: bst(6, 2, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, jointFlag: true,
+      title: "Kerr wedding", eventType: "wedding",
+      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-14T12:00:00.000Z"), "Offer the Kerrs first-to-confirm terms."),
+    },
+    {
+      venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, jointFlag: true,
+      title: "Nairn wedding", eventType: "wedding",
+      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-14T12:00:00.000Z"), "Offer the Nairns first-to-confirm terms."),
+    },
+    // --- Saloon --------------------------------------------------------------
+    {
+      venueId: venue.id, spaceId: saloon, kind: "ink", title: "Conference drinks reception",
+      eventType: "reception", startsAt: bst(0, 17, 30), endsAt: bst(0, 19, 30), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: saloon, kind: "internal_block", title: "Floor maintenance",
+      startsAt: bst(2, 8, 0), endsAt: bst(2, 12, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: saloon, kind: "hold", rank: 1, title: "Sinclair anniversary",
+      eventType: "dinner", startsAt: bst(3, 18, 0), endsAt: bst(3, 23, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-09-01T12:00:00.000Z"), "Send the Sinclairs the dinner menu options."),
+    },
+    // --- Reception Room ------------------------------------------------------
+    {
+      venueId: venue.id, spaceId: receptionRoom, kind: "ink", title: "Board strategy morning",
+      eventType: "meeting", startsAt: bst(1, 8, 0), endsAt: bst(1, 12, 0), createdBy: adminUser.id,
+    },
+    {
+      // 30-minute gap vs the 90-minute house default → turnaround warning.
+      venueId: venue.id, spaceId: receptionRoom, kind: "ink", title: "Alumni dinner",
+      eventType: "dinner", startsAt: bst(1, 12, 30), endsAt: bst(1, 17, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: receptionRoom, kind: "hold", rank: 1, title: "Wedding breakfast option",
+      eventType: "wedding", startsAt: bst(5, 10, 0), endsAt: bst(5, 16, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-25T12:00:00.000Z"), "Check whether the couple wants the smaller room."),
+    },
+    // --- Robert Adam Room ----------------------------------------------------
+    {
+      venueId: venue.id, spaceId: robertAdam, kind: "ink", title: "Trustees meeting",
+      eventType: "meeting", startsAt: bst(2, 9, 0), endsAt: bst(2, 11, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: robertAdam, kind: "hold", rank: 1, title: "Portrait workshop",
+      eventType: "workshop", startsAt: bst(2, 10, 0), endsAt: bst(2, 13, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-09-04T12:00:00.000Z"), "Confirm easel count with the tutor."),
+    },
+    {
+      venueId: venue.id, spaceId: robertAdam, kind: "prospect", title: "Podcast recording enquiry",
+      startsAt: bst(2, 10, 30), endsAt: bst(2, 12, 30), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: robertAdam, kind: "ink", title: "Whisky tasting",
+      eventType: "tasting", startsAt: bst(4, 19, 0), endsAt: bst(4, 22, 0), createdBy: adminUser.id,
+    },
+    // --- Galleries -----------------------------------------------------------
+    {
+      venueId: venue.id, spaceId: northGallery, kind: "ink", title: "Craft exhibition install",
+      eventType: "exhibition", startsAt: bst(2, 9, 0), endsAt: bst(2, 17, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: northGallery, kind: "ink", title: "Craft exhibition",
+      eventType: "exhibition", startsAt: bst(3, 9, 0), endsAt: bst(5, 8, 0), createdBy: adminUser.id,
+    },
+    {
+      venueId: venue.id, spaceId: southGallery, kind: "hold", rank: 1, title: "Photography backdrop",
+      eventType: "photography", startsAt: bst(1, 9, 0), endsAt: bst(1, 13, 0), createdBy: adminUser.id,
+      ...hygiene(new Date("2026-08-30T12:00:00.000Z"), "Ask the photographer for the shot list."),
+    },
+    {
+      venueId: venue.id, spaceId: southGallery, kind: "ink", title: "Wedding photography overflow",
+      eventType: "wedding", startsAt: bst(5, 12, 0), endsAt: bst(5, 23, 0), createdBy: adminUser.id,
+    },
+  ]).returning();
+  console.log(`  Diary bookings: ${String(insertedBookings.length)} created (${weekLabel})`);
 
   console.log("\nSeed complete.");
 }
