@@ -39,7 +39,23 @@ T-487 (schema + exclusion, **done**) · T-488 (state machine, **done**) · T-489
 
 **121 new Diary tests** (types 41 · diary-schema 8 · state machine 11 · conflict engine 20 · hold hygiene 12 · booking routes 15 · calendar routes 12 · migration-tail extension assertions within the existing suite). Pure cores were built red→green (TDD); the route layer was verified with the house inject + source-pin pattern written alongside the wiring.
 
-**Full-suite pass counts (this session, this tree):** `@omnitwin/types` 82 files / **1,807** · `@omnitwin/api` 108 files / **2,149** · `@omnitwin/web` 244 files / **2,955**. Typecheck + ESLint green on all three; `api` tsc build green; `web` Vite production build green (16.6s, local validation Clerk key).
+**Full-suite pass counts (this session, this tree):** `@omnitwin/types` 82 files / **1,807** · `@omnitwin/api` 108 files / **2,149** (→ **2,160** after post-review hardening below) · `@omnitwin/web` 244 files / **2,955**. Typecheck + ESLint green on all three; `api` tsc build green; `web` Vite production build green (16.6s, local validation Clerk key).
+
+## Post-review hardening (commit `5e9c5816`)
+
+The CLAUDE.md-mandated `typescript-reviewer` pass (interrupted mid-session by an API session limit, re-run on resume) returned three P1s and two P2s — all implemented literally, TDD-first on the pure core, same session:
+
+| # | Finding | Fix |
+|---|---|---|
+| P1-1 | `canManageVenue` includes **hallkeeper**, so the shared helper silently granted hallkeeper create/edit on bookings — contradicting the state machine's own "hallkeeper is read-facing" policy | Diary-local `canWriteBookings` (staff/admin ∧ venue match) gates `POST /bookings` and `PATCH` (pre-DB role check); reads keep `canManageVenue`. Inject tests: hallkeeper POST/PATCH → 403, hallkeeper GET stays open |
+| P1-2 | Concurrent hold exits raced: plain SELECT + blind rank UPDATEs under READ COMMITTED → deadlock (`40P01` → unhandled 500) or silent lost-update of a just-written ladder | Exit transitions now open with `SELECT … FOR UPDATE ORDER BY id` over the space's active ladder (deterministic lock order — serialises instead of deadlocking), and the state write is a **compare-and-set** on the kind/status the transition was derived from; a stale move returns 409 `BOOKING_STATE_CHANGED` |
+| P1-3 | Resequence scope was pairwise-overlap with the departed hold, so a chain H1–H2–H3 left non-contiguous ranks (H2→1, H3 stuck at 3) under ordinary single-user use | New pure `resequenceLaddersAfterExit`: survivors are clustered into connected components of their own overlap graph; every component touching the departed window is one contested slot resequenced from 1 — chains promote contiguously, and two clusters bridged only by the departed hold each gain their own 1st option (6 new tests) |
+| P2-4 | PATCH accepted edits to released/expired/cancelled/lost bookings — rewriting history with no audit trail | 409 `BOOKING_NOT_ACTIVE`: exited bookings are records, not editable plans |
+| P2-5 | `GET /calendar` ran its three independent queries sequentially | One `Promise.all` — one round-trip of latency on the endpoint every view polls |
+
+P3 notes (accepted, not changed): the `role as TransitionRole` widening is fail-closed by construction; `serializeBooking`'s `.parse()` strictness only bites out-of-band writes that bypass Zod; `internal_block`-vs-ink overlap surfacing is a documented v0 conflict-engine limitation. The reviewer explicitly verified sound: 23P01 detection against the installed driver source, the `make_interval` fragment (no injection surface — drizzle parameterises), instant-math DST safety, PATCH undefined-vs-null merge semantics, matrix↔role-policy drift guards, and tenant isolation.
+
+**Post-hardening verification:** api full suite **108 files / 2,160 tests** green; api typecheck green; api ESLint green. Diary test total: **132**.
 
 ## Deviations from the Canon / prompt, with reasons
 
