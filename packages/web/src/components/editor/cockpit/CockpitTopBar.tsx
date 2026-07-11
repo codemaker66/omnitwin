@@ -100,7 +100,11 @@ export function CockpitTopBar(): ReactElement {
         </span>
       </div>
 
-      <div className="cockpit-topbar__cell cockpit-topbar__cell--runtime">
+      <div
+        className="cockpit-topbar__cell cockpit-topbar__cell--runtime"
+        data-testid="cockpit-runtime-chip"
+        title={model.runtimeLabel}
+      >
         <span className="cockpit-topbar__kicker">Runtime asset</span>
         <strong className="cockpit-topbar__value">{model.runtimeLabel}</strong>
       </div>

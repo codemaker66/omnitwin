@@ -5,6 +5,7 @@ import { useCockpitStore } from "../stores/cockpit-store.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
 import {
   decideRuntimeAsset,
+  plannerRuntimeChipLabel,
   runtimeAssetViewTransformForRoom,
   TRADES_HALL_RUNTIME_ROOMS,
   type RuntimeAssetViewTransform,
@@ -16,10 +17,10 @@ import {
 // the loaded space, the venue is fixed. Mirrors the dev route's proven
 // decision pipeline (decideRuntimeAsset → splat URLs + view transform) and
 // reflects the runtime-asset status into the cockpit top bar. Public read;
-// degrades to the procedural scene whenever no usable package exists.
+// degrades to the atelier fallback (procedural clay + ink scene) whenever no
+// usable package exists — never a blank canvas.
 
 const RUNTIME_VENUE = "trades-hall";
-const PROCEDURAL_STATUS = "Procedural layer / no signed capture";
 const IDENTITY_TRANSFORM: RuntimeAssetViewTransform = runtimeAssetViewTransformForRoom("grand-hall");
 
 export type RoomRuntimeSplatStatus = "idle" | "loading" | "loaded" | "none";
@@ -68,7 +69,7 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   const decision = decideRuntimeAsset(null, pkg);
   const hasAsset = decision.source === "package" && decision.splatUrls.length > 0;
   const transform = roomSlug !== null ? runtimeAssetViewTransformForRoom(roomSlug) : IDENTITY_TRANSFORM;
-  const runtimeLabel = hasAsset ? decision.evidenceLabel : PROCEDURAL_STATUS;
+  const runtimeLabel = plannerRuntimeChipLabel(decision);
 
   useEffect(() => {
     useCockpitStore.getState().setRuntimeAssetStatus(runtimeLabel);

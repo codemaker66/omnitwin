@@ -27,7 +27,12 @@ import {
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 
-const DEFAULT_SPACE_SLUG = "grand-hall";
+// CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
+// the one room with a built runtime package (splat), so first-visit planners
+// land in captured reality rather than a procedural-only hall. Venues seeded
+// without it degrade through the legacy default, then the first space.
+const DEFAULT_SPACE_SLUG = "reception-room";
+const LEGACY_DEFAULT_SPACE_SLUG = "grand-hall";
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
 const MAX_REUSABLE_CONFIG_PROBES = 5;
 
@@ -146,6 +151,10 @@ export function EditorPage(): React.ReactElement {
   const authRole = useAuthStore((s) => s.user?.role ?? null);
   const authVenueId = useAuthStore((s) => s.user?.venueId ?? null);
   const [autoCreateBlocker, setAutoCreateBlocker] = useState<PlannerBootstrapBlocker | null>(null);
+  // Name of the space the bootstrap has ACTUALLY resolved (from the venue's
+  // own space list). The loading heading stays generic until this is known —
+  // it must never claim a room the fallback chain might not open.
+  const [openingRoomName, setOpeningRoomName] = useState<string | null>(null);
   const autoCreateAttemptedFor = useRef<string | null>(null);
   const venueAccessUser = useMemo<PlannerVenueAccessUser | null>(() => {
     if (!isAuthenticated || authRole === null) return null;
@@ -183,6 +192,7 @@ export function EditorPage(): React.ReactElement {
     if (autoCreateAttemptedFor.current === bootstrapKey) return;
     autoCreateAttemptedFor.current = bootstrapKey;
     setAutoCreateBlocker(null);
+    setOpeningRoomName(null);
     void (async () => {
       try {
         const venues = await spacesApi.listVenues();
@@ -206,8 +216,10 @@ export function EditorPage(): React.ReactElement {
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
+          ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
+        setOpeningRoomName(space.name);
         const reusableConfigId = await findReusablePublicConfigId(space.id);
         if (reusableConfigId !== null) {
           void navigate(`/plan/${reusableConfigId}`, { replace: true });
@@ -235,8 +247,8 @@ export function EditorPage(): React.ReactElement {
   // Auto-create failed → show a minimal retry screen instead of the
   // legacy SpacePicker splash. The SpacePicker was the old entry flow
   // (pick a venue → pick a space); now /plan always drops users
-  // straight into a Grand Hall config, so the splash has no role on
-  // this route.
+  // straight into a room config (Reception Room by default — CARD A1),
+  // so the splash has no role on this route.
   if (autoCreateBlocker !== null && urlConfigId === undefined && storeConfigId === null) {
     const copy = plannerBootstrapBlockerCopy(autoCreateBlocker);
     return (
@@ -267,13 +279,15 @@ export function EditorPage(): React.ReactElement {
   }
 
   // Auto-create in flight (or about to start) — show a neutral loading
-  // screen, not the SpacePicker splash.
+  // screen, not the SpacePicker splash. The heading upgrades from generic to
+  // named only once the bootstrap has resolved the room from the venue's own
+  // space list, so it can never claim a room the fallback chain didn't open.
   if (urlConfigId === undefined && storeConfigId === null) {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
           <p className="vv-state-kicker">Planner start</p>
-          <h1>Opening the Grand Hall planner</h1>
+          <h1>{openingRoomName !== null ? `Opening the ${openingRoomName} planner` : "Opening the planner"}</h1>
           <p>Preparing a recoverable planning draft with room context and review-state controls.</p>
         </section>
       </div>

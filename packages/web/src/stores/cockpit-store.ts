@@ -5,6 +5,7 @@ import {
   type CockpitMode,
   type CockpitOverlayKey,
 } from "../lib/cockpit-modes.js";
+import { CAPTURED_LAYER_FALLBACK_STATUS } from "../lib/runtime-package-resolution.js";
 
 type OverlayVisibility = Record<CockpitOverlayKey, boolean>;
 
@@ -15,7 +16,9 @@ function allOverlaysOn(): OverlayVisibility {
   }, {} as OverlayVisibility);
 }
 
-const DEFAULT_RUNTIME_ASSET_STATUS = "Procedural layer / no signed capture";
+// Until a runtime package resolves, the honest state IS the atelier fallback —
+// the chip must never open on a blank or stale claim.
+const DEFAULT_RUNTIME_ASSET_STATUS = CAPTURED_LAYER_FALLBACK_STATUS;
 
 /** A world-anchored evidence beam: a gold light column the scene raises over the
  *  exact point a simulated conflict / review marker concerns, so abstract

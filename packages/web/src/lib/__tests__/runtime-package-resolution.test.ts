@@ -7,6 +7,7 @@ import {
 import {
   decideRuntimeAsset,
   evidenceStatusLabel,
+  plannerRuntimeChipLabel,
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
   runtimeRoomTargetFromSearchParams,
@@ -282,6 +283,8 @@ describe("evidenceStatusLabel", () => {
       decideRuntimeAsset(null, makePackage({
         assetUrl: "https://assets.example/dev/splat-fixture/scene.ply",
       })).evidenceLabel,
+      plannerRuntimeChipLabel(decideRuntimeAsset(null, null)),
+      plannerRuntimeChipLabel(decideRuntimeAsset(null, makePackage({ evidenceStatus: "unverified" }))),
     ];
 
     for (const label of labels) {
@@ -290,6 +293,29 @@ describe("evidenceStatusLabel", () => {
         expect(lower).not.toContain(phrase);
       }
     }
+  });
+});
+
+describe("plannerRuntimeChipLabel", () => {
+  it("uses the atelier fallback copy when no captured layer resolves", () => {
+    expect(plannerRuntimeChipLabel(decideRuntimeAsset(null, null))).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
+  });
+
+  it("uses the atelier fallback copy when a package exists but is unusable", () => {
+    const staged = decideRuntimeAsset(null, makePackage({ assetRuntimeStatus: "staged" }));
+    expect(plannerRuntimeChipLabel(staged)).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
+  });
+
+  it("surfaces the package evidence state when a captured layer is mounted", () => {
+    const unverified = decideRuntimeAsset(null, makePackage({ evidenceStatus: "unverified" }));
+    expect(plannerRuntimeChipLabel(unverified)).toBe("Runtime asset loaded, not yet verified/signed.");
+
+    const reviewed = decideRuntimeAsset(null, makePackage({ evidenceStatus: "human_reviewed" }));
+    expect(plannerRuntimeChipLabel(reviewed)).toBe("Runtime asset loaded, human reviewed.");
   });
 });
 

@@ -34,9 +34,11 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().selectedPhaseId).toBe("dinner");
   });
 
-  it("defaults runtimeAssetStatus to the SAFE procedural label and the layers menu closed", () => {
+  it("defaults runtimeAssetStatus to the SAFE atelier fallback label and the layers menu closed", () => {
     const s = useCockpitStore.getState();
-    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.runtimeAssetStatus).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
     expect(s.layersOpen).toBe(false);
   });
 
@@ -103,7 +105,9 @@ describe("cockpit-store", () => {
     expect(s.layerMode).toBe("hybrid");
     expect(s.overlayVisibility.guestFlow).toBe(true);
     expect(s.selectedPhaseId).toBeNull();
-    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.runtimeAssetStatus).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();

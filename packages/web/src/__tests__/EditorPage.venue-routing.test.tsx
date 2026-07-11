@@ -101,6 +101,17 @@ const grandHall: Space = {
   floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
 };
 
+const receptionRoom: Space = {
+  id: "space-reception",
+  venueId: tradesHall.id,
+  name: "Reception Room",
+  slug: "reception-room",
+  widthM: "13.4",
+  lengthM: "11.2",
+  heightM: "3.2",
+  floorPlanOutline: [{ x: 0, y: 0 }, { x: 13.4, y: 0 }, { x: 13.4, y: 11.2 }, { x: 0, y: 11.2 }],
+};
+
 const ballroom: Space = {
   id: "space-ballroom",
   venueId: cityRooms.id,
@@ -130,6 +141,7 @@ function renderEditor(initialEntry: string): void {
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/plan/:code" element={<div data-testid="created-route" />} />
+        <Route path="/plan" element={<EditorPage />} />
         <Route path="/v/:venueSlug/plan" element={<EditorPage />} />
       </Routes>
     </MemoryRouter>,
@@ -220,5 +232,72 @@ describe("EditorPage venue-scoped bootstrap", () => {
     expect(screen.getByText(/City Rooms/)).toBeTruthy();
     expect(spacesMock.listSpaces).not.toHaveBeenCalled();
     expect(configMock.createPublicConfig).not.toHaveBeenCalled();
+  });
+});
+
+// CARD A1 (G1a): the built Reception Room runtime package is the default /plan
+// experience. The anonymous draft path must open the Reception Room unless the
+// visitor explicitly asks for another space.
+describe("EditorPage default /plan bootstrap", () => {
+  it("bootstraps the anonymous /plan draft into the Reception Room", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall]);
+    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(receptionRoom, "cfg-reception"));
+
+    renderEditor("/plan");
+
+    await waitFor(() => {
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(receptionRoom.id);
+    });
+    expect(configMock.createPublicConfig).not.toHaveBeenCalledWith(grandHall.id);
+    await screen.findByTestId("created-route");
+  });
+
+  it("keeps the opening heading generic until the venue's spaces resolve", () => {
+    // Before the space list resolves, the heading must not claim a room the
+    // bootstrap might not actually open (reviewer finding, CARD A1).
+    spacesMock.listVenues.mockReturnValue(new Promise(() => { /* keep pending */ }));
+
+    renderEditor("/plan");
+
+    expect(screen.getByRole("heading", { name: "Opening the planner" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /Reception Room/ })).toBeNull();
+  });
+
+  it("names the Reception Room once the bootstrap has resolved it", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall]);
+    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
+    // Freeze config creation so the resolved-room loading state stays visible.
+    configMock.createPublicConfig.mockReturnValue(new Promise(() => { /* keep pending */ }));
+
+    renderEditor("/plan");
+
+    expect(await screen.findByRole("heading", { name: "Opening the Reception Room planner" })).toBeTruthy();
+  });
+
+  it("still honours an explicit ?space= override", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall]);
+    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(grandHall, "cfg-grand"));
+
+    renderEditor("/plan?space=grand-hall");
+
+    await waitFor(() => {
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(grandHall.id);
+    });
+    await screen.findByTestId("created-route");
+  });
+
+  it("falls back to the Grand Hall when the venue has no reception-room space", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall]);
+    spacesMock.listSpaces.mockResolvedValue([grandHall]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(grandHall, "cfg-grand"));
+
+    renderEditor("/plan");
+
+    await waitFor(() => {
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(grandHall.id);
+    });
+    await screen.findByTestId("created-route");
   });
 });

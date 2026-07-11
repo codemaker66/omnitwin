@@ -102,6 +102,21 @@ describe("SS++ performance and visual hardening guardrails", () => {
     expect(cockpitCss).toContain("filter: none !important");
   });
 
+  it("never display-hides the runtime evidence chip at any cockpit width (CARD A1)", async () => {
+    const topBarCss = await read("src/components/editor/cockpit/CockpitTopBar.css");
+
+    // The runtime chip is the planner's honest claim about the captured
+    // layer. It may truncate, but it must never be display-hidden by a
+    // responsive rule — an invisible honesty chip is a silent claim.
+    const runtimeRules = topBarCss
+      .split("\n")
+      .filter((line) => line.includes("cockpit-topbar__cell--runtime"));
+    expect(runtimeRules.length).toBeGreaterThan(0);
+
+    const hiddenRuntimeRule = /cockpit-topbar__cell--runtime[^}]*display:\s*none/;
+    expect(topBarCss).not.toMatch(hiddenRuntimeRule);
+  });
+
   it("keeps the planner canvas hot path free of CSS compositor penalties", async () => {
     const appCss = await read("src/App.css");
     const stageBlock = cssBlock(appCss, ".planner-canvas-stage");
