@@ -195,7 +195,10 @@ export function dropDrag(state: DragState, env: DragEnv): DropOutcome {
       payload: commitPayload(state.context, state.ghost),
     };
   }
-  if (state.ghost.validity.kind === "blocked") {
+  // Re-validate against the CURRENT env — the board may have refreshed while
+  // the ghost was in flight, and a stale "ok" must not slip through.
+  const validity = ghostValidity(state.ghost, env, state.context.blockId);
+  if (validity.kind === "blocked") {
     return { state: { phase: "idle" }, effect: "rejected" };
   }
   const payload = commitPayload(state.context, state.ghost);

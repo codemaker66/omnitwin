@@ -103,6 +103,9 @@ const LivingHallPage = lazy(() =>
 const TwinPage = lazy(() =>
   import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage })),
 );
+const DiaryBoardPage = lazy(() =>
+  import("./pages/diary/DiaryBoardPage.js").then((m) => ({ default: m.DiaryBoardPage })),
+);
 
 function LoadingFallback(): ReactElement {
   return (
@@ -235,6 +238,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
+    // The API enforces the same write split server-side.
+    path: "/diary",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+        <DiaryBoardPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     path: "/dashboard",
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff", "executive"]}>
@@ -303,8 +316,8 @@ export const router = createBrowserRouter([
     element: withSuspense(<TradesHallVisualPage />),
   },
   {
-    // Internal operator asset status view. Protected because it reflects
-    // capture/package registration state and links into dev runtime routes.
+    // Legacy room-level registry remains available during Foundry migration;
+    // the Runtime Foundry dashboard links to it as a named compatibility tool.
     path: "/dev/assets/rooms",
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
