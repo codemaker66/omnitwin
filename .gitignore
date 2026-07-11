@@ -40,5 +40,3 @@ artifacts/
 .vercel
 
 packages/web/public/twin/
-# Living Hall splat runtime tiles (dev-local; production serves from R2/CDN - P4)
-packages/web/public/splats/
