@@ -36,6 +36,25 @@ describe("the hero", () => {
   });
 });
 
+describe("photography — newest set, never repeated", () => {
+  it("uses each photograph exactly once across the page", () => {
+    render(<FreshPage />);
+    const sources = [...document.querySelectorAll("img")]
+      .map((img) => img.getAttribute("src"))
+      .filter((src): src is string => src !== null && src !== "");
+    expect(new Set(sources).size).toBe(sources.length);
+  });
+
+  it("carries the Grand Hall's published figures in the hero", () => {
+    render(<FreshPage />);
+    const caps = document.querySelector('[data-room-caps="grand-hall"]');
+    const truth = TRADES_HALL_ROOM_CAPACITIES["grand-hall"];
+    for (const value of Object.values(truth)) {
+      expect(caps?.textContent).toContain(String(value));
+    }
+  });
+});
+
 describe("rooms — photographs with the venue's own figures", () => {
   it("renders all four photographed rooms with full published capacities", () => {
     render(<FreshPage />);

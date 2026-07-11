@@ -177,7 +177,7 @@ export const router = createBrowserRouter([
     // marketing homepage so visitors see the new design, not the planner
     // app's login wall. The actual planner moved to `/plan` (below).
     path: "/editor",
-    element: withSuspense(<SpotlightLandingPage />),
+    element: withSuspense(<FreshPage />),
   },
   {
     // `/plan` is the new home of the planner app. `/editor` used to live
@@ -341,11 +341,11 @@ export const router = createBrowserRouter([
     element: withSuspense(<AccessibilityPage />),
   },
   {
-    // Public marketing homepage — the spotlight-reveal hero (empty hall,
-    // carried light, the dressed room inside it). The previous homepage,
-    // the Rite, remains at /landing.
+    // Public marketing homepage — the photography-first page (June shoot,
+    // Trades House artwork). Prior designs remain reachable: spotlight at
+    // /welcome, the Rite at /landing, the Living Hall at /living-hall.
     path: "/",
-    element: withSuspense(<SpotlightLandingPage />),
+    element: withSuspense(<FreshPage />),
   },
   {
     // Role-aware post-sign-in destination. Used by the in-app Venviewer

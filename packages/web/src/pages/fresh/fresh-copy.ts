@@ -44,16 +44,10 @@ export interface FreshRoom {
   readonly alt: string;
 }
 
-/** The four photographed rooms, in the order a visit walks them. The two
- *  galleries are listed without photography — honestly — below. */
+/** The photographed rooms, newest shoot only (June 2026), one photograph
+ *  each — the hero already owns the Grand Hall, so it is not repeated here.
+ *  The two galleries are listed without photography — honestly — below. */
 export const FRESH_ROOMS: readonly FreshRoom[] = [
-  {
-    slug: "grand-hall",
-    name: "The Grand Hall",
-    line: "Dinner beneath the dome, the silk frieze of the trades above you.",
-    image: "/images/venue/Grand-Hall-scaled-opt.jpg",
-    alt: "The Grand Hall set for dinner, chandeliers lit beneath the domed ceiling",
-  },
   {
     slug: "saloon",
     name: "The Saloon",
@@ -65,17 +59,32 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     slug: "reception-room",
     name: "The Reception Room",
     line: "Where an evening at Trades Hall begins.",
-    image: "/images/venue/reception-wedding-opt.jpg",
-    alt: "The Reception Room dressed for a wedding, candles along the aisle",
+    image: tradesHallVenueImages.receptionRoom,
+    alt: "The Reception Room, afternoon light across the floor",
   },
   {
     slug: "robert-adam-room",
     name: "The Robert Adam Room",
     line: "The architect's own room, at its most intimate scale.",
-    image: "/images/venue/robert-adam-wedding-opt.jpg",
-    alt: "The Robert Adam Room dressed for a small wedding ceremony",
+    image: tradesHallVenueImages.robertAdamRoom,
+    alt: "The Robert Adam Room, plasterwork ceiling above",
   },
 ] as const;
+
+/** The hero owns the Grand Hall — its published figures sit with it. */
+export const FRESH_HERO_CAPS_LABEL = "The Grand Hall";
+
+/** Today's artwork (2026-07-11): an illustrated portrait of the facade,
+ *  and the arms of the Trades House. Labelled as artwork — never as
+ *  photography. */
+export const FRESH_HERITAGE_ART = "/images/brand/facade-art.webp";
+export const FRESH_HERITAGE_ART_ALT =
+  "An illustrated portrait of the Trades Hall facade — dome, portico, and lit windows";
+export const FRESH_ARMS = "/images/brand/coat-of-arms.webp";
+export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark.png";
+export const FRESH_ARMS_ALT = "The arms of the Trades House of Glasgow";
+export const FRESH_MOTTO = "Union is strength";
+export const FRESH_MOTTO_ATTR = "The motto of the Trades House of Glasgow";
 
 export const FRESH_GALLERIES_NOTE =
   "The North and South Galleries seat forty each — quieter rooms for planning meetings, drinks, and green-room use.";
@@ -120,6 +129,11 @@ export function allFreshCopy(): readonly string[] {
     FRESH_CTA_ROOMS,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
+    FRESH_HERO_CAPS_LABEL,
+    FRESH_HERITAGE_ART_ALT,
+    FRESH_ARMS_ALT,
+    FRESH_MOTTO,
+    FRESH_MOTTO_ATTR,
     ...FRESH_ROOMS.flatMap((r) => [r.name, r.line, r.alt]),
     FRESH_GALLERIES_NOTE,
     FRESH_RATES_TITLE,

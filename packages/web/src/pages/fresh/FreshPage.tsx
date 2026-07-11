@@ -17,15 +17,23 @@ import {
   FRESH_CTA_DATES,
   FRESH_CTA_ROOMS,
   FRESH_FOOTER_NOTE,
+  FRESH_ARMS,
+  FRESH_ARMS_ALT,
+  FRESH_ARMS_MARK,
   FRESH_GALLERIES_NOTE,
   FRESH_HEADLINE_AFTER,
   FRESH_HEADLINE_BEFORE,
   FRESH_HEADLINE_KINETIC,
+  FRESH_HERITAGE_ART,
+  FRESH_HERITAGE_ART_ALT,
   FRESH_HERITAGE_BODY,
   FRESH_HERITAGE_TITLE,
+  FRESH_HERO_CAPS_LABEL,
   FRESH_LEDE,
   FRESH_MAPS_HREF,
   FRESH_META_TITLE,
+  FRESH_MOTTO,
+  FRESH_MOTTO_ATTR,
   FRESH_RATES_NOTE,
   FRESH_RATES_TITLE,
   FRESH_ROOMS,
@@ -120,8 +128,11 @@ export function FreshPage(): ReactElement {
 
       <header className="fr-header">
         <p className="fr-brand">
-          <small>{FRESH_BRAND_SMALL}</small>
-          <b>{FRESH_BRAND_NAME}</b>
+          <img className="fr-brand-mark" src={FRESH_ARMS_MARK} alt="" width={120} height={150} />
+          <span>
+            <small>{FRESH_BRAND_SMALL}</small>
+            <b>{FRESH_BRAND_NAME}</b>
+          </span>
         </p>
         <div className="fr-header-side">
           <fieldset className="fr-theme" aria-label={FRESH_THEME_LABEL}>
@@ -163,6 +174,9 @@ export function FreshPage(): ReactElement {
               <span className="fr-w">{FRESH_HEADLINE_AFTER}</span>
             </h1>
             <p className="fr-lede">{FRESH_LEDE}</p>
+            <p className="fr-caps fr-hero-caps" data-room-caps="grand-hall">
+              <b>{FRESH_HERO_CAPS_LABEL}</b> · {roomCaps("grand-hall")}
+            </p>
             <div className="fr-hero-actions">
               <a className="fr-cta" href={FRESH_CONTACT_PHONE_HREF}>
                 {FRESH_CTA_DATES}
@@ -233,12 +247,13 @@ export function FreshPage(): ReactElement {
         {/* ——— heritage: one photograph, one paragraph ——— */}
         <section className="fr-heritage" aria-labelledby="fr-heritage-title">
           <img
-            src={tradesHallVenueImages.exterior}
-            alt="Trades Hall and its dome amid the rooftops of Glasgow's Merchant City"
+            className="fr-heritage-art"
+            src={FRESH_HERITAGE_ART}
+            alt={FRESH_HERITAGE_ART_ALT}
             loading="lazy"
             decoding="async"
-            width={1536}
-            height={1024}
+            width={1448}
+            height={1086}
           />
           <div className="fr-heritage-words" ref={reveal}>
             <h2 id="fr-heritage-title">{FRESH_HERITAGE_TITLE}</h2>
@@ -255,6 +270,13 @@ export function FreshPage(): ReactElement {
           <a href={FRESH_MAPS_HREF} target="_blank" rel="noreferrer">
             {FRESH_ADDRESS}
           </a>
+        </div>
+        <div className="fr-colophon">
+          <img src={FRESH_ARMS} alt={FRESH_ARMS_ALT} loading="lazy" decoding="async" width={480} height={600} />
+          <p className="fr-motto">
+            <em>{FRESH_MOTTO}</em>
+            <span>{FRESH_MOTTO_ATTR}</span>
+          </p>
         </div>
         <p className="fr-footer-note">{FRESH_FOOTER_NOTE}</p>
       </footer>
