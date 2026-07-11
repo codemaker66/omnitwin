@@ -83,6 +83,9 @@ const EventDayOpsPage = lazy(() =>
 const RoomShowcasePage = lazy(() =>
   import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
 );
+const FreshPage = lazy(() =>
+  import("./pages/fresh/FreshPage.js").then((m) => ({ default: m.FreshPage })),
+);
 const LivingHallPage = lazy(() =>
   import("./pages/living-hall/LivingHallPage.js").then((m) => ({
     default: m.LivingHallPage,
@@ -131,6 +134,13 @@ export const router = createBrowserRouter([
     // already shared to /welcome keep working.
     path: "/welcome",
     element: withSuspense(<SpotlightLandingPage />),
+  },
+  {
+    // /fresh — pictures-only prototype (2026 grammar: kinetic variable type,
+    // organic shapes, light/dark theming, a11y-first). Preview route for
+    // Blake's verdict; not linked from anywhere.
+    path: "/fresh",
+    element: withSuspense(<FreshPage />),
   },
   {
     // The Living Hall — P0 DOM-first document (spec:
