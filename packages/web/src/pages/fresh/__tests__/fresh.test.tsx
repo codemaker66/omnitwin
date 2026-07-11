@@ -45,7 +45,7 @@ describe("photography — newest set, never repeated", () => {
     expect(new Set(sources).size).toBe(sources.length);
   });
 
-  it("carries the Grand Hall's published figures in the hero", () => {
+  it("carries the Grand Hall's published figures on the page", () => {
     render(<FreshPage />);
     const caps = document.querySelector('[data-room-caps="grand-hall"]');
     const truth = TRADES_HALL_ROOM_CAPACITIES["grand-hall"];

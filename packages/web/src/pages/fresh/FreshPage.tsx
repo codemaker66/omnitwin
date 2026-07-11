@@ -5,7 +5,6 @@ import {
   TRADES_HALL_WEDDING_PRICING,
   formatPriceGBP,
 } from "../../lib/trades-hall-venue-truth.js";
-import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
   FRESH_ADDRESS,
   FRESH_BRAND_NAME,
@@ -28,7 +27,8 @@ import {
   FRESH_HERITAGE_ART_ALT,
   FRESH_HERITAGE_BODY,
   FRESH_HERITAGE_TITLE,
-  FRESH_HERO_CAPS_LABEL,
+  FRESH_HERO_ALT,
+  FRESH_HERO_IMAGE,
   FRESH_LEDE,
   FRESH_MAPS_HREF,
   FRESH_META_TITLE,
@@ -70,30 +70,41 @@ function loadTheme(): FreshTheme {
   }
 }
 
-/** Reveal-on-scroll, once, honouring reduced motion by never hiding. */
+/** Reveal-on-scroll, once, honouring reduced motion by never hiding.
+ *  Refs only queue nodes; the effect owns the observer's lifecycle — under
+ *  StrictMode the effect teardown/setup cycle rebuilds a live observer,
+ *  where a ref-created observer would die at first cleanup. */
 function useRevealOnce(): (node: HTMLElement | null) => void {
+  const nodesRef = useRef<Set<HTMLElement>>(new Set());
   const observerRef = useRef<IntersectionObserver | null>(null);
+
   useEffect(() => {
-    return () => {
-      observerRef.current?.disconnect();
-    };
-  }, []);
-  return useCallback((node: HTMLElement | null) => {
-    if (node === null) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    node.classList.add("fr-will-reveal");
-    observerRef.current ??= new IntersectionObserver(
-      (entries, observer) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            entry.target.classList.add("fr-revealed");
-            observer.unobserve(entry.target);
+            entry.target.classList.add('fr-revealed');
+            obs.unobserve(entry.target);
           }
         }
       },
-      { rootMargin: "-64px" },
+      { rootMargin: '-64px' },
     );
-    observerRef.current.observe(node);
+    observerRef.current = observer;
+    for (const node of nodesRef.current) observer.observe(node);
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+  }, []);
+
+  return useCallback((node: HTMLElement | null) => {
+    if (node === null) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    node.classList.add('fr-will-reveal');
+    nodesRef.current.add(node);
+    observerRef.current?.observe(node);
   }, []);
 }
 
@@ -160,9 +171,9 @@ export function FreshPage(): ReactElement {
         <section className="fr-hero" aria-labelledby="fr-headline">
           <img
             className="fr-hero-photo"
-            src={tradesHallVenueImages.grandHall}
-            alt="The Grand Hall of Trades Hall Glasgow, dressed and candlelit beneath the dome"
-            width={1535}
+            src={FRESH_HERO_IMAGE}
+            alt={FRESH_HERO_ALT}
+            width={1536}
             height={1024}
             fetchPriority="high"
             decoding="async"
@@ -174,9 +185,6 @@ export function FreshPage(): ReactElement {
               <span className="fr-w">{FRESH_HEADLINE_AFTER}</span>
             </h1>
             <p className="fr-lede">{FRESH_LEDE}</p>
-            <p className="fr-caps fr-hero-caps" data-room-caps="grand-hall">
-              <b>{FRESH_HERO_CAPS_LABEL}</b> · {roomCaps("grand-hall")}
-            </p>
             <div className="fr-hero-actions">
               <a className="fr-cta" href={FRESH_CONTACT_PHONE_HREF}>
                 {FRESH_CTA_DATES}
@@ -201,12 +209,14 @@ export function FreshPage(): ReactElement {
                 ref={reveal}
               >
                 <img
+                  className={room.portrait ? "is-portrait" : undefined}
                   src={room.image}
                   alt={room.alt}
                   loading="lazy"
                   decoding="async"
-                  width={1535}
-                  height={1024}
+                  width={room.width}
+                  height={room.height}
+                  style={room.focus ? { objectPosition: room.focus } : undefined}
                 />
                 <div className="fr-room-words">
                   <h3>{room.name}</h3>

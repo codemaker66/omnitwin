@@ -348,6 +348,9 @@
   object-fit: cover;
   border-radius: 3px;
 }
+.fr-room img.is-portrait {
+  height: clamp(380px, 58vh, 620px);
+}
 .fr-room:nth-child(odd) img {
   border-top-right-radius: clamp(36px, 7vw, 96px);
 }

@@ -42,37 +42,62 @@ export interface FreshRoom {
   readonly line: string;
   readonly image: string;
   readonly alt: string;
+  readonly width: number;
+  readonly height: number;
+  /** Portrait photographs render taller so nobody in them loses their head. */
+  readonly portrait?: boolean;
+  /** object-position focus, when the subject is not centred. */
+  readonly focus?: string;
 }
 
+/** The hero is the house itself, from above. */
+export const FRESH_HERO_IMAGE = tradesHallVenueImages.exterior;
+export const FRESH_HERO_ALT =
+  "Trades Hall and its dome from above, amid the rooftops of Glasgow's Merchant City";
+
 /** The photographed rooms, newest shoot only (June 2026), one photograph
- *  each — the hero already owns the Grand Hall, so it is not repeated here.
- *  The two galleries are listed without photography — honestly — below. */
+ *  each — never repeated anywhere on the page. The two galleries are
+ *  listed without photography — honestly — below. */
 export const FRESH_ROOMS: readonly FreshRoom[] = [
+  {
+    slug: "grand-hall",
+    name: "The Grand Hall",
+    line: "Dinner beneath the dome, the silk frieze of the trades above you.",
+    image: tradesHallVenueImages.grandHall,
+    alt: "The Grand Hall dressed and candlelit beneath the dome",
+    width: 1535,
+    height: 1024,
+  },
   {
     slug: "saloon",
     name: "The Saloon",
     line: "Panelled walls and stained glass — made for speeches and toasts.",
     image: tradesHallVenueImages.saloon,
     alt: "The Saloon, stained-glass windows above panelled walls",
+    width: 1535,
+    height: 1025,
   },
   {
     slug: "reception-room",
     name: "The Reception Room",
     line: "Where an evening at Trades Hall begins.",
     image: tradesHallVenueImages.receptionRoom,
-    alt: "The Reception Room, afternoon light across the floor",
+    alt: "The Reception Room dressed for a ceremony, candles along the aisle",
+    width: 1536,
+    height: 1024,
   },
   {
     slug: "robert-adam-room",
     name: "The Robert Adam Room",
     line: "The architect's own room, at its most intimate scale.",
     image: tradesHallVenueImages.robertAdamRoom,
-    alt: "The Robert Adam Room, plasterwork ceiling above",
+    alt: "A bride mid-aisle at a ceremony in the Robert Adam Room",
+    width: 1122,
+    height: 1402,
+    portrait: true,
+    focus: "center 18%",
   },
 ] as const;
-
-/** The hero owns the Grand Hall — its published figures sit with it. */
-export const FRESH_HERO_CAPS_LABEL = "The Grand Hall";
 
 /** Today's artwork (2026-07-11): an illustrated portrait of the facade,
  *  and the arms of the Trades House. Labelled as artwork — never as
@@ -129,7 +154,7 @@ export function allFreshCopy(): readonly string[] {
     FRESH_CTA_ROOMS,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
-    FRESH_HERO_CAPS_LABEL,
+    FRESH_HERO_ALT,
     FRESH_HERITAGE_ART_ALT,
     FRESH_ARMS_ALT,
     FRESH_MOTTO,
