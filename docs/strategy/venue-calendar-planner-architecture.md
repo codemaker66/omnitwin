@@ -309,3 +309,47 @@ Error envelope: house `{ error, code, details? }`; codes: `VALIDATION_ERROR`, `H
 ## 9. Out of scope (pointers)
 
 Timeline UI (P0 remainder, next slice) · websocket command channel (Canon §9) · challenge engine + joint ultimatums (P1) · waitlist (P1) · buffer/turnaround **templates** generating phases (P1) · resource singletons, room hierarchy/combinability (P1+) · ICS poller (P0 tail) · reminders delivery via Resend (P1).
+
+---
+
+## 10. Slice 2 — the Board (T-493; Canon §8/§9/§12/§18)
+
+**Scope:** the DOM-first multi-room timeline consuming `GET /calendar`. Lanes (six Trades Hall rooms), day/week/month zoom, venue-local now-line, drag with 15-min snap + live-conflict ghost + state-gated ink confirm, keyboard navigation **and keyboard drag day one**, undo, conflict rail with honest checks, needs-action holding tray, Ink & Gilt visuals (concept A). Route: `/diary` (staff/admin write; hallkeeper read — the Slice-1 write gate already enforces the server side).
+
+### 10.1 File map
+
+| File | Content |
+|---|---|
+| `web/src/pages/diary/board-copy.ts` (+test) | copy-as-data, claim-guard swept |
+| `web/src/pages/diary/lib/board-time.ts` (+test) | pure: venue-local day/week/month ranges via Intl (Europe/London; DST-tested both directions), time↔x math, 15/1-min snapping, now position, axis ticks |
+| `web/src/pages/diary/lib/board-layout.ts` (+test) | pure: interval packing into sub-rows (deterministic), footprint segment grouping (phases inside their booking's block; orphan phases standalone), needs-action selection |
+| `web/src/pages/diary/lib/board-drag.ts` (+test) | pure reducer: idle→pending(5px)→dragging→confirming(ink)→idle; pointer + keyboard share it; ghost validity vs active inks (blocked/warning + inline reason); commit payload builder |
+| `web/src/api/diary.ts` | `getCalendar(venueId, from, to, signal)` / `moveBooking(id, patch)` — Zod-validated via shared schemas |
+| `web/src/pages/diary/hooks/useCalendar.ts` | fetch + abort + refetch; optimistic entry override during commit |
+| `web/src/pages/diary/hooks/useUndoStack.ts` (+test) | move history; Ctrl+Z + toast undo → PATCH back |
+| `web/src/pages/diary/DiaryBoardPage.tsx` (+test) | shell: view/date state in URL (`?view=week&date=`), loading/error/empty, header (zoom, date nav, legend), composition |
+| `web/src/pages/diary/components/` | `BoardGrid` (sticky room rail + axis, lanes, now-line), `BoardBlock` (state visuals, focus, aria), `ConflictRail`, `HoldingTray`, `UndoToast` |
+| `web/src/pages/diary/diary-board.css` | Ink & Gilt board language; local `--diary-paper`/hatch tokens pending the A3 merged token layer |
+| `web/src/router.tsx` | lazy `/diary` behind `ProtectedRoute` (admin/staff/hallkeeper) |
+| `types/booking.ts` + `api/routes/bookings.ts` | `UpdateBookingSchema` gains optional `spaceId` (cross-lane moves); PATCH validates space∈venue (composite FK backs it; 23P01 already → 409) |
+
+### 10.2 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | No dnd-kit / no TanStack Virtual | neither is installed; 6 lanes × a week is tiny DOM (virtualisation is a later add per Canon §9 budget); the repo's drag culture is custom hooks. Keyboard DnD implemented in the shared reducer with live-region announcements — the Canon's requirement is the capability, not the library |
+| 2 | Venue timezone constant `Europe/London` in board-time | `GET /calendar` doesn't carry `venues.timezone` yet; single-venue reality. Response gains it with multi-venue (flagged) |
+| 3 | Ink "resists": drop of an ink enters a confirm step (Enter/click to confirm, Esc cancels); pencils commit instantly | Canon §8 "explicit intent required" without a modal |
+| 4 | Undo = PATCH back to previous values (client stack, Ctrl+Z + toast ≥5s) | no server undo endpoint; honest and simple; concurrent-edit caveat documented |
+| 5 | Tray v1 = needs-action rail (overdue next actions/decisions, unranked pencils; click focuses block) — **drag-from-tray deferred** | bookings.spaceId is NOT NULL and enquiry→booking conversion is Slice 3; a display+focus tray is honest, a fake drop target is not |
+| 6 | Keyboard-initiated commits animate nothing; pointer drags get transform-only ghost + spring snap-back on invalid | Emil doctrine + Canon §8 feel budget |
+| 7 | Mutations refetch in the background after optimistic apply | no websocket channel yet (Canon §9 is a later slice); refetch keeps conflicts honest |
+| 8 | Closed-day hatching deferred | no availability-rules data exists (schema question §8.2) |
+
+### 10.3 Zoom table
+
+| View | Window | px/hour | Disclosure |
+|---|---|---|---|
+| day | venue-local midnight→midnight | 96 | colour + title + times + chips |
+| week | Monday→Monday | 18 | colour + title (+times ≥ 90px width) |
+| month | 1st→1st | 3 (72/day) | colour bars + title when it fits |
