@@ -141,6 +141,8 @@ spec, House design language, architecture, red-team critique, wireframes, gap
 audit, execution playbook, frontier). Feature sessions consume one build card
 per session from `docs/plan/cards/` (protocol in its README).
 `docs/plan/06-GAP-AUDIT.md` supersedes all older "current gaps" lists.
+The booking/calendar domain ("the Diary") is governed by its own canon —
+see `docs/strategy/authority-map.md` for which rulebook wins where.
 Naming is hybrid: existing `cockpit*` code names stay; new modules, UI copy,
 and docs use Floor/House vocabulary. When a card conflicts with repo reality,
 flag it (Blake Clause) — do not silently reinterpret.

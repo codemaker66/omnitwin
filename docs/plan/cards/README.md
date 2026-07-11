@@ -21,4 +21,5 @@ Decisions of 10 Jul 2026:
 - **GPU spend approved**: start the G10 training queue immediately (RunPod/Lambda, ~£100–200/room); log every run to `state/training_runs.jsonl` (currently empty — fix as part of the first run).
 - **Fonts licensed now**: Söhne + Söhne Mono (Klim) and Canela (Commercial Type) become the primary faces; Geist/Geist Mono/Fraunces remain the fallback stack in tokens. Card A3 includes wiring the licensed files.
 - **Wave M = Event Cinema** (see `wave-M.md`).
+- 11 Jul: the Diary (calendar/booking) universe installed under `docs/strategy/` with its own canon; authority split + translucency ruling + shared command rail recorded in `docs/strategy/authority-map.md`. Cards A3/A4 implement the MERGED token layer (House + Ink & Gilt additions) per that ruling. Build order: Diary Slice 1 → A1/A2 → A3/A4.
 - A playable interaction prototype of the Floor lives at `docs/plan/prototypes/floor-v0.html` — reference for feel (altitude, ghosts, timeline morph, live numbers, command); it is NOT product code and says so in its own evidence drawer.
