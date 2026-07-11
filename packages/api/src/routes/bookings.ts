@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   BookingSchema,
+  ConvertEnquirySchema,
   CreateBookingSchema,
   TransitionBookingSchema,
   UpdateBookingSchema,
@@ -12,9 +13,10 @@ import {
   type BookingState,
 } from "@omnitwin/types";
 import { z } from "zod";
-import { bookings, bookingStatusHistory, events, spaces } from "../db/schema.js";
+import { bookings, bookingStatusHistory, enquiries, events, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, type JwtUser } from "../middleware/auth.js";
+import { emit, type EventPayload } from "../observability/event-bus.js";
 import { canManageVenue } from "../utils/query.js";
 import { canTransitionBooking } from "../state-machines/booking.js";
 import {
@@ -113,8 +115,28 @@ export function serializeBooking(row: BookingRow): Booking {
     seriesId: row.seriesId,
     notes: row.notes,
     createdBy: row.createdBy,
+    enquiryId: row.enquiryId,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
+  });
+}
+
+type DiaryChangeKind = EventPayload<"diary.changed">["kind"];
+
+/** Emit AFTER the mutation's transaction has committed (Canon §9: commit →
+ *  broadcast). Fire-and-forget — the hot path never waits on subscribers. */
+function publishDiaryChanged(
+  request: FastifyRequest,
+  venueId: string,
+  kind: DiaryChangeKind,
+  bookingId: string,
+): void {
+  emit(request.log, "diary.changed", {
+    venueId,
+    kind,
+    bookingId,
+    actorUserId: request.user.id,
+    at: new Date().toISOString(),
   });
 }
 
@@ -228,6 +250,7 @@ export async function bookingRoutes(
           .status(500)
           .send({ error: "Failed to create booking", code: "BOOKING_CREATE_FAILED" });
       }
+      publishDiaryChanged(request, created.venueId, "booking.created", created.id);
       return await reply.status(201).send({ data: serializeBooking(created) });
     } catch (error) {
       const code = pgErrorCode(error);
@@ -356,6 +379,7 @@ export async function bookingRoutes(
           .status(500)
           .send({ error: "Failed to update booking", code: "BOOKING_UPDATE_FAILED" });
       }
+      publishDiaryChanged(request, updated.venueId, "booking.updated", updated.id);
       return { data: serializeBooking(updated) };
     } catch (error) {
       const code = pgErrorCode(error);
@@ -492,6 +516,7 @@ export async function bookingRoutes(
           code: "BOOKING_STATE_CHANGED",
         });
       }
+      publishDiaryChanged(request, outcome.updated.venueId, "booking.transitioned", outcome.updated.id);
       return {
         data: serializeBooking(outcome.updated),
         // The Canon §3 human ping: promotions ride the response so the caller
@@ -503,6 +528,88 @@ export async function bookingRoutes(
       // The joint-first race, lost: another coordinator inked this slot
       // between our read and our write. The exclusion constraint arbitrated.
       if (code === PG_EXCLUSION_VIOLATION) return inkSlotTaken(reply);
+      throw error;
+    }
+  });
+
+  // Enquiry→hold conversion (T-496; Canon §12 P0 "enquiry→hold"). Always a
+  // hold, always hygienic — the schema requires the quartet. The enquiry's
+  // own lifecycle is deliberately untouched: the commitment axis and the
+  // enquiry axis stay independent (Canon §1); provenance lives on
+  // bookings.enquiry_id.
+  server.post("/from-enquiry", { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = ConvertEnquirySchema.safeParse(request.body);
+    if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const input = parsed.data;
+
+    const [enquiry] = await db
+      .select()
+      .from(enquiries)
+      .where(eq(enquiries.id, input.enquiryId))
+      .limit(1);
+    if (enquiry === undefined) {
+      return reply.status(404).send({ error: "Enquiry not found", code: "ENQUIRY_NOT_FOUND" });
+    }
+    if (!canWriteBookings(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+    }
+
+    const spaceId = input.spaceId ?? enquiry.spaceId;
+    const [space] = await db
+      .select({ id: spaces.id, venueId: spaces.venueId })
+      .from(spaces)
+      .where(and(eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+      .limit(1);
+    if (space === undefined || space.venueId !== enquiry.venueId) {
+      return reply.status(400).send({
+        error: "The space does not belong to this venue",
+        code: "SPACE_VENUE_MISMATCH",
+      });
+    }
+
+    const fallbackTitle = `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`;
+    const title = input.title ?? fallbackTitle.slice(0, 200);
+
+    try {
+      const [created] = await db
+        .insert(bookings)
+        .values({
+          venueId: enquiry.venueId,
+          spaceId,
+          eventId: null,
+          kind: "hold",
+          status: "active",
+          title,
+          eventType: input.eventType ?? enquiry.eventType,
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          rank: input.rank ?? null,
+          jointFlag: input.jointFlag ?? false,
+          decisionAt: new Date(input.decisionAt),
+          ownerUserId: input.ownerUserId,
+          nextAction: input.nextAction,
+          nextActionDueAt: new Date(input.nextActionDueAt),
+          seriesId: null,
+          notes: input.notes ?? null,
+          createdBy: request.user.id,
+          enquiryId: enquiry.id,
+        })
+        .returning();
+      if (created === undefined) {
+        return await reply
+          .status(500)
+          .send({ error: "Failed to convert the enquiry", code: "BOOKING_CREATE_FAILED" });
+      }
+      publishDiaryChanged(request, created.venueId, "enquiry.converted", created.id);
+      return await reply.status(201).send({ data: serializeBooking(created) });
+    } catch (error) {
+      const code = pgErrorCode(error);
+      if (code === PG_CHECK_VIOLATION) {
+        return reply.status(400).send({
+          error: "Booking violates a database integrity rule",
+          code: "BOOKING_INTEGRITY_VIOLATION",
+        });
+      }
       throw error;
     }
   });

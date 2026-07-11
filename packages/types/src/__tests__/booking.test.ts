@@ -311,10 +311,65 @@ describe("BookingSchema serialization contract", () => {
       seriesId: null,
       notes: null,
       createdBy: null,
+      enquiryId: null,
       createdAt: "2026-07-11T10:00:00.000Z",
       updatedAt: "2026-07-11T10:00:00.000Z",
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("ConvertEnquirySchema — enquiry→hold (T-496)", () => {
+  function validConvertInput(): Record<string, unknown> {
+    return {
+      enquiryId: "00000000-0000-4000-8000-0000000000e1",
+      startsAt: "2026-09-19T17:00:00.000Z",
+      endsAt: "2026-09-19T23:30:00.000Z",
+      rank: 2,
+      decisionAt: "2026-08-01T12:00:00.000Z",
+      ownerUserId: OWNER_ID,
+      nextAction: "Send the welcome pack and confirm the decision date.",
+      nextActionDueAt: "2026-07-25T09:00:00.000Z",
+    };
+  }
+
+  it("accepts a hygienic conversion with optional overrides", async () => {
+    const { ConvertEnquirySchema } = await import("../booking.js");
+    expect(ConvertEnquirySchema.safeParse(validConvertInput()).success).toBe(true);
+    expect(
+      ConvertEnquirySchema.safeParse({
+        ...validConvertInput(),
+        spaceId: SPACE_ID,
+        title: "MacLeod wedding",
+        eventType: "wedding",
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each(["decisionAt", "ownerUserId", "nextAction", "nextActionDueAt"] as const)(
+    "requires hold hygiene unconditionally — missing %s rejects",
+    async (field) => {
+      const { ConvertEnquirySchema } = await import("../booking.js");
+      const input = Object.fromEntries(
+        Object.entries(validConvertInput()).filter(([key]) => key !== field),
+      );
+      const result = ConvertEnquirySchema.safeParse(input);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes(field))).toBe(true);
+      }
+    },
+  );
+
+  it("rejects an inverted window", async () => {
+    const { ConvertEnquirySchema } = await import("../booking.js");
+    expect(
+      ConvertEnquirySchema.safeParse({
+        ...validConvertInput(),
+        startsAt: "2026-09-19T23:30:00.000Z",
+        endsAt: "2026-09-19T17:00:00.000Z",
+      }).success,
+    ).toBe(false);
   });
 });
 

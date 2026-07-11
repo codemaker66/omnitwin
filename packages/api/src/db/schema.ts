@@ -3178,6 +3178,10 @@ export const bookings = pgTable("bookings", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Conversion provenance (T-496): the enquiry this booking was pencilled
+  // from. Added by migration 0051, so it sits physically after 0050's
+  // columns — the diary-schema contract test encodes exactly that order.
+  enquiryId: uuid("enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
 }, (table) => [
   unique("bookings_id_venue_unique").on(table.id, table.venueId),
   foreignKey({
@@ -3196,6 +3200,7 @@ export const bookings = pgTable("bookings", {
   index("bookings_venue_kind_status_idx").on(table.venueId, table.kind, table.status),
   index("bookings_venue_decision_idx").on(table.venueId, table.decisionAt),
   index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
+  index("bookings_enquiry_idx").on(table.enquiryId),
 ]);
 
 // House status-history convention (enquiry_status_history pattern). Rows

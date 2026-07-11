@@ -61,6 +61,19 @@ export interface EventMap {
     readonly version: number;
     readonly sourceHash: string;
   };
+  /** The Diary changed (T-497): emitted AFTER a booking mutation's
+   *  transaction commits; the /ws/diary hub fans it out per venue. */
+  readonly "diary.changed": {
+    readonly venueId: string;
+    readonly kind:
+      | "booking.created"
+      | "booking.updated"
+      | "booking.transitioned"
+      | "enquiry.converted";
+    readonly bookingId: string;
+    readonly actorUserId: string | null;
+    readonly at: string;
+  };
 }
 
 export type EventName = keyof EventMap;
@@ -97,6 +110,9 @@ function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void 
       return;
     case "snapshot.created":
       registry["snapshot.created"] = list as Subscriber<"snapshot.created">[];
+      return;
+    case "diary.changed":
+      registry["diary.changed"] = list as Subscriber<"diary.changed">[];
       return;
   }
 }

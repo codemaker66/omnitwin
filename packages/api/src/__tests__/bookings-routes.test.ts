@@ -203,6 +203,82 @@ describe("booking routes — auth and validation boundary", () => {
   });
 });
 
+describe("enquiry→hold conversion (T-496)", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/bookings/from-enquiry",
+      payload: { enquiryId: BOOKING_ID },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("requires the full hygiene quartet at the schema boundary", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/bookings/from-enquiry",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: {
+        enquiryId: "00000000-0000-4000-8000-0000000000e1",
+        startsAt: "2026-09-19T17:00:00.000Z",
+        endsAt: "2026-09-19T23:30:00.000Z",
+        // no decisionAt / ownerUserId / nextAction / nextActionDueAt
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body) as { code: string; details: { path: unknown[] }[] };
+    expect(body.code).toBe("VALIDATION_ERROR");
+    const paths = body.details.flatMap((issue) => issue.path);
+    expect(paths).toContain("decisionAt");
+    expect(paths).toContain("nextAction");
+  });
+
+  it("accepts a hygienic conversion shape before hitting the database", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/bookings/from-enquiry",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: {
+        enquiryId: "00000000-0000-4000-8000-0000000000e1",
+        startsAt: "2026-09-19T17:00:00.000Z",
+        endsAt: "2026-09-19T23:30:00.000Z",
+        rank: 1,
+        decisionAt: "2026-08-01T12:00:00.000Z",
+        ownerUserId: OWNER_ID,
+        nextAction: "Send the welcome pack.",
+        nextActionDueAt: "2026-07-25T09:00:00.000Z",
+      },
+    });
+    expect(res.statusCode).not.toBe(400);
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
+  it("source contract: venue scope from the enquiry, hold kind, provenance link, no enquiry lifecycle change", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    expect(source).toContain("canWriteBookings(request.user, enquiry.venueId)");
+    expect(source).toContain('kind: "hold"');
+    expect(source).toContain("enquiryId: enquiry.id");
+    // Conversion must not touch the enquiry's own state machine.
+    expect(source).not.toContain("update(enquiries)");
+  });
+});
+
+describe("diary.changed emissions (T-497)", () => {
+  it("every mutation publishes AFTER its write succeeds", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const emissions = source.match(/publishDiaryChanged\(/g) ?? [];
+    // Helper definition + create + patch + transition + conversion.
+    expect(emissions.length).toBeGreaterThanOrEqual(5);
+    // The transition emission sits AFTER the transaction block resolves.
+    const txIndex = source.indexOf("db.transaction(async (tx) =>");
+    const transitionEmit = source.indexOf('"booking.transitioned"');
+    expect(transitionEmit).toBeGreaterThan(txIndex);
+    // Fire-and-forget bus, never awaited on the hot path.
+    expect(source).not.toContain("await publishDiaryChanged");
+  });
+});
+
 describe("booking routes — source contract", () => {
   it("maps the exclusion-constraint race to a calm 409 and never a stack trace", async () => {
     const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");

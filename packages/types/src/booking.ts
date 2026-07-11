@@ -128,6 +128,8 @@ export const BookingSchema = z.object({
   seriesId: z.string().uuid().nullable(),
   notes: z.string().max(2000).nullable(),
   createdBy: z.string().uuid().nullable(),
+  /** Conversion provenance (T-496): the enquiry this booking was pencilled from. */
+  enquiryId: z.string().uuid().nullable(),
   createdAt: IsoInstantSchema,
   updatedAt: IsoInstantSchema,
 });
@@ -237,6 +239,39 @@ export const TransitionBookingSchema = z.object({
   note: z.string().max(2000).optional(),
 });
 export type TransitionBookingInput = z.infer<typeof TransitionBookingSchema>;
+
+/**
+ * Enquiry→hold conversion (T-496; Canon §12 P0). Always creates a HOLD, so
+ * the hygiene quartet is required at the schema level — no pencil without a
+ * decision date, an owner, and a dated next action. spaceId/title/eventType
+ * default from the enquiry server-side when omitted.
+ */
+export const ConvertEnquirySchema = z
+  .object({
+    enquiryId: z.string().uuid(),
+    spaceId: z.string().uuid().optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    eventType: z.string().trim().min(1).max(80).optional(),
+    startsAt: IsoInstantSchema,
+    endsAt: IsoInstantSchema,
+    rank: z.number().int().min(1).optional(),
+    jointFlag: z.boolean().optional(),
+    decisionAt: IsoInstantSchema,
+    ownerUserId: z.string().uuid(),
+    nextAction: z.string().trim().min(1).max(500),
+    nextActionDueAt: IsoInstantSchema,
+    notes: z.string().max(2000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (Date.parse(value.endsAt) <= Date.parse(value.startsAt)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endsAt"],
+        message: "endsAt must be after startsAt — a booking occupies a real interval.",
+      });
+    }
+  });
+export type ConvertEnquiryInput = z.infer<typeof ConvertEnquirySchema>;
 
 // ---------------------------------------------------------------------------
 // Turnaround rules — minimal v0 (per space + event type, minutes), shaped

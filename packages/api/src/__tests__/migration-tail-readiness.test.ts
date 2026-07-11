@@ -83,6 +83,7 @@ const EXPECTED_TAIL = [
   "0048_event_architect_ops_reviews",
   "0049_reconstruction_foundry",
   "0050_diary_bookings",
+  "0051_diary_enquiry_link",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {

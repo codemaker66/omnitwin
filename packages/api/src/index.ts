@@ -52,6 +52,7 @@ import {
 } from "./routes/reconstruction-foundry.js";
 import { createReconstructionFoundryService } from "./services/reconstruction-foundry-integrations.js";
 import { registerAutoSave } from "./ws/auto-save.js";
+import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
@@ -380,6 +381,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(async (websocketScope) => {
     await websocketScope.register(websocket);
     await registerAutoSave(websocketScope, db);
+    await registerDiaryLive(websocketScope, db);
   });
 
   // Register default event-bus subscribers (structured-logging /

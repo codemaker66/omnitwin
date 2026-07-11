@@ -56,12 +56,28 @@ async function readDiaryMigration(): Promise<string> {
 describe("diary schema contract", () => {
   it("keeps migration 0050 table columns identical to the Drizzle diary schema", async () => {
     const sql = await readDiaryMigration();
-    for (const table of [bookings, bookingStatusHistory, turnaroundRules]) {
+    // bookings gained enquiry_id via the additive 0051 ALTER (Slice 3) —
+    // physical column order is 0050's CREATE followed by 0051's addition.
+    expect(drizzleColumnNames(bookings)).toEqual([
+      ...extractCreatedTableColumns(sql, getTableName(bookings)),
+      "enquiry_id",
+    ]);
+    for (const table of [bookingStatusHistory, turnaroundRules]) {
       const tableName = getTableName(table);
       expect(extractCreatedTableColumns(sql, tableName), tableName).toEqual(
         drizzleColumnNames(table),
       );
     }
+  });
+
+  it("migration 0051 adds the enquiry provenance link additively (T-496)", async () => {
+    const sql = await readFile(resolve("drizzle", "0051_diary_enquiry_link.sql"), "utf8");
+    expect(sql).toContain('ALTER TABLE "bookings"');
+    expect(sql).toContain('ADD COLUMN IF NOT EXISTS "enquiry_id"');
+    expect(sql).toContain('REFERENCES "enquiries"("id") ON DELETE SET NULL');
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "bookings_enquiry_idx"');
+    expect(sql).not.toMatch(/\b(?:DROP|RENAME)\b/iu);
+    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/iu);
   });
 
   it("enforces the ink hard floor: btree_gist + partial exclusion constraint", async () => {
