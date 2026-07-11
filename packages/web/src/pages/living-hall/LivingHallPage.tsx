@@ -9,6 +9,7 @@ import {
   strokesToInkGeometry,
   type DressingEventType,
 } from "./gold-ink.js";
+import { hasYourTable } from "./turn.js";
 import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
 import {
   CAPACITY_FORMATS,
@@ -22,7 +23,6 @@ import {
   FOOTER_EMAIL,
   FOOTER_PHONE_DISPLAY,
   FOOTER_PHONE_HREF,
-  RETURN_CTA_HREF,
   enquiryMailtoHref,
 } from "../landing/rite-copy.js";
 import {
@@ -32,8 +32,11 @@ import {
   LH_CAPTURE_RECORD_LINES,
   LH_CAPTURE_RECORD_TITLE,
   LH_CHECK_DATE_LABEL,
+  LH_CTA_CONTINUE_LABEL,
+  LH_CTA_PLANNER_HREF,
   LH_CTA_PLANNER_LABEL,
   LH_CTA_TEAM_LABEL,
+  LH_ENQUIRY_DRAFT_NOTE,
   LH_ENQUIRE_LABEL,
   LH_EVENT_CHOICE_LEGEND,
   LH_EVENT_TYPES,
@@ -132,8 +135,14 @@ export function LivingHallPage(): ReactElement {
   const sandboxButtonRef = useRef<HTMLButtonElement | null>(null);
   const [sceneFailed, setSceneFailed] = useState(false);
 
+  // The adaptive threshold: a visitor who has placed their table gets the
+  // planner as the primary door; a skimmer gets the events team. Engagement
+  // is re-read when the sandbox closes — the moment ownership was exercised.
+  const [engaged, setEngaged] = useState(() => hasYourTable());
+
   const exitSandbox = useCallback(() => {
     setSandboxActive(false);
+    setEngaged(hasYourTable());
     sandboxButtonRef.current?.focus();
   }, []);
 
@@ -305,13 +314,29 @@ export function LivingHallPage(): ReactElement {
                 <p className="lh-provenance">{VENUE_TRUTH_PROVENANCE.pricing}</p>
 
                 <div className="lh-threshold">
-                  <Link className="lh-cta" to={RETURN_CTA_HREF}>
-                    {LH_CTA_PLANNER_LABEL} <span aria-hidden>→</span>
-                  </Link>
-                  <a className="lh-cta-quiet" href={FOOTER_PHONE_HREF}>
-                    {LH_CTA_TEAM_LABEL} · {FOOTER_PHONE_DISPLAY}
-                  </a>
-                  <a className="lh-cta-quiet" href={enquiryMailtoHref()}>
+                  {engaged ? (
+                    <>
+                      <Link className="lh-cta" to={LH_CTA_PLANNER_HREF}>
+                        {LH_CTA_CONTINUE_LABEL} <span aria-hidden>→</span>
+                      </Link>
+                      <a className="lh-cta-quiet" href={FOOTER_PHONE_HREF}>
+                        {LH_CTA_TEAM_LABEL} · {FOOTER_PHONE_DISPLAY}
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <a className="lh-cta" href={FOOTER_PHONE_HREF}>
+                        {LH_CTA_TEAM_LABEL} <span aria-hidden>→</span>
+                      </a>
+                      <Link className="lh-cta-quiet" to={LH_CTA_PLANNER_HREF}>
+                        {LH_CTA_PLANNER_LABEL}
+                      </Link>
+                    </>
+                  )}
+                  <a
+                    className="lh-cta-quiet"
+                    href={enquiryMailtoHref(undefined, engaged ? LH_ENQUIRY_DRAFT_NOTE : undefined)}
+                  >
                     {FOOTER_EMAIL}
                   </a>
                 </div>

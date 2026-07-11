@@ -71,6 +71,12 @@ export function saveYourTable(position: YourTablePosition, room = "reception-roo
   }
 }
 
+/** Has the visitor made the room theirs? Drives the adaptive threshold:
+ *  engaged visitors get the planner as the primary door. */
+export function hasYourTable(room = "reception-room"): boolean {
+  return loadYourTable(room) !== null;
+}
+
 export function loadYourTable(room = "reception-room"): YourTablePosition | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
