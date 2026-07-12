@@ -35,4 +35,26 @@ describe("PlannerCockpit", () => {
     fireEvent.click(screen.getByRole("button", { name: /flow/i }));
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-cockpit-mode")).toBe("flow");
   });
+
+  // CARD A2: the stage exposes the resolve phase as an honesty attribute and
+  // hosts the quiet caption while the captured room develops. No spinner.
+  it("exposes the resolve phase on the stage and shows the quiet caption while developing", () => {
+    useCockpitStore.getState().setRoomResolve({ phase: "developing", loadedChunks: 2, totalChunks: 7 });
+    const { container } = render(<PlannerCockpit />);
+
+    expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("developing");
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.textContent).toContain("Loading captured room");
+    expect(caption.textContent).toContain("2 of 7 chunks");
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it("keeps the caption hidden outside the developing phase", () => {
+    useCockpitStore.getState().setRoomResolve({ phase: "fallback", loadedChunks: 0, totalChunks: 0 });
+    const { container } = render(<PlannerCockpit />);
+
+    expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("fallback");
+    expect(screen.getByTestId("room-resolve-caption").getAttribute("data-visible")).toBe("false");
+  });
 });

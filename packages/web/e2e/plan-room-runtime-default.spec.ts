@@ -1,8 +1,13 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
-
-const API = "http://localhost:3001";
-const CONFIG_ID = "e2e-a1-config-001";
-const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
+import {
+  API,
+  ATELIER_FALLBACK_COPY,
+  LOADED_EVIDENCE_COPY,
+  RECEPTION_SOG_CHUNKS,
+  receptionRuntimePackage,
+  settleCockpit,
+  stubPlannerBootstrap,
+} from "./support/plan-bootstrap.js";
 
 // ---------------------------------------------------------------------------
 // E2E: CARD A1 (G1a) — Reception Room runtime default-on
@@ -15,166 +20,37 @@ const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
 //   - package endpoint 404s → atelier fallback (procedural clay + ink room)
 //     with the designed fallback copy. Never a blank canvas.
 //
-// The API is fully stubbed (page.route) so this spec needs no live backend;
-// the splat bytes are the real captured SOG chunks served by Vite.
+// The API is fully stubbed (e2e/support/plan-bootstrap.ts) so this spec needs
+// no live backend; the splat bytes are the real captured SOG chunks.
 // ---------------------------------------------------------------------------
 
-const VENUE = {
-  id: "e2e-venue-trades",
-  name: "Trades Hall",
-  slug: "trades-hall-glasgow",
-  address: "85 Glassford Street",
-  logoUrl: null,
-  brandColour: null,
-} as const;
-
-const GRAND_HALL_SPACE = {
-  id: "e2e-space-grand",
-  venueId: VENUE.id,
-  name: "Grand Hall",
-  slug: "grand-hall",
-  widthM: "21",
-  lengthM: "10.5",
-  heightM: "7",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
-} as const;
-
-const RECEPTION_ROOM_SPACE = {
-  id: "e2e-space-reception",
-  venueId: VENUE.id,
-  name: "Reception Room",
-  slug: "reception-room",
-  widthM: "13.4",
-  lengthM: "11.2",
-  heightM: "3.2",
-  floorPlanOutline: [{ x: 0, y: 0 }, { x: 13.4, y: 0 }, { x: 13.4, y: 11.2 }, { x: 0, y: 11.2 }],
-} as const;
-
-const PLAN_CONFIG = {
-  id: CONFIG_ID,
-  spaceId: RECEPTION_ROOM_SPACE.id,
-  venueId: VENUE.id,
-  userId: null,
-  name: "New Layout",
-  isPublicPreview: true,
-  revision: 1,
-  objects: [],
-} as const;
-
-// The real captured Reception Room runtime chunks (63 MB total) shipped in
-// public/splats/reception/. env.sog is the environment shell, not the room.
-const RECEPTION_SOG_CHUNKS = [
-  "0_0.sog",
-  "0_1_0.sog",
-  "0_1_0_5.sog",
-  "0_6_0_0.sog",
-  "0_7_0_0.sog",
-  "0_15_0_0.sog",
-  "0_20_0.sog",
-] as const;
-
-const ATELIER_FALLBACK_COPY =
-  "Captured visual layer not yet available — planning on reviewed geometry";
-const LOADED_EVIDENCE_COPY = "Runtime asset loaded, not yet verified/signed.";
-
-function receptionRuntimePackage(origin: string): Record<string, unknown> {
-  const chunkUrls = RECEPTION_SOG_CHUNKS.map((chunk) => `${origin}/splats/reception/${chunk}`);
-  return {
-    id: "e2e-runtime-package-reception",
-    venueSlug: "trades-hall",
-    roomSlug: "reception-room",
-    primaryVisualAssetVersionId: ASSET_VERSION_ID,
-    semanticMeshAssetVersionId: null,
-    collisionAssetVersionId: null,
-    pointCloudAssetVersionId: null,
-    manifestJson: {
-      schemaVersion: "venviewer.runtime-package.v1",
-      venueSlug: "trades-hall",
-      roomSlug: "reception-room",
-      packageType: "room-runtime",
-      assets: {
-        primaryVisualAssetVersionId: ASSET_VERSION_ID,
-        semanticMeshAssetVersionId: null,
-        collisionAssetVersionId: null,
-        pointCloudAssetVersionId: null,
-      },
-    },
-    evidenceStatus: "unverified",
-    runtimeStatus: "internal_ready",
-    createdAt: "2026-07-09T22:56:00.000Z",
-    updatedAt: "2026-07-09T22:56:00.000Z",
-    primaryVisualAssetUrl: chunkUrls[0],
-    visualAssetUrls: chunkUrls,
-    primaryVisualAssetVersion: {
-      id: ASSET_VERSION_ID,
-      venueSlug: "trades-hall",
-      roomSlug: "reception-room",
-      captureSessionId: null,
-      assetKind: "splat",
-      sourceType: "xgrids",
-      fileName: "0_0.sog",
-      fileExt: ".sog",
-      r2Key: "venues/trades-hall/rooms/reception-room/xgrids/0_0.sog",
-      externalUrl: null,
-      mimeType: "application/octet-stream",
-      sha256: "a".repeat(64),
-      sizeBytes: 9017864,
-      evidenceStatus: "unverified",
-      runtimeStatus: "usable",
-      notes: null,
-      createdAt: "2026-07-09T22:56:00.000Z",
-      updatedAt: "2026-07-09T22:56:00.000Z",
-    },
-  };
-}
-
-async function stubPlannerBootstrap(page: Page): Promise<void> {
-  await page.route(`${API}/venues`, (route) => {
-    void route.fulfill({ json: { data: [VENUE] } });
-  });
-  await page.route(`${API}/venues/${VENUE.id}/spaces`, (route) => {
-    void route.fulfill({ json: { data: [GRAND_HALL_SPACE, RECEPTION_ROOM_SPACE] } });
-  });
-  await page.route(`${API}/public/configurations`, (route) => {
-    void route.fulfill({ json: { data: PLAN_CONFIG } });
-  });
-  await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
-    void route.fulfill({ json: { data: PLAN_CONFIG } });
-  });
-  await page.route(`${API}/venues/${VENUE.id}/spaces/${RECEPTION_ROOM_SPACE.id}`, (route) => {
-    void route.fulfill({ json: { data: RECEPTION_ROOM_SPACE } });
-  });
-  await page.route(`${API}/truth-mode/summary*`, (route) => {
-    void route.fulfill({
-      json: {
-        data: {
-          targetType: "configuration",
-          targetId: CONFIG_ID,
-          source: "Planning context - not a measured source of record",
-          confidence: "unknown",
-          assumption: "Human review required before reliance",
-          evidenceStatus: "not_checked",
-          reviewGate: "Human review required",
-          staleState: "unknown",
-          safeWording: ["Planning evidence - human review required before operational reliance."],
-          humanReviewRequired: true,
-          counts: { evidenceItems: 0, checkResults: 0, assumptions: 0, reviewGates: 0, staleEvents: 0 },
-        },
-      },
-    });
-  });
-}
+// The loaded case streams + decodes the full 63 MB chunk set; keep this file
+// serial so concurrent WebGL workers don't starve the renderer (same policy
+// as public-config-flow.spec.ts).
+test.describe.configure({ mode: "serial" });
 
 async function attachCardScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  await settleCockpit(page);
   const path = testInfo.outputPath(name);
-  const screenshot = await page.screenshot({ path, fullPage: false });
+  let screenshot = await page.screenshot({ path, fullPage: false });
+  if (screenshot.byteLength <= 15_000) {
+    // A blank frame means the capture raced the recovery remount — settle
+    // once more and reshoot; a persistently blank page still fails below.
+    await settleCockpit(page);
+    await page.waitForTimeout(1_000);
+    screenshot = await page.screenshot({ path, fullPage: false });
+  }
   expect(screenshot.byteLength).toBeGreaterThan(15_000);
   await testInfo.attach(name, { body: screenshot, contentType: "image/png" });
 }
 
 async function attachCanvasScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  // No settle/evaluate here: the preceding full-page capture's ReadPixels can
+  // stall this GPU's driver for tens of seconds with 2M splats loaded, and
+  // any injected JS (evaluate, attribute polls) hangs behind that GL call.
+  // The locator's own long actionability timeout rides out the stall instead.
   const path = testInfo.outputPath(name);
-  const screenshot = await page.locator("canvas").screenshot({ path });
+  const screenshot = await page.locator("canvas").first().screenshot({ path, timeout: 120_000 });
   expect(screenshot.byteLength).toBeGreaterThan(10_000);
   await testInfo.attach(name, { body: screenshot, contentType: "image/png" });
 }
@@ -200,7 +76,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     const runtimeChip = page.getByTestId("cockpit-runtime-chip");
     await expect(runtimeChip).toBeVisible();
     await expect(runtimeChip).toContainText(ATELIER_FALLBACK_COPY);
-    await expect(page.locator("canvas")).toBeVisible();
+    await expect(page.locator("canvas").first()).toBeVisible();
     const interactiveMs = Date.now() - startedAt;
 
     // 01 §17/§21.1 budget is < 1.5 s on the reference laptop with cached
@@ -220,7 +96,10 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
   });
 
   test("loaded: runtime package resolves → real captured chunks stream with the evidence chip", async ({ page, baseURL }, testInfo) => {
-    test.setTimeout(180_000);
+    // Worst honest case on a stalling GPU: 120 s chunk poll + decode + a
+    // ReadPixels-stalled capture. 300 s keeps the budget above the sum of
+    // the step timeouts instead of racing them.
+    test.setTimeout(300_000);
     const origin = baseURL ?? "http://localhost:5173";
     const sogResponses = new Set<string>();
     page.on("response", (response) => {
@@ -255,9 +134,13 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     // Give Spark a settle window to decode + paint the streamed gaussians
     // before capturing evidence (frameloop is demand-driven).
     await page.waitForTimeout(6_000);
-    await expect(page.locator("canvas")).toBeVisible();
+    await expect(page.locator("canvas").first()).toBeVisible();
 
+    // The card's evidence is the full-page loaded room + visible chip. A
+    // second canvas-only readback here is deliberately omitted: with 2M
+    // splats resident, back-to-back ReadPixels can kill this GPU's WebGL
+    // context (driver: "GPU stall due to ReadPixels — High"). The loaded
+    // canvas visuals are covered by plan-room-resolve.spec.ts's stage shots.
     await attachCardScreenshot(page, testInfo, "card-a1-loaded-room.png");
-    await attachCanvasScreenshot(page, testInfo, "card-a1-loaded-room-canvas.png");
   });
 });

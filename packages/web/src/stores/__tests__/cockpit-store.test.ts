@@ -47,6 +47,23 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Captured visual layer loaded / not yet signed");
   });
 
+  it("defaults roomResolve to the ink phase with no chunks", () => {
+    expect(useCockpitStore.getState().roomResolve).toEqual({
+      phase: "ink",
+      loadedChunks: 0,
+      totalChunks: 0,
+    });
+  });
+
+  it("setRoomResolve records the resolve choreography state", () => {
+    useCockpitStore.getState().setRoomResolve({ phase: "developing", loadedChunks: 3, totalChunks: 7 });
+    expect(useCockpitStore.getState().roomResolve).toEqual({
+      phase: "developing",
+      loadedChunks: 3,
+      totalChunks: 7,
+    });
+  });
+
   it("toggleLayers flips the layers menu open state", () => {
     expect(useCockpitStore.getState().layersOpen).toBe(false);
     useCockpitStore.getState().toggleLayers();
@@ -93,6 +110,7 @@ describe("cockpit-store", () => {
     api.toggleOverlay("guestFlow");
     api.selectPhase("ceremony");
     api.setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
+    api.setRoomResolve({ phase: "resolved", loadedChunks: 7, totalChunks: 7 });
     api.toggleLayers();
     api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
     api.requestFocus(1, 1);
@@ -108,6 +126,7 @@ describe("cockpit-store", () => {
     expect(s.runtimeAssetStatus).toBe(
       "Captured visual layer not yet available — planning on reviewed geometry",
     );
+    expect(s.roomResolve).toEqual({ phase: "ink", loadedChunks: 0, totalChunks: 0 });
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();

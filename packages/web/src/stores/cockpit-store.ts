@@ -6,6 +6,7 @@ import {
   type CockpitOverlayKey,
 } from "../lib/cockpit-modes.js";
 import { CAPTURED_LAYER_FALLBACK_STATUS } from "../lib/runtime-package-resolution.js";
+import type { RoomResolvePhase } from "../lib/room-resolve-model.js";
 
 type OverlayVisibility = Record<CockpitOverlayKey, boolean>;
 
@@ -38,12 +39,27 @@ export interface CockpitFocusRequest {
   readonly nonce: number;
 }
 
+/** The room-resolve choreography (CARD A2): written by the canvas as chunks
+ *  stream, read by the quiet caption and the stage's honesty attribute. */
+export interface CockpitRoomResolve {
+  readonly phase: RoomResolvePhase;
+  readonly loadedChunks: number;
+  readonly totalChunks: number;
+}
+
+const DEFAULT_ROOM_RESOLVE: CockpitRoomResolve = {
+  phase: "ink",
+  loadedChunks: 0,
+  totalChunks: 0,
+};
+
 interface CockpitState {
   readonly activeMode: CockpitMode;
   readonly layerMode: CockpitLayerMode;
   readonly overlayVisibility: OverlayVisibility;
   readonly selectedPhaseId: string | null;
   readonly runtimeAssetStatus: string;
+  readonly roomResolve: CockpitRoomResolve;
   readonly layersOpen: boolean;
   readonly beam: CockpitBeam | null;
   readonly focusRequest: CockpitFocusRequest | null;
@@ -60,6 +76,7 @@ interface CockpitState {
   readonly setPlannedGuestCount: (count: number | null) => void;
   readonly setFlowArrivalMinutes: (minutes: number) => void;
   readonly setRuntimeAssetStatus: (status: string) => void;
+  readonly setRoomResolve: (resolve: CockpitRoomResolve) => void;
   readonly toggleLayers: () => void;
   readonly setLayersOpen: (open: boolean) => void;
   readonly setBeam: (beam: CockpitBeam | null) => void;
@@ -75,6 +92,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   overlayVisibility: allOverlaysOn(),
   selectedPhaseId: null,
   runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
+  roomResolve: DEFAULT_ROOM_RESOLVE,
   layersOpen: false,
   beam: null,
   focusRequest: null,
@@ -97,6 +115,15 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   setPlannedGuestCount: (count) => { set({ plannedGuestCount: count }); },
   setFlowArrivalMinutes: (minutes) => { set({ flowArrivalMinutes: minutes }); },
   setRuntimeAssetStatus: (status) => { set({ runtimeAssetStatus: status }); },
+  setRoomResolve: (resolve) => {
+    set((state) => (
+      state.roomResolve.phase === resolve.phase
+        && state.roomResolve.loadedChunks === resolve.loadedChunks
+        && state.roomResolve.totalChunks === resolve.totalChunks
+        ? state
+        : { roomResolve: resolve }
+    ));
+  },
   toggleLayers: () => { set((state) => ({ layersOpen: !state.layersOpen })); },
   setLayersOpen: (open) => { set({ layersOpen: open }); },
   setBeam: (beam) => { set({ beam }); },
@@ -114,6 +141,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
       overlayVisibility: allOverlaysOn(),
       selectedPhaseId: null,
       runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
+      roomResolve: DEFAULT_ROOM_RESOLVE,
       layersOpen: false,
       beam: null,
       focusRequest: null,

@@ -25,9 +25,12 @@ import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
+import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
 import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-policy.js";
+import { inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
+import { InkArchitectureLayer } from "./InkArchitectureLayer.js";
 import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
@@ -190,16 +193,39 @@ export function PlannerScene(): ReactElement {
   const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
-  const roomGeometry = space !== null ? resolveRoomGeometry(space) : null;
+  // Memoized like useRoomDimensions above: the generic floorPlanOutline path
+  // allocates a fresh wallPolygon per call, and this component re-renders on
+  // every chunk arrival — an unmemoized call would thrash the ink layer's
+  // geometry memo during the develop window (reviewer MEDIUM finding).
+  const roomGeometry = useMemo(
+    () => (space !== null ? resolveRoomGeometry(space) : null),
+    [space],
+  );
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
   // Mesh ↔ Splat ↔ Hybrid: the procedural room stays visible unless a measured
   // splat is mounted AND the user has switched to pure Splat. The splat fades
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, transform, hasAsset } = useRoomRuntimeSplat();
+  const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
   const meshVisible = !hasAsset || layerMode !== "splat";
   const splatActive = hasAsset && layerMode !== "mesh";
+
+  // CARD A2 — "the room resolves": count chunk arrivals, derive the resolve
+  // phase, and publish it for the quiet caption + the stage's honesty
+  // attribute. The arrival set resets when the room's chunk list changes
+  // (the hook rebuilds the array each render, so key on its joined value).
+  const arrivals = useChunkArrivals(splatUrls.join("|"));
+  const totalChunks = splatUrls.length;
+  const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
+  const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
+  const resolvePhase = roomResolvePhase({ splatStatus, hasAsset, totalChunks, loadedChunks, failedChunks });
+  useEffect(() => {
+    useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
+  }, [loadedChunks, resolvePhase, totalChunks]);
+  // Ink recedes only where captured chunks actually arrived — it honestly
+  // persists over any region whose chunk failed.
+  const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
 
@@ -259,8 +285,21 @@ export function PlannerScene(): ReactElement {
               <GrandHallRoom />
             </>
           ))}
+          {roomGeometry !== null && (
+            <InkArchitectureLayer
+              polygon={roomGeometry.wallPolygon}
+              ceilingHeightM={roomGeometry.ceilingHeight}
+              targetOpacity={inkOpacity}
+            />
+          )}
           {hasAsset && (
-            <CockpitSplatLayer urls={splatUrls} transform={transform} active={splatActive} />
+            <CockpitSplatLayer
+              urls={splatUrls}
+              transform={transform}
+              active={splatActive}
+              onChunkLoaded={arrivals.markLoaded}
+              onChunkFailed={arrivals.markFailed}
+            />
           )}
           <CockpitCameraFocus />
           <CockpitPlanningCamera />

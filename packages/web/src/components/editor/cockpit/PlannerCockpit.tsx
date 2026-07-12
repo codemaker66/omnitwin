@@ -6,6 +6,7 @@ import { CockpitRightDock } from "./CockpitRightDock.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
+import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -24,12 +25,19 @@ import "./PlannerCockpit.css";
  */
 export function PlannerCockpit(): ReactElement {
   const activeMode = useCockpitStore((s) => s.activeMode);
+  const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
   return (
     <div className="cockpit-shell" data-testid="cockpit-shell">
       <CockpitTopBar />
       <CockpitNavRail />
-      <section className="cockpit-stage" data-cockpit-mode={activeMode} aria-label="Planner scene">
+      <section
+        className="cockpit-stage"
+        data-cockpit-mode={activeMode}
+        data-resolve-phase={resolvePhase}
+        aria-label="Planner scene"
+      >
         <Editor3D />
+        <RoomResolveCaption />
         <CanvasLayerControls />
         <CockpitMinimap />
       </section>
