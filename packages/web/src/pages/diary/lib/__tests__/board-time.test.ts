@@ -152,3 +152,26 @@ describe("wall-clock labels and columns", () => {
     expect(rangeTitle(day)).toContain("19 Sep");
   });
 });
+
+describe("datetime-local wall inputs (the drawer)", () => {
+  it("round-trips BST and GMT wall times through instants", async () => {
+    const { wallInputToMs, msToWallInput } = await import("../board-time.js");
+    const summer = wallInputToMs("2026-09-19T18:00");
+    expect(summer).toBe(Date.parse("2026-09-19T17:00:00.000Z")); // BST = UTC+1
+    expect(msToWallInput(summer ?? 0)).toBe("2026-09-19T18:00");
+
+    const winter = wallInputToMs("2026-01-15T18:00");
+    expect(winter).toBe(Date.parse("2026-01-15T18:00:00.000Z")); // GMT = UTC
+    expect(msToWallInput(winter ?? 0)).toBe("2026-01-15T18:00");
+  });
+
+  it("rejects malformed input and maps gap times to a real instant", async () => {
+    const { wallInputToMs, msToWallInput } = await import("../board-time.js");
+    expect(wallInputToMs("not-a-time")).toBeNull();
+    // 01:30 on 29 Mar 2026 never exists on London walls — the helper still
+    // yields a real instant, and rendering it back shows the user the truth.
+    const gap = wallInputToMs("2026-03-29T01:30");
+    expect(gap).not.toBeNull();
+    expect(msToWallInput(gap ?? 0)).toMatch(/^2026-03-29T0[02]:30$/);
+  });
+});

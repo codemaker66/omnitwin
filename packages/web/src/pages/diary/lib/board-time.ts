@@ -89,19 +89,47 @@ function zoneOffsetMs(ms: number, timeZone: string): number {
   return wallAsUtc - ms;
 }
 
-/** The instant at which the given wall-clock midnight occurs in the zone.
- *  Converges in two steps; DST-fold ambiguity resolves to the later offset,
- *  which is irrelevant for the midnights this module asks for (London never
- *  shifts at midnight). */
+/** The instant at which the given wall-clock time occurs in the zone.
+ *  Converges in two steps. DST-fold times resolve deterministically (later
+ *  offset); times inside the spring-forward gap map to a nearby real
+ *  instant — the drawer round-trips the result back into the input so the
+ *  user always sees what will actually be stored. */
 function instantForWall(
   year: number,
   month: number,
   day: number,
   timeZone: string,
+  hour = 0,
+  minute = 0,
 ): number {
-  const wallAsUtc = Date.UTC(year, month - 1, day);
+  const wallAsUtc = Date.UTC(year, month - 1, day, hour, minute);
   const firstGuess = wallAsUtc - zoneOffsetMs(wallAsUtc, timeZone);
   return wallAsUtc - zoneOffsetMs(firstGuess, timeZone);
+}
+
+const WALL_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+/** Parse a `datetime-local` value as venue wall time → instant ms.
+ *  Returns null for malformed input. */
+export function wallInputToMs(input: string, timeZone: string = VENUE_TIME_ZONE): number | null {
+  const match = WALL_INPUT_PATTERN.exec(input);
+  if (match === null) return null;
+  const [, year, month, day, hour, minute] = match;
+  return instantForWall(
+    Number(year),
+    Number(month),
+    Number(day),
+    timeZone,
+    Number(hour),
+    Number(minute),
+  );
+}
+
+/** Render an instant as a `datetime-local` value in venue wall time. */
+export function msToWallInput(ms: number, timeZone: string = VENUE_TIME_ZONE): string {
+  const wall = wallParts(ms, timeZone);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${String(wall.year)}-${pad(wall.month)}-${pad(wall.day)}T${pad(wall.hour)}:${pad(wall.minute)}`;
 }
 
 function localMidnight(ms: number, timeZone: string): number {

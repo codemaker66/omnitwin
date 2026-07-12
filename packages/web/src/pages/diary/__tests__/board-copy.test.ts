@@ -10,11 +10,20 @@ import { BOARD_COPY } from "../board-copy.js";
 function allStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (typeof value === "function") {
-    // Copy functions take a single label/count argument.
-    const fn = value as (arg: never) => string;
-    return [fn("Sample" as never), fn(2 as never)].filter(
-      (result): result is string => typeof result === "string",
-    );
+    // Copy functions take a label, a count, or a list — sweep every shape
+    // that produces a string and skip the ones that do not fit.
+    const fn = value as (...args: never[]) => string;
+    const attempts: readonly unknown[][] = [["Sample"], [2], [["Sample", "Names"]], ["Sample", 2]];
+    const results: string[] = [];
+    for (const args of attempts) {
+      try {
+        const out = fn(...(args as never[]));
+        if (typeof out === "string") results.push(out);
+      } catch {
+        // Signature mismatch — try the next shape.
+      }
+    }
+    return results;
   }
   if (typeof value === "object" && value !== null) {
     return Object.values(value).flatMap(allStrings);

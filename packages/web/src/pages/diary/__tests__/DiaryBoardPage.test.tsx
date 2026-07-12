@@ -11,14 +11,42 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // and the error/retry path — against a mocked diary API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock, moveBookingMock } = vi.hoisted(() => ({
+const {
+  getCalendarMock,
+  moveBookingMock,
+  createBookingMock,
+  updateBookingMock,
+  transitionBookingMock,
+  convertEnquiryMock,
+  listEnquiriesMock,
+} = vi.hoisted(() => ({
   getCalendarMock: vi.fn(),
   moveBookingMock: vi.fn(),
+  createBookingMock: vi.fn(),
+  updateBookingMock: vi.fn(),
+  transitionBookingMock: vi.fn(),
+  convertEnquiryMock: vi.fn(),
+  listEnquiriesMock: vi.fn(),
 }));
 
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
   moveBooking: moveBookingMock,
+  createBooking: createBookingMock,
+  updateBooking: updateBookingMock,
+  transitionBooking: transitionBookingMock,
+  convertEnquiry: convertEnquiryMock,
+}));
+
+vi.mock("../../../api/enquiries.js", () => ({
+  listEnquiries: listEnquiriesMock,
+}));
+
+vi.mock("../hooks/useDiaryLive.js", () => ({
+  useDiaryLive: () => ({
+    connected: true,
+    presence: [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }],
+  }),
 }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
@@ -129,6 +157,27 @@ function renderPage(): ReturnType<typeof render> {
 
 beforeEach(() => {
   getCalendarMock.mockResolvedValue(fixture());
+  listEnquiriesMock.mockResolvedValue([
+    {
+      id: "00000000-0000-4000-8000-0000000000e1",
+      venueId: VENUE,
+      spaceId: GRAND_HALL,
+      configurationId: null,
+      userId: null,
+      guestEmail: null,
+      guestPhone: null,
+      guestName: "Fiona MacLeod",
+      state: "submitted",
+      name: "Fiona MacLeod",
+      email: "fiona@example.com",
+      preferredDate: "2026-09-19",
+      eventType: "wedding",
+      estimatedGuests: 120,
+      message: null,
+      createdAt: "2026-07-01T09:00:00.000Z",
+      updatedAt: "2026-07-01T09:00:00.000Z",
+    },
+  ]);
   setUser("staff");
 });
 
@@ -185,13 +234,13 @@ describe("DiaryBoardPage", () => {
     expect(getCalendarMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keyboard-moves a pencil and PATCHes the snapped window (review P2 coverage)", async () => {
+  it("keyboard-moves a pencil with Space and PATCHes the snapped window (review P2 coverage)", async () => {
     moveBookingMock.mockResolvedValue({});
     renderPage();
     const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
-    fireEvent.keyDown(block, { key: "Enter" }); // lift
+    fireEvent.keyDown(block, { key: " " }); // lift (Space; Enter opens the drawer)
     fireEvent.keyDown(block, { key: "ArrowRight" }); // +15 minutes
-    fireEvent.keyDown(block, { key: "Enter" }); // drop → commit
+    fireEvent.keyDown(block, { key: " " }); // drop → commit
     // The page PATCHes the full snapshot (undo symmetry); the API treats an
     // unchanged spaceId as a no-op.
     expect(moveBookingMock).toHaveBeenCalledWith(HOLD_ID, {
@@ -207,10 +256,37 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockRejectedValue(new Error("boom"));
     renderPage();
     const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
-    fireEvent.keyDown(block, { key: "Enter" });
+    fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });
-    fireEvent.keyDown(block, { key: "Enter" });
+    fireEvent.keyDown(block, { key: " " });
     expect(await screen.findByText(/could not be saved/)).toBeDefined();
+  });
+
+  it("Enter opens the booking drawer prefilled from the block (T-495)", async () => {
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: "Enter" });
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    expect(drawer).toBeDefined();
+    expect(screen.getByDisplayValue("MacLeod wedding")).toBeDefined();
+    // The pencil's lifecycle actions come from the shared matrix.
+    expect(screen.getByRole("button", { name: "Ink it" })).toBeDefined();
+  });
+
+  it("converts an open enquiry through the drawer (T-496)", async () => {
+    convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — wedding" });
+    renderPage();
+    const convert = await screen.findByRole("button", { name: "Pencil in…" });
+    convert.click();
+    const drawer = await screen.findByRole("dialog", { name: "Pencil in this enquiry" });
+    expect(drawer).toBeDefined();
+    expect(screen.getByDisplayValue("Fiona MacLeod — wedding")).toBeDefined();
+    expect(screen.getByText(/enquiry itself stays where it is/)).toBeDefined();
+  });
+
+  it("shows the live presence chip from the channel (T-497)", async () => {
+    renderPage();
+    expect(await screen.findByText(/Live · 1/)).toBeDefined();
   });
 
   it("tells an unassigned account that it has no venue", () => {

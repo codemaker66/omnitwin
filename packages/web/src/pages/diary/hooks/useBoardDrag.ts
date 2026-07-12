@@ -39,6 +39,8 @@ export interface BoardDragArgs {
   readonly writable: boolean;
   readonly onCommit: (payload: CommitPayload) => void;
   readonly onRejected: () => void;
+  /** Enter on an idle block opens it (the drawer); Space lifts for drag. */
+  readonly onOpenBlock?: (blockId: string) => void;
 }
 
 export interface BlockDragHandlers {
@@ -167,8 +169,13 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         const current = stateRef.current;
         const isMine = current.phase !== "idle" && current.context.blockId === block.id;
         if (current.phase === "idle") {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            args.onOpenBlock?.(block.id);
+            return;
+          }
           if (!args.writable) return;
-          if (event.key === "Enter" || event.key === " ") {
+          if (event.key === " ") {
             event.preventDefault();
             setState(
               beginDrag({
@@ -212,7 +219,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         }
       },
     }),
-    [args.writable, args.pxPerHour, envFor, settle],
+    [args, envFor, settle],
   );
 
   const confirmDrop = useCallback(() => {

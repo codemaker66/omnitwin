@@ -72,12 +72,28 @@ export function ConflictRail({ report, onFocusEntry }: ConflictRailProps): React
   );
 }
 
+export interface TrayEnquiry {
+  readonly id: string;
+  readonly name: string;
+  readonly eventType: string | null;
+  readonly estimatedGuests: number | null;
+}
+
 export interface HoldingTrayProps {
   readonly items: readonly NeedsActionItem[];
   readonly onFocusEntry: (entryId: string) => void;
+  readonly enquiries: readonly TrayEnquiry[];
+  readonly canConvert: boolean;
+  readonly onConvertEnquiry: (enquiryId: string) => void;
 }
 
-export function HoldingTray({ items, onFocusEntry }: HoldingTrayProps): ReactElement {
+export function HoldingTray({
+  items,
+  onFocusEntry,
+  enquiries,
+  canConvert,
+  onConvertEnquiry,
+}: HoldingTrayProps): ReactElement {
   return (
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
       <h2 className="diary-panel-title">
@@ -104,6 +120,33 @@ export function HoldingTray({ items, onFocusEntry }: HoldingTrayProps): ReactEle
                   </span>
                 ))}
               </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3 className="diary-checks-title">{BOARD_COPY.trayEnquiries.title}</h3>
+      {enquiries.length === 0 ? (
+        <p className="diary-panel-empty">{BOARD_COPY.trayEnquiries.empty}</p>
+      ) : (
+        <ul className="diary-tray-list">
+          {enquiries.map((enquiry) => (
+            <li key={enquiry.id} className="diary-tray-enquiry">
+              <span className="diary-tray-item-title">{enquiry.name}</span>
+              <span className="diary-tray-item-reason">
+                {BOARD_COPY.trayEnquiries.detail(enquiry.eventType, enquiry.estimatedGuests)}
+              </span>
+              {canConvert ? (
+                <button
+                  type="button"
+                  className="diary-button"
+                  onClick={() => {
+                    onConvertEnquiry(enquiry.id);
+                  }}
+                >
+                  {BOARD_COPY.trayEnquiries.convert}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

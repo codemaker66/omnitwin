@@ -25,9 +25,13 @@ import {
   type MoveSnapshot,
   type UndoEntry,
 } from "./lib/undo-stack.js";
+import type { DrawerMode } from "./lib/drawer-form.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
+import { useDiaryLive } from "./hooks/useDiaryLive.js";
+import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid } from "./components/BoardGrid.js";
+import { BookingDrawer } from "./components/BookingDrawer.js";
 import { ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import "./diary-board.css";
 
@@ -83,6 +87,28 @@ export function DiaryBoardPage(): ReactElement {
   const [undoStack, setUndoStack] = useState<readonly UndoEntry[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [drawer, setDrawer] = useState<DrawerMode | null>(null);
+  const [openEnquiries, setOpenEnquiries] = useState<readonly Enquiry[]>([]);
+
+  const live = useDiaryLive(venueId !== null, refetch);
+
+  useEffect(() => {
+    if (venueId === null) return;
+    let cancelled = false;
+    listEnquiries()
+      .then((all) => {
+        if (cancelled) return;
+        setOpenEnquiries(
+          all.filter((enquiry) => enquiry.state === "submitted" || enquiry.state === "under_review"),
+        );
+      })
+      .catch(() => {
+        // The tray degrades to pencils-only; the board itself is unaffected.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [venueId, data]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -233,6 +259,15 @@ export function DiaryBoardPage(): ReactElement {
     setToast({ key: Date.now(), message: BOARD_COPY.drag.blockedDrop, showUndo: false });
   }, []);
 
+  const openBlock = useCallback(
+    (blockId: string) => {
+      const booking = bookingById.get(blockId);
+      if (booking === undefined) return;
+      setDrawer({ kind: "edit", booking });
+    },
+    [bookingById],
+  );
+
   const drag = useBoardDrag({
     laneOrder,
     inksByLane,
@@ -240,7 +275,47 @@ export function DiaryBoardPage(): ReactElement {
     writable,
     onCommit: handleCommit,
     onRejected: handleRejected,
+    onOpenBlock: openBlock,
   });
+
+  const openCreateDrawer = useCallback(() => {
+    const firstRoom = rooms[0];
+    if (user === null || firstRoom === undefined) return;
+    setDrawer({
+      kind: "create",
+      spaceId: firstRoom.id,
+      dayStartMs: range.fromMs,
+      ownerUserId: user.id,
+    });
+  }, [range.fromMs, rooms, user]);
+
+  const openConvertDrawer = useCallback(
+    (enquiryId: string) => {
+      const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
+      if (enquiry === undefined || user === null) return;
+      setDrawer({
+        kind: "convert",
+        enquiry: {
+          id: enquiry.id,
+          spaceId: enquiry.spaceId,
+          name: enquiry.name,
+          eventType: enquiry.eventType,
+          preferredDate: enquiry.preferredDate,
+        },
+        ownerUserId: user.id,
+      });
+    },
+    [openEnquiries, user],
+  );
+
+  const onDrawerSaved = useCallback(
+    (message: string) => {
+      setDrawer(null);
+      setToast({ key: Date.now(), message, showUndo: false });
+      refetch();
+    },
+    [refetch],
+  );
 
   const undo = useCallback(() => {
     const { entry, stack } = popMove(undoStack);
@@ -366,7 +441,23 @@ export function DiaryBoardPage(): ReactElement {
           <button type="button" className="diary-button" onClick={refetch}>
             {BOARD_COPY.refresh}
           </button>
+          {writable ? (
+            <button type="button" className="diary-button is-primary" onClick={openCreateDrawer}>
+              {BOARD_COPY.drawer.createTitle}
+            </button>
+          ) : null}
           {!writable ? <span className="diary-readonly">{BOARD_COPY.readOnly}</span> : null}
+          <span
+            className={`diary-live${live.connected ? " is-connected" : ""}`}
+            title={BOARD_COPY.presence.here(
+              live.presence
+                .filter((person) => person.userId !== user?.id)
+                .map((person) => person.name),
+            )}
+          >
+            {live.connected ? BOARD_COPY.presence.live : BOARD_COPY.presence.offline}
+            {live.presence.length > 0 ? ` · ${String(live.presence.length)}` : ""}
+          </span>
         </div>
         <ul className="diary-legend" aria-label="Legend">
           <li className="diary-legend-item is-ink">{BOARD_COPY.legend.ink}</li>
@@ -402,7 +493,18 @@ export function DiaryBoardPage(): ReactElement {
             nowMs={nowMs}
           />
           <aside className="diary-side">
-            <HoldingTray items={trayItems} onFocusEntry={focusEntry} />
+            <HoldingTray
+              items={trayItems}
+              onFocusEntry={focusEntry}
+              enquiries={openEnquiries.map((enquiry) => ({
+                id: enquiry.id,
+                name: enquiry.name,
+                eventType: enquiry.eventType,
+                estimatedGuests: enquiry.estimatedGuests,
+              }))}
+              canConvert={writable}
+              onConvertEnquiry={openConvertDrawer}
+            />
             <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
             {entries.length === 0 ? (
               <p className="diary-panel-empty">{BOARD_COPY.emptyRange}</p>
@@ -410,6 +512,19 @@ export function DiaryBoardPage(): ReactElement {
           </aside>
         </div>
       )}
+
+      {drawer !== null && venueId !== null ? (
+        <BookingDrawer
+          mode={drawer}
+          rooms={rooms}
+          venueId={venueId}
+          role={user?.role ?? ""}
+          onClose={() => {
+            setDrawer(null);
+          }}
+          onSaved={onDrawerSaved}
+        />
+      ) : null}
 
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
       {toast !== null ? (
