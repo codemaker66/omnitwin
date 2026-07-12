@@ -289,6 +289,42 @@ describe("DiaryBoardPage", () => {
     expect(await screen.findByText(/Live · 1/)).toBeDefined();
   });
 
+  it("retargeting the drawer without closing starts a fresh form (review P1)", async () => {
+    renderPage();
+    // Open the edit drawer on the pencil…
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: "Enter" });
+    expect(await screen.findByDisplayValue("MacLeod wedding")).toBeDefined();
+    // …then jump straight to "New booking" without closing. The create form
+    // must not inherit the edit form's fields.
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    expect(await screen.findByRole("dialog", { name: "New booking" })).toBeDefined();
+    expect(screen.queryByDisplayValue("MacLeod wedding")).toBeNull();
+  });
+
+  it("keeps the drawer open while a save is in flight — Escape and Close wait (review P2)", async () => {
+    let resolveSave: ((value: unknown) => void) | undefined;
+    updateBookingMock.mockImplementation(
+      () =>
+        new Promise((resolvePromise) => {
+          resolveSave = resolvePromise;
+        }),
+    );
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: "Enter" });
+    const title = await screen.findByDisplayValue("MacLeod wedding");
+    fireEvent.change(title, { target: { value: "MacLeod ceilidh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    // The PATCH is now pending: Escape must not tear the drawer down.
+    const drawer = screen.getByRole("dialog", { name: "Booking details" });
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Booking details" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Close" }).hasAttribute("disabled")).toBe(true);
+    resolveSave?.({ title: "MacLeod ceilidh" });
+    expect(await screen.findByText("Saved MacLeod ceilidh.")).toBeDefined();
+  });
+
   it("tells an unassigned account that it has no venue", () => {
     useAuthStore.setState({
       user: {

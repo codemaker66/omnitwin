@@ -85,6 +85,9 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
       };
 
       ws.onmessage = (frame: MessageEvent) => {
+        // A frame can already be queued when cleanup runs — never let it
+        // resurrect state on an unmounted hook (review P2).
+        if (disposed || socket !== ws) return;
         const message = parseLiveMessage(frame.data);
         if (message === null) return;
         if (message.type === "hello") {

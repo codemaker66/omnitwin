@@ -157,6 +157,9 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     hub.pingAll();
     hub.sweepStale(Date.now(), STALE_AFTER_MS);
   }, HEARTBEAT_INTERVAL_MS);
+  // Never hold the process open on its own (house convention — see the
+  // shutdown grace timer in index.ts).
+  heartbeat.unref();
 
   server.addHook("onClose", () => {
     clearInterval(heartbeat);
@@ -167,6 +170,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     let connection: DiaryLiveConnection | null = null;
     let venueId: string | null = null;
     let authenticating = false;
+    let closed = false;
 
     function send(payload: Record<string, unknown>): void {
       if (socket.readyState === 1) socket.send(JSON.stringify(payload));
@@ -182,38 +186,54 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       }
 
       if (connection === null) {
+        // A frame while authentication is already in flight must not abort
+        // the valid attempt (review P2) — drop it quietly.
+        if (authenticating) return;
         const auth = AuthMessage.safeParse(data);
         if (!auth.success) {
           send({ type: "error", code: "UNAUTHORIZED", message: "Authenticate first" });
           socket.close();
           return;
         }
-        if (authenticating) return;
         authenticating = true;
         void (async () => {
-          const user = await resolveWsUser(db, auth.data.token);
-          if (
-            user === null ||
-            user.userVenueId === null ||
-            (!DIARY_READ_ROLES.has(user.userRole) && user.platformRole !== "admin")
-          ) {
-            send({ type: "error", code: "FORBIDDEN", message: "The diary is a venue surface" });
+          // Any failure in here must end in a closed socket, never a
+          // stranded connection or an unhandled rejection (review P1).
+          try {
+            const user = await resolveWsUser(db, auth.data.token);
+            if (
+              user === null ||
+              user.userVenueId === null ||
+              (!DIARY_READ_ROLES.has(user.userRole) && user.platformRole !== "admin")
+            ) {
+              send({ type: "error", code: "FORBIDDEN", message: "The diary is a venue surface" });
+              socket.close();
+              return;
+            }
+            const [profile] = await db
+              .select({ name: users.name })
+              .from(users)
+              .where(eq(users.id, user.userId))
+              .limit(1);
+            // The socket may have died while we were authenticating —
+            // joining it would parade a phantom presence (review P2).
+            if (closed || socket.readyState !== 1) return;
+            venueId = user.userVenueId;
+            connection = hub.join(
+              venueId,
+              socket,
+              { userId: user.userId, name: profile?.name ?? "Colleague", role: user.userRole },
+              Date.now(),
+            );
+            send({ type: "hello", venueId, presence: hub.presenceFor(venueId) });
+          } catch {
+            send({
+              type: "error",
+              code: "AUTH_FAILED",
+              message: "Could not authenticate the connection — reconnect and try again",
+            });
             socket.close();
-            return;
           }
-          const [profile] = await db
-            .select({ name: users.name })
-            .from(users)
-            .where(eq(users.id, user.userId))
-            .limit(1);
-          venueId = user.userVenueId;
-          connection = hub.join(
-            venueId,
-            socket,
-            { userId: user.userId, name: profile?.name ?? "Colleague", role: user.userRole },
-            Date.now(),
-          );
-          send({ type: "hello", venueId, presence: hub.presenceFor(venueId) });
         })().finally(() => {
           authenticating = false;
         });
@@ -222,12 +242,17 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
 
       hub.touch(connection, Date.now());
       const message = IncomingLiveMessage.safeParse(data);
-      if (message.success && message.data.type === "ping") {
+      if (!message.success) {
+        send({ type: "error", code: "VALIDATION_ERROR", message: "Unknown message type" });
+        return;
+      }
+      if (message.data.type === "ping") {
         send({ type: "pong" });
       }
     });
 
     socket.on("close", () => {
+      closed = true;
       if (connection !== null && venueId !== null) {
         hub.leave(venueId, connection);
       }

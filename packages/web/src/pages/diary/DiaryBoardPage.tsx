@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import type {
@@ -87,7 +87,15 @@ export function DiaryBoardPage(): ReactElement {
   const [undoStack, setUndoStack] = useState<readonly UndoEntry[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [drawer, setDrawer] = useState<DrawerMode | null>(null);
+  // The nonce keys <BookingDrawer> so retargeting (edit A → New → edit B)
+  // always remounts with a fresh form — useState initialisers run once per
+  // mount, never per prop change (review P1).
+  const [drawer, setDrawer] = useState<{ mode: DrawerMode; nonce: number } | null>(null);
+  const drawerNonceRef = useRef(0);
+  const openDrawer = useCallback((mode: DrawerMode) => {
+    drawerNonceRef.current += 1;
+    setDrawer({ mode, nonce: drawerNonceRef.current });
+  }, []);
   const [openEnquiries, setOpenEnquiries] = useState<readonly Enquiry[]>([]);
 
   const live = useDiaryLive(venueId !== null, refetch);
@@ -263,9 +271,9 @@ export function DiaryBoardPage(): ReactElement {
     (blockId: string) => {
       const booking = bookingById.get(blockId);
       if (booking === undefined) return;
-      setDrawer({ kind: "edit", booking });
+      openDrawer({ kind: "edit", booking });
     },
-    [bookingById],
+    [bookingById, openDrawer],
   );
 
   const drag = useBoardDrag({
@@ -281,19 +289,19 @@ export function DiaryBoardPage(): ReactElement {
   const openCreateDrawer = useCallback(() => {
     const firstRoom = rooms[0];
     if (user === null || firstRoom === undefined) return;
-    setDrawer({
+    openDrawer({
       kind: "create",
       spaceId: firstRoom.id,
       dayStartMs: range.fromMs,
       ownerUserId: user.id,
     });
-  }, [range.fromMs, rooms, user]);
+  }, [openDrawer, range.fromMs, rooms, user]);
 
   const openConvertDrawer = useCallback(
     (enquiryId: string) => {
       const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
       if (enquiry === undefined || user === null) return;
-      setDrawer({
+      openDrawer({
         kind: "convert",
         enquiry: {
           id: enquiry.id,
@@ -305,7 +313,7 @@ export function DiaryBoardPage(): ReactElement {
         ownerUserId: user.id,
       });
     },
-    [openEnquiries, user],
+    [openDrawer, openEnquiries, user],
   );
 
   const onDrawerSaved = useCallback(
@@ -515,7 +523,8 @@ export function DiaryBoardPage(): ReactElement {
 
       {drawer !== null && venueId !== null ? (
         <BookingDrawer
-          mode={drawer}
+          key={drawer.nonce}
+          mode={drawer.mode}
           rooms={rooms}
           venueId={venueId}
           role={user?.role ?? ""}

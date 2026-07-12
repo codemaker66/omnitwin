@@ -130,8 +130,43 @@ describe("registerDiaryLive — source contract", () => {
     expect(source).toContain("clearInterval");
   });
 
-  it("heartbeats every 20 seconds per Canon §15", async () => {
+  it("heartbeats every 20 seconds per Canon §15 and never holds the process open", async () => {
     const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
     expect(source).toContain("20_000");
+    expect(source).toContain("heartbeat.unref()");
+  });
+
+  // Post-review hardening pins (slice-3 review P1/P2): the auth path must
+  // never strand a connection or leak an unhandled rejection, in-flight auth
+  // must not be aborted by a second frame, and a socket that closed during
+  // the async auth must never join the hub.
+  it("guards the async auth path — failure closes the socket instead of stranding it", async () => {
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    // resolveWsUser + the profile lookup run inside try/catch…
+    const tryIndex = source.indexOf("try {");
+    const resolveIndex = source.indexOf("await resolveWsUser");
+    expect(tryIndex).toBeGreaterThan(-1);
+    expect(resolveIndex).toBeGreaterThan(tryIndex);
+    // …and the catch answers with an error frame then closes.
+    expect(source).toContain('code: "AUTH_FAILED"');
+    const catchIndex = source.indexOf("} catch {", resolveIndex);
+    expect(catchIndex).toBeGreaterThan(-1);
+    expect(source.indexOf("socket.close()", catchIndex)).toBeGreaterThan(catchIndex);
+  });
+
+  it("drops frames while auth is in flight instead of treating them as a failed auth", async () => {
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    const inFlightGuard = source.indexOf("if (authenticating) return;");
+    const parse = source.indexOf("AuthMessage.safeParse");
+    expect(inFlightGuard).toBeGreaterThan(-1);
+    expect(parse).toBeGreaterThan(inFlightGuard);
+  });
+
+  it("never joins a socket that closed while authentication was in flight", async () => {
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    const livenessGuard = source.indexOf("if (closed || socket.readyState !== 1) return;");
+    const join = source.indexOf("hub.join(");
+    expect(livenessGuard).toBeGreaterThan(-1);
+    expect(join).toBeGreaterThan(livenessGuard);
   });
 });

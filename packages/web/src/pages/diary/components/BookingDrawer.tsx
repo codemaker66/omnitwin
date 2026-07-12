@@ -159,7 +159,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   function onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      // Same rule as the Cancel button: while a save is in flight the drawer
+      // stays put, so its outcome always lands somewhere visible (review P2).
+      if (!busy) onClose();
     }
   }
 
@@ -182,7 +184,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     >
       <header className="diary-drawer-header">
         <h2 className="diary-drawer-title">{drawerTitle(mode)}</h2>
-        <button type="button" className="diary-button" onClick={onClose}>
+        <button type="button" className="diary-button" onClick={onClose} disabled={busy}>
           {BOARD_COPY.drawer.close}
         </button>
       </header>
