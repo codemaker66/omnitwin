@@ -172,6 +172,25 @@ async function seed(): Promise<void> {
       role: "hallkeeper",
       venueId: venue.id,
     },
+    // Live-e2e coordinators (Diary Slice 4, T-518). clerkId stays NULL so the
+    // first real Clerk sign-in with the email links through the seed-user
+    // branch of getUserByClerkId — a non-null placeholder would be rejected
+    // as a Clerk-ID mismatch. `+clerk_test` addresses are Clerk dev-instance
+    // test users: OTP 424242, no real mail ever sent.
+    {
+      clerkId: null,
+      email: "fiona.coordinator+clerk_test@tradeshall.co.uk",
+      name: "Fiona Coordinator",
+      role: "staff",
+      venueId: venue.id,
+    },
+    {
+      clerkId: null,
+      email: "graham.coordinator+clerk_test@tradeshall.co.uk",
+      name: "Graham Coordinator",
+      role: "staff",
+      venueId: venue.id,
+    },
   ]).returning();
 
   for (const u of insertedUsers) {

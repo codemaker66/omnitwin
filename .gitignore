@@ -28,6 +28,9 @@ packages/api/src/scripts/customers.json
 .claude/*.lock
 .claude/settings.local.json
 
+# Local dev-database binaries + data (portable Postgres; see infra/dev-db/).
+.dev-db/
+
 # One-off `tree` scratchpads — regenerate locally as needed.
 web-structure.txt
 

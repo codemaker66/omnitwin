@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# OMNITWIN local dev database (Diary Slice 4, T-518)
+#
+# An isolated Postgres for local development and live e2e — NEVER the Neon
+# project in packages/api/.env (that is the production project; see
+# docs/PRODUCTION.md §Neon). Non-default host ports so nothing collides with
+# a native Postgres install.
+#
+#   docker compose -f infra/dev-db/docker-compose.yml up -d
+#
+# Connection strings (dev-only fixture credentials, not secrets):
+#   TCP (drizzle-kit migrate, psql):
+#     postgresql://postgres:postgres@localhost:54329/omnitwin_dev
+#   API / seed (same URL — the @neondatabase/serverless driver is WebSocket-
+#   only, so db/client.ts routes localhost URLs through the neon-proxy
+#   container on port 54331; see LOCAL_WS_PROXY_PORT in client.ts):
+#     postgresql://postgres:postgres@localhost:54329/omnitwin_dev
+#
+# The proxy image wraps Neon's own proxy pointed at a fixed local Postgres —
+# the documented recipe for running the serverless driver against local PG.
+#
+# No Docker (or the engine won't start)? The equivalent no-Docker fallback is
+# portable Postgres binaries in .dev-db/ (gitignored) plus the byte-shovel
+# proxy `node infra/dev-db/neon-ws-bridge.mjs` on the same ports.
+# ---------------------------------------------------------------------------
+
+name: omnitwin-dev-db
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: omnitwin_dev
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d omnitwin_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/omnitwin_dev
+    ports:
+      - "54331:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy
