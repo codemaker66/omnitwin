@@ -98,6 +98,34 @@ describe("theme — respects the system, remembers the choice", () => {
   });
 });
 
+describe("the enquiry composer", () => {
+  it("answers with the snuggest published room and updates as numbers change", () => {
+    render(<FreshPage />);
+    // Default draft: wedding for 100 — only the Grand Hall's 180 covers it.
+    expect(screen.getByText(/The Grand Hall is the right scale/)).toBeTruthy();
+    const guests = screen.getByLabelText("Guests");
+    fireEvent.change(guests, { target: { value: "40" } });
+    expect(screen.getByText(/The North Gallery holds exactly/)).toBeTruthy();
+  });
+
+  it("composes the visible email from the draft, openable via mailto", () => {
+    render(<FreshPage />);
+    expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Conference" }));
+    expect(screen.getByText("Enquiry — Conference for 100")).toBeTruthy();
+    expect(document.querySelector('a.fr-cta[href^="mailto:"]')).toBeTruthy();
+  });
+
+  it("sends the top CTAs to the composer, not to a phone link", () => {
+    render(<FreshPage />);
+    const ctas = screen.getAllByRole("link", { name: "Ask about a date" });
+    expect(ctas.length).toBeGreaterThanOrEqual(2);
+    for (const cta of ctas) {
+      expect(cta.getAttribute("href")).toBe("#enquire");
+    }
+  });
+});
+
 describe("contact — real destinations", () => {
   it("offers phone, email, and a map link", () => {
     render(<FreshPage />);

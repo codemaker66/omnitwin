@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
@@ -42,7 +49,28 @@ import {
   FRESH_THEME_LABEL,
   FRESH_THEME_OPTIONS,
   freshEnquiryHref,
+  FRESH_ENQUIRY_COPIED,
+  FRESH_ENQUIRY_COPY_ACTION,
+  FRESH_ENQUIRY_DATE_LABEL,
+  FRESH_ENQUIRY_EVENT_LABEL,
+  FRESH_ENQUIRY_GUESTS_LABEL,
+  FRESH_ENQUIRY_GUESTS_PROMPT,
+  FRESH_ENQUIRY_LEDE,
+  FRESH_ENQUIRY_OR_CALL,
+  FRESH_ENQUIRY_SEND,
+  FRESH_ENQUIRY_TITLE,
 } from "./fresh-copy.js";
+import {
+  ENQUIRY_EVENT_TYPES,
+  alsoFitsSentence,
+  composeEnquiry,
+  enquiryYear,
+  fitReport,
+  fitSentence,
+  weddingRateLine,
+  weddingScopeNote,
+  type EnquiryEventKey,
+} from "./enquiry-fit.js";
 import "./fresh.css";
 
 // -----------------------------------------------------------------------------
@@ -217,6 +245,146 @@ function useDomeAperture(): DomeApertureRefs {
   };
 }
 
+/** The Enquiry Composer — the conversation half. State stays tiny: an
+ *  occasion, a guest count (kept as text so half-typed numbers don't judder
+ *  the answer), an optional date. Everything said below it is computed by
+ *  enquiry-fit from published figures, and the finished email is visible,
+ *  copyable, and openable — no dead-end links. */
+function FreshEnquiry(): ReactElement {
+  const [eventKey, setEventKey] = useState<EnquiryEventKey>("wedding");
+  const [guestsText, setGuestsText] = useState("100");
+  const [dateISO, setDateISO] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const guestsParsed = Number.parseInt(guestsText, 10);
+  const guests =
+    Number.isFinite(guestsParsed) && guestsParsed >= 2 && guestsParsed <= 999
+      ? guestsParsed
+      : null;
+
+  const report = useMemo(
+    () => (guests === null ? null : fitReport(eventKey, guests)),
+    [eventKey, guests],
+  );
+  const composed = useMemo(
+    () =>
+      guests === null
+        ? null
+        : composeEnquiry({ eventKey, guests, dateISO }, FRESH_CONTACT_EMAIL),
+    [eventKey, guests, dateISO],
+  );
+  const also = report === null ? "" : alsoFitsSentence(report);
+  const rateLine =
+    eventKey === "wedding" ? weddingRateLine(enquiryYear(dateISO)) : null;
+  const scopeNote =
+    eventKey === "wedding" && guests !== null ? weddingScopeNote(guests) : null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const copyEnquiry = useCallback(() => {
+    if (composed === null) return;
+    const clipboard = navigator.clipboard as Clipboard | undefined;
+    if (clipboard === undefined) return;
+    void clipboard
+      .writeText(`${composed.subject}\n\n${composed.body}`)
+      .then(() => {
+        setCopied(true);
+      })
+      .catch(() => undefined);
+  }, [composed]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => {
+      setCopied(false);
+    }, 1600);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [copied]);
+
+  return (
+    <div className="fr-enq">
+      <div className="fr-enq-controls">
+        <fieldset className="fr-enq-types">
+          <legend>{FRESH_ENQUIRY_EVENT_LABEL}</legend>
+          <div className="fr-enq-pills">
+            {ENQUIRY_EVENT_TYPES.map((type) => (
+              <button
+                key={type.key}
+                type="button"
+                aria-pressed={eventKey === type.key}
+                onClick={() => {
+                  setEventKey(type.key);
+                }}
+              >
+                {type.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <div className="fr-enq-fields">
+          <label className="fr-enq-field">
+            <span>{FRESH_ENQUIRY_GUESTS_LABEL}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={2}
+              max={999}
+              value={guestsText}
+              onChange={(event) => {
+                setGuestsText(event.target.value);
+              }}
+            />
+          </label>
+          <label className="fr-enq-field">
+            <span>{FRESH_ENQUIRY_DATE_LABEL}</span>
+            <input
+              type="date"
+              min={today}
+              value={dateISO}
+              onChange={(event) => {
+                setDateISO(event.target.value);
+              }}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="fr-enq-answer" aria-live="polite">
+        {report === null ? (
+          <p className="fr-enq-fit">{FRESH_ENQUIRY_GUESTS_PROMPT}</p>
+        ) : (
+          <>
+            <p className="fr-enq-fit">{fitSentence(report)}</p>
+            {also !== "" && <p className="fr-enq-also">{also}</p>}
+            {rateLine !== null && <p className="fr-enq-also">{rateLine}</p>}
+            {scopeNote !== null && <p className="fr-enq-also">{scopeNote}</p>}
+          </>
+        )}
+      </div>
+
+      {composed !== null && (
+        <div className="fr-enq-compose">
+          <p className="fr-enq-subject">{composed.subject}</p>
+          <pre className="fr-enq-body">{composed.body}</pre>
+          <div className="fr-enq-actions">
+            <a className="fr-cta" href={composed.mailtoHref}>
+              {FRESH_ENQUIRY_SEND}
+            </a>
+            <button type="button" className="fr-enq-copy" onClick={copyEnquiry}>
+              {copied ? FRESH_ENQUIRY_COPIED : FRESH_ENQUIRY_COPY_ACTION}
+            </button>
+            <span className="fr-enq-call">
+              {FRESH_ENQUIRY_OR_CALL}{" "}
+              <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
   CAPACITY_FORMATS.map(
     (f) => `${f.label} ${String(TRADES_HALL_ROOM_CAPACITIES[slug][f.key])}`,
@@ -270,7 +438,7 @@ export function FreshPage(): ReactElement {
               </button>
             ))}
           </fieldset>
-          <a className="fr-header-cta" href={FRESH_CONTACT_PHONE_HREF}>
+          <a className="fr-header-cta" href="#enquire">
             {FRESH_CTA_DATES}
           </a>
         </div>
@@ -305,7 +473,7 @@ export function FreshPage(): ReactElement {
             </h1>
             <p className="fr-lede">{FRESH_LEDE}</p>
             <div className="fr-hero-actions">
-              <a className="fr-cta" href={FRESH_CONTACT_PHONE_HREF}>
+              <a className="fr-cta" href="#enquire">
                 {FRESH_CTA_DATES}
               </a>
               <a className="fr-cta-quiet" href="#rooms">
@@ -375,6 +543,14 @@ export function FreshPage(): ReactElement {
             ))}
           </div>
           <p className="fr-scope">{TRADES_HALL_WEDDING_PRICING.scope}.</p>
+        </section>
+
+        {/* ——— the enquiry composer: the page answers, then writes the email ——— */}
+        <section className="fr-enquiry" id="enquire" aria-labelledby="fr-enquiry-title">
+          <div className="fr-arch" aria-hidden />
+          <h2 id="fr-enquiry-title">{FRESH_ENQUIRY_TITLE}</h2>
+          <p className="fr-section-lede">{FRESH_ENQUIRY_LEDE}</p>
+          <FreshEnquiry />
         </section>
 
         {/* ——— heritage: one photograph, one paragraph ——— */}

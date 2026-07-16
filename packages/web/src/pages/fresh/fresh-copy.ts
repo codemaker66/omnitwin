@@ -118,6 +118,21 @@ export const FRESH_RATES_TITLE = "Weddings, plainly priced";
 export const FRESH_RATES_NOTE =
   "Rates below are for exclusive wedding use of the hall. For dinners, conferences, and everything else, ask — every event is quoted on its shape.";
 
+/** The Enquiry Composer — the page answers with published fit, then writes
+ *  the email. Sentences it composes live in enquiry-fit.ts, swept there. */
+export const FRESH_ENQUIRY_TITLE = "Ask about a date";
+export const FRESH_ENQUIRY_LEDE =
+  "Tell the page your occasion and it will tell you the room, from the venue's own figures — then send the enquiry as written, or call.";
+export const FRESH_ENQUIRY_EVENT_LABEL = "The occasion";
+export const FRESH_ENQUIRY_GUESTS_LABEL = "Guests";
+export const FRESH_ENQUIRY_DATE_LABEL = "The date, if you have one";
+export const FRESH_ENQUIRY_GUESTS_PROMPT =
+  "Tell us how many you are, and the rooms will sort themselves.";
+export const FRESH_ENQUIRY_SEND = "Open in your email app";
+export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
+export const FRESH_ENQUIRY_COPIED = "Copied";
+export const FRESH_ENQUIRY_OR_CALL = "or call";
+
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
   "Trades Hall was designed by Robert Adam and has served as the meeting place of the Trades House of Glasgow — the city's fourteen incorporated crafts — since 1791. It is the oldest building in Glasgow still used for its original purpose. When you celebrate here, you are keeping its diary going.";
@@ -163,6 +178,16 @@ export function allFreshCopy(): readonly string[] {
     FRESH_GALLERIES_NOTE,
     FRESH_RATES_TITLE,
     FRESH_RATES_NOTE,
+    FRESH_ENQUIRY_TITLE,
+    FRESH_ENQUIRY_LEDE,
+    FRESH_ENQUIRY_EVENT_LABEL,
+    FRESH_ENQUIRY_GUESTS_LABEL,
+    FRESH_ENQUIRY_DATE_LABEL,
+    FRESH_ENQUIRY_GUESTS_PROMPT,
+    FRESH_ENQUIRY_SEND,
+    FRESH_ENQUIRY_COPY_ACTION,
+    FRESH_ENQUIRY_COPIED,
+    FRESH_ENQUIRY_OR_CALL,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,
