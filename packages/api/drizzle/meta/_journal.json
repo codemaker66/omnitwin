@@ -332,13 +332,6 @@
       "breakpoints": true
     },
     {
-      "idx": 47,
-      "version": "7",
-      "when": 1781301600000,
-      "tag": "0049_reconstruction_foundry",
-      "breakpoints": true
-    },
-    {
       "idx": 48,
       "version": "7",
       "when": 1783776800000,
