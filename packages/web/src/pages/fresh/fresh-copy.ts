@@ -162,6 +162,13 @@ export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
 
+/** The room dossiers — each card opens into the room's own page-within-
+ *  the-page: published dimensions, and every capacity drawn to count. */
+export const FRESH_DOSSIER_OPEN = "Open the room";
+export const FRESH_DOSSIER_CLOSE = "Close";
+export const FRESH_DOSSIER_CTA = "Ask about this room";
+export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
+
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
   "Trades Hall was designed by Robert Adam and has served as the meeting place of the Trades House of Glasgow — the city's fourteen incorporated crafts — since 1791. It is the oldest building in Glasgow still used for its original purpose. When you celebrate here, you are keeping its diary going.";
@@ -217,6 +224,10 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_COPY_ACTION,
     FRESH_ENQUIRY_COPIED,
     FRESH_ENQUIRY_OR_CALL,
+    FRESH_DOSSIER_OPEN,
+    FRESH_DOSSIER_CLOSE,
+    FRESH_DOSSIER_CTA,
+    FRESH_DOSSIER_DRAWN_NOTE,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,

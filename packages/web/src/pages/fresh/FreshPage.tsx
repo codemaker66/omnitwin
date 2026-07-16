@@ -66,8 +66,11 @@ import {
   FRESH_HERITAGE_LADDER,
   FRESH_HERITAGE_SIZES,
   FRESH_ROOM_SIZES,
+  FRESH_DOSSIER_OPEN,
   ladderSrcSet,
+  type FreshRoom,
 } from "./fresh-copy.js";
+import { RoomDossier } from "./RoomDossier.js";
 import {
   ENQUIRY_EVENT_TYPES,
   alsoFitsSentence,
@@ -400,6 +403,7 @@ const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
 
 export function FreshPage(): ReactElement {
   const [theme, setTheme] = useState<FreshTheme>(() => loadTheme());
+  const [dossierRoom, setDossierRoom] = useState<FreshRoom | null>(null);
   const reveal = useRevealOnce();
   const aperture = useDomeAperture();
 
@@ -537,6 +541,15 @@ export function FreshPage(): ReactElement {
                   <p className="fr-caps" data-room-caps={room.slug}>
                     {roomCaps(room.slug)}
                   </p>
+                  <button
+                    type="button"
+                    className="fr-room-open"
+                    onClick={() => {
+                      setDossierRoom(room);
+                    }}
+                  >
+                    {FRESH_DOSSIER_OPEN}
+                  </button>
                 </div>
               </article>
             ))}
@@ -594,6 +607,13 @@ export function FreshPage(): ReactElement {
           </div>
         </section>
       </main>
+
+      <RoomDossier
+        room={dossierRoom}
+        onClose={() => {
+          setDossierRoom(null);
+        }}
+      />
 
       <footer className="fr-contact" id="contact" aria-labelledby="fr-contact-title">
         <h2 id="fr-contact-title">{FRESH_CONTACT_TITLE}</h2>

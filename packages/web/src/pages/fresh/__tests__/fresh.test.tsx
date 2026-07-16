@@ -151,6 +151,41 @@ describe("the enquiry composer", () => {
   });
 });
 
+describe("the room dossiers", () => {
+  it("opens a dossier whose drawn plan counts exactly the published number", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    expect(openButtons).toHaveLength(FRESH_ROOMS.length);
+    const first = openButtons[0];
+    expect(first).toBeTruthy();
+    if (first === undefined) return;
+    fireEvent.click(first);
+    const dialog = document.querySelector("dialog.fr-dossier");
+    expect(dialog?.hasAttribute("open")).toBe(true);
+    // Dinner is the default lens — the Grand Hall draws all 180 covers.
+    expect(document.querySelectorAll(".fr-plan-dot")).toHaveLength(
+      TRADES_HALL_ROOM_CAPACITIES["grand-hall"].dinner,
+    );
+    expect(document.querySelectorAll(".fr-plan-table")).toHaveLength(18);
+    fireEvent.click(screen.getByRole("button", { name: "Theatre 250" }));
+    expect(document.querySelectorAll(".fr-plan-dot")).toHaveLength(250);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.querySelector("dialog.fr-dossier")?.hasAttribute("open")).toBe(
+      false,
+    );
+  });
+
+  it("states the published dimensions for rooms that publish them", () => {
+    render(<FreshPage />);
+    const buttons = screen.getAllByRole("button", { name: "Open the room" });
+    const first = buttons[0];
+    if (first === undefined) return;
+    fireEvent.click(first);
+    expect(screen.getByText(/21 × 10 m · 7 m high/)).toBeTruthy();
+    expect(screen.getByText(/a further 7 m under the dome/)).toBeTruthy();
+  });
+});
+
 describe("contact — real destinations", () => {
   it("offers phone, email, and a map link", () => {
     render(<FreshPage />);
