@@ -88,7 +88,7 @@ IMG_D, _md = render_pano(C_D, gain=1.03, hole_r=HOLE_R)
 DONORS = [(IMG_B, C_B), (IMG_C, C_C), (IMG_D, C_D)]
 
 
-def run_fill():
+def run_fill(composite_mode="best", grain_match=True):
     return nf.fill_nadir_hole(
         IMG_A,
         C_A,
@@ -98,16 +98,43 @@ def run_fill():
         tripod_radius=TRIPOD_R,
         view_size=640,
         half_fov_deg=58.0,
+        composite_mode=composite_mode,
+        grain_match=grain_match,
     )
 
 
 _CACHE = {}
 
 
-def filled_and_report():
-    if "r" not in _CACHE:
-        _CACHE["r"] = run_fill()
-    return _CACHE["r"]
+def filled_and_report(composite_mode="best", grain_match=True):
+    key = (composite_mode, grain_match)
+    if key not in _CACHE:
+        _CACHE[key] = run_fill(composite_mode, grain_match)
+    return _CACHE[key]
+
+
+def _view_masks(size=640, half_fov=58.0):
+    """Hole + surrounding ring masks in gnomonic view space."""
+    from scipy.ndimage import binary_dilation
+
+    dirs = nf.gnomonic_nadir_dirs(size, half_fov)
+    rows, cols = nf.dirs_to_pixels(dirs.reshape(-1, 3), W, H)
+    hole = (
+        nf.sample_equirect(MASK_A[..., None].astype(np.float32) * 255.0, rows, cols)
+        .reshape(size, size, 1)[..., 0]
+        > 127
+    )
+    ring = binary_dilation(hole, iterations=10) & ~binary_dilation(hole, iterations=2)
+    return dirs, hole, ring
+
+
+def _detail_std(view, mask, sigma=2.5):
+    """Std of the high-frequency luminance layer — the 'grain contrast'."""
+    from scipy.ndimage import gaussian_filter
+
+    lp = gaussian_filter(view, (sigma, sigma, 0))
+    lum = (view - lp) @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    return float(lum[mask].std())
 
 
 def _psnr(a, b):
@@ -198,6 +225,38 @@ def test_smear_detection_finds_the_hole_without_being_told():
     iou = inter / union
     print(f"  smear-detection IoU vs true mask: {iou:.3f}")
     assert iou > 0.70, f"detection IoU {iou:.2f}"
+
+
+def test_grain_contrast_matches_ring_no_ghost_disc():
+    # THE ghost-disc test, measured on DELIVERED pixels: re-render the
+    # filled equirect (the resample the viewer actually performs) and
+    # require the hole's fine-grain contrast to sit at ring parity —
+    # neither flat (ghost disc) nor over-crisped (halo of sharpening).
+    filled, report = filled_and_report()
+    dirs, hole, ring = _view_masks()
+    fv = nf.render_view(filled, dirs)
+    gv = nf.render_view(GT_A, dirs)
+    ratio_filled = _detail_std(fv, hole) / max(_detail_std(fv, ring), 1e-6)
+    ratio_gt = _detail_std(gv, hole) / max(_detail_std(gv, ring), 1e-6)
+    print(f"  grain hole/ring ratio: filled {ratio_filled:.3f} vs truth {ratio_gt:.3f}"
+          f" (gain {report.get('grain_gain')}, residual pass "
+          f"{report.get('grain_residual_gain')})")
+    assert ratio_filled >= 0.85, f"ghost disc: grain ratio {ratio_filled:.3f} < 0.85"
+    assert ratio_filled <= 1.25, f"over-crisped: grain ratio {ratio_filled:.3f} > 1.25"
+    assert ratio_filled >= 0.80 * ratio_gt, (ratio_filled, ratio_gt)
+
+
+def test_best_donor_compositing_beats_averaging_on_grain():
+    # The mechanism test, isolated from grain matching (grain_match=False
+    # for both): averaging decorrelated donors softens grain; best-donor
+    # compositing must preserve measurably more of it.
+    filled_best, _ = filled_and_report("best", grain_match=False)
+    filled_avg, _ = filled_and_report("average", grain_match=False)
+    dirs, hole, _ring = _view_masks()
+    best = _detail_std(nf.render_view(filled_best, dirs), hole)
+    avg = _detail_std(nf.render_view(filled_avg, dirs), hole)
+    print(f"  raw hole grain contrast: best {best:.3f} vs average {avg:.3f}")
+    assert best > avg * 1.05, (best, avg)
 
 
 def _dump(out_dir):
