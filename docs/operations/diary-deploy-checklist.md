@@ -25,6 +25,7 @@ That ordering means: **for a window after the push, new Diary code is live while
 - [ ] **Neon backup branch**: console → Branches → create from production head, name `pre-diary-deploy-2026-07-DD`.
 - [ ] **State report** (read-only): `pnpm --filter @omnitwin/api exec tsx src/scripts/apply-diary-rollout.ts` — expect `ledger newest: 0043_platform_admin_scope` (production never received 0044+ because deploy.yml never ran — see §0). The script will list 0044–0048 in its cursor warning; that is expected and step 3 handles them **in order** — do NOT `--apply` this script in the standard path (it would apply 0050/0051 out of order and strand 0044–0048 below the cursor).
 - [ ] Confirm no other session is mid-commit on the branch; `git log --oneline -5` matches what you expect to ship.
+- [ ] **Check master drift**: `git fetch origin && git log --oneline 1d360e3b..origin/master`. Master keeps moving through Vercel's no-CI-wait path (3 homepage commits landed within hours of the reconciliation — walk-the-room, room dossiers, image ladder). If it has moved, merge `origin/master` into the branch again FIRST and re-run the gates; §4's "should be clean" only holds when the branch contains master's head.
 - [ ] The Slice-5 runbook (`diary-production-rollout-runbook.md`) is hereby the **diagnostic + emergency selective-apply tool**; this checklist owns the standard path.
 
 ## 3. Apply ALL pending migrations, in journal order, before any push
@@ -43,7 +44,7 @@ This is exactly what deploy.yml will do later — done deliberately first, so sc
 ## 4. Merge and push
 
 - [ ] Merge `feature/diary-p0-slice-3` into `master` locally (`git checkout master && git merge feature/diary-p0-slice-3` — it should be clean; the branch already contains master) and push. (If you prefer a PR, note PR #1 from the critique session is also open against master — sequence them deliberately; whichever merges second must re-run CI.)
-- [ ] Watch CI go **green** on the master head (first green in a while — the pin fix).
+- [ ] Watch CI go **green** on the master head (first green in a while — the pin fix, plus T-524's lockfile repair: the committed api manifest carried `pg@^8.22.0` without lockfile entries, so `pnpm install --frozen-lockfile` failed on any fresh checkout until commit 0bf09f48).
 - [ ] `deploy.yml` then runs its migrate: expect **"Migrations applied."** with nothing to do (step 3 already applied them).
 
 ## 5. Verify the deploys (per deploy-flow-current.md)
