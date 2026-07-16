@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { createDb } from "../db/client.js";
 import { validateEnv } from "../env.js";
 
@@ -18,8 +19,11 @@ import { validateEnv } from "../env.js";
 // newer than the newest ledger row — on production today that would also
 // apply 0049 + 0052–0058 (the Foundry chain, owner-gated separately). This
 // script applies EXACTLY 0050_diary_bookings and 0051_diary_enquiry_link,
-// each in its own transaction, and records ledger rows byte-identical to
-// what drizzle-orm's migrator writes (sha256 of the file, journal `when`).
+// each in its own transaction (a deliberate divergence: upstream wraps ALL
+// pending migrations in one shared transaction — per-migration commits make
+// a partial-progress retry idempotent instead), and records ledger rows
+// byte-identical to what drizzle-orm's migrator writes (sha256 of the file,
+// journal `when`).
 //
 // THE CURSOR CONSEQUENCE: drizzle's migrator compares only against the
 // NEWEST ledger row (verified in drizzle-orm/pg-core/dialect.js). Recording
@@ -36,14 +40,33 @@ import { validateEnv } from "../env.js";
 /* eslint-disable no-console -- CLI operator signal throughout */
 
 const MIGRATION_TAGS = ["0050_diary_bookings", "0051_diary_enquiry_link"] as const;
+
+// Security-review pin: the sha256 of each migration file EXACTLY as reviewed
+// and rehearsed (2026-07-16). Any local drift — a stray edit, a bad merge, a
+// CRLF conversion — aborts before a single statement runs. If a migration is
+// deliberately changed, re-review it and update the pin in the same commit.
+const EXPECTED_HASHES: Record<string, string> = {
+  "0050_diary_bookings": "6620f095a54c233e4a68ad4382bb1f855757f41260b1489a9ea00e743ad209f5",
+  "0051_diary_enquiry_link": "f5811ab63c69131361272536ea668e27c31db7ae43bf556421efc94378837add",
+};
+
 const APPLY = process.argv.includes("--apply");
 const ACCEPT_CURSOR_JUMP = process.argv.includes("--accept-cursor-jump");
+// Security-review guard: --apply must NAME its target. The run aborts unless
+// the resolved DATABASE_URL host equals this value — shape checks alone
+// cannot tell production from a schema-compatible clone.
+const HOST_FLAG_INDEX = process.argv.indexOf("--host");
+const CONFIRMED_HOST = HOST_FLAG_INDEX === -1 ? null : (process.argv[HOST_FLAG_INDEX + 1] ?? null);
 
-interface JournalEntry {
-  readonly idx: number;
-  readonly when: number;
-  readonly tag: string;
-}
+const JournalSchema = z.object({
+  entries: z.array(
+    z.object({
+      idx: z.number(),
+      when: z.number(),
+      tag: z.string(),
+    }),
+  ),
+});
 
 interface PlannedMigration {
   readonly tag: string;
@@ -62,22 +85,26 @@ const env = validateEnv();
 const targetUrl = new URL(env.DATABASE_URL);
 
 const drizzleDir = fileURLToPath(new URL("../../drizzle/", import.meta.url));
-const journal = JSON.parse(await readFile(`${drizzleDir}meta/_journal.json`, "utf-8")) as {
-  entries: JournalEntry[];
-};
+const journalParse = JournalSchema.safeParse(
+  JSON.parse(await readFile(`${drizzleDir}meta/_journal.json`, "utf-8")),
+);
+if (!journalParse.success) abort("drizzle/meta/_journal.json does not match the expected shape.");
+const journal = journalParse.data;
 
 const plan: PlannedMigration[] = [];
 for (const tag of MIGRATION_TAGS) {
   const entry = journal.entries.find((candidate) => candidate.tag === tag);
   if (entry === undefined) abort(`journal has no entry for ${tag} — unexpected tree state.`);
   const sqlText = await readFile(`${drizzleDir}${tag}.sql`, "utf-8");
-  plan.push({
-    tag,
-    when: entry.when,
-    sqlText,
-    hash: crypto.createHash("sha256").update(sqlText).digest("hex"),
-    applied: false,
-  });
+  const hash = crypto.createHash("sha256").update(sqlText).digest("hex");
+  if (hash !== EXPECTED_HASHES[tag]) {
+    abort(
+      `${tag}.sql does not match the reviewed content (sha256 ${hash} != pinned ` +
+        `${EXPECTED_HASHES[tag] ?? "<none>"}). The file drifted since review/rehearsal — ` +
+        "investigate before applying anything.",
+    );
+  }
+  plan.push({ tag, when: entry.when, sqlText, hash, applied: false });
 }
 const firstDiaryWhen = plan[0]?.when ?? 0;
 
@@ -128,8 +155,18 @@ for (const migration of plan) {
   if (!migration.applied) pendingCount += 1;
 }
 
-// --- 4. Prerequisites 0050/0051 reference ------------------------------------
-const PREREQUISITES = ["venues", "spaces", "users", "events", "event_phases", "enquiries"];
+// --- 4. Prerequisites — every table 0050/0051 reference (review-completed:
+// client_accounts + opportunities are FK targets of 0050's events columns) ---
+const PREREQUISITES = [
+  "venues",
+  "spaces",
+  "users",
+  "events",
+  "event_phases",
+  "enquiries",
+  "client_accounts",
+  "opportunities",
+];
 for (const table of PREREQUISITES) {
   const exists = await db.execute(sql`
     SELECT 1 AS ok FROM information_schema.tables
@@ -164,6 +201,28 @@ if (stranded.length > 0 && !ACCEPT_CURSOR_JUMP) {
       "unapplied. Re-run with --accept-cursor-jump once you have read the runbook's " +
       "cursor section.",
   );
+}
+
+// Positive target confirmation (security review): the operator must name the
+// host they believe they are changing. Wrong or missing name = no apply.
+if (CONFIRMED_HOST === null) {
+  abort(
+    `--apply requires --host <hostname>. This target resolves to "${targetUrl.hostname}" — ` +
+      "pass exactly that value if it is the database you intend to change.",
+  );
+}
+if (CONFIRMED_HOST !== targetUrl.hostname) {
+  abort(
+    `--host "${CONFIRMED_HOST}" does not match the resolved target "${targetUrl.hostname}". ` +
+      "No changes made.",
+  );
+}
+
+// One rollout at a time (security review): a session-scoped advisory lock so
+// two concurrent --apply invocations cannot interleave.
+const lock = await db.execute(sql`SELECT pg_try_advisory_lock(hashtext('diary-rollout-t520')) AS ok`);
+if (lock.rows[0]?.["ok"] !== true) {
+  abort("another diary-rollout invocation holds the advisory lock — not proceeding.");
 }
 
 // --- 5. Apply — one transaction per migration, ledger row included -----------

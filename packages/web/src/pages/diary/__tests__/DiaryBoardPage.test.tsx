@@ -346,6 +346,27 @@ describe("DiaryBoardPage", () => {
     expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
   });
 
+  it("a dismissed welcome never reopens on auth churn, even when storage writes fail (review P2)", async () => {
+    window.localStorage.removeItem(welcomeStorageKey(STAFF_USER_ID));
+    // Kiosk/private-browsing mode: persistence is denied.
+    const denied = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    try {
+      renderPage();
+      await screen.findByRole("dialog", { name: "The Diary, in one minute" });
+      fireEvent.click(screen.getByRole("button", { name: "Take me to the diary" }));
+      expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+      // Clerk sync replaces the user OBJECT (same identity, new reference) —
+      // the panel must stay closed for the rest of the session.
+      setUser("staff");
+      await screen.findByText("Grand Hall");
+      expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    } finally {
+      denied.mockRestore();
+    }
+  });
+
   it("the header reopens the welcome any time; Escape closes it (T-520)", async () => {
     renderPage();
     await screen.findByText("Grand Hall");

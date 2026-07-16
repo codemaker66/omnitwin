@@ -102,16 +102,28 @@ export function DiaryBoardPage(): ReactElement {
 
   // First-run welcome (T-520): greet each coordinator once per device; the
   // header's "How the Diary works" button re-opens it any time.
+  //
+  // Review hardening: the effect keys on the stable user ID (the auth store
+  // replaces the user OBJECT on every Clerk sync), and a per-mount ref
+  // remembers an in-session dismissal — so even when localStorage writes are
+  // denied (kiosks, private browsing), auth churn can never pop the panel
+  // back over an in-progress board. Degraded persistence then means
+  // "greets again next visit", exactly as documented in lib/welcome.ts.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const welcomeDismissedForRef = useRef<string | null>(null);
+  const userId = user?.id ?? null;
   useEffect(() => {
-    if (user !== null && venueId !== null && shouldShowWelcome(user.id)) {
-      setWelcomeOpen(true);
-    }
-  }, [user, venueId]);
+    if (userId === null || venueId === null) return;
+    if (welcomeDismissedForRef.current === userId) return;
+    if (shouldShowWelcome(userId)) setWelcomeOpen(true);
+  }, [userId, venueId]);
   const dismissWelcome = useCallback(() => {
-    if (user !== null) markWelcomeSeen(user.id);
+    if (userId !== null) {
+      welcomeDismissedForRef.current = userId;
+      markWelcomeSeen(userId);
+    }
     setWelcomeOpen(false);
-  }, [user]);
+  }, [userId]);
 
   const live = useDiaryLive(venueId !== null, refetch);
 

@@ -32,6 +32,13 @@ const webDir = fileURLToPath(new URL("../../packages/web/", import.meta.url));
 const { chromium } = createRequire(webDir)("@playwright/test");
 
 const BASE_URL = process.env.VERIFY_BASE_URL ?? "http://localhost:5174";
+// Fixture credentials go nowhere but the developer's own machine (security
+// review): refuse non-local targets outright.
+const baseHost = new URL(BASE_URL).hostname;
+if (baseHost !== "localhost" && baseHost !== "127.0.0.1") {
+  console.error(`VERIFY_BASE_URL must point at localhost, not "${baseHost}".`);
+  process.exit(1);
+}
 // Must match e2e/support/diary-live.ts + provision-clerk-test-users.mjs.
 const EMAIL = "fiona.coordinator+clerk_test@tradeshall.co.uk";
 const PASSWORD = "TradesHall-diary-e2e-2026!";
@@ -112,9 +119,15 @@ if (token === null) {
   process.exit(1);
 }
 
-const payload = JSON.parse(
-  Buffer.from(token.split(".")[1].replace(/-/gu, "+").replace(/_/gu, "/"), "base64").toString(),
-);
+let payload;
+try {
+  payload = JSON.parse(
+    Buffer.from(token.split(".")[1].replace(/-/gu, "+").replace(/_/gu, "/"), "base64").toString(),
+  );
+} catch {
+  console.error("The captured bearer token is not a decodable JWT — cannot grade its claims.");
+  process.exit(1);
+}
 
 console.log(`claims present: ${Object.keys(payload).sort().join(", ")}\n`);
 

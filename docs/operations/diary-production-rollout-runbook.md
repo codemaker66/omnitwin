@@ -44,8 +44,10 @@ DRY RUN complete. 2 migration(s) would be applied.
 ## 2. Apply
 
 ```
-pnpm --filter @omnitwin/api exec tsx src/scripts/apply-diary-rollout.ts --apply --accept-cursor-jump
+pnpm --filter @omnitwin/api exec tsx src/scripts/apply-diary-rollout.ts --apply --accept-cursor-jump --host <the-hostname-the-dry-run-printed>
 ```
+
+Three deliberate hurdles (post-security-review): `--apply` arms it, `--accept-cursor-jump` acknowledges §3, and `--host` must repeat the exact hostname the dry run printed — naming the wrong target aborts with no changes. The script also refuses to run if either migration file's sha256 differs from the pinned, reviewed value (drift = stop), and takes an advisory lock so two invocations can't interleave.
 
 Each migration runs in its own transaction; a failure rolls that migration back and aborts. Expected tail:
 
@@ -83,6 +85,12 @@ Production app smoke: venviewer.com loads, sign-in works, the planner and enquir
 ## 5. Rollback
 
 Both migrations are additive, so rollback is exact and safe while the Diary code is not yet deployed (nothing reads these objects).
+
+**Before any rollback, re-assert that precondition** (security review): if this returns anything but `0`, real bookings exist — STOP; the Neon backup-branch restore is then the only safe path.
+
+```sql
+SELECT count(*) FROM bookings;  -- must be 0 before running the DROPs below
+```
 
 ```sql
 -- 0051 first
