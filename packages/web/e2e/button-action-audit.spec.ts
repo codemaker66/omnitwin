@@ -23,6 +23,14 @@ import type { PublicProposal } from "../src/api/proposals.js";
 import type { ProposalCommentRow, ProposalHistoryEntry, StaffProposal, StaffProposalVersion } from "../src/api/proposals.js";
 import type { Space } from "../src/api/spaces.js";
 
+// Installed into the page by exposeFunction("buttonAuditPrintCalled", …) below;
+// evaluate() closures read it off window.
+declare global {
+  interface Window {
+    buttonAuditPrintCalled?: () => void;
+  }
+}
+
 const API = "http://localhost:3001";
 const NOW = "2026-06-18T12:00:00.000Z";
 const VENUE_ID = "00000000-0000-4000-8000-000000004001";
@@ -2183,7 +2191,7 @@ test.describe("SS++ representative button behavior", () => {
     });
     await page.evaluate(() => {
       window.addEventListener("button-audit-print", () => {
-        void window.buttonAuditPrintCalled?.();
+        window.buttonAuditPrintCalled?.();
       });
     });
 

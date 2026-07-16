@@ -167,7 +167,7 @@ test.describe("Navigation", () => {
     await page.route(`${API}/public/configurations`, async (route) => {
       const body = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
       createdSpaceId = body["spaceId"];
-      void route.fulfill({
+      await route.fulfill({
         json: {
           data: {
             id: "e2e-city-config",

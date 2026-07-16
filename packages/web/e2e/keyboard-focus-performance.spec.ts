@@ -270,22 +270,6 @@ function reviewHistoryFixture(): ReviewHistoryEntry {
   };
 }
 
-function snapshotEnvelopeFixture() {
-  return {
-    id: SNAPSHOT_ID,
-    configurationId: CONFIG_ID,
-    version: 2,
-    payload: {},
-    diagramUrl: null,
-    pdfUrl: null,
-    sourceHash: HASH,
-    createdAt: NOW,
-    createdBy: null,
-    approvedAt: NOW,
-    approvedBy: null,
-  };
-}
-
 function loadoutFixture(): Loadout {
   return {
     id: LOADOUT_ID,
@@ -1157,7 +1141,7 @@ async function assertNoRuntimeBreakage(page: Page, problems: PageProblems): Prom
 
 async function activeElementInside(page: Page, container: Locator): Promise<boolean> {
   const handle = await container.elementHandle();
-  expect(handle).not.toBeNull();
+  if (handle === null) throw new Error("container has no element handle");
   return page.evaluate((node) => {
     const active = document.activeElement;
     return active instanceof Element && node.contains(active);

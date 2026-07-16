@@ -114,6 +114,7 @@ test("the API answers on every health surface", async ({ request }) => {
   }
   const version = await request.get(`${API_URL}/health/version`);
   expect(version.ok()).toBe(true);
+  // eslint-disable-next-line no-console -- deliberate: reports the deployed version to the runner output
   console.log(`[smoke] /health/version → ${(await version.text()).slice(0, 200)}`);
 });
 
@@ -180,9 +181,11 @@ test("write probe: a labelled house block lands and is released (opt-in)", async
       await releaseOnce()
         .then(() => {
           released = true;
+          // eslint-disable-next-line no-console -- deliberate: operator-facing outcome report
           console.log(`[smoke] write probe: first release failed; retry released "${title}".`);
         })
         .catch(() => {
+          // eslint-disable-next-line no-console -- deliberate: manual-cleanup instructions (review Finding 1)
           console.log(
             `[smoke] WRITE PROBE LEFT AN ACTIVE ROW — manual cleanup needed: ` +
               `open the block titled "${title}" on the board and choose Release.`,

@@ -227,7 +227,9 @@ async function recordControlAudit(page: Page, name: string, path: string): Promi
             .join(" ");
           if (label.length > 0) return label;
         }
-        if (element.placeholder.trim().length > 0) return element.placeholder.trim();
+        if ("placeholder" in element && element.placeholder.trim().length > 0) {
+          return element.placeholder.trim();
+        }
       }
 
       const title = element.getAttribute("title");
@@ -272,7 +274,7 @@ async function recordControlAudit(page: Page, name: string, path: string): Promi
         }
       }
       if (!disabled && (rect.width < 32 || rect.height < 28)) {
-        issues.push({ selector, label, reason: `visible enabled control is very small (${Math.round(rect.width)}x${Math.round(rect.height)})` });
+        issues.push({ selector, label, reason: `visible enabled control is very small (${String(Math.round(rect.width))}x${String(Math.round(rect.height))})` });
       }
     }
 
@@ -427,7 +429,7 @@ function supplierPackFixture(acknowledgements: readonly SupplierSafeAcknowledgem
         sortOrder: 1,
       },
     ],
-    acknowledgements,
+    acknowledgements: [...acknowledgements],
     supplierNotice: "Supplier-facing planning handoff from venue operations data. Confirm details with the venue team before arrival.",
   };
 }
@@ -447,14 +449,14 @@ async function mockProposalShare(page: Page): Promise<void> {
   await page.route(`**/proposal-share/${PROPOSAL_TOKEN}/comment`, async (route) => {
     const request = route.request();
     if (request.method() !== "POST") {
-      void route.fallback();
+      await route.fallback();
       return;
     }
     const postData = request.postDataJSON() as { body?: unknown; kind?: unknown } | null;
     const body = typeof postData?.body === "string" ? postData.body : "Client comment";
     latestComment = body;
     if (postData?.kind === "request_changes") status = "changes_requested";
-    void route.fulfill({
+    await route.fulfill({
       json: {
         data: {
           id: "00000000-0000-4000-8000-000000004080",
@@ -486,7 +488,7 @@ async function mockSupplierShare(page: Page): Promise<void> {
   await page.route(`**/supplier-share/${SUPPLIER_TOKEN}/acknowledge`, async (route) => {
     const request = route.request();
     if (request.method() !== "POST") {
-      void route.fallback();
+      await route.fallback();
       return;
     }
     const postData = request.postDataJSON() as {
@@ -550,7 +552,7 @@ test.describe("T-469 production-live route pass", () => {
     ] as const;
 
     for (const room of roomCases) {
-      const path = `/venues/trades-hall/rooms/${room.slug}?live-route-pass=${Date.now()}`;
+      const path = `/venues/trades-hall/rooms/${room.slug}?live-route-pass=${String(Date.now())}`;
       const problems = watchPageProblems(page);
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name: room.heading })).toBeVisible();
@@ -630,12 +632,12 @@ test.describe("T-469 production-live route pass", () => {
     const cases = [
       {
         name: "proposal-share-unavailable",
-        path: `/proposal-share/not-a-real-token-${Date.now()}`,
+        path: `/proposal-share/not-a-real-token-${String(Date.now())}`,
         heading: "This proposal link isn't available",
       },
       {
         name: "supplier-share-unavailable",
-        path: `/supplier-share/not-a-real-token-${Date.now()}`,
+        path: `/supplier-share/not-a-real-token-${String(Date.now())}`,
         heading: "This supplier link is not available",
       },
     ] as const;
@@ -661,7 +663,7 @@ test.describe("T-469 production-live route pass", () => {
     const protectedViews = ["reviews", "loadouts", "proposals", "admin", "analytics"] as const;
 
     for (const view of protectedViews) {
-      const path = `/dashboard?view=${view}&live-route-pass=${Date.now()}`;
+      const path = `/dashboard?view=${view}&live-route-pass=${String(Date.now())}`;
       const problems = watchPageProblems(page);
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/u);

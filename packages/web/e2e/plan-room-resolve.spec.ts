@@ -109,6 +109,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       .toMatch(/ink|developing/);
     const firstPaintMs = Date.now() - startedAt;
     expect(firstPaintMs).toBeLessThan(15_000);
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
     console.log(`[CARD-A2] first paint (canvas + resolve attribute) in ${String(firstPaintMs)}ms`);
 
     // The develop begins: caption appears with honest chunk progress.
@@ -147,6 +148,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
         message: "waiting for resolved phase with the caption exited",
       })
       .toBe("resolved|false");
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
     console.log(`[CARD-A2] resolved ${String(RECEPTION_SOG_CHUNKS.length)} chunks in ${String(Date.now() - startedAt)}ms at 50 Mbps`);
 
     // Settle window for Spark's demand-driven paint, then final evidence.

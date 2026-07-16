@@ -389,7 +389,7 @@ async function mockEventDayRoutes(page: Page): Promise<{ readonly statusUpdates:
   await page.route(`${API}/ops-tasks/${TASK_ID}/status`, async (route) => {
     const body = route.request().postDataJSON() as { readonly status?: OpsTask["status"] };
     if (body.status !== undefined) statusUpdates.push(body.status);
-    void route.fulfill({ json: { data: taskFixture(body.status ?? "todo") } });
+    await route.fulfill({ json: { data: taskFixture(body.status ?? "todo") } });
   });
   return { statusUpdates };
 }

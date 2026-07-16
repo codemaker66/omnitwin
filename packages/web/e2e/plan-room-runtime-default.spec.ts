@@ -84,6 +84,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     // anonymous draft creation + navigation); the measured figure is logged
     // for the card's DoD evidence rather than hard-gated here.
     expect(interactiveMs).toBeLessThan(15_000);
+    // eslint-disable-next-line no-console -- deliberate: CARD-A1 timing evidence in the runner output
     console.log(`[CARD-A1] fallback: chip + interactive canvas in ${String(interactiveMs)}ms`);
 
     // The bootstrap must have landed in the Reception Room, and the chip
