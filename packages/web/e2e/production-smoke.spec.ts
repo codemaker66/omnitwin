@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
-// Production smoke suite — the Diary's first live week (T-522).
+// Production smoke suite — the Diary's first live week (T-523).
 // Runbook: docs/operations/diary-deploy-checklist.md §6.
 //
 // READ-ONLY by default. Self-gated: skips entirely unless PROD_SMOKE=1, so
@@ -25,6 +25,10 @@ import { test, expect, type Page } from "@playwright/test";
 // clearly-labelled house block tomorrow at 03:00 and immediately releases
 // it — the only trace is a released row visible under "Show released &
 // cancelled". Requires a staff-role smoke account.
+// FAILURE RESIDUE: if the probe fails between creation and release, an
+// ACTIVE row remains. The test logs its exact run-unique title; clean up
+// by opening that block on the board and choosing Release. Titles carry a
+// per-run token, so a leftover can never be confused with a fresh attempt.
 // ---------------------------------------------------------------------------
 
 const GATE = process.env["PROD_SMOKE"] === "1";
@@ -38,7 +42,11 @@ const ALLOW_WRITE = process.env["SMOKE_ALLOW_WRITE"] === "1";
  *  Never set against production — capture a storage state instead. */
 const TEST_OTP = process.env["SMOKE_TEST_OTP"];
 
-test.describe.configure({ mode: "serial" });
+// Serial on purpose: if a read-only probe fails, later tests (above all the
+// write probe) are skipped — never write into a system already looking sick.
+// retries: 0 — a retried write probe would create a second booking; smoke
+// re-runs must be deliberate, not automatic.
+test.describe.configure({ mode: "serial", retries: 0 });
 
 test.skip(!GATE, "Production smoke is opt-in — set PROD_SMOKE=1 (see diary-deploy-checklist.md §6).");
 
@@ -133,7 +141,10 @@ test("write probe: a labelled house block lands and is released (opt-in)", async
   await openDiary(page);
 
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const title = `Smoke probe — ignore (${tomorrow})`;
+  // Per-run token: a leftover from a failed earlier run can never collide
+  // with (or be released in place of) this run's block.
+  const runToken = Date.now().toString(36);
+  const title = `Smoke probe — ignore (${tomorrow}) #${runToken}`;
 
   await page.getByRole("button", { name: "New booking" }).click();
   const drawer = page.getByRole("dialog", { name: "New booking" });
@@ -146,14 +157,37 @@ test("write probe: a labelled house block lands and is released (opt-in)", async
   await drawer.getByRole("button", { name: "Add to the diary" }).click();
   await expect(page.getByText(`Added ${title} to the diary.`)).toBeVisible({ timeout: 15_000 });
 
-  // Release it through the shared lifecycle matrix, leaving only a released
-  // row (visible under "Show released & cancelled"). The title carries
-  // regex metacharacters (parentheses) — escape before matching.
-  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const block = page.getByRole("button", { name: new RegExp(escaped) }).first();
-  await block.focus();
-  await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-  await page.getByRole("button", { name: "Release" }).click();
-  await expect(page.getByText(/^Release: /)).toBeVisible({ timeout: 15_000 });
+  // From here a real row EXISTS — everything below must end in a release or
+  // a loud, actionable trace of what to clean up by hand.
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // parens etc. in the title
+  const releaseOnce = async (): Promise<void> => {
+    const block = page.getByRole("button", { name: new RegExp(escaped) }).first();
+    await block.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "Booking details" })).toBeVisible();
+    await page.getByRole("button", { name: "Release" }).click();
+    await expect(page.getByText(/^Release: /)).toBeVisible({ timeout: 15_000 });
+  };
+  let released = false;
+  try {
+    // Release it through the shared lifecycle matrix, leaving only a
+    // released row (visible under "Show released & cancelled").
+    await releaseOnce();
+    released = true;
+  } finally {
+    if (!released) {
+      // Best-effort second attempt, then hand the operator the exact title.
+      await releaseOnce()
+        .then(() => {
+          released = true;
+          console.log(`[smoke] write probe: first release failed; retry released "${title}".`);
+        })
+        .catch(() => {
+          console.log(
+            `[smoke] WRITE PROBE LEFT AN ACTIVE ROW — manual cleanup needed: ` +
+              `open the block titled "${title}" on the board and choose Release.`,
+          );
+        });
+    }
+  }
 });

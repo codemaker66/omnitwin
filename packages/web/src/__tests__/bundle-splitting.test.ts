@@ -67,10 +67,25 @@ describe("router.tsx — lazy route loading (#16)", () => {
     const { codeOnly } = await readSource(SRC);
     // The static import form was the bug. Lazy-loaded pages must NOT also
     // be statically imported (which would force them into the main chunk
-    // alongside the lazy-loaded version).
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*LoginPage\s*\}\s+from\s+["']\.\/pages\/LoginPage/m);
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*EditorPage\s*\}\s+from\s+["']\.\/pages\/EditorPage/m);
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*DashboardPage\s*\}\s+from\s+["']\.\/pages\/DashboardPage/m);
+    // alongside the lazy-loaded version). Every lazy-loaded page gets a
+    // negative assertion — a redundant static import alongside the lazy
+    // form silently defeats the split for that page.
+    const pages = [
+      "LoginPage",
+      "RegisterPage",
+      "EditorPage",
+      "DashboardPage",
+      "HallkeeperPage",
+      "SplatFixturePage",
+      "TradesHallVisualPage",
+      "TradesHallAssetStatusPage",
+      "RoomShowcasePage",
+    ] as const;
+    for (const pageName of pages) {
+      expect(codeOnly).not.toMatch(
+        new RegExp(String.raw`^import\s+\{\s*${pageName}\s*\}\s+from\s+["']\./pages/${pageName}`, "m"),
+      );
+    }
   });
 });
 
