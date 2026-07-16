@@ -2381,3 +2381,6 @@ export * from "./event-architect-engine.js";
 export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
 export * from "./booking.js";
+
+// G4 (03 §1): the one Action envelope — LIVE from Slice 1 (web action log).
+export * from "./action.js";

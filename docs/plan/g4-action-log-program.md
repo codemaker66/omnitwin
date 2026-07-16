@@ -30,6 +30,12 @@
 
 Slices 1–2 are pure-frontend and safe alongside the parallel workstreams; slice 3 coordinates with the API lane (booking/diary table conventions apply); slice 4's AI half is contract-only until Phase 8.
 
+## Slice 1 — SHIPPED 2026-07-17
+
+Delivered: ActionSchema in @omnitwin/types; action-log lib (gesture sealing by engine-assigned seq — NOT object identity or length inference); append-only config-scoped log store with explicit fold-on-overflow; editor-store wiring (recordedHistory sweep, undo/redo metas, save + config-boundary flushes, beginActionLogForConfig). Review cycle: two CRITICALs (identity-tracking broken by save-time id remapping; cap-time append+evict masking appends) + one HIGH (stale pre-await history snapshot) found by typescript-reviewer, all fixed same-session with reproductions pinned; a generation-reset defect (seqs restart per config, cursor didn't) caught by our own integration test, fixed via the explicit boundary API. HistoryEntry gained a monotone `seq` (engine change, behaviour-neutral, pinned suites untouched-green).
+
+Deferred to a slice-1.1 hardening pass (reviewer MEDIUMs/LOWs, non-blocking): byte budget on the log store (count-only today; 03 §9 hardware note), appendWithOverflow's maxEntries<2 contract guard, payload type-guards replacing the summary casts, asJson comment honesty, JsonValueSchema prototype-pollution key hardening + z.lazy parse cost (both PRECONDITIONS for slice 3's server ingestion — do not ship slice 3 without them).
+
 ## Standing constraints
 
 - TDD throughout; typescript-reviewer per slice; the frame-budget and pixel gates may not regress (the log must never do per-frame work — batch on the existing save/idle boundaries).
