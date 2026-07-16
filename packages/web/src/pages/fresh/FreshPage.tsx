@@ -59,6 +59,14 @@ import {
   FRESH_ENQUIRY_OR_CALL,
   FRESH_ENQUIRY_SEND,
   FRESH_ENQUIRY_TITLE,
+  FRESH_HERO_LADDER,
+  FRESH_HERO_PORTRAIT_MEDIA,
+  FRESH_HERO_PORTRAIT_SRCSET,
+  FRESH_HERO_SIZES,
+  FRESH_HERITAGE_LADDER,
+  FRESH_HERITAGE_SIZES,
+  FRESH_ROOM_SIZES,
+  ladderSrcSet,
 } from "./fresh-copy.js";
 import {
   ENQUIRY_EVENT_TYPES,
@@ -448,16 +456,28 @@ export function FreshPage(): ReactElement {
         {/* ——— hero: the photograph, and the breathing word ——— */}
         <section className="fr-hero" aria-labelledby="fr-headline">
           <div className="fr-hero-frame" ref={aperture.frameRef}>
-            <img
-              className="fr-hero-photo"
-              src={FRESH_HERO_IMAGE}
-              alt={FRESH_HERO_ALT}
-              width={1536}
-              height={864}
-              fetchPriority="high"
-              decoding="async"
-              ref={aperture.imgRef}
-            />
+            <picture>
+              {/* Narrow screens: the purpose-cut portrait, dome centred. */}
+              <source
+                media={FRESH_HERO_PORTRAIT_MEDIA}
+                srcSet={FRESH_HERO_PORTRAIT_SRCSET}
+                sizes="calc(100vw - 32px)"
+                width={768}
+                height={864}
+              />
+              <img
+                className="fr-hero-photo"
+                src={FRESH_HERO_IMAGE}
+                srcSet={ladderSrcSet(FRESH_HERO_IMAGE, FRESH_HERO_LADDER)}
+                sizes={FRESH_HERO_SIZES}
+                alt={FRESH_HERO_ALT}
+                width={1536}
+                height={864}
+                fetchPriority="high"
+                decoding="async"
+                ref={aperture.imgRef}
+              />
+            </picture>
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
@@ -498,6 +518,8 @@ export function FreshPage(): ReactElement {
                 <img
                   className={room.portrait === true ? "is-portrait" : undefined}
                   src={room.image}
+                  srcSet={ladderSrcSet(room.image, room.ladder)}
+                  sizes={FRESH_ROOM_SIZES}
                   alt={room.alt}
                   loading="lazy"
                   decoding="async"
@@ -558,6 +580,8 @@ export function FreshPage(): ReactElement {
           <img
             className="fr-heritage-art"
             src={FRESH_HERITAGE_ART}
+            srcSet={ladderSrcSet(FRESH_HERITAGE_ART, FRESH_HERITAGE_LADDER)}
+            sizes={FRESH_HERITAGE_SIZES}
             alt={FRESH_HERITAGE_ART_ALT}
             loading="lazy"
             decoding="async"

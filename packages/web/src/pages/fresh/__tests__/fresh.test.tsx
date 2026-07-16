@@ -98,6 +98,31 @@ describe("theme — respects the system, remembers the choice", () => {
   });
 });
 
+describe("responsive delivery — nobody downloads the originals", () => {
+  it("every content photograph carries a ladder srcset and sizes", () => {
+    render(<FreshPage />);
+    const content = [...document.querySelectorAll("img")].filter((img) => {
+      const src = img.getAttribute("src") ?? "";
+      return src.includes("/venue/") || src.includes("facade-art");
+    });
+    expect(content.length).toBeGreaterThanOrEqual(5);
+    for (const img of content) {
+      const srcset = img.getAttribute("srcset");
+      expect(srcset, `missing srcset on ${img.getAttribute("src") ?? ""}`).toContain(
+        "/images/venue/ladder/",
+      );
+      expect(img.getAttribute("sizes")).toBeTruthy();
+    }
+  });
+
+  it("art-directs the hero to the portrait crop on narrow screens", () => {
+    render(<FreshPage />);
+    const source = document.querySelector(".fr-hero-frame picture source");
+    expect(source?.getAttribute("media")).toBe("(max-width: 760px)");
+    expect(source?.getAttribute("srcset")).toContain("trades-hall-exterior-portrait-");
+  });
+});
+
 describe("the enquiry composer", () => {
   it("answers with the snuggest published room and updates as numbers change", () => {
     render(<FreshPage />);
