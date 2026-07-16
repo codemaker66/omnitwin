@@ -7,6 +7,8 @@ import {
   formatEvidenceState,
   formatStalenessState,
 } from "../../lib/truth-mode-summary.js";
+import { evidenceChipStateFromVerificationState } from "../../lib/evidence-chip-model.js";
+import { EvidenceChip } from "../evidence/EvidenceChip.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 
@@ -289,7 +291,16 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactE
               </div>
             </SummaryRow>
 
-            <SummaryRow label="Verification">{summary.verificationSummary}</SummaryRow>
+            <SummaryRow label="Verification">
+              <p style={bodyTextStyle}>{summary.verificationSummary}</p>
+              {/* CARD A4: the canonical evidence chip, driven by the summary's
+                  verification state. The source tags above keep their own
+                  11-value provenance vocabulary by design — mapping them onto
+                  the four chip states would overstate what is known. */}
+              <div style={{ marginTop: 8 }}>
+                <EvidenceChip state={evidenceChipStateFromVerificationState(summary.verificationState)} />
+              </div>
+            </SummaryRow>
 
             <SummaryRow label="Confidence">
               {summary.confidenceSummary}

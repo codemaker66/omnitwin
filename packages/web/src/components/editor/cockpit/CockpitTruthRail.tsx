@@ -4,6 +4,8 @@ import type { TruthModeSummary } from "@omnitwin/types";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { getTruthModeSummary } from "../../../api/truth-mode.js";
 import { buildTruthRailRows } from "../../../lib/cockpit-truth-rail-model.js";
+import { evidenceChipStateFromTruthTone } from "../../../lib/evidence-chip-model.js";
+import { EvidenceChip } from "../../evidence/EvidenceChip.js";
 import "./CockpitTruthRail.css";
 
 type SummaryStatus = "idle" | "loading" | "loaded" | "fallback";
@@ -69,9 +71,10 @@ export function CockpitTruthRail(): ReactElement {
           <div className="cockpit-truth__row" key={row.key}>
             <p className="cockpit-truth__label">{row.label}</p>
             <p className="cockpit-truth__value">{row.value}</p>
-            <span className={`cockpit-truth__chip cockpit-truth__chip--${row.tone}`}>
-              {row.tone === "neutral" ? "current" : "review"}
-            </span>
+            <EvidenceChip
+              state={evidenceChipStateFromTruthTone(row.tone)}
+              className="cockpit-truth__chip-slot"
+            />
           </div>
         ))}
       </div>

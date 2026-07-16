@@ -2,6 +2,9 @@ import { lazy, Suspense, type ReactElement } from "react";
 import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
+// Static like ProtectedRoute: the canonical evidence chip renders inside the
+// route-loading fallback itself, and it's tiny (per-icon lucide + one CSS page).
+import { EvidenceChip } from "./components/evidence/EvidenceChip.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -62,6 +65,9 @@ const PricingPage = lazy(() =>
 const SplatFixturePage = lazy(() =>
   import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage })),
 );
+const EvidenceChipFixturePage = lazy(() =>
+  import("./pages/EvidenceChipFixturePage.js").then((m) => ({ default: m.EvidenceChipFixturePage })),
+);
 const TradesHallVisualPage = lazy(() =>
   import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage })),
 );
@@ -100,6 +106,18 @@ const LivingHallPage = lazy(() =>
     default: m.LivingHallPage,
   })),
 );
+const LivingHallRuntimePreviewPage = lazy(() =>
+  import("./pages/living-hall/LivingHallRuntimePreviewPage.js").then((m) => ({
+    default: m.LivingHallRuntimePreviewPage,
+  })),
+);
+const LivingHallLocalPreflightPage = import.meta.env.DEV
+  ? lazy(() =>
+      import("./pages/living-hall/LivingHallLocalPreflightPage.js").then((m) => ({
+        default: m.LivingHallLocalPreflightPage,
+      })),
+    )
+  : null;
 const TwinPage = lazy(() =>
   import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage })),
 );
@@ -114,7 +132,9 @@ function LoadingFallback(): ReactElement {
         <p className="vv-state-kicker">Venviewer</p>
         <h1>Preparing the room workspace</h1>
         <p>Loading the route shell, controls, and current planning context.</p>
-        <span className="vv-status-chip" data-tone="review">Human review required for operational decisions</span>
+        {/* CARD A4: canonical chip grammar; the SAFE wording stays verbatim
+            as the chip detail. */}
+        <EvidenceChip state="review-required" detail="Human review required for operational decisions" />
       </section>
     </div>
   );
@@ -154,6 +174,25 @@ export const router = createBrowserRouter([
     // when the minimum-viable narrative ships.
     path: "/living-hall",
     element: withSuspense(<LivingHallPage />),
+  },
+  ...(LivingHallLocalPreflightPage === null
+    ? []
+    : [{
+        // Uses only two hard-coded local candidates and exact fixed cameras.
+        // The route and its asset origins are eliminated from production builds.
+        path: "/dev/reception-quality-preflight",
+        element: withSuspense(<LivingHallLocalPreflightPage />),
+      }]),
+  {
+    // Exact immutable Reception Room candidate. The page guard improves the
+    // operator experience; the API independently protects both metadata and
+    // every streamed file.
+    path: "/admin/runtime-package-previews/:runtimePackageId/view",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+        <LivingHallRuntimePreviewPage />
+      </ProtectedRoute>,
+    ),
   },
   {
     path: "/login",
@@ -314,6 +353,12 @@ export const router = createBrowserRouter([
     // when present and keeps procedural fallback copy explicit when absent.
     path: "/dev/trades-hall-visual",
     element: withSuspense(<TradesHallVisualPage />),
+  },
+  {
+    // CARD A4 fixture: every evidence-chip state and provenance badge on one
+    // page, for visual regression and manual review of the chip grammar.
+    path: "/dev/evidence-chips",
+    element: withSuspense(<EvidenceChipFixturePage />),
   },
   {
     // Legacy room-level registry remains available during Foundry migration;

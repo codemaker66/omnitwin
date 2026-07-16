@@ -1,0 +1,98 @@
+/* CARD A4 — the one chip grammar (01 §9 · 02 §3), on the House tokens (A3).
+   Hue never carries meaning alone: every state pairs icon + label. Missing
+   is deliberately hue-free — a dashed hairline outline. */
+
+.evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 9px;
+  border: 1px solid var(--house-hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--house-text-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  cursor: default;
+}
+
+button.evidence-chip {
+  cursor: pointer;
+  transition: border-color var(--house-motion-instant) ease-out;
+}
+button.evidence-chip:hover {
+  border-color: var(--house-hairline-hover);
+}
+button.evidence-chip:active {
+  transform: scale(0.97);
+}
+
+/* Visible focus ring — keyboard reachability is part of the grammar. */
+.evidence-chip:focus-visible {
+  outline: 2px solid var(--vv-focus);
+  outline-offset: 2px;
+}
+
+.evidence-chip__icon {
+  flex: 0 0 auto;
+}
+
+.evidence-chip__detail {
+  color: var(--house-text-3);
+  font-weight: 500;
+}
+
+/* -- The four canonical states (01 §9) ------------------------------------ */
+.evidence-chip[data-state="current"] {
+  border-color: color-mix(in srgb, var(--house-status-sage) 45%, transparent);
+  background: color-mix(in srgb, var(--house-status-sage) 12%, transparent);
+  color: var(--house-status-sage);
+}
+
+.evidence-chip[data-state="review-required"] {
+  border-color: color-mix(in srgb, var(--house-status-amber) 45%, transparent);
+  background: color-mix(in srgb, var(--house-status-amber) 12%, transparent);
+  color: var(--house-status-amber);
+}
+
+.evidence-chip[data-state="stale"] {
+  border-color: color-mix(in srgb, var(--house-status-grey) 55%, transparent);
+  background: color-mix(in srgb, var(--house-status-grey) 10%, transparent);
+  color: var(--house-text-2);
+}
+
+/* Missing: no fill, dashed hairline — absence must look like absence. */
+.evidence-chip[data-state="missing"] {
+  border-style: dashed;
+  border-color: var(--house-hairline-hover);
+  background: transparent;
+  color: var(--house-text-2);
+}
+
+/* -- Provenance badges (02 §3/§9) ------------------------------------------ */
+.evidence-chip__provenance {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 6px;
+  border: 1px solid var(--house-hairline);
+  border-radius: 999px;
+  color: var(--house-text-2);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.evidence-chip__provenance[data-provenance="ai"] {
+  border-color: color-mix(in srgb, var(--house-status-violet) 45%, transparent);
+  color: var(--house-status-violet);
+}
+
+.evidence-chip__provenance[data-provenance="simulated"] {
+  border-color: color-mix(in srgb, var(--house-status-cyan) 45%, transparent);
+  color: var(--house-status-cyan);
+}
