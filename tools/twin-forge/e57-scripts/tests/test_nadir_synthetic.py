@@ -52,25 +52,49 @@ def parquet(x, y):
     return np.stack([r, g, b], axis=-1).astype(np.float32)
 
 
-def render_pano(C, gain=1.0, hole_r=None):
+def render_pano(C, gain=1.0, hole_r=None, boxes=None, pads=None):
     """Analytic world-oriented equirect of the infinite parquet floor seen
     from scanner centre C. Above the horizon: a flat wall tone (must never
     be sampled by the fill). hole_r punches the tripod smear (blob of the
-    local mean colour, like the real scanner artifact)."""
+    local mean colour, like the real scanner artifact). boxes are WORLD-TRUE
+    axis-aligned occluders (bmin, bmax, color): a ray hitting one before the
+    floor shows the box — donors honestly cannot see the floor behind it.
+    pads are CAPTURE ARTIFACTS (cx, cy, r, color) painted onto the floor —
+    the chromatic tripod-pad blobs the detector must learn to catch."""
     dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
     img = np.full((H, W, 3), 90.0, dtype=np.float32)  # wall tone
     dz = dirs[..., 2]
     down = dz < -1e-9
-    t = (Z_FLOOR - C[2]) / dz[down]
-    P = C[None, :] + t[:, None] * dirs[down]
+    dd = dirs[down]
+    t = (Z_FLOOR - C[2]) / dd[:, 2]
+    P = C[None, :] + t[:, None] * dd
     img[down] = parquet(P[:, 0], P[:, 1])
+    if boxes:
+        for bmin, bmax, color in boxes:
+            bmin = np.asarray(bmin, dtype=np.float64)
+            bmax = np.asarray(bmax, dtype=np.float64)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t1 = (bmin[None, :] - C[None, :]) / dd
+                t2 = (bmax[None, :] - C[None, :]) / dd
+            t_near = np.nanmax(np.minimum(t1, t2), axis=1)
+            t_far = np.nanmin(np.maximum(t1, t2), axis=1)
+            hit = (t_near <= t_far) & (t_far > 0) & (np.maximum(t_near, 0) < t)
+            sub = img[down]
+            sub[hit] = np.asarray(color, dtype=np.float32)
+            img[down] = sub
     hole_mask = np.zeros((H, W), dtype=bool)
     if hole_r is not None:
         off = np.hypot(P[:, 0] - C[0], P[:, 1] - C[1])
-        hm = np.zeros(down.sum(), dtype=bool)
+        hm = np.zeros(int(down.sum()), dtype=bool)
         hm[off < hole_r] = True
         hole_mask[down] = hm
         img[hole_mask] = img[hole_mask].mean(axis=0, keepdims=True)
+    if pads:
+        sub = img[down]
+        for cx, cy, r, color in pads:
+            pm = np.hypot(P[:, 0] - cx, P[:, 1] - cy) < r
+            sub[pm] = np.asarray(color, dtype=np.float32)
+        img[down] = sub
     img = np.clip(img * gain, 0, 255)
     return img.astype(np.float32), hole_mask
 
@@ -257,6 +281,109 @@ def test_best_donor_compositing_beats_averaging_on_grain():
     avg = _detail_std(nf.render_view(filled_avg, dirs), hole)
     print(f"  raw hole grain contrast: best {best:.3f} vs average {avg:.3f}")
     assert best > avg * 1.05, (best, avg)
+
+
+OCC_BOX = (
+    np.array([0.95, -0.15, 0.0]),
+    np.array([1.15, 0.35, 0.85]),
+    np.array([70.0, 60.0, 55.0]),
+)
+PADS = [
+    (0.66, 0.12, 0.09, (168.0, 88.0, 150.0)),
+    (-0.60, -0.34, 0.08, (150.0, 80.0, 140.0)),
+]
+
+
+def _box_tris(box):
+    """12 triangles of an axis-aligned box (for the voxelizer)."""
+    bmin, bmax, _ = box
+    x0, y0, z0 = bmin
+    x1, y1, z1 = bmax
+    v = np.array(
+        [
+            [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
+            [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
+        ]
+    )
+    quads = [
+        (0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4),
+        (2, 3, 7, 6), (1, 2, 6, 5), (0, 3, 7, 4),
+    ]
+    tris = []
+    for a, b, c, d in quads:
+        tris.append([v[a], v[b], v[c]])
+        tris.append([v[a], v[c], v[d]])
+    return np.array(tris)
+
+
+def _floor_points_of_mask(mask, C):
+    dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
+    dd = dirs[mask]
+    t = (Z_FLOOR - C[2]) / dd[:, 2]
+    return C[None, :] + t[:, None] * dd
+
+
+def test_mesh_occlusion_rejects_blind_donor():
+    # A low cabinet stands between donor B and part of the hole. B's pano
+    # HONESTLY shows the cabinet along those rays — sampling it without a
+    # visibility test paints cabinet colour onto the floor. With the voxel
+    # occluder, B's blind samples are rejected and other donors take over.
+    boxes = [OCC_BOX]
+    gt, _ = render_pano(C_A, hole_r=None, boxes=boxes)
+    tgt, mask = render_pano(C_A, hole_r=HOLE_R, boxes=boxes)
+    donors = [
+        (render_pano(C_B, gain=0.90, hole_r=HOLE_R, boxes=boxes)[0], C_B),
+        (render_pano(C_C, gain=1.12, hole_r=HOLE_R, boxes=boxes)[0], C_C),
+        (render_pano(C_D, gain=1.03, hole_r=HOLE_R, boxes=boxes)[0], C_D),
+    ]
+    occ = nf.VoxelOccluder.from_triangles(_box_tris(OCC_BOX), voxel=0.05)
+    P = _floor_points_of_mask(mask, C_A)
+    zone_flat = occ.blocked(C_B, P)
+    assert int(zone_flat.sum()) > 200, "test rig: B must be blocked somewhere"
+    zone_eq = np.zeros((H, W), dtype=bool)
+    zone_eq[mask] = zone_flat
+
+    common = dict(
+        z_floor=Z_FLOOR, hole_mask_eq=mask, tripod_radius=TRIPOD_R,
+        view_size=640, half_fov_deg=58.0,
+    )
+    f_no, _ = nf.fill_nadir_hole(tgt, C_A, donors, occluder=None, **common)
+    f_oc, rep = nf.fill_nadir_hole(tgt, C_A, donors, occluder=occ, **common)
+    err_no = float(np.abs(f_no[zone_eq] - gt[zone_eq]).mean())
+    err_oc = float(np.abs(f_oc[zone_eq] - gt[zone_eq]).mean())
+    print(f"  occluded-zone error: without mesh {err_no:.1f}, with mesh {err_oc:.1f}"
+          f" (mesh-occluded samples: {rep.get('mesh_occluded_px')})")
+    assert rep.get("mesh_occluded_px", 0) > 0
+    assert err_oc < err_no * 0.55, (err_oc, err_no)
+    assert err_oc < 12.0, err_oc
+
+
+def test_chroma_detection_catches_tripod_pads_and_fill_restores():
+    # Two purple tripod-pad blobs sit just OUTSIDE the smear — flat enough
+    # to pass a variance test, detached from the nadir component, so only
+    # chroma awareness can catch them. End-to-end: detection must take them
+    # and the fill must put real floor back.
+    tgt, _ = render_pano(C_A, hole_r=HOLE_R, pads=PADS)
+    filled, _rep = nf.fill_nadir_hole(
+        tgt, C_A, DONORS, z_floor=Z_FLOOR, hole_mask_eq=None,
+        tripod_radius=TRIPOD_R, view_size=640, half_fov_deg=58.0,
+    )
+    dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
+    dz = dirs[..., 2]
+    down = dz < -1e-9
+    dd = dirs[down]
+    t = (Z_FLOOR - C_A[2]) / dd[:, 2]
+    P = C_A[None, :] + t[:, None] * dd
+    pad_flat = np.zeros(int(down.sum()), dtype=bool)
+    for cx, cy, r, _color in PADS:
+        pad_flat |= np.hypot(P[:, 0] - cx, P[:, 1] - cy) < r * 0.9
+    pad_eq = np.zeros((H, W), dtype=bool)
+    pad_eq[down] = pad_flat
+    err_before = float(np.abs(tgt[pad_eq] - GT_A[pad_eq]).mean())
+    err_after = float(np.abs(filled[pad_eq] - GT_A[pad_eq]).mean())
+    print(f"  pad-region error vs truth: before {err_before:.1f}, after {err_after:.1f}")
+    assert err_before > 40.0, "test rig: pads must actually deface the floor"
+    assert err_after < 14.0, f"pads survived the fill: err {err_after:.1f}"
 
 
 def _dump(out_dir):

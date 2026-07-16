@@ -69,6 +69,7 @@ def solve_floor_z(
     view_size: int = 320,
     half_fov_deg: float = 58.0,
     detect_kwargs: dict | None = None,
+    occluder=None,
 ) -> tuple[float, float]:
     """Photometric floor solve: the z that makes donors' reprojection of the
     RING (floor visible in BOTH target and donors, just outside the smear)
@@ -90,14 +91,36 @@ def solve_floor_z(
     dd = dirs[ry, rx]
     tvals = view[ry, rx] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
+    # Visibility, computed once at the init height (the answer is
+    # insensitive to the +/-0.3 m search range at cabinet scale). Two sides:
+    # ring pixels whose OWN ray is mesh-blocked are not floor (cabinet bases
+    # in a slot) and leave the solve entirely; then per-donor blindness.
+    blocked0: list[np.ndarray | None] = [None] * len(donors)
+    if occluder is not None:
+        z_ex = z_init + 0.30
+        t0 = (z_init - C_t[2]) / dd[:, 2]
+        P0 = C_t[None, :] + t0[:, None] * dd
+        floor_seen = ~occluder.blocked(C_t, P0, z_exempt_below=z_ex)
+        if int(floor_seen.sum()) < 200:
+            return z_init, 0.0
+        dd = dd[floor_seen]
+        tvals = tvals[floor_seen]
+        P0 = P0[floor_seen]
+        for di, (_dimg, C_d) in enumerate(donors):
+            blocked0[di] = occluder.blocked(
+                np.asarray(C_d, float), P0, z_exempt_below=z_ex
+            )
+
     def ncc_at(z: float) -> float:
         t = (z - C_t[2]) / dd[:, 2]
         P = C_t[None, :] + t[:, None] * dd
-        acc = np.zeros(ry.size, dtype=np.float64)
-        wacc = np.zeros(ry.size, dtype=np.float64)
-        for dimg, C_d in donors:
+        acc = np.zeros(dd.shape[0], dtype=np.float64)
+        wacc = np.zeros(dd.shape[0], dtype=np.float64)
+        for di, (dimg, C_d) in enumerate(donors):
             v = P - C_d[None, :]
             ok = (v[:, 2] < -0.05) & (np.hypot(v[:, 0], v[:, 1]) > 0.45)
+            if blocked0[di] is not None:
+                ok &= ~blocked0[di]
             if not np.any(ok):
                 continue
             rows, cols = nf.dirs_to_pixels(v[ok], dimg.shape[1], dimg.shape[0])
@@ -123,6 +146,12 @@ def solve_floor_z(
     zs2 = np.arange(z_best - 0.02, z_best + 0.0201, 0.004)
     scores2 = [ncc_at(float(z)) for z in zs2]
     z_fine = float(zs2[int(np.argmax(scores2))])
+    # Physical guardrail: scanners stand on tripods. A solved height outside
+    # 1.30-1.70 m means the ring was too contaminated to trust — fall back
+    # to the nominal tripod height rather than shear the reprojection.
+    height = float(C_t[2]) - z_fine
+    if not (1.30 <= height <= 1.70):
+        return z_init, -abs(float(max(scores2)))
     return z_fine, float(max(scores2))
 
 
@@ -146,6 +175,9 @@ def main() -> int:
     ap.add_argument("--ss", action="store_true",
                     help="use the 8192 supersampled panos (scan_XXX_8192.jpg) "
                          "for target AND donors — the viewer's zoom tier")
+    ap.add_argument("--mesh", default="",
+                    help="dollhouse GLB path: enables mesh donor-visibility "
+                         "(the GLB shares the E57 Z-up frame per twin-basis.ts)")
     ap.add_argument("--zoom-fov", type=float, default=30.0,
                     help="half-fov of the zoom-crop proof renders (30 keeps "
                          "the smear boundary in frame at tripod height)")
@@ -172,8 +204,37 @@ def main() -> int:
     donors = [(load_eq(nid), nodes[nid]["t"]) for nid in donor_ids]
     detect_kwargs = {"rel_thresh": args.detect_rel, "abs_cap": args.detect_cap}
 
+    occluder = None
+    mesh_info = None
+    if args.mesh:
+        import trimesh
+
+        m = trimesh.load(args.mesh, force="mesh", process=False)
+        tris = np.asarray(m.triangles, dtype=np.float64)
+        lo = tris.min(axis=(0, 1))
+        hi = tris.max(axis=(0, 1))
+        inside = (
+            lo[0] - 1 < C_t[0] < hi[0] + 1 and lo[1] - 1 < C_t[1] < hi[1] + 1
+        )
+        occluder = nf.VoxelOccluder.from_triangles(tris, voxel=0.10)
+        mesh_info = {
+            "tris": int(tris.shape[0]),
+            "bounds_lo": [round(float(x), 2) for x in lo],
+            "bounds_hi": [round(float(x), 2) for x in hi],
+            "target_inside_xy": bool(inside),
+            "grid_shape": list(occluder.grid.shape),
+            "occupancy_pct": round(float(occluder.grid.mean()) * 100.0, 2),
+        }
+        print("mesh:", json.dumps(mesh_info))
+        if not inside:
+            raise SystemExit(
+                "mesh XY bounds do not contain the target scanner — frame "
+                "mismatch, refusing to fill with a wrong occluder"
+            )
+
     z_floor, ncc = solve_floor_z(
-        target, C_t, donors, z_init=float(C_t[2]) - 1.5, detect_kwargs=detect_kwargs
+        target, C_t, donors, z_init=float(C_t[2]) - 1.5,
+        detect_kwargs=detect_kwargs, occluder=occluder,
     )
 
     filled, report = nf.fill_nadir_hole(
@@ -186,7 +247,10 @@ def main() -> int:
         view_size=args.view_size,
         half_fov_deg=args.half_fov,
         detect_kwargs=detect_kwargs,
+        occluder=occluder,
     )
+    if mesh_info is not None:
+        report["mesh"] = mesh_info
     report["scan"] = key
     report["donor_ids"] = donor_ids
     report["z_floor"] = round(z_floor, 4)

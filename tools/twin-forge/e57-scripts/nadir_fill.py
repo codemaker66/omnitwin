@@ -226,6 +226,108 @@ def render_view(img: np.ndarray, dirs: np.ndarray) -> np.ndarray:
     return sample_equirect(img, rows, cols)
 
 
+class VoxelOccluder:
+    """Voxelized mesh for donor-visibility tests, in E57 world metres.
+
+    The planar-floor model assumes every donor can see every floor point —
+    false in cabinet slots (scan_000). Built from mesh triangles (e.g. the
+    co-registered dollhouse GLB, which shares the E57 Z-up frame per
+    twin-basis.ts): surfaces are sampled at half-voxel pitch into a boolean
+    grid; a donor→point segment is BLOCKED when any interior sample lands in
+    an occupied voxel. Segment ends are skipped so the floor plane itself and
+    the donor's own housing never self-occlude. Deterministic, no deps."""
+
+    def __init__(self, grid: np.ndarray, origin: np.ndarray, voxel: float):
+        self.grid = grid
+        self.origin = np.asarray(origin, dtype=np.float64)
+        self.voxel = float(voxel)
+
+    @classmethod
+    def from_triangles(
+        cls, tris: np.ndarray, voxel: float = 0.10, max_subdiv: int = 48
+    ) -> "VoxelOccluder":
+        tris = np.asarray(tris, dtype=np.float64)
+        bmin = tris.min(axis=(0, 1)) - voxel
+        bmax = tris.max(axis=(0, 1)) + voxel
+        shape = tuple(np.ceil((bmax - bmin) / voxel).astype(np.int64) + 1)
+        grid = np.zeros(shape, dtype=bool)
+        edges = np.stack(
+            [
+                np.linalg.norm(tris[:, 1] - tris[:, 0], axis=1),
+                np.linalg.norm(tris[:, 2] - tris[:, 1], axis=1),
+                np.linalg.norm(tris[:, 0] - tris[:, 2], axis=1),
+            ],
+            axis=1,
+        ).max(axis=1)
+        k = np.clip(
+            np.ceil(edges / (voxel * 0.5)).astype(np.int64), 1, max_subdiv
+        )
+        for kk in np.unique(k):
+            sub = tris[k == kk]
+            ii, jj = np.meshgrid(
+                np.arange(kk + 1), np.arange(kk + 1), indexing="ij"
+            )
+            keep = (ii + jj) <= kk
+            u = (ii[keep] / kk)[None, :, None]
+            v = (jj[keep] / kk)[None, :, None]
+            pts = (
+                sub[:, None, 0] * (1.0 - u - v)
+                + sub[:, None, 1] * u
+                + sub[:, None, 2] * v
+            ).reshape(-1, 3)
+            idx = np.floor((pts - bmin[None, :]) / voxel).astype(np.int64)
+            np.clip(idx, 0, np.asarray(shape)[None, :] - 1, out=idx)
+            grid[idx[:, 0], idx[:, 1], idx[:, 2]] = True
+        return cls(grid, bmin, voxel)
+
+    def blocked(
+        self,
+        C: np.ndarray,
+        P: np.ndarray,
+        near_skip: float = 0.35,
+        far_skip: float = 0.12,
+        z_exempt_below: float | None = None,
+    ) -> np.ndarray:
+        """(M,) bool: is the open segment C→P[i] interrupted by the mesh?
+
+        z_exempt_below: ignore voxel hits BELOW this world z. The mesh
+        contains the floor surface itself, and rays to floor points graze
+        along it — far_skip trims path LENGTH, not height, so without this a
+        shallow ray is false-blocked by the very floor it is looking at.
+        Pass z_floor + ~0.3 m: skirting-height clutter can't hide the floor
+        from a tripod-height donor anyway."""
+        C = np.asarray(C, dtype=np.float64)
+        P = np.asarray(P, dtype=np.float64)
+        v = P - C[None, :]
+        L = np.linalg.norm(v, axis=1)
+        span = L - near_skip - far_skip
+        if P.size == 0 or float(np.nanmax(span, initial=0.0)) <= 0:
+            return np.zeros(P.shape[0], dtype=bool)
+        step = self.voxel * 0.7
+        n = int(np.clip(np.ceil(np.nanmax(span) / step), 1, 4096))
+        s = np.linspace(0.0, 1.0, n, dtype=np.float64)[None, :]
+        tt = near_skip + s * np.maximum(span, 0.0)[:, None]
+        valid = (span[:, None] > 0) & (tt <= (L[:, None] - far_skip))
+        unit = v / np.maximum(L, 1e-12)[:, None]
+        pts = C[None, None, :] + unit[:, None, :] * tt[..., None]
+        idx = np.floor((pts - self.origin[None, None, :]) / self.voxel).astype(
+            np.int64
+        )
+        gshape = np.asarray(self.grid.shape)[None, None, :]
+        inb = valid & np.all((idx >= 0) & (idx < gshape), axis=2)
+        if z_exempt_below is not None:
+            inb &= pts[..., 2] >= z_exempt_below
+        hit = np.zeros(P.shape[0], dtype=bool)
+        if np.any(inb):
+            gi = idx[inb]
+            occ = self.grid[gi[:, 0], gi[:, 1], gi[:, 2]]
+            rows = np.broadcast_to(
+                np.arange(P.shape[0])[:, None], inb.shape
+            )[inb]
+            hit = np.bincount(rows[occ], minlength=P.shape[0]) > 0
+        return hit
+
+
 def detect_smear_view(
     view: np.ndarray,
     std_window: int = 9,
@@ -233,11 +335,18 @@ def detect_smear_view(
     abs_floor: float = 1.2,
     abs_cap: float = 6.0,
     grow_px: int = 2,
+    chroma_k: float = 6.0,
 ) -> np.ndarray:
     """Find the tripod smear in a nadir gnomonic view: the blur has far less
     local texture than the real floor. Local-std threshold (relative to the
     view's own texture level), keep the connected component containing the
-    nadir point (the exact view centre), close + grow slightly."""
+    nadir point (the exact view centre), close + grow slightly.
+
+    chroma_k adds the second capture artifact: tripod-PAD blobs (purple
+    rubber feet) that sit just outside the smear — flat enough to pass a
+    variance test but chromatically alien. Pixels whose blurred chroma sits
+    more than chroma_k robust sigmas from the surrounding floor's, within
+    the smear's neighbourhood, are unioned into the mask. 0 disables."""
     from scipy import ndimage
 
     v = np.asarray(view, dtype=np.float32)
@@ -261,6 +370,66 @@ def detect_smear_view(
     mask = labels == centre_label
     mask = ndimage.binary_closing(mask, iterations=3)
     mask = ndimage.binary_fill_holes(mask)
+
+    if chroma_k > 0 and np.any(mask):
+        # Tripod-pad stage: the pads are FLAT (so they are already connected
+        # components of the low-variance `raw` mask, just not the nadir one)
+        # and chromatically alien. Judge each flat component near the smear
+        # by the ABSOLUTE chroma distance of its median from the surrounding
+        # floor's median — per-component medians are immune to a mixed ring
+        # (blond floor + dark cabinet) that inflates MAD-style thresholds.
+        blur = ndimage.gaussian_filter(v, (2.0, 2.0, 0.0))
+        blum = blur @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+        cb = blur[..., 2] - blum
+        cr = blur[..., 0] - blum
+        ring = ndimage.binary_dilation(mask, iterations=14) & ~ndimage.binary_dilation(
+            mask, iterations=3
+        )
+        if int(ring.sum()) >= 200:
+            mcb = float(np.median(cb[ring]))
+            mcr = float(np.median(cr[ring]))
+            radius_px = int(np.clip(np.sqrt(mask.sum() / np.pi) * 0.9, 8, 120))
+            neigh = ndimage.binary_dilation(mask, iterations=radius_px)
+            cand = raw & neigh & ~mask
+            labs, n_comp = ndimage.label(cand)
+            added = False
+            for lab in range(1, n_comp + 1):
+                comp = labs == lab
+                area = int(comp.sum())
+                # The std window erodes a flat blob's rim by ~window/2 before
+                # it reaches `raw`, so small pads survive only as cores:
+                # accept small cores, then dilate the accepted component back
+                # out by the half-window to recover the true blob extent.
+                if area < 12 or area > int(mask.sum()) * 0.8:
+                    continue
+                d_med = float(
+                    np.hypot(
+                        np.median(cb[comp]) - mcb, np.median(cr[comp]) - mcr
+                    )
+                )
+                if d_med > chroma_k * 2.0:  # absolute chroma units (~12+)
+                    mask = mask | ndimage.binary_dilation(
+                        comp, iterations=max(1, std_window // 2)
+                    )
+                    added = True
+            # Cool-blob stage: the real tripod pads are blurry (never flat
+            # enough for `raw`) but COOL — blue ABOVE luminance in a scene
+            # where wood floor and mahogany are both warm (blue well below).
+            # Any cool component near the smear is a capture artifact here;
+            # a venue with genuinely blue floor decor would set chroma_k=0.
+            cool = (cb > chroma_k) & neigh & ~mask
+            labs2, n2 = ndimage.label(cool)
+            for lab in range(1, n2 + 1):
+                comp = labs2 == lab
+                if int(comp.sum()) >= 12:
+                    mask = mask | ndimage.binary_dilation(
+                        comp, iterations=max(1, std_window // 2)
+                    )
+                    added = True
+            if added:
+                mask = ndimage.binary_closing(mask, iterations=3)
+                mask = ndimage.binary_fill_holes(mask)
+
     if grow_px > 0:
         mask = ndimage.binary_dilation(mask, iterations=grow_px)
     return mask
@@ -352,6 +521,7 @@ def fill_nadir_hole(
     grain_match: bool = True,
     grain_gain_cap: float = 2.2,
     sheen_field: bool = True,
+    occluder: "VoxelOccluder | None" = None,
 ) -> tuple[np.ndarray, dict]:
     """Fill the target sweep's nadir tripod hole from neighbouring sweeps.
 
@@ -420,11 +590,38 @@ def fill_nadir_hole(
     ring &= dz < -1e-9
     P_ring, ry, rx = floor_points(ring)
     ring_vals = view[ry, rx]
+    if occluder is not None:
+        # TARGET-side mesh test: ring pixels whose own ray is interrupted
+        # (cabinet bases in a slot) do not show floor — they would poison
+        # the exposure gains, the grain reference, and the sheen field.
+        floor_seen = ~occluder.blocked(
+            C_t, P_ring, z_exempt_below=z_floor + 0.30
+        )
+        P_ring, ry, rx = P_ring[floor_seen], ry[floor_seen], rx[floor_seen]
+        ring_vals = ring_vals[floor_seen]
+        ring = np.zeros_like(ring)
+        ring[ry, rx] = True
+        report["ring_px_floor_seen"] = int(floor_seen.sum())
+        report["ring_px_dropped_by_mesh"] = int(np.count_nonzero(~floor_seen))
 
     n_donors = len(donors)
     samples = np.zeros((n_hole, n_donors, 3), dtype=np.float32)
     weights = np.zeros((n_hole, n_donors), dtype=np.float32)
     donor_gains: list[np.ndarray] = []
+
+    # Mesh visibility, evaluated per donor on a coarse cell lattice (the
+    # boundary is smooth at cabinet scale) and upsampled to view pixels.
+    donor_blk: list[np.ndarray | None] = [None] * n_donors
+    vis_cells = None
+    if occluder is not None:
+        fs = max(1, int(np.ceil(view_size / 224)))
+        cell = dirs[::fs, ::fs]
+        cdz = cell[..., 2]
+        cdown = cdz < -1e-9
+        ct = (z_floor - C_t[2]) / np.where(cdown, cdz, -1.0)
+        P_cell = C_t[None, None, :] + ct[..., None] * cell
+        vis_cells = (P_cell, cdown, fs)
+        report["mesh_occluded_px"] = 0
 
     for di, (dimg, C_d) in enumerate(donors):
         dimg = np.asarray(dimg)  # any dtype; samplers gather-then-convert
@@ -437,12 +634,30 @@ def fill_nadir_hole(
         ok = looking_down & outside_cone & (dist > 1e-6)
         report["cone_rejected_px"] += int(np.count_nonzero(looking_down & ~outside_cone))
 
+        occ_hit_count = 0
+        if vis_cells is not None:
+            P_cell, cdown, fs = vis_cells
+            blk_small = np.zeros(cdown.shape, dtype=bool)
+            blk_small[cdown] = occluder.blocked(
+                C_d, P_cell[cdown], z_exempt_below=z_floor + 0.30
+            )
+            blk = np.repeat(np.repeat(blk_small, fs, axis=0), fs, axis=1)[
+                :view_size, :view_size
+            ]
+            donor_blk[di] = blk
+            occ_hit = blk[ys, xs] & ok
+            occ_hit_count = int(occ_hit.sum())
+            ok &= ~occ_hit
+            report["mesh_occluded_px"] += occ_hit_count
+
         rows, cols = dirs_to_pixels(v[ok], dimg.shape[1], dimg.shape[0])
         samp = sample_equirect(dimg, rows, cols)
 
         # Exposure gain per channel from the ring (median target/donor ratio).
         vr_ = P_ring - C_d[None, :]
         okr = (vr_[:, 2] < -0.05) & (np.hypot(vr_[:, 0], vr_[:, 1]) > tripod_radius)
+        if donor_blk[di] is not None:
+            okr &= ~donor_blk[di][ry, rx]
         gain = np.ones(3, dtype=np.float32)
         if int(okr.sum()) >= 50:
             rr, rc = dirs_to_pixels(vr_[okr], dimg.shape[1], dimg.shape[0])
@@ -462,6 +677,7 @@ def fill_nadir_hole(
                 "gain": [round(float(g), 4) for g in gain],
                 "usable_px": int(ok.sum()),
                 "cone_overlap_px": int(np.count_nonzero(looking_down & ~outside_cone)),
+                "mesh_occluded_px": occ_hit_count,
             }
         )
 
@@ -558,6 +774,11 @@ def fill_nadir_hole(
         ring2 = ndimage.binary_dilation(hole_view, iterations=4) & ~hole_view
         ring2 &= dz < -1e-9
         P_r2, r2y, r2x = floor_points(ring2)
+        if occluder is not None and r2y.size:
+            keep2 = ~occluder.blocked(
+                C_t, P_r2, z_exempt_below=z_floor + 0.30
+            )
+            P_r2, r2y, r2x = P_r2[keep2], r2y[keep2], r2x[keep2]
         if r2y.size >= 100:
             acc_r = np.zeros((r2y.size, 3), dtype=np.float32)
             w_r = np.zeros(r2y.size, dtype=np.float32)
@@ -568,6 +789,8 @@ def fill_nadir_hole(
                 dist2 = np.linalg.norm(v2, axis=1)
                 off2 = np.hypot(v2[:, 0], v2[:, 1])
                 ok2 = (v2[:, 2] < -0.05) & (off2 > tripod_radius) & (dist2 > 1e-6)
+                if donor_blk[di] is not None:
+                    ok2 &= ~donor_blk[di][r2y, r2x]
                 if not np.any(ok2):
                     continue
                 rr2, cc2 = dirs_to_pixels(v2[ok2], dimg.shape[1], dimg.shape[0])
