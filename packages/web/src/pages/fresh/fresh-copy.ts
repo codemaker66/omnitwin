@@ -162,6 +162,30 @@ export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
 
+/** Walk the room — the poster-first capture embed. The poster is a render
+ *  of the captured scene (never one of the venue photographs, so the
+ *  no-repeat law holds); the room itself loads only when invited. */
+export const FRESH_WALK_TITLE = "Walk the room";
+export const FRESH_WALK_LEDE =
+  "The Reception Room, captured — rendered live in your browser, not a photograph. Step in, look around from where the scanner stood, and move a table with your own hands.";
+export const FRESH_WALK_CHIP = "This is not a photograph.";
+export const FRESH_WALK_WAKE = "Step in";
+export const FRESH_WALK_SIZE_NOTE =
+  "Loads the captured room — about 60 MB, best on wifi.";
+export const FRESH_WALK_LOADING = "The room is arriving";
+export const FRESH_WALK_HINT =
+  "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
+export const FRESH_WALK_FAILED =
+  "The captured room couldn't open in this browser — the photographs above still tell the truth.";
+export const FRESH_WALK_NOTE =
+  "The same capture drives Venviewer, the planning tool beneath this page.";
+export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
+export const FRESH_WALK_POSTER_SRCSET =
+  "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
+export const FRESH_WALK_POSTER_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
+export const FRESH_WALK_POSTER_ALT =
+  "The Reception Room as a captured scene, rendered by Venviewer — not a photograph";
+
 /** The room dossiers — each card opens into the room's own page-within-
  *  the-page: published dimensions, and every capacity drawn to count. */
 export const FRESH_DOSSIER_OPEN = "Open the room";
@@ -228,6 +252,16 @@ export function allFreshCopy(): readonly string[] {
     FRESH_DOSSIER_CLOSE,
     FRESH_DOSSIER_CTA,
     FRESH_DOSSIER_DRAWN_NOTE,
+    FRESH_WALK_TITLE,
+    FRESH_WALK_LEDE,
+    FRESH_WALK_CHIP,
+    FRESH_WALK_WAKE,
+    FRESH_WALK_SIZE_NOTE,
+    FRESH_WALK_LOADING,
+    FRESH_WALK_HINT,
+    FRESH_WALK_FAILED,
+    FRESH_WALK_NOTE,
+    FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,

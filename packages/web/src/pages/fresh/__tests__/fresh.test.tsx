@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+// The walk chunk carries three + Spark — far beyond jsdom. The page contract
+// under test is the poster-first wiring, so the lazy module becomes a stub.
+vi.mock("../FreshWalk.js", () => ({
+  default: () => <div data-testid="fresh-walk-stub" />,
+}));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
 import { FRESH_ROOMS, allFreshCopy } from "../fresh-copy.js";
@@ -107,9 +113,9 @@ describe("responsive delivery — nobody downloads the originals", () => {
     });
     expect(content.length).toBeGreaterThanOrEqual(5);
     for (const img of content) {
-      const srcset = img.getAttribute("srcset");
-      expect(srcset, `missing srcset on ${img.getAttribute("src") ?? ""}`).toContain(
-        "/images/venue/ladder/",
+      const srcset = img.getAttribute("srcset") ?? "";
+      expect(srcset, `missing srcset on ${img.getAttribute("src") ?? ""}`).toMatch(
+        / \d+w/,
       );
       expect(img.getAttribute("sizes")).toBeTruthy();
     }
@@ -183,6 +189,49 @@ describe("the room dossiers", () => {
     fireEvent.click(first);
     expect(screen.getByText(/21 × 10 m · 7 m high/)).toBeTruthy();
     expect(screen.getByText(/a further 7 m under the dome/)).toBeTruthy();
+  });
+});
+
+describe("walk the room — poster-first", () => {
+  it("shows the rendered poster and pays nothing until invited", () => {
+    render(<FreshPage />);
+    const poster = screen.getByAltText(
+      "The Reception Room as a captured scene, rendered by Venviewer — not a photograph",
+    );
+    expect(poster.getAttribute("src")).toContain("walk-poster");
+    expect(screen.getByRole("button", { name: "Step in" })).toBeTruthy();
+    expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
+    expect(
+      document.querySelector('[data-walk-state="poster"]'),
+    ).toBeTruthy();
+  });
+
+  it("wakes into loading when WebGL is available", async () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as never);
+    try {
+      render(<FreshPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
+      expect(document.querySelector('[data-walk-state="loading"]')).toBeTruthy();
+      expect(await screen.findByTestId("fresh-walk-stub")).toBeTruthy();
+    } finally {
+      getContext.mockRestore();
+    }
+  });
+
+  it("fails honestly when WebGL is unavailable", () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    try {
+      render(<FreshPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
+      expect(document.querySelector('[data-walk-state="failed"]')).toBeTruthy();
+      expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
+    } finally {
+      getContext.mockRestore();
+    }
   });
 });
 
