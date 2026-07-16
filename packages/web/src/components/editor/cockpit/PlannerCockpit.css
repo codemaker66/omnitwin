@@ -16,8 +16,12 @@
     "rail   stage  panel"
     "rail   bottom bottom";
   overflow: hidden;
-  background: var(--vv-cinema-black, #090807);
-  color: #f4efe6;
+  /* CARD A3: planner chrome consumes House names directly — the proof path
+     for the token layer. bg-0 replaces the previously-undefined
+     --vv-cinema-black's #090807 fallback (Δ ≤ 2/channel); text-1 is the
+     exact value the shell already used. */
+  background: var(--house-bg-0, #0b0a09);
+  color: var(--house-text-1, #f4efe6);
   font-family: "Inter", system-ui, sans-serif;
   color-scheme: dark;
   isolation: isolate;

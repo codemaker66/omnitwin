@@ -1,0 +1,84 @@
+/* ---------------------------------------------------------------------------
+ * HOUSE TOKEN LAYER — CARD A3 (G2a) · 02-DESIGN-LANGUAGE §3–§6 · 06 §3.3
+ *
+ * CANONICAL: the `--house-*` names. They carry 02's exact BOH values and are
+ * the only names new code may consume. No Tailwind — this file extends the
+ * custom-property system (06 §3.3).
+ *
+ * LEGACY: the `--vv-*` names below are compatibility aliases. Root-level
+ * tokens are single-sourced here (global.css imports this file and defines
+ * none of them); component-scoped `--vv-cinema-*` declarations in App.css
+ * remain that subsystem's own. Two classes:
+ *   - aliased  → the House value differs from the old value by ≤ 2 units per
+ *     channel (invisible to the pixel-diff suites), so the alias adopts the
+ *     House canon directly.
+ *   - literal  → the House counterpart differs visibly (e.g. --vv-danger
+ *     #f19a8f vs oxblood #B25454). These keep today's exact value so the
+ *     golden routes stay pixel-identical; each carries a MIGRATION note and
+ *     dies when its consuming surfaces move to House names (A4+, C-band).
+ *
+ * The dark-theme contrast audit for every value here lives in
+ * src/__tests__/house-tokens.test.ts (02 §3: text ≥ 4.5:1, hues ≥ 3:1).
+ * FOH (ivory register) tokens are deliberately absent — F2's card.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* -- Surfaces (02 §3 BOH) ------------------------------------------------ */
+  --house-bg-0: #0B0A09;            /* canvas behind the scene, Focus mode   */
+  --house-bg-1: #131110;            /* panels (blur + scene tint live in 03) */
+  --house-bg-2: #1B1917;            /* raised elements, inputs               */
+  --house-hairline: rgba(245, 240, 232, 0.08);       /* all borders          */
+  --house-hairline-hover: rgba(245, 240, 232, 0.12); /* border on hover      */
+
+  /* -- Text (02 §3; never pure white) -------------------------------------- */
+  --house-text-1: #F4EFE6;                      /* primary — warm ivory      */
+  --house-text-2: rgba(244, 239, 230, 0.62);    /* secondary                 */
+  --house-text-3: rgba(244, 239, 230, 0.38);    /* muted, hints (≥ 3:1 tier) */
+
+  /* -- The one accent (02 §2.3) -------------------------------------------- */
+  --house-accent-brass: #C6A15B;
+
+  /* -- Status hues (02 §3 — meaning only, never decoration; hue never
+   *    carries meaning alone: every status pairs icon + label. "Missing"
+   *    has no hue by design — it is a dashed --house-hairline outline.    -- */
+  --house-status-sage: #8FAE8B;     /* Current                               */
+  --house-status-amber: #C99A5B;    /* Review required / caution             */
+  --house-status-grey: rgba(244, 239, 230, 0.38);  /* Stale (= text/3)       */
+  --house-status-oxblood: #B25454;  /* Blocked / conflict — named rule inline */
+  --house-status-cyan: #6FB7C9;     /* Simulated — always labelled           */
+  --house-status-violet: #9D8BC9;   /* AI-proposed — always with the glyph   */
+
+  /* -- Ghost material constants (02 §3, P2 cross-cutting) ------------------ */
+  --house-ghost-fill-opacity: 0.32;      /* of the object's own albedo       */
+  --house-ghost-stroke-width: 1px;       /* inner stroke, provenance hue     */
+  --house-ghost-breath-duration: 3s;     /* static under reduced motion      */
+  --house-ghost-breath-amplitude: 0.04;  /* ±4% opacity breath               */
+
+  /* -- Motion tiers (02 §6; curves live with the implementation) ----------- */
+  --house-motion-instant: 100ms;         /* hover, ticks, selection (≤100)   */
+  --house-motion-deliberate: 240ms;      /* materialize, panels, chips
+                                            (200–300 band; pinned to §6.3
+                                            Materialize's 240 ms)            */
+  --house-motion-cinematic: 650ms;       /* camera only (500–800 band mid)   */
+
+  /* -- Legacy aliases (sub-threshold: adopt House canon) ------------------- */
+  /* Note: --vv-cinema-* stay OUT of this file by design — App.css declares
+     them scoped to .venviewer-planner-shell (its own subsystem); they migrate
+     with that shell, not here. */
+  --vv-ink: var(--house-bg-0);           /* was #090807 (Δ ≤ 2/channel)      */
+  --vv-ink-2: var(--house-bg-1);         /* was #14100d (Δ ≤ 3/channel)      */
+  --vv-cream: var(--house-text-1);       /* was #f6f1e8 (Δ ≤ 2/channel)      */
+
+  /* -- Legacy literals (visible delta: frozen until surfaces migrate) ------ */
+  --vv-gold: #d7b56d;       /* MIGRATION: --house-accent-brass (#C6A15B)     */
+  --vv-gold-2: #c9a84c;     /* MIGRATION: --house-accent-brass (#C6A15B)     */
+  --vv-muted: rgba(246, 241, 232, 0.68);  /* MIGRATION: --house-text-2       */
+  --vv-cyan: #6bd9e8;       /* MIGRATION: --house-status-cyan (#6FB7C9)      */
+  --vv-danger: #f19a8f;     /* MIGRATION: --house-status-oxblood (#B25454)   */
+  --vv-success: #8fd19e;    /* MIGRATION: --house-status-sage (#8FAE8B)      */
+  --vv-focus: #87e7f0;      /* MIGRATION: keep — no House focus token yet;
+                               raise with A4 chip grammar (focus ring law)   */
+  --vv-panel: rgba(18, 16, 13, 0.92);        /* MIGRATION: --house-bg-1 @72%
+                                                + blur per 02 §5 depth model */
+  --vv-panel-soft: rgba(255, 249, 236, 0.08); /* MIGRATION: --house-hairline */
+}
