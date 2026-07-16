@@ -138,11 +138,17 @@ export function registerErrorNormalizer(
 
     // Server errors feed the observability channel BEFORE we reshape —
     // logs + Sentry need the native throwable, not the envelope.
-    if (status >= 500 && onServerError !== undefined) {
-      try {
-        onServerError(err, request, reply);
-      } catch {
-        // Observability must never cause a cascading failure; swallow.
+    if (status >= 500) {
+      // Always land in the request log too: without this, a thrown 500 is
+      // invisible in any environment where the Sentry callback is absent
+      // or inert (observed live in Slice 4 — a silent 0.8 ms 500).
+      request.log.error({ err }, "request errored");
+      if (onServerError !== undefined) {
+        try {
+          onServerError(err, request, reply);
+        } catch {
+          // Observability must never cause a cascading failure; swallow.
+        }
       }
     }
 
