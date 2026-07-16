@@ -1969,10 +1969,10 @@ test.describe("SS++ button and action inventory", () => {
     readonly waitFor: (page: Page) => Promise<void>;
   }[] = [
     {
-      name: "landing (spotlight)",
+      name: "landing (fresh)",
       path: "/",
       waitFor: async (page) => {
-        await expect(page.getByRole("heading", { level: 1, name: /See your evening/i })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: /The hall has been/i })).toBeVisible();
       },
     },
     {

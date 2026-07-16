@@ -1,0 +1,795 @@
+/* -----------------------------------------------------------------------------
+   fresh.css — /fresh, the pictures-only prototype.
+
+   Grounded in the building: blond Scottish sandstone as the ground, brown-
+   black ink, bottle green from the panelled rooms (never terracotta), candle
+   ochre only where light genuinely falls. Robert Adam's ellipse becomes the
+   section divider. Fraunces variable carries the display voice; its axes
+   power the page's single bold move — the breathing "lit". Light-first;
+   dark mode is dark grey (#1b1713 family), never pure black, and both
+   themes hold AA on their own.
+----------------------------------------------------------------------------- */
+
+.fr-root {
+  --fr-paper: #ede7db;
+  --fr-paper-2: #e4dccb;
+  --fr-ink: #262016;
+  --fr-ink-2: #5a5244;
+  --fr-green: #1f4a38;
+  --fr-green-soft: rgba(31, 74, 56, 0.14);
+  --fr-ochre: #b7862f;
+  --fr-rule: #d5cbb6;
+  --fr-arc: #d5cbb6;
+  color-scheme: light;
+  --fr-display: "Fraunces", "Georgia", serif;
+  --fr-body: "Newsreader", "Georgia", serif;
+  --fr-ui: "Geist", system-ui, sans-serif;
+  --fr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+
+  background: var(--fr-paper);
+  color: var(--fr-ink);
+  font-family: var(--fr-body);
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+@media (prefers-color-scheme: dark) {
+  .fr-root:not([data-theme="light"]) {
+    --fr-paper: #1b1713;
+    --fr-paper-2: #241f18;
+    --fr-ink: #efe7d9;
+    --fr-ink-2: #b5aa97;
+    --fr-green: #8fc3a8;
+    --fr-green-soft: rgba(143, 195, 168, 0.16);
+    --fr-ochre: #d8a64c;
+    --fr-rule: #3a332a;
+    /* Against dark paper the drawn arch needs warmth to read at all. */
+    --fr-arc: rgba(216, 166, 76, 0.55);
+    color-scheme: dark;
+  }
+}
+.fr-root[data-theme="dark"] {
+  --fr-paper: #1b1713;
+  --fr-paper-2: #241f18;
+  --fr-ink: #efe7d9;
+  --fr-ink-2: #b5aa97;
+  --fr-green: #8fc3a8;
+  --fr-green-soft: rgba(143, 195, 168, 0.16);
+  --fr-ochre: #d8a64c;
+  --fr-rule: #3a332a;
+  --fr-arc: rgba(216, 166, 76, 0.55);
+  color-scheme: dark;
+}
+
+/* App-shell overrides: this page holds its own manners. */
+.fr-root button,
+.fr-root button:hover:not(:disabled) {
+  transform: none;
+  filter: none;
+}
+.fr-root :focus-visible {
+  outline: 2px solid var(--fr-green);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.fr-skip {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  z-index: 40;
+  padding: 10px 16px;
+  background: var(--fr-paper);
+  border: 1px solid var(--fr-rule);
+  border-radius: 4px;
+  color: var(--fr-ink);
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  text-decoration: none;
+  transform: translateY(-56px);
+  transition: transform 200ms var(--fr-ease);
+}
+.fr-skip:focus-visible {
+  transform: none;
+}
+
+/* ————————————————— header ————————————————— */
+
+.fr-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px clamp(16px, 4vw, 44px);
+  background: color-mix(in srgb, var(--fr-paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--fr-rule);
+}
+.fr-brand {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.2;
+}
+.fr-brand span {
+  display: flex;
+  flex-direction: column;
+}
+.fr-brand-mark {
+  width: 26px;
+  height: auto;
+}
+.fr-brand small {
+  font-family: var(--fr-ui);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+.fr-brand b {
+  font-family: var(--fr-display);
+  font-size: 19px;
+  font-weight: 500;
+  font-variation-settings: "opsz" 40;
+}
+.fr-header-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.fr-theme {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+}
+.fr-theme button {
+  font-family: var(--fr-ui);
+  font-size: 12px;
+  color: var(--fr-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition:
+    color 180ms var(--fr-ease),
+    background-color 180ms var(--fr-ease),
+    transform 140ms var(--fr-ease);
+}
+.fr-theme button:active {
+  transform: scale(0.96);
+}
+.fr-theme button[aria-pressed="true"] {
+  color: var(--fr-paper);
+  background: var(--fr-green);
+}
+.fr-header-cta {
+  font-family: var(--fr-ui);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--fr-paper);
+  background: var(--fr-green);
+  padding: 9px 20px;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: transform 140ms var(--fr-ease), background-color 180ms var(--fr-ease);
+}
+.fr-header-cta:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-header-cta:hover {
+    background: color-mix(in srgb, var(--fr-green) 86%, var(--fr-ink) 14%);
+  }
+}
+
+/* ————————————————— hero ————————————————— */
+
+.fr-hero {
+  position: relative;
+  padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 44px) 0;
+}
+.fr-hero-frame {
+  position: relative;
+}
+.fr-hero-photo {
+  display: block;
+  width: 100%;
+  height: clamp(380px, 66vh, 700px);
+  object-fit: cover;
+  /* Top-anchored: on any hero wider than the photo's 3:2, the cover crop
+     becomes width-determined, so the dome's on-screen position is a pure
+     function of frame width — which is what lets the aperture clip align
+     exactly at every size. */
+  object-position: 50% 0;
+  border-radius: 0 clamp(48px, 12vw, 160px) 0 0 / 0 clamp(36px, 9vw, 120px) 0 0;
+}
+/* The fanlight: the photo's drawn top edge, lifting over the real dome. */
+.fr-hero-fanlight {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.fr-hero-fanlight [data-fanlight] {
+  fill: none;
+  stroke: var(--fr-arc);
+  stroke-width: 1;
+}
+.fr-hero-fanlight [data-keystone] {
+  fill: none;
+  stroke: var(--fr-ochre);
+  stroke-width: 1.5;
+}
+.fr-hero-panel {
+  position: relative;
+  max-width: 720px;
+  margin: clamp(-72px, -8vw, -110px) auto 0;
+  padding: clamp(24px, 4vw, 44px);
+  background: var(--fr-paper);
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px clamp(28px, 6vw, 72px) 3px 3px / 3px clamp(22px, 4vw, 48px) 3px 3px;
+}
+.fr-hero h1 {
+  margin: 0 0 0.45em;
+  font-family: var(--fr-display);
+  font-weight: 420;
+  font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+  font-size: clamp(38px, 6.4vw, 72px);
+  line-height: 1.04;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+/* The one bold move: "lit" breathes like a candle on Fraunces' axes.
+   Time-based, hero-only, and removed entirely under reduced motion. */
+.fr-kinetic {
+  font-style: italic;
+  color: var(--fr-ochre);
+  animation: fr-breathe 3.4s ease-in-out infinite alternate;
+}
+@keyframes fr-breathe {
+  from {
+    font-variation-settings: "opsz" 144, "SOFT" 0, "WONK" 0;
+    font-weight: 380;
+  }
+  to {
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    font-weight: 580;
+  }
+}
+.fr-lede {
+  max-width: 58ch;
+  margin: 0 0 1.4em;
+  font-size: 17.5px;
+  color: var(--fr-ink-2);
+}
+.fr-hero-caps {
+  margin: 0 0 1.6em;
+}
+.fr-hero-caps b {
+  color: var(--fr-ink);
+  font-weight: 600;
+}
+.fr-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+.fr-cta {
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fr-paper);
+  background: var(--fr-green);
+  padding: 12px 26px;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: transform 140ms var(--fr-ease), background-color 180ms var(--fr-ease);
+}
+.fr-cta:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-cta:hover {
+    background: color-mix(in srgb, var(--fr-green) 86%, var(--fr-ink) 14%);
+  }
+}
+.fr-cta-quiet {
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  color: var(--fr-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+  transition: text-decoration-color 180ms var(--fr-ease);
+}
+.fr-cta-quiet:hover {
+  text-decoration-color: var(--fr-green);
+}
+
+/* ————————————————— shared section grammar ————————————————— */
+
+.fr-rooms,
+.fr-rates,
+.fr-enquiry {
+  position: relative;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(64px, 10vh, 120px) clamp(16px, 4vw, 44px) 0;
+}
+/* Adam's ellipse as a drawn divider — one quiet arc, not a decoration set. */
+.fr-arch {
+  position: absolute;
+  top: clamp(24px, 4vh, 48px);
+  left: clamp(16px, 4vw, 44px);
+  right: clamp(16px, 4vw, 44px);
+  height: 44px;
+  border-top: 1px solid var(--fr-rule);
+  border-radius: 100% 100% 0 0 / 200% 200% 0 0;
+}
+.fr-arch.is-flipped {
+  transform: scaleX(-1);
+}
+.fr-rooms h2,
+.fr-rates h2,
+.fr-enquiry h2,
+.fr-heritage h2,
+.fr-contact h2 {
+  margin: 0 0 0.4em;
+  font-family: var(--fr-display);
+  font-weight: 480;
+  font-variation-settings: "opsz" 96;
+  font-size: clamp(28px, 4vw, 42px);
+  letter-spacing: -0.01em;
+}
+.fr-section-lede {
+  max-width: 60ch;
+  margin: 0 0 2.2em;
+  color: var(--fr-ink-2);
+}
+
+/* ————————————————— rooms: asymmetric flow ————————————————— */
+
+.fr-room-flow {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(40px, 7vh, 76px);
+}
+.fr-room {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(18px, 3vw, 36px);
+  align-items: end;
+}
+.fr-room.is-flipped {
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+}
+.fr-room.is-flipped img {
+  order: 2;
+}
+.fr-room img {
+  width: 100%;
+  height: clamp(260px, 38vh, 420px);
+  object-fit: cover;
+  border-radius: 3px;
+}
+.fr-room img.is-portrait {
+  height: clamp(380px, 58vh, 620px);
+}
+.fr-room:nth-child(odd) img {
+  border-top-right-radius: clamp(36px, 7vw, 96px);
+}
+.fr-room:nth-child(even) img {
+  border-top-left-radius: clamp(36px, 7vw, 96px);
+}
+.fr-room-words h3 {
+  margin: 0 0 0.3em;
+  font-family: var(--fr-display);
+  font-weight: 500;
+  font-variation-settings: "opsz" 72;
+  font-size: clamp(22px, 3vw, 30px);
+}
+.fr-room-words p {
+  max-width: 42ch;
+  margin: 0 0 0.9em;
+  color: var(--fr-ink-2);
+}
+/* The capacity line is the card's load-bearing data — promoted from
+   footnote to stated fact. */
+.fr-caps {
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--fr-ink);
+  border-top: 1px solid var(--fr-rule);
+  padding-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+/* The galleries speak in the page's own editorial voice — an aside,
+   not a system notice. */
+.fr-galleries {
+  max-width: 60ch;
+  margin: clamp(40px, 6vh, 64px) 0 0;
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--fr-rule);
+  color: var(--fr-ink-2);
+  font-size: 16.5px;
+}
+
+/* ————————————————— rates ————————————————— */
+
+.fr-rate-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(20px, 4vw, 44px);
+}
+.fr-rate-columns dl {
+  margin: 0;
+  padding: clamp(18px, 3vw, 28px);
+  background: var(--fr-paper-2);
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px 40px 3px 3px;
+}
+.fr-rate-columns dt {
+  font-family: var(--fr-display);
+  font-weight: 550;
+  font-size: 21px;
+  margin-bottom: 14px;
+}
+.fr-rate {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--fr-rule);
+}
+.fr-rate dd {
+  margin: 0;
+}
+.fr-price {
+  font-family: var(--fr-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--fr-green);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fr-scope {
+  margin: 1.6em 0 0;
+  font-family: var(--fr-ui);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+}
+
+/* ————————————————— heritage ————————————————— */
+
+.fr-heritage {
+  position: relative;
+  margin-top: clamp(72px, 11vh, 128px);
+}
+.fr-heritage-art {
+  display: block;
+  width: min(100%, 900px);
+  height: auto;
+  margin: 0 auto;
+  filter: drop-shadow(0 18px 40px rgba(38, 32, 22, 0.22));
+}
+.fr-heritage-words {
+  max-width: 640px;
+  margin: clamp(-64px, -6vw, -96px) auto 0;
+  position: relative;
+  padding: clamp(22px, 3.6vw, 40px);
+  background: var(--fr-paper);
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px 3px 3px clamp(28px, 6vw, 64px);
+}
+.fr-heritage-words p {
+  margin: 0;
+  color: var(--fr-ink-2);
+}
+
+/* ————————————————— contact ————————————————— */
+
+.fr-contact {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(64px, 10vh, 110px) clamp(16px, 4vw, 44px) 48px;
+}
+.fr-contact-ways {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 18px 0 40px;
+}
+.fr-contact-ways a {
+  font-family: var(--fr-ui);
+  font-size: 15px;
+  color: var(--fr-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+  padding: 6px 0;
+  transition: text-decoration-color 180ms var(--fr-ease);
+}
+.fr-contact-ways a:hover {
+  text-decoration-color: var(--fr-green);
+}
+.fr-colophon {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 0 0 34px;
+}
+.fr-colophon img {
+  width: 92px;
+  height: auto;
+}
+.fr-motto {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fr-motto em {
+  font-family: var(--fr-display);
+  font-size: 22px;
+  font-variation-settings: "opsz" 60, "SOFT" 60, "WONK" 0;
+  color: var(--fr-ink);
+}
+.fr-motto span {
+  font-family: var(--fr-ui);
+  font-size: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-footer-note {
+  font-family: var(--fr-ui);
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+  border-top: 1px solid var(--fr-rule);
+  padding-top: 18px;
+}
+
+/* ————————————————— reveals & motion manners ————————————————— */
+
+.fr-will-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 480ms var(--fr-ease),
+    transform 480ms var(--fr-ease);
+}
+.fr-revealed {
+  opacity: 1;
+  transform: none;
+}
+/* Print never scrolls, so the observer never fires — a printed page (or
+   any capture pipeline) must see everything without it. */
+@media print {
+  .fr-will-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .fr-skip,
+  .fr-theme {
+    display: none;
+  }
+}
+
+/* ————————————————— the enquiry composer ————————————————— */
+
+.fr-enq {
+  display: grid;
+  gap: clamp(24px, 4vh, 40px);
+  max-width: 760px;
+}
+.fr-enq-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px 28px;
+}
+.fr-enq-types {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.fr-enq-types legend,
+.fr-enq-field span {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--fr-ui);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+.fr-enq-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fr-enq-pills button {
+  font-family: var(--fr-ui);
+  font-size: 13.5px;
+  color: var(--fr-ink);
+  background: transparent;
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition:
+    color 180ms var(--fr-ease),
+    background-color 180ms var(--fr-ease),
+    border-color 180ms var(--fr-ease),
+    transform 140ms var(--fr-ease);
+}
+.fr-enq-pills button:active {
+  transform: scale(0.96);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-enq-pills button:hover {
+    border-color: var(--fr-green);
+  }
+}
+.fr-enq-pills button[aria-pressed="true"] {
+  color: var(--fr-paper);
+  background: var(--fr-green);
+  border-color: var(--fr-green);
+}
+.fr-enq-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 28px;
+}
+.fr-enq-field input {
+  font-family: var(--fr-body);
+  font-size: 16px;
+  color: var(--fr-ink);
+  background: var(--fr-paper);
+  border: 1px solid var(--fr-rule);
+  border-radius: 4px;
+  padding: 9px 14px;
+  transition: border-color 180ms var(--fr-ease);
+}
+.fr-enq-field input:hover {
+  border-color: var(--fr-ink-2);
+}
+.fr-enq-field input[type="number"] {
+  width: 110px;
+  font-variant-numeric: tabular-nums;
+}
+.fr-enq-field input[type="date"] {
+  width: 200px;
+}
+/* The answer: an editorial aside, not a widget. Height is reserved so the
+   sentence changing never shoves the page around. */
+.fr-enq-answer {
+  min-height: 5.2em;
+  padding-left: 18px;
+  border-left: 2px solid var(--fr-green);
+}
+.fr-enq-fit {
+  margin: 0 0 0.5em;
+  font-size: 19px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.fr-enq-also {
+  margin: 0 0 0.4em;
+  font-size: 15px;
+  color: var(--fr-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.fr-enq-compose {
+  padding: clamp(18px, 3vw, 28px);
+  background: var(--fr-paper-2);
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px clamp(22px, 4vw, 44px) 3px 3px / 3px clamp(18px, 3vw, 32px) 3px 3px;
+}
+.fr-enq-subject {
+  margin: 0 0 0.7em;
+  font-family: var(--fr-ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.fr-enq-body {
+  margin: 0 0 1.2em;
+  font-family: var(--fr-body);
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--fr-ink-2);
+  white-space: pre-wrap;
+}
+.fr-enq-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.fr-enq-copy {
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  color: var(--fr-ink);
+  background: transparent;
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+  padding: 11px 22px;
+  cursor: pointer;
+  min-width: 150px;
+  transition:
+    border-color 180ms var(--fr-ease),
+    transform 140ms var(--fr-ease);
+}
+.fr-enq-copy:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-enq-copy:hover {
+    border-color: var(--fr-green);
+  }
+}
+.fr-enq-call {
+  font-size: 15px;
+  color: var(--fr-ink-2);
+}
+.fr-enq-call a {
+  color: var(--fr-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fr-kinetic {
+    animation: none;
+    font-variation-settings: "opsz" 144, "SOFT" 60, "WONK" 0;
+    font-weight: 480;
+  }
+  .fr-will-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .fr-skip,
+  .fr-theme button,
+  .fr-header-cta,
+  .fr-cta,
+  .fr-enq-pills button,
+  .fr-enq-field input,
+  .fr-enq-copy {
+    transition: none;
+  }
+}
+
+/* ————————————————— small screens ————————————————— */
+
+@media (max-width: 760px) {
+  .fr-header {
+    flex-wrap: wrap;
+  }
+  .fr-hero-panel {
+    margin-top: -48px;
+  }
+  .fr-room,
+  .fr-room.is-flipped {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .fr-room.is-flipped img {
+    order: 0;
+  }
+  .fr-room img {
+    height: 240px;
+  }
+}
