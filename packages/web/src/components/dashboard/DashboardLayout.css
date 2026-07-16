@@ -7,7 +7,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   color: #fff7e8;
-  background: linear-gradient(180deg, #090807 0%, #17120d 100%);
+  background: linear-gradient(180deg, var(--house-bg-0, #090807) 0%, #17120d 100%);
   border-bottom: 1px solid rgba(215, 181, 109, 0.22);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
   font-family: Inter, sans-serif;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -257,7 +258,9 @@ export function EditorPage(): React.ReactElement {
           <p className="vv-state-kicker">Planner start</p>
           <h1>{copy.title}</h1>
           <p>{copy.body}</p>
-          <span className="vv-status-chip" data-tone="review">Planning workspace not opened yet</span>
+          {/* Wave A closure: canonical chip grammar — the workspace is absent,
+              which is exactly what Missing (dashed outline) claims. */}
+          <EvidenceChip state="missing" detail="planning workspace not opened yet" />
           <div className="vv-state-actions">
             <button
               type="button"
