@@ -14,6 +14,7 @@ import {
   formToConvertPayload,
   formToCreatePayload,
   formToUpdatePayload,
+  hiddenFieldError,
   initialDrawerForm,
   type DrawerForm,
   type DrawerMode,
@@ -83,12 +84,19 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed);
   }
 
+  function rejectWithVisibleErrors(errors: FieldErrors): void {
+    setFieldErrors(errors);
+    // An error keyed to a field with no inline slot (e.g. hidden hygiene
+    // fields) must still be seen — a silent return is a dead submit button.
+    setSubmitError(hiddenFieldError(errors, isHold));
+  }
+
   function submit(): void {
     setSubmitError(null);
     if (mode.kind === "create") {
       const result = formToCreatePayload(form, venueId);
       if (!result.ok) {
-        setFieldErrors(result.fieldErrors);
+        rejectWithVisibleErrors(result.fieldErrors);
         return;
       }
       setFieldErrors({});
@@ -106,7 +114,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     if (mode.kind === "convert") {
       const result = formToConvertPayload(form, mode.enquiry.id);
       if (!result.ok) {
-        setFieldErrors(result.fieldErrors);
+        rejectWithVisibleErrors(result.fieldErrors);
         return;
       }
       setFieldErrors({});
@@ -123,7 +131,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     }
     const result = formToUpdatePayload(form, mode.booking);
     if (!result.ok) {
-      setFieldErrors(result.fieldErrors);
+      rejectWithVisibleErrors(result.fieldErrors);
       return;
     }
     if (!result.changed) {

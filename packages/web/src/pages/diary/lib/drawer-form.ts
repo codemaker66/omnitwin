@@ -173,6 +173,30 @@ function issuesToFieldErrors(
   return errors;
 }
 
+/** Fields the drawer renders an inline error slot for. */
+const ERROR_SLOTTED_ALWAYS: readonly string[] = ["title", "startsAt", "endsAt"];
+const ERROR_SLOTTED_HOLD: readonly string[] = [
+  "rank",
+  "decisionAt",
+  "nextAction",
+  "nextActionDueAt",
+  "ownerUserId",
+];
+
+/**
+ * A validation message must never land somewhere the user cannot see it —
+ * that is a silently dead submit button (found live, T-518). Returns the
+ * first error keyed to a field with no visible inline slot, for the drawer
+ * to surface as its form-level error.
+ */
+export function hiddenFieldError(errors: FieldErrors, isHold: boolean): string | null {
+  const visible = new Set([...ERROR_SLOTTED_ALWAYS, ...(isHold ? ERROR_SLOTTED_HOLD : [])]);
+  for (const [key, message] of Object.entries(errors)) {
+    if (!visible.has(key)) return message;
+  }
+  return null;
+}
+
 export function formToCreatePayload(
   form: DrawerForm,
   venueId: string,
@@ -180,7 +204,12 @@ export function formToCreatePayload(
   const times = mapTimes(form, ["startsAt", "endsAt", "decisionAt", "nextActionDueAt"]);
   if (Object.keys(times.errors).length > 0) return { ok: false, fieldErrors: times.errors };
 
-  const rank = emptyToUndefined(form.rank);
+  // The payload expresses the VISIBLE form. The create drawer opens with
+  // hold defaults (rank "1", the signed-in owner); switching kind hides the
+  // hygiene fieldset, so its values must leave the payload too — otherwise
+  // the schema rejects on fields the user cannot see (found live, T-518).
+  const isHold = form.kind === "hold";
+  const rank = isHold ? emptyToUndefined(form.rank) : undefined;
   const candidate = {
     venueId,
     spaceId: form.spaceId,
@@ -190,11 +219,11 @@ export function formToCreatePayload(
     startsAt: times.values["startsAt"],
     endsAt: times.values["endsAt"],
     rank: rank === undefined ? undefined : Number(rank),
-    jointFlag: form.jointFlag || undefined,
-    decisionAt: times.values["decisionAt"],
-    ownerUserId: emptyToUndefined(form.ownerUserId),
-    nextAction: emptyToUndefined(form.nextAction),
-    nextActionDueAt: times.values["nextActionDueAt"],
+    jointFlag: (isHold && form.jointFlag) || undefined,
+    decisionAt: isHold ? times.values["decisionAt"] : undefined,
+    ownerUserId: isHold ? emptyToUndefined(form.ownerUserId) : undefined,
+    nextAction: isHold ? emptyToUndefined(form.nextAction) : undefined,
+    nextActionDueAt: isHold ? times.values["nextActionDueAt"] : undefined,
     notes: emptyToUndefined(form.notes),
   };
   const parsed = CreateBookingSchema.safeParse(candidate);

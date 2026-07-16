@@ -5,6 +5,7 @@ import {
   formToConvertPayload,
   formToCreatePayload,
   formToUpdatePayload,
+  hiddenFieldError,
   initialDrawerForm,
   type DrawerForm,
 } from "../drawer-form.js";
@@ -85,6 +86,32 @@ describe("formToCreatePayload", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.fieldErrors["startsAt"]).toBeDefined();
+  });
+
+  it("hiddenFieldError surfaces messages for fields without a visible slot", () => {
+    // Non-hold drawer: a rank error has no inline slot → must surface.
+    expect(hiddenFieldError({ rank: "Only holds carry an option-ladder rank." }, false)).toBe(
+      "Only holds carry an option-ladder rank.",
+    );
+    // Hold drawer renders the hygiene slots → same key stays inline.
+    expect(hiddenFieldError({ rank: "Rank must be a positive integer." }, true)).toBeNull();
+    // Slotted fields never escalate.
+    expect(hiddenFieldError({ title: "Required." }, false)).toBeNull();
+  });
+
+  it("switching kind away from hold strips the stale hold-only defaults (Slice 4 live regression)", () => {
+    // The create drawer opens with hold defaults (rank "1", the signed-in
+    // owner). Choosing House block hides those fields — so they must also
+    // leave the payload, or the schema rejects on fields the user cannot
+    // see and the submit button goes silently dead (found live, T-518).
+    const result = formToCreatePayload(holdForm({ kind: "internal_block" }), VENUE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.kind).toBe("internal_block");
+    expect(result.payload.rank).toBeUndefined();
+    expect(result.payload.ownerUserId).toBeUndefined();
+    expect(result.payload.decisionAt).toBeUndefined();
+    expect(result.payload.nextAction).toBeUndefined();
   });
 
   it("an ink needs no hygiene but keeps the interval rule", () => {
