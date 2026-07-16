@@ -947,6 +947,79 @@
   align-self: flex-start;
 }
 
+/* --- first-run welcome (T-520) ----------------------------------------------------- */
+
+.diary-welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--vv-ink-1) 72%, transparent);
+  padding: 24px;
+}
+
+.diary-welcome {
+  background: var(--vv-ink-2);
+  border: 1px solid var(--vv-gold);
+  border-radius: 12px;
+  padding: 26px 28px;
+  max-width: 520px;
+  max-height: min(84vh, 680px);
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 240ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 240ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* The words scroll; the single button never leaves sight. */
+.diary-welcome-body {
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.diary-welcome-title {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  margin: 0 0 8px;
+}
+
+.diary-welcome-intro {
+  margin: 0 0 16px;
+  opacity: 0.85;
+}
+
+.diary-welcome-entries {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.diary-welcome-entry dt {
+  font-weight: 600;
+  color: var(--vv-gold);
+  margin-bottom: 2px;
+}
+
+.diary-welcome-entry dd {
+  margin: 0;
+  opacity: 0.85;
+}
+
+.diary-welcome-disclosure {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: 0 0 16px;
+}
+
 /* --- reduced motion --------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -961,7 +1034,8 @@
     transition: opacity 200ms ease;
   }
 
-  .diary-drawer {
+  .diary-drawer,
+  .diary-welcome {
     transition: none;
   }
 }

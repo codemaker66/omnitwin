@@ -121,6 +121,45 @@ export const BOARD_COPY = {
     cancel: "Keep it where it is",
   },
 
+  welcome: {
+    title: "The Diary, in one minute",
+    intro:
+      "Everything the venue is committed to, on one board. Four kinds of commitment, one rule: nothing goes stale.",
+    entries: [
+      {
+        term: "Pencil",
+        detail:
+          "A ranked option. Pencils may overlap — that is the option ladder — and every pencil carries a decision date, an owner, and a next action.",
+      },
+      {
+        term: "Ink",
+        detail:
+          "The confirmed commitment. The diary itself refuses two inks in the same room at the same time — if a slot was just inked elsewhere, you are told the moment you try.",
+      },
+      {
+        term: "House block & prospect",
+        detail:
+          "A house block is the venue's own time — resets, maintenance, private use. A prospect is an early conversation; it never blocks anything.",
+      },
+      {
+        term: "The tray",
+        detail:
+          "Open enquiries arrive there ready to pencil in, and any pencil whose next action is overdue is called out by name.",
+      },
+      {
+        term: "Keyboard",
+        detail: "Space lifts a block for arrow-key moves. Enter opens it.",
+      },
+      {
+        term: "Live",
+        detail:
+          "Colleagues in the diary appear in the header — their changes arrive on your board by themselves.",
+      },
+    ],
+    dismiss: "Take me to the diary",
+    reopen: "How the Diary works",
+  },
+
   undo: {
     moved: (title: string): string => `Moved ${title}.`,
     action: "Undo",

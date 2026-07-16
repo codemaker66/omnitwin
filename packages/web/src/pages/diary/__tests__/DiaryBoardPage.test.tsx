@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { welcomeStorageKey } from "../lib/welcome.js";
 
 // ---------------------------------------------------------------------------
 // Render contract for the Diary Board (T-493): lanes, blocks, conflict rail
@@ -50,6 +51,7 @@ vi.mock("../hooks/useDiaryLive.js", () => ({
 }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
+const STAFF_USER_ID = "00000000-0000-4000-8000-0000000000ff";
 const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
 const SALOON = "00000000-0000-4000-8000-0000000000b2";
 const INK_ID = "00000000-0000-4000-8000-0000000000c1";
@@ -134,7 +136,7 @@ function fixture(): CalendarResponse {
 function setUser(role: string): void {
   useAuthStore.setState({
     user: {
-      id: "00000000-0000-4000-8000-0000000000ff",
+      id: STAFF_USER_ID,
       email: "staff@test.com",
       role,
       platformRole: "none",
@@ -179,11 +181,15 @@ beforeEach(() => {
     },
   ]);
   setUser("staff");
+  // Most tests exercise a returning coordinator — the first-run welcome has
+  // its own dedicated tests below.
+  window.localStorage.setItem(welcomeStorageKey(STAFF_USER_ID), "1");
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.localStorage.clear();
   useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, error: null });
 });
 
@@ -323,6 +329,31 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByRole("button", { name: "Close" }).hasAttribute("disabled")).toBe(true);
     resolveSave?.({ title: "MacLeod ceilidh" });
     expect(await screen.findByText("Saved MacLeod ceilidh.")).toBeDefined();
+  });
+
+  it("greets a first-time coordinator once, and dismissal persists (T-520)", async () => {
+    window.localStorage.removeItem(welcomeStorageKey(STAFF_USER_ID));
+    const first = renderPage();
+    const panel = await screen.findByRole("dialog", { name: "The Diary, in one minute" });
+    expect(panel).toBeDefined();
+    expect(screen.getByText(/option ladder/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Take me to the diary" }));
+    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    first.unmount();
+
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+  });
+
+  it("the header reopens the welcome any time; Escape closes it (T-520)", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How the Diary works" }));
+    const panel = screen.getByRole("dialog", { name: "The Diary, in one minute" });
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
   });
 
   it("tells an unassigned account that it has no venue", () => {

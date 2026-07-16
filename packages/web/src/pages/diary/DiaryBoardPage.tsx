@@ -26,12 +26,14 @@ import {
   type UndoEntry,
 } from "./lib/undo-stack.js";
 import type { DrawerMode } from "./lib/drawer-form.js";
+import { markWelcomeSeen, shouldShowWelcome } from "./lib/welcome.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
 import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid } from "./components/BoardGrid.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
+import { WelcomePanel } from "./components/WelcomePanel.js";
 import { ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import "./diary-board.css";
 
@@ -97,6 +99,19 @@ export function DiaryBoardPage(): ReactElement {
     setDrawer({ mode, nonce: drawerNonceRef.current });
   }, []);
   const [openEnquiries, setOpenEnquiries] = useState<readonly Enquiry[]>([]);
+
+  // First-run welcome (T-520): greet each coordinator once per device; the
+  // header's "How the Diary works" button re-opens it any time.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  useEffect(() => {
+    if (user !== null && venueId !== null && shouldShowWelcome(user.id)) {
+      setWelcomeOpen(true);
+    }
+  }, [user, venueId]);
+  const dismissWelcome = useCallback(() => {
+    if (user !== null) markWelcomeSeen(user.id);
+    setWelcomeOpen(false);
+  }, [user]);
 
   const live = useDiaryLive(venueId !== null, refetch);
 
@@ -449,6 +464,15 @@ export function DiaryBoardPage(): ReactElement {
           <button type="button" className="diary-button" onClick={refetch}>
             {BOARD_COPY.refresh}
           </button>
+          <button
+            type="button"
+            className="diary-button"
+            onClick={() => {
+              setWelcomeOpen(true);
+            }}
+          >
+            {BOARD_COPY.welcome.reopen}
+          </button>
           {writable ? (
             <button type="button" className="diary-button is-primary" onClick={openCreateDrawer}>
               {BOARD_COPY.drawer.createTitle}
@@ -520,6 +544,8 @@ export function DiaryBoardPage(): ReactElement {
           </aside>
         </div>
       )}
+
+      {welcomeOpen ? <WelcomePanel onDismiss={dismissWelcome} /> : null}
 
       {drawer !== null && venueId !== null ? (
         <BookingDrawer

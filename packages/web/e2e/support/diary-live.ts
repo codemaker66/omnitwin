@@ -95,6 +95,14 @@ export async function openSeededWeek(page: Page): Promise<void> {
   // Lane headers come from GET /calendar — their presence proves the live
   // read model, not a fixture.
   await expect(page.getByText("Grand Hall").first()).toBeVisible({ timeout: 20_000 });
+  // A fresh browser context is always a first visit, so the first-run
+  // welcome (T-519) greets the coordinator — dismiss it exactly as a real
+  // first-time user would before working the board.
+  const welcomeDismiss = page.getByRole("button", { name: "Take me to the diary" });
+  if (await welcomeDismiss.isVisible().catch(() => false)) {
+    await welcomeDismiss.click();
+    await expect(welcomeDismiss).toBeHidden();
+  }
 }
 
 /** Drawer time fields — labels from board-copy.ts; datetime-local format.
