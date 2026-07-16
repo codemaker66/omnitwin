@@ -141,36 +141,47 @@ def equirect_grid_dirs(w: int, h: int, row0: int, nrows: int) -> np.ndarray:
 
 def sample_equirect(img: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
     """Bilinear sample of an equirect raster at fractional (rows, cols).
-    Columns wrap (azimuth seam); rows clamp (poles). img (H, W, C) float."""
-    im = np.asarray(img, dtype=np.float32)
+    Columns wrap (azimuth seam); rows clamp (poles). img (H, W, C), any
+    dtype — corners are gathered first and only the gathered values are
+    converted, so uint8 sources (e.g. 8192 supersampled panos) are never
+    copied wholesale to float."""
+    im = np.asarray(img)
     h, w = im.shape[:2]
     r = np.clip(np.asarray(rows, dtype=np.float64), 0.0, h - 1.0)
     c = np.asarray(cols, dtype=np.float64) % w
     r0 = np.floor(r).astype(np.int64)
     c0 = np.floor(c).astype(np.int64)
-    fr = (r - r0)[..., None]
-    fc = (c - c0)[..., None]
+    fr = (r - r0)[..., None].astype(np.float32)
+    fc = (c - c0)[..., None].astype(np.float32)
     r1 = np.minimum(r0 + 1, h - 1)
     c1 = (c0 + 1) % w
-    top = im[r0, c0] * (1 - fc) + im[r0, c1] * fc
-    bot = im[r1, c0] * (1 - fc) + im[r1, c1] * fc
+    v00 = im[r0, c0].astype(np.float32)
+    v01 = im[r0, c1].astype(np.float32)
+    v10 = im[r1, c0].astype(np.float32)
+    v11 = im[r1, c1].astype(np.float32)
+    top = v00 * (1 - fc) + v01 * fc
+    bot = v10 * (1 - fc) + v11 * fc
     return top * (1 - fr) + bot * fr
 
 
 def sample_image(img: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
     """Plain bilinear sample (clamped, no wrap) — for gnomonic views."""
-    im = np.asarray(img, dtype=np.float32)
+    im = np.asarray(img)
     h, w = im.shape[:2]
     r = np.clip(np.asarray(rows, dtype=np.float64), 0.0, h - 1.0)
     c = np.clip(np.asarray(cols, dtype=np.float64), 0.0, w - 1.0)
     r0 = np.floor(r).astype(np.int64)
     c0 = np.floor(c).astype(np.int64)
-    fr = (r - r0)[..., None]
-    fc = (c - c0)[..., None]
+    fr = (r - r0)[..., None].astype(np.float32)
+    fc = (c - c0)[..., None].astype(np.float32)
     r1 = np.minimum(r0 + 1, h - 1)
     c1 = np.minimum(c0 + 1, w - 1)
-    top = im[r0, c0] * (1 - fc) + im[r0, c1] * fc
-    bot = im[r1, c0] * (1 - fc) + im[r1, c1] * fc
+    v00 = im[r0, c0].astype(np.float32)
+    v01 = im[r0, c1].astype(np.float32)
+    v10 = im[r1, c0].astype(np.float32)
+    v11 = im[r1, c1].astype(np.float32)
+    top = v00 * (1 - fc) + v01 * fc
+    bot = v10 * (1 - fc) + v11 * fc
     return top * (1 - fr) + bot * fr
 
 
@@ -256,11 +267,16 @@ def detect_smear_view(
 
 
 def poisson_blend_into_hole(
-    target: np.ndarray, source: np.ndarray, hole: np.ndarray
+    target: np.ndarray, source: np.ndarray, hole: np.ndarray, max_px: int = 400_000
 ) -> np.ndarray:
     """Gradient-domain composite: keep the SOURCE's gradients inside the hole
     but pin the boundary to the TARGET (Dirichlet), killing any residual
-    exposure/white-balance step. 5-point Laplacian, sparse direct solve."""
+    exposure/white-balance step. 5-point Laplacian, sparse direct solve.
+
+    Above max_px unknowns (the 8192 tier), the solve runs on a strided
+    downscale and only its CORRECTION field (solution minus source) is
+    upsampled — legitimate because Poisson's contribution is inherently
+    low-frequency; the full-resolution grain rides in from the source."""
     from scipy import sparse
     from scipy.sparse.linalg import spsolve
 
@@ -273,6 +289,25 @@ def poisson_blend_into_hole(
     n = ys.size
     if n == 0:
         return tgt.copy()
+    if n > max_px:
+        from scipy import ndimage as _ndi
+
+        f = int(np.ceil(np.sqrt(n / max_px)))
+        out_ds = poisson_blend_into_hole(
+            tgt[::f, ::f], src[::f, ::f], hole[::f, ::f], max_px
+        )
+        corr_ds = out_ds - src[::f, ::f]
+        corr = np.repeat(np.repeat(corr_ds, f, axis=0), f, axis=1)[:h, :w]
+        if corr.shape[0] < h or corr.shape[1] < w:
+            corr = np.pad(
+                corr,
+                ((0, h - corr.shape[0]), (0, w - corr.shape[1]), (0, 0)),
+                mode="edge",
+            )
+        corr = _ndi.gaussian_filter(corr, (float(f), float(f), 0.0))
+        out = tgt.copy()
+        out[ys, xs] = src[ys, xs] + corr[ys, xs]
+        return out
     idx[ys, xs] = np.arange(n)
 
     out = tgt.copy()
@@ -313,6 +348,10 @@ def fill_nadir_hole(
     view_size: int = 640,
     half_fov_deg: float = 58.0,
     detect_kwargs: dict | None = None,
+    composite_mode: str = "best",
+    grain_match: bool = True,
+    grain_gain_cap: float = 2.2,
+    sheen_field: bool = True,
 ) -> tuple[np.ndarray, dict]:
     """Fill the target sweep's nadir tripod hole from neighbouring sweeps.
 
@@ -385,9 +424,10 @@ def fill_nadir_hole(
     n_donors = len(donors)
     samples = np.zeros((n_hole, n_donors, 3), dtype=np.float32)
     weights = np.zeros((n_hole, n_donors), dtype=np.float32)
+    donor_gains: list[np.ndarray] = []
 
     for di, (dimg, C_d) in enumerate(donors):
-        dimg = np.asarray(dimg, dtype=np.float32)
+        dimg = np.asarray(dimg)  # any dtype; samplers gather-then-convert
         C_d = np.asarray(C_d, dtype=np.float64)
         v = P_hole - C_d[None, :]
         dist = np.linalg.norm(v, axis=1)
@@ -416,6 +456,7 @@ def fill_nadir_hole(
 
         samples[ok, di] = samp * gain[None, :]
         weights[ok, di] = w_ok.astype(np.float32)
+        donor_gains.append(gain)
         report["donors"].append(
             {
                 "gain": [round(float(g), 4) for g in gain],
@@ -430,14 +471,16 @@ def fill_nadir_hole(
     lum = samples @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
     wpos = weights > 0
     n_valid = wpos.sum(axis=1)
-    med = np.zeros(n_hole, dtype=np.float32)
-    for i in range(n_hole):  # n_hole ~ 1e4; exact weighted median is cheap
-        wi = weights[i, wpos[i]]
-        li = lum[i, wpos[i]]
-        if li.size:
-            order = np.argsort(li)
-            cw = np.cumsum(wi[order])
-            med[i] = li[order][np.searchsorted(cw, cw[-1] * 0.5)]
+    # Vectorized weighted median across the donor axis (k is small; the
+    # hole can be ~1e6 px at the 8192 tier — no Python-level loop).
+    order = np.argsort(np.where(wpos, lum, np.inf), axis=1)
+    w_sorted = np.take_along_axis(np.where(wpos, weights, 0.0), order, axis=1)
+    l_sorted = np.take_along_axis(lum, order, axis=1)
+    cw = np.cumsum(w_sorted, axis=1)
+    total = cw[:, -1:]
+    med_idx = np.argmax(cw >= total * 0.5, axis=1)
+    med = l_sorted[np.arange(n_hole), med_idx]
+    med = np.where(total[:, 0] > 0, med, 0.0).astype(np.float32)
     dev = np.abs(lum - med[:, None])
     mad = float(np.median(dev[wpos])) if np.any(wpos) else 0.0
     gate = max(12.0, 3.0 * 1.4826 * mad)
@@ -446,12 +489,34 @@ def fill_nadir_hole(
     weights = np.where(occluded, 0.0, weights)
 
     wsum = weights.sum(axis=1)
-    blended = np.zeros((n_hole, 3), dtype=np.float32)
     covered = wsum > 1e-9
-    blended[covered] = (
-        (samples[covered] * weights[covered][..., None]).sum(axis=1)
-        / wsum[covered][:, None]
-    )
+    blended = np.zeros((n_hole, 3), dtype=np.float32)
+    report["composite_mode"] = composite_mode
+    if composite_mode == "average":
+        blended[covered] = (
+            (samples[covered] * weights[covered][..., None]).sum(axis=1)
+            / wsum[covered][:, None]
+        )
+    elif composite_mode == "best":
+        # Best-donor compositing: averaging N donors whose fine grain is
+        # decorrelated (sub-texel pose/z error) keeps the aligned plank
+        # edges but averages the grain away — the "ghost disc". Instead,
+        # every pixel takes ONE donor's sample: donors ranked by total
+        # usable weight, each pixel served by the best-ranked donor that
+        # survived its cone/occlusion gates. The Poisson step then sews
+        # any donor-switch boundaries at the gradient level.
+        order = np.argsort(-weights.sum(axis=0))
+        w_ord = weights[:, order]
+        s_ord = samples[:, order]
+        choice = np.argmax(w_ord > 0, axis=1)
+        blended = s_ord[np.arange(n_hole), choice]
+        share = np.bincount(order[choice[covered]], minlength=n_donors)
+        for di in range(n_donors):
+            report["donors"][di]["primary_share"] = round(
+                float(share[di]) / max(int(covered.sum()), 1), 4
+            )
+    else:
+        raise ValueError(f"unknown composite_mode: {composite_mode}")
     report["synthesized_px"] = int(np.count_nonzero(~covered))
     if np.any(~covered) and np.any(covered):
         # Donor-less pixels: seed from the nearest covered hole pixel's blend;
@@ -465,7 +530,106 @@ def fill_nadir_hole(
 
     source = view.copy()
     source[ys, xs] = blended
-    view_out = poisson_blend_into_hole(view, source, hole_view)
+    if composite_mode == "best":
+        # Multiband: a single donor carries the truest GRAIN (averaging
+        # decorrelated donors blurs it) but the donor ensemble carries the
+        # truest LIGHTING (per-donor sheen/exposure error averages out).
+        # Take low frequencies from the weighted average, high from the
+        # best donor, and let Poisson integrate the combined field.
+        avg = blended.copy()
+        avg[covered] = (
+            (samples[covered] * weights[covered][..., None]).sum(axis=1)
+            / wsum[covered][:, None]
+        )
+        src_avg = view.copy()
+        src_avg[ys, xs] = avg
+        lp_best = ndimage.gaussian_filter(source, (2.5, 2.5, 0.0))
+        lp_avg = ndimage.gaussian_filter(src_avg, (2.5, 2.5, 0.0))
+        source = lp_avg + (source - lp_best)
+
+    if sheen_field and donor_gains:
+        # Harmonic sheen field: a scalar gain per donor can't track the
+        # target's spatially varying floor sheen (view-dependent, unseeable
+        # from donor positions). Measure the target/donor-prediction RATIO
+        # per channel on the band just outside the hole — where both are
+        # known — and extend it harmonically (Laplace, zero-gradient
+        # source) across the hole. Multiplying it in removes the smooth
+        # "mopped patch" tone without touching grain.
+        ring2 = ndimage.binary_dilation(hole_view, iterations=4) & ~hole_view
+        ring2 &= dz < -1e-9
+        P_r2, r2y, r2x = floor_points(ring2)
+        if r2y.size >= 100:
+            acc_r = np.zeros((r2y.size, 3), dtype=np.float32)
+            w_r = np.zeros(r2y.size, dtype=np.float32)
+            for di, (dimg, C_d) in enumerate(donors):
+                dimg = np.asarray(dimg)
+                C_d = np.asarray(C_d, dtype=np.float64)
+                v2 = P_r2 - C_d[None, :]
+                dist2 = np.linalg.norm(v2, axis=1)
+                off2 = np.hypot(v2[:, 0], v2[:, 1])
+                ok2 = (v2[:, 2] < -0.05) & (off2 > tripod_radius) & (dist2 > 1e-6)
+                if not np.any(ok2):
+                    continue
+                rr2, cc2 = dirs_to_pixels(v2[ok2], dimg.shape[1], dimg.shape[0])
+                s2 = sample_equirect(dimg, rr2, cc2) * donor_gains[di][None, :]
+                ov2 = np.clip(-v2[ok2, 2] / dist2[ok2], 0.0, 1.0)
+                w2 = (ov2**2) / np.maximum(dist2[ok2] ** 2, 1e-6)
+                acc_r[ok2] += w2[:, None].astype(np.float32) * s2
+                w_r[ok2] += w2.astype(np.float32)
+            good2 = w_r > 1e-9
+            if int(good2.sum()) >= 100:
+                pred = acc_r[good2] / w_r[good2][:, None]
+                raw = np.zeros_like(view)
+                sup = np.zeros(view.shape[:2], dtype=np.float32)
+                raw[r2y[good2], r2x[good2]] = np.clip(
+                    view[r2y[good2], r2x[good2]] / np.maximum(pred, 1e-3),
+                    0.7,
+                    1.4,
+                )
+                sup[r2y[good2], r2x[good2]] = 1.0
+                # Sheen is smooth by definition — support-weighted blur of the
+                # measured ratios keeps grain noise out of the Dirichlet ring.
+                num = ndimage.gaussian_filter(raw, (4.0, 4.0, 0.0))
+                den = ndimage.gaussian_filter(sup, 4.0)[..., None]
+                ratio_map = np.ones_like(view)
+                smoothed = num / np.maximum(den, 1e-6)
+                ring_px = sup > 0
+                ratio_map[ring_px] = smoothed[ring_px]
+                u = poisson_blend_into_hole(
+                    ratio_map, np.ones_like(ratio_map), hole_view
+                ).astype(np.float32)
+                source[ys, xs] = source[ys, xs] * u[ys, xs]
+                report["sheen_field"] = {
+                    "min": round(float(u[ys, xs].min()), 3),
+                    "max": round(float(u[ys, xs].max()), 3),
+                }
+    view_out = poisson_blend_into_hole(view, source, hole_view).astype(np.float32)
+
+    if grain_match and int(ring.sum()) >= 200:
+        # Ring-matched grain: donors are sampled obliquely from metres away,
+        # so their reprojection is inherently softer than the target's own
+        # nadir pixels. Split the composite into low-pass + detail and scale
+        # ONLY the detail layer (real reprojected signal, nothing invented)
+        # until the hole's grain contrast matches the surrounding ring's.
+        # Feathered over 4 px so the boundary contrast stays continuous.
+        lp = ndimage.gaussian_filter(view_out, (2.5, 2.5, 0.0))
+        detail = view_out - lp
+        lum_w = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+        lumd = detail @ lum_w
+        s_ring = float(lumd[ring].std())
+        s_hole = float(lumd[hole_view].std())
+        g = float(np.clip(s_ring / max(s_hole, 1e-6), 1.0, grain_gain_cap))
+        ramp = np.clip(ndimage.distance_transform_edt(hole_view) / 6.0, 0.0, 1.0)
+        boost = detail * (g - 1.0) * ramp[..., None]
+        # Locally mean-free: adding texture contrast must not shift local
+        # luminance, or the boundary bands read as a faint step.
+        boost -= ndimage.gaussian_filter(boost, (4.0, 4.0, 0.0))
+        view_out = view_out + boost
+        report["grain_gain"] = round(g, 3)
+        report["grain_detail_std"] = {
+            "ring": round(s_ring, 3),
+            "hole_before": round(s_hole, 3),
+        }
 
     # ---- write back only the equirect hole pixels -------------------------
     if hole_mask_eq is not None:
@@ -483,13 +647,43 @@ def fill_nadir_hole(
         eq_mask[band0:] = mm > 0.5
 
     ery, erx = np.nonzero(eq_mask)
-    ed = equirect_grid_dirs(eq_w, eq_h, 0, eq_h)[ery, erx]
+    row0 = int(ery.min()) if ery.size else 0
+    band = equirect_grid_dirs(eq_w, eq_h, row0, eq_h - row0)  # band-limited:
+    ed = band[ery - row0, erx]  # full grid at 8192 would be ~800 MB
+    del band
     grows, gcols, ginside = dirs_to_gnomonic_pixels(ed, view_size, half_fov_deg)
-    filled = tgt.copy()
     take = ginside
-    filled[ery[take], erx[take]] = sample_image(
-        view_out.astype(np.float32), grows[take], gcols[take]
-    )
+    filled = tgt.copy()
+
+    def write_back(v):
+        filled[ery[take], erx[take]] = sample_image(
+            v.astype(np.float32), grows[take], gcols[take]
+        )
+
+    write_back(view_out)
+
+    if grain_match and int(ring.sum()) >= 200:
+        # Closed-loop residual: the view→equirect→view resample softens the
+        # matched grain back down. Measure on the DELIVERED pixels (re-render
+        # the filled equirect exactly as a viewer would) and correct once.
+        fv = render_view(filled, dirs)
+        lp2 = ndimage.gaussian_filter(fv, (2.5, 2.5, 0.0))
+        lumd2 = (fv - lp2) @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+        s_ring2 = float(lumd2[ring].std())
+        s_hole2 = float(lumd2[hole_view].std())
+        residual = float(np.clip(s_ring2 / max(s_hole2, 1e-6), 1.0, 1.6))
+        report["grain_residual_gain"] = round(residual, 3)
+        if residual > 1.02:
+            lp3 = ndimage.gaussian_filter(view_out, (2.5, 2.5, 0.0))
+            detail3 = view_out - lp3
+            ramp3 = np.clip(
+                ndimage.distance_transform_edt(hole_view) / 6.0, 0.0, 1.0
+            )
+            boost3 = detail3 * (residual - 1.0) * ramp3[..., None]
+            boost3 -= ndimage.gaussian_filter(boost3, (4.0, 4.0, 0.0))
+            view_out = view_out + boost3
+            write_back(view_out)
+
     report["hole_px_eq"] = int(np.count_nonzero(eq_mask))
     report["eq_px_written"] = int(np.count_nonzero(take))
     return filled, report

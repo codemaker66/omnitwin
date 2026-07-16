@@ -143,6 +143,12 @@ def main() -> int:
     ap.add_argument("--detect-rel", type=float, default=0.35)
     ap.add_argument("--detect-cap", type=float, default=6.0)
     ap.add_argument("--tripod-radius", type=float, default=0.45)
+    ap.add_argument("--ss", action="store_true",
+                    help="use the 8192 supersampled panos (scan_XXX_8192.jpg) "
+                         "for target AND donors — the viewer's zoom tier")
+    ap.add_argument("--zoom-fov", type=float, default=30.0,
+                    help="half-fov of the zoom-crop proof renders (30 keeps "
+                         "the smear boundary in frame at tripod height)")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -153,8 +159,11 @@ def main() -> int:
     C_t = nodes[key]["t"]
 
     def load_eq(nid: str) -> np.ndarray:
-        p = os.path.join(args.equirect, f"{nid}.jpg")
-        return np.asarray(Image.open(p).convert("RGB"), dtype=np.float32)
+        name = f"{nid}_8192.jpg" if args.ss else f"{nid}.jpg"
+        p = os.path.join(args.equirect, name)
+        # uint8 on purpose: the samplers gather-then-convert, so five 8192
+        # donors stay ~100 MB each instead of 400 MB as float32.
+        return np.asarray(Image.open(p).convert("RGB"), dtype=np.uint8)
 
     target = load_eq(key)
     donor_ids = pick_donors(nodes, key, args.k)
@@ -198,6 +207,40 @@ def main() -> int:
     Image.fromarray(overlay.clip(0, 255).astype(np.uint8)).save(
         os.path.join(args.out, f"{key}-mask.png")
     )
+
+    # Zoom-tier proof: tight straight-down crops of before vs after, plus
+    # grain metrics measured on the DELIVERED pixels at zoom.
+    from scipy import ndimage as ndi
+
+    zdirs = nf.gnomonic_nadir_dirs(640, args.zoom_fov)
+    zb = nf.render_view(target, zdirs)
+    za = nf.render_view(filled, zdirs)
+    Image.fromarray(zb.clip(0, 255).astype(np.uint8)).save(
+        os.path.join(args.out, f"{key}-zoom-before.png")
+    )
+    Image.fromarray(za.clip(0, 255).astype(np.uint8)).save(
+        os.path.join(args.out, f"{key}-zoom-after.png")
+    )
+    zmask = nf.detect_smear_view(zb, **detect_kwargs)
+    zring = ndi.binary_dilation(zmask, iterations=12) & ~ndi.binary_dilation(
+        zmask, iterations=3
+    )
+    lum_w = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+    def dstd(v, m):
+        lp = ndi.gaussian_filter(v, (2.5, 2.5, 0.0))
+        return float((((v - lp) @ lum_w)[m]).std())
+
+    if int(zmask.sum()) > 500 and int(zring.sum()) > 500:
+        report["zoom_grain_ratio"] = round(
+            dstd(za, zmask) / max(dstd(za, zring), 1e-6), 3
+        )
+        inner = zmask & ~ndi.binary_erosion(zmask, iterations=3)
+        outer = ndi.binary_dilation(zmask, iterations=3) & ~zmask
+        step = abs(float((za[inner] @ lum_w).mean() - (za[outer] @ lum_w).mean()))
+        report["zoom_boundary_step_pct"] = round(step / 255.0 * 100.0, 3)
+    report["ss"] = bool(args.ss)
+    report["zoom_half_fov_deg"] = args.zoom_fov
 
     Image.fromarray(filled.clip(0, 255).astype(np.uint8)).save(
         os.path.join(args.out, f"{key}-filled.jpg"), quality=90
