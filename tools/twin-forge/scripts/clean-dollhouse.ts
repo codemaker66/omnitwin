@@ -47,6 +47,13 @@ const DEBRIS_DIAG_M = 0.8;
  *  connectivity, so it removes skirts even when attached to the main shell. */
 const SLIVER_RATIO = 30;
 const SLIVER_MIN_EDGE_M = 0.12;
+/** DISABLED after visual regression: large flat surfaces (the Grand Hall
+ *  parquet) legitimately triangulate into long thin faces, and the sliver
+ *  cull opened hairline cracks across the floor while STILL not removing the
+ *  attached roofline skirts it was aimed at. Isolated-component + ribbon
+ *  rules are the proven-safe set; the two attached skirts go to interactive
+ *  picking (Blender) instead. */
+const CULL_SLIVERS = false;
 
 class UnionFind {
   private parent: Int32Array;
@@ -162,9 +169,10 @@ async function main(): Promise<void> {
           faceVertexIds.push(ids);
           faceAreas.push(area);
           faceIsSliver.push(
-            longest > SLIVER_MIN_EDGE_M &&
+            CULL_SLIVERS &&
+              longest > SLIVER_MIN_EDGE_M &&
               (longest * longest) / (4 * Math.max(area, 1e-9)) > SLIVER_RATIO,
-          );
+  );
           record.faceRootVertexIds.push(ids[0]);
         }
       }

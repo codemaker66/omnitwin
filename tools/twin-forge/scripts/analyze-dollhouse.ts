@@ -235,6 +235,37 @@ async function main(): Promise<void> {
     }
   }
 
+  // Attic census: plan-grid histogram of faces in the high band (z-up in this
+  // glb). The dome shows as a dense circular blob; torn roofline skirts show
+  // as thin isolated LINES of cells — their coordinates seed the hand-cut
+  // boxes in clean-dollhouse.ts.
+  {
+    const CELL = 2;
+    const cells = new Map<string, { faces: number; zMin: number; zMax: number }>();
+    for (const face of faces) {
+      const z = face.centroid[2] ?? 0;
+      if (z < 6.8 || z > 9.2) continue;
+      const cx = Math.floor((face.centroid[0] ?? 0) / CELL);
+      const cy = Math.floor((face.centroid[1] ?? 0) / CELL);
+      const key = `${String(cx)},${String(cy)}`;
+      const cell = cells.get(key) ?? { faces: 0, zMin: Infinity, zMax: -Infinity };
+      cell.faces += 1;
+      cell.zMin = Math.min(cell.zMin, z);
+      cell.zMax = Math.max(cell.zMax, z);
+      cells.set(key, cell);
+    }
+    console.log(`\nattic band z in [6.8,9.2] — occupied ${String(CELL)}m plan cells (x-range, y-range → faces, z-range):`);
+    const entries = [...cells.entries()].sort(
+      (left, right) => right[1].faces - left[1].faces,
+    );
+    for (const [key, cell] of entries) {
+      const [cx, cy] = key.split(",").map(Number);
+      console.log(
+        `  cell(${String((cx ?? 0) * CELL)}..${String(((cx ?? 0) + 1) * CELL)}, ${String((cy ?? 0) * CELL)}..${String(((cy ?? 0) + 1) * CELL)}) faces ${String(cell.faces).padStart(6)} z ${cell.zMin.toFixed(1)}-${cell.zMax.toFixed(1)}`,
+      );
+    }
+  }
+
   for (const [areaMax, diagMax] of [
     [0.05, 0.4],
     [0.2, 0.8],
