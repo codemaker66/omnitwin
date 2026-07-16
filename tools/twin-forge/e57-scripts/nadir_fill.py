@@ -101,3 +101,395 @@ def donor_weight(
         return 0.0
     overhead = max(0.0, -v[2] / dist)  # 1 = straight down, 0 = horizontal
     return (overhead ** incidence_power) / (dist ** dist_power)
+
+
+# ---------------------------------------------------------------------------
+# Vectorized mappings (bulk twins of the scalar functions above)
+# ---------------------------------------------------------------------------
+
+
+def dirs_to_pixels(dirs: np.ndarray, w: int, h: int) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized world_dir_to_equirect_pixel. dirs (..., 3) -> (rows, cols)
+    float64 arrays of the leading shape."""
+    d = np.asarray(dirs, dtype=np.float64)
+    n = np.linalg.norm(d, axis=-1)
+    n = np.where(n < 1e-12, 1.0, n)
+    dx, dy, dz = d[..., 0] / n, d[..., 1] / n, d[..., 2] / n
+    el = np.arcsin(np.clip(dz, -1.0, 1.0))
+    az = np.arctan2(dy, dx) % TWO_PI
+    rows = (np.pi / 2.0 - el) / np.pi * h - 0.5
+    cols = az / TWO_PI * w - 0.5
+    return rows, cols
+
+
+def equirect_grid_dirs(w: int, h: int, row0: int, nrows: int) -> np.ndarray:
+    """(nrows, w, 3) float64 ray grid for equirect rows row0..row0+nrows —
+    same formula as the extractor's world_equirect_band_dirs (pinned to it by
+    tests/test_nadir_vs_extractor.py through the scalar mapping)."""
+    el = np.pi / 2.0 - (np.arange(row0, row0 + nrows) + 0.5) / h * np.pi
+    az = (np.arange(w) + 0.5) / w * TWO_PI
+    cos_el = np.cos(el)[:, None]
+    return np.stack(
+        [
+            cos_el * np.cos(az)[None, :],
+            cos_el * np.sin(az)[None, :],
+            np.broadcast_to(np.sin(el)[:, None], (nrows, w)),
+        ],
+        axis=2,
+    )
+
+
+def sample_equirect(img: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    """Bilinear sample of an equirect raster at fractional (rows, cols).
+    Columns wrap (azimuth seam); rows clamp (poles). img (H, W, C) float."""
+    im = np.asarray(img, dtype=np.float32)
+    h, w = im.shape[:2]
+    r = np.clip(np.asarray(rows, dtype=np.float64), 0.0, h - 1.0)
+    c = np.asarray(cols, dtype=np.float64) % w
+    r0 = np.floor(r).astype(np.int64)
+    c0 = np.floor(c).astype(np.int64)
+    fr = (r - r0)[..., None]
+    fc = (c - c0)[..., None]
+    r1 = np.minimum(r0 + 1, h - 1)
+    c1 = (c0 + 1) % w
+    top = im[r0, c0] * (1 - fc) + im[r0, c1] * fc
+    bot = im[r1, c0] * (1 - fc) + im[r1, c1] * fc
+    return top * (1 - fr) + bot * fr
+
+
+def sample_image(img: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    """Plain bilinear sample (clamped, no wrap) — for gnomonic views."""
+    im = np.asarray(img, dtype=np.float32)
+    h, w = im.shape[:2]
+    r = np.clip(np.asarray(rows, dtype=np.float64), 0.0, h - 1.0)
+    c = np.clip(np.asarray(cols, dtype=np.float64), 0.0, w - 1.0)
+    r0 = np.floor(r).astype(np.int64)
+    c0 = np.floor(c).astype(np.int64)
+    fr = (r - r0)[..., None]
+    fc = (c - c0)[..., None]
+    r1 = np.minimum(r0 + 1, h - 1)
+    c1 = np.minimum(c0 + 1, w - 1)
+    top = im[r0, c0] * (1 - fc) + im[r0, c1] * fc
+    bot = im[r1, c0] * (1 - fc) + im[r1, c1] * fc
+    return top * (1 - fr) + bot * fr
+
+
+# ---------------------------------------------------------------------------
+# Gnomonic nadir view — the compact working space for detection/fill/blend.
+# In the equirect the tripod hole smears across the entire bottom rows; in a
+# straight-down perspective view it is a small disc. Convention: image col →
+# world +X, image row → world +Y, optical axis = -Z (looking at the floor).
+# ---------------------------------------------------------------------------
+
+
+def gnomonic_nadir_dirs(size: int, half_fov_deg: float) -> np.ndarray:
+    s = np.tan(np.radians(half_fov_deg))
+    u = ((np.arange(size) + 0.5) / size * 2.0 - 1.0) * s
+    gx = np.broadcast_to(u[None, :], (size, size))
+    gy = np.broadcast_to(u[:, None], (size, size))
+    d = np.stack([gx, gy, -np.ones((size, size))], axis=-1)
+    return d / np.linalg.norm(d, axis=-1, keepdims=True)
+
+
+def dirs_to_gnomonic_pixels(
+    dirs: np.ndarray, size: int, half_fov_deg: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Inverse of gnomonic_nadir_dirs: world dirs -> (rows, cols, inside)."""
+    s = np.tan(np.radians(half_fov_deg))
+    d = np.asarray(dirs, dtype=np.float64)
+    dz = d[..., 2]
+    down = dz < -1e-9
+    safe = np.where(down, -dz, 1.0)
+    gx = d[..., 0] / safe
+    gy = d[..., 1] / safe
+    cols = (gx / s * 0.5 + 0.5) * size - 0.5
+    rows = (gy / s * 0.5 + 0.5) * size - 0.5
+    inside = down & (rows >= 0) & (rows <= size - 1) & (cols >= 0) & (cols <= size - 1)
+    return rows, cols, inside
+
+
+def render_view(img: np.ndarray, dirs: np.ndarray) -> np.ndarray:
+    """Sample an equirect along arbitrary world dirs (a perspective render)."""
+    h, w = np.asarray(img).shape[:2]
+    rows, cols = dirs_to_pixels(dirs, w, h)
+    return sample_equirect(img, rows, cols)
+
+
+def detect_smear_view(
+    view: np.ndarray,
+    std_window: int = 9,
+    rel_thresh: float = 0.35,
+    abs_floor: float = 1.2,
+    abs_cap: float = 6.0,
+    grow_px: int = 2,
+) -> np.ndarray:
+    """Find the tripod smear in a nadir gnomonic view: the blur has far less
+    local texture than the real floor. Local-std threshold (relative to the
+    view's own texture level), keep the connected component containing the
+    nadir point (the exact view centre), close + grow slightly."""
+    from scipy import ndimage
+
+    v = np.asarray(view, dtype=np.float32)
+    lum = v @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    mean = ndimage.uniform_filter(lum, std_window)
+    mean_sq = ndimage.uniform_filter(lum * lum, std_window)
+    std = np.sqrt(np.maximum(mean_sq - mean * mean, 0.0))
+    texture = float(np.median(std[std > 0.5])) if np.any(std > 0.5) else 1.0
+    thresh = float(np.clip(rel_thresh * texture, abs_floor, abs_cap))
+    raw = std < thresh
+    labels, _n = ndimage.label(raw)
+    size = labels.shape[0]
+    centre_label = labels[size // 2, size // 2]
+    if centre_label == 0:
+        # centre pixel escaped the mask (noise); search a small window
+        win = labels[size // 2 - 6 : size // 2 + 7, size // 2 - 6 : size // 2 + 7]
+        vals = win[win > 0]
+        if vals.size == 0:
+            return np.zeros_like(raw)
+        centre_label = int(np.bincount(vals).argmax())
+    mask = labels == centre_label
+    mask = ndimage.binary_closing(mask, iterations=3)
+    mask = ndimage.binary_fill_holes(mask)
+    if grow_px > 0:
+        mask = ndimage.binary_dilation(mask, iterations=grow_px)
+    return mask
+
+
+def poisson_blend_into_hole(
+    target: np.ndarray, source: np.ndarray, hole: np.ndarray
+) -> np.ndarray:
+    """Gradient-domain composite: keep the SOURCE's gradients inside the hole
+    but pin the boundary to the TARGET (Dirichlet), killing any residual
+    exposure/white-balance step. 5-point Laplacian, sparse direct solve."""
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+
+    tgt = np.asarray(target, dtype=np.float64)
+    src = np.asarray(source, dtype=np.float64)
+    hole = np.asarray(hole, dtype=bool)
+    h, w = hole.shape
+    idx = -np.ones((h, w), dtype=np.int64)
+    ys, xs = np.nonzero(hole)
+    n = ys.size
+    if n == 0:
+        return tgt.copy()
+    idx[ys, xs] = np.arange(n)
+
+    out = tgt.copy()
+    rows_l, cols_l, vals = [], [], []
+    rhs_base = np.zeros((n, tgt.shape[2]), dtype=np.float64)
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        ny = np.clip(ys + dy, 0, h - 1)
+        nx = np.clip(xs + dx, 0, w - 1)
+        rhs_base += src[ys, xs] - src[ny, nx]  # source gradient (Laplacian)
+        nb = idx[ny, nx]
+        inside = nb >= 0
+        rows_l.append(np.nonzero(inside)[0])
+        cols_l.append(nb[inside])
+        vals.append(-np.ones(int(inside.sum())))
+        outside = ~inside
+        rhs_base[outside] += tgt[ny[outside], nx[outside]]  # Dirichlet boundary
+    diag = sparse.coo_matrix(
+        (np.full(n, 4.0), (np.arange(n), np.arange(n))), shape=(n, n)
+    )
+    off = sparse.coo_matrix(
+        (np.concatenate(vals), (np.concatenate(rows_l), np.concatenate(cols_l))),
+        shape=(n, n),
+    )
+    A = (diag + off).tocsr()
+    for ch in range(tgt.shape[2]):
+        out[ys, xs, ch] = spsolve(A, rhs_base[:, ch])
+    return out
+
+
+def fill_nadir_hole(
+    target_img: np.ndarray,
+    C_target: np.ndarray,
+    donors: list[tuple[np.ndarray, np.ndarray]],
+    z_floor: float,
+    hole_mask_eq: np.ndarray | None = None,
+    tripod_radius: float = 0.45,
+    cone_feather_m: float = 0.15,
+    view_size: int = 640,
+    half_fov_deg: float = 58.0,
+    detect_kwargs: dict | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Fill the target sweep's nadir tripod hole from neighbouring sweeps.
+
+    Pipeline (all in the gnomonic nadir view, then written back):
+      1. render the target's straight-down view;
+      2. hole mask: caller-supplied (resampled) or detected from the smear;
+      3. every hole pixel's ray -> floor point P (z = z_floor);
+      4. each donor: reproject P, reject P under the donor's own tripod cone
+         (hard inside tripod_radius, feathered over cone_feather_m) or above
+         its horizon; bilinear-sample its equirect;
+      5. per-donor exposure gain solved on the ring around the hole (median
+         target/donor ratio per channel — the JPGs are unharmonized);
+      6. robust blend: per-pixel weighted median luminance gates out
+         occluded/inconsistent donors (MAD gate), then incidence/distance-
+         weighted average of the survivors;
+      7. Poisson boundary blend pins the composite to the target's own ring;
+      8. write back ONLY the hole pixels of the equirect.
+
+    Returns (filled equirect float32, report dict). Never silent: the report
+    counts cone rejections, occlusion rejections, and synthesized (donor-less)
+    pixels."""
+    from scipy import ndimage
+
+    tgt = np.asarray(target_img, dtype=np.float32)
+    C_t = np.asarray(C_target, dtype=np.float64)
+    eq_h, eq_w = tgt.shape[:2]
+
+    dirs = gnomonic_nadir_dirs(view_size, half_fov_deg)
+    view = render_view(tgt, dirs)
+
+    if hole_mask_eq is not None:
+        vr, vc = dirs_to_pixels(dirs, eq_w, eq_h)
+        m = sample_equirect(
+            np.asarray(hole_mask_eq, dtype=np.float32)[..., None] * 255.0, vr, vc
+        )[..., 0]
+        hole_view = m > 127.0
+    else:
+        hole_view = detect_smear_view(view, **(detect_kwargs or {}))
+
+    dz = dirs[..., 2]
+    hole_view &= dz < -1e-9
+    ys, xs = np.nonzero(hole_view)
+    n_hole = ys.size
+    report: dict = {
+        "hole_px_view": int(n_hole),
+        "cone_rejected_px": 0,
+        "occlusion_rejected_px": 0,
+        "synthesized_px": 0,
+        "donors": [],
+    }
+    if n_hole == 0:
+        report["hole_px_eq"] = 0
+        return tgt.copy(), report
+
+    # Floor points for hole pixels and for the gain-estimation ring.
+    def floor_points(mask):
+        yy, xx = np.nonzero(mask)
+        dd = dirs[yy, xx]
+        t = (z_floor - C_t[2]) / dd[:, 2]
+        return C_t[None, :] + t[:, None] * dd, yy, xx
+
+    P_hole, _, _ = floor_points(hole_view)
+    ring = ndimage.binary_dilation(hole_view, iterations=8) & ~ndimage.binary_dilation(
+        hole_view, iterations=2
+    )
+    ring &= dz < -1e-9
+    P_ring, ry, rx = floor_points(ring)
+    ring_vals = view[ry, rx]
+
+    n_donors = len(donors)
+    samples = np.zeros((n_hole, n_donors, 3), dtype=np.float32)
+    weights = np.zeros((n_hole, n_donors), dtype=np.float32)
+
+    for di, (dimg, C_d) in enumerate(donors):
+        dimg = np.asarray(dimg, dtype=np.float32)
+        C_d = np.asarray(C_d, dtype=np.float64)
+        v = P_hole - C_d[None, :]
+        dist = np.linalg.norm(v, axis=1)
+        off = np.hypot(v[:, 0], v[:, 1])
+        looking_down = v[:, 2] < -0.05
+        outside_cone = off > tripod_radius
+        ok = looking_down & outside_cone & (dist > 1e-6)
+        report["cone_rejected_px"] += int(np.count_nonzero(looking_down & ~outside_cone))
+
+        rows, cols = dirs_to_pixels(v[ok], dimg.shape[1], dimg.shape[0])
+        samp = sample_equirect(dimg, rows, cols)
+
+        # Exposure gain per channel from the ring (median target/donor ratio).
+        vr_ = P_ring - C_d[None, :]
+        okr = (vr_[:, 2] < -0.05) & (np.hypot(vr_[:, 0], vr_[:, 1]) > tripod_radius)
+        gain = np.ones(3, dtype=np.float32)
+        if int(okr.sum()) >= 50:
+            rr, rc = dirs_to_pixels(vr_[okr], dimg.shape[1], dimg.shape[0])
+            dsamp = sample_equirect(dimg, rr, rc)
+            ratio = ring_vals[okr] / np.maximum(dsamp, 1e-3)
+            gain = np.clip(np.median(ratio, axis=0), 0.5, 2.0).astype(np.float32)
+
+        overhead = np.clip(-v[ok, 2] / dist[ok], 0.0, 1.0)
+        feather = np.clip((off[ok] - tripod_radius) / cone_feather_m, 0.0, 1.0)
+        w_ok = (overhead**2) / np.maximum(dist[ok] ** 2, 1e-6) * feather
+
+        samples[ok, di] = samp * gain[None, :]
+        weights[ok, di] = w_ok.astype(np.float32)
+        report["donors"].append(
+            {
+                "gain": [round(float(g), 4) for g in gain],
+                "usable_px": int(ok.sum()),
+                "cone_overlap_px": int(np.count_nonzero(looking_down & ~outside_cone)),
+            }
+        )
+
+    # Robust occlusion gate: donors disagreeing with the per-pixel weighted
+    # median luminance by > max(12, ~3 sigma via MAD) are dropped (chair
+    # legs, glints) — only enforced where >= 3 donors cover the pixel.
+    lum = samples @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    wpos = weights > 0
+    n_valid = wpos.sum(axis=1)
+    med = np.zeros(n_hole, dtype=np.float32)
+    for i in range(n_hole):  # n_hole ~ 1e4; exact weighted median is cheap
+        wi = weights[i, wpos[i]]
+        li = lum[i, wpos[i]]
+        if li.size:
+            order = np.argsort(li)
+            cw = np.cumsum(wi[order])
+            med[i] = li[order][np.searchsorted(cw, cw[-1] * 0.5)]
+    dev = np.abs(lum - med[:, None])
+    mad = float(np.median(dev[wpos])) if np.any(wpos) else 0.0
+    gate = max(12.0, 3.0 * 1.4826 * mad)
+    occluded = wpos & (dev > gate) & (n_valid[:, None] >= 3)
+    report["occlusion_rejected_px"] = int(occluded.sum())
+    weights = np.where(occluded, 0.0, weights)
+
+    wsum = weights.sum(axis=1)
+    blended = np.zeros((n_hole, 3), dtype=np.float32)
+    covered = wsum > 1e-9
+    blended[covered] = (
+        (samples[covered] * weights[covered][..., None]).sum(axis=1)
+        / wsum[covered][:, None]
+    )
+    report["synthesized_px"] = int(np.count_nonzero(~covered))
+    if np.any(~covered) and np.any(covered):
+        # Donor-less pixels: seed from the nearest covered hole pixel's blend;
+        # the Poisson step then diffuses them smoothly. Logged, never silent.
+        cov_map = np.zeros(hole_view.shape, dtype=bool)
+        cov_map[ys[covered], xs[covered]] = True
+        _, (iy, ix) = ndimage.distance_transform_edt(~cov_map, return_indices=True)
+        val_map = np.zeros(hole_view.shape + (3,), dtype=np.float32)
+        val_map[ys[covered], xs[covered]] = blended[covered]
+        blended[~covered] = val_map[iy[ys[~covered]], ix[xs[~covered]]]
+
+    source = view.copy()
+    source[ys, xs] = blended
+    view_out = poisson_blend_into_hole(view, source, hole_view)
+
+    # ---- write back only the equirect hole pixels -------------------------
+    if hole_mask_eq is not None:
+        eq_mask = np.asarray(hole_mask_eq, dtype=bool)
+    else:
+        # Derive the equirect mask by projecting the bottom band into the
+        # view and sampling the detected hole mask.
+        band0 = int(eq_h * (180.0 - half_fov_deg) / 180.0) - 2
+        eq_mask = np.zeros((eq_h, eq_w), dtype=bool)
+        gd = equirect_grid_dirs(eq_w, eq_h, band0, eq_h - band0)
+        grows, gcols, ginside = dirs_to_gnomonic_pixels(gd, view_size, half_fov_deg)
+        mm = np.zeros((eq_h - band0, eq_w), dtype=np.float32)
+        hv = hole_view.astype(np.float32)[..., None]
+        mm[ginside] = sample_image(hv, grows[ginside], gcols[ginside])[..., 0]
+        eq_mask[band0:] = mm > 0.5
+
+    ery, erx = np.nonzero(eq_mask)
+    ed = equirect_grid_dirs(eq_w, eq_h, 0, eq_h)[ery, erx]
+    grows, gcols, ginside = dirs_to_gnomonic_pixels(ed, view_size, half_fov_deg)
+    filled = tgt.copy()
+    take = ginside
+    filled[ery[take], erx[take]] = sample_image(
+        view_out.astype(np.float32), grows[take], gcols[take]
+    )
+    report["hole_px_eq"] = int(np.count_nonzero(eq_mask))
+    report["eq_px_written"] = int(np.count_nonzero(take))
+    return filled, report
