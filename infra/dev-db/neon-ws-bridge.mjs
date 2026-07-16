@@ -32,6 +32,11 @@ const PG_HOST = "127.0.0.1";
 const PG_PORT = 54329; // must match infra/dev-db/docker-compose.yml
 
 const server = new WebSocketServer({ port: WS_PORT });
+server.on("error", (error) => {
+  // e.g. EADDRINUSE from a stale bridge — say so instead of crashing silently.
+  console.error(`[bridge] server error: ${String(error instanceof Error ? error.message : error)}`);
+  process.exit(1);
+});
 let nextId = 1;
 
 server.on("connection", (socket) => {

@@ -34,14 +34,20 @@ const MockTokenSchema = z.object({
   venueId: z.string().nullable(),
 });
 
-const AuthEmailSchema = z.string().trim().toLowerCase().email();
 const ALLOWED_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
 type AuthRole = typeof ALLOWED_ROLES[number];
 const allowedRoleSet = new Set<string>(ALLOWED_ROLES);
 
-export type VerifiedEmailResolution =
-  | { readonly ok: true; readonly email: string }
-  | { readonly ok: false; readonly code: "EMAIL_REQUIRED" | "EMAIL_UNVERIFIED"; readonly message: string };
+// Verified-email primitives live in the auth-email.ts leaf (T-518: breaks the
+// auth ↔ clerk-email import cycle); re-exported here so existing importers
+// (webhooks, ws, tests) are unaffected.
+export {
+  normalizeAuthEmail,
+  resolveVerifiedClerkEmail,
+  type VerifiedEmailResolution,
+} from "./auth-email.js";
+import { normalizeAuthEmail } from "./auth-email.js";
+import { resolveVerifiedClerkEmailWithFallback } from "./clerk-email.js";
 
 // Augment FastifyRequest to include user
 declare module "fastify" {
@@ -65,50 +71,6 @@ export function setAuthDb(db: Database): void {
 // Clerk email + access policy helpers
 // ---------------------------------------------------------------------------
 
-export function normalizeAuthEmail(raw: unknown): string | null {
-  const result = AuthEmailSchema.safeParse(raw);
-  return result.success ? result.data : null;
-}
-
-function isExplicitlyVerified(value: unknown): boolean {
-  return value === true || value === "true" || value === "verified";
-}
-
-/**
- * Clerk JWT templates can name the verification claim differently depending
- * on configuration. Venviewer fails closed: a token needs an explicit verified
- * signal, not just an email string.
- */
-export function resolveVerifiedClerkEmail(payload: Record<string, unknown>): VerifiedEmailResolution {
-  const email = normalizeAuthEmail(payload["email"]);
-  if (email === null) {
-    return {
-      ok: false,
-      code: "EMAIL_REQUIRED",
-      message: "A verified email address is required",
-    };
-  }
-
-  const verified =
-    isExplicitlyVerified(payload["email_verified"]) ||
-    isExplicitlyVerified(payload["emailVerified"]) ||
-    isExplicitlyVerified(payload["email_verification_status"]) ||
-    isExplicitlyVerified(payload["emailVerificationStatus"]) ||
-    isExplicitlyVerified(payload["primary_email_verified"]) ||
-    isExplicitlyVerified(payload["primaryEmailVerified"]) ||
-    isExplicitlyVerified(payload["primary_email_verification_status"]) ||
-    isExplicitlyVerified(payload["primaryEmailVerificationStatus"]);
-
-  if (!verified) {
-    return {
-      ok: false,
-      code: "EMAIL_UNVERIFIED",
-      message: "Email address must be verified before access is granted",
-    };
-  }
-
-  return { ok: true, email };
-}
 
 function sanitizeRole(raw: string): AuthRole {
   return allowedRoleSet.has(raw) ? raw as AuthRole : "planner";
@@ -387,7 +349,6 @@ export async function authenticate(
   // Claims first (production's customised session token); Backend-API
   // fallback for instances issuing default tokens with no email claim —
   // see middleware/clerk-email.ts. Both paths fail closed on unverified.
-  const { resolveVerifiedClerkEmailWithFallback } = await import("./clerk-email.js");
   const emailResolution = await resolveVerifiedClerkEmailWithFallback(
     payload as Record<string, unknown>,
     clerkId,

@@ -173,7 +173,10 @@ function issuesToFieldErrors(
   return errors;
 }
 
-/** Fields the drawer renders an inline error slot for. */
+/** Fields the drawer renders an inline error slot for. COUPLED to
+ *  BookingDrawer.tsx: the always-set mirrors its unconditional fieldError()
+ *  calls, the hold-set mirrors the `showHygiene` fieldset — if a field gains
+ *  or loses an inline slot there, update these lists in the same change. */
 const ERROR_SLOTTED_ALWAYS: readonly string[] = ["title", "startsAt", "endsAt"];
 const ERROR_SLOTTED_HOLD: readonly string[] = [
   "rank",

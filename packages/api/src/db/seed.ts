@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { type FloorPlanPoint, polygonBoundingBox, CANONICAL_ASSETS, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
-import { createDb } from "./client.js";
+import { createDb, isLocalDatabaseUrl } from "./client.js";
 import {
   venues,
   spaces,
@@ -36,6 +36,22 @@ function rectOutline(w: number, l: number): readonly FloorPlanPoint[] {
 
 async function seed(): Promise<void> {
   const env = validateEnv();
+
+  // Security-review guard (T-518): this seed writes venues, users, and a
+  // whole booking week — it must never run against a remote database by
+  // accident. packages/api/.env points at the PRODUCTION Neon project, so
+  // an unthinking `pnpm db:seed` would otherwise write straight into it.
+  if (!isLocalDatabaseUrl(env.DATABASE_URL) && process.env["SEED_ALLOW_REMOTE"] !== "1") {
+    console.error(
+      "Refusing to seed a non-local DATABASE_URL. Point DATABASE_URL at the",
+    );
+    console.error(
+      "local dev database (infra/dev-db/) or set SEED_ALLOW_REMOTE=1 if you",
+    );
+    console.error("really mean to seed a remote database.");
+    process.exit(1);
+  }
+
   const db = createDb(env.DATABASE_URL);
 
   console.log("Seeding database...");

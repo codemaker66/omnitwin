@@ -30,6 +30,15 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
+// This spec needs the LIVE stack (local Postgres + bridge + API + Clerk dev
+// instance — runbook in docs/reports/slice-4-report.md). The default e2e run
+// (CI included) has none of that, so the file self-gates instead of failing:
+// run it with E2E_DIARY_LIVE=1.
+test.skip(
+  process.env["E2E_DIARY_LIVE"] !== "1",
+  "Live diary stack required — set E2E_DIARY_LIVE=1 (see docs/reports/slice-4-report.md).",
+);
+
 // Unique-per-run tag + a run-scoped free slot inside the seeded week.
 // Seeded bookings all start 08:00+, so 00:15–05:45 windows stay clear;
 // the minute offset varies per run to dodge leftovers from earlier runs.
@@ -98,7 +107,7 @@ test("the drawer writes a real booking into the diary", async () => {
   await drawer.getByRole("button", { name: "Add to the diary" }).click();
 
   await expect(pageA.getByText(`Added ${title} to the diary.`)).toBeVisible({ timeout: 15_000 });
-  await expect(pageA.getByRole("button", { name: new RegExp(title) })).toBeVisible();
+  await expect(pageA.getByRole("button", { name: new RegExp(title) }).first()).toBeVisible();
 });
 
 test("a public enquiry becomes a pencil through the tray (T-496)", async () => {
@@ -155,6 +164,11 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
   for (let sweep = 0; sweep < 4; sweep += 1) {
     const leftover = pageA.getByRole("button", { name: /^Ink race winner / }).first();
     if (!(await leftover.isVisible().catch(() => false))) break;
+    if (sweep === 3) {
+      throw new Error(
+        "Leftover 'Ink race winner' inks survived 3 cancel sweeps — clear them manually before rerunning.",
+      );
+    }
     await leftover.focus();
     await pageA.keyboard.press("Enter");
     await expect(pageA.getByRole("dialog", { name: "Booking details" })).toBeVisible();
@@ -223,7 +237,7 @@ test("the live channel carries a colleague's booking without a reload (T-497)", 
   await drawer.getByRole("button", { name: "Add to the diary" }).click();
   await expect(pageA.getByText(`Added ${title} to the diary.`)).toBeVisible({ timeout: 15_000 });
 
-  await expect(pageB.getByRole("button", { name: new RegExp(title) })).toBeVisible({
+  await expect(pageB.getByRole("button", { name: new RegExp(title) }).first()).toBeVisible({
     timeout: 15_000,
   });
 });

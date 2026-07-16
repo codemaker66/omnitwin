@@ -64,6 +64,8 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   );
 
   const isHold = form.kind === "hold";
+  // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
+  // exactly the set of hold-only inline error slots.
   const showHygiene = isHold;
 
   function set<Key extends keyof DrawerForm>(key: Key, value: DrawerForm[Key]): void {

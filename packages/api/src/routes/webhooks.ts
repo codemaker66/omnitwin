@@ -5,6 +5,7 @@ import { z } from "zod";
 import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { getUserByClerkId, normalizeAuthEmail } from "../middleware/auth.js";
+import { evictClerkEmailCacheEntry } from "../middleware/clerk-email.js";
 
 const ClerkEmailAddressSchema = z.object({
   email_address: z.string().email(),
@@ -132,6 +133,9 @@ export async function processClerkWebhookEvent(
   persistence: ClerkWebhookPersistence,
   updatedAt: Date = new Date(),
 ): Promise<ClerkWebhookProcessingResult> {
+  // The fallback email cache (middleware/clerk-email.ts) must never outlive
+  // a Clerk-side identity change — evict before any processing outcome.
+  evictClerkEmailCacheEntry(event.data.id);
   if (event.type === "user.deleted") {
     await persistence.unlinkUser(event.data.id, updatedAt);
     return { status: "processed", clerkId: event.data.id };

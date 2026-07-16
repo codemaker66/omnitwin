@@ -54,4 +54,20 @@ describe("createDb local proxy branch", () => {
       expect(proxy("localhost", 54329)).toBe("localhost:54331/v1");
     }
   });
+
+  it("restores driver defaults when a Neon URL follows a local one (review P2)", () => {
+    createDb(LOCAL_URL);
+    createDb(NEON_URL);
+    expect(neonConfig.useSecureWebSocket).toBe(true);
+    expect(neonConfig.pipelineTLS).toBe(true);
+    expect(neonConfig.pipelineConnect).toBe("password");
+    // The driver exposes a default wsProxy getter when unset, so assert the
+    // meaningful property: the dev-proxy route is gone.
+    const proxy = neonConfig.wsProxy;
+    if (typeof proxy === "function") {
+      expect(proxy("example.neon.tech", 5432)).not.toContain(":54331/");
+    } else if (proxy !== undefined) {
+      expect(proxy).not.toContain(":54331/");
+    }
+  });
 });

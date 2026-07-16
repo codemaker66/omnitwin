@@ -40,6 +40,13 @@ export function createDb(databaseUrl: string): Database {
     neonConfig.useSecureWebSocket = false;
     neonConfig.pipelineTLS = false;
     neonConfig.pipelineConnect = false;
+  } else {
+    // neonConfig is a module singleton — restore the driver defaults so a
+    // process that mixed localities (tests, tools) is deterministic per call.
+    neonConfig.wsProxy = undefined;
+    neonConfig.useSecureWebSocket = true;
+    neonConfig.pipelineTLS = true;
+    neonConfig.pipelineConnect = "password";
   }
   const pool = new Pool({ connectionString: databaseUrl });
   // An idle pooled client can error at any time (dropped socket, server
