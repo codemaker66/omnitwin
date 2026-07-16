@@ -14,7 +14,7 @@ import {
   placedObjects,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { getUserByClerkId, resolveVerifiedClerkEmail } from "../middleware/auth.js";
+import { getUserByClerkId } from "../middleware/auth.js";
 
 const FLUSH_DEBOUNCE_MS = 500;
 const EDITABLE_REVIEW_STATUSES = ["draft", "changes_requested", "rejected"] as const;
@@ -223,7 +223,13 @@ export async function resolveWsUser(
     const { verifyToken } = await import("@clerk/backend");
     const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
     const payload = await verifyToken(token, { secretKey });
-    const emailResolution = resolveVerifiedClerkEmail(payload as Record<string, unknown>);
+    // Claims first; Backend-API fallback when the instance issues default
+    // tokens with no email claim (middleware/clerk-email.ts). Fail-closed.
+    const { resolveVerifiedClerkEmailWithFallback } = await import("../middleware/clerk-email.js");
+    const emailResolution = await resolveVerifiedClerkEmailWithFallback(
+      payload as Record<string, unknown>,
+      payload.sub,
+    );
     if (!emailResolution.ok) return null;
 
     const dbUser = await getUserByClerkId(db, payload.sub, emailResolution.email);

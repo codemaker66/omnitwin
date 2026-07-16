@@ -384,7 +384,14 @@ export async function authenticate(
   }
 
   const clerkId = payload.sub;
-  const emailResolution = resolveVerifiedClerkEmail(payload as Record<string, unknown>);
+  // Claims first (production's customised session token); Backend-API
+  // fallback for instances issuing default tokens with no email claim —
+  // see middleware/clerk-email.ts. Both paths fail closed on unverified.
+  const { resolveVerifiedClerkEmailWithFallback } = await import("./clerk-email.js");
+  const emailResolution = await resolveVerifiedClerkEmailWithFallback(
+    payload as Record<string, unknown>,
+    clerkId,
+  );
   if (!emailResolution.ok) {
     await reply.status(403).send({ error: emailResolution.message, code: emailResolution.code });
     return;
