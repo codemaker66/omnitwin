@@ -31,6 +31,9 @@ packages/api/src/scripts/customers.json
 # Local dev-database binaries + data (portable Postgres; see infra/dev-db/).
 .dev-db/
 
+# Production-smoke saved auth session (playwright storage state; never commit).
+.smoke/
+
 # One-off `tree` scratchpads — regenerate locally as needed.
 web-structure.txt
 
