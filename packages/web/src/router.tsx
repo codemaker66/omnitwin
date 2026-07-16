@@ -15,84 +15,103 @@ import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 // static — it's tiny and runs the auth check before the lazy page mounts.
 // ---------------------------------------------------------------------------
 
+// The cockpit and legacy pages set their type in Inter + Playfair Display;
+// the homepage doesn't use either, so that stylesheet must not render-block
+// the front door. cockpitImport() attaches it alongside the first chunk that
+// actually needs it (display=swap keeps the first cockpit paint readable).
+const COCKPIT_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap";
+let cockpitFontsRequested = false;
+function cockpitImport<T>(factory: () => Promise<T>): Promise<T> {
+  if (!cockpitFontsRequested) {
+    cockpitFontsRequested = true;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = COCKPIT_FONTS_HREF;
+    document.head.append(link);
+  }
+  return factory();
+}
+
 const LoginPage = lazy(() =>
-  import("./pages/LoginPage.js").then((m) => ({ default: m.LoginPage })),
+  cockpitImport(() => import("./pages/LoginPage.js").then((m) => ({ default: m.LoginPage }))),
 );
 const RegisterPage = lazy(() =>
-  import("./pages/RegisterPage.js").then((m) => ({ default: m.RegisterPage })),
+  cockpitImport(() => import("./pages/RegisterPage.js").then((m) => ({ default: m.RegisterPage }))),
 );
 const OAuthConsentPage = lazy(() =>
-  import("./pages/OAuthConsentPage.js").then((m) => ({ default: m.OAuthConsentPage })),
+  cockpitImport(() => import("./pages/OAuthConsentPage.js").then((m) => ({ default: m.OAuthConsentPage }))),
 );
 const ClerkRouteProvider = lazy(() =>
-  import("./components/auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider })),
+  cockpitImport(() => import("./components/auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider }))),
 );
 const EditorPage = lazy(() =>
-  import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage })),
+  cockpitImport(() => import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage }))),
 );
 const BlueprintPage = lazy(() =>
-  import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage })),
+  cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
 );
 const SpotlightLandingPage = lazy(() =>
-  import("./pages/spotlight/SpotlightLandingPage.js").then((m) => ({
+  cockpitImport(() => import("./pages/spotlight/SpotlightLandingPage.js").then((m) => ({
     default: m.SpotlightLandingPage,
-  })),
+  }))),
 );
 const LandingPage = lazy(() =>
-  import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage })),
+  cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
 );
 const DashboardPage = lazy(() =>
-  import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage })),
+  cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
 const HallkeeperPage = lazy(() =>
-  import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage })),
+  cockpitImport(() => import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage }))),
 );
 const PrivacyPage = lazy(() =>
-  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) })),
+  cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) }))),
 );
 const TermsPage = lazy(() =>
-  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "terms" }) })),
+  cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "terms" }) }))),
 );
 const AccessibilityPage = lazy(() =>
-  import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "accessibility" }) })),
+  cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "accessibility" }) }))),
 );
 const PricingPage = lazy(() =>
-  import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage })),
+  cockpitImport(() => import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage }))),
 );
 const SplatFixturePage = lazy(() =>
-  import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage })),
+  cockpitImport(() => import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage }))),
 );
 const TradesHallVisualPage = lazy(() =>
-  import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage })),
+  cockpitImport(() => import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage }))),
 );
 const TradesHallAssetStatusPage = lazy(() =>
-  import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage })),
+  cockpitImport(() => import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage }))),
 );
 const ProposalPage = lazy(() =>
-  import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage })),
+  cockpitImport(() => import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage }))),
 );
 const SupplierPortalPage = lazy(() =>
-  import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage })),
+  cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
 );
 const OpsHandoffPage = lazy(() =>
-  import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage })),
+  cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
 );
 const EventDayOpsPage = lazy(() =>
-  import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage })),
+  cockpitImport(() => import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage }))),
 );
 const RoomShowcasePage = lazy(() =>
-  import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage })),
+  cockpitImport(() => import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage }))),
 );
 const FreshPage = lazy(() =>
+  // The homepage: never triggers the cockpit font load.
   import("./pages/fresh/FreshPage.js").then((m) => ({ default: m.FreshPage })),
 );
 const LivingHallPage = lazy(() =>
-  import("./pages/living-hall/LivingHallPage.js").then((m) => ({
+  cockpitImport(() => import("./pages/living-hall/LivingHallPage.js").then((m) => ({
     default: m.LivingHallPage,
-  })),
+  }))),
 );
 const TwinPage = lazy(() =>
-  import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage })),
+  cockpitImport(() => import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage }))),
 );
 
 function LoadingFallback(): ReactElement {

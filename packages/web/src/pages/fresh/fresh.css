@@ -19,6 +19,8 @@
   --fr-green-soft: rgba(31, 74, 56, 0.14);
   --fr-ochre: #b7862f;
   --fr-rule: #d5cbb6;
+  --fr-arc: #d5cbb6;
+  color-scheme: light;
   --fr-display: "Fraunces", "Georgia", serif;
   --fr-body: "Newsreader", "Georgia", serif;
   --fr-ui: "Geist", system-ui, sans-serif;
@@ -41,6 +43,9 @@
     --fr-green-soft: rgba(143, 195, 168, 0.16);
     --fr-ochre: #d8a64c;
     --fr-rule: #3a332a;
+    /* Against dark paper the drawn arch needs warmth to read at all. */
+    --fr-arc: rgba(216, 166, 76, 0.55);
+    color-scheme: dark;
   }
 }
 .fr-root[data-theme="dark"] {
@@ -52,6 +57,8 @@
   --fr-green-soft: rgba(143, 195, 168, 0.16);
   --fr-ochre: #d8a64c;
   --fr-rule: #3a332a;
+  --fr-arc: rgba(216, 166, 76, 0.55);
+  color-scheme: dark;
 }
 
 /* App-shell overrides: this page holds its own manners. */
@@ -214,7 +221,7 @@
 }
 .fr-hero-fanlight [data-fanlight] {
   fill: none;
-  stroke: var(--fr-rule);
+  stroke: var(--fr-arc);
   stroke-width: 1;
 }
 .fr-hero-fanlight [data-keystone] {
@@ -396,22 +403,26 @@
   margin: 0 0 0.9em;
   color: var(--fr-ink-2);
 }
+/* The capacity line is the card's load-bearing data — promoted from
+   footnote to stated fact. */
 .fr-caps {
   font-family: var(--fr-ui);
-  font-size: 12.5px;
-  letter-spacing: 0.02em;
-  color: var(--fr-ink-2);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--fr-ink);
   border-top: 1px solid var(--fr-rule);
   padding-top: 10px;
   font-variant-numeric: tabular-nums;
 }
+/* The galleries speak in the page's own editorial voice — an aside,
+   not a system notice. */
 .fr-galleries {
   max-width: 60ch;
   margin: clamp(40px, 6vh, 64px) 0 0;
-  padding: 16px 20px;
-  background: var(--fr-green-soft);
-  border-radius: 3px 28px 3px 3px;
-  color: var(--fr-ink);
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--fr-rule);
+  color: var(--fr-ink-2);
+  font-size: 16.5px;
 }
 
 /* ————————————————— rates ————————————————— */
@@ -559,6 +570,19 @@
 .fr-revealed {
   opacity: 1;
   transform: none;
+}
+/* Print never scrolls, so the observer never fires — a printed page (or
+   any capture pipeline) must see everything without it. */
+@media print {
+  .fr-will-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .fr-skip,
+  .fr-theme {
+    display: none;
+  }
 }
 
 /* ————————————————— the enquiry composer ————————————————— */
