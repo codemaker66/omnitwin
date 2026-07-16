@@ -1,5 +1,14 @@
 # Diary production rollout — 0050 + 0051 (owner-run)
 
+> **STATUS (2026-07-16, post-reconciliation): superseded for the standard
+> path by [`diary-deploy-checklist.md`](diary-deploy-checklist.md).** The
+> branch↔master reconciliation (T-523) made the committed journal coherent,
+> so the deploy pipeline applies 0044→0051 **in journal order** with no
+> cursor stranding — running THIS script's `--apply` first would instead
+> strand 0044–0048 below the cursor. This document and its script remain
+> the **state-report (dry-run) and emergency selective-apply tool**; the
+> rehearsal evidence, cursor analysis, and rollback SQL below stay valid.
+
 **Task:** T-520 · **Written:** 2026-07-16 · **Script:** `packages/api/src/scripts/apply-diary-rollout.ts`
 **Scope:** apply exactly two additive migrations — `0050_diary_bookings` (bookings/turnaround/history tables, ink exclusion constraint, additive columns on events/event_phases/spaces) and `0051_diary_enquiry_link` (bookings.enquiry_id) — to the production Neon database, with correct drizzle ledger records.
 
