@@ -437,6 +437,18 @@ export function FreshPage(): ReactElement {
     setWalkState(gl === null ? "failed" : "loading");
   }, []);
 
+  // Identity-stable for FreshWalk: new callback identities would make the
+  // splat layers dispose and refetch their tiles on every progress tick.
+  const walkLive = useCallback(() => {
+    setWalkState("live");
+  }, []);
+  const walkFailed = useCallback(() => {
+    setWalkState("failed");
+  }, []);
+  const walkProgress = useCallback((loaded: number, total: number) => {
+    setWalkPercent(Math.round((loaded / total) * 100));
+  }, []);
+
   useEffect(() => {
     document.title = FRESH_META_TITLE;
   }, []);
@@ -598,15 +610,9 @@ export function FreshPage(): ReactElement {
             {(walkState === "loading" || walkState === "live") && (
               <Suspense fallback={null}>
                 <FreshWalk
-                  onLive={() => {
-                    setWalkState("live");
-                  }}
-                  onFailed={() => {
-                    setWalkState("failed");
-                  }}
-                  onProgress={(loaded, total) => {
-                    setWalkPercent(Math.round((loaded / total) * 100));
-                  }}
+                  onLive={walkLive}
+                  onFailed={walkFailed}
+                  onProgress={walkProgress}
                 />
               </Suspense>
             )}

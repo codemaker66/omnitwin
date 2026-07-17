@@ -268,30 +268,39 @@ export default function FreshWalk({
   const nudgeRef = useRef<((dx: number, dz: number) => void) | null>(null);
   const [live, setLive] = useState(false);
 
-  const handleLoad = useCallback(
-    (event: { url: string }) => {
-      loadedRef.current.add(event.url);
-      const loadedBytes = RECEPTION_TILE_MANIFEST.filter((tile) =>
-        loadedRef.current.has(`/splats/reception/${tile.file}`),
-      ).reduce((sum, tile) => sum + tile.bytes, 0);
-      onProgress(loadedBytes, TOTAL_BYTES);
-      if (loadedRef.current.size >= RECEPTION_TILE_MANIFEST.length) {
-        setLive(true);
-        onLive();
-      }
-    },
-    [onLive, onProgress],
-  );
+  // SparkSplatLayer re-creates its mesh — disposing and REFETCHING the
+  // tile — whenever onLoad/onError change identity. The handlers below
+  // must therefore stay identity-stable for the component's whole life,
+  // whatever the parent passes; latest callbacks live in refs. (Unstable
+  // handlers put the room into permanent dispose/refetch churn on slow
+  // networks: state reached "live" while Spark never painted a frame.)
+  const onLiveRef = useRef(onLive);
+  const onFailedRef = useRef(onFailed);
+  const onProgressRef = useRef(onProgress);
+  useEffect(() => {
+    onLiveRef.current = onLive;
+    onFailedRef.current = onFailed;
+    onProgressRef.current = onProgress;
+  }, [onFailed, onLive, onProgress]);
 
-  const handleError = useCallback(
-    (_event: SparkSplatErrorEvent) => {
-      // One missing tile is an incomplete room — fail honestly, once.
-      if (failedRef.current) return;
-      failedRef.current = true;
-      onFailed();
-    },
-    [onFailed],
-  );
+  const handleLoad = useCallback((event: { url: string }) => {
+    loadedRef.current.add(event.url);
+    const loadedBytes = RECEPTION_TILE_MANIFEST.filter((tile) =>
+      loadedRef.current.has(`/splats/reception/${tile.file}`),
+    ).reduce((sum, tile) => sum + tile.bytes, 0);
+    onProgressRef.current(loadedBytes, TOTAL_BYTES);
+    if (loadedRef.current.size >= RECEPTION_TILE_MANIFEST.length) {
+      setLive(true);
+      onLiveRef.current();
+    }
+  }, []);
+
+  const handleError = useCallback((_event: SparkSplatErrorEvent) => {
+    // One missing tile is an incomplete room — fail honestly, once.
+    if (failedRef.current) return;
+    failedRef.current = true;
+    onFailedRef.current();
+  }, []);
 
   return (
     <div
