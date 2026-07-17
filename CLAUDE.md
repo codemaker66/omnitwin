@@ -242,3 +242,9 @@ matches what you're about to do.
   helper (e.g. `api.get<T>(path, schema)`), or debugging cascading
   `objectInputType vs objectOutputType is not assignable` errors at
   the api client boundary.
+
+- `.claude/gotchas/spark-splat-layer-callback-identity.md`
+  Read this when: passing `onLoad`/`onError` to `SparkSplatLayer`,
+  wiring a splat scene's progress to React state, or debugging a splat
+  scene that reaches its "loaded" state but renders a blank canvas
+  (especially when it works on localhost and fails deployed).
