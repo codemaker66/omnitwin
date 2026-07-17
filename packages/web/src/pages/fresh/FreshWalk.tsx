@@ -60,9 +60,10 @@ const WALK_STATION = {
   look: [-2.0, -0.55, 9.0],
 } as const;
 
-const YAW_LIMIT = 0.95;
-const PITCH_LIMIT = 0.32;
+const YAW_LIMIT = 1.25;
+const PITCH_LIMIT = 0.38;
 const LOOK_EASE_RATE = 7;
+const WALK_FOV_DEG = 62;
 const KEY_STEP_M = 0.25;
 const CLEARANCE_RADIUS_M = 1.45;
 const CYAN = 0x62d9da;
@@ -104,9 +105,16 @@ function LookRig({ interaction }: { readonly interaction: WalkInteraction }): nu
     };
     const onMove = (event: PointerEvent): void => {
       if (!looking.current || interaction.tableDrag) return;
-      const next = yaw.current.target - event.movementX * 0.0032;
+      // Grab-the-world, finger-locked: the point you grab stays under your
+      // hand (the Street View / Look Around convention), so sensitivity is
+      // the field of view divided by the canvas size — not a magic number.
+      const width = Math.max(1, element.clientWidth);
+      const height = Math.max(1, element.clientHeight);
+      const fovV = (WALK_FOV_DEG * Math.PI) / 180;
+      const fovH = 2 * Math.atan(Math.tan(fovV / 2) * (width / height));
+      const next = yaw.current.target + event.movementX * (fovH / width);
       yaw.current.target = Math.max(-YAW_LIMIT, Math.min(YAW_LIMIT, next));
-      const nextPitch = pitch.current.target - event.movementY * 0.0022;
+      const nextPitch = pitch.current.target + event.movementY * (fovV / height);
       pitch.current.target = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, nextPitch));
       invalidate();
     };
@@ -209,33 +217,45 @@ function WalkTable({ interaction, nudgeRef }: WalkTableProps): ReactElement {
     };
   }, [applyPosition, nudgeRef, objects]);
 
-  const moveToRay = useCallback(
-    (event: ThreeEvent<PointerEvent>) => {
+  const dragOffset = useRef({ x: 0, z: 0 });
+
+  const rayToFloor = useCallback(
+    (event: ThreeEvent<PointerEvent>): { x: number; z: number } | null => {
       const { origin, direction } = event.ray;
-      if (Math.abs(direction.y) < 1e-4) return;
+      if (Math.abs(direction.y) < 1e-4) return null;
       const t = (FIRST_TABLE.floorY - origin.y) / direction.y;
-      if (t <= 0) return;
-      position.current = clampToFloorBounds(
-        origin.x + direction.x * t,
-        origin.z + direction.z * t,
-      );
-      applyPosition();
+      if (t <= 0) return null;
+      return { x: origin.x + direction.x * t, z: origin.z + direction.z * t };
     },
-    [applyPosition],
+    [],
   );
 
   return (
     <primitive
       object={objects.group}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+        const hit = rayToFloor(event);
+        if (hit === null) return;
+        // Preserve the grab point — the table follows the hand from where
+        // it was held, never snapping its centre to the cursor.
+        dragOffset.current = {
+          x: position.current.x - hit.x,
+          z: position.current.z - hit.z,
+        };
         interaction.tableDrag = true;
         objects.clearance.material.opacity = 0.75;
         (event.target as Element | undefined)?.setPointerCapture(event.pointerId);
-        moveToRay(event);
+        invalidate();
       }}
       onPointerMove={(event: ThreeEvent<PointerEvent>) => {
         if (!interaction.tableDrag) return;
-        moveToRay(event);
+        const hit = rayToFloor(event);
+        if (hit === null) return;
+        position.current = clampToFloorBounds(
+          hit.x + dragOffset.current.x,
+          hit.z + dragOffset.current.z,
+        );
+        applyPosition();
       }}
       onPointerUp={() => {
         if (!interaction.tableDrag) return;
@@ -325,7 +345,7 @@ export default function FreshWalk({
         frameloop="demand"
         dpr={[1, 2]}
         camera={{
-          fov: 62,
+          fov: WALK_FOV_DEG,
           near: 0.05,
           far: 150,
           position: [...WALK_STATION.position],
