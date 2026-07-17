@@ -386,6 +386,27 @@ def test_chroma_detection_catches_tripod_pads_and_fill_restores():
     assert err_after < 14.0, f"pads survived the fill: err {err_after:.1f}"
 
 
+def test_donorless_pixels_fall_back_without_crashing():
+    # A single donor whose own tripod cone overlaps the hole leaves some
+    # pixels with NO donor at all — the synthesized-pixel fallback must
+    # seed them from the nearest covered fill and report them honestly.
+    # (Latent crash found by the batch: EDT indices were row-sliced, not
+    # point-indexed — first executed on scan_000's plinth shadow.)
+    filled, report = nf.fill_nadir_hole(
+        IMG_A,
+        C_A,
+        [(IMG_D, C_D)],  # D stands 0.6 m away: its cone overlaps A's hole
+        z_floor=Z_FLOOR,
+        hole_mask_eq=MASK_A,
+        tripod_radius=TRIPOD_R,
+        view_size=640,
+        half_fov_deg=58.0,
+    )
+    assert report["synthesized_px"] > 0, report
+    assert np.all(np.isfinite(filled))
+    print(f"  synthesized px: {report['synthesized_px']} (fallback exercised)")
+
+
 def _dump(out_dir):
     from PIL import Image
 
