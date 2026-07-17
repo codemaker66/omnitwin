@@ -298,33 +298,44 @@ class VoxelOccluder:
         from a tripod-height donor anyway."""
         C = np.asarray(C, dtype=np.float64)
         P = np.asarray(P, dtype=np.float64)
-        v = P - C[None, :]
-        L = np.linalg.norm(v, axis=1)
-        span = L - near_skip - far_skip
-        if P.size == 0 or float(np.nanmax(span, initial=0.0)) <= 0:
-            return np.zeros(P.shape[0], dtype=bool)
-        step = self.voxel * 0.7
-        n = int(np.clip(np.ceil(np.nanmax(span) / step), 1, 4096))
-        s = np.linspace(0.0, 1.0, n, dtype=np.float64)[None, :]
-        tt = near_skip + s * np.maximum(span, 0.0)[:, None]
-        valid = (span[:, None] > 0) & (tt <= (L[:, None] - far_skip))
-        unit = v / np.maximum(L, 1e-12)[:, None]
-        pts = C[None, None, :] + unit[:, None, :] * tt[..., None]
-        idx = np.floor((pts - self.origin[None, None, :]) / self.voxel).astype(
-            np.int64
-        )
+        m_total = P.shape[0]
+        if m_total == 0:
+            return np.zeros(0, dtype=bool)
+        # Chunked march: the full rays×steps lattice at once can spike
+        # hundreds of MB (batch workers OOMed on it); slabs bound the peak.
+        hit = np.zeros(m_total, dtype=bool)
+        chunk = 4096
         gshape = np.asarray(self.grid.shape)[None, None, :]
-        inb = valid & np.all((idx >= 0) & (idx < gshape), axis=2)
-        if z_exempt_below is not None:
-            inb &= pts[..., 2] >= z_exempt_below
-        hit = np.zeros(P.shape[0], dtype=bool)
-        if np.any(inb):
-            gi = idx[inb]
-            occ = self.grid[gi[:, 0], gi[:, 1], gi[:, 2]]
-            rows = np.broadcast_to(
-                np.arange(P.shape[0])[:, None], inb.shape
-            )[inb]
-            hit = np.bincount(rows[occ], minlength=P.shape[0]) > 0
+        step = self.voxel * 0.7
+        for c0 in range(0, m_total, chunk):
+            Pc = P[c0 : c0 + chunk]
+            v = Pc - C[None, :]
+            L = np.linalg.norm(v, axis=1)
+            span = L - near_skip - far_skip
+            top = float(np.nanmax(span, initial=0.0))
+            if top <= 0:
+                continue
+            n = int(np.clip(np.ceil(top / step), 1, 4096))
+            s = np.linspace(0.0, 1.0, n, dtype=np.float64)[None, :]
+            tt = near_skip + s * np.maximum(span, 0.0)[:, None]
+            valid = (span[:, None] > 0) & (tt <= (L[:, None] - far_skip))
+            unit = v / np.maximum(L, 1e-12)[:, None]
+            pts = C[None, None, :] + unit[:, None, :] * tt[..., None]
+            idx = np.floor(
+                (pts - self.origin[None, None, :]) / self.voxel
+            ).astype(np.int64)
+            inb = valid & np.all((idx >= 0) & (idx < gshape), axis=2)
+            if z_exempt_below is not None:
+                inb &= pts[..., 2] >= z_exempt_below
+            if np.any(inb):
+                gi = idx[inb]
+                occ = self.grid[gi[:, 0], gi[:, 1], gi[:, 2]]
+                rows = np.broadcast_to(
+                    np.arange(Pc.shape[0])[:, None], inb.shape
+                )[inb]
+                hit[c0 : c0 + chunk] = (
+                    np.bincount(rows[occ], minlength=Pc.shape[0]) > 0
+                )
         return hit
 
 
@@ -546,7 +557,11 @@ def fill_nadir_hole(
     pixels."""
     from scipy import ndimage
 
-    tgt = np.asarray(target_img, dtype=np.float32)
+    # Keep the target's own dtype: a uint8 8192 pano forced to float32 costs
+    # 400 MB (plus the same again for the output copy) — the OOM that killed
+    # the first batch. Samplers gather-then-convert, so uint8 works
+    # throughout; only the written hole pixels round-trip through float.
+    tgt = np.asarray(target_img)
     C_t = np.asarray(C_target, dtype=np.float64)
     eq_h, eq_w = tgt.shape[:2]
 
@@ -881,9 +896,10 @@ def fill_nadir_hole(
     filled = tgt.copy()
 
     def write_back(v):
-        filled[ery[take], erx[take]] = sample_image(
-            v.astype(np.float32), grows[take], gcols[take]
-        )
+        vals = sample_image(v.astype(np.float32), grows[take], gcols[take])
+        if filled.dtype == np.uint8:
+            vals = np.clip(np.rint(vals), 0, 255).astype(np.uint8)
+        filled[ery[take], erx[take]] = vals
 
     write_back(view_out)
 
