@@ -44,11 +44,36 @@ export interface FreshRoom {
   readonly alt: string;
   readonly width: number;
   readonly height: number;
+  /** Rung widths available in /images/venue/ladder/ for this photo. */
+  readonly ladder: readonly number[];
   /** Portrait photographs render taller so nobody in them loses their head. */
   readonly portrait?: boolean;
   /** object-position focus, when the subject is not centred. */
   readonly focus?: string;
 }
+
+/** Responsive delivery: pre-encoded webp rungs live in
+ *  /images/venue/ladder/ as <basename>-<width>.webp — one visitor
+ *  downloads one rung, never the full-size original. */
+export function ladderSrcSet(imagePath: string, widths: readonly number[]): string {
+  const basename = (imagePath.split("/").pop() ?? "").replace(/\.[a-z0-9]+$/i, "");
+  return widths
+    .map((w) => `/images/venue/ladder/${basename}-${String(w)}.webp ${String(w)}w`)
+    .join(", ");
+}
+
+export const FRESH_HERO_LADDER = [480, 768, 1120, 1536] as const;
+export const FRESH_HERO_SIZES =
+  "(max-width: 760px) calc(100vw - 32px), calc(100vw - 88px)";
+/** Narrow screens get a purpose-cut portrait of the hall (dome centred) —
+ *  the landscape aerial survives no phone crop. Same photograph, one
+ *  rendered image: the no-repeat law counts elements, not crops. */
+export const FRESH_HERO_PORTRAIT_MEDIA = "(max-width: 760px)";
+export const FRESH_HERO_PORTRAIT_SRCSET =
+  "/images/venue/ladder/trades-hall-exterior-portrait-480.webp 480w, /images/venue/ladder/trades-hall-exterior-portrait-768.webp 768w";
+export const FRESH_ROOM_SIZES = "(max-width: 760px) calc(100vw - 32px), 558px";
+export const FRESH_HERITAGE_LADDER = [480, 768, 1120, 1448] as const;
+export const FRESH_HERITAGE_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
 
 /** The hero is the house itself, from above. */
 export const FRESH_HERO_IMAGE = tradesHallVenueImages.exterior;
@@ -67,6 +92,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "The Grand Hall dressed and candlelit beneath the dome",
     width: 1535,
     height: 1024,
+    ladder: [480, 768, 1120, 1535],
   },
   {
     slug: "saloon",
@@ -76,6 +102,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "The Saloon, stained-glass windows above panelled walls",
     width: 1535,
     height: 1025,
+    ladder: [480, 768, 1120, 1535],
   },
   {
     slug: "reception-room",
@@ -85,6 +112,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "The Reception Room dressed for a ceremony, candles along the aisle",
     width: 1536,
     height: 1024,
+    ladder: [480, 768, 1120, 1536],
   },
   {
     slug: "robert-adam-room",
@@ -94,6 +122,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "A bride mid-aisle at a ceremony in the Robert Adam Room",
     width: 1122,
     height: 1402,
+    ladder: [480, 768, 1122],
     portrait: true,
     focus: "center 18%",
   },
@@ -132,6 +161,37 @@ export const FRESH_ENQUIRY_SEND = "Open in your email app";
 export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
+
+/** Walk the room — the poster-first capture embed. The poster is a render
+ *  of the captured scene (never one of the venue photographs, so the
+ *  no-repeat law holds); the room itself loads only when invited. */
+export const FRESH_WALK_TITLE = "Walk the room";
+export const FRESH_WALK_LEDE =
+  "The Reception Room, captured — rendered live in your browser, not a photograph. Step in, look around from where the scanner stood, and move a table with your own hands.";
+export const FRESH_WALK_CHIP = "This is not a photograph.";
+export const FRESH_WALK_WAKE = "Step in";
+export const FRESH_WALK_SIZE_NOTE =
+  "Loads the captured room — about 60 MB, best on wifi.";
+export const FRESH_WALK_LOADING = "The room is arriving";
+export const FRESH_WALK_HINT =
+  "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
+export const FRESH_WALK_FAILED =
+  "The captured room couldn't open in this browser — the photographs above still tell the truth.";
+export const FRESH_WALK_NOTE =
+  "The same capture drives Venviewer, the planning tool beneath this page.";
+export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
+export const FRESH_WALK_POSTER_SRCSET =
+  "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
+export const FRESH_WALK_POSTER_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
+export const FRESH_WALK_POSTER_ALT =
+  "The Reception Room as a captured scene, rendered by Venviewer — not a photograph";
+
+/** The room dossiers — each card opens into the room's own page-within-
+ *  the-page: published dimensions, and every capacity drawn to count. */
+export const FRESH_DOSSIER_OPEN = "Open the room";
+export const FRESH_DOSSIER_CLOSE = "Close";
+export const FRESH_DOSSIER_CTA = "Ask about this room";
+export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
 
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
@@ -188,6 +248,20 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_COPY_ACTION,
     FRESH_ENQUIRY_COPIED,
     FRESH_ENQUIRY_OR_CALL,
+    FRESH_DOSSIER_OPEN,
+    FRESH_DOSSIER_CLOSE,
+    FRESH_DOSSIER_CTA,
+    FRESH_DOSSIER_DRAWN_NOTE,
+    FRESH_WALK_TITLE,
+    FRESH_WALK_LEDE,
+    FRESH_WALK_CHIP,
+    FRESH_WALK_WAKE,
+    FRESH_WALK_SIZE_NOTE,
+    FRESH_WALK_LOADING,
+    FRESH_WALK_HINT,
+    FRESH_WALK_FAILED,
+    FRESH_WALK_NOTE,
+    FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,

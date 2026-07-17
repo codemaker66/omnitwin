@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -59,7 +61,37 @@ import {
   FRESH_ENQUIRY_OR_CALL,
   FRESH_ENQUIRY_SEND,
   FRESH_ENQUIRY_TITLE,
+  FRESH_HERO_LADDER,
+  FRESH_HERO_PORTRAIT_MEDIA,
+  FRESH_HERO_PORTRAIT_SRCSET,
+  FRESH_HERO_SIZES,
+  FRESH_HERITAGE_LADDER,
+  FRESH_HERITAGE_SIZES,
+  FRESH_ROOM_SIZES,
+  FRESH_DOSSIER_OPEN,
+  FRESH_WALK_CHIP,
+  FRESH_WALK_FAILED,
+  FRESH_WALK_HINT,
+  FRESH_WALK_LEDE,
+  FRESH_WALK_LOADING,
+  FRESH_WALK_NOTE,
+  FRESH_WALK_POSTER,
+  FRESH_WALK_POSTER_ALT,
+  FRESH_WALK_POSTER_SIZES,
+  FRESH_WALK_POSTER_SRCSET,
+  FRESH_WALK_SIZE_NOTE,
+  FRESH_WALK_TITLE,
+  FRESH_WALK_WAKE,
+  ladderSrcSet,
+  type FreshRoom,
 } from "./fresh-copy.js";
+import { RoomDossier } from "./RoomDossier.js";
+
+/** The captured room costs nothing until invited: three + Spark live in
+ *  this chunk, which only downloads when the visitor steps in. */
+const FreshWalk = lazy(() => import("./FreshWalk.js"));
+
+type WalkState = "poster" | "loading" | "live" | "failed";
 import {
   ENQUIRY_EVENT_TYPES,
   alsoFitsSentence,
@@ -392,8 +424,18 @@ const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
 
 export function FreshPage(): ReactElement {
   const [theme, setTheme] = useState<FreshTheme>(() => loadTheme());
+  const [dossierRoom, setDossierRoom] = useState<FreshRoom | null>(null);
+  const [walkState, setWalkState] = useState<WalkState>("poster");
+  const [walkPercent, setWalkPercent] = useState(0);
   const reveal = useRevealOnce();
   const aperture = useDomeAperture();
+
+  const wakeWalk = useCallback(() => {
+    // Cheap honesty check before paying for the chunk: no WebGL, no room.
+    const probe = document.createElement("canvas");
+    const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
+    setWalkState(gl === null ? "failed" : "loading");
+  }, []);
 
   useEffect(() => {
     document.title = FRESH_META_TITLE;
@@ -448,16 +490,28 @@ export function FreshPage(): ReactElement {
         {/* ——— hero: the photograph, and the breathing word ——— */}
         <section className="fr-hero" aria-labelledby="fr-headline">
           <div className="fr-hero-frame" ref={aperture.frameRef}>
-            <img
-              className="fr-hero-photo"
-              src={FRESH_HERO_IMAGE}
-              alt={FRESH_HERO_ALT}
-              width={1536}
-              height={864}
-              fetchPriority="high"
-              decoding="async"
-              ref={aperture.imgRef}
-            />
+            <picture>
+              {/* Narrow screens: the purpose-cut portrait, dome centred. */}
+              <source
+                media={FRESH_HERO_PORTRAIT_MEDIA}
+                srcSet={FRESH_HERO_PORTRAIT_SRCSET}
+                sizes="calc(100vw - 32px)"
+                width={768}
+                height={864}
+              />
+              <img
+                className="fr-hero-photo"
+                src={FRESH_HERO_IMAGE}
+                srcSet={ladderSrcSet(FRESH_HERO_IMAGE, FRESH_HERO_LADDER)}
+                sizes={FRESH_HERO_SIZES}
+                alt={FRESH_HERO_ALT}
+                width={1536}
+                height={864}
+                fetchPriority="high"
+                decoding="async"
+                ref={aperture.imgRef}
+              />
+            </picture>
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
@@ -498,6 +552,8 @@ export function FreshPage(): ReactElement {
                 <img
                   className={room.portrait === true ? "is-portrait" : undefined}
                   src={room.image}
+                  srcSet={ladderSrcSet(room.image, room.ladder)}
+                  sizes={FRESH_ROOM_SIZES}
                   alt={room.alt}
                   loading="lazy"
                   decoding="async"
@@ -515,12 +571,89 @@ export function FreshPage(): ReactElement {
                   <p className="fr-caps" data-room-caps={room.slug}>
                     {roomCaps(room.slug)}
                   </p>
+                  <button
+                    type="button"
+                    className="fr-room-open"
+                    onClick={() => {
+                      setDossierRoom(room);
+                    }}
+                  >
+                    {FRESH_DOSSIER_OPEN}
+                  </button>
                 </div>
               </article>
             ))}
           </div>
           <p className="fr-galleries" ref={reveal}>
             {FRESH_GALLERIES_NOTE}
+          </p>
+        </section>
+
+        {/* ——— walk the room: the capture, poster-first ——— */}
+        <section className="fr-walk" id="walk" aria-labelledby="fr-walk-title">
+          <div className="fr-arch is-flipped" aria-hidden />
+          <h2 id="fr-walk-title">{FRESH_WALK_TITLE}</h2>
+          <p className="fr-section-lede">{FRESH_WALK_LEDE}</p>
+          <div className="fr-walk-stage" data-walk-state={walkState}>
+            {(walkState === "loading" || walkState === "live") && (
+              <Suspense fallback={null}>
+                <FreshWalk
+                  onLive={() => {
+                    setWalkState("live");
+                  }}
+                  onFailed={() => {
+                    setWalkState("failed");
+                  }}
+                  onProgress={(loaded, total) => {
+                    setWalkPercent(Math.round((loaded / total) * 100));
+                  }}
+                />
+              </Suspense>
+            )}
+            <img
+              className="fr-walk-poster"
+              src={FRESH_WALK_POSTER}
+              srcSet={FRESH_WALK_POSTER_SRCSET}
+              sizes={FRESH_WALK_POSTER_SIZES}
+              alt={FRESH_WALK_POSTER_ALT}
+              loading="lazy"
+              decoding="async"
+              width={1120}
+              height={700}
+            />
+            {walkState === "poster" && (
+              <div className="fr-walk-veil">
+                <p className="fr-walk-chip">{FRESH_WALK_CHIP}</p>
+                <button type="button" className="fr-cta" onClick={wakeWalk}>
+                  {FRESH_WALK_WAKE}
+                </button>
+                <p className="fr-walk-size">{FRESH_WALK_SIZE_NOTE}</p>
+              </div>
+            )}
+            {walkState === "loading" && (
+              <div className="fr-walk-veil" aria-live="polite">
+                <p className="fr-walk-chip">
+                  {FRESH_WALK_LOADING} — {String(walkPercent)}%
+                </p>
+                <div
+                  className="fr-walk-bar"
+                  role="progressbar"
+                  aria-valuenow={walkPercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div style={{ width: `${String(walkPercent)}%` }} />
+                </div>
+              </div>
+            )}
+            {walkState === "failed" && (
+              <div className="fr-walk-veil">
+                <p className="fr-walk-chip">{FRESH_WALK_FAILED}</p>
+              </div>
+            )}
+          </div>
+          <p className="fr-walk-hint">
+            {walkState === "live" ? FRESH_WALK_HINT : FRESH_WALK_NOTE}
           </p>
         </section>
 
@@ -558,6 +691,8 @@ export function FreshPage(): ReactElement {
           <img
             className="fr-heritage-art"
             src={FRESH_HERITAGE_ART}
+            srcSet={ladderSrcSet(FRESH_HERITAGE_ART, FRESH_HERITAGE_LADDER)}
+            sizes={FRESH_HERITAGE_SIZES}
             alt={FRESH_HERITAGE_ART_ALT}
             loading="lazy"
             decoding="async"
@@ -570,6 +705,13 @@ export function FreshPage(): ReactElement {
           </div>
         </section>
       </main>
+
+      <RoomDossier
+        room={dossierRoom}
+        onClose={() => {
+          setDossierRoom(null);
+        }}
+      />
 
       <footer className="fr-contact" id="contact" aria-labelledby="fr-contact-title">
         <h2 id="fr-contact-title">{FRESH_CONTACT_TITLE}</h2>
