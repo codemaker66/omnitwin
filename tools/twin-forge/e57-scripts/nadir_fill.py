@@ -522,6 +522,7 @@ def fill_nadir_hole(
     grain_gain_cap: float = 2.2,
     sheen_field: bool = True,
     occluder: "VoxelOccluder | None" = None,
+    z_exempt_m: float = 0.30,
 ) -> tuple[np.ndarray, dict]:
     """Fill the target sweep's nadir tripod hole from neighbouring sweeps.
 
@@ -595,7 +596,7 @@ def fill_nadir_hole(
         # (cabinet bases in a slot) do not show floor — they would poison
         # the exposure gains, the grain reference, and the sheen field.
         floor_seen = ~occluder.blocked(
-            C_t, P_ring, z_exempt_below=z_floor + 0.30
+            C_t, P_ring, z_exempt_below=z_floor + z_exempt_m
         )
         P_ring, ry, rx = P_ring[floor_seen], ry[floor_seen], rx[floor_seen]
         ring_vals = ring_vals[floor_seen]
@@ -639,7 +640,7 @@ def fill_nadir_hole(
             P_cell, cdown, fs = vis_cells
             blk_small = np.zeros(cdown.shape, dtype=bool)
             blk_small[cdown] = occluder.blocked(
-                C_d, P_cell[cdown], z_exempt_below=z_floor + 0.30
+                C_d, P_cell[cdown], z_exempt_below=z_floor + z_exempt_m
             )
             blk = np.repeat(np.repeat(blk_small, fs, axis=0), fs, axis=1)[
                 :view_size, :view_size
@@ -742,7 +743,8 @@ def fill_nadir_hole(
         _, (iy, ix) = ndimage.distance_transform_edt(~cov_map, return_indices=True)
         val_map = np.zeros(hole_view.shape + (3,), dtype=np.float32)
         val_map[ys[covered], xs[covered]] = blended[covered]
-        blended[~covered] = val_map[iy[ys[~covered]], ix[xs[~covered]]]
+        ysn, xsn = ys[~covered], xs[~covered]
+        blended[~covered] = val_map[iy[ysn, xsn], ix[ysn, xsn]]
 
     source = view.copy()
     source[ys, xs] = blended
@@ -776,7 +778,7 @@ def fill_nadir_hole(
         P_r2, r2y, r2x = floor_points(ring2)
         if occluder is not None and r2y.size:
             keep2 = ~occluder.blocked(
-                C_t, P_r2, z_exempt_below=z_floor + 0.30
+                C_t, P_r2, z_exempt_below=z_floor + z_exempt_m
             )
             P_r2, r2y, r2x = P_r2[keep2], r2y[keep2], r2x[keep2]
         if r2y.size >= 100:
