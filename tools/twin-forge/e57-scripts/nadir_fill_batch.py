@@ -204,7 +204,7 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--mesh", default="")
     ap.add_argument("--scans", default="all")
-    ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--k", type=int, default=8)
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -232,7 +232,7 @@ def main() -> int:
         initializer=_init,
         initargs=(args.manifest, occ_data, occ_fine_data,
                   args.equirect, args.out, args.k),
-        maxtasksperchild=8,
+        maxtasksperchild=1,  # fresh process per sweep: memory back to the OS
     ) as pool:
         with open(report_path, "a", encoding="utf8") as rf:
             for rec in pool.imap_unordered(process_scan, targets):
