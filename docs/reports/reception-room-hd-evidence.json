@@ -1,0 +1,2110 @@
+{
+  "schemaVersion": "venviewer.reception-room-hd-evidence.v1",
+  "createdAt": "2026-07-12T13:00:25+01:00",
+  "evidenceCutoff": "2026-07-12",
+  "postCutoffAddenda": {
+    "asOf": "2026-07-16",
+    "originalEvidenceEntriesChanged": true,
+    "note": "The original 2026-07-12 source-asset and fixed-view capture receipts remain unchanged. Planned hero/photo labels, next tests and current implementation status were corrected where later evidence disproved them. A separate 2026-07-16 database-free real-component capture is recorded as a new run; it proves pairwise visual differences, not a physical quality improvement or a product-route result.",
+    "runtimeProfileSecurityHardening": {
+      "status": "implemented_locally_not_deployed",
+      "identityAndReleaseAreSeparate": true,
+      "reviewedByteProfileReceiptLocation": "API server only; absent from public response and production bundle",
+      "anonymousPresentationAllowlist": [],
+      "authenticatedAdministratorPreview": "separate private metadata and protected-stream path",
+      "publicClientReceives": "no Reception runtime profile or member URL; both reviewed byte profiles are structurally blocked from anonymous presentation",
+      "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Neither reviewed byte profile has an exact reviewed immutable presentation contract."},
+      "futurePresentationContractRequirements": ["exact group transform", "exact camera policy and route", "renderer-profile digest", "browser applies every reviewed value exactly rather than using local presentation defaults"],
+      "futureAnonymousMemberUrlShape": "/assets/runtime-profiles/<eligible-reviewed-profile>/members/<ordinal>/content.sog",
+      "detailedLatestPackageMetadata": "platform administrator required",
+      "directAssetIdStreams": "platform administrator required",
+      "legacyBrowserResolver": "retired to safe fallback because URL-mode Spark cannot attach an administrator bearer token",
+      "legacyPublicSingleVisualPolicy": "retired for every room; each room requires a reviewed immutable presentation contract in addition to reviewed bytes",
+      "trustedOriginRule": "PUBLIC_API_ORIGIN required and clean HTTPS in production; server ignores request Host for anonymous member URLs and client pins all four URLs to configured API origin",
+      "publicMetadataAndMemberRequestGates": ["room showcase opt-in", "exact reviewed byte identity and immutable presentation contract", "published state", "human-reviewed public QA", "every required QA check is present and passed", "linked signed transform", "QA and transform match exact package/venue/room", "QA binds exact transform-content SHA-256", "same immutable package revision and member immediately before send"],
+      "runtimeProfileStorage": "dedicated private runtime-profile R2 credentials and bucket; no public URL field, no fallback to legacy upload or Foundry storage, and a distinct bucket name is required",
+      "immutableReviewIds": "transform-artifact and QA-record IDs permit exact idempotent retries only; changed content requires a new ID",
+      "physicalObjectVerification": "cache misses read the complete private object and verify registered byte count and SHA-256; cache hits are keyed by the same SHA-256 and size; every request reruns all release gates and exact member identity immediately before send",
+      "verifiedByteCache": {"scope":"per_api_process","maximumBytes":67108864,"maximumEntries":16,"ttlMilliseconds":300000,"singleFlight":"identical SHA-256 and size only; authorization remains per request"},
+      "transferAdmission": {"scope":"per_api_process","activeVerifiedResponses":2,"maximumQueuedWaiters":16,"queueDiscipline":"FIFO","queueTimeoutMilliseconds":300000,"maximumMemberBytes":16777216,"upstreamTimeoutMilliseconds":30000,"absoluteResponseTransferDeadlineMilliseconds":180000,"absoluteDeadlineAction":"abort upstream work and destroy the stalled response","slotRelease":"after both handler work and response finish/close or forced-deadline settlement","unfinishedClose":"abort upstream before final release"},
+      "privatePreviewDisconnectRule": "The administrator-only private-preview byte route registers disconnect handling before database/package lookup, preventing a lookup-time disconnect from later acquiring or stranding a verified-transfer slot. Private byte preview does not grant anonymous presentation eligibility.",
+      "memberRouteRateLimit": "24 requests per minute per client IP; edge/WAF controls remain required for distributed traffic",
+      "receptionPublicShowcaseEnabled": false,
+      "publicReleaseChanged": false,
+      "runtimeProfilePrivateStorageProvisionedOrCopied": false,
+      "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until every activation gate passes"]
+    },
+    "reports": [
+      "docs/reports/reception-room-e57-geometry-edge-visual-diagnosis-2026-07-14.md",
+      "docs/reports/lcc2-authoritative-frontier-evidence-2026-07-14.md",
+      "docs/reports/reception-room-private-exact-package-preview-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-cv-alignment-diagnostic-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-gravity-overlay-diagnostic-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-structural-cv-diagnostic-2026-07-15.md",
+      "docs/reports/omnitwin-config-b-trainer-contract-preflight-2026-07-14.md",
+      "docs/reports/reception-room-local-real-component-quality-preflight-2026-07-16.md",
+      "docs/reports/reception-room-e57-matched-cv-2026-07-16.md"
+    ]
+  },
+  "latestStructuralComputerVision": {
+    "asOf": "2026-07-15",
+    "authority": "none",
+    "decision": "blocked_no_room_boundary",
+    "failureCodeBothInputs": "HORIZONTAL_ROOM_ENVELOPE_NOT_FOUND",
+    "plainLanguage": "Computer vision found nine wall planes and two independent wall directions in each real input, but neither input proved one continuous Reception floor physically contacting the room walls. No room height, transform, overlay or approval was created.",
+    "xgrids": {"sampleCount":160000,"structuralSurfaceCount":17559,"wallPlaneCount":9,"floorBandsMeters":[-1.5205,-1.4312]},
+    "e57FitOnly": {"fitStationIds":[124,125,127,128,130,132,133,135,136,137,139,142,143,144],"pointCount":225418,"structuralSurfaceCount":40981,"wallPlaneCount":9,"mainFloorBandMeters":-2.8802,"validationStationIdsRead":[],"frozenTestStationIdsRead":[],"excludedStationIdsRead":[]},
+    "sourceNaming": "The 20.5 GB, 149-scan file is venue-wide. Reception is a candidate station subset, not the whole E57. The staged F: copy and the earlier registered F:\\E57 path share recorded size/mtime, but this addendum does not assert newly reverified byte identity.",
+    "completeE57HashDuringFitOnlyProbe": false,
+    "filesWrittenByRealProbe": 0,
+    "productionTool": {"path":"tools/reception-hd/register_e57_xgrids_surfaces.py","sizeBytes":420828,"sha256":"84d4eaf4d2c8b0f6d60e3c48283f4f3dd319320a65c172f6792da21619f8d31a"},
+    "report": "docs/reports/reception-room-e57-xgrids-structural-cv-diagnostic-2026-07-15.md",
+    "nextTest": "Supply a human-reviewed room-only 3D crop or floor-boundary polygon, then rerun fit-only structural CV with validation held back and frozen test stations untouched. Independent controls remain required for authority.",
+    "supersededBy": "latestMatchedCameraComputerVision"
+  },
+  "latestMatchedCameraComputerVision": {
+    "asOf": "2026-07-16",
+    "authority": "none",
+    "decision": "slight_quality_directional_lead_not_a_physical_winner",
+    "plainLanguage": "Computer vision now aligns the XGRIDS/Potree room to E57 and compares Quality and Mobile from three evidence-backed E57 cameras. The frozen primary rule gives Quality a slight directional lead, but the effect has no calibrated practical threshold and the largest allowed border sensitivity produces no reliable winner. Keep Quality as the review leader; do not promote or physically approve either candidate from this evidence alone.",
+    "geometry": {
+      "fitScanIds": [124,125,127,128,130,132,133,135,136,137,139,142,143,144],
+      "validationScanIds": [131,134,138],
+      "properYawDegrees": 167.61874444197818,
+      "properTranslationMeters": [13.129636870981638,1.8645790764845938,-1.4672480408373136],
+      "properFitWallTrimmedRmseMeters": 0.0253654871,
+      "properValidationCombinedRmseMeters": 0.2114153354657659,
+      "mirrorValidationCombinedRmseMeters": 0.2782798965876932,
+      "properValidationRelativeAdvantage": 0.2402780867099271,
+      "validationTargetToSourceMedianMeters": 0.034674620385294064,
+      "validationTargetToSourceP95Meters": 0.0694355857921251,
+      "validationReceipt": "C:\\tmp\\reception-potree-e57-feasibility-2026-07-16\\validation-proper-vs-mirror.json",
+      "validationReceiptSha256": "81dadda64ba0a25c0d073ce60ee8d9bf39baa166aaa8a46cd3d859eaacaa9927"
+    },
+    "matchedCameras": {
+      "scanIds": [131,134,138],
+      "skyboxName": "Skybox 4",
+      "fovDegrees": 90,
+      "receipt": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\reception-e57-matched-camera-views-2026-07-16.json",
+      "receiptSha256": "06fea12e3933cd0e2cffa524986fe1ad6765b33306e3a9da453cb508f01ded82",
+      "payloadSha256": "86be01492e86b8ea59122b50345f5cc16dbf8f764f213422af84d266f6bee8ae",
+      "rawE57ReadByCameraTool": false,
+      "jpegBytesReadByCameraTool": false,
+      "poseJsonReadByCameraTool": false
+    },
+    "primaryImageComparison": {
+      "comparisonSizePixels": [1024,1024],
+      "borderPixels": 24,
+      "candidate": "quality",
+      "status": "directional_lead",
+      "practicalMateriality": "not_calibrated",
+      "qualityClearWins": {"multiscaleEdgeChamfer":2,"normalizedGradientOrientationSimilarity":3},
+      "mobileClearWins": {"multiscaleEdgeChamfer":1,"normalizedGradientOrientationSimilarity":0},
+      "meanRelativeEffectQualityPositive": {"multiscaleEdgeChamfer":-0.00361416562049587,"normalizedGradientOrientationSimilarity":0.00217247653347933},
+      "receipt": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\reception-e57-matched-cv-final-result-2026-07-16.json",
+      "receiptSha256": "b5edced2b2eb20a819b5f4ba8a518d44c47073eccbddd92f0faec93338c319c7",
+      "contactSheet": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\reception-e57-matched-cv-final-contact-sheet-2026-07-16.png",
+      "contactSheetSha256": "405122b72ca36110e411655b236a7f8ebcb7c168961d4226bc871628848f3242"
+    },
+    "sensitivity": [
+      {"comparisonSizePixels":[1024,1024],"borderPixels":0,"status":"directional_lead","candidate":"quality","receiptSha256":"ae37aa340a2ff6261f3e3da2969d2798ffc65dbd99c97dab1180f2daf56f624d"},
+      {"comparisonSizePixels":[512,512],"borderPixels":12,"status":"directional_lead","candidate":"quality","receiptSha256":"4a5dcfc88029c183bac3495eba1dabfac0444f86e43877be0fff161b37507363"},
+      {"comparisonSizePixels":[1024,1024],"borderPixels":48,"status":"no_reliable_winner","candidate":null,"receiptSha256":"e89544c5f84e32abc56ee53f694347d602fc6bf073941df4dfafad1e42f38f54"}
+    ],
+    "implementation": {
+      "registrationTool": {"path":"tools/reception-hd/register_potree_e57.py","sha256":"ad0556344de432fdd9cba793857dd3f71360e34153f621b31e023238b995cd8d"},
+      "cameraTool": {"path":"tools/reception-hd/build_e57_matched_camera_views.py","sha256":"9a37cb8fd1d3b755168be6e63d8796de3d6eee9ba64e0fbc8d7ed89fe8e7d154"},
+      "imageScorer": {"path":"tools/reception-hd/compare_matched_renders.py","sha256":"d7fb531e7d0e6854db3f0b35c1361f8b9e9bed6c38a300a6964cf323efc8aeb0"},
+      "developmentOnlyExactCameraInput": "packages/web/src/pages/living-hall/reception-experimental-camera.ts"
+    },
+    "scope": {
+      "physicalApproval": false,
+      "runtimePromotionApproval": false,
+      "publicationApproval": false,
+      "trainingApproval": false,
+      "matchedRenderMethodDidNotRequestOrUseScanIds": [126,129,141],
+      "holdoutQualification": "Earlier repository diagnostics contain some of these station records, so this is a method-specific holdout claim rather than a claim that the data has never been inspected anywhere."
+    },
+    "report": "docs/reports/reception-room-e57-matched-cv-2026-07-16.md",
+    "nextTest": "Freeze this exact camera and scoring protocol, then run it once on method-specific holdout stations 126, 129 and 141 without changing thresholds. Independent surveyed controls or a fresh separately captured photographic survey remain required for physical accuracy."
+  },
+  "latestLocalRealComponentPreflight": {
+    "asOf": "2026-07-16",
+    "authority": "pairwise_diagnostic_only",
+    "decision": "verified_difference_no_quality_winner",
+    "plainLanguage": "The real Living Hall scene loaded both reviewed four-file candidates at the same six cameras. Computer vision found review-worthy differences in five views and could not reliably assess the low-edge ceiling view. This proves the candidates look different; without a registered real photograph or independently trusted scan it cannot say which is more accurate.",
+    "route": "/dev/reception-quality-preflight",
+    "routeBoundary": {
+      "developmentOnly": true,
+      "hardCodedCandidateEnum": true,
+      "hardCodedViewEnum": true,
+      "acceptsArbitraryAssetUrl": false,
+      "protectedAuthenticatedProductRoute": false,
+      "productionBundleExclusionVerified": true
+    },
+    "viewerProfile": {
+      "id": "reception-fixed-fine-review-v1",
+      "canvasDprRange": [1, 2],
+      "observedEffectiveDprApproximately": 1,
+      "antialias": false,
+      "outputColorSpace": "sRGB",
+      "toneMapping": "ACESFilmicToneMapping",
+      "toneMappingExposure": 1,
+      "sparkMaxSh": 3,
+      "sparkLodEnabled": false,
+      "preBlurAmount": 0,
+      "blurAmount": 0.3,
+      "blurValuesAreControlledBaselineNotProvedOptimum": true
+    },
+    "candidates": [
+      {
+        "id": "quality-sog-fine-real-component",
+        "format": "SOG",
+        "namedFilesLoaded": ["0_15_0_0.sog", "0_1_0_5.sog", "0_6_0_0.sog", "0_7_0_0.sog"],
+        "observedLoadedSourceCount": 4,
+        "observedDecodedSplatTotal": 2002009
+      },
+      {
+        "id": "mobile-spz-fine-real-component",
+        "format": "SPZ",
+        "namedFilesLoaded": ["0_13_0_0.spz", "0_3_0_0.spz", "0_7_0_1.spz", "0_8_0_0.spz"],
+        "observedLoadedSourceCount": 4,
+        "observedDecodedSplatTotal": 1978258
+      }
+    ],
+    "assetIntegrityScope": "The page and sidecars prove that the four named files loaded and that decoded totals matched. This capture manifest does not hash the bytes served by the local asset servers, so it is not a new byte-exact asset audit.",
+    "views": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+    "viewGeometry": "six feature framings sharing one optical centre; no orbit or moving camera",
+    "capture": {
+      "pixelDimensions": [1200, 900],
+      "format": "lossless PNG",
+      "candidateViewPairs": 12,
+      "repeatCountPerPair": 2,
+      "screenshotCount": 24,
+      "sidecarCount": 12,
+      "repeatDelayMilliseconds": 500,
+      "byteIdenticalRepeatPairs": 12,
+      "staticRepeatMeaning": "No still-frame pixel drift was observed after load. This does not prove moving-camera or orbit stability.",
+      "rejectedPreliminaryCapture": "An earlier screenshot path was reported to have returned JPEG bytes under .png names. Those discarded bytes and their rejection log/hash were not retained, so the incident is not independently reproducible; it was excluded from the metric set. The final run used Chrome DevTools Page.captureScreenshot, and all 24 final files independently pass PNG-signature, 1200x900, eight-bit-RGB and hash checks.",
+      "rejectedPreliminaryCaptureArtifactRetained": false,
+      "rejectedPreliminaryCaptureSha256": null,
+      "rejectedPreliminaryCaptureIndependentReverification": "not_possible"
+    },
+    "artifacts": {
+      "root": "output/playwright/reception-hd-real-component-2026-07-16",
+      "captureManifest": {"path":"output/playwright/reception-hd-real-component-2026-07-16/capture-manifest.json","sha256":"e414ee58d64266c59bebfa23485f897c8c3472929853ec3b398e093ae43faf5b"},
+      "cvTriage": {"path":"output/playwright/reception-hd-real-component-2026-07-16/cv-triage.json","sha256":"9cc0af09bdc25fc004e34f1d0e741611f699145c81bf7e9e6be8befd7c58f15b","embeddedReceiptSha256":"55bf71044439e9ce15cb6d069f296a155ba5aa8b33f46b4ed34a87648a9143dc"},
+      "pixelMetrics": {"path":"output/playwright/reception-hd-real-component-2026-07-16/pixel-metrics.json","sha256":"d79443a4594d97fab25724acc97772159d41f09f6b0a1cc63e89a0863490caf3"},
+      "boardIndex": {"path":"output/playwright/reception-hd-real-component-2026-07-16/cv-boards-current/index.json","sha256":"006dddb62557244c49897382d4a893ca1885e15971380848cf52f1f075f80bb3","embeddedReceiptSha256":"52cf083c4cf21446defe000385d43dcc7ddd3f849432ff7f578b0908abc5886f"}
+    },
+    "integrityVerification": {
+      "sealTimeEnvironmentFilesVerified": "15/15",
+      "currentEnvironmentRecheck": {
+        "checkedAt": "2026-07-16",
+        "recordedFileCount": 15,
+        "currentHashMatchCount": 13,
+        "currentHashMismatchCount": 2,
+        "mismatches": [
+          {"path":"pnpm-lock.yaml","recordedSizeBytes":282823,"recordedSha256":"a9aa8eb057a98849c1a9f7889c0e2c8a71a4448023c914a0a754680baddb5146","currentSizeBytes":285839,"currentSha256":"767b459e11b52b8bc7fe17d5e5bf69fec3230f02618555e7eefb6aa6c01450c1"},
+          {"path":"packages/web/src/router.tsx","recordedSizeBytes":17251,"recordedSha256":"6eebd7866b2f9f831f70c8c78b7c3cca4461ebfee0f7f43c33ec0ac2959199f8","currentSizeBytes":18038,"currentSha256":"95c6020e9610e8cd6a89f9cbc6c0947544935c0d4a20d577ea9d0d4d1ba3fb0c"}
+        ],
+        "meaning": "The immutable capture artifacts remain valid, but today's whole app is not proved bit-reproducible from this selected environment list."
+      },
+      "environmentManifestScope": "selected capture/render/CV files; not a complete transitive-module inventory",
+      "screenshotsVerified": "24/24",
+      "sidecarsVerified": "12/12",
+      "repeatPairsVerified": "12/12",
+      "cvInputsVerified": "12/12",
+      "cvReceiptAndManifestBindingVerified": true,
+      "boardInputsAndOutputsVerified": "12/12"
+    },
+    "computerVision": {
+      "comparisonDirections": 2,
+      "perDirectionVerdicts": {"review":5,"notAssessable":1,"triageClear":0},
+      "notAssessableView": "ceiling-moulding",
+      "psnrDbRange": [26.912251, 29.773793],
+      "ssimRange": [0.941555, 0.961395],
+      "normalizedRgbMaeRange": [0.025317, 0.040604],
+      "interpretation": "Similarity and edge-energy measurements locate differences. They do not establish physical truth, real detail or directional superiority."
+    },
+    "verification": {
+      "focusedTests": "59/59 passed",
+      "bundleSplittingTests": "13/13 passed",
+      "typecheck": "passed",
+      "targetedLint": "passed",
+      "productionBuild": "capture-era build passed with a temporary process-only dummy live-format Clerk key. Current production validation additionally requires a clean HTTPS VITE_API_URL; both validation-only values must stay process-local and must not be written to an environment file",
+      "productionLeakScan": "No development route, localhost asset URL, local candidate ID, local-preflight chunk or Reception splat payload was found; dist/splats/reception is absent."
+    },
+    "limitations": [
+      "no registered held-out photograph or independently trusted scan at the same cameras",
+      "all six cameras share one optical centre",
+      "no moving-camera, orbit, FPS, load-time, GPU-memory or named-device evidence",
+      "local development route only; protected authenticated route not captured",
+      "no human acceptance decision and no product quality improvement proved"
+    ],
+    "report": "docs/reports/reception-room-local-real-component-quality-preflight-2026-07-16.md",
+    "nextTest": "Add spatially distinct near/mid/far/orbit and moving-camera performance evidence, then compare both candidates with a registered held-out physical reference. Separately authorize migrations, registration, deployment and authenticated streaming before repeating the protocol through the protected route."
+  },
+  "postCaptureRuntimeDeliveryHardening": {
+    "asOf": "2026-07-16",
+    "authority": "local_implementation_and_tests_only",
+    "captureArtifactHashesChanged": false,
+    "serverReviewedProfiles": ["quality-sog-fine-v1", "mobile-spz-fine-v1"],
+    "publicPresentationCandidate": null,
+    "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Reviewed byte identity is not an immutable reviewed presentation contract."},
+    "futurePresentationContractRequirements": ["exact group transform", "exact camera policy and route", "renderer-profile digest", "browser applies every reviewed value exactly rather than using local presentation defaults"],
+    "currentPublicResponse": null,
+    "futureEligiblePublicResponseFields": ["scope", "venueSlug", "roomSlug", "profileId", "visualAssetUrls"],
+    "futureEligiblePublicResponseForbiddenFields": ["runtime package ID", "asset version ID", "original filename", "byte hash", "storage key or digest", "hierarchy hash", "composition decision", "private notes"],
+    "anonymousMemberUrlShape": "/assets/runtime-profiles/<eligible-reviewed-profile>/members/<ordinal>/content.sog",
+    "anonymousMemberUrlShapeStatus": "future_contract_only; no Reception profile currently exposes this shape",
+    "metadataGate": "room showcase opt-in + exact reviewed byte identity and immutable presentation contract + published state + human-reviewed public QA with every required check present and passed + linked signed transform + exact QA/transform package/venue/room scope + QA-bound exact transform-content SHA-256",
+    "immutableReviewIds": "transform-artifact and QA-record IDs permit exact idempotent retries only; changed content requires a new ID",
+    "runtimeProfileStorage": "dedicated private runtime-profile R2 credentials and bucket; no public URL field, no fallback to legacy upload or Foundry storage, and bucket must be distinct",
+    "memberGate": "authorize before work, obtain full size/SHA-256-verified private bytes or an exact verified-cache hit, then rerun the complete package/QA/transform gate and immutable member identity immediately before send",
+    "verifiedByteCache": {"scope":"per_api_process","maximumBytes":67108864,"maximumEntries":16,"ttlMilliseconds":300000,"singleFlight":"identical SHA-256 and size only; authorization remains per request"},
+    "transferAdmission": {"scope":"per_api_process","activeVerifiedResponses":2,"maximumQueuedWaiters":16,"queueDiscipline":"FIFO","queueTimeoutMilliseconds":300000,"maximumMemberBytes":16777216,"upstreamTimeoutMilliseconds":30000,"absoluteResponseTransferDeadlineMilliseconds":180000,"absoluteDeadlineAction":"abort upstream work and destroy the stalled response","slotRelease":"after both handler work and response finish/close or forced-deadline settlement","unfinishedClose":"abort upstream before final release"},
+    "memberRouteRateLimit": "24 requests per minute per client IP; not a substitute for edge/WAF controls",
+    "trustedOriginRule": "clean production PUBLIC_API_ORIGIN only; request Host ignored and client pins all four member URLs to configured API origin",
+    "privatePreviewRule": "authenticated exact-package preview accepts only a non-null server-reviewed Quality or Mobile byte-profile label and protected streams; this grants no anonymous presentation eligibility. Its byte route registers disconnect handling before database/package lookup so a lookup-time disconnect cannot later acquire or strand a verified-transfer slot",
+    "legacyDetailedLatestEndpoint": "platform_admin_only",
+    "legacyDirectAssetIdEndpoints": "platform_admin_only",
+    "legacyBrowserResolver": "retired_to_safe_fallback",
+    "legacyPublicSingleVisualEndpoint": "retired_safe_fallback_for_every_room",
+    "currentReceptionShowcaseState": "disabled_fail_closed",
+    "runtimeProfilePrivateStorageProvisionedOrCopied": false,
+    "directAnonymousPrivateBucketAccessDenialVerified": false,
+    "edgeRateLimitOrWafConfiguredByThisWork": false,
+    "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until all activation gates pass"],
+    "deploymentRegistrationMigrationPublicPointerOrReleaseChanged": false,
+    "qualityConclusionChanged": false
+  },
+  "handling": {
+    "classification": "INTERNAL",
+    "publicRedactionRequired": true,
+    "sensitiveFields": ["absolute local paths", "project and device identifiers", "asset hashes", "provisional E57 station bounds", "venue screenshots"],
+    "externalShareRule": "Create an approved redacted alias annex; do not distribute this raw register or screenshot bundle externally."
+  },
+  "repository": {
+    "root": "C:\\Users\\blake\\omnitwin2",
+    "branch": "feature/diary-p0-slice-3",
+    "head": "e5c2f0a87e3e2da5a7eab87e375865fd62eadb5d",
+    "worktreeAtStart": "dirty_user_owned",
+    "unrelatedChangesPreserved": true
+  },
+  "classificationPolicy": {
+    "verified": "Direct local inspection, a reproducible measurement, or an authoritative primary source.",
+    "supported_inference": "Strongly supported by verified evidence, with a named decisive test outstanding.",
+    "hypothesis": "A candidate mechanism awaiting a discriminating experiment.",
+    "blocked": "A named artifact, authority, operator action, or implementation is absent."
+  },
+  "assetFieldResolution": {
+    "cameraAvailability": "sourceContexts[asset.contextRef].cameraAvailability",
+    "poseAvailability": "sourceContexts[asset.contextRef].poseAvailability",
+    "coordinateFrame": "sourceContexts[asset.contextRef].coordinateFrame",
+    "note": "Every asset has a contextRef; shared camera/pose/frame facts are normalized here rather than repeated on all 50 records."
+  },
+  "safety": {
+    "rawSourcesModified": false,
+    "lccMastersModified": false,
+    "encryptedCalibrationOpened": false,
+    "proprietaryPayloadDecoded": false,
+    "paidComputeLaunched": false,
+    "vendorPurchaseMade": false,
+    "productionRuntimePointerChanged": false,
+    "publicReleaseChanged": false
+  },
+  "commercialReleaseGates": {
+    "xgridsDerivedAssets": {
+      "status": "blocked",
+      "requires": [
+        "written existing-base and candidate output distribution/refinement rights",
+        "counsel-approved implementation of LCC/LCC2 attribution, modification, recipient-link, redistribution, downstream competing-AI and derivative/open-terms obligations",
+        "format licence reviewed commit and required notices stored in release manifest"
+      ],
+      "failureOutcome": "no customer or public release of the XGRIDS-derived base"
+    },
+    "matterportE57AndDerivatives": {
+      "status": "blocked_beyond_internal_inspection",
+      "requires": [
+        "express commercial-training permission before any E57 point/image/pose/depth or derived pose/depth enters training",
+        "written decision for crop/conversion/derived mesh or GLB distribution and embedding",
+        "no-resale boundary and sublicensee Terms treatment",
+        "RR-E57-METRIC-CONTROL before metric authority"
+      ],
+      "failureOutcome": "owned-photo/control lane proceeds without E57 training inputs or distributed E57 derivatives"
+    },
+    "newPhotography": {
+      "status": "blocked_until_capture_rights_pack",
+      "requires": [
+        "photographer assignment and training/derivative grant",
+        "venue/client permission",
+        "subject-property, embedded artwork/signage and contractual clearance",
+        "privacy and model releases where applicable"
+      ]
+    },
+    "vendorPhotoProcessing": {
+      "status": "blocked_until_egress_and_processing_terms",
+      "requires": [
+        "local-versus-cloud processing and network-egress declaration",
+        "input-photo licence and confidentiality terms",
+        "processing location, subprocessors and security/incident terms",
+        "retention/deletion and deletion evidence",
+        "telemetry, secondary use and model-training terms",
+        "export and account-termination behaviour"
+      ],
+      "failureOutcome": "no private venue photo upload or vendor/cloud processing"
+    },
+    "mutableControllingTerms": {
+      "status": "blocked_until_immutable_snapshot_set",
+      "requires": [
+        "effective/version date where shown",
+        "retrieval timestamp and final URL",
+        "counsel-approved retained content snapshot plus SHA-256 or approved archive identifier",
+        "customer order/addendum version controlling the relevant acquisition/use date"
+      ],
+      "blockerId": "LEGAL-SOURCE-SNAPSHOT-SET"
+    },
+    "softwareAndModels": {
+      "status": "exact_build_review_required",
+      "requires": [
+        "version/commit and dependency closure",
+        "checkpoint/weight and dataset rights",
+        "NOTICE/source obligations",
+        "patent freedom-to-operate decision"
+      ]
+    }
+  },
+  "machine": {
+    "os": "Windows",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "gpuMemoryGiB": 24,
+    "lccStudioInstalledVersion": "2.0.0",
+    "lccHdEnhancementUiState": "Not Activated",
+    "lccProjectOpenAttempt": {
+      "result": "cancelled_safely",
+      "warning": "An editor is currently running and may corrupt the open file. Confirm that your changes are saved?",
+      "missingArtifact": "RR-LCC-HERO-CAPTURE-SET"
+    },
+    "evidenceStrength": "verified"
+  },
+  "assetRoots": {
+    "portalcamRaw": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618",
+    "qualityLccProject": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638",
+    "mobileLccProject": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650",
+    "qualityRuntimeCopy": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result",
+    "mobileSpzRuntimeCopy": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result",
+    "mobileSpzWithMesh": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh",
+    "mobileSogComparator": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result",
+    "e57": "F:\\E57\\cloud_0.e57",
+    "fixedViewOutput": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation"
+  },
+  "sourceContexts": {
+    "portalcamRaw": {
+      "cameraAvailability": "four camera-event identities and four RGB-event identities; no open image payloads",
+      "poseAvailability": "poses.csv, 9080 rows at approximately 9.998 Hz",
+      "coordinateFrame": "unknown local PortalCam/body frame; units, pose direction, handedness, quaternion ordering, and camera extrinsics are not reviewed",
+      "limitations": [
+        "XBAG/XBIN is proprietary",
+        "lixel.zip calibration entries are ZipCrypto encrypted",
+        "GNSS is all zero/status 0",
+        "control_points.csv is empty",
+        "event metadata does not expose RGB or LiDAR payloads"
+      ],
+      "nextTest": "Obtain an official XGRIDS export/SDK sample containing images, dimensions, timestamps, intrinsics, distortion, camera/body extrinsics, poses, LiDAR/depth, frame conventions, hashes, and written commercial rights."
+    },
+    "qualitySh3": {
+      "cameraAvailability": "not exported with the inspected PLY/SOG package",
+      "poseAvailability": "not exported with the inspected PLY/SOG package",
+      "coordinateFrame": "LCC local reconstruction frame; runtime applies a static unreviewed transform",
+      "limitations": [
+        "source LCC hero views remain uncaptured; the initial active-editor warning later cleared, but a safe operator capture is still pending",
+        "LCC-to-E57 similarity transform is not a reviewed TransformArtifact",
+        "output rights require written confirmation"
+      ],
+      "nextTest": "Create RR-LCC-HERO-CAPTURE-SET, RR-INDEPENDENT-VIEWER-CAPTURE-SET and RR-ACTUAL-ROUTE-CAPTURE-SET, then compare valid Mobile and Quality frontiers without assuming the winner."
+    },
+    "mobileSh0": {
+      "cameraAvailability": "not exported with the inspected PLY/SPZ package",
+      "poseAvailability": "not exported with the inspected PLY/SPZ package",
+      "coordinateFrame": "LCC local reconstruction frame; runtime applies a static unreviewed transform",
+      "limitations": [
+        "DC-only/SH0 source",
+        "separate reconstruction from Quality source, so source differences are confounded",
+        "all-level runtime composition is invalid",
+        "public one-URL composition would be coarse-only"
+      ],
+      "nextTest": "Use only a valid frontier and compare against the Quality SH3 candidate at frozen product cameras."
+    },
+    "matterportE57": {
+      "cameraAvailability": "894 embedded 4096x4096 pinhole faces, six per scan",
+      "poseAvailability": "149 registered scan poses and image poses in the E57",
+      "coordinateFrame": "Matterport venue-local frame with metric units; Reception identity and independent accuracy/metric authority are not yet signed",
+      "limitations": [
+        "candidate Reception scan range 122-144 is a supported inference",
+        "the E57 is a Matterport Digital Asset owned by Matterport under the reviewed PSA, with a customer licence rather than customer ownership",
+        "current Matterport Terms prohibit commercial AI/ML training using Matterport Data; no express permission is recorded",
+        "cropping, conversion, derivative mesh/GLB distribution, embedding and no-resale boundaries need a written decision",
+        "no independent fit/blind control audit establishes metric authority",
+        "full valid-point count was not computed"
+      ],
+      "nextTest": "Complete RR-E57-CROP-CONFIRMATION with a human-reviewed room-only 3D crop or Reception floor-boundary polygon, scan/top/side evidence and a second-person check; then complete RR-E57-METRIC-CONTROL and obtain express use/conversion/derivative/distribution/training decisions."
+    }
+  },
+  "assets": [
+    {
+      "id": "portalcam-xbag",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\2026-06-01-150618.xbin",
+      "fileType": "proprietary XBAG/XBIN",
+      "sizeBytes": 8696471552,
+      "sha256": "625D942745DB807E26841C9E86F10FA9F93B9F276C56E7FD312B094D3F16B565",
+      "sourceRole": "primary_capture_container",
+      "compressionLineage": "PortalCam primary capture; no authorized/open decoder was established or used",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Signature and file inventory only; payload semantics are not decoded.",
+      "nextTest": "Official XGRIDS export/SDK."
+    },
+    {
+      "id": "portalcam-poses",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\poses.csv",
+      "fileType": "CSV trajectory sidecar",
+      "sizeBytes": 775173,
+      "sha256": "C95D880F973628E75163A65554DAE0B7F450089B34873214EE8057B47CCDB878",
+      "sourceRole": "trajectory_sidecar",
+      "compressionLineage": "Exported beside PortalCam capture; 9080 rows; timestamp plus XYZ plus quaternion",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Pose semantics and camera/body extrinsics are unknown.",
+      "nextTest": "Vendor frame-convention documentation and E57 control fit."
+    },
+    {
+      "id": "portalcam-gnss",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\gnss.csv",
+      "fileType": "CSV",
+      "sizeBytes": 1278131,
+      "sha256": "B1DEFFCBFBEE74E0B4941FB6DB260F7C6B2B36A3CE7881B2C6551C8BF1ADA579",
+      "sourceRole": "unusable_gnss_sidecar",
+      "compressionLineage": "PortalCam sidecar; approximately 9000 zero/status-0 records",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Does not anchor the indoor project.",
+      "nextTest": "Use E57/surveyed controls instead."
+    },
+    {
+      "id": "portalcam-control-points",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\control_points.csv",
+      "fileType": "empty CSV",
+      "sizeBytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "sourceRole": "control_point_sidecar",
+      "compressionLineage": "PortalCam sidecar",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "No control points exist.",
+      "nextTest": "Create independent surveyed/visual controls."
+    },
+    {
+      "id": "portalcam-ulog",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\log\\data.ulg",
+      "fileType": "ULog v1",
+      "sizeBytes": 11917937,
+      "sha256": "AB2E7613416DF6832F8BE981A806F0F82CF4C75D2DC7BA038F30446AF2BF2B36",
+      "sourceRole": "capture_event_metadata",
+      "compressionLineage": "PortalCam logging sidecar; 9110 LiDAR events plus camera/RGB/IMU event catalogs",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Event records are not image/LiDAR payloads.",
+      "nextTest": "Join an official 30-second export to event timestamps."
+    },
+    {
+      "id": "portalcam-calibration-encrypted",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\log\\lixel.zip",
+      "fileType": "ZIP with ZipCrypto entries",
+      "sizeBytes": 52517198,
+      "sha256": "0313BCBE1201A8788DB5216DF820C5E4177D9412D60AC8060CFDA9BBE09573A7",
+      "sourceRole": "encrypted_calibration_bundle",
+      "compressionLineage": "PortalCam bundle naming camera, IMU, LiDAR, and extrinsic YAMLs",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Encrypted; no circumvention attempted.",
+      "nextTest": "Official unencrypted vendor export."
+    },
+    {
+      "id": "portalcam-project-json",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\log\\project.json",
+      "fileType": "JSON",
+      "sizeBytes": 2413,
+      "sha256": "FB2E812AC14427062A9CE22F87EF66D97BA0BDE36A3DBE563D252302E3DCD12E",
+      "sourceRole": "capture_manifest",
+      "compressionLineage": "PortalCam project sidecar",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "verifiedVersions": {
+        "algorithmVersion": "v2.1.2.20250828.beta",
+        "softwareVersion": "V3.2.1_20250829.122027",
+        "systemVersion": "V3.2.1",
+        "lidarVersion": "A5.07.29.12",
+        "lidarDriverSdkVersion": "1.5.17",
+        "lidarControlLibraryVersion": "V1.8@20250722",
+        "lidarType": "rs_airy"
+      },
+      "limitations": "Metadata does not supply open images/calibration. Device/user identifiers were deliberately omitted from this evidence register.",
+      "nextTest": "Preserve with any vendor export and reconcile versions."
+    },
+    {
+      "id": "portalcam-preview-metadata",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\model\\metadata.json",
+      "fileType": "Potree JSON",
+      "sizeBytes": 1299,
+      "sha256": "65E314FF0908BA9A87A4E149F82C3BC76FE529FD0AA63B621C7C69B8E94A0D7E",
+      "sourceRole": "decimated_preview_metadata",
+      "compressionLineage": "Derived PortalCam preview; declares 175237 points",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Preview is not raw LiDAR and has no RGB.",
+      "nextTest": "Do not use as full reconstruction source."
+    },
+    {
+      "id": "portalcam-preview-octree",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\model\\octree.bin",
+      "fileType": "Potree octree binary",
+      "sizeBytes": 2453318,
+      "sha256": "C49EB7A959BE867EF27B63CA1E17B36505566A882F359B642B268AFB979E98F5",
+      "sourceRole": "decimated_preview_points",
+      "compressionLineage": "Derived from PortalCam capture; position, intensity, lcc_prediction",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Only 175237 points; no RGB; not a depth supervision master.",
+      "nextTest": "Request registered raw LAS/LAZ/E57/PLY."
+    },
+    {
+      "id": "portalcam-preview-hierarchy",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\model\\hierarchy.bin",
+      "fileType": "Potree hierarchy binary",
+      "sizeBytes": 2046,
+      "sha256": "40D1FE4A74F7CD5F92EC6752BC9F5AEBE5BA262795DA8748C00363017F76E21B",
+      "sourceRole": "preview_hierarchy",
+      "compressionLineage": "Companion to preview octree",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "Preview structure only.",
+      "nextTest": "None unless used for a non-authoritative visual locator."
+    },
+    {
+      "id": "portalcam-preview-photo",
+      "path": "F:\\gaussian splat -- xgrids\\model\\Reception_Room_2026-06-01-150618\\project_data\\preview_photo.jpg",
+      "fileType": "JPEG 800x600",
+      "sizeBytes": 208529,
+      "sha256": "5B91C0EC0506BA711CD9FC040BE202AEA7DE3B5D3D9725E48467EF36B2AEE5EE",
+      "sourceRole": "capture_preview",
+      "compressionLineage": "PortalCam preview derivative",
+      "contextRef": "portalcamRaw",
+      "evidenceStrength": "verified",
+      "limitations": "One low-resolution preview is not a reconstructable image set.",
+      "nextTest": "None."
+    },
+    {
+      "id": "quality-sh3-ply-fine",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud.ply",
+      "fileType": "binary little-endian Gaussian PLY; 62 float32 properties",
+      "sizeBytes": 496504970,
+      "sha256": "DA8EFA94895EF7AA2C6024336278D855FDB13026BF10028901C3AC46D1E91A3D",
+      "sourceRole": "quality_source_ply_fine",
+      "pointCount": 2002028,
+      "shDegree": 3,
+      "compressionLineage": "PortalCam -> LCC Studio project 1900549066649638 -> iteration_100 Quality PLY",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "No exact LCC hero comparison or photographic ground truth.",
+      "nextTest": "Freeze as Stage-0 visual master and capture RR-LCC-HERO-CAPTURE-SET."
+    },
+    {
+      "id": "quality-sh3-ply-medium",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud_1.ply",
+      "fileType": "binary little-endian Gaussian PLY",
+      "sizeBytes": 246335464,
+      "sha256": "0E652172E35E3E2907956ECB3E94B5FCA172B1D536051548FFFCB6401563FA07",
+      "sourceRole": "quality_source_ply_intermediate",
+      "pointCount": 993280,
+      "shDegree": 3,
+      "compressionLineage": "Quality fine PLY -> LCC LoD level 2",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement LoD, not additive with fine.",
+      "nextTest": "Use only for adaptive frontier validation."
+    },
+    {
+      "id": "quality-sh3-ply-coarse",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud_2.ply",
+      "fileType": "binary little-endian Gaussian PLY",
+      "sizeBytes": 123018456,
+      "sha256": "2C4D4A696BB6E1348DD6E6684B18F6E183C4138918196DEB433F0BD362BC8B43",
+      "sourceRole": "quality_source_ply_coarse",
+      "pointCount": 496034,
+      "shDegree": 3,
+      "compressionLineage": "Quality fine PLY -> LCC LoD level 1",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Coarse preview only.",
+      "nextTest": "Reject as sole hero-quality runtime asset."
+    },
+    {
+      "id": "quality-sh3-environment-ply",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\ply-result\\point_cloud\\iteration_100\\environment.ply",
+      "fileType": "binary little-endian Gaussian PLY",
+      "sizeBytes": 895823,
+      "sha256": "340CA8996DC539CA6D1AE73829689E321ED4B7DA37C38D0B52BC1C380662FB41",
+      "sourceRole": "quality_environment",
+      "pointCount": 3604,
+      "shDegree": 3,
+      "compressionLineage": "Quality LCC environment output",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Environment authority and runtime need are unreviewed.",
+      "nextTest": "Keep excluded unless a fixed-view test proves required."
+    },
+    {
+      "id": "quality-sh3-lcc2-container",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\Reception Room.lcc2",
+      "fileType": "LCC2 JSON v0.0.3 with SOG references",
+      "sizeBytes": 80065,
+      "sha256": "F0A4C782CC0F031830404D409F5C0ACCDC30ED501FA562169206962CEEE64F3E",
+      "sourceRole": "quality_lcc2_hierarchy",
+      "pointCountAllNonEnvironmentLevels": 3491322,
+      "validFineFrontierPointCount": 2002009,
+      "compressionLineage": "Quality SH3 PLY LoDs -> LCC2/SOG; byte-identical to early LccStudio render2 package",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "All levels cannot be composed additively.",
+      "nextTest": "Package exact fine frontier in typed runtime contract."
+    },
+    {
+      "id": "quality-sog-coarse",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 9017864,
+      "sha256": "0A5B8C21327BE7C747087BAAB237D1907E0A0277B0D019300E0D6B2E7EBA0A16",
+      "sourceRole": "lod_chunk_coarse",
+      "pointCount": 496034,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud_2.ply -> LCC2 level 1 -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Parent/replacement level; not part of fixed fine frontier.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "quality-sog-medium-a",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_1_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 9845814,
+      "sha256": "08C928B2556E2BA38CDF1777C806BB6B7ECE249D5E7C442D20C0232CA703005C",
+      "sourceRole": "lod_chunk_intermediate",
+      "pointCount": 561053,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud_1.ply -> LCC2 level 2 -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Parent/replacement level.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "quality-sog-medium-b",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_20_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 8106037,
+      "sha256": "72664EF164DF58E88E018AB455F67DE8C985DE4E5F799FC6B45041AA804AF2E4",
+      "sourceRole": "lod_chunk_intermediate",
+      "pointCount": 432226,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud_1.ply -> LCC2 level 2 -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Parent/replacement level.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "quality-sog-fine-a",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_15_0_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 10279160,
+      "sha256": "111A47F7470FC83D1DC7F0BF2E1D3AA96943DD5A453005B840597E8C491D2368",
+      "sourceRole": "quality_fine_leaf_chunk",
+      "pointCount": 602409,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three fine leaves.",
+      "nextTest": "Stage-0 candidate."
+    },
+    {
+      "id": "quality-sog-fine-b",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_1_0_5.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 10047085,
+      "sha256": "559DD375950966F8D1AA088A391B7105E364ABC5013E7D29EA573728AB208FE1",
+      "sourceRole": "quality_fine_leaf_chunk",
+      "pointCount": 577816,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three fine leaves.",
+      "nextTest": "Stage-0 candidate."
+    },
+    {
+      "id": "quality-sog-fine-c",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_6_0_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 10368228,
+      "sha256": "182525354CD14FA6BC8F6A54C0CBE0E39B5D5C216DD27E2CC4D44D1458BA8238",
+      "sourceRole": "quality_fine_leaf_chunk",
+      "pointCount": 599740,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three fine leaves.",
+      "nextTest": "Stage-0 candidate."
+    },
+    {
+      "id": "quality-sog-fine-d",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_7_0_0.sog",
+      "fileType": "SOG; antialias=false; SH codebook 65536",
+      "sizeBytes": 5040628,
+      "sha256": "3B68D24538523A559730E14D5ED1733F67D9894354E26322E20CF5F4458CCEBF",
+      "sourceRole": "quality_fine_leaf_chunk",
+      "pointCount": 222044,
+      "shDegree": 3,
+      "compressionLineage": "Quality point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three fine leaves.",
+      "nextTest": "Stage-0 candidate."
+    },
+    {
+      "id": "quality-sog-environment",
+      "path": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\env.sog",
+      "fileType": "SOG; SH codebook 2048",
+      "sizeBytes": 129565,
+      "sha256": "1B6927A6D883634D93CC59294C77F2ACC02B55DA1092BDD6BD637765E8B3F7F8",
+      "sourceRole": "quality_environment_chunk",
+      "pointCount": 3604,
+      "shDegree": 3,
+      "compressionLineage": "Quality environment.ply -> SOG",
+      "contextRef": "qualitySh3",
+      "evidenceStrength": "verified",
+      "limitations": "Not included in current runtime; visual need unreviewed.",
+      "nextTest": "A/B separately."
+    },
+    {
+      "id": "mobile-sh0-ply-fine",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud.ply",
+      "fileType": "binary little-endian Gaussian PLY; 17 properties",
+      "sizeBytes": 134589707,
+      "sha256": "8F6894AAB409BBD413F379BB64B527D170E066D918CC6099C07FAE175F0B94B8",
+      "sourceRole": "mobile_source_ply_fine",
+      "pointCount": 1979247,
+      "shDegree": 0,
+      "compressionLineage": "PortalCam -> separate LCC Studio Mobile/Portable build -> iteration_100 DC-only PLY",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Separate reconstruction; not a controlled SH ablation.",
+      "nextTest": "Use only as current-runtime lineage comparator."
+    },
+    {
+      "id": "mobile-sh0-ply-medium",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud_1.ply",
+      "fileType": "binary little-endian Gaussian PLY",
+      "sizeBytes": 67042925,
+      "sha256": "1AEDA97CF7B123166B25420844EC24C950E49EDB2B0DC897F0E427426F3F4065",
+      "sourceRole": "mobile_source_ply_intermediate",
+      "pointCount": 985912,
+      "shDegree": 0,
+      "compressionLineage": "Mobile fine PLY -> LCC LoD level 2",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement LoD.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-sh0-ply-coarse",
+      "path": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud_2.ply",
+      "fileType": "binary little-endian Gaussian PLY",
+      "sizeBytes": 33442221,
+      "sha256": "9655DE461496082FBBAC99C61DB4995596C70A40735AE260E92FB207B2AC7BA5",
+      "sourceRole": "mobile_source_ply_coarse",
+      "pointCount": 491784,
+      "shDegree": 0,
+      "compressionLineage": "Mobile fine PLY -> LCC LoD level 1",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Only 24.86 percent of fine source count.",
+      "nextTest": "Reject as sole hero-quality runtime asset."
+    },
+    {
+      "id": "mobile-sh0-lcc2-sog-container",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\Reception Room Mobile.lcc2",
+      "fileType": "LCC2 JSON v0.0.3 with SOG references",
+      "sizeBytes": 74350,
+      "sha256": "C224ECDE1EC06260A1DC89778A1599C0511A479E6209D5E059AE32A5B3DCFD65",
+      "sourceRole": "mobile_sog_comparator_hierarchy",
+      "pointCountAllNonEnvironmentLevels": 3456900,
+      "validFineFrontierPointCount": 1979204,
+      "compressionLineage": "Mobile SH0 PLY LoDs -> LCC2 -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Same source reconstruction as the Mobile SPZ family, but original exporter version/settings remain unrecorded.",
+      "nextTest": "Compare the valid SOG fine frontier against Mobile PLY and SPZ at fixed and spatially distinct cameras."
+    },
+    {
+      "id": "mobile-sog-coarse",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 5925017,
+      "sha256": "D69338E6D36BDEE3A8A1645B80F5EEA297E6FCD1D0168D1EBB7FF0FD655217B8",
+      "sourceRole": "mobile_sog_lod_chunk_coarse",
+      "pointCount": 491784,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_2.ply -> LCC2 level 1 -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement parent.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-sog-medium-a",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_18_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 5986477,
+      "sha256": "803D396B4DE1216E341D1B5BC9973B37F11F51709C8EB90A56FA5F6F137879AE",
+      "sourceRole": "mobile_sog_lod_chunk_intermediate",
+      "pointCount": 509427,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_1.ply -> LCC2 level 2 -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement parent.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-sog-medium-b",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_1_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 5823131,
+      "sha256": "AC8E6F47AF57E3D3C724B9E0A841DCB5619D0A65338D3BF8D4147D0CCA1C4455",
+      "sourceRole": "mobile_sog_lod_chunk_intermediate",
+      "pointCount": 476485,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_1.ply -> LCC2 level 2 -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement parent.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-sog-fine-a",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_14_0_2.sog",
+      "fileType": "SOG",
+      "sizeBytes": 6610826,
+      "sha256": "A6C047DDA22E1D7D8229ABA76A04F5DCDC897A6030E95BA226EA03F0EDDAF42E",
+      "sourceRole": "mobile_sog_fine_leaf_chunk",
+      "pointCount": 567532,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three Mobile SOG fine leaves.",
+      "nextTest": "Same-source SOG/SPZ comparator."
+    },
+    {
+      "id": "mobile-sog-fine-b",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_3_0_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 7290094,
+      "sha256": "9CA77004E73468EE8BEB53EFB601089CBDAC7A6527873389F659FF6F52390F43",
+      "sourceRole": "mobile_sog_fine_leaf_chunk",
+      "pointCount": 617153,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three Mobile SOG fine leaves.",
+      "nextTest": "Same-source SOG/SPZ comparator."
+    },
+    {
+      "id": "mobile-sog-fine-c",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_8_0_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 6201804,
+      "sha256": "27AA9853BA66FCFA0126BBD674F3B7CAACBFAB18CFE9F016AB1D25327CB49365",
+      "sourceRole": "mobile_sog_fine_leaf_chunk",
+      "pointCount": 513922,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three Mobile SOG fine leaves.",
+      "nextTest": "Same-source SOG/SPZ comparator."
+    },
+    {
+      "id": "mobile-sog-fine-d",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_9_0_0.sog",
+      "fileType": "SOG",
+      "sizeBytes": 3495232,
+      "sha256": "B17FDCA6C8E3A29F5D20D073699C433B980FB55D982C656F54F3DD63D0797C9A",
+      "sourceRole": "mobile_sog_fine_leaf_chunk",
+      "pointCount": 280597,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Must be composed with the other three Mobile SOG fine leaves.",
+      "nextTest": "Same-source SOG/SPZ comparator."
+    },
+    {
+      "id": "mobile-sog-environment",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\env.sog",
+      "fileType": "SOG",
+      "sizeBytes": 62807,
+      "sha256": "F7B857023B9893B943B71131CB700AF2906984FE47C8028EF2C1266553C9DBF7",
+      "sourceRole": "mobile_sog_environment_chunk",
+      "pointCount": 3971,
+      "shDegree": 0,
+      "compressionLineage": "Mobile environment.ply -> SOG",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Not part of the pure fine-frontier comparison.",
+      "nextTest": "Environment A/B."
+    },
+    {
+      "id": "mobile-sh0-lcc2-spz-container",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\Reception Room Mobile.lcc2",
+      "fileType": "LCC2 JSON v0.0.3 with SPZ v3 references",
+      "sizeBytes": 56168,
+      "sha256": "A5F0FFEDA6AE8D20784774AADF0A69205271D1C4A8210C8CACC5487B231B5CC2",
+      "sourceRole": "current_runtime_hierarchy",
+      "pointCountAllNonEnvironmentLevels": 3455732,
+      "validFineFrontierPointCount": 1978258,
+      "compressionLineage": "Mobile SH0 PLY LoDs -> LCC2 -> SPZ v3/NGSP gzip",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "The legacy/dev-fixture route registered all seven chunks and the older public contract could not express the four-file fine frontier. The later private exact route rejects mixed levels but remains undeployed and uncaptured.",
+      "nextTest": "Reject mixed-level asset set and add typed frontier."
+    },
+    {
+      "id": "mobile-spz-coarse",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 7652108,
+      "sha256": "D605163555BA8A7A2B27319294AD93C219601399BCB206D634B48C1283235A7E",
+      "sourceRole": "lod_chunk_coarse_current",
+      "pointCount": 491784,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_2.ply -> LCC2 level 1 -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Public one-URL resolution selects this coarse root.",
+      "nextTest": "Do not publish alone for HD."
+    },
+    {
+      "id": "mobile-spz-medium-a",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_2_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 8397200,
+      "sha256": "D9536BE11F0BF94197D2DD7EE2BC70DBF2054ADA95ADDD29A29FE8F69087EA1B",
+      "sourceRole": "lod_chunk_intermediate_current",
+      "pointCount": 544867,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_1.ply -> LCC2 level 2 -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement parent.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-spz-medium-b",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_3_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 6778655,
+      "sha256": "58E4BBF0E1A5D27EFD3B5B1E83930F7D1B1DC24053E6BA444550A84905412A27",
+      "sourceRole": "lod_chunk_intermediate_current",
+      "pointCount": 440823,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud_1.ply -> LCC2 level 2 -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Replacement parent.",
+      "nextTest": "Adaptive LoD only."
+    },
+    {
+      "id": "mobile-spz-fine-a",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_13_0_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 8620036,
+      "sha256": "82BBBD033609F99F05C45C177ADA552B87B905255AC515014F75561C292BF55C",
+      "sourceRole": "mobile_fine_leaf_chunk",
+      "pointCount": 565974,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Fine comparator from a lower-SH-capacity but separate reconstruction; directional quality versus Quality SH3 is unproved.",
+      "nextTest": "Compose only with the other three fine leaves."
+    },
+    {
+      "id": "mobile-spz-fine-b",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_3_0_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 9199830,
+      "sha256": "13200D905D50160034538E705B60C549AAF82348679791F801EFA3F9E52171B3",
+      "sourceRole": "mobile_fine_leaf_chunk",
+      "pointCount": 604926,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Fine comparator only.",
+      "nextTest": "Compose only with the other three fine leaves."
+    },
+    {
+      "id": "mobile-spz-fine-c",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_7_0_1.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 8768751,
+      "sha256": "5D4E274DF25AAE56A8989416E1078FC86912B4C7B053B1C7D3C25A6E484A80DF",
+      "sourceRole": "mobile_fine_leaf_chunk",
+      "pointCount": 582881,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Fine comparator only.",
+      "nextTest": "Compose only with the other three fine leaves."
+    },
+    {
+      "id": "mobile-spz-fine-d",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_8_0_0.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 3422064,
+      "sha256": "925C90A714ABF7ED9CACEA65A4ABF4DE1FF225EAD2EF503AADCF836068AB62ED",
+      "sourceRole": "mobile_fine_leaf_chunk",
+      "pointCount": 224477,
+      "shDegree": 0,
+      "compressionLineage": "Mobile point_cloud.ply -> LCC2 level 3 leaf -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Fine comparator only.",
+      "nextTest": "Compose only with the other three fine leaves."
+    },
+    {
+      "id": "mobile-spz-environment",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\env.spz",
+      "fileType": "SPZ v3/NGSP gzip",
+      "sizeBytes": 72986,
+      "sha256": "00BA83257962930FC002C1C9A16B1BF96185DC9F9244C27374FACD061775F84B",
+      "sourceRole": "mobile_environment_chunk",
+      "pointCount": 3971,
+      "shDegree": 0,
+      "compressionLineage": "Mobile environment.ply -> SPZ",
+      "contextRef": "mobileSh0",
+      "evidenceStrength": "verified",
+      "limitations": "Excluded from current runtime.",
+      "nextTest": "A/B separately."
+    },
+    {
+      "id": "mobile-attached-mesh-master",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh\\mesh-files\\Reception Room Mobile.ply",
+      "fileType": "binary little-endian triangle PLY; XYZ only",
+      "sizeBytes": 379462,
+      "sha256": "1C44FAFFBFD8011AFA69DC4150C9AF148070181227EA1B6A5861F884EF7BFEED",
+      "sourceRole": "attached_mesh_master",
+      "vertexCount": 10209,
+      "faceCount": 19747,
+      "compressionLineage": "Mobile LCC build -> attached mesh export",
+      "contextRef": "mobileSh0",
+      "cameraAvailability": "none in mesh",
+      "poseAvailability": "companion mobile-attached-poses JSON has 4529 trajectory poses",
+      "coordinateFrame": "LCC local reconstruction frame; no reviewed E57 transform",
+      "evidenceStrength": "verified",
+      "limitations": "Geometry-only and very coarse for ornament detail; no normals, colours, UVs, materials, accuracy report, or reviewed transform.",
+      "nextTest": "Use only as a collision/visual comparator; compare a column/skirting/cornice crop against a rights-cleared measured reference and high-detail mesh."
+    },
+    {
+      "id": "mobile-attached-poses",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh\\lcc2-result\\info\\poses.json",
+      "fileType": "JSON trajectory",
+      "sizeBytes": 542400,
+      "sha256": "9D2D40F18A6B53AF63043F1849D83575ABE7D8B8563F85723F465DFA01D62C9A",
+      "sourceRole": "lcc_exported_pose_trajectory",
+      "poseCount": 4529,
+      "compressionLineage": "Mobile LCC build -> LCC2 info pose export",
+      "contextRef": "mobileSh0",
+      "cameraAvailability": "RGB is null for all 4529 records",
+      "poseAvailability": "timestamp, translation T, quaternion-like R",
+      "coordinateFrame": "unknown LCC local pose convention; direction, units, handedness and quaternion order are not declared in the file",
+      "evidenceStrength": "verified",
+      "limitations": "No linked frames, intrinsics, distortion, camera IDs or calibration; cannot become a COLMAP bridge by itself.",
+      "nextTest": "Join only to an official frame/calibration export and validate pose convention against E57 controls."
+    },
+    {
+      "id": "mobile-build-report",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh\\lcc2-result\\info\\report.json",
+      "fileType": "JSON build report",
+      "sizeBytes": 466,
+      "sha256": "52ACC76C76C19059C994C853AF0778568E1B0BA8F509FCF1457941229984A483",
+      "sourceRole": "mobile_lcc_build_metadata",
+      "compressionLineage": "Mobile LCC build report",
+      "contextRef": "mobileSh0",
+      "cameraAvailability": "hdImageCount 0; droneImageCount 0; video fields empty",
+      "poseAvailability": "separate poses.json",
+      "coordinateFrame": "not declared",
+      "evidenceStrength": "verified",
+      "limitations": "Quality value and buildType are vendor fields without a public semantic mapping in this report.",
+      "nextTest": "Record the same report fields for a v2.1 Quality and any HD candidate."
+    },
+    {
+      "id": "matterport-e57",
+      "path": "F:\\E57\\cloud_0.e57",
+      "fileType": "ASTM E57; XYZRGB; Matterport Pro3",
+      "sizeBytes": 20518437888,
+      "sha256": "975039D11FC04CA681F038E499F358124BBCAB178AD5CE6324FA912212729CDD",
+      "sourceRole": "external_metric_reference_candidate",
+      "pointCount": 965520000,
+      "scanCount": 149,
+      "imageCount": 894,
+      "compressionLineage": "Matterport Pro3 venue capture -> E57 export",
+      "contextRef": "matterportE57",
+      "evidenceStrength": "verified",
+      "limitations": "Reception scans 122-144, independent metric accuracy, and use/conversion/derivative/distribution/training rights remain unconfirmed.",
+      "nextTest": "RR-E57-CROP-CONFIRMATION, RR-E57-METRIC-CONTROL, and LEGAL-RIGHTS-MEMO."
+    },
+    {
+      "id": "matterpak-control-mesh",
+      "path": "F:\\VenviewerCaptureStaging\\trades-hall-2026-07-10\\source\\matterpak\\424ff41f6e5d41969c635fcd61be9b3f.obj",
+      "fileType": "Wavefront OBJ with 144-texture set",
+      "sizeBytes": 38381816,
+      "sha256": "CF7247B5343FE719DC0F1AAF6B64C667D238C69133B71C44CCD9F5C67B5878C7",
+      "sourceRole": "vendor_control_mesh",
+      "pointCount": 237561,
+      "faceCount": 474049,
+      "compressionLineage": "MatterPak export",
+      "contextRef": "matterportE57",
+      "cameraAvailability": "none in OBJ",
+      "poseAvailability": "not registered into current runtime",
+      "coordinateFrame": "Matterport/vendor frame, transform not reviewed",
+      "evidenceStrength": "verified",
+      "limitations": "Not an HD visual answer and not runtime-registered.",
+      "nextTest": "Use only as optional geometry/mesh comparator after transform review."
+    }
+  ],
+  "lodFrontiers": {
+    "qualitySog": {
+      "encoding": "SOG",
+      "shDegree": 3,
+      "antialias": false,
+      "sourceFineCount": 2002028,
+      "coarse": {
+        "assetIds": ["quality-sog-coarse"],
+        "pointCount": 496034
+      },
+      "intermediate": {
+        "assetIds": ["quality-sog-medium-a", "quality-sog-medium-b"],
+        "pointCount": 993279
+      },
+      "fine": {
+        "assetIds": ["quality-sog-fine-a", "quality-sog-fine-b", "quality-sog-fine-c", "quality-sog-fine-d"],
+        "pointCount": 2002009,
+        "selectedBytes": 35735101,
+        "selectedStage0Candidate": true
+      },
+      "invalidAllLevelsPointCount": 3491322,
+      "invalidAllLevelsBytes": 62704816,
+      "allLevelsPlusEnvironmentBytes": 62834381,
+      "exportFilterDeltaAtFine": -19
+    },
+    "mobileSog": {
+      "encoding": "SOG",
+      "shDegree": 0,
+      "sourceFineCount": 1979247,
+      "coarse": {
+        "assetIds": ["mobile-sog-coarse"],
+        "pointCount": 491784
+      },
+      "intermediate": {
+        "assetIds": ["mobile-sog-medium-a", "mobile-sog-medium-b"],
+        "pointCount": 985912
+      },
+      "fine": {
+        "assetIds": ["mobile-sog-fine-a", "mobile-sog-fine-b", "mobile-sog-fine-c", "mobile-sog-fine-d"],
+        "pointCount": 1979204,
+        "selectedBytes": 23597956
+      },
+      "invalidAllLevelsPointCount": 3456900,
+      "invalidAllLevelsBytes": 41332581,
+      "allLevelsPlusEnvironmentBytes": 41395388,
+      "exportFilterDeltaAtFine": -43
+    },
+    "mobileSpz": {
+      "encoding": "SPZ v3/NGSP gzip",
+      "shDegree": 0,
+      "antialias": false,
+      "sourceFineCount": 1979247,
+      "coarse": {
+        "assetIds": ["mobile-spz-coarse"],
+        "pointCount": 491784
+      },
+      "intermediate": {
+        "assetIds": ["mobile-spz-medium-a", "mobile-spz-medium-b"],
+        "pointCount": 985690
+      },
+      "fine": {
+        "assetIds": ["mobile-spz-fine-a", "mobile-spz-fine-b", "mobile-spz-fine-c", "mobile-spz-fine-d"],
+        "pointCount": 1978258,
+        "selectedBytes": 30010681
+      },
+      "invalidAllLevelsPointCount": 3455732,
+      "invalidAllLevelsBytes": 52838644,
+      "allLevelsPlusEnvironmentBytes": 52911630,
+      "invalidToFineRatio": 1.746845,
+      "exportFilterDeltaAtFine": -989,
+      "historicalInternalRuntimeMountedAllSeven": true,
+      "currentRuntimeResolverRejectsMixedReplacementLevels": true,
+      "currentPublicSchemaWouldSelectCoarseOnlyIfThisPackageIsPublished": true
+    }
+  },
+  "fixedViewExperiment": {
+    "manifest": "docs/reports/reception-room-fixed-view-manifest.json",
+    "renderer": "Spark2 through Three.js in packages/web /dev/splat-fixture",
+    "viewportCssPixels": [1200, 900],
+    "deviceScaleFactor": 1,
+    "comparisonCount": 42,
+    "viewCount": 6,
+    "variantCount": 7,
+    "sameCameraWithinEachView": true,
+    "allAutomatedViewsShareOneOpticalCentre": true,
+    "variants": [
+      "quality-sh3-ply",
+      "quality-sh3-sog-leaf",
+      "mobile-sh0-ply",
+      "mobile-sh0-sog-leaf",
+      "mobile-sh0-spz-leaf",
+      "mobile-sh0-spz-all-invalid",
+      "mobile-sh0-spz-coarse"
+    ],
+    "metricArtifact": {
+      "path": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation\\fixed-view-metrics.json",
+      "sizeBytes": 9407,
+      "sha256": "55C0DBDE098EF55E808EB44A7745CDE07646E7A56F21E48FDC3C3B5350327233",
+      "containsPerViewValues": true
+    },
+    "metricMethod": {
+      "sampleDomain": "uint8 sRGB RGB values normalized to [0,1], without linear-light conversion",
+      "scope": "full 1200x900 frame including identical background; no feature mask",
+      "psnr": "10*log10(1/MSE), data_range=1",
+      "ssim": "skimage-compatible 7x7 uniform window, sample covariance, K1=0.01, K2=0.03, data_range=1, reflect boundary, mean over RGB channels",
+      "mae": "mean absolute error over every RGB sample",
+      "packages": {
+        "numpy": "2.4.2",
+        "Pillow": "12.0.0",
+        "scipy": "1.17.0"
+      }
+    },
+    "pairwiseResults": [
+      {
+        "a": "quality-sh3-ply",
+        "b": "quality-sh3-sog-leaf",
+        "psnrRangeDb": [41.88, 42.73],
+        "ssimRange": [0.966711, 0.971788],
+        "maeRange": [0.005432, 0.006021],
+        "interpretation": "Verified high pixel agreement at six tested Spark cameras; direct single-generation encoder provenance is not established; not a claim of physical/source quality."
+      },
+      {
+        "a": "mobile-sh0-ply",
+        "b": "mobile-sh0-sog-leaf",
+        "psnrRangeDb": [41.436814, 43.74835],
+        "ssimRange": [0.958019, 0.970598],
+        "maeRange": [0.004788, 0.006223],
+        "interpretation": "Verified high PLY-to-SOG-package pixel agreement at six tested cameras; source/export settings and filtering remain confounders."
+      },
+      {
+        "a": "mobile-sh0-ply",
+        "b": "mobile-sh0-spz-leaf",
+        "psnrRangeDb": [41.79, 43.65],
+        "ssimRange": [0.95963, 0.970183],
+        "maeRange": [0.004861, 0.006033],
+        "interpretation": "Verified high PLY-to-SPZ-package pixel agreement at six tested Spark cameras."
+      },
+      {
+        "a": "mobile-sh0-sog-leaf",
+        "b": "mobile-sh0-spz-leaf",
+        "psnrRangeDb": [42.025483, 44.018868],
+        "ssimRange": [0.95827, 0.969874],
+        "maeRange": [0.004584, 0.005772],
+        "interpretation": "Same-Mobile-source SOG and SPZ valid fine packages render similarly at the six tested cameras; this does not rank them at spatially distinct cameras or motion."
+      },
+      {
+        "a": "mobile-sh0-spz-leaf",
+        "b": "mobile-sh0-spz-all-invalid",
+        "psnrRangeDb": [27.74, 30.21],
+        "ssimRange": [0.911731, 0.930638],
+        "maeRange": [0.017664, 0.024377],
+        "interpretation": "Invalid parent-plus-child mounting visibly doubles/smears edges."
+      },
+      {
+        "a": "mobile-sh0-spz-leaf",
+        "b": "mobile-sh0-spz-coarse",
+        "psnrRangeDb": [34.03, 36.32],
+        "ssimRange": [0.914215, 0.935022],
+        "maeRange": [0.00961, 0.01328],
+        "interpretation": "Coarse-only root is visibly softer than the fine frontier."
+      },
+      {
+        "a": "quality-sh3-ply",
+        "b": "mobile-sh0-ply",
+        "psnrRangeDb": [25.42, 29.16],
+        "ssimRange": [0.906682, 0.932757],
+        "maeRange": [0.028553, 0.045893],
+        "interpretation": "Sources materially differ; separate reconstruction/settings/SH/counts confound cause."
+      }
+    ],
+    "antiMetricFinding": {
+      "metric": "Laplacian variance",
+      "result": "Misranked invalid doubled edges as sharper.",
+      "conclusion": "Never use a single edge-energy metric as the quality gate."
+    },
+    "evidenceStrength": "verified",
+    "limitations": [
+      "No exact LCC Studio hero cameras",
+      "No non-Venviewer independent-viewer capture and no actual-product-route capture",
+      "No held-out reference photographs",
+      "No true training held-outs",
+      "No moving/orbit stability trace",
+      "All six automated framings share one optical centre; crop/FOV changes cannot test SH view dependence",
+      "Fixture route is not the complete product route; RR-INDEPENDENT-VIEWER-CAPTURE-SET and RR-ACTUAL-ROUTE-CAPTURE-SET remain",
+      "PSNR, SSIM and MAE were computed over the full 1200x900 RGB frame, including the identical background; feature masks are required for acceptance testing"
+    ],
+    "nextTest": "This block records the historical 2026-07-12 fixture experiment. The database-free real-component fixed A/B is now complete in latestLocalRealComponentPreflight. Current next tests are RR-LCC-HERO-CAPTURE-SET, RR-INDEPENDENT-VIEWER-CAPTURE-SET, spatially distinct moving/performance/held-out-reference evidence, and the separately authorized protected route."
+  },
+  "diagnosticTooling": [
+    {
+      "path": "tools/reception-hd/capture-fixed-views.playwright.js",
+      "sizeBytes": 3887,
+      "sha256": "C394022C859AAC66946EB248F45F1A0CC487C733C3161F3634EC09EC66043F5C",
+      "role": "Canonicalized Playwright CLI replay expression for the seven-variant, six-view matrix; created after the two actual capture scripts",
+      "playwrightCliVersion": "0.1.17",
+      "browserUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "actualCaptureScripts": [
+        {
+          "path": "tools/reception-hd/capture-variant-matrix.actual.js",
+          "originalWorkingPath": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\work\\capture-variant-matrix.js",
+          "sizeBytes": 3459,
+          "sha256": "FD9E8E5A4AA709FEEA63F45A64C1FAEAE926E4C4A64AD92C34FF9522FFE5EEC5"
+        },
+        {
+          "path": "tools/reception-hd/capture-mobile-sog.actual.js",
+          "originalWorkingPath": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\work\\capture-mobile-sog.js",
+          "sizeBytes": 1996,
+          "sha256": "D4C117B6FD39427DFA4EC409BB2B8ACC70A30067DB0AF976AFAE2F267EE2477D"
+        }
+      ]
+    },
+    {
+      "path": "tools/reception-hd/compare_fixed_views.py",
+      "sizeBytes": 5497,
+      "sha256": "80ECD4E94382CDAB62AA8C6B5D6319BA4CB11B454D6FB3DA1C97C9E2443242E3",
+      "receiptScope": "historical capture-time/finalization tool receipt retained unchanged",
+      "role": "Historical read-only full-frame PSNR/SSIM/MAE evaluator receipt",
+      "outputRef": "fixedViewExperiment.metricArtifact"
+    },
+    {
+      "path": "tools/reception-hd/compare_fixed_views.py",
+      "checkedAt": "2026-07-16",
+      "sizeBytes": 6025,
+      "sha256": "628a96a1f54a6b55515b508edfce632c9be8d462fdd234f937005e8c756c8d90",
+      "role": "Current evaluator implementation",
+      "semanticReplay": "Reproduced the historical seven-comparison metric artifact exactly; this current hash is not substituted for the historical capture-time receipt."
+    },
+    {
+      "role": "Capture-environment provenance hashed at report finalization",
+      "status": "partial_not_atomic_at_capture",
+      "manifestRef": "docs/reports/reception-room-fixed-view-manifest.json.repository.captureEnvironmentFilesHashedAtFinalization",
+      "files": [
+        {"path":"package.json","sizeBytes":1436,"sha256":"2437AE731A35F4FE0A621CF8D083B78D8F5A248FB7D1DB5B5DECD8C7284FB7A0","gitState":"modified"},
+        {"path":"pnpm-lock.yaml","sizeBytes":290732,"sha256":"AF3D8149E8030EFB7DFA510957261D25306BEE9057C8FF4D79ACDC0A7B178489","gitState":"modified"},
+        {"path":"packages/web/package.json","sizeBytes":1601,"sha256":"6619CE2B523B41EAB04CCAF9D55CE98CB36166E2333CCA1DA2771787334A2F95","gitState":"clean_at_head"},
+        {"path":"packages/web/src/pages/SplatFixturePage.tsx","sizeBytes":6671,"sha256":"3A6C30948332ED8A2156468BA426A5DF2F02959BD1153F825D127B461F831AF1","gitState":"clean_at_head"},
+        {"path":"packages/web/src/components/scene/SparkSplatLayer.tsx","sizeBytes":5107,"sha256":"AFAFF819E205C911235005BFAFBA18D037BD1AD1A0B73AC22AF07672F0BD0616","gitState":"clean_at_head"},
+        {"path":"packages/web/src/router.tsx","sizeBytes":16067,"sha256":"4A4BE344B2EE20870E00ECD9CA72BFFBF0A05451AFC57DF2A7F0B4105B11CC3F","gitState":"clean_at_head"},
+        {"path":"packages/web/vite.config.ts","sizeBytes":4103,"sha256":"86CD309A96B757A19F554CF3BD325652012DBA5F98EAA80B075D0658027C468F","gitState":"clean_at_head"}
+      ],
+      "limitation": "The dirty-worktree diff, exact resolved dependency tree and Chrome binary were not snapshotted atomically at screenshot time; replay is not bit-reproducible."
+    }
+  ],
+  "pilotDesign": {
+    "status": "specified_not_executed",
+    "totalPhotos": 30,
+    "mappingSubsets": [
+      {"id":"A","filenameRange":"RR-PILOT-MAP-A-01..09","count":9,"allocation":{"general24mm":5,"timberDoorsGlazingCurtainsWindows50mm":2,"floorboardsSkirtingCorniceColumns50mm":2}},
+      {"id":"B","filenameRange":"RR-PILOT-MAP-B-01..09","count":9,"allocation":{"general24mm":5,"timberDoorsGlazingCurtainsWindows50mm":2,"floorboardsSkirtingCorniceColumns50mm":2}}
+    ],
+    "repeatValidation": {
+      "stationIds": ["RR-PILOT-S01", "RR-PILOT-S02", "RR-PILOT-S03", "RR-PILOT-S04", "RR-PILOT-S05", "RR-PILOT-S06"],
+      "filenamePattern": "<station>-A and <station>-B",
+      "count": 12,
+      "coverage": ["room overview", "dark timber doors and glazing", "curtains and window edges", "column with cornice or skirting", "polished floorboards", "doorway and room depth with a fixed small wall feature"],
+      "excludedFrom": ["both mapping subsets", "triangulation", "bundle adjustment", "training", "appearance fitting"],
+      "method": "Build/freeze A and B from their respective nine mapping images plus the same independent controls; localize each paired validation photo pose-only against its corresponding frozen model; do not update either model.",
+      "gate": "Every pair localizes and agrees in room frame within 20 mm translation and 0.2 degrees rotation."
+    },
+    "baseControlBlocker": "RR-PHOTO-METRIC-CONTROL",
+    "e57Policy": "Optional only; RR-E57-CROP-CONFIRMATION, RR-E57-METRIC-CONTROL and rights gates apply only if E57 is used.",
+    "minimumPoseGate": "At least 24/30 defensible poses and at least 8/9 mapping images in each subset; every repeat pair is mandatory.",
+    "executionBlockers": ["CAPTURE-RIGHTS-PACK", "RR-PHOTO-METRIC-CONTROL", "RR-PILOT-CLI-BUNDLE", "RR-TRAINER-RUNNABLE-BUNDLE"]
+  },
+  "rawGoNoGo": {
+    "decision": "no_go_for_independent_portalcam_retraining",
+    "goScope": "metadata inventory, pose/event preservation, and official vendor export request only",
+    "verifiedVersions": {
+      "algorithmVersion": "v2.1.2.20250828.beta",
+      "softwareVersion": "V3.2.1_20250829.122027",
+      "systemVersion": "V3.2.1",
+      "lidarVersion": "A5.07.29.12",
+      "lidarDriverSdkVersion": "1.5.17",
+      "lidarControlLibraryVersion": "V1.8@20250722",
+      "lidarType": "rs_airy"
+    },
+    "items": [
+      {"item": "frame availability", "state": "requires_vendor_export", "evidenceStrength": "verified_absent_from_open_files"},
+      {"item": "frame format", "state": "indeterminate_proprietary", "evidenceStrength": "supported_inference"},
+      {"item": "camera count", "state": "verified_four_event_sources", "evidenceStrength": "verified"},
+      {"item": "image dimensions", "state": "indeterminate", "evidenceStrength": "verified_absent_from_open_sidecars"},
+      {"item": "timestamps", "state": "verified_event_and_trajectory_timestamps", "evidenceStrength": "verified"},
+      {"item": "pose source", "state": "verified_poses_csv", "evidenceStrength": "verified"},
+      {"item": "pose coordinate frame", "state": "indeterminate", "evidenceStrength": "verified_missing_semantics"},
+      {"item": "intrinsics", "state": "encrypted_or_requires_vendor_export", "evidenceStrength": "verified"},
+      {"item": "distortion", "state": "indeterminate", "evidenceStrength": "verified_missing"},
+      {"item": "point cloud", "state": "decimated_preview_and_vendor_reconstructions_only", "evidenceStrength": "verified"},
+      {"item": "depth", "state": "indeterminate_or_embedded", "evidenceStrength": "supported_inference"},
+      {"item": "LiDAR alignment", "state": "encrypted_or_requires_vendor_export", "evidenceStrength": "verified"},
+      {"item": "calibration", "state": "encrypted_or_requires_vendor_export", "evidenceStrength": "verified"},
+      {"item": "firmware/software version", "state": "verified_in_json_metadata", "evidenceStrength": "verified"}
+    ],
+    "namedBlocker": "RR-XGRIDS-OPEN-EXPORT"
+  },
+  "pipelineAudit": {
+    "overall": "not_runnable",
+    "postCutoffStatus": {
+      "asOf": "2026-07-15",
+      "decision": "contract_valid_runtime_blocked",
+      "helpNowReturnsZero": true,
+      "syntheticNonTrainingPreflightPassed": true,
+      "trainingRunPerformed": false,
+      "gpuUsed": false,
+      "legacyRunpodLaunchFailsClosedWithExitCode": 78,
+      "remainingBlockers": ["trainer production-path gsplat/Tyro worker translation", "trainer production-path E57 depth loss wiring", "trainer production-path distorted-camera acceptance", "trainer production-path bilateral-grid binary serialization", "optimizer-produced held-out metrics and resume", "candidate generation and runtime packaging; the separate downstream D-014 verifier is implemented and tested"],
+      "evidenceReport": "docs/reports/omnitwin-config-b-trainer-contract-preflight-2026-07-14.md"
+    },
+    "runpod": {
+      "repoFilesPresent": [
+        "infra/runpod/Dockerfile",
+        "infra/runpod/bootstrap.sh",
+        "infra/runpod/run_training.sh",
+        "infra/runpod/runpod-template.json",
+        "infra/runpod/RUNBOOK.md"
+      ],
+      "state": "scaffold_present_not_proven",
+      "limitations": "The image/template/live pod were not launched or verified. The legacy runner now exits 78 before reaching its dormant obsolete trainer/config block; the runbook contains stale price assumptions. Secret/account/template state was not exposed or inferred.",
+      "nextTest": "Complete local non-training import/config proofs without secrets, then request explicit approval for one capped RunPod smoke through the accepted D-016 activation route."
+    },
+    "trainingRunLedger": {
+      "path": "state/training_runs.jsonl",
+      "bytes": 0,
+      "lines": 0,
+      "interpretation": "No recorded run; does not exclude an unrecorded external experiment."
+    },
+    "entryPointSmoke": {
+      "asOf": "2026-07-12",
+      "command": "python -B -m venviewer_training.simple_trainer_depth --help",
+      "exitCode": 1,
+      "cause": "missing venviewer_training/_upstream_simple_trainer.py"
+    },
+    "capabilitiesAsOf": "2026-07-12",
+    "capabilities": [
+      {
+        "capability": "MCMC",
+        "state": "named_but_not_wired",
+        "evidence": "run_training.sh/default strategy does not select MCMC; YAML is ignored by invoked path"
+      },
+      {
+        "capability": "3DGUT",
+        "state": "partial_broken",
+        "evidence": "flag exists but does not supply correct per-camera model; mixed model/resolution batching absent"
+      },
+      {
+        "capability": "bilateral-grid correction",
+        "state": "missing_dependency_and_output",
+        "evidence": "bilagrid/import path absent; evaluation neutrality not implemented"
+      },
+      {
+        "capability": "antialiased rendering",
+        "state": "claimed_not_end_to_end_verified",
+        "evidence": "desired setting exists, but invoked config path is disconnected"
+      },
+      {
+        "capability": "depth supervision",
+        "state": "partial_broken",
+        "evidence": "unsupported external-depth CLI, indexing/UV/distortion/ICP provenance defects"
+      },
+      {
+        "capability": "mixed cameras",
+        "state": "limited_unverified",
+        "evidence": "Same-projection mixed intrinsics and batch-size-one varying resolution may work upstream; mixed projection models, varying-size batches above one, wrapper propagation and trajectory rendering are not implemented or fixture-tested."
+      },
+      {
+        "capability": "high-resolution photo inputs",
+        "state": "unproven",
+        "evidence": "no memory/bucketing fixture or successful import/run"
+      },
+      {
+        "capability": "evaluation",
+        "state": "broken",
+        "evidence": "expects nonexistent metrics and lacks strict held-out/appearance policy"
+      },
+      {
+        "capability": "manifest creation",
+        "state": "not_enforced",
+        "evidence": "D-014 deterministic bundle is not produced by current runner"
+      },
+      {
+        "capability": "runtime packaging",
+        "state": "manual_separate",
+        "evidence": "no verified trainer-to-SOG/SPZ/release pipeline"
+      }
+    ],
+    "postCutoffCapabilityReconciliation": {
+      "asOf": "2026-07-15",
+      "mcmc": "An exact compiled Config B contract now exists, but no runtime worker consumes it.",
+      "depthSupervision": "Strict depth-indexing and input-validation fixtures now pass, but the production loss remains unwired.",
+      "evaluation": "A strict downstream held-out candidate verifier is implemented and tested, but the trainer does not produce its required candidate inputs or optimizer metrics.",
+      "manifestAndPackaging": "The downstream D-014 verifier is real; candidate generation, bilateral serialization, resume and trainer-to-runtime packaging remain incomplete."
+    },
+    "missingBundle": "RR-TRAINER-RUNNABLE-BUNDLE",
+    "nextTest": "Finish local non-training import/config proofs, then—only with explicit approval—run one capped RunPod smoke through the D-016 path. Local Windows training is not the execution route."
+  },
+  "runtimeAudit": {
+    "dominantFault": "lcc2_replacement_lods_composed_additively",
+    "dominantFaultContext": "verified in the historical/dev-fixture route; later code rejects mixed replacement levels, and a fresh database-free real-component fixed-view run exists, but no protected-route or physical-reference capture proves product quality",
+    "sourceSubstitution": "current pointer changed from earlier Quality SH3 SOG to later Mobile SH0 SPZ",
+    "sourceQualityEffect": "unproved_direction; separate reconstructions and missing physical/cross-context hero references confound the comparison",
+    "conditionalPublicContractRisk": "if the current multi-file package is published through the one-URL schema, it resolves only the coarse root and cannot express the reviewed fine frontier",
+    "secondaryFaults": [
+      "planner DPR hard-pinned to 0.75",
+      "legacy/general renderer paths remain partly unpinned; the Reception fixed-review profile is explicit, but blur optimization and wider product adoption are unproved",
+      "static transform is stale/unreviewed",
+      "planner tests still pin DPR 0.75; resolver tests now reject mixed replacement levels"
+    ],
+    "currentRemotePrefix": "venues/trades-hall/rooms/reception-room/xgrids/2026-06-15/lcc2-result-spz/data/3dgs",
+    "sparkSpzCompatibility": "up to SPZ v3 in inspected Spark2; test any SPZ v4 output",
+    "evidenceStrength": "verified",
+    "nextTest": "The database-free real-component still-image preflight is complete. Next add spatially distinct moving views, FPS/load/GPU/device evidence and a registered held-out physical reference. Separately, after authorized migrations, registration, deployment and streaming, repeat through the protected authenticated product route.",
+    "postCutoffStatus": {
+      "asOf": "2026-07-16",
+      "replacementLodCompositionRejectedByRuntimeResolverAndExactPrivatePreviewGate": true,
+      "diagnosticFixturesCanStillMountArbitraryUrlCombinations": true,
+      "exactPrivateFourLeafProfilesImplemented": ["quality_sh3_sog_fine", "mobile_sh0_spz_fine"],
+      "publicPointerChanged": false,
+      "configuredDatabaseReady": false,
+      "candidateRegisteredOrStreamed": false,
+      "actualRouteCaptureCompleted": false,
+      "databaseFreeRealComponentFixedCaptureCompleted": true,
+      "losslessCaptureCvCompleted": true,
+      "explicitReceptionSparkQualityProfileImplemented": true,
+      "movingCameraCaptureCompleted": false,
+      "fpsLoadGpuAndNamedDeviceEvidenceCompleted": false,
+      "heldOutPhysicalReferenceCompared": false,
+      "roomTransformReviewed": false,
+      "localAcceptanceBlocker": "spatially distinct moving-camera, FPS/load/GPU/device and held-out physical-reference evidence; the controlled blur/pre-blur baseline is not proved optimal",
+      "protectedRouteAcceptanceBlocker": "migration/deployment approval, internal-ready candidate registration, authenticated streaming, reviewed transform, and fresh protected-route fixed/moving capture"
+    }
+  },
+  "attachedMeshAudit": {
+    "packageRoot": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh",
+    "spzVisualPayloadByteIdenticalToMobileVisualPackage": true,
+    "lcc2ContainerSha256": "A5F0FFEDA6AE8D20784774AADF0A69205271D1C4A8210C8CACC5487B231B5CC2",
+    "meshMasterAssetId": "mobile-attached-mesh-master",
+    "tileSet": {
+      "plyFiles": 16,
+      "plyBytes": 663871,
+      "verticesSummedAcrossTiles": 28172,
+      "facesSummedAcrossTiles": 24809,
+      "btreeFiles": 16,
+      "btreeBytes": 120000
+    },
+    "posesAssetId": "mobile-attached-poses",
+    "buildReportAssetId": "mobile-build-report",
+    "buildReportFacts": {
+      "name": "Reception Room Mobile",
+      "buildStartTime": "2026-06-15 13:10:28",
+      "buildDuration": "04:03:58",
+      "scanDurationSeconds": 908.0854752063751,
+      "deviceModel": "PortalCam",
+      "hdImageCount": 0,
+      "quality": 3,
+      "pointCloudQuantity": 1999005,
+      "taskId": "19005490661556650"
+    },
+    "evidenceStrength": "verified",
+    "limitations": "The attached mesh adds a small geometry-only mesh, not a higher-detail splat or photographic texture. It was not rendered in the six-view pure-splat matrix.",
+    "nextTest": "Render mesh-only and hybrid at column/skirting/cornice detail once the transform is reviewed; reject if silhouettes, lighting or occlusion mismatch."
+  },
+  "e57ReceptionCandidate": {
+    "scanRangeInclusive": [122, 144],
+    "scanCount": 23,
+    "pointCount": 149040000,
+    "stationPositionBounds": {
+      "min": [12.358713, 2.041371, -1.40219],
+      "max": [19.473276, 12.120439, -1.348435]
+    },
+    "boundaryObservation": "scan 121 appears to be the doorway",
+    "evidenceStrength": "supported_inference",
+    "namedBlocker": "RR-E57-CROP-CONFIRMATION",
+    "nextTest": "Create a human-reviewed room-only 3D crop or Reception floor-boundary polygon; preserve scan/top/side evidence and obtain a second-person check. A scan-ID screenshot alone is insufficient."
+  },
+  "existingColmapAudit": {
+    "path": "F:\\E57\\colmap_v2",
+    "scope": "Existing model/materialized faces cover E57 scans 0-49 only.",
+    "receptionIncluded": false,
+    "evidenceStrength": "verified",
+    "limitations": "It cannot be treated as a Reception registration scaffold and its venue/room identity does not transfer by proximity or filename.",
+    "nextTest": "After RR-E57-CROP-CONFIRMATION, RR-E57-METRIC-CONTROL and the applicable Matterport rights decision, optionally create a new Reception-only scaffold from scans 122-144 and preserve fixed source poses."
+  },
+  "dependencyLicenceSources": [
+    {
+      "component": "LCC format",
+      "url": "https://github.com/xgrids/LCCWhitepaper/tree/b38c2eb31be24e4220f23c69c4a0f3306356920e",
+      "reviewedCommit": "b38c2eb31be24e4220f23c69c4a0f3306356920e",
+      "classification": "custom_limited_non_osi",
+      "obligationsScreen": [
+        "visible Data Organization Format originated from XGRIDS attribution",
+        "modification or derivative notice",
+        "recipient Whitepaper link or copy",
+        "redistribution authorization/ownership notice",
+        "competing-AI training restriction and written downstream flowdown",
+        "modifications/derivatives made available on no-less-open terms",
+        "termination on breach"
+      ],
+      "accessed": "2026-07-12",
+      "releaseDecision": "counsel_approval_and_exact_output_rights_required"
+    },
+    {
+      "component": "LCC2 format",
+      "url": "https://github.com/xgrids/LCC2Whitepaper/tree/039367dbe53ccbfa07b44a8e6280ceb4ebf8aa0b",
+      "reviewedCommit": "039367dbe53ccbfa07b44a8e6280ceb4ebf8aa0b",
+      "classification": "custom_limited_non_osi",
+      "obligationsScreen": [
+        "visible Data Organization Format originated from XGRIDS attribution",
+        "modification or derivative notice",
+        "recipient Whitepaper link or copy",
+        "redistribution authorization/ownership notice",
+        "competing-AI training restriction and written downstream flowdown",
+        "modifications/derivatives made available on no-less-open terms",
+        "termination on breach"
+      ],
+      "accessed": "2026-07-12",
+      "releaseDecision": "counsel_approval_and_exact_output_rights_required"
+    },
+    {
+      "component": "Matterport E57 / Matterport Digital Asset",
+      "url": "https://matterport.com/legal/platform-subscription-agreement",
+      "termsUrl": "https://matterport.com/terms-of-use",
+      "classification": "vendor_digital_asset_licensed_not_customer_owned",
+      "rightsScreen": [
+        "PSA states Matterport owns Matterport Digital Assets including E57",
+        "customer licence permits stated use/display/distribution subject to Terms",
+        "PSA states no resale",
+        "Terms prohibit commercial AI/ML training using Matterport Data",
+        "cropping/conversion/derivative GLB distribution and embedding need exact written decision"
+      ],
+      "psaLastUpdated": "2026-03-01",
+      "termsLastUpdated": "2026-03-01",
+      "snapshotStatus": "mutable_pages_not_retained_immutably; LEGAL-SOURCE-SNAPSHOT-SET",
+      "accessed": "2026-07-12",
+      "releaseDecision": "no_commercial_training_or_derivative_distribution_without_written_clearance"
+    },
+    {
+      "component": "gsplat",
+      "url": "https://github.com/nerfstudio-project/gsplat/tree/v1.5.3",
+      "version": "v1.5.3 repo target",
+      "classification": "Apache-2.0 code candidate",
+      "limitations": "Exact repaired build, dependency closure and patent/FTO decision remain unapproved."
+    },
+    {
+      "component": "UBC 3DGS-MCMC reference",
+      "url": "https://github.com/ubc-vision/3dgs-mcmc",
+      "version": "not selected",
+      "classification": "custom_noncommercial_graphdeco_derived",
+      "releaseDecision": "do_not_vendor; use separately implemented gsplat MCMC with provenance"
+    },
+    {
+      "component": "COLMAP",
+      "url": "https://github.com/colmap/colmap",
+      "version": "not selected",
+      "classification": "BSD-3-Clause core candidate",
+      "limitations": "Exact release and dependency closure remain."
+    },
+    {
+      "component": "GLOMAP",
+      "url": "https://github.com/colmap/glomap",
+      "version": "standalone archived 2026-03-09",
+      "classification": "BSD-3-Clause but obsolete standalone",
+      "releaseDecision": "use COLMAP global mapper"
+    },
+    {
+      "component": "hloc",
+      "url": "https://github.com/cvg/Hierarchical-Localization",
+      "version": "not selected",
+      "classification": "Apache-2.0 core candidate",
+      "limitations": "Extractors, matchers, submodules and checkpoints require separate review."
+    },
+    {
+      "component": "LightGlue",
+      "url": "https://github.com/cvg/LightGlue",
+      "version": "not selected",
+      "classification": "Apache-2.0 code candidate",
+      "limitations": "Exact weights and paired extractor provenance remain."
+    },
+    {
+      "component": "ALIKED",
+      "url": "https://github.com/Shiaoming/ALIKED",
+      "version": "not selected",
+      "classification": "BSD-3-Clause code candidate",
+      "limitations": "Exact checkpoint/weights and dependency closure remain."
+    },
+    {
+      "component": "Open3D",
+      "url": "https://github.com/isl-org/Open3D",
+      "version": "not selected",
+      "classification": "MIT core candidate",
+      "limitations": "Optional models and dependencies vary."
+    },
+    {
+      "component": "PDAL",
+      "url": "https://github.com/PDAL/PDAL",
+      "version": "not selected",
+      "classification": "BSD-style core candidate",
+      "limitations": "Plugins, codecs and build dependencies vary."
+    },
+    {
+      "component": "Spark",
+      "url": "https://github.com/sparkjsdev/spark",
+      "version": "2.0.0 installed in repo",
+      "classification": "MIT code candidate",
+      "limitations": "Asset/format rights and exact distribution build are separate."
+    },
+    {
+      "component": "Three.js",
+      "url": "https://github.com/mrdoob/three.js/tree/r180",
+      "version": "r180 installed in repo",
+      "classification": "MIT code candidate"
+    },
+    {
+      "component": "SuperSplat",
+      "url": "https://github.com/playcanvas/supersplat",
+      "version": "not installed/pinned for this diagnostic",
+      "classification": "MIT code candidate"
+    },
+    {
+      "component": "splat-transform",
+      "url": "https://github.com/playcanvas/splat-transform",
+      "version": "not selected",
+      "classification": "MIT code candidate",
+      "limitations": "Input asset/format terms remain."
+    }
+  ],
+  "commercialSources": [
+    {
+      "claim": "LCC Studio v2.1.0 is current and dated 2026-07-02; release history describes relevant alignment/HD changes.",
+      "url": "https://www.xgrids.com/support/download?page=LCCStudio",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified"
+    },
+    {
+      "claim": "Current Single Model HD requirements include same-device JPG/PNG/JPEG, >8 GB VRAM, and PortalCam photo/control-point limits.",
+      "url": "https://docs.xgrids.com/en-us/06-lixel-cybercolor/01-lcc-studio/v2.1.0/07-single-model.html",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified"
+    },
+    {
+      "claim": "Current FAQ recommends approximately 80 percent overlap, fixed focal/resolution, no zoom/crop, sharp/fixed-exposure images over 1024x768 and roughly 100-degree horizontal FOV.",
+      "url": "https://docs.xgrids.com/en-us/06-lixel-cybercolor/01-lcc-studio/v2.1.0/17-faq.html",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified",
+      "limitations": "FAQ and Single Model pages conflict on the generic 500/1000 image ceiling; ask vendor."
+    },
+    {
+      "claim": "Official Shopify feed displayed Premium variant 43558032998493 at USD 2500/year with available=true.",
+      "url": "https://store.xgrids.com/products/lixel-cybercolor-1-year-premium",
+      "feedUrl": "https://store.xgrids.com/products/lixel-cybercolor-1-year-premium.js",
+      "variantId": 43558032998493,
+      "capturedAt": "2026-07-12T13:35:25+01:00",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified",
+      "limitations": "Human page/feed checkout availability conflicted; entitlement, tax, devices and output rights unverified."
+    },
+    {
+      "claim": "Official Shopify feed displayed current-period PortalCam upgrade LCC variant 44177759502429 at USD 1000 with available=true.",
+      "url": "https://store.xgrids.com/products/portalcam",
+      "feedUrl": "https://store.xgrids.com/products/portalcam.js",
+      "variantId": 44177759502429,
+      "capturedAt": "2026-07-12T13:35:25+01:00",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified",
+      "limitations": "Actual eligibility and remaining term need written confirmation."
+    },
+    {
+      "claim": "Official Shopify feed displayed LCC Cloud variant 44461078904925 at USD 800/year with available=true; public material reviewed did not establish HD Enhancement scope.",
+      "url": "https://store.xgrids.com/products/lcc-cloud-1-year",
+      "feedUrl": "https://store.xgrids.com/products/lcc-cloud-1-year.js",
+      "variantId": 44461078904925,
+      "capturedAt": "2026-07-12T13:35:25+01:00",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified",
+      "limitations": "Reference amount only; checkout, tax, availability and HD entitlement require confirmation."
+    },
+    {
+      "claim": "Public XGRIDS Terms do not clearly settle locally generated output ownership/distribution in the reviewed text.",
+      "url": "https://store.xgrids.com/policies/terms-of-service",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "supported_inference",
+      "limitations": "Not legal advice; no visible stable version/effective date or retained immutable content snapshot was recorded; supplemental/order terms may control. LEGAL-SOURCE-SNAPSHOT-SET remains."
+    },
+    {
+      "claim": "RunPod displayed RTX 4090 USD 0.69/h, L40S 0.99/h, A100 PCIe 1.39/h and A100 SXM 1.49/h.",
+      "url": "https://www.runpod.io/pricing",
+      "accessed": "2026-07-12",
+      "sourceType": "service_primary",
+      "evidenceStrength": "verified",
+      "limitations": "Availability, tax, storage, price changes and secure-region choice apply."
+    },
+    {
+      "claim": "RealityScan is USD 1250/user/year unless an EULA exception applies; the revenue exception uses previous-12-month corporate-group gross revenue and includes advances or funds raised, with separate educational/non-commercial rules.",
+      "url": "https://www.realityscan.com/license?lang=en-US",
+      "eulaUrl": "https://www.realityscan.com/eula",
+      "accessed": "2026-07-12",
+      "sourceType": "vendor_primary",
+      "evidenceStrength": "verified",
+      "limitations": "Eligibility and input/source rights still require review. The mutable EULA showed no retained version date/content snapshot; LEGAL-SOURCE-SNAPSHOT-SET remains."
+    },
+    {
+      "claim": "ArtiFixer released checkpoint is research/development only under NVIDIA One-Way Noncommercial terms.",
+      "url": "https://huggingface.co/nvidia/ArtiFixer",
+      "licenceUrl": "https://developer.download.nvidia.com/licenses/NVIDIA-OneWay-Noncommercial-License-22Mar2022.pdf",
+      "accessed": "2026-07-12",
+      "sourceType": "model_owner_primary",
+      "evidenceStrength": "verified"
+    }
+  ],
+  "conclusions": [
+    {
+      "id": "C1",
+      "claim": "Invalid parent-plus-child LCC2 mounting is the strongest measured legacy/dev-fixture runtime-contract loss; the older conditional one-URL path would instead select only the coarse root. The later private exact route rejects mixed levels but has not been deployed or captured.",
+      "classification": "verified",
+      "evidenceRefs": [
+        "quality-sh3-ply-fine",
+        "quality-sh3-lcc2-container",
+        "mobile-sh0-ply-fine",
+        "mobile-sh0-lcc2-spz-container",
+        "fixedViewExperiment",
+        "runtimeAudit"
+      ],
+      "limitation": "Measured in the Spark fixture; actual-product-route and physical hero references remain missing.",
+      "nextTest": "RR-ACTUAL-ROUTE-CAPTURE-SET plus fixed/moving valid-frontier baselines."
+    },
+    {
+      "id": "C1B",
+      "claim": "The runtime substituted a separate Mobile SH0 reconstruction for the higher-capacity Quality SH3 candidate, and the two sources render materially differently; directional source-quality superiority is unproved.",
+      "classification": "supported_inference",
+      "evidenceRefs": ["quality-sh3-ply-fine", "mobile-sh0-ply-fine", "fixedViewExperiment", "runtimeAudit"],
+      "limitation": "Separate reconstructions, settings, cameras, SH capacity and physical-reference absence confound the comparison.",
+      "nextTest": "RR-LCC-HERO-CAPTURE-SET, RR-INDEPENDENT-VIEWER-CAPTURE-SET and RR-ACTUAL-ROUTE-CAPTURE-SET."
+    },
+    {
+      "id": "C2",
+      "claim": "PLY-to-valid-SOG/SPZ-package pixel deltas are much smaller than the invalid-LOD and coarse-only deltas at six tested same-centre Spark framings.",
+      "classification": "supported_inference",
+      "evidenceRefs": ["fixedViewExperiment"],
+      "limitation": "Original encoder version/settings, single-generation lineage, filtering, spatially distinct cameras, alpha/SH behaviour, motion, and physical reference remain.",
+      "nextTest": "Recover exporter provenance and run actual-route spatially distinct/moving views plus photographic references."
+    },
+    {
+      "id": "C3",
+      "claim": "No authorized/open independent-retraining path is established from the reviewed Reception PortalCam artifacts.",
+      "classification": "verified",
+      "evidenceRefs": [
+        "portalcam-xbag",
+        "portalcam-poses",
+        "portalcam-ulog",
+        "portalcam-calibration-encrypted",
+        "rawGoNoGo"
+      ],
+      "limitation": "An official uninspected export/SDK may change the verdict.",
+      "nextTest": "RR-XGRIDS-OPEN-EXPORT."
+    },
+    {
+      "id": "C4",
+      "claim": "An owned-photography/trainer lane is technically viable enough for a bounded 30-photo registration gate; E57 inclusion is optional and rights/control-gated.",
+      "classification": "supported_inference",
+      "evidenceRefs": ["matterport-e57", "e57ReceptionCandidate"],
+      "limitation": "Control network, E57 room identity/accuracy/rights, registration performance and trainer execution are unproved.",
+      "nextTest": "Capture controls, rights memo, 30-photo gate and trainer smoke; add E57 only if separately approved."
+    },
+    {
+      "id": "C5",
+      "claim": "Subject to existing-base distribution rights, a corrected higher-capacity vendor candidate plus separately captured hero layers is the strongest practical primary plan to test.",
+      "classification": "supported_inference",
+      "evidenceRefs": ["C1", "C1B", "C2", "C3", "C4", "pipelineAudit"],
+      "limitation": "No hero micro-splat or vendor HD candidate has yet been produced; vendor-base shipping rights are not established.",
+      "nextTest": "Same-photo vendor HD versus independent hero/full candidate bake-off."
+    },
+    {
+      "id": "C6",
+      "claim": "Three-dimensional computer vision can extract strong wall and horizontal-surface evidence from both real captures, but the current evidence cannot establish one common Reception room envelope or an approved E57-to-XGRIDS transform.",
+      "classification": "verified",
+      "evidenceRefs": ["latestStructuralComputerVision", "e57ReceptionCandidate", "quality-sh3-ply-fine"],
+      "limitation": "The fit-only rerun intentionally read no validation, frozen test or excluded station geometry and wrote no output. It did not rehash the entire venue-wide E57.",
+      "nextTest": "RR-E57-CROP-CONFIRMATION followed by held-back validation and independent physical controls."
+    },
+    {
+      "id": "C7",
+      "claim": "The real Living Hall component can load the reviewed Quality SOG and Mobile SPZ four-file fine candidates at exact observed decoded totals, and the two candidates produce reproducible pairwise visual differences at six same-centre feature views.",
+      "classification": "verified",
+      "evidenceRefs": ["latestLocalRealComponentPreflight", "runtimeAudit"],
+      "limitation": "The capture does not re-hash the served asset bytes, use a registered held-out physical reference, test spatially distinct or moving cameras, measure performance/GPU/device behaviour, or run through the protected authenticated route. It proves difference, not directional quality or product improvement.",
+      "nextTest": "Add registered physical-reference, near/mid/far/orbit, moving-camera and performance evidence, then separately repeat through the authorized protected route."
+    }
+  ],
+  "namedBlockers": [
+    {
+      "id": "RR-LCC-HERO-CAPTURE-SET",
+      "missing": "Five exact Quality LCC Studio fixed-detail screenshots and viewer metadata for timber doors/glazing, curtains/windows, column/moulding, floorboards, and room-depth/fixed-detail context",
+      "owner": "Blake",
+      "cheapestTest": "Confirm no other editor owns the saved project and follow the corrected asset-backed screenshot checklist",
+      "estimatedTime": "30-60 minutes",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-INDEPENDENT-VIEWER-CAPTURE-SET",
+      "missing": "Five asset-backed fixed-detail framings for full Quality PLY and valid Quality/Mobile SOG/SPZ packages in a pinned non-Venviewer renderer",
+      "owner": "Blake and Codex",
+      "cheapestTest": "Use the manifest filename/sidecar contract in pinned SuperSplat or another independent renderer",
+      "estimatedTime": "half day",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-ACTUAL-ROUTE-CAPTURE-SET",
+      "missing": "Valid Mobile and Quality candidates in the protected authenticated product route, with spatially distinct fixed and moving cameras, matrices, FPS/load/GPU/device measurements and a held-out physical reference. The database-free real-component six-view still-image slice is complete; historical all-level/coarse controls remain diagnostic-fixture evidence only.",
+      "owner": "Codex and QA",
+      "cheapestTest": "Authorize the required migrations, deployment, registration and authenticated streaming, then run the already implemented profile and evidence contract through the protected route",
+      "estimatedTime": "half to one day",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-E57-CROP-CONFIRMATION",
+      "missing": "Human-reviewed room-only 3D crop or floor-boundary polygon, with Reception identity and inclusion/exclusion evidence",
+      "owner": "Blake",
+      "cheapestTest": "In CloudCompare, isolate only the Reception Room, save the crop or floor-boundary polygon plus scan-ID/top/side screenshots, and have a second person check it before the fit-only rerun",
+      "estimatedTime": "30-60 minutes plus review",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-E57-METRIC-CONTROL",
+      "missing": "Independent fit/blind controls, transform model/scale/uncertainty and residual evidence",
+      "owner": "Survey/capture lead and engineer",
+      "cheapestTest": "Capture at least 8 non-coplanar fit controls and 6 blind controls distributed through the room",
+      "estimatedTime": "site/survey dependent",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "RR-PHOTO-METRIC-CONTROL",
+      "missing": "Independent room control network for the owned-photo lane: at least 8 fit and 6 blind non-coplanar controls",
+      "owner": "Survey/capture lead",
+      "cheapestTest": "Survey and sign the control manifest independently of Matterport/E57",
+      "estimatedTime": "site/survey dependent",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "RR-XGRIDS-OPEN-EXPORT",
+      "missing": "Official open frame/calibration/depth export or documented SDK",
+      "owner": "Blake and XGRIDS",
+      "cheapestTest": "Request a 30-second sample and written field/rights specification",
+      "estimatedTime": "one email plus vendor response",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "LEGAL-RIGHTS-MEMO",
+      "missing": "Written XGRIDS existing-base/output/refinement/distribution terms and LCC/LCC2 compliance; Matterport E57 use/conversion/derivative/distribution/training decisions; vendor-photo processing location/egress, input licence, confidentiality, retention/deletion, telemetry and secondary-use terms",
+      "owner": "Blake, vendors, and counsel",
+      "cheapestTest": "Written vendor responses and counsel review",
+      "estimatedTime": "1-3 hours plus response time",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "LEGAL-SOURCE-SNAPSHOT-SET",
+      "missing": "Immutable internal snapshots or approved archive identifiers, dates and hashes for mutable controlling vendor terms/orders",
+      "owner": "Blake and counsel",
+      "cheapestTest": "Retain the controlling XGRIDS, Matterport and RealityScan page/order versions with retrieval metadata and content hashes",
+      "estimatedTime": "1-2 hours",
+      "externalCash": 0
+    },
+    {
+      "id": "CAPTURE-RIGHTS-PACK",
+      "missing": "Photographer assignment, venue/client training and derivative permission, subject-property and embedded-work clearance, privacy/model releases",
+      "owner": "Blake, counsel, venue and photographer",
+      "cheapestTest": "Create and sign the capture-rights checklist before the 30-photo pilot",
+      "estimatedTime": "scope dependent",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "RR-PILOT-CLI-BUNDLE",
+      "missing": "Smoke-tested end-to-end pilot CLI interfaces, fixtures, schemas and dependency lock beyond the completed Config B non-training checker",
+      "owner": "Codex/engineering",
+      "cheapestTest": "Retain T-514's checker evidence and implement synthetic fixtures for each still-missing registration, evaluation, packaging and lineage interface",
+      "estimatedTime": "included in engineering estimate",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-TRAINER-RUNNABLE-BUNDLE",
+      "missing": "Real pinned trainer worker, accepted argument translation, depth/distorted-camera/bilateral behavior, held-out evaluation, resume, deterministic D-014 bundle and runtime packaging; T-514 proved only a non-training checker",
+      "owner": "Codex/engineering",
+      "cheapestTest": "Finish and locally import-test the real worker contract; only then request approval for the mandated rights-gated RunPod smoke",
+      "estimatedTime": "2-4 engineering days",
+      "externalCash": 0
+    },
+    {
+      "id": "RR-RUNTIME-DEVICE-MATRIX",
+      "missing": "Named supported desktop/laptop/mobile devices, browsers, DPR/network/cache profiles and executed performance results",
+      "owner": "Blake and QA",
+      "cheapestTest": "Select supported devices and run the fixed/moving candidate suite",
+      "estimatedTime": "device availability dependent",
+      "externalCash": "unknown"
+    },
+    {
+      "id": "RR-ROLLOUT-REPLICATION-GATE",
+      "missing": "Grand Hall plus one contrasting smaller/darker-room replication using the same package/frontier invariant, renderer profile, evidence schema, metric rubric, rights checklist and device gates",
+      "owner": "Codex, QA and Blake",
+      "cheapestTest": "Repeat the selected Stage-0/candidate protocol in both rooms; vary only asset IDs, reviewed transforms, cameras and documented room thresholds",
+      "estimatedTime": "1-2 engineering/QA days per room plus operator capture",
+      "externalCash": "zero before any new capture/survey cost"
+    }
+  ]
+}
