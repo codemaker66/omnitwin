@@ -647,3 +647,82 @@ export async function hallkeeperNotified(
   const html = await render(<HallkeeperNotifiedEmail {...data} />);
   return { subject, html };
 }
+
+// ---------------------------------------------------------------------------
+// holdDecisionReminder — sent to the hold's owner at T-7 / T-3 / T-1
+// before the decision date (Diary hold hygiene, T-527). Claim-safe copy:
+// planning support, human decision — the email never asserts an outcome.
+// ---------------------------------------------------------------------------
+
+export interface HoldDecisionReminderData {
+  readonly holdTitle: string;
+  readonly spaceName: string;
+  /** en-GB long form, e.g. "Monday, 27 July 2026". */
+  readonly decisionDate: string;
+  readonly daysBefore: number;
+  readonly rank: number | null;
+  readonly jointFlag: boolean;
+  readonly diaryUrl: string;
+}
+
+function ordinalRank(rank: number): string {
+  const suffix =
+    rank % 100 >= 11 && rank % 100 <= 13
+      ? "th"
+      : rank % 10 === 1
+        ? "st"
+        : rank % 10 === 2
+          ? "nd"
+          : rank % 10 === 3
+            ? "rd"
+            : "th";
+  return `${String(rank)}${suffix}`;
+}
+
+export function HoldDecisionReminderEmail(props: HoldDecisionReminderData): ReactElement {
+  const dayWord = props.daysBefore === 1 ? "day" : "days";
+  return (
+    <Layout
+      label="Diary reminder"
+      preview={`${String(props.daysBefore)} ${dayWord} to the decision date for ${props.holdTitle}`}
+    >
+      <Heading style={h2Style()}>
+        {String(props.daysBefore)} {dayWord} to a hold decision
+      </Heading>
+      <Section>
+        <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
+          <tbody>
+            <MetaRow label="Hold" value={props.holdTitle} />
+            <MetaRow label="Room" value={props.spaceName} />
+            <MetaRow label="Decision date" value={props.decisionDate} />
+            <MetaRow
+              label="Position"
+              value={props.rank === null ? null : `${ordinalRank(props.rank)} option`}
+            />
+            <MetaRow label="Joint hold" value={props.jointFlag ? "Yes" : null} />
+          </tbody>
+        </table>
+      </Section>
+      <Text style={{ fontSize: 13, color: INK_SOFT, marginTop: 16 }}>
+        This hold reaches its decision date in {String(props.daysBefore)} {dayWord}.
+        Confirm it, release it, or move the decision date — the choice stays with
+        you and the client; this is a planning nudge, nothing has changed on the
+        board.
+      </Text>
+      <Section style={{ marginTop: 20 }}>
+        <Button href={props.diaryUrl} style={buttonStyle}>
+          Open the Diary
+        </Button>
+      </Section>
+    </Layout>
+  );
+}
+
+export async function holdDecisionReminder(
+  data: HoldDecisionReminderData,
+): Promise<{ subject: string; html: string }> {
+  const dayWord = data.daysBefore === 1 ? "day" : "days";
+  const subject = `${String(data.daysBefore)} ${dayWord} to decide — ${data.holdTitle} (${data.spaceName})`;
+  const html = await render(<HoldDecisionReminderEmail {...data} />);
+  return { subject, html };
+}
