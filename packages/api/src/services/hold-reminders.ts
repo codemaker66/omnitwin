@@ -98,8 +98,21 @@ export interface HoldReminderPassOptions {
   readonly send?: ReminderSend;
 }
 
-function reminderIdempotencyKey(bookingId: string, daysBefore: number): string {
-  return `hold-reminder:${bookingId}:t-${String(daysBefore)}`;
+/** Venue-local (Europe/London) calendar day, YYYY-MM-DD. */
+function londonDay(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Europe/London",
+  }).format(instant);
+}
+
+/** The decision DAY is part of the key: hold decision dates move (ladders
+ *  resequence, clients renegotiate), and a moved date must earn its own
+ *  fresh T-7/3/1 — deduping only repeats for the SAME scheduled decision. */
+function reminderIdempotencyKey(bookingId: string, decisionAt: Date, daysBefore: number): string {
+  return `hold-reminder:${bookingId}:${londonDay(decisionAt)}:t-${String(daysBefore)}`;
 }
 
 function formatDecisionDate(decisionAt: Date): string {
@@ -134,7 +147,11 @@ export async function runHoldReminderPassOnHolds(
     // selectDueHoldReminders only passes owner-reachable holds through.
     const to = reminder.hold.ownerEmail;
     if (to === null) continue;
-    const idempotencyKey = reminderIdempotencyKey(reminder.hold.id, reminder.daysBefore);
+    const idempotencyKey = reminderIdempotencyKey(
+      reminder.hold.id,
+      reminder.hold.decisionAt,
+      reminder.daysBefore,
+    );
 
     if (dryRun) {
       reminders.push({

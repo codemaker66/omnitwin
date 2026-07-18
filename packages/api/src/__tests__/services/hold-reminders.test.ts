@@ -131,8 +131,10 @@ describe("runHoldReminderPassOnHolds", () => {
     expect(payload.subject).toContain("7 days");
     expect(payload.subject).toContain("The Hartley wedding");
     expect(payload.html).toContain("Grand Hall");
+    // The key carries the decision's venue-local day: a moved decision date
+    // earns fresh reminders instead of deduping against the old date's send.
     expect(options.idempotencyKey).toBe(
-      "hold-reminder:00000000-0000-4000-8000-00000000000a:t-7",
+      "hold-reminder:00000000-0000-4000-8000-00000000000a:2026-07-27:t-7",
     );
     expect(summary).toMatchObject({ scanned: 1, due: 1, sent: 1, failed: 0, dryRun: false });
     expect(summary.reminders[0]?.outcome).toBe("sent");
@@ -148,7 +150,7 @@ describe("runHoldReminderPassOnHolds", () => {
     expect(summary).toMatchObject({ scanned: 1, due: 1, sent: 0, failed: 0, dryRun: true });
     expect(summary.reminders[0]?.outcome).toBe("dry_run");
     expect(summary.reminders[0]?.idempotencyKey).toBe(
-      "hold-reminder:00000000-0000-4000-8000-00000000000b:t-7",
+      "hold-reminder:00000000-0000-4000-8000-00000000000b:2026-07-27:t-7",
     );
   });
 

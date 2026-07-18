@@ -22,7 +22,7 @@ const SUMMARY = {
       bookingId: "00000000-0000-4000-8000-000000000001",
       daysBefore: 7,
       to: "owner@tradeshall.example",
-      idempotencyKey: "hold-reminder:00000000-0000-4000-8000-000000000001:t-7",
+      idempotencyKey: "hold-reminder:00000000-0000-4000-8000-000000000001:2026-07-27:t-7",
       outcome: "sent",
     },
   ],
