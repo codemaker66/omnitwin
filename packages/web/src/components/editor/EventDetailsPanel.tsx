@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AccessibilityRequirements,
   DietarySummary,
@@ -23,6 +23,7 @@ import {
   emptyEventInstructions,
 } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { logPlannerAction } from "../../stores/planner-action-log.js";
 import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
 import { GOLD, BORDER, CARD_BG, INPUT_BG, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
 
@@ -62,6 +63,10 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  // The blob the server held before the pending edits — set at hydration,
+  // advanced after each successful save. It is the action log's inverse
+  // (G4): reverting an event.details.update means PATCHing this back.
+  const serverStateRef = useRef<EventInstructions | null>(null);
 
   // Load current metadata once when the panel opens. We hit the auth
   // GET endpoint rather than reading from the editor store because the
@@ -96,13 +101,19 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           // Spread the parsed blob verbatim — Zod .default()s on the
           // EventInstructions fields guarantee dayOfContact/phaseDeadlines
           // are present post-parse, so no `??` fallbacks are needed here.
-          setState({ ...emptyEventInstructions(), ...loaded });
+          const hydrated = { ...emptyEventInstructions(), ...loaded };
+          serverStateRef.current = hydrated;
+          setState(hydrated);
         } else {
+          serverStateRef.current = emptyEventInstructions();
           setState(emptyEventInstructions());
         }
       } catch (err) {
         if (guard.cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load event details");
+        // Server truth is unknown here — a later save logs its inverse as
+        // the empty blob the form was initialised with (best known before).
+        serverStateRef.current = emptyEventInstructions();
         setState(emptyEventInstructions());
       } finally {
         if (!guard.cancelled) setLoading(false);
@@ -123,6 +134,31 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       // empty draft should be treated as "no contact" rather than a 400.
       const payload = normalizeForSave(state);
       await patchConfigMetadata(configId, { instructions: payload });
+      // G4: one Action per changed save. A no-change save still PATCHes
+      // (behaviour untouched) but is not a mutation worth logging. Both
+      // blobs share emptyEventInstructions()'s key order, so string
+      // comparison is a faithful deep-equal here.
+      //
+      // Guarded: the panel survives /plan/A → /plan/B navigation (same
+      // route element, no remount), so a PATCH for A can resolve after the
+      // log has switched to B and serverStateRef holds B's hydration. That
+      // continuation must not append to B's log (the record would be
+      // fabricated from B's data) nor clobber B's baseline. Same-config
+      // close/reopen races stay honest without a guard: re-hydration either
+      // refetches the pre-PATCH blob (the logged inverse is exactly that)
+      // or the post-PATCH blob (the comparison dedups the entry).
+      if (useEditorStore.getState().configId === configId) {
+        const before = serverStateRef.current;
+        if (before === null || JSON.stringify(before) !== JSON.stringify(payload)) {
+          logPlannerAction({
+            intent: "event.details.update",
+            tool: "event-details",
+            payload: { instructions: payload },
+            inverse: { instructions: before },
+          });
+        }
+        serverStateRef.current = payload;
+      }
       setSavedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");

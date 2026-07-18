@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { type LightingFixtureFamily } from "../lib/photometrics.js";
 import { rigGroupsFromCounts, type RigGroup } from "../lib/dmx.js";
+import { logPlannerAction } from "./planner-action-log.js";
 
 // ---------------------------------------------------------------------------
 // lighting-rig-store — the planner's editable lighting rig (Epic 6 Lighting lens).
@@ -83,38 +84,125 @@ interface RigActions {
   readonly clear: () => void;
 }
 
-export const useLightingRigStore = create<RigState & RigActions>((set) => ({
+function sameCounts(a: RigCounts, b: RigCounts): boolean {
+  return (Object.keys(EMPTY_COUNTS) as LightingFixtureFamily[]).every(
+    (family) => a[family] === b[family],
+  );
+}
+
+// G4 Slice 2: rig mutations emit Actions (audit-only — the rig has no undo
+// surface; the inverses make a future revert tool possible). No-op mutations
+// stay silent; deletions carry the full fixture so the inverse restores it.
+export const useLightingRigStore = create<RigState & RigActions>((set, get) => ({
   counts: { ...DEFAULT_RIG_COUNTS },
   imported: [],
   setCount: (family, count) => {
+    const previous = get().counts[family];
+    const next = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
     set((state) => ({
-      counts: { ...state.counts, [family]: Number.isFinite(count) && count > 0 ? Math.floor(count) : 0 },
+      counts: { ...state.counts, [family]: next },
     }));
+    if (next === previous) return;
+    logPlannerAction({
+      intent: "lighting.rig.set-count",
+      tool: "lighting-rig",
+      payload: { family, count: next, previous },
+      inverse: { family, count: previous },
+    });
   },
   addImportedFixture: (spec, count = 1) => {
-    set((state) => {
-      const id = importedFixtureId(spec);
-      const add = normalizeCount(count, 1);
-      const existing = state.imported.find((f) => f.id === id);
-      if (existing) {
-        return { imported: state.imported.map((f) => (f.id === id ? { ...f, count: f.count + add } : f)) };
-      }
-      const channels = normalizeCount(spec.channels, 1);
-      return { imported: [...state.imported, { ...spec, channels, id, count: add }] };
+    const id = importedFixtureId(spec);
+    const add = normalizeCount(count, 1);
+    const existing = get().imported.find((f) => f.id === id);
+    if (existing) {
+      // The written value derives inside the updater from live state (the
+      // pre-slice-2 atomicity); the get()-captured snapshot feeds only the
+      // log, where a hypothetical stale read costs an audit detail, not
+      // store state.
+      set((state) => ({
+        imported: state.imported.map((f) => (f.id === id ? { ...f, count: f.count + add } : f)),
+      }));
+      logPlannerAction({
+        intent: "lighting.rig.import-fixture",
+        tool: "lighting-rig",
+        payload: { fixture: { ...existing, count: existing.count + add }, added: add },
+        inverse: { id, count: existing.count },
+      });
+      return;
+    }
+    const channels = normalizeCount(spec.channels, 1);
+    const fixture: ImportedRigFixture = { ...spec, channels, id, count: add };
+    set((state) => ({ imported: [...state.imported, fixture] }));
+    logPlannerAction({
+      intent: "lighting.rig.import-fixture",
+      tool: "lighting-rig",
+      payload: { fixture, added: add },
+      // Setting an imported count to 0 removes the fixture — the inverse
+      // of a first import is exactly that.
+      inverse: { id, count: 0 },
     });
   },
   setImportedCount: (id, count) => {
+    const existing = get().imported.find((f) => f.id === id);
     set((state) => ({
       imported: count > 0
         ? state.imported.map((f) => (f.id === id ? { ...f, count: Math.floor(count) } : f))
         : state.imported.filter((f) => f.id !== id),
     }));
+    if (existing === undefined) return; // unknown id — state was a no-op
+    if (count > 0) {
+      const next = Math.floor(count);
+      if (next === existing.count) return;
+      logPlannerAction({
+        intent: "lighting.rig.set-imported-count",
+        tool: "lighting-rig",
+        payload: { id, count: next, previous: existing.count },
+        inverse: { id, count: existing.count },
+      });
+      return;
+    }
+    logPlannerAction({
+      intent: "lighting.rig.remove-fixture",
+      tool: "lighting-rig",
+      payload: { id, via: "set-count-zero" },
+      inverse: { fixture: existing },
+    });
   },
   removeImportedFixture: (id) => {
+    const existing = get().imported.find((f) => f.id === id);
     set((state) => ({ imported: state.imported.filter((f) => f.id !== id) }));
+    if (existing === undefined) return;
+    logPlannerAction({
+      intent: "lighting.rig.remove-fixture",
+      tool: "lighting-rig",
+      payload: { id },
+      inverse: { fixture: existing },
+    });
   },
-  reset: () => { set({ counts: { ...DEFAULT_RIG_COUNTS }, imported: [] }); },
-  clear: () => { set({ counts: { ...EMPTY_COUNTS }, imported: [] }); },
+  reset: () => {
+    const previous = get();
+    const pristine = sameCounts(previous.counts, DEFAULT_RIG_COUNTS) && previous.imported.length === 0;
+    set({ counts: { ...DEFAULT_RIG_COUNTS }, imported: [] });
+    if (pristine) return;
+    logPlannerAction({
+      intent: "lighting.rig.reset",
+      tool: "lighting-rig",
+      payload: { to: "starter-rig" },
+      inverse: { counts: previous.counts, imported: previous.imported },
+    });
+  },
+  clear: () => {
+    const previous = get();
+    const pristine = sameCounts(previous.counts, EMPTY_COUNTS) && previous.imported.length === 0;
+    set({ counts: { ...EMPTY_COUNTS }, imported: [] });
+    if (pristine) return;
+    logPlannerAction({
+      intent: "lighting.rig.clear",
+      tool: "lighting-rig",
+      payload: { to: "empty" },
+      inverse: { counts: previous.counts, imported: previous.imported },
+    });
+  },
 }));
 
 /** A clean display label for an imported fixture, avoiding a doubled brand when

@@ -28,9 +28,9 @@ import type {
   ObjectFieldPatch,
 } from "../lib/editor-history.js";
 import { useSelectionStore } from "./selection-store.js";
-import { useAuthStore } from "./auth-store.js";
 import { useActionLogStore } from "./action-log-store.js";
 import { createActionEmitter } from "../lib/action-log.js";
+import { plannerActionContext } from "./planner-action-log.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -268,17 +268,11 @@ const EDITOR_HISTORY_IDS: HistoryIdAdapter = {
 };
 
 // G4 Slice 1: every sealed gesture ALSO lands in the append-only action log
-// (fire-and-forget — the undo timeline itself is unchanged). Surface stays
-// "planner" until slice 2 threads the active band through; actor.ref is the
-// signed-in user when present.
+// (fire-and-forget — the undo timeline itself is unchanged). Actor/surface
+// stamping is shared with the direct-surface seams via plannerActionContext.
 const actionEmitter = createActionEmitter<EditorObject>({
   emit: (action) => { useActionLogStore.getState().append(action); },
-  context: () => ({
-    actor: { kind: "operator", ref: useAuthStore.getState().user?.id },
-    surface: "planner",
-    makeId: () => crypto.randomUUID(),
-    now: () => new Date().toISOString(),
-  }),
+  context: plannerActionContext,
 });
 
 /**

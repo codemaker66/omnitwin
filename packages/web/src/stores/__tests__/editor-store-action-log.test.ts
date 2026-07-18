@@ -90,6 +90,22 @@ describe("editor-store action log emission", () => {
     expect(first?.intent).toBe("object.place");
   });
 
+  it("object notes ride the engine path — setObjectNotes lands as object.update (slice-2 audit correction)", () => {
+    // The G4 programme audit listed object notes as API-direct; they are
+    // not — setObjectNotes records through editor-history, so Slice 1
+    // already covers them. This pins that coverage.
+    store().addObject(TABLE_ID, 1, 0, 2);
+    store().bumpHistoryEpoch();
+    const placed = store().objects[0];
+    if (placed === undefined) throw new Error("expected a placed object");
+    store().setObjectNotes(placed.id, "VIP table — board seated here");
+    store().undo(); // seals the open notes gesture, then logs the undo
+
+    expect(loggedIntents()).toEqual(["object.place", "object.update", "history.undo"]);
+    const notesAction = useActionLogStore.getState().entries[1];
+    expect((notesAction?.payload as { label: string }).label).toBe("Edit note");
+  });
+
   it("undo/redo behaviour itself is untouched (spot check alongside the pinned suite)", () => {
     store().addObject(TABLE_ID, 1, 0, 2);
     store().bumpHistoryEpoch();

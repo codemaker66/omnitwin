@@ -22,7 +22,7 @@ export interface ActionContext {
 
 /** JSON normalization: guarantees the schema's serializable contract.
  *  Runs at gesture rate (not per frame), so the round-trip cost is noise. */
-function asJson(value: unknown): JsonValue {
+export function asJson(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
