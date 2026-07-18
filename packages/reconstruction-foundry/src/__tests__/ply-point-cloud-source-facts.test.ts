@@ -296,7 +296,7 @@ describe("ordinary point PLY Source Facts", () => {
       "POINT_PLY_COMPRESSED_LAYOUT_UNSUPPORTED",
     );
     expectFailure(await inspect(faceMeshFixture()), "POINT_PLY_EXTRA_ELEMENT_UNSUPPORTED");
-    const vertexList = Buffer.from(`${[
+    const vertexList = Buffer.from([
       "ply",
       "format binary_little_endian 1.0",
       "element vertex 1",
@@ -306,7 +306,7 @@ describe("ordinary point PLY Source Facts", () => {
       "property list uchar float samples",
       "end_header",
       "",
-    ].join("\n")}`, "ascii");
+    ].join("\n"), "ascii");
     expectFailure(await inspect(vertexList), "POINT_PLY_LIST_PROPERTY_UNSUPPORTED");
   });
 
@@ -407,7 +407,7 @@ describe("ordinary point PLY Source Facts", () => {
       })),
       "POINT_PLY_COMMENT_LIMIT_EXCEEDED",
     );
-    const manyElements = Buffer.from(`${[
+    const manyElements = Buffer.from([
       "ply",
       "format binary_little_endian 1.0",
       ...Array.from({ length: FOUNDRY_POINT_PLY_ELEMENT_MAX_COUNT + 1 }, (_, index) =>
@@ -415,7 +415,7 @@ describe("ordinary point PLY Source Facts", () => {
       ),
       "end_header",
       "",
-    ].join("\n")}`, "ascii");
+    ].join("\n"), "ascii");
     expectFailure(await inspect(manyElements), "POINT_PLY_ELEMENT_LIMIT_EXCEEDED");
     expectFailure(
       await inspect(pointPlyFixture({
@@ -430,15 +430,15 @@ describe("ordinary point PLY Source Facts", () => {
       })),
       "POINT_PLY_PROPERTY_LIMIT_EXCEEDED",
     );
-    const tooManyVertices = Buffer.from(`${[
+    const tooManyVertices = Buffer.from([
       "ply",
       "format binary_little_endian 1.0",
       `element vertex ${String(FOUNDRY_POINT_PLY_VERTEX_MAX_COUNT + 1)}`,
       "end_header",
       "",
-    ].join("\n")}`, "ascii");
+    ].join("\n"), "ascii");
     expectFailure(await inspect(tooManyVertices), "POINT_PLY_VERTEX_COUNT_LIMIT_EXCEEDED");
-    const strideOverflow = Buffer.from(`${[
+    const strideOverflow = Buffer.from([
       "ply",
       "format binary_little_endian 1.0",
       `element vertex ${String(FOUNDRY_POINT_PLY_VERTEX_MAX_COUNT)}`,
@@ -450,7 +450,7 @@ describe("ordinary point PLY Source Facts", () => {
       ),
       "end_header",
       "",
-    ].join("\n")}`, "ascii");
+    ].join("\n"), "ascii");
     expectFailure(await inspect(strideOverflow), "POINT_PLY_LAYOUT_SIZE_LIMIT_EXCEEDED");
   });
 

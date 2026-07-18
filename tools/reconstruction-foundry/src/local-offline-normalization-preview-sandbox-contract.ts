@@ -16,7 +16,7 @@ export const LOCAL_OFFLINE_PREVIEW_SANDBOX_EVIDENCE_V0 =
   "omnitwin.reconstruction-foundry.offline-preview-sandbox-evidence.v0";
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND =
-  "docker_desktop_wsl2_shared_kernel" as const;
+  "docker_desktop_wsl2_shared_kernel";
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_LIMITATIONS = Object.freeze([
   "The worker shares the Docker Desktop Linux kernel; this is container isolation, not a dedicated virtual machine.",
@@ -481,7 +481,8 @@ function parseControls(
   ) {
     return null;
   }
-  return cloneFrozen(value) as unknown as LocalOfflinePreviewSandboxEffectiveControls;
+  const frozenControls: unknown = cloneFrozen(value);
+  return frozenControls as LocalOfflinePreviewSandboxEffectiveControls;
 }
 
 function fixedPersistence(value: unknown): boolean {
@@ -499,7 +500,10 @@ export function compileLocalOfflinePreviewSandboxPolicy(
     configurationInput,
   );
   if (configuration === null) return null;
-  const material = {
+  const material: Omit<
+    LocalOfflinePreviewSandboxPolicy,
+    "policyDigest"
+  > = {
     schemaVersion: LOCAL_OFFLINE_PREVIEW_SANDBOX_POLICY_V0,
     backend: LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND,
     authority: "none" as const,
@@ -541,7 +545,8 @@ export function parseLocalOfflinePreviewSandboxPolicy(
   }
   const expected = digest(POLICY_DOMAIN, withoutDigest(value, "policyDigest"));
   if (value.policyDigest !== expected) return null;
-  return cloneFrozen(value) as unknown as LocalOfflinePreviewSandboxPolicy;
+  const frozenPolicy: unknown = cloneFrozen(value);
+  return frozenPolicy as LocalOfflinePreviewSandboxPolicy;
 }
 
 function parseByteBinding(
@@ -664,7 +669,8 @@ export function parseLocalOfflinePreviewSandboxTerminalReceipt(
   }
   const expected = digest(RECEIPT_DOMAIN, withoutDigest(value, "receiptDigest"));
   if (value.receiptDigest !== expected) return null;
-  return cloneFrozen(value) as unknown as LocalOfflinePreviewSandboxTerminalReceipt;
+  const frozenReceipt: unknown = cloneFrozen(value);
+  return frozenReceipt as LocalOfflinePreviewSandboxTerminalReceipt;
 }
 
 export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
@@ -698,7 +704,10 @@ export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
   ) {
     return null;
   }
-  const material = {
+  const material: Omit<
+    LocalOfflinePreviewSandboxEvidence,
+    "evidenceDigest"
+  > = {
     schemaVersion: LOCAL_OFFLINE_PREVIEW_SANDBOX_EVIDENCE_V0,
     backend: LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND,
     authority: "none" as const,
@@ -757,5 +766,6 @@ export function parseLocalOfflinePreviewSandboxEvidence(
   }
   const expected = digest(EVIDENCE_DOMAIN, withoutDigest(value, "evidenceDigest"));
   if (value.evidenceDigest !== expected) return null;
-  return cloneFrozen(value) as unknown as LocalOfflinePreviewSandboxEvidence;
+  const frozenEvidence: unknown = cloneFrozen(value);
+  return frozenEvidence as LocalOfflinePreviewSandboxEvidence;
 }

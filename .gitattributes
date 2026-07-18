@@ -1,0 +1,11 @@
+docs/specs/omnitwin-foundry-*.md text eol=lf
+docs/specs/omnitwin-foundry-*.json text eol=lf
+docs/specs/omnitwin-foundry-*.jsonl text eol=lf
+# Applied migrations are immutable byte evidence: their sha256 pins
+# (foundry-derivative-*-schema tests) cover the exact accepted bytes, so no
+# EOL conversion may ever rewrite them on add or checkout.
+packages/api/drizzle/*.sql -text
+venviewer_training/gsplat-v1.5.3.source-lock.json text eol=lf
+# Byte-pinned evidence vector document (activation-v1 test suite) — exact
+# bytes, overriding the eol=lf rule above.
+docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text
