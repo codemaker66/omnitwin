@@ -369,3 +369,33 @@ Timeline UI (P0 remainder, next slice) · websocket command channel (Canon §9) 
 | Presence is advisory display only | never a correctness mechanism (Canon §9) |
 
 File map: `api/src/services/diary-events.ts` (emit helper + EventMap extension in `observability/event-bus.ts`) · `api/src/ws/diary-live.ts` (`DiaryLiveHub` pure-ish core + `registerDiaryLive`) · `api/drizzle/0051_diary_enquiry_link.sql` + journal + EXPECTED_TAIL · `api/src/routes/bookings.ts` (+from-enquiry route, + event emissions) · web: `pages/diary/components/BookingDrawer.tsx`, `lib/drawer-form.ts` (pure form⇄payload mapping + venue-local datetime helpers in board-time), `hooks/useDiaryLive.ts` (+ pure `live-protocol.ts` message reducer), tray + page wiring. Tests per unit, house patterns.
+
+## 12. Slice 7 — first-live-week operations (T-527; Canon §12/§15/§18)
+
+The hold-hygiene reminder core (§3, `computeHoldReminderInstants`) gains its
+delivery layer, and the first live week gets a repeatable operations pack.
+
+**Delivery design (`api/src/services/hold-reminders.ts`):**
+
+| Decision | Rationale |
+| --- | --- |
+| NO new schema — idempotency keys ride `email_sends`' UNIQUE constraint | the sent-marker already exists, survives restarts, and dedupes racing crons at the database; a bespoke reminders table would duplicate it (house rule: reuse, no duplicates) |
+| Key = `hold-reminder:{bookingId}:{decision-day}:t-{n}`, decision day venue-local (Europe/London), built via `formatToParts` | a MOVED decision date must earn fresh T-7/3/1 reminders — the old date's send must not dedupe the new date's; `formatToParts` keeps the string independent of locale ordering because it lives inside a UNIQUE db key |
+| 24h freshness window; stale instants are skipped, never sent late | "7 days to decide" on day 5 is misinformation; the ladder's ≥48h gaps mean at most one instant is ever due (proved in tests) |
+| Nothing sends at/after the decision moment | overdue-decision comms are hold hygiene's resequence conversation, not a countdown |
+| Owner join is LEFT | ownerless holds still count in `scanned` (honest summaries) and are skipped as unreachable — `configuration-reviews` changed_by precedent |
+| Per-reminder failure isolation (key derivation inside the try) | one undeliverable reminder never starves the pass |
+| Scheduling = pure pass + `POST /admin/diary/hold-reminders` (dryRun) + `scripts/run-hold-reminders.ts` for cron | the house cleanup convention — no in-process timers; the CLI exists because the admin endpoint requires a signed-in Clerk platform admin, which a scheduler cannot be. Exit 1 on failures feeds cron alerting |
+
+**Operations pack:** `docs/operations/diary-first-week-operations.md` — smoke
+cadence + append-only results log + triage tree (per-surface failure→cause→
+action, retry-safety rules) + the reminder cron recipe and its rehearsed
+safety properties. Claim-safe throughout: reminders are a planning nudge;
+decisions stay with people.
+
+File map: `api/src/services/hold-reminders.ts` (pure due-selection +
+injected-send orchestration + fetch) · `api/src/services/email-templates.tsx`
+(`HoldDecisionReminderEmail`) · `api/src/routes/admin.ts`
+(`POST /admin/diary/hold-reminders`) · `api/src/scripts/run-hold-reminders.ts`
+(cron path) · tests: `services/hold-reminders.test.ts` (16),
+`admin-hold-reminders.test.ts` (5, service-mocked in an isolated file).
