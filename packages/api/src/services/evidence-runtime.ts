@@ -292,7 +292,7 @@ async function loadRuntimePackageForConfig(db: Database, configId: string): Prom
       ),
     )
     .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
-    .orderBy(desc(runtimePackages.updatedAt))
+    .orderBy(desc(runtimePackages.revision))
     .limit(1);
 
   return row?.pkg ?? null;

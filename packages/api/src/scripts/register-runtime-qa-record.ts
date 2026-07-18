@@ -10,6 +10,7 @@ import {
   RuntimeQaRecordRegistrationSchema,
   RuntimeTransformArtifactSchema,
   runtimeQaRecordSignedTransformArtifactId,
+  runtimeQaRecordSignedTransformArtifactSha256,
   type RegisterRuntimeQaRecordInput,
   type RuntimePackage,
   type RuntimeQaRecordRegistration,
@@ -17,6 +18,7 @@ import {
   type RuntimeQaRecordRegistrationReport,
   type RuntimeTransformArtifact,
 } from "@omnitwin/types";
+import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
 
 // ---------------------------------------------------------------------------
 // register-runtime-qa-record
@@ -297,6 +299,17 @@ export async function preflightRuntimeQaRecordRegistration(
     throw new Error(
       `Runtime QA signed transform artifact ${signedTransformArtifactId} is not registered for ${options.payload.venueSlug}/${options.payload.roomSlug} package ${options.payload.runtimePackageId}.`,
     );
+  }
+  if (signedTransformArtifact !== null) {
+    const requestedSha256 = runtimeQaRecordSignedTransformArtifactSha256(options.payload.record);
+    const registeredSha256 = runtimeTransformArtifactSha256(
+      signedTransformArtifact.transformArtifact,
+    );
+    if (requestedSha256 !== null && requestedSha256 !== registeredSha256) {
+      throw new Error(
+        `Runtime QA signed transform SHA-256 ${requestedSha256} does not match registered transform content ${registeredSha256}.`,
+      );
+    }
   }
 
   return {

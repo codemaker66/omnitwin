@@ -4,7 +4,8 @@ import { createPublicKey } from "node:crypto";
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
 //
-// Production-required variables (CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET)
+// Production-required variables (including Clerk credentials and the private
+// reviewed-runtime storage connection)
 // are .optional() at the schema level so dev/test environments without
 // Clerk configured can still boot. The cross-field check below enforces
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
@@ -35,6 +36,13 @@ const EnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_BUCKET_NAME: z.string().min(1).optional(),
   R2_PUBLIC_URL: z.string().url().optional(),
+  // Reviewed runtime profiles — private, API-mediated storage only. These
+  // credentials must be scoped to this one private bucket. Deliberately no
+  // public URL exists: anonymous bytes are released only through API gates.
+  RUNTIME_PROFILE_R2_ACCOUNT_ID: z.string().min(1).optional(),
+  RUNTIME_PROFILE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  RUNTIME_PROFILE_R2_PRIVATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
   // Reconstruction Foundry — candidates MUST remain in a private bucket;
   // verified releases are copied to a distinct, immutable public bucket.
   FOUNDRY_R2_ACCOUNT_ID: z.string().min(1).optional(),
@@ -48,6 +56,9 @@ const EnvSchema = z.object({
   FOUNDRY_ED25519_PUBLIC_KEYS_JSON: z.string().min(1).optional(),
   // Frontend URL for email links (defaults to localhost)
   FRONTEND_URL: z.string().url().optional(),
+  // Canonical public API origin used to construct anonymous reviewed-profile
+  // member URLs. Never derive public content URLs from Host/forwarded headers.
+  PUBLIC_API_ORIGIN: z.string().url().optional(),
   // Sentry — error tracking. DSN is optional (disabled if unset); the
   // SDK import itself is lazy so dev/test environments without Sentry
   // configured don't pay the cold-start cost.
@@ -105,6 +116,45 @@ const EnvSchema = z.object({
         message: "FRONTEND_URL is required in production (email links will point to localhost without it)",
       });
     }
+    if (env.PUBLIC_API_ORIGIN === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PUBLIC_API_ORIGIN"],
+        message: "PUBLIC_API_ORIGIN is required in production (public runtime URLs must not trust request Host headers)",
+      });
+    }
+    for (const field of [
+      "RUNTIME_PROFILE_R2_ACCOUNT_ID",
+      "RUNTIME_PROFILE_R2_ACCESS_KEY_ID",
+      "RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY",
+      "RUNTIME_PROFILE_R2_PRIVATE_BUCKET",
+    ] as const) {
+      if (env[field] === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} is required in production (reviewed runtime bytes require dedicated private storage)`,
+        });
+      }
+    }
+  }
+
+  if (env.PUBLIC_API_ORIGIN !== undefined) {
+    const url = new URL(env.PUBLIC_API_ORIGIN);
+    if (
+      url.protocol !== "https:" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PUBLIC_API_ORIGIN"],
+        message: "PUBLIC_API_ORIGIN must be a clean HTTPS origin without credentials, path, query, or fragment",
+      });
+    }
   }
 
   // R2 credential cohesion: if any R2 config is set, all required fields must be set.
@@ -117,6 +167,36 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["R2_ACCOUNT_ID"],
       message: "R2 configuration is incomplete — set all of R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL or none",
+    });
+  }
+
+  const runtimeProfileR2Fields = [
+    env.RUNTIME_PROFILE_R2_ACCOUNT_ID,
+    env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
+    env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY,
+    env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
+  ];
+  const runtimeProfileR2Set = runtimeProfileR2Fields.filter((field) => field !== undefined).length;
+  if (runtimeProfileR2Set > 0 && runtimeProfileR2Set < runtimeProfileR2Fields.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
+      message: "Runtime-profile R2 configuration is incomplete — set RUNTIME_PROFILE_R2_ACCOUNT_ID, RUNTIME_PROFILE_R2_ACCESS_KEY_ID, RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY, and RUNTIME_PROFILE_R2_PRIVATE_BUCKET together or none",
+    });
+  }
+
+  if (
+    env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET !== undefined &&
+    [
+      env.R2_BUCKET_NAME,
+      env.FOUNDRY_R2_CANDIDATE_BUCKET,
+      env.FOUNDRY_R2_RELEASE_BUCKET,
+    ].includes(env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
+      message: "Reviewed runtime profiles require a dedicated private bucket distinct from the legacy upload and Foundry buckets",
     });
   }
 

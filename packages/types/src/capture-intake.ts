@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const CAPTURE_INTAKE_SCHEMA_VERSION = "venviewer.capture-intake.v1";
 export const CAPTURE_STAGE_SCHEMA_VERSION = "venviewer.capture-stage.v1";
+export const E57_PHYSICAL_HEADER_BYTES = 48;
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const MAGIC_HEX = /^(?:[a-f0-9]{2})*$/;
@@ -93,6 +94,64 @@ export const E57PhysicalHeaderSchema = z
   })
   .strict();
 export type E57PhysicalHeader = z.infer<typeof E57PhysicalHeaderSchema>;
+
+const E57_MAGIC_BYTES = [0x41, 0x53, 0x54, 0x4d, 0x2d, 0x45, 0x35, 0x37] as const;
+
+function safeE57Integer(value: bigint, label: string): number {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${label} exceeds JavaScript's safe integer range`);
+  }
+  return Number(value);
+}
+
+/**
+ * Parses the fixed, little-endian ASTM E57 physical header without reading or
+ * retaining any bytes beyond the supplied view.
+ */
+export function parseE57PhysicalHeader(
+  bytes: Uint8Array,
+  actualBytes: number,
+): E57PhysicalHeader {
+  if (bytes.byteLength < E57_PHYSICAL_HEADER_BYTES) {
+    throw new Error("ASTM E57 file is shorter than its 48-byte physical header");
+  }
+  for (const [index, expected] of E57_MAGIC_BYTES.entries()) {
+    if (bytes[index] !== expected) {
+      throw new Error("ASTM E57 physical header has an invalid signature");
+    }
+  }
+  if (!Number.isSafeInteger(actualBytes) || actualBytes < 0) {
+    throw new Error("E57 actual byte length must be a nonnegative safe integer");
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const physicalLengthBytes = safeE57Integer(
+    view.getBigUint64(16, true),
+    "E57 physical length",
+  );
+  const xmlPhysicalOffsetBytes = safeE57Integer(
+    view.getBigUint64(24, true),
+    "E57 XML offset",
+  );
+  const xmlLogicalLengthBytes = safeE57Integer(
+    view.getBigUint64(32, true),
+    "E57 XML length",
+  );
+  const pageSizeBytes = safeE57Integer(view.getBigUint64(40, true), "E57 page size");
+  if (pageSizeBytes <= 0) {
+    throw new Error("ASTM E57 page size must be positive");
+  }
+
+  return {
+    versionMajor: view.getUint32(8, true),
+    versionMinor: view.getUint32(12, true),
+    physicalLengthBytes,
+    xmlPhysicalOffsetBytes,
+    xmlLogicalLengthBytes,
+    pageSizeBytes,
+    fileLengthMatchesHeader: physicalLengthBytes === actualBytes,
+  };
+}
 
 export const CaptureFileSignatureSchema = z
   .object({

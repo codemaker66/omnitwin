@@ -1,0 +1,29 @@
+{
+  "name": "@omnitwin/reconstruction-foundry-cli",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Operator CLI for private Reconstruction Foundry candidate preparation and verification",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "foundry": "tsx src/entry.ts",
+    "lcc2-frontier": "tsx src/lcc2-frontier-entry.ts",
+    "local-app": "tsx src/entry.ts local-app",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@omnitwin/reconstruction-foundry": "workspace:*",
+    "@omnitwin/types": "workspace:*",
+    "hash-wasm": "4.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "tsx": "4.20.6",
+    "typescript": "5.7.3",
+    "vitest": "4.1.8"
+  }
+}

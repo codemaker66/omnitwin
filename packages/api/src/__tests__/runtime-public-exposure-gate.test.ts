@@ -1,9 +1,376 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
+import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+
+vi.mock("@omnitwin/reconstruction-foundry", async () =>
+  import("./support/reconstruction-foundry-canonical-mock.js")
+);
 import {
+  acquirePublicRuntimeProfileTransfer,
+  bindPublicRuntimeProfileTransferToResponse,
+  readVerifiedRuntimeProfileMemberBytes,
+  resolveVerifiedRuntimeProfileResponseRange,
+  runtimeQaRecordRegistrationIsExactRetry,
+  runtimeQaRecordAllowsPublicRuntimePackage,
   runtimeQaRecordAllowsPublicRoomVisual,
+  runtimeTransformArtifactRegistrationIsExactRetry,
+  tryAcquirePublicRuntimeProfileTransfer,
+  type RuntimePackageRow,
   type RuntimeQaRecordRow,
   type RuntimeTransformArtifactRow,
 } from "../routes/assets.js";
+
+describe("public runtime profile transfer capacity", () => {
+  it("admits only two concurrent full-object verifications and releases slots idempotently", () => {
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    let releaseReplacement: (() => void) | null = null;
+    try {
+      expect(releaseFirst).not.toBeNull();
+      expect(releaseSecond).not.toBeNull();
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+
+      releaseFirst?.();
+      releaseFirst?.();
+      releaseReplacement = tryAcquirePublicRuntimeProfileTransfer();
+      expect(releaseReplacement).not.toBeNull();
+    } finally {
+      releaseReplacement?.();
+      releaseSecond?.();
+      releaseFirst?.();
+    }
+  });
+
+  it("queues the third and fourth profile members until the two active slots finish", async () => {
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    let releaseThird: (() => void) | null = null;
+    let releaseFourth: (() => void) | null = null;
+    try {
+      expect(releaseFirst).not.toBeNull();
+      expect(releaseSecond).not.toBeNull();
+      const third = acquirePublicRuntimeProfileTransfer();
+      const fourth = acquirePublicRuntimeProfileTransfer();
+      let thirdResolved = false;
+      let fourthResolved = false;
+      void third.then(() => {
+        thirdResolved = true;
+      });
+      void fourth.then(() => {
+        fourthResolved = true;
+      });
+
+      await Promise.resolve();
+      expect(thirdResolved).toBe(false);
+      expect(fourthResolved).toBe(false);
+
+      releaseFirst?.();
+      releaseThird = await third;
+      expect(releaseThird).not.toBeNull();
+      expect(thirdResolved).toBe(true);
+      expect(fourthResolved).toBe(false);
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+
+      releaseSecond?.();
+      releaseFourth = await fourth;
+      expect(releaseFourth).not.toBeNull();
+      expect(fourthResolved).toBe(true);
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+    } finally {
+      releaseFourth?.();
+      releaseThird?.();
+      releaseSecond?.();
+      releaseFirst?.();
+    }
+  });
+
+  it("holds a slot until response finish and aborts an unfinished closed response", () => {
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    let replacement: (() => void) | null = null;
+    let replacementAfterClose: (() => void) | null = null;
+    try {
+      expect(releaseFirst).not.toBeNull();
+      expect(releaseSecond).not.toBeNull();
+      const finishedResponse = Object.assign(new EventEmitter(), {
+        writableFinished: false,
+        destroy: vi.fn(),
+      });
+      const abortFinishedUpstream = vi.fn();
+      const markFinishedWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+        finishedResponse,
+        releaseFirst ?? (() => undefined),
+        abortFinishedUpstream,
+      );
+
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+      finishedResponse.writableFinished = true;
+      finishedResponse.emit("finish");
+      finishedResponse.emit("close");
+      expect(abortFinishedUpstream).not.toHaveBeenCalled();
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+      markFinishedWorkSettled();
+
+      replacement = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacement).not.toBeNull();
+      const closedResponse = Object.assign(new EventEmitter(), {
+        writableFinished: false,
+        destroy: vi.fn(),
+      });
+      const abortClosedUpstream = vi.fn();
+      const markClosedWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+        closedResponse,
+        replacement ?? (() => undefined),
+        abortClosedUpstream,
+      );
+
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+      closedResponse.emit("close");
+      expect(abortClosedUpstream).toHaveBeenCalledTimes(1);
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+      markClosedWorkSettled();
+      replacementAfterClose = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacementAfterClose).not.toBeNull();
+      closedResponse.writableFinished = true;
+      closedResponse.emit("finish");
+      closedResponse.emit("close");
+      expect(abortClosedUpstream).toHaveBeenCalledTimes(1);
+    } finally {
+      replacementAfterClose?.();
+      replacement?.();
+      releaseSecond?.();
+      releaseFirst?.();
+    }
+  });
+
+  it("terminates stalled responses at the absolute deadline and recovers both slots", async () => {
+    vi.useFakeTimers();
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    let replacementFirst: (() => void) | null = null;
+    let replacementSecond: (() => void) | null = null;
+    try {
+      expect(releaseFirst).not.toBeNull();
+      expect(releaseSecond).not.toBeNull();
+      const firstResponse = Object.assign(new EventEmitter(), {
+        writableFinished: false,
+        destroy: vi.fn(),
+      });
+      const secondResponse = Object.assign(new EventEmitter(), {
+        writableFinished: false,
+        destroy: vi.fn(),
+      });
+      const abortFirstUpstream = vi.fn();
+      const abortSecondUpstream = vi.fn();
+      const markFirstWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+        firstResponse,
+        releaseFirst ?? (() => undefined),
+        abortFirstUpstream,
+        1_000,
+      );
+      const markSecondWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+        secondResponse,
+        releaseSecond ?? (() => undefined),
+        abortSecondUpstream,
+        1_000,
+      );
+
+      markFirstWorkSettled();
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(abortFirstUpstream).toHaveBeenCalledTimes(1);
+      expect(abortSecondUpstream).toHaveBeenCalledTimes(1);
+      expect(firstResponse.destroy).toHaveBeenCalledTimes(1);
+      expect(secondResponse.destroy).toHaveBeenCalledTimes(1);
+      replacementFirst = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacementFirst).not.toBeNull();
+      expect(tryAcquirePublicRuntimeProfileTransfer()).toBeNull();
+
+      // The deadline settles the response even when destroy() does not emit
+      // close, but the second slot remains held until its work also settles.
+      markSecondWorkSettled();
+      replacementSecond = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacementSecond).not.toBeNull();
+    } finally {
+      replacementSecond?.();
+      replacementFirst?.();
+      releaseSecond?.();
+      releaseFirst?.();
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the absolute deadline after a normally finished response", async () => {
+    vi.useFakeTimers();
+    const release = tryAcquirePublicRuntimeProfileTransfer();
+    let replacement: (() => void) | null = null;
+    try {
+      expect(release).not.toBeNull();
+      const response = Object.assign(new EventEmitter(), {
+        writableFinished: false,
+        destroy: vi.fn(),
+      });
+      const abortUpstream = vi.fn();
+      const markWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+        response,
+        release ?? (() => undefined),
+        abortUpstream,
+        1_000,
+      );
+
+      markWorkSettled();
+      response.writableFinished = true;
+      response.emit("finish");
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(abortUpstream).not.toHaveBeenCalled();
+      expect(response.destroy).not.toHaveBeenCalled();
+      replacement = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacement).not.toBeNull();
+    } finally {
+      replacement?.();
+      release?.();
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds the FIFO at 16 waiting requests and rejects the 17th waiter", async () => {
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    const releases: (() => void)[] = [];
+    try {
+      const queued = Array.from({ length: 16 }, () => acquirePublicRuntimeProfileTransfer());
+      await expect(acquirePublicRuntimeProfileTransfer()).resolves.toBeNull();
+      releaseFirst?.();
+      for (const waiter of queued) {
+        const release = await waiter;
+        expect(release).not.toBeNull();
+        if (release !== null) {
+          releases.push(release);
+          release();
+        }
+      }
+    } finally {
+      for (const release of releases) release();
+      releaseSecond?.();
+      releaseFirst?.();
+    }
+  });
+
+  it("removes an expired five-minute waiter without consuming a later slot", async () => {
+    vi.useFakeTimers();
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    try {
+      const waiting = acquirePublicRuntimeProfileTransfer();
+      await vi.advanceTimersByTimeAsync(300_000);
+      await expect(waiting).resolves.toBeNull();
+      releaseFirst?.();
+      const replacement = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacement).not.toBeNull();
+      replacement?.();
+    } finally {
+      releaseSecond?.();
+      releaseFirst?.();
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes an aborted queued request immediately", async () => {
+    const releaseFirst = tryAcquirePublicRuntimeProfileTransfer();
+    const releaseSecond = tryAcquirePublicRuntimeProfileTransfer();
+    const controller = new AbortController();
+    try {
+      const waiting = acquirePublicRuntimeProfileTransfer(controller.signal);
+      controller.abort();
+      await expect(waiting).resolves.toBeNull();
+      releaseFirst?.();
+      const replacement = tryAcquirePublicRuntimeProfileTransfer();
+      expect(replacement).not.toBeNull();
+      replacement?.();
+    } finally {
+      releaseSecond?.();
+      releaseFirst?.();
+    }
+  });
+});
+
+describe("readVerifiedRuntimeProfileMemberBytes", () => {
+  it("releases bytes only when the complete registered size and SHA-256 match", async () => {
+    const expected = Buffer.from("reviewed-runtime-profile-member", "utf8");
+    const expectedSha256 = createHash("sha256").update(expected).digest("hex");
+
+    const verified = await readVerifiedRuntimeProfileMemberBytes(
+      Readable.from([expected.subarray(0, 7), expected.subarray(7)]),
+      expected.byteLength,
+      expectedSha256,
+    );
+    expect(verified).not.toBeNull();
+    expect(verified?.equals(expected)).toBe(true);
+  });
+
+  it("rejects changed, truncated, oversized, or invalidly-described bytes", async () => {
+    const expected = Buffer.from("reviewed-runtime-profile-member", "utf8");
+    const expectedSha256 = createHash("sha256").update(expected).digest("hex");
+
+    await expect(readVerifiedRuntimeProfileMemberBytes(
+      Readable.from([Buffer.from("changed-runtime-profile-member", "utf8")]),
+      expected.byteLength,
+      expectedSha256,
+    )).resolves.toBeNull();
+    await expect(readVerifiedRuntimeProfileMemberBytes(
+      Readable.from([expected.subarray(0, expected.byteLength - 1)]),
+      expected.byteLength,
+      expectedSha256,
+    )).resolves.toBeNull();
+    await expect(readVerifiedRuntimeProfileMemberBytes(
+      Readable.from([Buffer.concat([expected, Buffer.from("!")])]),
+      expected.byteLength,
+      expectedSha256,
+    )).resolves.toBeNull();
+    await expect(readVerifiedRuntimeProfileMemberBytes(
+      Readable.from([expected]),
+      expected.byteLength,
+      "not-a-sha256",
+    )).resolves.toBeNull();
+  });
+});
+
+describe("resolveVerifiedRuntimeProfileResponseRange", () => {
+  it("supports full, bounded, open-ended, and suffix ranges after full-object verification", () => {
+    expect(resolveVerifiedRuntimeProfileResponseRange(undefined, 100)).toEqual({
+      start: 0, end: 99, partial: false,
+    });
+    expect(resolveVerifiedRuntimeProfileResponseRange("bytes=10-19", 100)).toEqual({
+      start: 10, end: 19, partial: true,
+    });
+    expect(resolveVerifiedRuntimeProfileResponseRange("bytes=90-", 100)).toEqual({
+      start: 90, end: 99, partial: true,
+    });
+    expect(resolveVerifiedRuntimeProfileResponseRange("bytes=-5", 100)).toEqual({
+      start: 95, end: 99, partial: true,
+    });
+    expect(resolveVerifiedRuntimeProfileResponseRange("bytes=90-999", 100)).toEqual({
+      start: 90, end: 99, partial: true,
+    });
+  });
+
+  it("rejects empty, reversed, out-of-bounds, unsafe, or malformed ranges", () => {
+    for (const range of [
+      "bytes=-",
+      "bytes=-0",
+      "bytes=50-49",
+      "bytes=100-",
+      "bytes=999999999999999999999-",
+      "items=0-1",
+    ]) {
+      expect(resolveVerifiedRuntimeProfileResponseRange(range, 100)).toBeNull();
+    }
+  });
+});
 
 const NOW = new Date("2026-06-16T00:00:00.000Z");
 const RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
@@ -46,6 +413,9 @@ function qaRecordRow(overrides: Partial<RuntimeQaRecordRow> = {}): RuntimeQaReco
       rotation: [-Math.PI / 2, 0, 0],
       scale: 0.63,
       signedTransformArtifactId: SIGNED_TRANSFORM_ID,
+      signedTransformArtifactSha256: runtimeTransformArtifactSha256(
+        transformArtifactRow().transformArtifact,
+      ),
       note: "Signed room-local transform for reviewed runtime alignment.",
     },
     cameraProfile: {
@@ -231,6 +601,94 @@ function transformArtifactRow(overrides: Partial<RuntimeTransformArtifactRow> = 
   };
 }
 
+function runtimePackageRow(overrides: Partial<RuntimePackageRow> = {}): RuntimePackageRow {
+  return {
+    id: RUNTIME_PACKAGE_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    revision: 1,
+    identityKind: "content_sha256",
+    contentDigest: "a".repeat(64),
+    primaryVisualAssetVersionId: "10000000-0000-4000-8000-000000000001",
+    semanticMeshAssetVersionId: null,
+    collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
+    manifestJson: {
+      schemaVersion: "venviewer.runtime-package.v1",
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      packageType: "room-runtime",
+      assets: {
+        primaryVisualAssetVersionId: "10000000-0000-4000-8000-000000000001",
+        semanticMeshAssetVersionId: null,
+        collisionAssetVersionId: null,
+        pointCloudAssetVersionId: null,
+      },
+    },
+    evidenceStatus: "human_reviewed",
+    runtimeStatus: "published",
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
+}
+
+describe("runtimeQaRecordAllowsPublicRuntimePackage", () => {
+  it("binds the QA row and signed transform to the exact package venue and room", () => {
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow(),
+      qaRecordRow(),
+      transformArtifactRow(),
+    )).toBe(true);
+
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow({ roomSlug: "grand-hall" }),
+      qaRecordRow(),
+      transformArtifactRow(),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow({ evidenceStatus: "unverified" }),
+      qaRecordRow(),
+      transformArtifactRow(),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow({ runtimeStatus: "internal_ready" }),
+      qaRecordRow(),
+      transformArtifactRow(),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow(),
+      qaRecordRow({ roomSlug: "grand-hall" }),
+      transformArtifactRow({ roomSlug: "grand-hall" }),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow(),
+      qaRecordRow({
+        recordJson: {
+          ...qaRecordRow().recordJson,
+          roomSlug: "grand-hall",
+        },
+      }),
+      transformArtifactRow(),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow(),
+      qaRecordRow(),
+      transformArtifactRow({
+        transformArtifact: {
+          ...transformArtifactRow().transformArtifact,
+          id: "different-transform-content-id",
+        },
+      }),
+    )).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRuntimePackage(
+      runtimePackageRow({ id: "10000000-0000-4000-8000-000000000099" }),
+      qaRecordRow(),
+      transformArtifactRow(),
+    )).toBe(false);
+  });
+});
+
 describe("runtimeQaRecordAllowsPublicRoomVisual", () => {
   it("blocks public visuals when there is no persisted QA record", () => {
     expect(runtimeQaRecordAllowsPublicRoomVisual(null, transformArtifactRow())).toBe(false);
@@ -272,5 +730,108 @@ describe("runtimeQaRecordAllowsPublicRoomVisual", () => {
     expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
       runtimeStatus: "internal_ready",
     }), transformArtifactRow())).toBe(false);
+  });
+
+  it("binds approval to exact transform bytes reviewed no earlier than that transform", () => {
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      recordJson: {
+        ...qaRecordRow().recordJson,
+        viewTransform: {
+          ...qaRecordRow().recordJson.viewTransform,
+          signedTransformArtifactSha256: "b".repeat(64),
+        },
+      },
+    }), transformArtifactRow())).toBe(false);
+
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow(), transformArtifactRow({
+      transformArtifact: {
+        ...transformArtifactRow().transformArtifact,
+        matrix: [
+          1, 0, 0, 0,
+          0, 1, 0, 0,
+          0, 0, 1, 0,
+          0.25, 0, 0, 1,
+        ],
+      },
+    }))).toBe(false);
+
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow(), transformArtifactRow({
+      updatedAt: new Date("2026-06-16T00:00:00.001Z"),
+    }))).toBe(false);
+  });
+
+  it("fails closed when persisted QA or transform JSON no longer passes its full schema", () => {
+    const invalidTransform = { ...transformArtifactRow().transformArtifact };
+    Reflect.set(invalidTransform, "units", "centimeters");
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow({
+      recordJson: {
+        ...qaRecordRow().recordJson,
+        checks: [],
+      } as RuntimeQaRecordRow["recordJson"],
+    }), transformArtifactRow())).toBe(false);
+    expect(runtimeQaRecordAllowsPublicRoomVisual(qaRecordRow(), transformArtifactRow({
+      transformArtifact: invalidTransform,
+    }))).toBe(false);
+  });
+});
+
+describe("immutable transform and QA registration retries", () => {
+  it("accepts an identical transform retry but rejects changed content under the same id", () => {
+    const existing = transformArtifactRow();
+    const request = {
+      runtimePackageId: existing.runtimePackageId,
+      venueSlug: existing.venueSlug,
+      roomSlug: existing.roomSlug,
+      transformArtifact: existing.transformArtifact,
+      reviewNote: existing.reviewNote,
+    };
+    expect(runtimeTransformArtifactRegistrationIsExactRetry(existing, request)).toBe(true);
+    expect(runtimeTransformArtifactRegistrationIsExactRetry(existing, {
+      ...request,
+      transformArtifact: {
+        ...request.transformArtifact,
+        matrix: [
+          1, 0, 0, 0,
+          0, 1, 0, 0,
+          0, 0, 1, 0,
+          0.01, 0, 0, 1,
+        ],
+      },
+    })).toBe(false);
+    expect(runtimeTransformArtifactRegistrationIsExactRetry(existing, {
+      ...request,
+      transformArtifact: {
+        ...request.transformArtifact,
+        reviewer: {
+          ...request.transformArtifact.reviewer,
+          id: "ops/different-reviewer",
+        },
+      },
+    })).toBe(false);
+    expect(runtimeTransformArtifactRegistrationIsExactRetry(existing, {
+      ...request,
+      reviewNote: "Changed review note under the same artifact id.",
+    })).toBe(false);
+  });
+
+  it("accepts an identical QA retry but rejects a changed review under the same record id", () => {
+    const existing = qaRecordRow();
+    const request = {
+      runtimePackageId: existing.runtimePackageId,
+      venueSlug: existing.venueSlug,
+      roomSlug: existing.roomSlug,
+      record: existing.recordJson,
+    };
+    expect(runtimeQaRecordRegistrationIsExactRetry(existing, request)).toBe(true);
+    expect(runtimeQaRecordRegistrationIsExactRetry(existing, {
+      ...request,
+      record: {
+        ...request.record,
+        publicExposure: {
+          ...request.record.publicExposure,
+          reason: "A changed approval requires a new immutable record id.",
+        },
+      },
+    })).toBe(false);
   });
 });

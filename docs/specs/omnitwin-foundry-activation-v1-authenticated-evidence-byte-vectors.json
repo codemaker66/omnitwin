@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "omnitwin.foundry.activation-v1-authenticated-evidence-byte-vectors.v1",
+  "authority": "none",
+  "semanticReceiptValidation": "not_performed",
+  "databaseAdmission": "not_performed",
+  "privateKeyMaterial": "not_included",
+  "sourceContract": {
+    "path": "docs/specs/omnitwin-foundry-authenticated-result-evidence-v1.md",
+    "byteLength": "87168",
+    "sha256": "550169ce29f47982ea2ff36e7a88cf978d9941fbeb60f776f6d49d67d3560875"
+  },
+  "positiveVectors": [
+    {
+      "id": "runner-terminal-wire-only-ascii-order",
+      "evidenceKind": "runner_terminal",
+      "domain": "omnitwin.foundry.derivative-runner-terminal-receipt.v1",
+      "payloadType": "application/vnd.omnitwin.foundry.derivative-runner-terminal-receipt.v1+json",
+      "keyId": "ed25519-sha256:06e3fd8fda29bb60ab59557de61edb0aecdb231134be30e75b455f8e1b792fa9",
+      "publicKeySpkiBase64": "MCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+      "publicKeySpkiSha256": "sha256:06e3fd8fda29bb60ab59557de61edb0aecdb231134be30e75b455f8e1b792fa9",
+      "payloadCanonicalJson": "{\"authority\":\"none\",\"evidenceKind\":\"runner_terminal\",\"fixture\":{\"A\":\"alpha\",\"Z\":\"zulu\",\"_\":\"under\",\"a\":\"lower\",\"decimal\":\"0\",\"flags\":[true,false],\"text\":\"café\"},\"schemaVersion\":\"omnitwin.foundry.evidence-wire-fixture.v1\"}",
+      "payloadBase64": "eyJhdXRob3JpdHkiOiJub25lIiwiZXZpZGVuY2VLaW5kIjoicnVubmVyX3Rlcm1pbmFsIiwiZml4dHVyZSI6eyJBIjoiYWxwaGEiLCJaIjoienVsdSIsIl8iOiJ1bmRlciIsImEiOiJsb3dlciIsImRlY2ltYWwiOiIwIiwiZmxhZ3MiOlt0cnVlLGZhbHNlXSwidGV4dCI6ImNhZsOpIn0sInNjaGVtYVZlcnNpb24iOiJvbW5pdHdpbi5mb3VuZHJ5LmV2aWRlbmNlLXdpcmUtZml4dHVyZS52MSJ9",
+      "payloadByteLength": "222",
+      "payloadSha256": "6e24d1608ce0d30ab2a352d67c8fafe27786033d5abf06635d59b476b50e7c57",
+      "receiptSha256": "sha256:514a39546e3f815b069dc1999e56c9833670f5f1a170fe25852910aea0ef8f3f",
+      "signatureBase64": "lMKKPAVqFHGaxIj5eAWjMCW6z6VFixjNrDVIc/cW8zwYyOkQ0/ogYviNZdc9iVy5xmrlxuMpfoaw49S4wP4MBA==",
+      "envelopeCanonicalJson": "{\"payload\":\"eyJhdXRob3JpdHkiOiJub25lIiwiZXZpZGVuY2VLaW5kIjoicnVubmVyX3Rlcm1pbmFsIiwiZml4dHVyZSI6eyJBIjoiYWxwaGEiLCJaIjoienVsdSIsIl8iOiJ1bmRlciIsImEiOiJsb3dlciIsImRlY2ltYWwiOiIwIiwiZmxhZ3MiOlt0cnVlLGZhbHNlXSwidGV4dCI6ImNhZsOpIn0sInNjaGVtYVZlcnNpb24iOiJvbW5pdHdpbi5mb3VuZHJ5LmV2aWRlbmNlLXdpcmUtZml4dHVyZS52MSJ9\",\"payloadType\":\"application/vnd.omnitwin.foundry.derivative-runner-terminal-receipt.v1+json\",\"signatures\":[{\"keyid\":\"ed25519-sha256:06e3fd8fda29bb60ab59557de61edb0aecdb231134be30e75b455f8e1b792fa9\",\"sig\":\"lMKKPAVqFHGaxIj5eAWjMCW6z6VFixjNrDVIc/cW8zwYyOkQ0/ogYviNZdc9iVy5xmrlxuMpfoaw49S4wP4MBA==\"}]}",
+      "envelopeBase64": "eyJwYXlsb2FkIjoiZXlKaGRYUm9iM0pwZEhraU9pSnViMjVsSWl3aVpYWnBaR1Z1WTJWTGFXNWtJam9pY25WdWJtVnlYM1JsY20xcGJtRnNJaXdpWm1sNGRIVnlaU0k2ZXlKQklqb2lZV3h3YUdFaUxDSmFJam9pZW5Wc2RTSXNJbDhpT2lKMWJtUmxjaUlzSW1FaU9pSnNiM2RsY2lJc0ltUmxZMmx0WVd3aU9pSXdJaXdpWm14aFozTWlPbHQwY25WbExHWmhiSE5sWFN3aWRHVjRkQ0k2SW1OaFpzT3BJbjBzSW5OamFHVnRZVlpsY25OcGIyNGlPaUp2Ylc1cGRIZHBiaTVtYjNWdVpISjVMbVYyYVdSbGJtTmxMWGRwY21VdFptbDRkSFZ5WlM1Mk1TSjkiLCJwYXlsb2FkVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5vbW5pdHdpbi5mb3VuZHJ5LmRlcml2YXRpdmUtcnVubmVyLXRlcm1pbmFsLXJlY2VpcHQudjEranNvbiIsInNpZ25hdHVyZXMiOlt7ImtleWlkIjoiZWQyNTUxOS1zaGEyNTY6MDZlM2ZkOGZkYTI5YmI2MGFiNTk1NTdkZTYxZWRiMGFlY2RiMjMxMTM0YmUzMGU3NWI0NTVmOGUxYjc5MmZhOSIsInNpZyI6ImxNS0tQQVZxRkhHYXhJajVlQVdqTUNXNno2VkZpeGpOckRWSWMvY1c4endZeU9rUTAvb2dZdmlOWmRjOWlWeTV4bXJseHVNcGZvYXc0OVM0d1A0TUJBPT0ifV19",
+      "envelopeByteLength": "606",
+      "envelopeRawSha256": "f8f4a875fa1a77eef80fa3943bdb83122e654012a56bf6e454716f80602e3019",
+      "envelopeSha256": "sha256:cb56e146fd5f32ce04fba8c44b6f56b9d7b7267bcd5393ab931f14cdf710aba2"
+    }
+  ],
+  "positiveCanonicalJsonVectors": [
+    {
+      "id": "empty-string-and-required-escapes",
+      "canonicalJson": "{\"A\":\"\",\"escaped\":\"\\b\\f\\n\\r\\t\\\"\\\\/\",\"unicode\":\"😀\"}",
+      "rawBase64": "eyJBIjoiIiwiZXNjYXBlZCI6IlxiXGZcblxyXHRcIlxcLyIsInVuaWNvZGUiOiLwn5iAIn0=",
+      "byteLength": "53",
+      "sha256": "965e901aa2040f1ec996d3fecf31c19d2a32da26bd2d9f2b03b43d0e9ad21162"
+    }
+  ],
+  "negativeCanonicalBase64Vectors": [
+    {
+      "id": "nonzero-two-pad-bits",
+      "encoded": "AB==",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+    },
+    {
+      "id": "nonzero-one-pad-bits",
+      "encoded": "AAB=",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+    },
+    {
+      "id": "missing-padding",
+      "encoded": "YQ",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+    },
+    {
+      "id": "excess-padding",
+      "encoded": "YQ===",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+    },
+    {
+      "id": "trailing-newline",
+      "encoded": "YQ==\n",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+    }
+  ],
+  "negativeCanonicalJsonVectors": [
+    {
+      "id": "trailing-newline",
+      "rawBase64": "eyJhIjoiMSJ9Cg==",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_NOT_CANONICAL"
+    },
+    {
+      "id": "reordered-keys",
+      "rawBase64": "eyJiIjoiMiIsImEiOiIxIn0=",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_NOT_CANONICAL"
+    },
+    {
+      "id": "duplicate-key",
+      "rawBase64": "eyJhIjoiMSIsImEiOiIyIn0=",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_DUPLICATE_KEY"
+    },
+    {
+      "id": "numeric-leaf",
+      "rawBase64": "eyJhIjoxfQ==",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_NUMBER_FORBIDDEN"
+    },
+    {
+      "id": "non-ascii-key",
+      "rawBase64": "eyLDqSI6InZhbHVlIn0=",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_KEY_NOT_ASCII"
+    },
+    {
+      "id": "lone-surrogate",
+      "rawBase64": "eyJhIjoiXHVkODAwIn0=",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_STRING_NOT_UNICODE_SCALAR"
+    },
+    {
+      "id": "leading-whitespace",
+      "rawBase64": "IHsiYSI6IjEifQ==",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_JSON_NOT_CANONICAL"
+    },
+    {
+      "id": "invalid-utf8",
+      "rawBase64": "eyJhIjoiwyJ9",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_UTF8_INVALID"
+    },
+    {
+      "id": "utf8-bom",
+      "rawBase64": "77u/eyJhIjoiMSJ9",
+      "maximumByteLength": "64",
+      "expectedErrorCode": "FOUNDRY_ACTIVATION_V1_UTF8_BOM_FORBIDDEN"
+    }
+  ]
+}

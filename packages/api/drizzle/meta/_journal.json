@@ -351,6 +351,55 @@
       "when": 1783900800000,
       "tag": "0051_diary_enquiry_link",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783933200000,
+      "tag": "0052_runtime_package_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783936800000,
+      "tag": "0053_foundry_execution_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1783940400000,
+      "tag": "0054_foundry_derivative_rights",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784026800000,
+      "tag": "0055_foundry_derivative_rights_custody",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784030400000,
+      "tag": "0056_foundry_derivative_execution_barrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784034000000,
+      "tag": "0057_foundry_derivative_execution_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784037600000,
+      "tag": "0058_foundry_derivative_activation_disabled",
+      "breakpoints": true
     }
   ]
 }

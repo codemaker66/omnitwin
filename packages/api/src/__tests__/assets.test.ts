@@ -294,11 +294,42 @@ describe("GET /assets", () => {
     expect(res.statusCode).not.toBe(404);
     expect(res.statusCode).not.toBe(401);
   });
+
+  it("exposes the verified preview fingerprint to an allowed browser origin", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["access-control-expose-headers"]).toContain("x-content-sha256");
+  });
 });
 
 describe("GET /assets/runtime-packages/latest", () => {
+  it("requires authentication before exposing internal package metadata", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/latest?venue=trades-hall&room=robert-adam-room",
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects an authenticated non-platform-admin before registry lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/latest?venue=trades-hall&room=reception-room",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it("validates venue and room query params before querying", async () => {
-    const res = await server.inject({ method: "GET", url: "/assets/runtime-packages/latest" });
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/latest",
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
     expect(res.statusCode).toBe(400);
   });
 
@@ -306,6 +337,7 @@ describe("GET /assets/runtime-packages/latest", () => {
     const res = await server.inject({
       method: "GET",
       url: "/assets/runtime-packages/latest?venue=trades-hall&room=robert-adam-room",
+      headers: { authorization: `Bearer ${adminToken()}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ data: null });
@@ -315,16 +347,35 @@ describe("GET /assets/runtime-packages/latest", () => {
     const res = await server.inject({
       method: "GET",
       url: "/assets/runtime-packages/latest?venue=trades-hall&room=made-up-room",
+      headers: { authorization: `Bearer ${adminToken()}` },
     });
     expect(res.statusCode).toBe(400);
   });
 });
 
 describe("GET /assets/runtime-assets/:assetVersionId", () => {
+  it("requires authentication before resolving an internal asset identifier", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/assets/runtime-assets/${ASSET_VERSION_ID}`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects an authenticated non-platform-admin before asset lookup", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: `/assets/runtime-assets/${ASSET_VERSION_ID}`,
+      headers: { authorization: `Bearer ${plannerToken()}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it("rejects malformed asset version IDs before storage lookup", async () => {
     const res = await server.inject({
       method: "GET",
       url: "/assets/runtime-assets/not-a-runtime-asset-id",
+      headers: { authorization: `Bearer ${adminToken()}` },
     });
     expect(res.statusCode).toBe(400);
   });
@@ -333,7 +384,10 @@ describe("GET /assets/runtime-assets/:assetVersionId", () => {
     const res = await server.inject({
       method: "GET",
       url: `/assets/runtime-assets/${ASSET_VERSION_ID}`,
-      headers: { range: "items=0-10" },
+      headers: {
+        authorization: `Bearer ${adminToken()}`,
+        range: "items=0-10",
+      },
     });
     expect(res.statusCode).toBe(416);
     expect(res.json()).toMatchObject({
@@ -348,12 +402,13 @@ describe("GET /assets/runtime-packages/public-room-visual", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns a client-safe fallback when no runtime visual can be read", async () => {
+  it("always returns the safe fallback because the raw external-URL route is retired", async () => {
     const res = await server.inject({
       method: "GET",
       url: "/assets/runtime-packages/public-room-visual?venue=trades-hall&room=grand-hall",
     });
     expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("public, max-age=60");
     expect(res.json()).toEqual({
       data: {
         venueSlug: "trades-hall",
@@ -483,14 +538,91 @@ describe("POST /admin/assets/register-runtime-package", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("rejects a manifest whose room does not match the package room", async () => {
+  it("returns 410 for an admin and points to the immutable replacement", async () => {
     const res = await server.inject({
       method: "POST",
       url: "/admin/assets/register-runtime-package",
       headers: { authorization: `Bearer ${adminToken()}` },
+      payload: validRuntimePackageBody,
+    });
+    expect(res.statusCode).toBe(410);
+    expect(res.json()).toMatchObject({
+      code: "RUNTIME_PACKAGE_MUTABLE_REGISTRATION_RETIRED",
+      replacement: "/admin/assets/runtime-package-revisions",
+    });
+  });
+});
+
+describe("public reviewed runtime profile boundary", () => {
+  it("validates the profile lookup query without exposing registry metadata", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/approved-profile",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("fails closed while Reception public showcase permission is disabled", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/approved-profile?venue=trades-hall&room=reception-room",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("private, no-store");
+    expect(res.json()).toEqual({ data: null });
+    expect(res.body).not.toMatch(/manifestJson|r2Key|sha256|hierarchy|decisionRef|assetVersionId/u);
+  });
+
+  it("rejects malformed opaque member identifiers before any storage access", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-profiles/not-a-profile/members/0/content.sog",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns no member bytes while Reception public showcase permission is disabled", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-profiles/quality-sog-fine-v1/members/0/content.sog",
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.headers["cache-control"]).toBe("private, no-store");
+    expect(res.json()).toMatchObject({ code: "RUNTIME_PROFILE_MEMBER_NOT_AVAILABLE" });
+    expect(res.body).not.toContain(ASSET_VERSION_ID);
+  });
+});
+
+describe("POST /admin/assets/runtime-package-revisions", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/runtime-package-revisions",
+      payload: { package: validRuntimePackageBody },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a non-admin role", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/runtime-package-revisions",
+      headers: { authorization: `Bearer ${plannerToken()}` },
+      payload: { package: validRuntimePackageBody },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("rejects a manifest whose room does not match the package room", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/runtime-package-revisions",
+      headers: { authorization: `Bearer ${adminToken()}` },
       payload: {
-        ...validRuntimePackageBody,
-        roomSlug: "saloon",
+        package: {
+          ...validRuntimePackageBody,
+          roomSlug: "saloon",
+        },
       },
     });
     expect(res.statusCode).toBe(400);
@@ -499,25 +631,27 @@ describe("POST /admin/assets/register-runtime-package", () => {
   it("rejects a loadable package without a primary visual asset", async () => {
     const res = await server.inject({
       method: "POST",
-      url: "/admin/assets/register-runtime-package",
+      url: "/admin/assets/runtime-package-revisions",
       headers: { authorization: `Bearer ${adminToken()}` },
       payload: {
-        venueSlug: "trades-hall",
-        roomSlug: "saloon",
-        primaryVisualAssetVersionId: null,
-        manifestJson: {
-          schemaVersion: "venviewer.runtime-package.v1",
+        package: {
           venueSlug: "trades-hall",
           roomSlug: "saloon",
-          packageType: "room-runtime",
-          assets: {
-            primaryVisualAssetVersionId: null,
-            semanticMeshAssetVersionId: null,
-            collisionAssetVersionId: null,
-            pointCloudAssetVersionId: null,
+          primaryVisualAssetVersionId: null,
+          manifestJson: {
+            schemaVersion: "venviewer.runtime-package.v1",
+            venueSlug: "trades-hall",
+            roomSlug: "saloon",
+            packageType: "room-runtime",
+            assets: {
+              primaryVisualAssetVersionId: null,
+              semanticMeshAssetVersionId: null,
+              collisionAssetVersionId: null,
+              pointCloudAssetVersionId: null,
+            },
           },
+          runtimeStatus: "internal_ready",
         },
-        runtimeStatus: "internal_ready",
       },
     });
     expect(res.statusCode).toBe(400);

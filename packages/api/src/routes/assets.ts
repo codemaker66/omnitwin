@@ -1,27 +1,35 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, asc, desc, eq, inArray, ne, type SQL } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   AdminRoomsQuerySchema,
+  ApprovedRoomRuntimeProfileSchema,
   AssetVersionSchema,
   CaptureControlSourceRecordQuerySchema,
   CaptureControlSourceRegistrationSchema,
   CaptureSessionSchema,
+  CreateRuntimePackageRevisionInputSchema,
   LatestRuntimePackageQuerySchema,
   PublicRoomRuntimeVisualSchema,
   RegisterCaptureControlSourceRecordInputSchema,
   RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
-  RegisterRuntimePackageInputSchema,
   RegisterRuntimeQaRecordInputSchema,
   RegisterRuntimeTransformArtifactInputSchema,
   RoomManifestQuerySchema,
   RoomManifestSchema,
   RoomAssetStatusSchema,
   RuntimeFileExtensionSchema,
+  ReviewedRuntimeProfileIdSchema,
+  RuntimePackageManifestJsonSchema,
+  RuntimePackageRevisionCreateResponseSchema,
   RuntimeQaRecordQuerySchema,
   RuntimeQaRecordRegistrationSchema,
+  RuntimeQaRecordV0Schema,
   RuntimePackageSchema,
+  TransformArtifactV0Schema,
   RuntimeTransformArtifactQuerySchema,
   RuntimeTransformArtifactSchema,
   TRADES_HALL_RUNTIME_ROOMS,
@@ -30,11 +38,14 @@ import {
   splatExtensionForKey,
   runtimeQaRecordAllowsPublicExposure,
   runtimeQaRecordSignedTransformArtifactId,
+  runtimeQaRecordSignedTransformArtifactSha256,
   type AssetVersion,
+  type ApprovedRoomRuntimeProfile,
   type CaptureControlSourceRegistration,
   type CaptureSession,
   type CaptureControlFreshnessStatus,
   type PublicRoomRuntimeVisual,
+  type ReviewedRuntimeProfileId,
   type RuntimeQaRecordRegistration,
   type RegisterRuntimePackageInput,
   type ReviewedCaptureControlStatus,
@@ -57,21 +68,41 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
+import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
+import {
+  RuntimeProfileVerifiedByteCache,
+} from "../lib/runtime-profile-verified-byte-cache.js";
+import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+import {
+  isReceptionReviewedProfilePresentationCandidate,
+  matchReceptionReviewedRuntimeProfile,
+} from "../lib/reception-reviewed-runtime-profile.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
+import {
+  RuntimePackageRevisionConflictError,
+  RuntimePackageRevisionIntegrityError,
+  createDatabaseRuntimePackageRevisionStore,
+  createRuntimePackageRevision,
+} from "../services/runtime-package-revisions.js";
 
 // ---------------------------------------------------------------------------
 // Asset routes
 //
 // Public:
 //   GET /assets
+//   GET /assets/runtime-packages/approved-profile?venue=trades-hall&room=reception-room
+//   GET /assets/runtime-packages/public-room-visual?... (retired safe fallback only)
+//   GET /assets/runtime-profiles/:profileId/members/:memberIndex/content.sog
+//
+// Platform-admin/internal:
 //   GET /assets/runtime-packages/latest?venue=trades-hall&room=grand-hall
-//   GET /assets/runtime-packages/public-room-visual?venue=trades-hall&room=grand-hall
 //   GET /assets/runtime-assets/:assetVersionId
 //
 // Admin:
 //   POST /admin/assets/capture-session
 //   POST /admin/assets/register-version
-//   POST /admin/assets/register-runtime-package
+//   POST /admin/assets/runtime-package-revisions
+//   POST /admin/assets/register-runtime-package (deprecated; always 410 after auth)
 //   POST /admin/assets/register-runtime-transform-artifact
 //   GET  /admin/assets/runtime-transform-artifacts?runtimePackageId=...
 //   POST /admin/assets/register-runtime-qa-record
@@ -90,11 +121,62 @@ export type RuntimePackageRow = typeof runtimePackages.$inferSelect;
 export type RuntimeQaRecordRow = typeof runtimeQaRecords.$inferSelect;
 export type RuntimeTransformArtifactRow = typeof runtimeTransformArtifacts.$inferSelect;
 
+interface PublicReviewedProfileResolution {
+  readonly pkg: RuntimePackageRow;
+  readonly visualAssets: readonly AssetVersionRow[];
+  readonly profileId: ReviewedRuntimeProfileId;
+  readonly reviewedTransformArtifactSha256: string;
+}
+
+interface PublicRuntimeProfileMemberAuthorization {
+  readonly profileId: ReviewedRuntimeProfileId;
+  readonly runtimePackageId: string;
+  readonly runtimePackageRevision: number;
+  readonly runtimePackageContentDigest: string | null;
+  readonly reviewedTransformArtifactSha256: string;
+  readonly memberIndex: number;
+  readonly assetVersionId: string;
+  readonly r2Key: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
+  readonly fileName: string;
+  readonly fileExt: string;
+}
+
+class RuntimeProfileMemberIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuntimeProfileMemberIntegrityError";
+  }
+}
+
+class RuntimeProfileMemberUpstreamTimeoutError extends Error {
+  constructor() {
+    super("Runtime profile member storage timed out");
+    this.name = "RuntimeProfileMemberUpstreamTimeoutError";
+  }
+}
+
 const RuntimeAssetParamsSchema = z.object({
   assetVersionId: z.string().uuid(),
   fileName: z.string().min(1).max(255).optional(),
 }).strict();
+const RuntimeProfileMemberParamsSchema = z.object({
+  profileId: ReviewedRuntimeProfileIdSchema,
+  memberIndex: z.coerce.number().int().nonnegative().max(15),
+  memberFileName: z.literal("content.sog"),
+}).strict();
 const HTTP_RANGE_HEADER_PATTERN = /^bytes=\d*-\d*$/u;
+const MAX_PUBLIC_RUNTIME_PROFILE_MEMBER_BYTES = 16 * 1024 * 1024;
+const MAX_CONCURRENT_PUBLIC_RUNTIME_PROFILE_TRANSFERS = 2;
+const MAX_QUEUED_PUBLIC_RUNTIME_PROFILE_TRANSFERS = 16;
+const PUBLIC_RUNTIME_PROFILE_QUEUE_TIMEOUT_MS = 300_000;
+const PUBLIC_RUNTIME_PROFILE_UPSTREAM_TIMEOUT_MS = 30_000;
+const PUBLIC_RUNTIME_PROFILE_TRANSFER_DEADLINE_MS = 180_000;
+const PUBLIC_RUNTIME_PROFILE_ROUTE_RATE_LIMIT_PER_MINUTE = 24;
+const PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_BYTES = 64 * 1024 * 1024;
+const PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_ENTRIES = 16;
+const PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_TTL_MS = 5 * 60_000;
 
 type S3ClientType = import("@aws-sdk/client-s3").S3Client;
 
@@ -112,6 +194,171 @@ interface RuntimeControlEvidenceChainDashboardSummary {
 }
 
 let cachedS3: S3ClientType | null = null;
+let cachedRuntimeProfileS3: S3ClientType | null = null;
+let activePublicRuntimeProfileTransfers = 0;
+const queuedPublicRuntimeProfileTransfers: PublicRuntimeProfileTransferWaiter[] = [];
+const publicRuntimeProfileVerifiedBytes = new RuntimeProfileVerifiedByteCache({
+  maximumBytes: PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_BYTES,
+  maximumEntries: PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_ENTRIES,
+  ttlMilliseconds: PUBLIC_RUNTIME_PROFILE_VERIFIED_CACHE_TTL_MS,
+});
+
+interface PublicRuntimeProfileTransferWaiter {
+  readonly activate: () => void;
+}
+
+interface PublicRuntimeProfileResponseLifecycle {
+  readonly writableFinished: boolean;
+  once(event: "finish" | "close", listener: () => void): unknown;
+  off(event: "finish" | "close", listener: () => void): unknown;
+  destroy(error?: Error): unknown;
+}
+
+function publicRuntimeProfileTransferRelease(): () => void {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = queuedPublicRuntimeProfileTransfers.shift();
+    if (next !== undefined) {
+      // Hand the same active slot to the oldest bounded waiter. The active
+      // count deliberately stays unchanged until that request also finishes.
+      next.activate();
+      return;
+    }
+    activePublicRuntimeProfileTransfers -= 1;
+  };
+}
+
+export function tryAcquirePublicRuntimeProfileTransfer(): (() => void) | null {
+  if (activePublicRuntimeProfileTransfers >= MAX_CONCURRENT_PUBLIC_RUNTIME_PROFILE_TRANSFERS) {
+    return null;
+  }
+  activePublicRuntimeProfileTransfers += 1;
+  return publicRuntimeProfileTransferRelease();
+}
+
+/**
+ * Wait for one of the two per-process response-buffer slots instead of making
+ * the third and fourth members of a four-file profile fail with HTTP 429.
+ * The queue is FIFO, bounded, abortable, and time-limited.
+ */
+export function acquirePublicRuntimeProfileTransfer(
+  signal?: AbortSignal,
+): Promise<(() => void) | null> {
+  const immediate = tryAcquirePublicRuntimeProfileTransfer();
+  if (immediate !== null) return Promise.resolve(immediate);
+  if (
+    signal?.aborted === true ||
+    queuedPublicRuntimeProfileTransfers.length >= MAX_QUEUED_PUBLIC_RUNTIME_PROFILE_TRANSFERS
+  ) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const removeFromQueue = (): void => {
+      const index = queuedPublicRuntimeProfileTransfers.indexOf(waiter);
+      if (index >= 0) queuedPublicRuntimeProfileTransfers.splice(index, 1);
+    };
+    const cleanup = (): void => {
+      if (timeout !== null) clearTimeout(timeout);
+      signal?.removeEventListener("abort", cancel);
+    };
+    const cancel = (): void => {
+      if (settled) return;
+      settled = true;
+      removeFromQueue();
+      cleanup();
+      resolve(null);
+    };
+    const waiter: PublicRuntimeProfileTransferWaiter = {
+      activate: () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(publicRuntimeProfileTransferRelease());
+      },
+    };
+
+    queuedPublicRuntimeProfileTransfers.push(waiter);
+    timeout = setTimeout(cancel, PUBLIC_RUNTIME_PROFILE_QUEUE_TIMEOUT_MS);
+    signal?.addEventListener("abort", cancel, { once: true });
+    // AbortSignal does not replay an abort that happened just before listener
+    // registration, so close the race explicitly after the waiter is ready.
+    if (signal?.aborted === true) cancel();
+  });
+}
+
+/**
+ * Keep a verified response's memory slot until both the handler work and the
+ * Node response are settled. On an early client close the upstream operation
+ * is aborted first, but the slot is not reused until that work has unwound.
+ */
+export function bindPublicRuntimeProfileTransferToResponse(
+  response: PublicRuntimeProfileResponseLifecycle,
+  releaseTransfer: () => void,
+  abortUpstream: () => void,
+  deadlineMilliseconds = PUBLIC_RUNTIME_PROFILE_TRANSFER_DEADLINE_MS,
+): () => void {
+  let responseSettled = false;
+  let workSettled = false;
+  let released = false;
+  let upstreamAborted = false;
+  let deadline: ReturnType<typeof setTimeout> | null = null;
+  const abortUpstreamOnce = (): void => {
+    if (upstreamAborted) return;
+    upstreamAborted = true;
+    abortUpstream();
+  };
+  const clearDeadline = (): void => {
+    if (deadline === null) return;
+    clearTimeout(deadline);
+    deadline = null;
+  };
+  const releaseWhenFullySettled = (): void => {
+    if (released || !responseSettled || !workSettled) return;
+    released = true;
+    releaseTransfer();
+  };
+  const settleResponse = (): void => {
+    if (responseSettled) return;
+    responseSettled = true;
+    clearDeadline();
+    response.off("finish", handleFinish);
+    response.off("close", handleClose);
+    releaseWhenFullySettled();
+  };
+  const handleFinish = (): void => {
+    settleResponse();
+  };
+  const handleClose = (): void => {
+    if (!response.writableFinished) abortUpstreamOnce();
+    settleResponse();
+  };
+  const handleDeadline = (): void => {
+    deadline = null;
+    abortUpstreamOnce();
+    try {
+      response.destroy();
+    } finally {
+      // A custom or already-detached response may not emit `close` after
+      // destroy(). Mark it settled here so the capacity lease can still be
+      // released once the handler work has unwound.
+      settleResponse();
+    }
+  };
+  response.once("finish", handleFinish);
+  response.once("close", handleClose);
+  deadline = setTimeout(handleDeadline, deadlineMilliseconds);
+  deadline.unref();
+  return () => {
+    if (workSettled) return;
+    workSettled = true;
+    releaseWhenFullySettled();
+  };
+}
 
 async function getS3Client(env: Env): Promise<S3ClientType> {
   if (cachedS3 !== null) return cachedS3;
@@ -129,6 +376,24 @@ async function getS3Client(env: Env): Promise<S3ClientType> {
     },
   });
   return cachedS3;
+}
+
+async function getRuntimeProfileS3Client(env: Env): Promise<S3ClientType> {
+  if (cachedRuntimeProfileS3 !== null) return cachedRuntimeProfileS3;
+
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  cachedRuntimeProfileS3 = new S3Client({
+    region: "auto",
+    endpoint: `https://${env.RUNTIME_PROFILE_R2_ACCOUNT_ID ?? ""}.r2.cloudflarestorage.com`,
+    forcePathStyle: true,
+    maxAttempts: 3,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    credentials: {
+      accessKeyId: env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID ?? "",
+      secretAccessKey: env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY ?? "",
+    },
+  });
+  return cachedRuntimeProfileS3;
 }
 
 function dateToIso(value: Date): string {
@@ -157,11 +422,147 @@ function resolveAssetUrl(row: AssetVersionRow, requestOrigin: string | null): st
   return `${requestOrigin}/assets/runtime-assets/${row.id}/${encodeURIComponent(row.fileName)}`;
 }
 
+function publicRuntimeProfileOrigin(env: Env): string | null {
+  if (env.PUBLIC_API_ORIGIN === undefined) return null;
+  try {
+    return new URL(env.PUBLIC_API_ORIGIN).origin;
+  } catch {
+    return null;
+  }
+}
+
+function trustedRuntimeAssetOrigin(env: Env, request: FastifyRequest): string | null {
+  const configured = publicRuntimeProfileOrigin(env);
+  if (configured !== null) return configured;
+  return env.NODE_ENV === "production" ? null : runtimeAssetOrigin(request);
+}
+
+class RuntimePackageRevisionAdmissionError extends Error {
+  constructor(
+    readonly statusCode: 400 | 503,
+    readonly code: "VALIDATION_ERROR" | "RUNTIME_VISUAL_URLS_UNAVAILABLE",
+    readonly details: unknown,
+  ) {
+    super(code);
+    this.name = "RuntimePackageRevisionAdmissionError";
+  }
+}
+
+export function resolveRuntimeVisualAssetUrls(
+  visualAssetVersions: readonly AssetVersionRow[],
+  requestOrigin: string | null,
+): readonly string[] | null {
+  const urls: string[] = [];
+  const uniqueUrls = new Set<string>();
+  for (const asset of visualAssetVersions) {
+    const url = resolveAssetUrl(asset, requestOrigin);
+    if (url === null || uniqueUrls.has(url)) return null;
+    uniqueUrls.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
 function r2IsConfigured(env: Env): boolean {
   return env.R2_ACCOUNT_ID !== undefined &&
     env.R2_ACCESS_KEY_ID !== undefined &&
     env.R2_SECRET_ACCESS_KEY !== undefined &&
     env.R2_BUCKET_NAME !== undefined;
+}
+
+export function runtimeProfileR2IsConfigured(env: Env): boolean {
+  return env.RUNTIME_PROFILE_R2_ACCOUNT_ID !== undefined &&
+    env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID !== undefined &&
+    env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY !== undefined &&
+    env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET !== undefined;
+}
+
+export async function readBoundedRuntimeProfileMemberBytes(
+  body: Readable,
+  expectedSizeBytes: number,
+): Promise<Buffer | null> {
+  if (
+    !Number.isSafeInteger(expectedSizeBytes) ||
+    expectedSizeBytes <= 0 ||
+    expectedSizeBytes > MAX_PUBLIC_RUNTIME_PROFILE_MEMBER_BYTES
+  ) {
+    body.destroy();
+    return null;
+  }
+
+  const output = Buffer.allocUnsafe(expectedSizeBytes);
+  let receivedBytes = 0;
+  try {
+    for await (const chunk of body) {
+      const chunkBytes = typeof chunk === "string"
+        ? Buffer.from(chunk)
+        : Buffer.isBuffer(chunk)
+          ? chunk
+          : Buffer.from(chunk as Uint8Array);
+      receivedBytes += chunkBytes.byteLength;
+      if (receivedBytes > expectedSizeBytes) return null;
+      chunkBytes.copy(output, receivedBytes - chunkBytes.byteLength);
+    }
+  } finally {
+    if (!body.destroyed) body.destroy();
+  }
+
+  return receivedBytes === expectedSizeBytes ? output : null;
+}
+
+export async function readVerifiedRuntimeProfileMemberBytes(
+  body: Readable,
+  expectedSizeBytes: number,
+  expectedSha256: string,
+): Promise<Buffer | null> {
+  if (!/^[a-f0-9]{64}$/u.test(expectedSha256)) {
+    body.destroy();
+    return null;
+  }
+  const bytes = await readBoundedRuntimeProfileMemberBytes(body, expectedSizeBytes);
+  if (bytes === null || createHash("sha256").update(bytes).digest("hex") !== expectedSha256) {
+    return null;
+  }
+  return bytes;
+}
+
+export function resolveVerifiedRuntimeProfileResponseRange(
+  requestedRange: string | undefined,
+  totalBytes: number,
+): { readonly start: number; readonly end: number; readonly partial: boolean } | null {
+  if (requestedRange === undefined) {
+    return { start: 0, end: totalBytes - 1, partial: false };
+  }
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(requestedRange);
+  if (match === null) return null;
+  const startText = match[1] ?? "";
+  const endText = match[2] ?? "";
+  if (startText.length === 0) {
+    const suffixLength = Number(endText);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    return {
+      start: Math.max(0, totalBytes - suffixLength),
+      end: totalBytes - 1,
+      partial: true,
+    };
+  }
+
+  const start = Number(startText);
+  const requestedEnd = endText.length === 0 ? totalBytes - 1 : Number(endText);
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    start >= totalBytes ||
+    requestedEnd < start
+  ) {
+    return null;
+  }
+  return {
+    start,
+    end: Math.min(requestedEnd, totalBytes - 1),
+    partial: true,
+  };
 }
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
@@ -170,6 +571,18 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
     code: "VALIDATION_ERROR",
     details,
   });
+}
+
+function isPostgresUniqueViolation(error: unknown): boolean {
+  let cursor: unknown = error;
+  const visited = new Set<unknown>();
+  while (typeof cursor === "object" && cursor !== null && !visited.has(cursor)) {
+    visited.add(cursor);
+    const record = cursor as Record<string, unknown>;
+    if (record["code"] === "23505") return true;
+    cursor = record["cause"];
+  }
+  return false;
 }
 
 function serializeAssetVersion(row: AssetVersionRow): AssetVersion {
@@ -231,7 +644,7 @@ function assetStorageReferences(version: AssetVersionRow): readonly string[] {
   return [version.r2Key, version.externalUrl].filter((value): value is string => value !== null);
 }
 
-function isServablePrimaryVisualAsset(version: AssetVersionRow): boolean {
+function isServableRuntimeVisualAsset(version: AssetVersionRow): boolean {
   if (version.assetKind !== "splat" || version.runtimeStatus !== "usable") return false;
   if (version.evidenceStatus === "rejected") return false;
   if (version.roomSlug === null) return false;
@@ -253,32 +666,61 @@ function runtimePackageCanLoad(pkg: RuntimePackageRow): boolean {
   return pkg.runtimeStatus === "internal_ready" || pkg.runtimeStatus === "published";
 }
 
-async function listUsableRuntimeVisualAssets(
-  db: Database,
-  pkg: RuntimePackageRow,
-  primaryVisualAsset: AssetVersionRow,
-): Promise<readonly AssetVersionRow[]> {
-  if (!runtimePackageCanLoad(pkg)) return [];
-  // Serve the manifest room chunks that match the package's primary visual
-  // asset format (e.g. all `.sog` chunks for a SOG package, all `.spz` chunks
-  // for an SPZ package), so a room can be re-exported to a new splat format by
-  // re-registering its primary without serving two formats at once. The matching
-  // environment chunk (`env.<ext>`) is excluded — it is not part of the room
-  // splat total.
-  const fileExt = primaryVisualAsset.fileExt;
-  return db
-    .select()
-    .from(assetVersions)
-    .where(and(
-      eq(assetVersions.venueSlug, pkg.venueSlug),
-      eq(assetVersions.roomSlug, pkg.roomSlug),
-      eq(assetVersions.assetKind, "splat"),
-      eq(assetVersions.fileExt, fileExt),
-      eq(assetVersions.runtimeStatus, "usable"),
-      ne(assetVersions.evidenceStatus, "rejected"),
-      ne(assetVersions.fileName, `env${fileExt}`),
-    ))
-    .orderBy(asc(assetVersions.fileName), asc(assetVersions.id));
+type RuntimeVisualCompositionPackage = Pick<
+  RuntimePackageRow,
+  "venueSlug" | "roomSlug" | "primaryVisualAssetVersionId" | "manifestJson"
+>;
+
+function declaredRuntimeVisualAssetVersionIds(
+  pkg: RuntimeVisualCompositionPackage,
+): readonly string[] | null {
+  const parsedManifest = RuntimePackageManifestJsonSchema.safeParse(pkg.manifestJson);
+  if (!parsedManifest.success) return null;
+
+  const manifest = parsedManifest.data;
+  if (
+    manifest.venueSlug !== pkg.venueSlug ||
+    manifest.roomSlug !== pkg.roomSlug ||
+    manifest.assets.primaryVisualAssetVersionId !== pkg.primaryVisualAssetVersionId
+  ) {
+    return null;
+  }
+
+  if (manifest.assets.visualAssetVersionIds !== undefined) {
+    return manifest.assets.visualAssetVersionIds;
+  }
+  return pkg.primaryVisualAssetVersionId === null ? [] : [pkg.primaryVisualAssetVersionId];
+}
+
+export function resolveRuntimeVisualAssetComposition(
+  pkg: RuntimeVisualCompositionPackage,
+  candidateAssets: readonly AssetVersionRow[],
+): readonly AssetVersionRow[] | null {
+  const declaredIds = declaredRuntimeVisualAssetVersionIds(pkg);
+  if (declaredIds === null || candidateAssets.length !== declaredIds.length) return null;
+
+  const declaredIdSet = new Set(declaredIds);
+  const candidatesById = new Map<string, AssetVersionRow>();
+  for (const candidate of candidateAssets) {
+    if (
+      !declaredIdSet.has(candidate.id) ||
+      candidatesById.has(candidate.id) ||
+      candidate.venueSlug !== pkg.venueSlug ||
+      candidate.roomSlug !== pkg.roomSlug ||
+      !isServableRuntimeVisualAsset(candidate)
+    ) {
+      return null;
+    }
+    candidatesById.set(candidate.id, candidate);
+  }
+
+  const orderedAssets: AssetVersionRow[] = [];
+  for (const id of declaredIds) {
+    const asset = candidatesById.get(id);
+    if (asset === undefined) return null;
+    orderedAssets.push(asset);
+  }
+  return orderedAssets;
 }
 
 function serializeRuntimePackage(
@@ -286,8 +728,21 @@ function serializeRuntimePackage(
   primaryVisualAssetVersion: AssetVersionRow | null,
   requestOrigin: string | null,
   visualAssetVersions: readonly AssetVersionRow[] = [],
-): RuntimePackage {
+): RuntimePackage | null {
   const serializedAsset = primaryVisualAssetVersion === null ? null : serializeAssetVersion(primaryVisualAssetVersion);
+  const exposesRuntimeUrls = pkg.runtimeStatus === "published";
+  const primaryVisualAssetUrl = !exposesRuntimeUrls || primaryVisualAssetVersion === null
+    ? null
+    : resolveAssetUrl(primaryVisualAssetVersion, requestOrigin);
+  const visualAssetUrls = exposesRuntimeUrls
+    ? resolveRuntimeVisualAssetUrls(visualAssetVersions, requestOrigin)
+    : [];
+  if (
+    visualAssetUrls === null ||
+    (exposesRuntimeUrls && primaryVisualAssetVersion !== null && primaryVisualAssetUrl === null)
+  ) {
+    return null;
+  }
   return RuntimePackageSchema.parse({
     id: pkg.id,
     venueSlug: pkg.venueSlug,
@@ -302,13 +757,42 @@ function serializeRuntimePackage(
     createdAt: dateToIso(pkg.createdAt),
     updatedAt: dateToIso(pkg.updatedAt),
     primaryVisualAssetVersion: serializedAsset,
-    primaryVisualAssetUrl: primaryVisualAssetVersion === null
-      ? null
-      : resolveAssetUrl(primaryVisualAssetVersion, requestOrigin),
-    visualAssetUrls: visualAssetVersions
-      .map((asset) => resolveAssetUrl(asset, requestOrigin))
-      .filter((url): url is string => url !== null),
+    primaryVisualAssetUrl,
+    visualAssetUrls,
   });
+}
+
+export function serializeApprovedRoomRuntimeProfile(
+  pkg: RuntimePackageRow,
+  visualAssetVersions: readonly AssetVersionRow[],
+  requestOrigin: string | null,
+  reviewedTransformArtifactSha256: string | null,
+): ApprovedRoomRuntimeProfile | null {
+  const profileId = matchReceptionReviewedRuntimeProfile(pkg, visualAssetVersions);
+  if (
+    profileId === null ||
+    !isReceptionReviewedProfilePresentationCandidate(
+      profileId,
+      reviewedTransformArtifactSha256,
+    ) ||
+    requestOrigin === null
+  ) {
+    return null;
+  }
+  const visualAssetUrls = visualAssetVersions.map((_asset, index) =>
+    `${requestOrigin}/assets/runtime-profiles/${encodeURIComponent(profileId)}` +
+      `/members/${String(index)}/content.sog`
+  );
+  if (visualAssetUrls.some((url) => !isClientSafeVisualUrl(url))) return null;
+
+  const parsed = ApprovedRoomRuntimeProfileSchema.safeParse({
+    scope: "approved_room_runtime_profile",
+    venueSlug: pkg.venueSlug,
+    roomSlug: pkg.roomSlug,
+    profileId,
+    visualAssetUrls,
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 function serializeRuntimeQaRecord(row: RuntimeQaRecordRow): RuntimeQaRecordRegistration {
@@ -377,35 +861,28 @@ function unavailablePublicRoomRuntimeVisual(venueSlug: string, roomSlug: string)
   });
 }
 
-function availablePublicRoomRuntimeVisual(
+function roomAllowsPublicRuntimePresentation(
   venueSlug: string,
   roomSlug: string,
-  visualUrl: string,
-): PublicRoomRuntimeVisual {
-  return PublicRoomRuntimeVisualSchema.parse({
-    venueSlug,
-    roomSlug,
-    runtimeVisualAvailable: true,
-    visualUrl,
-    visualLabel: "Runtime visual preview",
-    safeCopy: "Runtime visual available for planning preview. Final details are confirmed by the venue team.",
-    humanReviewRequired: true,
-  });
+): boolean {
+  if (venueSlug !== "trades-hall") return false;
+  return TRADES_HALL_RUNTIME_ROOMS.some((room) =>
+    room.slug === roomSlug && room.publicShowcaseEnabled
+  );
 }
 
 function isClientSafeVisualUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol !== "https:") return false;
-    return !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+    return url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   } catch {
     return false;
   }
-}
-
-function resolvePublicRoomVisualUrl(row: AssetVersionRow): string | null {
-  if (row.externalUrl === null) return null;
-  return isClientSafeVisualUrl(row.externalUrl) ? row.externalUrl : null;
 }
 
 export function runtimeQaRecordAllowsPublicRoomVisual(
@@ -413,21 +890,42 @@ export function runtimeQaRecordAllowsPublicRoomVisual(
   transformArtifact: RuntimeTransformArtifactRow | null | undefined,
 ): boolean {
   if (row === null || row === undefined) return false;
-  if (!runtimeQaRecordAllowsPublicExposure(row.recordJson)) return false;
+  if (transformArtifact === null || transformArtifact === undefined) return false;
+  const parsedRecord = RuntimeQaRecordV0Schema.safeParse(row.recordJson);
+  const parsedTransform = TransformArtifactV0Schema.safeParse(transformArtifact.transformArtifact);
+  if (!parsedRecord.success || !parsedTransform.success) return false;
+  const record = parsedRecord.data;
+  if (!runtimeQaRecordAllowsPublicExposure(record)) return false;
 
-  const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(row.recordJson);
-  if (signedTransformArtifactId === null) return false;
+  const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(record);
+  const signedTransformArtifactSha256 = runtimeQaRecordSignedTransformArtifactSha256(record);
+  if (signedTransformArtifactId === null || signedTransformArtifactSha256 === null) return false;
   if (row.signedTransformArtifactId !== signedTransformArtifactId) return false;
   if (row.publicExposureDecision !== "approved_public") return false;
   if (row.assetEvidenceStatus !== "human_reviewed") return false;
   if (row.runtimeStatus !== "published") return false;
+  if (row.publicExposureDecision !== record.publicExposure.decision) return false;
+  if (row.assetEvidenceStatus !== record.assetEvidenceStatus) return false;
+  if (row.runtimeStatus !== record.runtimeStatus) return false;
 
-  return transformArtifact !== null &&
-    transformArtifact !== undefined &&
-    transformArtifact.runtimePackageId === row.runtimePackageId &&
+  const qaCreatedAt = row.createdAt instanceof Date ? row.createdAt.getTime() : Number.NaN;
+  const transformUpdatedAt = transformArtifact.updatedAt instanceof Date
+    ? transformArtifact.updatedAt.getTime()
+    : Number.NaN;
+  if (
+    !Number.isFinite(qaCreatedAt) ||
+    !Number.isFinite(transformUpdatedAt) ||
+    transformUpdatedAt > qaCreatedAt
+  ) {
+    return false;
+  }
+
+  return transformArtifact.runtimePackageId === row.runtimePackageId &&
     transformArtifact.venueSlug === row.venueSlug &&
     transformArtifact.roomSlug === row.roomSlug &&
-    transformArtifact.transformArtifactId === signedTransformArtifactId;
+    transformArtifact.transformArtifactId === signedTransformArtifactId &&
+    parsedTransform.data.id === signedTransformArtifactId &&
+    runtimeTransformArtifactSha256(parsedTransform.data) === signedTransformArtifactSha256;
 }
 
 async function findRuntimeTransformArtifact(
@@ -451,14 +949,14 @@ async function findRuntimeTransformArtifactForQaRecord(
   db: Database,
   row: RuntimeQaRecordRow | null,
 ): Promise<RuntimeTransformArtifactRow | null> {
-  return row !== null &&
-    row !== undefined
-    ? findRuntimeTransformArtifact(
-      db,
-      row.runtimePackageId,
-      runtimeQaRecordSignedTransformArtifactId(row.recordJson),
-    )
-    : null;
+  if (row === null || row === undefined) return null;
+  const parsedRecord = RuntimeQaRecordV0Schema.safeParse(row.recordJson);
+  if (!parsedRecord.success) return null;
+  return findRuntimeTransformArtifact(
+    db,
+    row.runtimePackageId,
+    runtimeQaRecordSignedTransformArtifactId(parsedRecord.data),
+  );
 }
 
 async function findAssetVersion(db: Database, id: string | null | undefined): Promise<AssetVersionRow | null> {
@@ -467,6 +965,90 @@ async function findAssetVersion(db: Database, id: string | null | undefined): Pr
     .select()
     .from(assetVersions)
     .where(eq(assetVersions.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function findRuntimeQaRecordByImmutableKey(
+  db: Database,
+  runtimePackageId: string,
+  recordId: string,
+): Promise<RuntimeQaRecordRow | null> {
+  const [row] = await db
+    .select()
+    .from(runtimeQaRecords)
+    .where(and(
+      eq(runtimeQaRecords.runtimePackageId, runtimePackageId),
+      eq(runtimeQaRecords.recordId, recordId),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
+export function runtimeQaRecordAllowsPublicRuntimePackage(
+  pkg: RuntimePackageRow,
+  row: RuntimeQaRecordRow | null | undefined,
+  transformArtifact: RuntimeTransformArtifactRow | null | undefined,
+): boolean {
+  if (row === null || row === undefined) return false;
+  const parsedRecord = RuntimeQaRecordV0Schema.safeParse(row.recordJson);
+  if (!parsedRecord.success) return false;
+  const record = parsedRecord.data;
+  return transformArtifact !== null &&
+    transformArtifact !== undefined &&
+    row.runtimePackageId === pkg.id &&
+    row.venueSlug === pkg.venueSlug &&
+    row.roomSlug === pkg.roomSlug &&
+    record.runtimePackageId === pkg.id &&
+    record.venueSlug === pkg.venueSlug &&
+    record.roomSlug === pkg.roomSlug &&
+    pkg.evidenceStatus === "human_reviewed" &&
+    row.assetEvidenceStatus === pkg.evidenceStatus &&
+    record.assetEvidenceStatus === pkg.evidenceStatus &&
+    row.runtimeStatus === pkg.runtimeStatus &&
+    record.runtimeStatus === pkg.runtimeStatus &&
+    transformArtifact.runtimePackageId === pkg.id &&
+    transformArtifact.venueSlug === pkg.venueSlug &&
+    transformArtifact.roomSlug === pkg.roomSlug &&
+    transformArtifact.transformArtifact.id === transformArtifact.transformArtifactId &&
+    runtimeQaRecordAllowsPublicRoomVisual(row, transformArtifact);
+}
+
+async function findAssetVersions(
+  db: Database,
+  ids: readonly string[],
+): Promise<readonly AssetVersionRow[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(assetVersions)
+    .where(inArray(assetVersions.id, [...ids]));
+}
+
+async function findRuntimeVisualAssetComposition(
+  db: Database,
+  pkg: RuntimeVisualCompositionPackage,
+): Promise<readonly AssetVersionRow[] | null> {
+  const declaredIds = declaredRuntimeVisualAssetVersionIds(pkg);
+  if (declaredIds === null) return null;
+  const candidates = await findAssetVersions(db, declaredIds);
+  return resolveRuntimeVisualAssetComposition(pkg, candidates);
+}
+
+async function findLatestPublishedRuntimePackage(
+  db: Database,
+  venueSlug: string,
+  roomSlug: string,
+): Promise<RuntimePackageRow | null> {
+  const [row] = await db
+    .select()
+    .from(runtimePackages)
+    .where(and(
+      eq(runtimePackages.venueSlug, venueSlug),
+      eq(runtimePackages.roomSlug, roomSlug),
+      eq(runtimePackages.runtimeStatus, "published"),
+    ))
+    .orderBy(desc(runtimePackages.revision))
     .limit(1);
   return row ?? null;
 }
@@ -501,6 +1083,54 @@ function validateRuntimeTransformPackageLink(
     return "Runtime transform artifacts cannot be registered against rejected or archived runtime packages.";
   }
   return null;
+}
+
+export function runtimeTransformArtifactRegistrationIsExactRetry(
+  existing: RuntimeTransformArtifactRow,
+  input: {
+    readonly runtimePackageId: string;
+    readonly venueSlug: string;
+    readonly roomSlug: string;
+    readonly transformArtifact: unknown;
+    readonly reviewNote?: string | null;
+  },
+): boolean {
+  const storedArtifact = TransformArtifactV0Schema.safeParse(existing.transformArtifact);
+  const requestedArtifact = TransformArtifactV0Schema.safeParse(input.transformArtifact);
+  return storedArtifact.success &&
+    requestedArtifact.success &&
+    existing.runtimePackageId === input.runtimePackageId &&
+    existing.venueSlug === input.venueSlug &&
+    existing.roomSlug === input.roomSlug &&
+    existing.transformArtifactId === requestedArtifact.data.id &&
+    existing.reviewNote === (input.reviewNote ?? null) &&
+    runtimeTransformArtifactSha256(storedArtifact.data) ===
+      runtimeTransformArtifactSha256(requestedArtifact.data);
+}
+
+export function runtimeQaRecordRegistrationIsExactRetry(
+  existing: RuntimeQaRecordRow,
+  input: {
+    readonly runtimePackageId: string;
+    readonly venueSlug: string;
+    readonly roomSlug: string;
+    readonly record: RuntimeQaRecordRow["recordJson"];
+  },
+): boolean {
+  const storedRecord = RuntimeQaRecordV0Schema.safeParse(existing.recordJson);
+  const requestedRecord = RuntimeQaRecordV0Schema.safeParse(input.record);
+  return storedRecord.success &&
+    requestedRecord.success &&
+    existing.runtimePackageId === input.runtimePackageId &&
+    existing.venueSlug === input.venueSlug &&
+    existing.roomSlug === input.roomSlug &&
+    existing.recordId === requestedRecord.data.recordId &&
+    existing.signedTransformArtifactId ===
+      runtimeQaRecordSignedTransformArtifactId(requestedRecord.data) &&
+    existing.publicExposureDecision === requestedRecord.data.publicExposure.decision &&
+    existing.assetEvidenceStatus === requestedRecord.data.assetEvidenceStatus &&
+    existing.runtimeStatus === requestedRecord.data.runtimeStatus &&
+    JSON.stringify(storedRecord.data) === JSON.stringify(requestedRecord.data);
 }
 
 function validateRuntimeQaPackageLink(
@@ -605,8 +1235,38 @@ function validatePrimaryVisualAsset(input: RegisterRuntimePackageInput, row: Ass
   if (baseError !== null) return baseError;
   if ((input.primaryVisualAssetVersionId ?? null) === null) return null;
   if (row === null) return "primaryVisualAssetVersionId does not exist.";
-  if (!isServablePrimaryVisualAsset(row)) {
+  if (!isServableRuntimeVisualAsset(row)) {
     return "primaryVisualAssetVersionId must reference a non-fixture splat asset with a supported Spark file extension.";
+  }
+  return null;
+}
+
+export function validateRuntimeVisualAssetReceipts(
+  input: RegisterRuntimePackageInput,
+  rows: readonly AssetVersionRow[],
+): string | null {
+  const receipts = input.manifestJson.assets.visualAssetReceipts;
+  if (receipts === undefined) return null;
+  if (receipts.length !== rows.length) {
+    return "Visual asset receipts must exactly match the resolved visual composition.";
+  }
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const receipt = receipts[index];
+    if (row === undefined || receipt === undefined || row.r2Key === null) {
+      return "Every visual asset receipt must bind one protected R2 asset.";
+    }
+    if (
+      receipt.assetVersionId !== row.id ||
+      receipt.fileName !== row.fileName ||
+      receipt.fileExt !== row.fileExt ||
+      receipt.sha256 !== row.sha256 ||
+      receipt.sizeBytes !== row.sizeBytes ||
+      receipt.storageKeySha256 !== runtimeAssetStorageKeySha256(row.r2Key)
+    ) {
+      return `Visual asset receipt ${String(index)} does not match its registered immutable member.`;
+    }
   }
   return null;
 }
@@ -1032,46 +1692,176 @@ export async function assetRoutes(
 ): Promise<void> {
   const { db, env } = opts;
 
+  async function resolvePublicReviewedProfile(
+    venueSlug: string,
+    roomSlug: string,
+    requestedProfileId?: ReviewedRuntimeProfileId,
+  ): Promise<PublicReviewedProfileResolution | null> {
+    if (!runtimeProfileR2IsConfigured(env)) return null;
+    if (!roomAllowsPublicRuntimePresentation(venueSlug, roomSlug)) return null;
+    const pkg = await findLatestPublishedRuntimePackage(db, venueSlug, roomSlug);
+    if (pkg === null || pkg.runtimeStatus !== "published" || !runtimePackageCanLoad(pkg)) {
+      return null;
+    }
+    const visualAssets = await findRuntimeVisualAssetComposition(db, pkg);
+    if (visualAssets === null || visualAssets.length === 0) return null;
+    const profileId = matchReceptionReviewedRuntimeProfile(pkg, visualAssets);
+    if (
+      profileId === null ||
+      (requestedProfileId !== undefined && profileId !== requestedProfileId)
+    ) {
+      return null;
+    }
+    const qaRecord = await latestRuntimeQaRecord(db, pkg.id);
+    const transformArtifact = await findRuntimeTransformArtifactForQaRecord(db, qaRecord);
+    if (!runtimeQaRecordAllowsPublicRuntimePackage(pkg, qaRecord, transformArtifact)) return null;
+    const parsedQaRecord = RuntimeQaRecordV0Schema.safeParse(qaRecord?.recordJson);
+    const reviewedTransformArtifactSha256 = parsedQaRecord.success
+      ? runtimeQaRecordSignedTransformArtifactSha256(parsedQaRecord.data)
+      : null;
+    if (
+      reviewedTransformArtifactSha256 === null ||
+      !isReceptionReviewedProfilePresentationCandidate(
+        profileId,
+        reviewedTransformArtifactSha256,
+      )
+    ) {
+      return null;
+    }
+    return { pkg, visualAssets, profileId, reviewedTransformArtifactSha256 };
+  }
+
+  function publicRuntimeProfileMemberAuthorization(
+    resolved: PublicReviewedProfileResolution,
+    memberIndex: number,
+  ): PublicRuntimeProfileMemberAuthorization | null {
+    const asset = resolved.visualAssets[memberIndex];
+    if (
+      asset === undefined ||
+      !isServableRuntimeVisualAsset(asset) ||
+      asset.r2Key === null ||
+      asset.sha256 === null ||
+      asset.sizeBytes === null ||
+      asset.sizeBytes <= 0 ||
+      asset.sizeBytes > MAX_PUBLIC_RUNTIME_PROFILE_MEMBER_BYTES
+    ) {
+      return null;
+    }
+    return {
+      profileId: resolved.profileId,
+      runtimePackageId: resolved.pkg.id,
+      runtimePackageRevision: resolved.pkg.revision,
+      runtimePackageContentDigest: resolved.pkg.contentDigest,
+      reviewedTransformArtifactSha256: resolved.reviewedTransformArtifactSha256,
+      memberIndex,
+      assetVersionId: asset.id,
+      r2Key: asset.r2Key,
+      sha256: asset.sha256,
+      sizeBytes: asset.sizeBytes,
+      fileName: asset.fileName,
+      fileExt: asset.fileExt,
+    };
+  }
+
+  function samePublicRuntimeProfileMemberAuthorization(
+    left: PublicRuntimeProfileMemberAuthorization,
+    right: PublicRuntimeProfileMemberAuthorization | null,
+  ): boolean {
+    return right !== null &&
+      left.profileId === right.profileId &&
+      left.runtimePackageId === right.runtimePackageId &&
+      left.runtimePackageRevision === right.runtimePackageRevision &&
+      left.runtimePackageContentDigest === right.runtimePackageContentDigest &&
+      left.reviewedTransformArtifactSha256 === right.reviewedTransformArtifactSha256 &&
+      left.memberIndex === right.memberIndex &&
+      left.assetVersionId === right.assetVersionId &&
+      left.r2Key === right.r2Key &&
+      left.sha256 === right.sha256 &&
+      left.sizeBytes === right.sizeBytes &&
+      left.fileName === right.fileName &&
+      left.fileExt === right.fileExt;
+  }
+
   server.get("/", async () => {
     const rows = await db.select().from(assetDefinitions).orderBy(assetDefinitions.name);
     return { data: rows };
   });
 
-  server.get("/runtime-packages/latest", async (request, reply) => {
+  server.get(
+    "/runtime-packages/latest",
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    async (request, reply) => {
+      const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
+      if (!parsedQuery.success) {
+        return validationError(reply, parsedQuery.error.issues);
+      }
+
+      try {
+        const [row] = await db
+          .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
+          .from(runtimePackages)
+          .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
+          .where(and(
+            eq(runtimePackages.venueSlug, parsedQuery.data.venue),
+            eq(runtimePackages.roomSlug, parsedQuery.data.room),
+            eq(runtimePackages.runtimeStatus, "published"),
+            eq(assetVersions.runtimeStatus, "usable"),
+          ))
+          .orderBy(desc(runtimePackages.revision))
+          .limit(1);
+
+        if (
+          row === undefined ||
+          row.pkg.runtimeStatus !== "published" ||
+          !runtimePackageCanLoad(row.pkg) ||
+          !isServableRuntimeVisualAsset(row.primaryVisualAssetVersion)
+        ) {
+          return { data: null };
+        }
+
+        const visualAssetVersions = await findRuntimeVisualAssetComposition(db, row.pkg);
+        if (visualAssetVersions === null) {
+          return { data: null };
+        }
+        return {
+          data: serializeRuntimePackage(
+            row.pkg,
+            row.primaryVisualAssetVersion,
+            trustedRuntimeAssetOrigin(env, request),
+            visualAssetVersions,
+          ),
+        };
+      } catch (error: unknown) {
+        request.log.warn({
+          err: error,
+          venueSlug: parsedQuery.data.venue,
+          roomSlug: parsedQuery.data.room,
+        }, "runtime package registry lookup unavailable; returning empty runtime package state");
+        return { data: null };
+      }
+    },
+  );
+
+  server.get("/runtime-packages/approved-profile", async (request, reply) => {
+    reply.header("cache-control", "private, no-store");
     const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return validationError(reply, parsedQuery.error.issues);
     }
 
     try {
-      const [row] = await db
-        .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
-        .from(runtimePackages)
-        .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
-        .where(and(
-          eq(runtimePackages.venueSlug, parsedQuery.data.venue),
-          eq(runtimePackages.roomSlug, parsedQuery.data.room),
-          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
-          eq(assetVersions.runtimeStatus, "usable"),
-        ))
-        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
-        .limit(1);
-
-      if (
-        row === undefined ||
-        !runtimePackageCanLoad(row.pkg) ||
-        !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
-      ) {
-        return { data: null };
-      }
-
-      const visualAssetVersions = await listUsableRuntimeVisualAssets(db, row.pkg, row.primaryVisualAssetVersion);
+      const resolved = await resolvePublicReviewedProfile(
+        parsedQuery.data.venue,
+        parsedQuery.data.room,
+      );
+      const trustedOrigin = publicRuntimeProfileOrigin(env);
+      if (resolved === null || trustedOrigin === null) return { data: null };
       return {
-        data: serializeRuntimePackage(
-          row.pkg,
-          row.primaryVisualAssetVersion,
-          runtimeAssetOrigin(request),
-          visualAssetVersions,
+        data: serializeApprovedRoomRuntimeProfile(
+          resolved.pkg,
+          resolved.visualAssets,
+          trustedOrigin,
+          resolved.reviewedTransformArtifactSha256,
         ),
       };
     } catch (error: unknown) {
@@ -1079,71 +1869,30 @@ export async function assetRoutes(
         err: error,
         venueSlug: parsedQuery.data.venue,
         roomSlug: parsedQuery.data.room,
-      }, "runtime package registry lookup unavailable; returning empty runtime package state");
+      }, "approved runtime profile lookup unavailable; returning safe fallback state");
       return { data: null };
     }
   });
 
   server.get("/runtime-packages/public-room-visual", async (request, reply) => {
+    reply.header("cache-control", "public, max-age=60");
     const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
     if (!parsedQuery.success) {
       return validationError(reply, parsedQuery.error.issues);
     }
 
-    const unavailable = unavailablePublicRoomRuntimeVisual(parsedQuery.data.venue, parsedQuery.data.room);
-
-    try {
-      const [row] = await db
-        .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
-        .from(runtimePackages)
-        .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
-        .where(and(
-          eq(runtimePackages.venueSlug, parsedQuery.data.venue),
-          eq(runtimePackages.roomSlug, parsedQuery.data.room),
-          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
-          eq(assetVersions.runtimeStatus, "usable"),
-        ))
-        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
-        .limit(1);
-
-      if (
-        row === undefined ||
-        !runtimePackageCanLoad(row.pkg) ||
-        !isServablePrimaryVisualAsset(row.primaryVisualAssetVersion)
-      ) {
-        return { data: unavailable };
-      }
-
-      const qaRecord = await latestRuntimeQaRecord(db, row.pkg.id);
-      const transformArtifact = await findRuntimeTransformArtifactForQaRecord(db, qaRecord);
-      if (!runtimeQaRecordAllowsPublicRoomVisual(qaRecord, transformArtifact)) {
-        return { data: unavailable };
-      }
-
-      const visualUrl = resolvePublicRoomVisualUrl(row.primaryVisualAssetVersion);
-      if (visualUrl === null) {
-        return { data: unavailable };
-      }
-
-      return {
-        data: availablePublicRoomRuntimeVisual(parsedQuery.data.venue, parsedQuery.data.room, visualUrl),
-      };
-    } catch (error: unknown) {
-      request.log.warn({
-        err: error,
-        venueSlug: parsedQuery.data.venue,
-        roomSlug: parsedQuery.data.room,
-      }, "public room runtime visual lookup unavailable; returning safe fallback state");
-      return { data: unavailable };
-    }
+    // Retired by design: raw external URLs cannot re-run release gates or
+    // verify physical bytes. Every room must eventually use a reviewed,
+    // anonymous profile-member route. Until then the public UI gets fallback.
+    return {
+      data: unavailablePublicRoomRuntimeVisual(
+        parsedQuery.data.venue,
+        parsedQuery.data.room,
+      ),
+    };
   });
 
-  async function streamRuntimeAsset(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
-    const parsedParams = RuntimeAssetParamsSchema.safeParse(request.params);
-    if (!parsedParams.success) {
-      return validationError(reply, parsedParams.error.issues);
-    }
-
+  function parseRuntimeAssetRange(request: FastifyRequest, reply: FastifyReply): string | undefined | FastifyReply {
     const rangeHeader = request.headers.range;
     const range = typeof rangeHeader === "string" ? rangeHeader : undefined;
     if (range !== undefined && !HTTP_RANGE_HEADER_PATTERN.test(range)) {
@@ -1152,6 +1901,149 @@ export async function assetRoutes(
         code: "UNSUPPORTED_RANGE",
       });
     }
+    return range;
+  }
+
+  async function sendRuntimeAssetBytes(
+    asset: AssetVersionRow,
+    range: string | undefined,
+    cacheControl: string,
+    reply: FastifyReply,
+  ): Promise<FastifyReply> {
+    if (asset.r2Key === null) {
+      return reply.status(404).send({
+        error: "Runtime asset is not available",
+        code: "RUNTIME_ASSET_NOT_AVAILABLE",
+      });
+    }
+
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const s3 = await getS3Client(env);
+    const object = await s3.send(new GetObjectCommand({
+      Bucket: env.R2_BUCKET_NAME,
+      Key: r2PublicPath(asset.r2Key),
+      Range: range,
+    }));
+    if (object.Body === undefined) {
+      return reply.status(502).send({
+        error: "Runtime asset object was empty",
+        code: "RUNTIME_ASSET_EMPTY",
+      });
+    }
+
+    if (!(object.Body instanceof Readable)) {
+      return reply.status(502).send({
+        error: "Runtime asset object was not a server byte stream",
+        code: "RUNTIME_ASSET_NOT_STREAMABLE",
+      });
+    }
+    const responseStatus = object.ContentRange === undefined ? 200 : 206;
+    reply
+      .status(responseStatus)
+      .header("accept-ranges", object.AcceptRanges ?? "bytes")
+      .header("content-type", asset.mimeType ?? object.ContentType ?? "application/octet-stream")
+      .header("cache-control", cacheControl);
+    if (object.ContentLength !== undefined) reply.header("content-length", String(object.ContentLength));
+    if (object.ContentRange !== undefined) reply.header("content-range", object.ContentRange);
+    if (object.ETag !== undefined) reply.header("etag", object.ETag);
+    return reply.send(object.Body);
+  }
+
+  async function loadVerifiedRuntimeProfileMemberBytes(
+    asset: AssetVersionRow,
+    consumerSignal: AbortSignal,
+  ): Promise<Buffer> {
+    if (
+      asset.r2Key === null ||
+      asset.sha256 === null ||
+      asset.sizeBytes === null ||
+      asset.sizeBytes <= 0 ||
+      asset.sizeBytes > MAX_PUBLIC_RUNTIME_PROFILE_MEMBER_BYTES
+    ) {
+      throw new RuntimeProfileMemberIntegrityError("Runtime profile member identity is incomplete");
+    }
+    const r2Key = asset.r2Key;
+    const sha256 = asset.sha256;
+    const sizeBytes = asset.sizeBytes;
+    try {
+      return await publicRuntimeProfileVerifiedBytes.load(
+        { sha256, sizeBytes },
+        consumerSignal,
+        async (sharedSignal) => {
+          const controller = new AbortController();
+          let activeBody: Readable | null = null;
+          let upstreamTimedOut = false;
+          const abortStorage = (): void => {
+            controller.abort(sharedSignal.reason);
+            const reason = sharedSignal.reason instanceof Error
+              ? sharedSignal.reason
+              : new DOMException("Runtime profile storage request aborted", "AbortError");
+            activeBody?.destroy(reason);
+          };
+          sharedSignal.addEventListener("abort", abortStorage, { once: true });
+          if (sharedSignal.aborted) abortStorage();
+          const timeout = setTimeout(() => {
+            upstreamTimedOut = true;
+            const timeoutError = new RuntimeProfileMemberUpstreamTimeoutError();
+            controller.abort(timeoutError);
+            activeBody?.destroy(timeoutError);
+          }, PUBLIC_RUNTIME_PROFILE_UPSTREAM_TIMEOUT_MS);
+          timeout.unref();
+          try {
+            const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+            const s3 = await getRuntimeProfileS3Client(env);
+            const object = await s3.send(new GetObjectCommand({
+              Bucket: env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
+              Key: r2PublicPath(r2Key),
+            }), { abortSignal: controller.signal });
+            if (!(object.Body instanceof Readable)) {
+              const possibleBody = object.Body as { destroy?: () => void } | undefined;
+              possibleBody?.destroy?.();
+              throw new RuntimeProfileMemberIntegrityError(
+                "Runtime profile member was not a server byte stream",
+              );
+            }
+            activeBody = object.Body;
+            const bytes = await readBoundedRuntimeProfileMemberBytes(
+              object.Body,
+              sizeBytes,
+            );
+            if (bytes === null) {
+              throw new RuntimeProfileMemberIntegrityError(
+                "Runtime profile member failed its registered size check",
+              );
+            }
+            return bytes;
+          } catch (error: unknown) {
+            if (upstreamTimedOut) throw new RuntimeProfileMemberUpstreamTimeoutError();
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+            sharedSignal.removeEventListener("abort", abortStorage);
+            if (activeBody !== null && !activeBody.destroyed) activeBody.destroy();
+          }
+        });
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        error.message === "Verified runtime profile bytes did not match their immutable identity"
+      ) {
+        throw new RuntimeProfileMemberIntegrityError(
+          "Runtime profile member failed its registered SHA-256 check",
+        );
+      }
+      throw error;
+    }
+  }
+
+  async function streamRuntimeAsset(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+    const parsedParams = RuntimeAssetParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return validationError(reply, parsedParams.error.issues);
+    }
+
+    const parsedRange = parseRuntimeAssetRange(request, reply);
+    if (typeof parsedRange !== "string" && parsedRange !== undefined) return parsedRange;
     if (!r2IsConfigured(env)) {
       return reply.status(503).send({
         error: "Runtime asset storage is not configured",
@@ -1160,27 +2052,24 @@ export async function assetRoutes(
     }
 
     try {
-      const [row] = await db
-        .select({ asset: assetVersions, pkg: runtimePackages })
-        .from(assetVersions)
-        .innerJoin(runtimePackages, and(
-          eq(runtimePackages.venueSlug, assetVersions.venueSlug),
-          eq(runtimePackages.roomSlug, assetVersions.roomSlug),
-        ))
-        .where(and(
-          eq(assetVersions.id, parsedParams.data.assetVersionId),
-          inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"]),
-          eq(assetVersions.runtimeStatus, "usable"),
-        ))
-        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
-        .limit(1);
+      const asset = await findAssetVersion(db, parsedParams.data.assetVersionId);
+      const pkg = asset === null || asset.roomSlug === null
+        ? null
+        : await findLatestPublishedRuntimePackage(db, asset.venueSlug, asset.roomSlug);
+      const visualAssetVersions = pkg === null
+        ? null
+        : await findRuntimeVisualAssetComposition(db, pkg);
 
       if (
-        row === undefined ||
-        !runtimePackageCanLoad(row.pkg) ||
-        !isServablePrimaryVisualAsset(row.asset) ||
-        row.asset.r2Key === null ||
-        (parsedParams.data.fileName !== undefined && parsedParams.data.fileName !== row.asset.fileName)
+        asset === null ||
+        pkg === null ||
+        pkg.runtimeStatus !== "published" ||
+        !runtimePackageCanLoad(pkg) ||
+        visualAssetVersions === null ||
+        !visualAssetVersions.some((version) => version.id === asset.id) ||
+        !isServableRuntimeVisualAsset(asset) ||
+        asset.r2Key === null ||
+        (parsedParams.data.fileName !== undefined && parsedParams.data.fileName !== asset.fileName)
       ) {
         return reply.status(404).send({
           error: "Runtime asset is not available",
@@ -1188,31 +2077,8 @@ export async function assetRoutes(
         });
       }
 
-      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-      const s3 = await getS3Client(env);
-      const object = await s3.send(new GetObjectCommand({
-        Bucket: env.R2_BUCKET_NAME,
-        Key: r2PublicPath(row.asset.r2Key),
-        Range: range,
-      }));
-      if (object.Body === undefined) {
-        return reply.status(502).send({
-          error: "Runtime asset object was empty",
-          code: "RUNTIME_ASSET_EMPTY",
-        });
-      }
-
-      const bytes = await object.Body.transformToByteArray();
-      const responseStatus = object.ContentRange === undefined ? 200 : 206;
-      reply
-        .status(responseStatus)
-        .header("accept-ranges", object.AcceptRanges ?? "bytes")
-        .header("content-type", row.asset.mimeType ?? object.ContentType ?? "application/octet-stream")
-        .header("cache-control", "private, max-age=300")
-        .header("content-length", String(bytes.byteLength));
-      if (object.ContentRange !== undefined) reply.header("content-range", object.ContentRange);
-      if (object.ETag !== undefined) reply.header("etag", object.ETag);
-      return reply.send(Buffer.from(bytes));
+      const response = await sendRuntimeAssetBytes(asset, parsedRange, "private, max-age=300", reply);
+      return response;
     } catch (error: unknown) {
       request.log.warn({
         err: error,
@@ -1225,8 +2091,188 @@ export async function assetRoutes(
     }
   }
 
-  server.get("/runtime-assets/:assetVersionId", streamRuntimeAsset);
-  server.get("/runtime-assets/:assetVersionId/:fileName", streamRuntimeAsset);
+  async function streamRuntimeProfileMember(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<FastifyReply> {
+    reply.header("cache-control", "private, no-store");
+    const parsedParams = RuntimeProfileMemberParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return validationError(reply, parsedParams.error.issues);
+    }
+
+    const parsedRange = parseRuntimeAssetRange(request, reply);
+    if (typeof parsedRange !== "string" && parsedRange !== undefined) return parsedRange;
+
+    const controller = new AbortController();
+    let clientDisconnected = false;
+    const abortForClientDisconnect = (): void => {
+      if (reply.raw.writableFinished) return;
+      clientDisconnected = true;
+      controller.abort(new DOMException("Runtime profile client disconnected", "AbortError"));
+    };
+    reply.raw.once("close", abortForClientDisconnect);
+    const releaseTransfer = await acquirePublicRuntimeProfileTransfer(controller.signal);
+    if (releaseTransfer === null) {
+      reply.raw.off("close", abortForClientDisconnect);
+      if (clientDisconnected) return reply;
+      return reply
+        .status(429)
+        .header("retry-after", "1")
+        .send({
+          error: "Runtime profile transfer queue is temporarily full",
+          code: "RUNTIME_PROFILE_TRANSFER_LIMIT_REACHED",
+        });
+    }
+    if (clientDisconnected || reply.raw.destroyed) {
+      reply.raw.off("close", abortForClientDisconnect);
+      releaseTransfer();
+      return reply;
+    }
+    const markWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+      reply.raw,
+      releaseTransfer,
+      abortForClientDisconnect,
+      PUBLIC_RUNTIME_PROFILE_TRANSFER_DEADLINE_MS,
+    );
+    reply.raw.off("close", abortForClientDisconnect);
+
+    try {
+      const resolved = await resolvePublicReviewedProfile(
+        "trades-hall",
+        "reception-room",
+        parsedParams.data.profileId,
+      );
+      const authorization = resolved === null
+        ? null
+        : publicRuntimeProfileMemberAuthorization(
+          resolved,
+          parsedParams.data.memberIndex,
+        );
+      if (resolved === null || authorization === null) {
+        return reply.status(404).send({
+          error: "Runtime profile member is not available",
+          code: "RUNTIME_PROFILE_MEMBER_NOT_AVAILABLE",
+        });
+      }
+      if (!runtimeProfileR2IsConfigured(env)) {
+        return reply.status(503).send({
+          error: "Private runtime profile storage is not configured",
+          code: "RUNTIME_PROFILE_STORAGE_DISABLED",
+        });
+      }
+
+      const responseRange = resolveVerifiedRuntimeProfileResponseRange(
+        parsedRange,
+        authorization.sizeBytes,
+      );
+      if (responseRange === null) {
+        return reply
+          .status(416)
+          .header("content-range", `bytes */${String(authorization.sizeBytes)}`)
+          .send({
+            error: "Requested byte range is not satisfiable",
+            code: "RUNTIME_PROFILE_MEMBER_RANGE_NOT_SATISFIABLE",
+          });
+      }
+
+      const asset = resolved.visualAssets[parsedParams.data.memberIndex];
+      if (asset === undefined) {
+        return reply.status(404).send({
+          error: "Runtime profile member is not available",
+          code: "RUNTIME_PROFILE_MEMBER_NOT_AVAILABLE",
+        });
+      }
+      const verifiedBytes = await loadVerifiedRuntimeProfileMemberBytes(
+        asset,
+        controller.signal,
+      );
+
+      // Release decisions can change while a request waits or storage is
+      // fetched. Re-run every package, QA and transform gate immediately
+      // before sending bytes and require the exact same immutable member.
+      const current = await resolvePublicReviewedProfile(
+        "trades-hall",
+        "reception-room",
+        parsedParams.data.profileId,
+      );
+      const currentAuthorization = current === null
+        ? null
+        : publicRuntimeProfileMemberAuthorization(
+          current,
+          parsedParams.data.memberIndex,
+        );
+      if (!samePublicRuntimeProfileMemberAuthorization(authorization, currentAuthorization)) {
+        return reply.status(409).send({
+          error: "Runtime profile approval changed before the member could be released",
+          code: "RUNTIME_PROFILE_AUTHORIZATION_CHANGED",
+        });
+      }
+
+      const body = verifiedBytes.subarray(responseRange.start, responseRange.end + 1);
+      reply
+        .status(responseRange.partial ? 206 : 200)
+        .header("accept-ranges", "bytes")
+        .header("content-type", asset.mimeType ?? "application/octet-stream")
+        .header("content-length", String(body.byteLength))
+        .header("cache-control", "private, no-store");
+      if (responseRange.partial) {
+        reply.header(
+          "content-range",
+          `bytes ${String(responseRange.start)}-${String(responseRange.end)}/${String(authorization.sizeBytes)}`,
+        );
+      }
+      return reply.send(body);
+    } catch (error: unknown) {
+      if (clientDisconnected || controller.signal.aborted) return reply;
+      if (error instanceof RuntimeProfileMemberUpstreamTimeoutError) {
+        return reply.status(504).send({
+          error: "Runtime profile member storage timed out",
+          code: "RUNTIME_PROFILE_MEMBER_UPSTREAM_TIMEOUT",
+        });
+      }
+      if (error instanceof RuntimeProfileMemberIntegrityError) {
+        return reply.status(409).send({
+          error: "Runtime profile member failed byte verification",
+          code: "RUNTIME_PROFILE_MEMBER_INTEGRITY_FAILED",
+        });
+      }
+      request.log.warn({
+        err: error,
+        profileId: parsedParams.data.profileId,
+        memberIndex: parsedParams.data.memberIndex,
+      }, "runtime profile member stream failed");
+      return reply.status(502).send({
+        error: "Runtime profile member could not be streamed",
+        code: "RUNTIME_PROFILE_MEMBER_STREAM_FAILED",
+      });
+    } finally {
+      markWorkSettled();
+    }
+  }
+
+  server.get(
+    "/runtime-assets/:assetVersionId",
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    streamRuntimeAsset,
+  );
+  server.get(
+    "/runtime-assets/:assetVersionId/:fileName",
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    streamRuntimeAsset,
+  );
+  server.get(
+    "/runtime-profiles/:profileId/members/:memberIndex/:memberFileName",
+    {
+      config: {
+        rateLimit: {
+          max: PUBLIC_RUNTIME_PROFILE_ROUTE_RATE_LIMIT_PER_MINUTE,
+          timeWindow: "1 minute",
+        },
+      },
+    },
+    streamRuntimeProfileMember,
+  );
 }
 
 export async function adminAssetRoutes(
@@ -1234,6 +2280,7 @@ export async function adminAssetRoutes(
   opts: { db: Database; env: Env },
 ): Promise<void> {
   const { db } = opts;
+  const runtimePackageRevisionStore = createDatabaseRuntimePackageRevisionStore(db);
 
   server.post(
     "/capture-session",
@@ -1306,7 +2353,7 @@ export async function adminAssetRoutes(
           .select()
           .from(runtimePackages)
           .where(eq(runtimePackages.venueSlug, venueSlug))
-          .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt)),
+          .orderBy(desc(runtimePackages.revision)),
         db
           .select()
           .from(runtimeTransformArtifacts)
@@ -1385,70 +2432,150 @@ export async function adminAssetRoutes(
   server.post(
     "/register-runtime-package",
     { preHandler: [authenticate, authorizePlatformAdmin()] },
+    async (_request, reply) => reply.status(410).send({
+      error: "This mutable runtime-package endpoint has been retired. Create an immutable revision instead.",
+      code: "RUNTIME_PACKAGE_MUTABLE_REGISTRATION_RETIRED",
+      replacement: "/admin/assets/runtime-package-revisions",
+    }),
+  );
+
+  server.post(
+    "/runtime-package-revisions",
+    { preHandler: [authenticate, authorizePlatformAdmin()] },
     async (request, reply) => {
-      const parsed = RegisterRuntimePackageInputSchema.safeParse(request.body);
+      const parsed = CreateRuntimePackageRevisionInputSchema.safeParse(request.body);
       if (!parsed.success) {
         return validationError(reply, parsed.error.issues);
       }
 
-      const input = parsed.data;
-      const primaryVisualAsset = await findAssetVersion(db, input.primaryVisualAssetVersionId);
-      const semanticMeshAsset = await findAssetVersion(db, input.semanticMeshAssetVersionId);
-      const collisionAsset = await findAssetVersion(db, input.collisionAssetVersionId);
-      const pointCloudAsset = await findAssetVersion(db, input.pointCloudAssetVersionId);
-      const assetError = firstValidationMessage([
-        validatePrimaryVisualAsset(input, primaryVisualAsset),
-        validateAssetReference(input, semanticMeshAsset, "semanticMeshAssetVersionId"),
-        validateAssetReference(input, collisionAsset, "collisionAssetVersionId"),
-        validateAssetReference(input, pointCloudAsset, "pointCloudAssetVersionId"),
-      ]);
-      if (assetError !== null) {
-        return validationError(reply, assetError);
-      }
+      const input = parsed.data.package;
+      const requestOrigin = trustedRuntimeAssetOrigin(opts.env, request);
+      let admittedAssets: {
+        readonly primaryVisualAsset: AssetVersionRow | null;
+        readonly runtimeVisualAssetComposition: readonly AssetVersionRow[];
+      } | undefined;
 
-      const values = {
-        venueSlug: input.venueSlug,
-        roomSlug: input.roomSlug,
-        primaryVisualAssetVersionId: input.primaryVisualAssetVersionId ?? null,
-        semanticMeshAssetVersionId: input.semanticMeshAssetVersionId ?? null,
-        collisionAssetVersionId: input.collisionAssetVersionId ?? null,
-        pointCloudAssetVersionId: input.pointCloudAssetVersionId ?? null,
-        manifestJson: input.manifestJson,
-        evidenceStatus: input.evidenceStatus,
-        runtimeStatus: input.runtimeStatus,
-        updatedAt: new Date(),
-      };
-      const [existingPackage] = await db
-        .select()
-        .from(runtimePackages)
-        .where(and(
-          eq(runtimePackages.venueSlug, input.venueSlug),
-          eq(runtimePackages.roomSlug, input.roomSlug),
-        ))
-        .orderBy(desc(runtimePackages.updatedAt), desc(runtimePackages.createdAt))
-        .limit(1);
-
-      const [pkg] = existingPackage === undefined
-        ? await db.insert(runtimePackages).values(values).returning()
-        : await db
-          .update(runtimePackages)
-          .set(values)
-          .where(eq(runtimePackages.id, existingPackage.id))
-          .returning();
-
-      if (pkg === undefined) {
-        return reply.status(500).send({ error: "Failed to register runtime package", code: "RUNTIME_PACKAGE_REGISTER_FAILED" });
+      let creation;
+      try {
+        creation = await createRuntimePackageRevision(runtimePackageRevisionStore, parsed.data, {
+          beforeInsert: async () => {
+            const [
+              primaryVisualAsset,
+              semanticMeshAsset,
+              collisionAsset,
+              pointCloudAsset,
+              runtimeVisualAssetComposition,
+            ] = await Promise.all([
+              findAssetVersion(db, input.primaryVisualAssetVersionId),
+              findAssetVersion(db, input.semanticMeshAssetVersionId),
+              findAssetVersion(db, input.collisionAssetVersionId),
+              findAssetVersion(db, input.pointCloudAssetVersionId),
+              findRuntimeVisualAssetComposition(db, {
+                venueSlug: input.venueSlug,
+                roomSlug: input.roomSlug,
+                primaryVisualAssetVersionId: input.primaryVisualAssetVersionId ?? null,
+                manifestJson: input.manifestJson,
+              }),
+            ]);
+            if (runtimeVisualAssetComposition === null) {
+              throw new RuntimePackageRevisionAdmissionError(
+                400,
+                "VALIDATION_ERROR",
+                "Visual asset composition must reference exactly the registered, usable, non-fixture splat assets declared for the same venue and room.",
+              );
+            }
+            const assetError = firstValidationMessage([
+              validatePrimaryVisualAsset(input, primaryVisualAsset),
+              validateRuntimeVisualAssetReceipts(input, runtimeVisualAssetComposition),
+              validateAssetReference(input, semanticMeshAsset, "semanticMeshAssetVersionId"),
+              validateAssetReference(input, collisionAsset, "collisionAssetVersionId"),
+              validateAssetReference(input, pointCloudAsset, "pointCloudAssetVersionId"),
+            ]);
+            if (assetError !== null) {
+              throw new RuntimePackageRevisionAdmissionError(400, "VALIDATION_ERROR", assetError);
+            }
+            if (
+              input.runtimeStatus === "published" &&
+              resolveRuntimeVisualAssetUrls(runtimeVisualAssetComposition, requestOrigin) === null
+            ) {
+              throw new RuntimePackageRevisionAdmissionError(
+                503,
+                "RUNTIME_VISUAL_URLS_UNAVAILABLE",
+                "Runtime visual URLs could not be resolved as a complete set",
+              );
+            }
+            admittedAssets = { primaryVisualAsset, runtimeVisualAssetComposition };
+          },
+        });
+      } catch (error) {
+        if (error instanceof RuntimePackageRevisionAdmissionError) {
+          if (error.statusCode === 400) return validationError(reply, error.details);
+          return reply.status(503).send({
+            error: error.details,
+            code: error.code,
+          });
+        }
+        if (error instanceof RuntimePackageRevisionConflictError) {
+          return reply.status(409).send({
+            error: error.message,
+            code: error.code,
+            requestedRevision: error.requestedRevision,
+            expectedRevision: error.expectedRevision,
+          });
+        }
+        if (error instanceof RuntimePackageRevisionIntegrityError) {
+          request.log.error({ error }, "runtime package revision integrity check failed");
+          return reply.status(500).send({
+            error: "Runtime package revision integrity check failed",
+            code: error.code,
+          });
+        }
+        throw error;
       }
 
       request.log.info({
         userId: request.user.id,
-        runtimePackageId: pkg.id,
-        venueSlug: pkg.venueSlug,
-        roomSlug: pkg.roomSlug,
-        runtimeStatus: pkg.runtimeStatus,
-      }, "runtime package registered");
+        runtimePackageId: creation.row.id,
+        revision: creation.row.revision,
+        contentDigest: creation.contentDigest,
+        created: creation.created,
+        venueSlug: creation.row.venueSlug,
+        roomSlug: creation.row.roomSlug,
+        runtimeStatus: creation.row.runtimeStatus,
+      }, "immutable runtime package revision resolved");
 
-      return reply.status(201).send({ data: serializeRuntimePackage(pkg, primaryVisualAsset, runtimeAssetOrigin(request)) });
+      const serializationAssets = creation.created
+        ? admittedAssets
+        : { primaryVisualAsset: null, runtimeVisualAssetComposition: [] };
+      if (serializationAssets === undefined) {
+        request.log.error({ runtimePackageId: creation.row.id }, "runtime package admission result was lost");
+        return reply.status(500).send({
+          error: "Runtime package admission result was not available",
+          code: "RUNTIME_PACKAGE_ADMISSION_RESULT_MISSING",
+        });
+      }
+      const serializedPackage = serializeRuntimePackage(
+        creation.row,
+        serializationAssets.primaryVisualAsset,
+        requestOrigin,
+        serializationAssets.runtimeVisualAssetComposition,
+      );
+      if (serializedPackage === null) {
+        return reply.status(500).send({
+          error: "Registered runtime package could not be serialized as a complete visual set",
+          code: "RUNTIME_PACKAGE_SERIALIZATION_FAILED",
+        });
+      }
+      const response = RuntimePackageRevisionCreateResponseSchema.parse({
+        data: serializedPackage,
+        receipt: {
+          packageId: creation.row.id,
+          revision: creation.row.revision,
+          contentDigest: creation.contentDigest,
+          created: creation.created,
+        },
+      });
+      return reply.status(creation.created ? 201 : 200).send(response);
     },
   );
 
@@ -1483,22 +2610,41 @@ export async function adminAssetRoutes(
         updatedAt: new Date(),
       };
 
-      const [existingArtifact] = await db
-        .select()
-        .from(runtimeTransformArtifacts)
-        .where(and(
-          eq(runtimeTransformArtifacts.runtimePackageId, input.runtimePackageId),
-          eq(runtimeTransformArtifacts.transformArtifactId, input.transformArtifact.id),
-        ))
-        .limit(1);
+      const existingArtifact = await findRuntimeTransformArtifact(
+        db,
+        input.runtimePackageId,
+        input.transformArtifact.id,
+      );
 
-      const [artifact] = existingArtifact === undefined
-        ? await db.insert(runtimeTransformArtifacts).values(values).returning()
-        : await db
-          .update(runtimeTransformArtifacts)
-          .set(values)
-          .where(eq(runtimeTransformArtifacts.id, existingArtifact.id))
-          .returning();
+      if (existingArtifact !== null) {
+        if (!runtimeTransformArtifactRegistrationIsExactRetry(existingArtifact, input)) {
+          return reply.status(409).send({
+            error: "A transform artifact id is immutable; register changed content under a new id",
+            code: "RUNTIME_TRANSFORM_ARTIFACT_IMMUTABLE",
+          });
+        }
+        return reply.status(200).send({ data: serializeRuntimeTransformArtifact(existingArtifact) });
+      }
+
+      let artifact: RuntimeTransformArtifactRow | undefined;
+      try {
+        [artifact] = await db.insert(runtimeTransformArtifacts).values(values).returning();
+      } catch (error) {
+        if (!isPostgresUniqueViolation(error)) throw error;
+        const racedArtifact = await findRuntimeTransformArtifact(
+          db,
+          input.runtimePackageId,
+          input.transformArtifact.id,
+        );
+        if (racedArtifact === null) throw error;
+        if (!runtimeTransformArtifactRegistrationIsExactRetry(racedArtifact, input)) {
+          return reply.status(409).send({
+            error: "A transform artifact id is immutable; register changed content under a new id",
+            code: "RUNTIME_TRANSFORM_ARTIFACT_IMMUTABLE",
+          });
+        }
+        return reply.status(200).send({ data: serializeRuntimeTransformArtifact(racedArtifact) });
+      }
 
       if (artifact === undefined) {
         return reply.status(500).send({
@@ -1688,36 +2834,94 @@ export async function adminAssetRoutes(
         return validationError(reply, transformLinkError);
       }
 
+      const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(input.record);
+      let boundRecord = input.record;
+      if (signedTransformArtifactId !== null) {
+        const parsedArtifact = TransformArtifactV0Schema.safeParse(
+          signedTransformArtifact?.transformArtifact,
+        );
+        if (!parsedArtifact.success) {
+          return validationError(reply, "Registered signed transform content is invalid.");
+        }
+        const exactTransformSha256 = runtimeTransformArtifactSha256(parsedArtifact.data);
+        const requestedTransformSha256 = runtimeQaRecordSignedTransformArtifactSha256(input.record);
+        if (
+          requestedTransformSha256 !== null &&
+          requestedTransformSha256 !== exactTransformSha256
+        ) {
+          return validationError(
+            reply,
+            "Runtime QA signed transform SHA-256 does not match the registered transform content.",
+          );
+        }
+        boundRecord = RuntimeQaRecordV0Schema.parse({
+          ...input.record,
+          viewTransform: {
+            ...input.record.viewTransform,
+            signedTransformArtifactSha256: exactTransformSha256,
+          },
+        });
+      }
+
       const values = {
         runtimePackageId: input.runtimePackageId,
         venueSlug: input.venueSlug,
         roomSlug: input.roomSlug,
-        recordId: input.record.recordId,
-        recordJson: input.record,
-        signedTransformArtifactId: runtimeQaRecordSignedTransformArtifactId(input.record),
-        publicExposureDecision: input.record.publicExposure.decision,
-        assetEvidenceStatus: input.record.assetEvidenceStatus,
-        runtimeStatus: input.record.runtimeStatus,
+        recordId: boundRecord.recordId,
+        recordJson: boundRecord,
+        signedTransformArtifactId: runtimeQaRecordSignedTransformArtifactId(boundRecord),
+        publicExposureDecision: boundRecord.publicExposure.decision,
+        assetEvidenceStatus: boundRecord.assetEvidenceStatus,
+        runtimeStatus: boundRecord.runtimeStatus,
         reviewedBy: request.user.id,
         updatedAt: new Date(),
       };
 
-      const [existingRecord] = await db
-        .select()
-        .from(runtimeQaRecords)
-        .where(and(
-          eq(runtimeQaRecords.runtimePackageId, input.runtimePackageId),
-          eq(runtimeQaRecords.recordId, input.record.recordId),
-        ))
-        .limit(1);
+      const existingRecord = await findRuntimeQaRecordByImmutableKey(
+        db,
+        input.runtimePackageId,
+        input.record.recordId,
+      );
 
-      const [record] = existingRecord === undefined
-        ? await db.insert(runtimeQaRecords).values(values).returning()
-        : await db
-          .update(runtimeQaRecords)
-          .set(values)
-          .where(eq(runtimeQaRecords.id, existingRecord.id))
-          .returning();
+      if (existingRecord !== null) {
+        if (!runtimeQaRecordRegistrationIsExactRetry(existingRecord, {
+          runtimePackageId: input.runtimePackageId,
+          venueSlug: input.venueSlug,
+          roomSlug: input.roomSlug,
+          record: boundRecord,
+        })) {
+          return reply.status(409).send({
+            error: "A runtime QA record id is immutable; register a changed review under a new id",
+            code: "RUNTIME_QA_RECORD_IMMUTABLE",
+          });
+        }
+        return reply.status(200).send({ data: serializeRuntimeQaRecord(existingRecord) });
+      }
+
+      let record: RuntimeQaRecordRow | undefined;
+      try {
+        [record] = await db.insert(runtimeQaRecords).values(values).returning();
+      } catch (error) {
+        if (!isPostgresUniqueViolation(error)) throw error;
+        const racedRecord = await findRuntimeQaRecordByImmutableKey(
+          db,
+          input.runtimePackageId,
+          input.record.recordId,
+        );
+        if (racedRecord === null) throw error;
+        if (!runtimeQaRecordRegistrationIsExactRetry(racedRecord, {
+          runtimePackageId: input.runtimePackageId,
+          venueSlug: input.venueSlug,
+          roomSlug: input.roomSlug,
+          record: boundRecord,
+        })) {
+          return reply.status(409).send({
+            error: "A runtime QA record id is immutable; register a changed review under a new id",
+            code: "RUNTIME_QA_RECORD_IMMUTABLE",
+          });
+        }
+        return reply.status(200).send({ data: serializeRuntimeQaRecord(racedRecord) });
+      }
 
       if (record === undefined) {
         return reply.status(500).send({

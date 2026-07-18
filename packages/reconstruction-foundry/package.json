@@ -1,0 +1,38 @@
+{
+  "name": "@omnitwin/reconstruction-foundry",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Private, evidence-first reconstruction release preparation and candidate verification",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "typecheck": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1038.0",
+    "@gltf-transform/core": "4.3.0",
+    "@gltf-transform/extensions": "4.3.0",
+    "@omnitwin/types": "workspace:*",
+    "gltf-validator": "2.0.0-dev.3.10",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.34.5",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "typescript": "5.7.3",
+    "vitest": "4.1.8"
+  }
+}

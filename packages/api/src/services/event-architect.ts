@@ -164,7 +164,7 @@ async function buildFrozenRequest(
       eq(runtimePackages.runtimeStatus, "internal_ready"),
       eq(runtimePackages.runtimeStatus, "published"),
     ),
-  )).orderBy(desc(runtimePackages.createdAt)).limit(1);
+  )).orderBy(desc(runtimePackages.revision)).limit(1);
 
   const outline = FloorPlanOutlineSchema.parse(source.space.floorPlanOutline);
   const now = new Date().toISOString();

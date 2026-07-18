@@ -590,12 +590,30 @@ export {
   RuntimeCompositionEvidenceRefSchema,
   RuntimeSogChunkDecisionSchema,
   RuntimeCompositionDecisionV0Schema,
+  RUNTIME_COMPOSITION_DECISION_V1_SCHEMA_VERSION,
+  RUNTIME_FRONTIER_SPLAT_FORMATS,
+  RuntimeFrontierSplatFormatSchema,
+  RuntimeHierarchyNodeRangeV1Schema,
+  RuntimeFrontierMemberV1Schema,
+  RuntimeExcludedAncestorV1Schema,
+  RuntimeFrontierEnvironmentAssetV1Schema,
+  RuntimeFrontierEnvironmentDispositionV1Schema,
+  RuntimeHierarchyLevelTotalV1Schema,
+  RuntimeCompositionDecisionV1Schema,
   type RuntimeCompositionDecision,
   type RuntimeLodGraphAuthority,
   type RuntimeCompositionReviewTrigger,
   type RuntimeCompositionEvidenceRef,
   type RuntimeSogChunkDecision,
   type RuntimeCompositionDecisionV0,
+  type RuntimeFrontierSplatFormat,
+  type RuntimeHierarchyNodeRangeV1,
+  type RuntimeFrontierMemberV1,
+  type RuntimeExcludedAncestorV1,
+  type RuntimeFrontierEnvironmentAssetV1,
+  type RuntimeFrontierEnvironmentDispositionV1,
+  type RuntimeHierarchyLevelTotalV1,
+  type RuntimeCompositionDecisionV1,
 } from "./runtime-composition-decision.js";
 
 // --- ASPIRATIONAL: runtime QA evidence record for T-091/T-453 review gates ---
@@ -627,6 +645,7 @@ export {
   RuntimeQaRecordRegistrationReportInspectionSchema,
   runtimeQaRecordHasSignedRoomTransform,
   runtimeQaRecordSignedTransformArtifactId,
+  runtimeQaRecordSignedTransformArtifactSha256,
   runtimeQaRecordAllowsPublicExposure,
   type RuntimeQaCheckKey,
   type RuntimeQaCheckStatus,
@@ -2300,6 +2319,15 @@ export {
   isTradesHallRuntimeRoomSlug,
   tradesHallRuntimeRoomForSlug,
   RuntimePackageManifestJsonSchema,
+  ReviewedRuntimeProfileIdSchema,
+  ApprovedRoomRuntimeProfileSchema,
+  RuntimePackagePreviewSchema,
+  RuntimePackagePreviewVisualAssetSchema,
+  RuntimePackageCompositionBasisSchema,
+  RuntimePackageVisualAssetReceiptSchema,
+  RuntimePackageRevisionIdentityKindSchema,
+  RuntimePackageContentDigestSchema,
+  RUNTIME_PACKAGE_REVISION_IDENTITY_KINDS,
   CaptureSessionSchema,
   RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
@@ -2313,6 +2341,9 @@ export {
   RuntimeTransformArtifactRegistrationReportInspectionSchema,
   PublicRoomRuntimeVisualSchema,
   RegisterRuntimePackageInputSchema,
+  CreateRuntimePackageRevisionInputSchema,
+  RuntimePackageRevisionReceiptSchema,
+  RuntimePackageRevisionCreateResponseSchema,
   RegisterRuntimeTransformArtifactInputSchema,
   RuntimeTransformArtifactQuerySchema,
   LatestRuntimePackageQuerySchema,
@@ -2350,6 +2381,14 @@ export {
   type R2TrainingInputLane,
   type R2TrainingOutputLane,
   type RuntimePackageManifestJson,
+  type ReviewedRuntimeProfileId,
+  type ApprovedRoomRuntimeProfile,
+  type RuntimePackagePreview,
+  type RuntimePackagePreviewVisualAsset,
+  type RuntimePackageCompositionBasis,
+  type RuntimePackageVisualAssetReceipt,
+  type RuntimePackageRevisionIdentityKind,
+  type RuntimePackageContentDigest,
   type CaptureSession,
   type RegisterCaptureSessionInput,
   type RegisterAssetVersionInput,
@@ -2362,6 +2401,9 @@ export {
   type RuntimeTransformArtifactRegistrationReportInspection,
   type PublicRoomRuntimeVisual,
   type RegisterRuntimePackageInput,
+  type CreateRuntimePackageRevisionInput,
+  type RuntimePackageRevisionReceipt,
+  type RuntimePackageRevisionCreateResponse,
   type RegisterRuntimeTransformArtifactInput,
   type RuntimeTransformArtifactQuery,
   type LatestRuntimePackageQuery,
@@ -2380,6 +2422,15 @@ export * from "./event-architect.js";
 export * from "./event-architect-engine.js";
 export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
+export * from "./omnitwin-foundry.js";
+export * from "./omnitwin-foundry-derivative-rights.js";
+export * from "./omnitwin-foundry-derivative-rights-custody.js";
+export * from "./omnitwin-foundry-derivative-execution-v1.js";
+export * from "./omnitwin-foundry-execution.js";
+export * from "./omnitwin-foundry-stop-intent.js";
+export * from "./omnitwin-foundry-intake-admission.js";
+export * from "./omnitwin-foundry-phase1.js";
+export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
 
 // G4 (03 §1): the one Action envelope — LIVE from Slice 1 (web action log).

@@ -26,6 +26,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
+import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -50,6 +51,9 @@ import {
   adminReconstructionFoundryRoutes,
   publicReconstructionReleaseRoutes,
 } from "./routes/reconstruction-foundry.js";
+import { adminFoundryDerivativeRightsRoutes } from "./routes/foundry-derivative-rights.js";
+import { FoundryDerivativeExecutionCandidatesService } from "./services/foundry-derivative-execution-candidates.js";
+import { FoundryDerivativeRightsCustodyService } from "./services/foundry-derivative-rights-custody.js";
 import { createReconstructionFoundryService } from "./services/reconstruction-foundry-integrations.js";
 import { registerAutoSave } from "./ws/auto-save.js";
 import { registerDiaryLive } from "./ws/diary-live.js";
@@ -143,6 +147,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(cors, {
     origin: allowedOrigins,
     credentials: true,
+    exposedHeaders: ["x-content-sha256"],
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
@@ -267,6 +272,10 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // --- Database ---
   const db = createDb(env.DATABASE_URL);
   const reconstructionFoundryService = createReconstructionFoundryService(db, env);
+  const foundryDerivativeRightsCustodyService =
+    new FoundryDerivativeRightsCustodyService(db);
+  const foundryDerivativeExecutionCandidatesService =
+    new FoundryDerivativeExecutionCandidatesService(db);
 
   // --- DB-probe health check ---
   // Separate from /health so process liveness stays DB-independent.
@@ -322,9 +331,15 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(clientRoutes, { db, prefix: "/clients" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
+  await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {
     service: reconstructionFoundryService,
     prefix: "/admin/reconstruction-foundry",
+  });
+  await server.register(adminFoundryDerivativeRightsRoutes, {
+    service: foundryDerivativeRightsCustodyService,
+    executionCandidatesService: foundryDerivativeExecutionCandidatesService,
+    prefix: "/admin/reconstruction-foundry/derivative-rights",
   });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });

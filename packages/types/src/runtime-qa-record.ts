@@ -49,6 +49,8 @@ export const RuntimeQaCheckStatusSchema = z.enum(RUNTIME_QA_CHECK_STATUSES);
 export const RuntimeQaTransformPostureSchema = z.enum(RUNTIME_QA_TRANSFORM_POSTURES);
 export const RuntimeQaPublicExposureDecisionSchema = z.enum(RUNTIME_QA_PUBLIC_EXPOSURE_DECISIONS);
 
+const RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+
 const RuntimeQaRecordIdSchema = z.string().trim().min(1).max(120).regex(
   /^[a-z0-9]+(?:-[a-z0-9]+)*$/u,
   "Runtime QA record id must be lowercase kebab-case.",
@@ -86,6 +88,11 @@ export const RuntimeQaViewTransformSchema = z
     rotation: RuntimeVec3Schema,
     scale: z.number().finite().positive(),
     signedTransformArtifactId: RuntimeManifestKeySchema.nullable(),
+    signedTransformArtifactSha256: z
+      .string()
+      .regex(RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN)
+      .nullable()
+      .optional(),
     note: SafePlanningWordingSchema,
   })
   .strict()
@@ -109,6 +116,18 @@ export const RuntimeQaViewTransformSchema = z
         code: z.ZodIssueCode.custom,
         path: ["signedTransformArtifactId"],
         message: "Unsigned runtime QA transforms must not reference a signed transform artifact.",
+      });
+    }
+
+    if (
+      transform.posture !== "signed_room_local_transform" &&
+      transform.signedTransformArtifactSha256 !== null &&
+      transform.signedTransformArtifactSha256 !== undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["signedTransformArtifactSha256"],
+        message: "Unsigned runtime QA transforms must not bind signed transform artifact content.",
       });
     }
   });
@@ -237,16 +256,33 @@ export const RuntimeQaRecordV0Schema = z
       });
     }
 
-    const signedTransformCheck = record.checks.find((check) =>
-      check.checkKey === "signed_transform_artifact",
+    const sparkPayloadLoadCheckIndex = record.checks.findIndex((check) =>
+      check.checkKey === "spark_payload_loads"
     );
+    const sparkPayloadLoadCheck = record.checks[sparkPayloadLoadCheckIndex];
+    if (
+      sparkPayloadLoadCheck?.status === "passed" &&
+      record.sparkLoad.loadStatus !== "loaded"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["checks", sparkPayloadLoadCheckIndex, "status"],
+        message:
+          `The spark_payload_loads check cannot pass when sparkLoad.loadStatus is ${record.sparkLoad.loadStatus}.`,
+      });
+    }
+
+    const signedTransformCheckIndex = record.checks.findIndex((check) =>
+      check.checkKey === "signed_transform_artifact"
+    );
+    const signedTransformCheck = record.checks[signedTransformCheckIndex];
     if (
       record.viewTransform.posture !== "signed_room_local_transform" &&
       signedTransformCheck?.status === "passed"
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["checks"],
+        path: ["checks", signedTransformCheckIndex, "status"],
         message: "Unsigned runtime QA records cannot pass the signed transform artifact check.",
       });
     }
@@ -273,17 +309,27 @@ export const RuntimeQaRecordV0Schema = z
       });
     }
 
-    const publicExposureCheck = record.checks.find((check) =>
-      check.checkKey === "public_exposure_review",
-    );
     if (
       record.publicExposure.decision === "approved_public" &&
-      publicExposureCheck?.status !== "passed"
+      (record.viewTransform.signedTransformArtifactSha256 === null ||
+        record.viewTransform.signedTransformArtifactSha256 === undefined)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["checks"],
-        message: "Public runtime exposure requires a passed public exposure review check.",
+        path: ["viewTransform", "signedTransformArtifactSha256"],
+        message: "Public runtime exposure requires an exact signed transform artifact SHA-256.",
+      });
+    }
+
+    if (record.publicExposure.decision === "approved_public") {
+      record.checks.forEach((check, index) => {
+        if (check.status === "passed") return;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["checks", index, "status"],
+          message:
+            `Public runtime exposure requires every required QA check to pass; ${check.checkKey} is ${check.status}.`,
+        });
       });
     }
   });
@@ -299,10 +345,30 @@ export function runtimeQaRecordSignedTransformArtifactId(record: RuntimeQaRecord
     : null;
 }
 
+export function runtimeQaRecordSignedTransformArtifactSha256(
+  record: RuntimeQaRecordV0,
+): string | null {
+  if (!runtimeQaRecordHasSignedRoomTransform(record)) return null;
+  const digest = record.viewTransform.signedTransformArtifactSha256;
+  return typeof digest === "string" && RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN.test(digest)
+    ? digest
+    : null;
+}
+
 export function runtimeQaRecordAllowsPublicExposure(record: RuntimeQaRecordV0): boolean {
+  const everyRequiredCheckPassed =
+    record.checks.length === RUNTIME_QA_CHECK_KEYS.length &&
+    record.checks.every((check) => check.status === "passed") &&
+    RUNTIME_QA_CHECK_KEYS.every((requiredCheck) =>
+      record.checks.some((check) => check.checkKey === requiredCheck)
+    );
+
   return record.publicExposure.decision === "approved_public" &&
     record.assetEvidenceStatus === "human_reviewed" &&
-    runtimeQaRecordHasSignedRoomTransform(record);
+    record.sparkLoad.loadStatus === "loaded" &&
+    runtimeQaRecordHasSignedRoomTransform(record) &&
+    runtimeQaRecordSignedTransformArtifactSha256(record) !== null &&
+    everyRequiredCheckPassed;
 }
 
 export const RuntimeQaRecordRegistrationSchema = z

@@ -2,13 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
   CAPTURE_INTAKE_SCHEMA_VERSION,
   CAPTURE_STAGE_SCHEMA_VERSION,
+  E57_PHYSICAL_HEADER_BYTES,
   CaptureIntakeInspectionSchema,
   CaptureIntakeOperatorStatusSchema,
   CaptureRelativePathSchema,
   CaptureStageManifestSchema,
+  parseE57PhysicalHeader,
 } from "../capture-intake.js";
 
 const SHA = "a".repeat(64);
+
+function e57HeaderBytes(): Uint8Array {
+  const backing = new Uint8Array(E57_PHYSICAL_HEADER_BYTES + 7);
+  const bytes = backing.subarray(7);
+  bytes.set([0x41, 0x53, 0x54, 0x4d, 0x2d, 0x45, 0x35, 0x37]);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, 2, true);
+  view.setBigUint64(16, 48n, true);
+  view.setBigUint64(24, 32n, true);
+  view.setBigUint64(32, 128n, true);
+  view.setBigUint64(40, 1024n, true);
+  return bytes;
+}
 
 function validInspection(): unknown {
   return {
@@ -73,6 +89,63 @@ describe("CaptureRelativePathSchema", () => {
       expect(CaptureRelativePathSchema.safeParse(path).success).toBe(false);
     },
   );
+});
+
+describe("parseE57PhysicalHeader", () => {
+  it("parses a valid offset Uint8Array view and binds the declared file length", () => {
+    expect(E57_PHYSICAL_HEADER_BYTES).toBe(48);
+    expect(parseE57PhysicalHeader(e57HeaderBytes(), 48)).toEqual({
+      versionMajor: 1,
+      versionMinor: 2,
+      physicalLengthBytes: 48,
+      xmlPhysicalOffsetBytes: 32,
+      xmlLogicalLengthBytes: 128,
+      pageSizeBytes: 1024,
+      fileLengthMatchesHeader: true,
+    });
+    expect(parseE57PhysicalHeader(e57HeaderBytes(), 49).fileLengthMatchesHeader).toBe(false);
+  });
+
+  it("rejects truncated or incorrectly signed headers", () => {
+    expect(() => parseE57PhysicalHeader(e57HeaderBytes().subarray(0, 47), 47)).toThrow(
+      "shorter than its 48-byte physical header",
+    );
+    const bytes = e57HeaderBytes();
+    bytes[0] = 0;
+    expect(() => parseE57PhysicalHeader(bytes, 48)).toThrow("invalid signature");
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects unsafe actual byte length %s",
+    (actualBytes) => {
+      expect(() => parseE57PhysicalHeader(e57HeaderBytes(), actualBytes)).toThrow(
+        "nonnegative safe integer",
+      );
+    },
+  );
+
+  it.each([
+    [16, "physical length"],
+    [24, "XML offset"],
+    [32, "XML length"],
+    [40, "page size"],
+  ] as const)("rejects an unsafe uint64 at byte %i", (offset, label) => {
+    const bytes = e57HeaderBytes();
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setBigUint64(
+      offset,
+      BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+      true,
+    );
+    expect(() => parseE57PhysicalHeader(bytes, 48)).toThrow(
+      `E57 ${label} exceeds JavaScript's safe integer range`,
+    );
+  });
+
+  it("rejects a zero page size", () => {
+    const bytes = e57HeaderBytes();
+    new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setBigUint64(40, 0n, true);
+    expect(() => parseE57PhysicalHeader(bytes, 48)).toThrow("page size must be positive");
+  });
 });
 
 describe("CaptureIntakeInspectionSchema", () => {

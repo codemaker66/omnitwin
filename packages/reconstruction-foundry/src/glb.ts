@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference -- upstream ships no declarations.
 /// <reference path="./gltf-validator.d.ts" />
 import { readFile } from "node:fs/promises";
 import { validateBytes } from "gltf-validator";
@@ -103,9 +104,10 @@ function assertNoExternalUris(value: unknown, path = "GLB"): void {
 function parseJsonChunk(bytes: Buffer): JsonRecord {
   let raw: unknown;
   try {
-    const jsonText = new TextDecoder("utf-8", { fatal: true })
-      .decode(bytes)
-      .replace(/[\u0000\u0020]+$/u, "");
+    let jsonText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    while (jsonText.endsWith("\u0000") || jsonText.endsWith(" ")) {
+      jsonText = jsonText.slice(0, -1);
+    }
     raw = JSON.parse(jsonText);
   } catch (error: unknown) {
     throw new FoundryIntegrityError("INVALID_GLB_JSON_CHUNK", "GLB first chunk must contain valid UTF-8 JSON.", { cause: error });

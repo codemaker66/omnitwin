@@ -17,6 +17,9 @@ import {
   eventMissionSessions,
   eventMissionTasks,
   eventMissions,
+  foundryDerivativeExecutionAuthorizationCandidatesV1,
+  foundryDerivativeRightsRegistryAttestationRevocationsV1,
+  foundryDerivativeRightsRegistryAttestationsV1,
   layoutValidationRuns,
   opsTasks,
   reconstructionReleaseAttestations,
@@ -75,6 +78,12 @@ const RECONSTRUCTION_FOUNDRY_TABLES = [
   reconstructionReleaseChannelEvents,
 ] as const;
 
+const DERIVATIVE_EXECUTION_CANDIDATE_TABLES = [
+  foundryDerivativeRightsRegistryAttestationsV1,
+  foundryDerivativeRightsRegistryAttestationRevocationsV1,
+  foundryDerivativeExecutionAuthorizationCandidatesV1,
+] as const;
+
 const EXPECTED_TAIL = [
   "0044_placed_objects_render_to_real",
   "0045_event_scenario_phase_scope",
@@ -84,6 +93,13 @@ const EXPECTED_TAIL = [
   "0049_reconstruction_foundry",
   "0050_diary_bookings",
   "0051_diary_enquiry_link",
+  "0052_runtime_package_revisions",
+  "0053_foundry_execution_control",
+  "0054_foundry_derivative_rights",
+  "0055_foundry_derivative_rights_custody",
+  "0056_foundry_derivative_execution_barrier",
+  "0057_foundry_derivative_execution_candidates",
+  "0058_foundry_derivative_activation_disabled",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -329,6 +345,16 @@ describe("migration tail rollout readiness", () => {
       foreignColumns: ["id", "release_id", "venue_slug", "release_kind", "release_digest"],
     });
     expect(sql).not.toContain('BEFORE UPDATE ON "reconstruction_release_channels"');
+  });
+
+  it("keeps migration 0057 evidence columns identical to the inert Drizzle schema", async () => {
+    const sql = await readMigration("0057_foundry_derivative_execution_candidates");
+    for (const table of DERIVATIVE_EXECUTION_CANDIDATE_TABLES) {
+      const tableName = getTableName(table);
+      expect(extractCreatedTableColumns(sql, tableName), tableName).toEqual(
+        drizzleColumnNames(table),
+      );
+    }
   });
 
   it("keeps both feature migrations additive and pins their cross-table integrity boundaries", async () => {
