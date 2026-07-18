@@ -535,10 +535,18 @@ def synthesize_pattern_core(
     of THIS floor's visible texture — nothing invented — and a fixed seed
     makes the result reproducible. Pixels outside `core` are never touched."""
     rng = np.random.default_rng(seed)
-    v = np.asarray(view, dtype=np.float32)
+    v_full = np.asarray(view, dtype=np.float32)
     core = np.asarray(core, dtype=bool)
     band = np.asarray(band, dtype=bool)
     h, w = core.shape
+    # Quilt the HIGH-PASS layer only: patches carry grain and edges, while
+    # the composite's own low frequencies (sheen field, donor lighting) stay
+    # in place — pasting full pixels checkered real floors, because each
+    # patch dragged its source region's brightness across the sheen.
+    from scipy import ndimage as _ndi
+
+    low = _ndi.gaussian_filter(v_full, (6.0, 6.0, 0.0))
+    v = v_full - low
     out = v.copy()
 
     # Candidate windows fully inside the band (integral-image window sums).
@@ -592,7 +600,9 @@ def synthesize_pattern_core(
                 win[blendz] = win[blendz] * (1.0 - t) + chosen[blendz] * t
             out[sr:er, sc:ec] = win
             known[sr:er, sc:ec] |= tile_core
-    return out
+    result = v_full.copy()
+    result[core] = low[core] + out[core]
+    return result
 
 
 def fill_nadir_hole(
@@ -939,6 +949,14 @@ def fill_nadir_hole(
         loc = ndimage.uniform_filter(np.abs(lumc), 15)
         ring_level = float(np.median(loc[ring]))
         weak = hole_view & (loc < 0.55 * max(ring_level, 1e-6))
+        # Geometric cap: synthesis exists for the CORE (donors too oblique at
+        # the tripod point), not the whole hole. Uncapped, real sweeps
+        # re-quilted ~1M px and locked into visible repetition.
+        off_img = np.full(hole_view.shape, np.inf, dtype=np.float32)
+        off_img[ys, xs] = np.hypot(
+            P_hole[:, 0] - C_t[0], P_hole[:, 1] - C_t[1]
+        ).astype(np.float32)
+        weak &= off_img < tripod_radius * 2.2
         weak = ndimage.binary_opening(weak, iterations=2)
         lbl, nlb = ndimage.label(weak)
         if nlb:
