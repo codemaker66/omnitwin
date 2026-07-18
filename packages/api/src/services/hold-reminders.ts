@@ -98,14 +98,23 @@ export interface HoldReminderPassOptions {
   readonly send?: ReminderSend;
 }
 
-/** Venue-local (Europe/London) calendar day, YYYY-MM-DD. */
+/** Venue-local (Europe/London) calendar day, YYYY-MM-DD. Built from
+ *  formatToParts so the shape never depends on a locale's string ordering —
+ *  this value is embedded in a UNIQUE database key and must be stable
+ *  across ICU/CLDR upgrades. */
 function londonDay(instant: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     timeZone: "Europe/London",
-  }).format(instant);
+  }).formatToParts(instant);
+  const part = (type: "year" | "month" | "day"): string => {
+    const found = parts.find((p) => p.type === type);
+    if (found === undefined) throw new Error(`Intl part ${type} missing`);
+    return found.value;
+  };
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** The decision DAY is part of the key: hold decision dates move (ladders
@@ -144,31 +153,44 @@ export async function runHoldReminderPassOnHolds(
   let failed = 0;
 
   for (const reminder of due) {
-    // selectDueHoldReminders only passes owner-reachable holds through.
+    // selectDueHoldReminders only passes owner-reachable holds through; if
+    // that contract ever loosens, fail LOUDLY rather than silently dropping
+    // a reminder the summary already counted as due.
     const to = reminder.hold.ownerEmail;
-    if (to === null) continue;
-    const idempotencyKey = reminderIdempotencyKey(
-      reminder.hold.id,
-      reminder.hold.decisionAt,
-      reminder.daysBefore,
-    );
-
-    if (dryRun) {
-      reminders.push({
-        bookingId: reminder.hold.id,
-        daysBefore: reminder.daysBefore,
-        to,
-        idempotencyKey,
-        outcome: "dry_run",
-      });
+    if (to === null) {
+      logger?.error(
+        { event: "hold_reminder_unreachable_owner", bookingId: reminder.hold.id },
+        "due reminder reached the send loop without an owner email — selectDueHoldReminders contract violated",
+      );
+      failed += 1;
       continue;
     }
-
+    // Everything per-reminder — key derivation, render, send — sits inside
+    // one try: a single bad reminder must never starve the rest of the pass.
+    let idempotencyKey = `hold-reminder:${reminder.hold.id}:unkeyed`;
     let outcome: ReminderOutcome = "failed";
     try {
+      idempotencyKey = reminderIdempotencyKey(
+        reminder.hold.id,
+        reminder.hold.decisionAt,
+        reminder.daysBefore,
+      );
+
+      if (dryRun) {
+        reminders.push({
+          bookingId: reminder.hold.id,
+          daysBefore: reminder.daysBefore,
+          to,
+          idempotencyKey,
+          outcome: "dry_run",
+        });
+        continue;
+      }
+
       const { subject, html } = await holdDecisionReminder({
         holdTitle: reminder.hold.title,
         spaceName: reminder.hold.spaceName,
+        ownerName: reminder.hold.ownerName,
         decisionDate: formatDecisionDate(reminder.hold.decisionAt),
         daysBefore: reminder.daysBefore,
         rank: reminder.hold.rank,
@@ -178,7 +200,6 @@ export async function runHoldReminderPassOnHolds(
       const ok = await send({ to, subject, html }, { db, idempotencyKey, logger });
       outcome = ok ? "sent" : "failed";
     } catch (err) {
-      // One undeliverable reminder must never starve the rest of the pass.
       logger?.error(
         { event: "hold_reminder_failed", idempotencyKey, error: err instanceof Error ? err.message : String(err) },
         "hold reminder send threw",
@@ -218,7 +239,11 @@ export async function runHoldReminderPass(
     })
     .from(bookings)
     .innerJoin(spaces, eq(bookings.spaceId, spaces.id))
-    .innerJoin(users, eq(bookings.ownerUserId, users.id))
+    // LEFT join — ownerUserId is nullable (and ON DELETE SET NULL), and an
+    // ownerless hold must still appear in `scanned` so the summary is an
+    // honest count; selectDueHoldReminders then skips it as unreachable
+    // (the configuration-reviews.ts changed_by precedent).
+    .leftJoin(users, eq(bookings.ownerUserId, users.id))
     .where(
       and(
         eq(bookings.kind, "hold"),

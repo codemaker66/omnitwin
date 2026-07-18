@@ -64,7 +64,7 @@ SMOKE_EMAIL=<smoke-account> SMOKE_PASSWORD=<its-password> \
 pnpm --filter @omnitwin/web exec playwright test e2e/production-smoke.spec.ts
 ```
 
-Suggested cadence for the first live week: after the deploy, then each morning before the venue opens. The optional write probe (`SMOKE_ALLOW_WRITE=1`) creates and immediately cancels one clearly-labelled house block — leave it off unless you want write-path confirmation.
+Suggested cadence for the first live week: after the deploy, then each morning before the venue opens. The optional write probe (`SMOKE_ALLOW_WRITE=1`) creates and immediately cancels one clearly-labelled house block — leave it off unless you want write-path confirmation. **The full first-week routine — cadence, results log, triage tree, and the hold-reminder delivery cron — lives in [`diary-first-week-operations.md`](diary-first-week-operations.md) (T-527).**
 
 ## 7. Owner actions that ride along (from Slice 5, unchanged)
 

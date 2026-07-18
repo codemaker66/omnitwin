@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import "dotenv/config";
 import { createDb } from "../db/client.js";
 import { runHoldReminderPass } from "../services/hold-reminders.js";

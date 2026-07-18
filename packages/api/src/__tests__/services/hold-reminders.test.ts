@@ -185,6 +185,44 @@ describe("runHoldReminderPassOnHolds", () => {
     expect(summary).toMatchObject({ scanned: 2, due: 2, sent: 1, failed: 1 });
   });
 
+  it("stamps the key with the decision's Europe/London day, not the UTC day", async () => {
+    // Decision 2026-07-27T23:30Z = 00:30 on the 28th in BST — the venue's
+    // calendar day. A UTC slice() regression would stamp 07-27 and fail here.
+    const decisionAt = new Date("2026-07-27T23:30:00.000Z");
+    const now = new Date(decisionAt.getTime() - 7 * DAY_MS + HOUR_MS); // T-7, 1h fresh
+    const send = vi.fn().mockResolvedValue(true);
+    const summary = await runHoldReminderPassOnHolds(
+      [hold({ id: "00000000-0000-4000-8000-000000000010", decisionAt })],
+      { db: DB, now, send },
+    );
+    expect(summary.reminders[0]?.idempotencyKey).toBe(
+      "hold-reminder:00000000-0000-4000-8000-000000000010:2026-07-28:t-7",
+    );
+  });
+
+  it("a moved decision date earns a fresh key — the old date's send cannot dedupe it", async () => {
+    const id = "00000000-0000-4000-8000-000000000011";
+    const send = vi.fn().mockResolvedValue(true);
+    const firstDecision = new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS);
+    const first = await runHoldReminderPassOnHolds(
+      [hold({ id, decisionAt: firstDecision })],
+      { db: DB, now: NOW, send },
+    );
+    // The client renegotiates: the decision moves out ten days. At the NEW
+    // date's T-7 the key must differ from the first send's key.
+    const movedDecision = new Date(firstDecision.getTime() + 10 * DAY_MS);
+    const laterNow = new Date(movedDecision.getTime() - 7 * DAY_MS + HOUR_MS);
+    const second = await runHoldReminderPassOnHolds(
+      [hold({ id, decisionAt: movedDecision })],
+      { db: DB, now: laterNow, send },
+    );
+    const firstKey = first.reminders[0]?.idempotencyKey;
+    const secondKey = second.reminders[0]?.idempotencyKey;
+    expect(firstKey).toBeDefined();
+    expect(secondKey).toBeDefined();
+    expect(secondKey).not.toBe(firstKey);
+  });
+
   it("holds with nothing due produce an empty, honest summary", async () => {
     const send = vi.fn();
     const quiet = hold({ decisionAt: new Date(NOW.getTime() + 30 * DAY_MS) });

@@ -657,6 +657,8 @@ export async function hallkeeperNotified(
 export interface HoldDecisionReminderData {
   readonly holdTitle: string;
   readonly spaceName: string;
+  /** The hold owner's display name; null renders without a salutation. */
+  readonly ownerName: string | null;
   /** en-GB long form, e.g. "Monday, 27 July 2026". */
   readonly decisionDate: string;
   readonly daysBefore: number;
@@ -689,6 +691,11 @@ export function HoldDecisionReminderEmail(props: HoldDecisionReminderData): Reac
       <Heading style={h2Style()}>
         {String(props.daysBefore)} {dayWord} to a hold decision
       </Heading>
+      {props.ownerName !== null && props.ownerName !== "" && (
+        <Text style={{ fontSize: 13, color: INK_SOFT, margin: "0 0 8px" }}>
+          Hi {props.ownerName},
+        </Text>
+      )}
       <Section>
         <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
           <tbody>
