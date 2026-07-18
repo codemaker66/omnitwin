@@ -22,6 +22,15 @@ vi.mock("../api/spaces.js", () => ({
   getSpace: vi.fn(),
 }));
 
+// G4 slice 3: successful saves fire-and-forget an action-log flush; stub it
+// so this suite's save tests don't trip the real-traffic guard.
+vi.mock("../api/action-log.js", () => ({
+  postActionBatch: vi.fn(
+    (_configId: string, batch: { actions: readonly unknown[] }) =>
+      Promise.resolve({ accepted: batch.actions.length, duplicates: 0 }),
+  ),
+}));
+
 const configMock = vi.mocked(await import("../api/configurations.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");

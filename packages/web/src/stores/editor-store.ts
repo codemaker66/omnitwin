@@ -31,6 +31,8 @@ import { useSelectionStore } from "./selection-store.js";
 import { useActionLogStore } from "./action-log-store.js";
 import { createActionEmitter } from "../lib/action-log.js";
 import { plannerActionContext } from "./planner-action-log.js";
+import { flushActionLog } from "./action-log-sync.js";
+import { postActionBatch } from "../api/action-log.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -286,6 +288,13 @@ export function beginActionLogForConfig(configId: string): void {
   useActionLogStore.getState().beginLog(configId);
 }
 
+/** Fire-and-forget flush of the log's unsent tail to the API (G4 slice 3).
+ *  flushActionLog snapshots the store synchronously, swallows failures, and
+ *  drops late acks after a config switch — safe on every boundary. */
+function flushActionLogToServer(revision: number): void {
+  void flushActionLog({ revision, post: postActionBatch });
+}
+
 let interactionEpoch = 0;
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
@@ -464,6 +473,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // reset — a gesture landing during the awaits above advances the live
       // history, and a stale snapshot would lose it (reviewer HIGH).
       const previousHistory = get().history;
+      const previousRevision = get().configRevision;
+      const previousWasPublic = get().isPublicPreview;
       set({
         configId: config.id,
         spaceId: config.spaceId,
@@ -477,8 +488,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         history: emptyHistory<EditorObject>(),
       });
       // G4: config boundary — seal any open gesture from the previous
-      // config's timeline, then open the new configuration's log.
+      // config's timeline, ship its unsent tail (the flush snapshots the
+      // store before beginLog wipes it; late acks are config-guarded),
+      // then open the new configuration's log.
       actionEmitter.flush(previousHistory);
+      if (previousRevision !== null && !previousWasPublic) {
+        flushActionLogToServer(previousRevision);
+      }
       beginActionLogForConfig(config.id);
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
@@ -682,6 +698,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         lastSavedAt: new Date(),
         saveConflict: null,
       });
+      // G4 slice 3: the save boundary ships the log's unsent tail, anchored
+      // to the revision this save produced. Auth path only — the ingest
+      // endpoint is authenticated, and public-preview planning stays local.
+      if (useAuthPath) flushActionLogToServer(saved.revision);
       return true;
     } catch (err) {
       const conflict = configApi.parseRevisionConflict(err);

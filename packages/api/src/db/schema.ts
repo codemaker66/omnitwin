@@ -10,6 +10,7 @@ import {
   jsonb,
   integer,
   bigint,
+  bigserial,
   boolean,
   date,
   index,
@@ -1319,6 +1320,10 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   eventPhaseId: uuid("event_phase_id").notNull().references(() => eventPhases.id, { onDelete: "cascade" }),
   layoutVariantId: uuid("layout_variant_id").references(() => layoutVariants.id, { onDelete: "set null" }),
   configurationId: uuid("configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  canonicalSnapshotId: uuid("canonical_snapshot_id"),
+  proofDigest: varchar("proof_digest", { length: 64 }),
+  supersedesSnapshotId: uuid("supersedes_snapshot_id"),
+  frozenBy: uuid("frozen_by").references(() => users.id, { onDelete: "set null" }),
   snapshotHash: varchar("snapshot_hash", { length: 64 }),
   status: varchar("status", { length: 30 }).notNull().default("draft"),
   objectCount: integer("object_count").notNull().default(0),
@@ -1334,6 +1339,8 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   index("phase_layout_snapshots_phase_idx").on(table.eventPhaseId),
   index("phase_layout_snapshots_variant_idx").on(table.layoutVariantId),
   index("phase_layout_snapshots_config_idx").on(table.configurationId),
+  index("phase_layout_snapshots_canonical_idx").on(table.canonicalSnapshotId),
+  index("phase_layout_snapshots_supersedes_idx").on(table.supersedesSnapshotId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -5373,4 +5380,35 @@ export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints"
   unique("foundry_checkpoint_provider_dedupe_unique").on(table.attemptId, table.providerCheckpointId, table.checkpointSha256),
   unique("foundry_checkpoint_actor_idempotency_unique").on(table.verifiedBy, table.idempotencyKey),
   index("foundry_checkpoint_attempt_verified_idx").on(table.attemptId, table.verifiedAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Action log — G4 Slice 3 (03 §2). The append-only audit trail behind the
+// planner's Action envelope (migration 0059). Append-only by code contract:
+// no update/delete surface exists anywhere. `id` is the CLIENT action uuid
+// (no default) so ON CONFLICT (id) DO NOTHING makes batch retries idempotent;
+// `ordinal` is the server-assigned read order (client clocks never order the
+// trail). `recorded_ts` is the operator's clock, `received_at` the server's —
+// kept separate so neither is ever presented as the other (claim safety).
+// ---------------------------------------------------------------------------
+
+export const actionLog = pgTable("action_log", {
+  id: uuid("id").primaryKey(),
+  ordinal: bigserial("ordinal", { mode: "number" }).notNull(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  batchId: uuid("batch_id").notNull(),
+  revision: integer("revision").notNull(),
+  /** The AUTHENTICATED principal the server observed on ingestion — the
+   *  anchor to cross-check the self-reported actor blob against. */
+  submittedBy: uuid("submitted_by").notNull(),
+  actor: jsonb("actor").notNull(),
+  intent: varchar("intent", { length: 160 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  inverse: jsonb("inverse"),
+  provenance: jsonb("provenance").notNull(),
+  recordedTs: timestamp("recorded_ts", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("action_log_ordinal_unique").on(table.ordinal),
+  index("action_log_config_ordinal_idx").on(table.configurationId, table.ordinal),
 ]);

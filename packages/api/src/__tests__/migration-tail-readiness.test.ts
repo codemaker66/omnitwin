@@ -100,6 +100,7 @@ const EXPECTED_TAIL = [
   "0056_foundry_derivative_execution_barrier",
   "0057_foundry_derivative_execution_candidates",
   "0058_foundry_derivative_activation_disabled",
+  "0059_action_log",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {

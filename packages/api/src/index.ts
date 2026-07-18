@@ -10,6 +10,7 @@ import { venueRoutes } from "./routes/venues.js";
 import { spaceRoutes } from "./routes/spaces.js";
 import { configurationRoutes } from "./routes/configurations.js";
 import { placedObjectRoutes } from "./routes/placed-objects.js";
+import { actionLogRoutes } from "./routes/action-log.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
@@ -318,6 +319,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
   await server.register(configurationRoutes, { db, prefix: "/configurations" });
   await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
+  await server.register(actionLogRoutes, { db, prefix: "/configurations/:configId/actions" });
   await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });

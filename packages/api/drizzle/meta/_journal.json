@@ -400,6 +400,13 @@
       "when": 1784037600000,
       "tag": "0058_foundry_derivative_activation_disabled",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784376000000,
+      "tag": "0059_action_log",
+      "breakpoints": true
     }
   ]
 }

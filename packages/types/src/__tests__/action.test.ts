@@ -64,6 +64,28 @@ describe("ActionSchema", () => {
     }).success).toBe(false);
   });
 
+  it("rejects prototype-polluting record keys at every depth (slice-3 precondition)", () => {
+    // JSON.parse creates OWN __proto__/constructor/prototype properties —
+    // harmless in the parsed object itself, but poison for any downstream
+    // spread/merge/assign over payloads. The server ingests these blobs;
+    // the schema is the gate.
+    const attacks = [
+      '{"__proto__": {"polluted": true}}',
+      '{"constructor": {"prototype": {"polluted": true}}}',
+      '{"prototype": {"polluted": true}}',
+      '{"nested": {"deep": {"__proto__": {"polluted": true}}}}',
+      '{"list": [{"__proto__": {"polluted": true}}]}',
+    ];
+    for (const attack of attacks) {
+      const payload: unknown = JSON.parse(attack);
+      expect(ActionSchema.safeParse({ ...VALID_ACTION, payload }).success, attack).toBe(false);
+      expect(ActionSchema.safeParse({ ...VALID_ACTION, inverse: payload }).success, attack).toBe(false);
+    }
+    // Benign keys that merely CONTAIN the words stay legal.
+    const benign: unknown = JSON.parse('{"proto_notes": {"constructor_name": "Adam"}}');
+    expect(ActionSchema.safeParse({ ...VALID_ACTION, payload: benign }).success).toBe(true);
+  });
+
   it("rejects unknown envelope or provenance fields (strict contract)", () => {
     expect(ActionSchema.safeParse({ ...VALID_ACTION, extra: true }).success).toBe(false);
     expect(ActionSchema.safeParse({

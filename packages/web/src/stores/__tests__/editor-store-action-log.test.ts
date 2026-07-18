@@ -29,6 +29,16 @@ vi.mock("../../api/spaces.js", () => ({
   getSpace: vi.fn(async () => Promise.reject(new Error("no space in tests"))),
 }));
 
+const { postActionBatchMock } = vi.hoisted(() => ({
+  postActionBatchMock: vi.fn(
+    (_configId: string, batch: { readonly revision: number; readonly actions: readonly { readonly intent: string }[] }) =>
+      Promise.resolve({ accepted: batch.actions.length, duplicates: 0 }),
+  ),
+}));
+vi.mock("../../api/action-log.js", () => ({
+  postActionBatch: postActionBatchMock,
+}));
+
 const TABLE_ID = "round-table-6ft";
 
 function store(): ReturnType<typeof useEditorStore.getState> {
@@ -104,6 +114,37 @@ describe("editor-store action log emission", () => {
     expect(loggedIntents()).toEqual(["object.place", "object.update", "history.undo"]);
     const notesAction = useActionLogStore.getState().entries[1];
     expect((notesAction?.payload as { label: string }).label).toBe("Edit note");
+  });
+
+  it("a successful authenticated save flushes the log's unsent tail to the API (slice 3)", async () => {
+    postActionBatchMock.mockClear();
+    useEditorStore.setState({ configRevision: 3, isPublicPreview: false });
+    const saveMock = vi.mocked(
+      (await import("../../api/configurations.js")).authBatchSave,
+    );
+    saveMock.mockResolvedValue({ revision: 8, objects: [] } as never);
+
+    store().addObject(TABLE_ID, 1, 0, 2);
+    store().bumpHistoryEpoch();
+    const placed = store().objects[0];
+    if (placed === undefined) throw new Error("expected a placed object");
+    store().updateObject(placed.id, { positionX: 5 });
+
+    const saved = await store().saveToServer(true);
+    expect(saved).toBe(true);
+    // saveToServer seals the open gesture before the request, so both
+    // gestures are in the log; the post-success flush ships them stamped
+    // with the SAVED revision (the anchor the audit trail records).
+    expect(postActionBatchMock).toHaveBeenCalledTimes(1);
+    const firstCall = postActionBatchMock.mock.calls[0];
+    if (firstCall === undefined) throw new Error("expected a flush call");
+    const [configId, batch] = firstCall;
+    expect(configId).toBe("cfg-log-test");
+    expect(batch.revision).toBe(8);
+    expect(batch.actions.map((a) => a.intent)).toEqual(["object.place", "object.update"]);
+    await vi.waitFor(() => {
+      expect(useActionLogStore.getState().sentCount).toBe(2);
+    });
   });
 
   it("undo/redo behaviour itself is untouched (spot check alongside the pinned suite)", () => {

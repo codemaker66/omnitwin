@@ -46,14 +46,41 @@ export type JsonValue =
   | readonly JsonValue[]
   | { readonly [key: string]: JsonValue };
 
-export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+/** Keys that must never appear in ingested JSON records: JSON.parse creates
+ *  them as OWN properties, and any later spread/merge/assign over the blob
+ *  turns them into prototype pollution. Enforced at every nesting depth. */
+export const FORBIDDEN_JSON_KEYS = ["__proto__", "constructor", "prototype"] as const;
+
+/** The guard runs BEFORE the record parse: zod's record parser rebuilds
+ *  objects with plain assignment, where a `__proto__` key silently becomes
+ *  the new object's prototype instead of an own property — a post-parse
+ *  refine would never see it. */
+const SafeJsonRecordSchema = z.preprocess((input, ctx) => {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    for (const key of FORBIDDEN_JSON_KEYS) {
+      if (Object.hasOwn(input, key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `forbidden record key: ${key}`,
+        });
+        return z.NEVER;
+      }
+    }
+  }
+  return input;
+}, z.record(z.lazy(() => JsonValueSchema)));
+
+// Input is `unknown` (not JsonValue): the record branch's pre-parse pollution
+// guard is a ZodEffects whose input type is deliberately wide — the schema
+// validates arbitrary input down to JsonValue output.
+export const JsonValueSchema: z.ZodType<JsonValue, z.ZodTypeDef, unknown> = z.lazy(() =>
   z.union([
     z.string(),
     z.number(),
     z.boolean(),
     z.null(),
     z.array(JsonValueSchema),
-    z.record(JsonValueSchema),
+    SafeJsonRecordSchema,
   ]),
 );
 
