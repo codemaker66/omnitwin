@@ -517,6 +517,84 @@ def poisson_blend_into_hole(
     return out
 
 
+def synthesize_pattern_core(
+    view: np.ndarray,
+    core: np.ndarray,
+    band: np.ndarray,
+    patch: int = 24,
+    overlap: int = 8,
+    candidates: int = 220,
+    seed: int = 0,
+) -> np.ndarray:
+    """Rebuild a low-texture CORE from real patches of the same floor's BAND.
+
+    Quilting-lite (Efros–Freeman lineage): raster-scan the core in
+    overlapping tiles; each tile takes the band patch whose pixels best match
+    the tile's already-known context (ring pixels + previously laid tiles),
+    cross-faded over the overlap. Every synthesized pixel is a verbatim crop
+    of THIS floor's visible texture — nothing invented — and a fixed seed
+    makes the result reproducible. Pixels outside `core` are never touched."""
+    rng = np.random.default_rng(seed)
+    v = np.asarray(view, dtype=np.float32)
+    core = np.asarray(core, dtype=bool)
+    band = np.asarray(band, dtype=bool)
+    h, w = core.shape
+    out = v.copy()
+
+    # Candidate windows fully inside the band (integral-image window sums).
+    ii = np.pad(band.astype(np.int64), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    full = (
+        ii[patch:, patch:] - ii[:-patch, patch:] - ii[patch:, :-patch]
+        + ii[:-patch, :-patch]
+    ) == patch * patch
+    cand_pos = np.argwhere(full)
+    if cand_pos.shape[0] == 0 or int(core.sum()) == 0:
+        return out
+    if cand_pos.shape[0] > candidates:
+        cand_pos = cand_pos[
+            rng.choice(cand_pos.shape[0], size=candidates, replace=False)
+        ]
+    cands = np.stack(
+        [v[r : r + patch, c : c + patch] for r, c in cand_pos]
+    )  # (K, p, p, 3)
+
+    known = ~core  # grows as tiles are laid
+    ys, xs = np.nonzero(core)
+    r0, r1 = int(ys.min()), int(ys.max())
+    c0, c1 = int(xs.min()), int(xs.max())
+    step = patch - overlap
+    ramp = np.minimum(np.arange(1, patch + 1), overlap) / float(overlap)
+    fade_r = np.minimum.outer(ramp, np.ones(patch))
+    fade_c = np.minimum.outer(np.ones(patch), ramp)
+    fade = np.minimum(fade_r, fade_c).astype(np.float32)[..., None]
+
+    for tr in range(max(r0 - overlap, 0), r1 + 1, step):
+        for tc in range(max(c0 - overlap, 0), c1 + 1, step):
+            er, ec = min(tr + patch, h), min(tc + patch, w)
+            sr, sc = er - patch, ec - patch
+            tile_core = core[sr:er, sc:ec]
+            if not tile_core.any():
+                continue
+            win = out[sr:er, sc:ec]
+            ctx = known[sr:er, sc:ec]
+            if ctx.any():
+                diff = cands - win[None]
+                scores = (diff * diff).sum(axis=3)[:, ctx].sum(axis=1)
+                best = int(np.argmin(scores))
+            else:  # interior tile with no context yet — deterministic pick
+                best = int(rng.integers(0, cands.shape[0]))
+            chosen = cands[best]
+            write = tile_core & ~ctx
+            blendz = tile_core & ctx
+            win[write] = chosen[write]
+            if blendz.any():
+                t = fade[..., 0][blendz][..., None]
+                win[blendz] = win[blendz] * (1.0 - t) + chosen[blendz] * t
+            out[sr:er, sc:ec] = win
+            known[sr:er, sc:ec] |= tile_core
+    return out
+
+
 def fill_nadir_hole(
     target_img: np.ndarray,
     C_target: np.ndarray,
@@ -534,6 +612,7 @@ def fill_nadir_hole(
     sheen_field: bool = True,
     occluder: "VoxelOccluder | None" = None,
     z_exempt_m: float = 0.30,
+    core_synthesis: bool = False,
 ) -> tuple[np.ndarray, dict]:
     """Fill the target sweep's nadir tripod hole from neighbouring sweeps.
 
@@ -844,6 +923,42 @@ def fill_nadir_hole(
                     "max": round(float(u[ys, xs].max()), 3),
                 }
     view_out = poisson_blend_into_hole(view, source, hole_view).astype(np.float32)
+
+    if core_synthesis and int(ring.sum()) >= 200:
+        # Pattern-core synthesis — CONTENT stage, deliberately before the
+        # grain calibration: where donors were too oblique or soft to carry
+        # texture (herringbone/gloss centres from the live walk), rebuild
+        # the weak core from the floor's OWN visible texture; the closed
+        # grain loop below then calibrates the synthesized pixels through
+        # the same delivery resample as everything else. Detection is
+        # objective: local high-frequency energy far below the ring's.
+        lpc = ndimage.gaussian_filter(view_out, (2.5, 2.5, 0.0))
+        lumc = (view_out - lpc) @ np.array(
+            [0.2126, 0.7152, 0.0722], dtype=np.float32
+        )
+        loc = ndimage.uniform_filter(np.abs(lumc), 15)
+        ring_level = float(np.median(loc[ring]))
+        weak = hole_view & (loc < 0.55 * max(ring_level, 1e-6))
+        weak = ndimage.binary_opening(weak, iterations=2)
+        lbl, nlb = ndimage.label(weak)
+        if nlb:
+            sizes = np.bincount(lbl.ravel())
+            sizes[0] = 0
+            weak = sizes[lbl] > 300
+        core_px = int(weak.sum())
+        report["core_synthesized_px"] = 0
+        if core_px >= 400:
+            band_src = (
+                ndimage.binary_dilation(weak, iterations=70)
+                & ~ndimage.binary_dilation(weak, iterations=3)
+                & (dz < -1e-9)
+                & (loc >= 0.8 * ring_level)
+            )
+            if int(band_src.sum()) >= 24 * 24 * 20:
+                view_out = synthesize_pattern_core(
+                    view_out, weak, band_src, seed=0
+                )
+                report["core_synthesized_px"] = core_px
 
     if grain_match and int(ring.sum()) >= 200:
         # Ring-matched grain: donors are sampled obliquely from metres away,

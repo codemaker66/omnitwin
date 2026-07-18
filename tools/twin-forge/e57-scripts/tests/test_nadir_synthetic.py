@@ -407,6 +407,75 @@ def test_donorless_pixels_fall_back_without_crashing():
     print(f"  synthesized px: {report['synthesized_px']} (fallback exercised)")
 
 
+def test_pattern_core_synthesis_rebuilds_blanked_parquet():
+    # Pure-function test: blank the centre of an analytic parquet view to a
+    # featureless disc (the "soft core"), then rebuild it ONLY from patches
+    # of the same view's visible band. Grain contrast must return to band
+    # parity, the boundary must stay seamless, and the result must be
+    # deterministic for a fixed seed.
+    from scipy.ndimage import binary_dilation, binary_erosion
+
+    dirs = nf.gnomonic_nadir_dirs(640, 58.0)
+    view = nf.render_view(GT_A, dirs)
+    yy, xx = np.mgrid[0:640, 0:640]
+    core = np.hypot(yy - 320, xx - 320) < 80
+    band = binary_dilation(core, iterations=60) & ~binary_dilation(core, iterations=4)
+    blanked = view.copy()
+    blanked[core] = view[core].mean(axis=0, keepdims=True)
+
+    out1 = nf.synthesize_pattern_core(blanked, core, band, seed=7)
+    out2 = nf.synthesize_pattern_core(blanked, core, band, seed=7)
+    assert np.array_equal(out1, out2), "must be deterministic for a fixed seed"
+    assert np.array_equal(out1[~core], blanked[~core]), "only the core may change"
+
+    ratio_before = _detail_std(blanked, core) / max(_detail_std(blanked, band), 1e-6)
+    ratio_after = _detail_std(out1, core) / max(_detail_std(out1, band), 1e-6)
+    print(f"  core/band grain: blanked {ratio_before:.3f} -> synthesized {ratio_after:.3f}")
+    assert ratio_before < 0.30, "test rig: the blank must actually be featureless"
+    assert ratio_after >= 0.80, f"synthesis too weak: {ratio_after:.3f}"
+
+    inner = core & ~binary_erosion(core, iterations=3)
+    outer = binary_dilation(core, iterations=3) & ~core
+    lum_w = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    step = abs(float((out1[inner] @ lum_w).mean() - (out1[outer] @ lum_w).mean()))
+    gt_step = abs(float((view[inner] @ lum_w).mean() - (view[outer] @ lum_w).mean()))
+    print(f"  synthesis boundary excess step: {abs(step - gt_step):.3f}")
+    assert abs(step - gt_step) < 2.0, "visible ring at the synthesis boundary"
+
+
+def test_core_synthesis_flag_restores_soft_core_from_blurred_donors():
+    # Integration cruelty: donors so blurred they can only deliver a soft
+    # core (the herringbone/gloss failure from the live walk). Without the
+    # flag the delivered core stays soft; with it, patch synthesis from the
+    # target's own ring restores grain parity.
+    from scipy.ndimage import gaussian_filter
+
+    donors_soft = [
+        (gaussian_filter(img, (2.5, 2.5, 0.0)), C)
+        for img, C in [(IMG_B, C_B), (IMG_C, C_C)]
+    ]
+    common = dict(
+        z_floor=Z_FLOOR, hole_mask_eq=MASK_A, tripod_radius=TRIPOD_R,
+        view_size=640, half_fov_deg=58.0,
+    )
+    f_off, _ = nf.fill_nadir_hole(IMG_A, C_A, donors_soft,
+                                  core_synthesis=False, **common)
+    f_on, rep = nf.fill_nadir_hole(IMG_A, C_A, donors_soft,
+                                   core_synthesis=True, **common)
+    dirs, hole, ring = _view_masks()
+    yy, xx = np.mgrid[0:640, 0:640]
+    core = np.hypot(yy - 320, xx - 320) < 60
+    r_off = _detail_std(nf.render_view(f_off, dirs), core) / max(
+        _detail_std(nf.render_view(f_off, dirs), ring), 1e-6)
+    r_on = _detail_std(nf.render_view(f_on, dirs), core) / max(
+        _detail_std(nf.render_view(f_on, dirs), ring), 1e-6)
+    print(f"  delivered core grain: flag off {r_off:.3f} vs on {r_on:.3f} "
+          f"(synth core px: {rep.get('core_synthesized_px')})")
+    assert r_off < 0.62, f"test rig: blurred donors must leave a soft core ({r_off:.3f})"
+    assert r_on >= 0.78, f"core synthesis under-delivered: {r_on:.3f}"
+    assert rep.get("core_synthesized_px", 0) > 500
+
+
 def _dump(out_dir):
     from PIL import Image
 

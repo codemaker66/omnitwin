@@ -57,6 +57,7 @@ def _init(
     equirect: str,
     out: str,
     k: int,
+    core_synthesis: bool = False,
 ) -> None:
     """Worker init. The mesh is loaded and voxelized ONCE in the parent —
     workers receive finished occupancy grids, so a bad GLB aborts the run
@@ -64,7 +65,8 @@ def _init(
     nodes = load_nodes(manifest)
     occ = nf.VoxelOccluder(*occ_data) if occ_data else None
     occ_fine = nf.VoxelOccluder(*occ_fine_data) if occ_fine_data else None
-    _G.update(nodes=nodes, occ=occ, occ_fine=occ_fine, eq=equirect, out=out, k=k)
+    _G.update(nodes=nodes, occ=occ, occ_fine=occ_fine, eq=equirect, out=out,
+              k=k, cs=core_synthesis)
 
 
 def build_occluders(mesh_path: str, nodes: dict) -> tuple[tuple, tuple]:
@@ -157,6 +159,7 @@ def process_scan(scan: int) -> dict:
             half_fov_deg=34.0,
             occluder=occ,
             z_exempt_m=z_exempt,
+            core_synthesis=bool(_G.get("cs")),
         )
         del donors, target
 
@@ -183,6 +186,7 @@ def process_scan(scan: int) -> dict:
             "mesh_occluded_px": rep.get("mesh_occluded_px"),
             "grain_gain": rep.get("grain_gain"),
             "sheen": rep.get("sheen_field"),
+            "core_synthesized_px": rep.get("core_synthesized_px"),
             "secs": round(time.time() - t0, 1),
         }
         with open(marker, "w", encoding="utf8") as f:
@@ -206,6 +210,9 @@ def main() -> int:
     ap.add_argument("--scans", default="all")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--k", type=int, default=8)
+    ap.add_argument("--core-synthesis", action="store_true",
+                    help="rebuild weak fill cores (herringbone/gloss) from "
+                         "the floor's own texture via patch quilting")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -231,7 +238,7 @@ def main() -> int:
         args.workers,
         initializer=_init,
         initargs=(args.manifest, occ_data, occ_fine_data,
-                  args.equirect, args.out, args.k),
+                  args.equirect, args.out, args.k, args.core_synthesis),
         maxtasksperchild=1,  # fresh process per sweep: memory back to the OS
     ) as pool:
         with open(report_path, "a", encoding="utf8") as rf:
