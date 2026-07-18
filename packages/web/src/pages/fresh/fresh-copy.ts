@@ -134,8 +134,8 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
 export const FRESH_HERITAGE_ART = "/images/brand/facade-art.webp";
 export const FRESH_HERITAGE_ART_ALT =
   "An illustrated portrait of the Trades Hall facade — dome, portico, and lit windows";
-export const FRESH_ARMS = "/images/brand/coat-of-arms.webp";
-export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark.png";
+export const FRESH_ARMS = "/images/brand/coat-of-arms-240.webp";
+export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark-64.webp";
 export const FRESH_ARMS_ALT = "The arms of the Trades House of Glasgow";
 export const FRESH_MOTTO = "Union is strength";
 export const FRESH_MOTTO_ATTR = "The motto of the Trades House of Glasgow";
@@ -198,6 +198,9 @@ export const FRESH_HERITAGE_BODY =
   "Trades Hall was designed by Robert Adam and has served as the meeting place of the Trades House of Glasgow — the city's fourteen incorporated crafts — since 1791. It is the oldest building in Glasgow still used for its original purpose. When you celebrate here, you are keeping its diary going.";
 
 export const FRESH_CONTACT_TITLE = "Speak with the events team";
+export const FRESH_CONTACT_TEL_LABEL = "Telephone";
+export const FRESH_CONTACT_EMAIL_LABEL = "Email";
+export const FRESH_CONTACT_VISIT_LABEL = "Visit";
 export const FRESH_CONTACT_PHONE_DISPLAY = FOOTER_PHONE_DISPLAY;
 export const FRESH_CONTACT_PHONE_HREF = FOOTER_PHONE_HREF;
 export const FRESH_CONTACT_EMAIL = FOOTER_EMAIL;
@@ -265,6 +268,9 @@ export function allFreshCopy(): readonly string[] {
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,
+    FRESH_CONTACT_TEL_LABEL,
+    FRESH_CONTACT_EMAIL_LABEL,
+    FRESH_CONTACT_VISIT_LABEL,
     FRESH_ADDRESS,
     FRESH_THEME_LABEL,
     ...FRESH_THEME_OPTIONS.map((o) => o.label),

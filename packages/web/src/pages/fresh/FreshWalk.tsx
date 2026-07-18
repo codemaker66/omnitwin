@@ -54,10 +54,12 @@ import {
 // -----------------------------------------------------------------------------
 
 /** Pose 1856 of the capture walk, verbatim; gaze authored toward the
- *  visitor's table. Position must stay on the capture path. */
+ *  room's warm columned end — glazed doors, lamplight — with the
+ *  visitor's table in the foreground. Position must stay on the
+ *  capture path; the ±72° sweep from here is verified photoreal. */
 const WALK_STATION = {
   position: [1.497, -0.116, 6.9],
-  look: [-2.0, -0.55, 9.0],
+  look: [-2.85, -0.55, 7.5],
 } as const;
 
 const YAW_LIMIT = 1.25;
