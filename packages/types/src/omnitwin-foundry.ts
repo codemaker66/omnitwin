@@ -464,6 +464,16 @@ export const FOUNDRY_PROVENANCE_CLASSES = [
 export const FoundryProvenanceClassSchema = z.enum(FOUNDRY_PROVENANCE_CLASSES);
 export type FoundryProvenanceClass = z.infer<typeof FoundryProvenanceClassSchema>;
 
+// Truthfulness ordering for lineage monotonicity: a derived asset may keep or
+// lower its parents' truthfulness, never raise it — generated material cannot
+// become captured evidence through a derivation hop.
+const FOUNDRY_PROVENANCE_TRUTHFULNESS: Record<FoundryProvenanceClass, number> = {
+  captured: 3,
+  enhanced_captured: 2,
+  generated_cinematic: 1,
+  concept_imagination: 0,
+};
+
 export const FOUNDRY_ACCESS_STATES = [
   "direct",
   "official_export",
@@ -1140,6 +1150,22 @@ export const FoundryIngestManifestV0Schema = z
           message: "generated assets must be declared as derived",
         });
       }
+      const parentTruthfulness = asset.parentAssetIds
+        .map((parentId) => assetsById.get(parentId))
+        .filter((parent) => parent !== undefined)
+        .map((parent) => FOUNDRY_PROVENANCE_TRUTHFULNESS[parent.provenanceClass]);
+      if (
+        parentTruthfulness.length !== 0 &&
+        FOUNDRY_PROVENANCE_TRUTHFULNESS[asset.provenanceClass] >
+          Math.min(...parentTruthfulness)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["assets", index, "provenanceClass"],
+          message:
+            "derived assets cannot claim a more truthful provenance class than their least truthful parent",
+        });
+      }
     }
 
     for (const [index, region] of manifest.generatedRegions.entries()) {
@@ -1633,10 +1659,35 @@ export function validateFoundryQualityEvidence(
       issues.add("fixed_view:typed_evidence_required");
     }
   }
-  const generatedSubjects = report.subjectAssetIds.filter((id) => {
+  const isGeneratedClass = (id: string): boolean => {
     const provenance = assets.get(id)?.provenanceClass;
     return provenance === "generated_cinematic" || provenance === "concept_imagination";
-  });
+  };
+  // Generated material may be a review SUBJECT under a permitting policy, but
+  // it can never attest: a model-generated reviewer attestation is
+  // self-approval regardless of policy.
+  for (const review of report.humanReviews) {
+    if (isGeneratedClass(review.reviewerAttestationAssetId)) {
+      issues.add(`${review.reviewKind}:generated_reviewer_attestation_forbidden`);
+    }
+  }
+  if (report.contract.generatedContentPolicy === "forbidden") {
+    for (const measurement of report.measurements) {
+      for (const id of measurement.evidenceAssetIds) {
+        if (isGeneratedClass(id)) {
+          issues.add(`${measurement.requirementId}:generated_evidence_forbidden:${id}`);
+        }
+      }
+    }
+    for (const review of report.humanReviews) {
+      for (const id of review.evidenceAssetIds) {
+        if (isGeneratedClass(id)) {
+          issues.add(`${review.reviewKind}:generated_evidence_forbidden:${id}`);
+        }
+      }
+    }
+  }
+  const generatedSubjects = report.subjectAssetIds.filter(isGeneratedClass);
   if (
     report.contract.generatedContentPolicy === "forbidden" &&
     generatedSubjects.length !== 0
@@ -2059,10 +2110,33 @@ export function validateFoundryJobRights(
   ) {
     return { allowed: false, blockers: ["ingest_manifest_digest_mismatch"] };
   }
+  if (manifestResult.data.legalReviewState === "blocked") {
+    return { allowed: false, blockers: ["manifest_legal_review_blocked"] };
+  }
   const assets = new Map(manifestResult.data.assets.map((asset) => [asset.id, asset]));
+  const stagesById = new Map(jobResult.data.stages.map((stage) => [stage.id, stage]));
+  // A stage consumes its declared inputs plus, transitively, every input of
+  // the stages it depends on: consuming an upstream stage's outputs cannot
+  // shed the rights obligations of that stage's sources. Stage plans are
+  // schema-guaranteed acyclic before this walk runs.
+  const effectiveInputs = new Map<string, ReadonlySet<string>>();
+  const collectEffectiveInputs = (stageId: string): ReadonlySet<string> => {
+    const memoized = effectiveInputs.get(stageId);
+    if (memoized !== undefined) return memoized;
+    const stage = stagesById.get(stageId);
+    if (stage === undefined) return new Set();
+    const collected = new Set(stage.inputAssetIds);
+    for (const dependencyId of stage.dependsOn) {
+      for (const assetId of collectEffectiveInputs(dependencyId)) {
+        collected.add(assetId);
+      }
+    }
+    effectiveInputs.set(stageId, collected);
+    return collected;
+  };
   const blockers = new Set<string>();
   for (const stage of jobResult.data.stages) {
-    for (const assetId of stage.inputAssetIds) {
+    for (const assetId of collectEffectiveInputs(stage.id)) {
       const asset = assets.get(assetId);
       if (asset === undefined) {
         blockers.add(`${stage.id}:${assetId}:missing_asset`);
