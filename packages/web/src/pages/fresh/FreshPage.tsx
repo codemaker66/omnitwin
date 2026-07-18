@@ -22,6 +22,9 @@ import {
   FRESH_CONTACT_PHONE_DISPLAY,
   FRESH_CONTACT_PHONE_HREF,
   FRESH_CONTACT_TITLE,
+  FRESH_CONTACT_TEL_LABEL,
+  FRESH_CONTACT_EMAIL_LABEL,
+  FRESH_CONTACT_VISIT_LABEL,
   FRESH_CTA_DATES,
   FRESH_CTA_ROOMS,
   FRESH_FOOTER_NOTE,
@@ -463,6 +466,17 @@ export function FreshPage(): ReactElement {
     }
   }, []);
 
+  // On narrow screens the three-pill row gives way to one cycling button —
+  // the header's prime pixels belong to the photograph, not a preference.
+  const cycleTheme = useCallback(() => {
+    const order: readonly FreshTheme[] = ["auto", "light", "dark"];
+    const next = order[(order.indexOf(theme) + 1) % order.length] ?? "auto";
+    applyTheme(next);
+  }, [applyTheme, theme]);
+
+  const themeLabel =
+    FRESH_THEME_OPTIONS.find((option) => option.key === theme)?.label ?? "Auto";
+
   return (
     <div className="fr-root" data-theme={theme === "auto" ? undefined : theme}>
       <a className="fr-skip" href="#rooms">
@@ -471,7 +485,7 @@ export function FreshPage(): ReactElement {
 
       <header className="fr-header">
         <p className="fr-brand">
-          <img className="fr-brand-mark" src={FRESH_ARMS_MARK} alt="" width={120} height={150} />
+          <img className="fr-brand-mark" src={FRESH_ARMS_MARK} alt="" width={64} height={80} />
           <span>
             <small>{FRESH_BRAND_SMALL}</small>
             <b>{FRESH_BRAND_NAME}</b>
@@ -492,6 +506,14 @@ export function FreshPage(): ReactElement {
               </button>
             ))}
           </fieldset>
+          <button
+            type="button"
+            className="fr-theme-cycle"
+            onClick={cycleTheme}
+            aria-label={`${FRESH_THEME_LABEL}: ${themeLabel}`}
+          >
+            {themeLabel}
+          </button>
           <a className="fr-header-cta" href="#enquire">
             {FRESH_CTA_DATES}
           </a>
@@ -721,19 +743,30 @@ export function FreshPage(): ReactElement {
 
       <footer className="fr-contact" id="contact" aria-labelledby="fr-contact-title">
         <h2 id="fr-contact-title">{FRESH_CONTACT_TITLE}</h2>
-        <div className="fr-contact-ways">
-          <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
-          <a href={freshEnquiryHref()}>{FRESH_CONTACT_EMAIL}</a>
-          <a href={FRESH_MAPS_HREF} target="_blank" rel="noreferrer">
-            {FRESH_ADDRESS}
-          </a>
-        </div>
-        <div className="fr-colophon">
-          <img src={FRESH_ARMS} alt={FRESH_ARMS_ALT} loading="lazy" decoding="async" width={480} height={600} />
-          <p className="fr-motto">
-            <em>{FRESH_MOTTO}</em>
-            <span>{FRESH_MOTTO_ATTR}</span>
-          </p>
+        <div className="fr-contact-grid">
+          <div className="fr-contact-ways">
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_TEL_LABEL}</small>
+              <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+            </p>
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_EMAIL_LABEL}</small>
+              <a href={freshEnquiryHref()}>{FRESH_CONTACT_EMAIL}</a>
+            </p>
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_VISIT_LABEL}</small>
+              <a href={FRESH_MAPS_HREF} target="_blank" rel="noreferrer">
+                {FRESH_ADDRESS}
+              </a>
+            </p>
+          </div>
+          <div className="fr-colophon">
+            <img src={FRESH_ARMS} alt={FRESH_ARMS_ALT} loading="lazy" decoding="async" width={240} height={300} />
+            <p className="fr-motto">
+              <em>{FRESH_MOTTO}</em>
+              <span>{FRESH_MOTTO_ATTR}</span>
+            </p>
+          </div>
         </div>
         <p className="fr-footer-note">{FRESH_FOOTER_NOTE}</p>
       </footer>

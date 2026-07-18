@@ -236,11 +236,27 @@ describe("walk the room — poster-first", () => {
 });
 
 describe("contact — real destinations", () => {
-  it("offers phone, email, and a map link", () => {
+  it("offers phone, email, and a map link under their labels", () => {
     render(<FreshPage />);
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
     expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
     expect(document.querySelector('a[href*="maps.google.com"]')).toBeTruthy();
+    expect(screen.getByText("Telephone")).toBeTruthy();
+    expect(screen.getByText("Email")).toBeTruthy();
+    expect(screen.getByText("Visit")).toBeTruthy();
+  });
+});
+
+describe("theme — the compact cycle control", () => {
+  it("cycles auto → light → dark → auto and persists accordingly", () => {
+    render(<FreshPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Auto" }));
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBe("light");
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Light" }));
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBe("dark");
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Dark" }));
+    expect(screen.getByRole("button", { name: "Theme: Auto" })).toBeTruthy();
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBeNull();
   });
 });
 
