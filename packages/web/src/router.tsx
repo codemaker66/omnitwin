@@ -128,18 +128,8 @@ const LivingHallPage = lazy(() =>
     default: m.LivingHallPage,
   }))),
 );
-const LivingHallRuntimePreviewPage = lazy(() =>
-  import("./pages/living-hall/LivingHallRuntimePreviewPage.js").then((m) => ({
-    default: m.LivingHallRuntimePreviewPage,
-  })),
-);
-const LivingHallLocalPreflightPage = import.meta.env.DEV
-  ? lazy(() =>
-      import("./pages/living-hall/LivingHallLocalPreflightPage.js").then((m) => ({
-        default: m.LivingHallLocalPreflightPage,
-      })),
-    )
-  : null;
+// Living Hall preview/preflight routes return WITH their pages when that
+// feature commits (in flight; see docs/sessions/2026-07-17.md, T-526).
 const TwinPage = lazy(() =>
   cockpitImport(() => import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage }))),
 );
@@ -203,25 +193,6 @@ export const router = createBrowserRouter([
     // when the minimum-viable narrative ships.
     path: "/living-hall",
     element: withSuspense(<LivingHallPage />),
-  },
-  ...(LivingHallLocalPreflightPage === null
-    ? []
-    : [{
-        // Uses only two hard-coded local candidates and exact fixed cameras.
-        // The route and its asset origins are eliminated from production builds.
-        path: "/dev/reception-quality-preflight",
-        element: withSuspense(<LivingHallLocalPreflightPage />),
-      }]),
-  {
-    // Exact immutable Reception Room candidate. The page guard improves the
-    // operator experience; the API independently protects both metadata and
-    // every streamed file.
-    path: "/admin/runtime-package-previews/:runtimePackageId/view",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-        <LivingHallRuntimePreviewPage />
-      </ProtectedRoute>,
-    ),
   },
   {
     path: "/login",
