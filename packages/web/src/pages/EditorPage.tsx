@@ -22,6 +22,7 @@ import {
 import { getPublicConfig } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
+import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
   type PlannerVenueAccessUser,
@@ -177,6 +178,14 @@ export function EditorPage(): React.ReactElement {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
+
+  // DEV-only session-replay bridge (G4 slice 4, the __venPerf pattern):
+  // window.__venReplay() replays the open config's audit trail and diffs
+  // the reconstruction against the live document. Never in production.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    return registerReplayBridge();
+  }, []);
 
   // Auto-open the requested venue + space on the first render that has no
   // configId anywhere. `/plan` keeps the single-tenant shortcut by choosing the

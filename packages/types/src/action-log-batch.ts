@@ -39,8 +39,9 @@ export function jsonDepth(value: unknown): number {
 
 /** Bounds first, envelope parse second — order is the whole point. Depth is
  *  measured before serialization so JSON.stringify's own recursion never
- *  sees a pathological chain either. */
-const BoundedActionSchema = z.preprocess((input, ctx) => {
+ *  sees a pathological chain either. Exported: AI proposals (slice 4)
+ *  bound their ghost actions with the same discipline as ingestion. */
+export const BoundedActionSchema = z.preprocess((input, ctx) => {
   const depth = jsonDepth(input);
   if (depth > ACTION_MAX_DEPTH) {
     ctx.addIssue({

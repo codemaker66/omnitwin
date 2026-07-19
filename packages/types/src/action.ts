@@ -11,7 +11,7 @@ import { z } from "zod";
 // construction); a CRDT layer can adopt the envelope without changes.
 // ---------------------------------------------------------------------------
 
-const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T/;
+export const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T/;
 
 /** Who performed the mutation. `ref` identifies the concrete user/agent. */
 export const ACTION_ACTOR_KINDS = ["operator", "ai", "system"] as const;
