@@ -407,6 +407,20 @@
       "when": 1784376000000,
       "tag": "0059_action_log",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784383200000,
+      "tag": "0060_phase_layout_snapshot_lineage",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784469600000,
+      "tag": "0061_diary_commands",
+      "breakpoints": true
     }
   ]
 }

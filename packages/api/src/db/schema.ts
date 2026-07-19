@@ -5392,6 +5392,27 @@ export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints"
 // kept separate so neither is ever presented as the other (claim safety).
 // ---------------------------------------------------------------------------
 
+/** Diary command ledger (T-537; Canon §9): every completed /ws/diary
+ *  command records its outcome here INSIDE the mutation's transaction —
+ *  the client-minted command_id pk makes resends replay the recorded
+ *  outcome instead of re-executing (the action_log idempotency pattern
+ *  applied to the Diary's server-authoritative command channel). */
+export const diaryCommands = pgTable("diary_commands", {
+  commandId: uuid("command_id").primaryKey(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  kind: varchar("kind", { length: 40 }).notNull(),
+  /** Provenance only — deliberately no FK: the booking may be purged later
+   *  while the command record remains audit history. */
+  bookingId: uuid("booking_id"),
+  outcome: varchar("outcome", { length: 16 }).notNull(),
+  statusCode: integer("status_code").notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("diary_commands_venue_received_idx").on(table.venueId, table.receivedAt),
+]);
+
 export const actionLog = pgTable("action_log", {
   id: uuid("id").primaryKey(),
   ordinal: bigserial("ordinal", { mode: "number" }).notNull(),

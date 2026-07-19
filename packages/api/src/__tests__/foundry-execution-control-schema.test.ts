@@ -580,13 +580,19 @@ describe("Foundry execution-control migration", () => {
   it("is the contiguous journaled migration tail", async () => {
     const journalText = await readFile(resolve("drizzle", "meta", "_journal.json"), "utf8");
     const journal = JournalSchema.parse(JSON.parse(journalText) as unknown);
-    expect(journal.entries.at(-7)?.tag).toBe("0052_runtime_package_revisions");
-    expect(journal.entries.at(-6)?.tag).toBe(MIGRATION_TAG);
-    expect(journal.entries.at(-5)?.tag).toBe("0054_foundry_derivative_rights");
-    expect(journal.entries.at(-4)?.tag).toBe("0055_foundry_derivative_rights_custody");
-    expect(journal.entries.at(-3)?.tag).toBe("0056_foundry_derivative_execution_barrier");
-    expect(journal.entries.at(-2)?.tag).toBe("0057_foundry_derivative_execution_candidates");
-    expect(journal.entries.at(-1)?.tag).toBe("0058_foundry_derivative_activation_disabled");
-    expect(journal.entries.at(-1)?.idx).toBe(journal.entries.length - 1);
+    // Tag-anchored (append-proof): the chain sits contiguously in order.
+
+    const chainTags = ["0052_runtime_package_revisions", MIGRATION_TAG, "0054_foundry_derivative_rights", "0055_foundry_derivative_rights_custody", "0056_foundry_derivative_execution_barrier", "0057_foundry_derivative_execution_candidates", "0058_foundry_derivative_activation_disabled"];
+
+    const chainStart = journal.entries.findIndex((entry) => entry.tag === chainTags[0]);
+
+    expect(chainStart).toBeGreaterThan(-1);
+
+    chainTags.forEach((chainTag, chainOffset) => {
+
+      expect(journal.entries[chainStart + chainOffset]?.tag).toBe(chainTag);
+
+    });
+    expect(journal.entries[journal.entries.length - 1]?.idx).toBe(journal.entries.length - 1);
   });
 });

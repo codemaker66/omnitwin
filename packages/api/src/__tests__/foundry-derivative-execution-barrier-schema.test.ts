@@ -63,17 +63,17 @@ describe("Foundry derivative execution V0 barrier migration", () => {
     ]);
     const journal = JournalSchema.parse(JSON.parse(journalText) as unknown);
 
-    expect(journal.entries.at(-3)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === MIGRATION_TAG)).toMatchObject({
       idx: 54,
       tag: MIGRATION_TAG,
       version: "7",
       breakpoints: true,
     });
-    expect(journal.entries.at(-2)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0057_foundry_derivative_execution_candidates")).toMatchObject({
       idx: 55,
       tag: "0057_foundry_derivative_execution_candidates",
     });
-    expect(journal.entries.at(-1)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0058_foundry_derivative_activation_disabled")).toMatchObject({
       idx: 56,
       tag: "0058_foundry_derivative_activation_disabled",
     });

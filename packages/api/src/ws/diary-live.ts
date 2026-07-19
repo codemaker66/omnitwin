@@ -1,28 +1,39 @@
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { DiaryCommandSchema } from "@omnitwin/types";
 import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { subscribe } from "../observability/event-bus.js";
+import { emit, subscribe } from "../observability/event-bus.js";
+import {
+  executeDiaryCommand,
+  realDiaryCommandDeps,
+} from "../services/diary-commands.js";
+import type { MutationActor } from "../services/booking-mutations.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
 // The Diary live channel (T-497; Canon §9/§15).
 //
-// /ws/diary carries EVENTS and PRESENCE — the read side of the Canon's
-// realtime doctrine. Mutations stay on the REST surface where each one runs
-// in a transaction with the exclusion constraint as the final arbiter; every
-// successful mutation emits `diary.changed` on the house event bus AFTER its
-// commit, and this hub fans the event out to every connection of that venue.
-// Migrating the write path onto command envelopes is the explicit remaining
-// §9 step (architecture doc §11) — deferred, not forgotten.
+// /ws/diary carries EVENTS, PRESENCE, and — since T-537 — the Canon §9
+// COMMAND channel: "Mutations = commands validated in a Neon transaction
+// (exclusion constraint = final arbiter) → commit → broadcast." A command
+// frame dispatches through the SAME mutation cores as the REST surface
+// (services/booking-mutations.ts — one validation dialect, two transports),
+// records its outcome in the diary_commands ledger inside the mutation's
+// transaction (exactly-once via the client-minted commandId), acks the
+// sender, and emits `diary.changed` on the house event bus AFTER commit —
+// the same fan-out path REST mutations use, so every venue connection sees
+// one consistent stream.
 //
 // Protocol:
 //   client → { type: "auth", token }          first message, auto-save style
 //   client → { type: "ping" }                 keepalive (any message touches)
+//   client → { type: "diary.command", command }   T-537 mutation envelope
 //   server → { type: "hello", venueId, presence }
 //   server → { type: "presence", users }      on every join/leave
 //   server → { type: "diary.event", ... }     after a committed mutation
+//   server → { type: "diary.ack", ... }       the command's outcome envelope
 //   server → { type: "ping" } / { type: "pong" }
 //
 // Presence is ADVISORY display only — never a correctness mechanism
@@ -141,6 +152,7 @@ export class DiaryLiveHub {
 
 const IncomingLiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
+  z.object({ type: z.literal("diary.command"), command: DiaryCommandSchema }),
 ]);
 
 export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
@@ -169,6 +181,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   server.get("/ws/diary", { websocket: true }, (socket, _request) => {
     let connection: DiaryLiveConnection | null = null;
     let venueId: string | null = null;
+    let actor: MutationActor | null = null;
     let authenticating = false;
     let closed = false;
 
@@ -219,6 +232,12 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             // joining it would parade a phantom presence (review P2).
             if (closed || socket.readyState !== 1) return;
             venueId = user.userVenueId;
+            actor = {
+              id: user.userId,
+              role: user.userRole,
+              venueId: user.userVenueId,
+              platformRole: user.platformRole,
+            };
             connection = hub.join(
               venueId,
               socket,
@@ -248,7 +267,49 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       }
       if (message.data.type === "ping") {
         send({ type: "pong" });
+        return;
       }
+
+      // T-537 command envelope. All async work fully guarded (the Slice-3
+      // ws law): every path ends in a sent ack — executeDiaryCommand never
+      // throws by contract, and the outer catch covers the send itself.
+      const { command } = message.data;
+      const commandActor = actor;
+      const commandVenueId = venueId;
+      if (commandActor === null || commandVenueId === null) return;
+      void (async () => {
+        try {
+          const execution = await executeDiaryCommand(
+            db,
+            commandActor,
+            commandVenueId,
+            command,
+            realDiaryCommandDeps(db),
+          );
+          send(execution.ack);
+          // Commit → broadcast, on the SAME bus path REST mutations use, so
+          // every venue connection (sender included) sees one event stream.
+          if (execution.changed !== null) {
+            emit(server.log, "diary.changed", {
+              venueId: commandVenueId,
+              kind: execution.changed.kind,
+              bookingId: execution.changed.bookingId,
+              actorUserId: commandActor.id,
+              at: new Date().toISOString(),
+            });
+          }
+        } catch {
+          send({
+            type: "diary.ack",
+            commandId: command.commandId,
+            outcome: "rejected",
+            replay: false,
+            status: 500,
+            code: "COMMAND_FAILED",
+            error: "The command could not be completed — reload the diary and try again",
+          });
+        }
+      })();
     });
 
     socket.on("close", () => {

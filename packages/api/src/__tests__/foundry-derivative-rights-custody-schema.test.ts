@@ -64,19 +64,29 @@ describe("Foundry derivative-rights custody migration", () => {
       readFile(resolve("drizzle/0054_foundry_derivative_rights.sql"), "utf8"),
     ]);
     const journal = JournalSchema.parse(JSON.parse(journalText) as unknown);
-    expect(journal.entries.at(-5)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0054_foundry_derivative_rights")).toMatchObject({
       idx: 52,
       tag: "0054_foundry_derivative_rights",
     });
-    expect(journal.entries.at(-4)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === MIGRATION_TAG)).toMatchObject({
       idx: 53,
       tag: MIGRATION_TAG,
       version: "7",
       breakpoints: true,
     });
-    expect(journal.entries.at(-3)?.tag).toBe("0056_foundry_derivative_execution_barrier");
-    expect(journal.entries.at(-2)?.tag).toBe("0057_foundry_derivative_execution_candidates");
-    expect(journal.entries.at(-1)?.tag).toBe("0058_foundry_derivative_activation_disabled");
+    // Tag-anchored (append-proof): the chain sits contiguously in order.
+
+    const chainTags = ["0056_foundry_derivative_execution_barrier", "0057_foundry_derivative_execution_candidates", "0058_foundry_derivative_activation_disabled"];
+
+    const chainStart = journal.entries.findIndex((entry) => entry.tag === chainTags[0]);
+
+    expect(chainStart).toBeGreaterThan(-1);
+
+    chainTags.forEach((chainTag, chainOffset) => {
+
+      expect(journal.entries[chainStart + chainOffset]?.tag).toBe(chainTag);
+
+    });
     expect(createHash("sha256").update(executionSql).digest("hex")).toBe(
       IMMUTABLE_0053_SHA256,
     );

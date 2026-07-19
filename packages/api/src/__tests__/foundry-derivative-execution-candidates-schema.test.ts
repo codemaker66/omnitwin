@@ -59,19 +59,19 @@ describe("Foundry derivative execution-candidate evidence migration", () => {
       ),
     ]);
     const journal = JournalSchema.parse(JSON.parse(journalText) as unknown);
-    expect(journal.entries.at(-4)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0055_foundry_derivative_rights_custody")).toMatchObject({
       idx: 53,
       tag: "0055_foundry_derivative_rights_custody",
     });
-    expect(journal.entries.at(-3)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0056_foundry_derivative_execution_barrier")).toMatchObject({
       idx: 54,
       tag: "0056_foundry_derivative_execution_barrier",
     });
-    expect(journal.entries.at(-2)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === MIGRATION_TAG)).toMatchObject({
       idx: 55,
       tag: MIGRATION_TAG,
     });
-    expect(journal.entries.at(-1)).toMatchObject({
+    expect(journal.entries.find((entry) => entry.tag === "0058_foundry_derivative_activation_disabled")).toMatchObject({
       idx: 56,
       tag: "0058_foundry_derivative_activation_disabled",
     });
