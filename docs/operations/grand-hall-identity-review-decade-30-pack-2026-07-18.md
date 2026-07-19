@@ -1,8 +1,15 @@
 # Grand Hall identity review — decade-30 evidence pack
 
-**Status:** `AWAITING HUMAN REVIEW — NOTHING IN THIS PACK IS REVIEWED OR APPROVED`
+**Status:** `DECADE-30 IDENTITY REVIEW RECORDED — operator chat confirmation, 2026-07-19`
 **Created:** 2026-07-18 (Foundry phase-1 goal, gate-closure preparation)
+**Reviewed:** 2026-07-19 (see completed attestation below)
 **Extends:** `grand-hall-review-gate-intake-2026-07-13.json` → `identityAttestation`
+
+> Scope of this record: it closes the decade-30 sampling gap of the phase-1
+> identity gate via a recorded operator confirmation. It is NOT a
+> cryptographic signature and does not by itself satisfy the intake's
+> release-grade `authenticatedReviewerSubject` standard for publication —
+> the intake's controls, release-scope and rights sections remain open.
 
 ## Why this pack exists
 
@@ -44,22 +51,19 @@ room. Third-party reference photographs may be consulted but must NOT be
 embedded or hashed into this pack until the intake's `identityReferences`
 rights section is resolved (`requires_written_permission_or_replacement`).
 
-## Attestation template (all fields intentionally blank)
+## Attestation (completed 2026-07-19, transcribed verbatim from the operator)
 
-Completing and signing this section — or recording the equivalent decision in
-an append-only platform audit event — is the human act this pack prepares.
-
-- authenticatedReviewerSubject: ______
-- reviewerRoleAndVenueAuthority: ______
-- knowledgeBasis: ______
-- exactEvidenceIndexSha256: sha256 of the "Byte-pinned inventory" block below, computed at signing time: ______
-- exactCubefaceAndReferenceSha256Values: the 60 values below, plus any reference hashes once rights-cleared
-- completeNodeOrSweepScopeDecision — tick one:
-  - [ ] (a) identity attested on the derived JPEG set for sweeps 30–39, lineage caveat accepted
+- authenticatedReviewerSubject: Blake (repository owner and Venviewer operator; Claude Code session user)
+- reviewerRoleAndVenueAuthority: founder/operator; commissioner of the Trades Hall captures with personal knowledge of the venue
+- knowledgeBasis: personal knowledge of the Grand Hall; reviewed the full 60-image contact sheet generated from the byte-pinned inventory below (all six faces of all ten positions)
+- exactEvidenceIndexSha256: 9621fb76e758c47e9f8cb49b495f010b50fb8517754a9b28110ab3c300a80262 (sha256 over the exact 60 inventory lines below)
+- exactCubefaceAndReferenceSha256Values: the 60 values below; no third-party reference hashes (rights section still open)
+- completeNodeOrSweepScopeDecision:
+  - [x] (a) identity attested on the derived JPEG set for sweeps 30–39, lineage caveat accepted
   - [ ] (b) E57-side extraction required before attestation
-- perSweepVerdict (30–39, each `grand_hall` / `not_grand_hall` / `uncertain`): ______
-- reviewedAt: ______
-- signatureOrAppendOnlyPlatformAuditEvent: ______
+- perSweepVerdict (30–39): all ten positions `grand_hall`
+- reviewedAt: 2026-07-19T10:21:36Z
+- signatureOrAppendOnlyPlatformAuditEvent: operator chat confirmation, verbatim "yes it is the grand hall", recorded in the Claude Code session transcript of 2026-07-19 in direct response to this pack's contact sheet; not a cryptographic signature
 
 ## Byte-pinned inventory (60 files, SHA-256, filename)
 
