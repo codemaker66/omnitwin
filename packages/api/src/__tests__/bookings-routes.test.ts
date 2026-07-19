@@ -270,34 +270,42 @@ describe("diary.changed emissions (T-497)", () => {
     const emissions = source.match(/publishDiaryChanged\(/g) ?? [];
     // Helper definition + create + patch + transition + conversion.
     expect(emissions.length).toBeGreaterThanOrEqual(5);
-    // The transition emission sits AFTER the transaction block resolves.
-    const txIndex = source.indexOf("db.transaction(async (tx) =>");
-    const transitionEmit = source.indexOf('"booking.transitioned"');
-    expect(transitionEmit).toBeGreaterThan(txIndex);
+    // T-537: each route publishes only after its mutation core resolved OK —
+    // the core call must precede the publish in every adapter.
+    for (const core of ["createBookingCore(", "updateBookingCore(", "transitionBookingCore("]) {
+      const coreIndex = source.indexOf(core);
+      expect(coreIndex).toBeGreaterThan(-1);
+      expect(source.indexOf("publishDiaryChanged(", coreIndex)).toBeGreaterThan(coreIndex);
+    }
     // Fire-and-forget bus, never awaited on the hot path.
     expect(source).not.toContain("await publishDiaryChanged");
+    // The cores stay transport-neutral: publication is a transport concern,
+    // so the service must not emit (each transport publishes after commit).
+    const coreSource = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    expect(coreSource).not.toContain("publishDiaryChanged");
+    expect(coreSource).not.toContain("emit(");
   });
 });
 
-describe("booking routes — source contract", () => {
+describe("booking mutation cores — source contract (extracted T-537, invariants unchanged)", () => {
   it("maps the exclusion-constraint race to a calm 409 and never a stack trace", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain('const PG_EXCLUSION_VIOLATION = "23P01"');
     expect(source).toContain("INK_SLOT_TAKEN");
     expect(source).toContain("first to confirm wins");
   });
 
   it("checks write authority before any booking write", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    expect(source.indexOf("canWriteBookings(request.user, input.venueId)")).toBeGreaterThan(-1);
-    expect(source.indexOf("canWriteBookings(request.user, input.venueId)")).toBeLessThan(
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    expect(source.indexOf("canWriteBookings(actor, input.venueId)")).toBeGreaterThan(-1);
+    expect(source.indexOf("canWriteBookings(actor, input.venueId)")).toBeLessThan(
       source.indexOf(".insert(bookings)"),
     );
   });
 
   it("runs transition, history, and ladder resequence in one transaction", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    const txStart = source.indexOf("db.transaction(async (tx) =>");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    const txStart = source.indexOf("conn.transaction(async (tx) =>");
     expect(txStart).toBeGreaterThan(-1);
     const txBody = source.slice(txStart);
     expect(txBody).toContain("tx.insert(bookingStatusHistory)");
@@ -306,8 +314,8 @@ describe("booking routes — source contract", () => {
   });
 
   it("serialises concurrent hold exits: ordered FOR UPDATE lock + compare-and-set write (review P1)", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    const txStart = source.indexOf("db.transaction(async (tx) =>");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    const txStart = source.indexOf("conn.transaction(async (tx) =>");
     const txBody = source.slice(txStart);
     // Deterministic lock order across the space's ladder rows.
     expect(txBody).toContain('.for("update")');
@@ -321,41 +329,44 @@ describe("booking routes — source contract", () => {
   });
 
   it("treats exited bookings as history — PATCH refuses them (review P2)", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("BOOKING_NOT_ACTIVE");
     expect(source).toContain('row.status !== "active"');
   });
 
   it("validates a cross-lane move's target space against the venue (the Board)", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("patch.spaceId !== undefined");
     expect(source).toContain("eq(spaces.id, patch.spaceId)");
     expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
   });
 
   it("scopes diary writes to staff/admin while reads keep the shared venue policy", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    expect(source).toContain('new Set(["staff", "admin"])');
-    expect(source).toContain("canWriteBookings(request.user, input.venueId)");
+    const coreSource = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    expect(coreSource).toContain('new Set(["staff", "admin"])');
+    expect(coreSource).toContain("canWriteBookings(actor, input.venueId)");
     // Reads still use the shared helper (hallkeeper stays read-facing).
-    expect(source).toContain("canManageVenue(request.user, row.venueId)");
+    const routeSource = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    expect(routeSource).toContain("canManageVenue(request.user, row.venueId)");
   });
 
   it("enforces hold hygiene on edits of live holds", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain("HOLD_HYGIENE_REQUIRED");
     expect(source).toContain("holdHygieneIssues");
   });
 
   it("clears the ladder rank on promotion to ink", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(source).toContain('rank: toState === "ink" ? null : row.rank');
   });
 
   it("carries no unsupported claim language", async () => {
-    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    expect(source).not.toContain("certified safe");
-    expect(source).not.toContain("fire approved");
-    expect(source).not.toContain("legally compliant");
+    for (const file of ["src/routes/bookings.ts", "src/services/booking-mutations.ts"]) {
+      const source = await readFile(resolve(file), "utf-8");
+      expect(source).not.toContain("certified safe");
+      expect(source).not.toContain("fire approved");
+      expect(source).not.toContain("legally compliant");
+    }
   });
 });

@@ -2432,6 +2432,7 @@ export * from "./omnitwin-foundry-intake-admission.js";
 export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
+export * from "./diary-command.js";
 
 // G4 (03 §1): the one Action envelope — LIVE from Slice 1 (web action log).
 export * from "./action.js";

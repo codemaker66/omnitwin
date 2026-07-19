@@ -7,9 +7,14 @@ import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 /**
  * Returns true if the user can manage a resource belonging to the given venue.
  * Venviewer platform admins can manage any venue. Customer venue roles can
- * manage only their assigned venue.
+ * manage only their assigned venue. Accepts the structural subset it reads
+ * (the isPlatformAdmin precedent) so non-HTTP actors — the /ws/diary command
+ * channel's MutationActor — can be checked without fabricating a JwtUser.
  */
-export function canManageVenue(user: JwtUser, venueId: string): boolean {
+export function canManageVenue(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
   if (isPlatformAdmin(user)) return true;
   if ((user.role === "admin" || user.role === "staff" || user.role === "hallkeeper") && user.venueId === venueId) return true;
   return false;
