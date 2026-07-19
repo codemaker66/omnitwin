@@ -1,0 +1,33 @@
+{
+  "id": "colmap-sfm-to-venue-control-proposed",
+  "sourceFrameId": "colmap-sfm",
+  "targetFrameId": "venue-control",
+  "operationKind": "affine_similarity",
+  "matrix": [
+    -0.5624360642241849,
+    1.6260789659747132,
+    0.23309866498936546,
+    0,
+    -0.02632727397933565,
+    -0.255274107835771,
+    1.7172489982698131,
+    0,
+    1.6424903853143353,
+    0.5527245641623566,
+    0.10734527407719184,
+    0,
+    8.30477490432187,
+    -5.153103582256394,
+    1.528183987006821,
+    1
+  ],
+  "state": "proposed",
+  "transformArtifactAssetId": null,
+  "residualReportAssetId": null,
+  "projectionArtifactAssetId": null,
+  "reviewerAttestationAssetId": null,
+  "provenanceAssetIds": [
+    "e57-main",
+    "colmap-sparse-images-bin"
+  ]
+}
