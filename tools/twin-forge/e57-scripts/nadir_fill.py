@@ -437,6 +437,35 @@ def detect_smear_view(
                         comp, iterations=max(1, std_window // 2)
                     )
                     added = True
+            # Smear-LIKE detached lobes (the scan_045 entry-node failure):
+            # the smear can arrive SPLIT by a texture band or threshold —
+            # fragments that connect to nothing, wood-coloured (both chroma
+            # stages blind), but flat and matching the central smear's
+            # colour. Guards against eating real floor sheen: must be
+            # DEEPLY flat (< 0.6x the base threshold), inside the tripod
+            # zone, and no bigger than the central smear itself.
+            ref = np.median(blur[mask], axis=0)
+            deep_flat = std < (thresh * 0.6)
+            # Wider zone than the chroma stages: tripod junk scatters to
+            # ~2.5x the smear radius (the chroma neigh stops too close —
+            # that near-miss was exactly the 0.22-coverage failure mode).
+            neigh_lobe = ndimage.binary_dilation(
+                mask, iterations=int(np.clip(radius_px * 2.5, 30, 300))
+            )
+            lobes = deep_flat & neigh_lobe & ~mask
+            labs3, n3 = ndimage.label(lobes)
+            cap = int(mask.sum()) * 1.2
+            for lab in range(1, n3 + 1):
+                comp = labs3 == lab
+                area = int(comp.sum())
+                if area < 12 or area > cap:
+                    continue
+                col_d = float(np.linalg.norm(np.median(blur[comp], axis=0) - ref))
+                if col_d < 26.0:
+                    mask = mask | ndimage.binary_dilation(
+                        comp, iterations=max(1, std_window // 2)
+                    )
+                    added = True
             if added:
                 mask = ndimage.binary_closing(mask, iterations=3)
                 mask = ndimage.binary_fill_holes(mask)
