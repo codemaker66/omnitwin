@@ -12,20 +12,20 @@ import { ApiError } from "../../../api/client.js";
 //                    ack re-throws as a REAL ApiError (status/code/details
 //                    verbatim), so every existing error branch — drawer
 //                    copy, the board's 409 handling — works unchanged.
-//   channel absent → plain REST, exactly as before T-537.
-//   channel FAILS  → two distinct cases (reviewer P0, T-537). The sender
-//                    rejects with ChannelDispatchError whose `sent` flag
-//                    records whether the frame was handed to the socket:
-//        never sent (socket closed before dispatch) → REST retry, always
-//          safe — the server provably saw nothing.
-//        sent but unconfirmed (ack timeout / drop after send) → REST retry
-//          ONLY for update/transition, whose cores re-apply to the SAME
-//          row (a repeat is a no-op or a clean 4xx). A create carries no
-//          idempotency identity over REST — the commandId ledger covers
-//          the ws transport alone — so a blind retry could commit a
-//          SECOND booking (holds/prospects overlap by design). An
-//          unconfirmed create therefore surfaces COMMAND_UNCONFIRMED and
-//          the board's next refetch shows the truth.
+//   channel absent → plain REST, carrying the same minted commandId as an
+//                    Idempotency-Key (T-538).
+//   channel FAILS  → REST retry with the SAME commandId (T-538). The
+//                    fallback sends the id as an Idempotency-Key, so the
+//                    server's diary_commands ledger dedupes across BOTH
+//                    transports: if the ws attempt committed, the REST
+//                    resend replays the recorded outcome instead of
+//                    re-executing — no duplicate is possible even for a
+//                    create (holds/prospects overlap by design, so this
+//                    was T-537's P0; its refusal-based guard is superseded
+//                    by identity). The sender still rejects with
+//                    ChannelDispatchError whose `sent` flag records
+//                    whether the frame reached the socket — diagnostic
+//                    now, no longer a retry gate.
 //
 // Ack integrity: the protocol layer (live-protocol.ts) parses every server
 // frame against the SHARED DiaryCommandAckSchema — which embeds
@@ -66,31 +66,27 @@ export function releaseDiaryCommandChannel(sender: DiaryCommandSender): void {
   if (currentChannel === sender) currentChannel = null;
 }
 
-/** Route a mutation command-first with REST fallback (see module comment). */
+/** Route a mutation command-first with REST fallback (see module comment).
+ *  ONE commandId is minted per logical operation and travels with BOTH
+ *  transports — the fallback passes it as an Idempotency-Key, so the
+ *  server's ledger dedupes a channel attempt and its REST retry. */
 export async function sendViaChannelOrRest(
   buildCommand: (commandId: string) => DiaryCommand,
-  restFallback: () => Promise<Booking>,
+  restFallback: (commandId: string) => Promise<Booking>,
 ): Promise<Booking> {
+  const commandId = crypto.randomUUID();
   const channel = currentChannel;
-  if (channel === null) return restFallback();
+  if (channel === null) return restFallback(commandId);
 
-  const command = buildCommand(crypto.randomUUID());
+  const command = buildCommand(commandId);
   let ack: DiaryCommandAck;
   try {
     ack = await channel(command);
-  } catch (error) {
+  } catch {
     // Channel-level failure — the server never ANSWERED, but it may still
-    // have EXECUTED (see module comment). REST retry is allowed when the
-    // frame provably never left this client, or when the command's core is
-    // shape-idempotent (update/transition). An unconfirmed create must not
-    // re-execute as a new operation.
-    const neverSent = error instanceof ChannelDispatchError && !error.sent;
-    if (neverSent || command.kind !== "booking.create") return restFallback();
-    throw new ApiError(
-      0,
-      "Could not confirm this booking was created — check the board before retrying",
-      "COMMAND_UNCONFIRMED",
-    );
+    // have EXECUTED. The retry carries the SAME commandId, so a committed
+    // ws attempt replays instead of re-executing (T-538).
+    return restFallback(commandId);
   }
 
   if (ack.outcome === "rejected") {
@@ -103,8 +99,9 @@ export async function sendViaChannelOrRest(
   }
   if (ack.booking === undefined) {
     // Defensive: an applied ack should always carry the booking; if a
-    // server variant ever omits it, REST re-reads authoritative state.
-    return restFallback();
+    // server variant ever omits it, the SAME-id REST call replays the
+    // recorded outcome with a fresh row read — authoritative state.
+    return restFallback(command.commandId);
   }
   return ack.booking;
 }

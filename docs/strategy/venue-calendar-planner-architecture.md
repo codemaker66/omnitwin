@@ -413,7 +413,7 @@ broadcast." One validation dialect, two transports.
 | `diary_commands` ledger (0061), client-minted uuid pk, recorded INSIDE the mutation's transaction | exactly-once: command and record commit or vanish together; a resend aborts on the pk and replays the recorded outcome (`replay: true`) |
 | The core runs in a NESTED SAVEPOINT within the command transaction | a 23P01 (the ink race) aborts the sub-transaction even though the core returns a calm deny; rolling back only the savepoint keeps the ledger write alive so the loser's ack carries the TRUE `INK_SLOT_TAKEN` — found by the live two-coordinator e2e, not by unit tests |
 | Acks speak the REST vocabulary verbatim (status/code/error/details) | the client rebuilds a REAL `ApiError` from a rejected ack — every existing error branch (drawer copy, board 409 handling) works unchanged |
-| Client: channel-first via a module registry (`diary-command-channel.ts`), REST fallback | progressive enhancement — the socket is never load-bearing for correctness; channel absence degrades to exactly the pre-T-537 behaviour. Channel FAILURE is split (reviewer P0): a frame that provably never left the client retries over REST for any kind; a SENT-but-unconfirmed command retries only for update/transition (row-idempotent cores) — an unconfirmed create surfaces `COMMAND_UNCONFIRMED` instead of re-executing, because REST carries no commandId and a blind retry could commit a second hold/prospect |
+| Client: channel-first via a module registry (`diary-command-channel.ts`), REST fallback | progressive enhancement — the socket is never load-bearing for correctness. Since T-538 the fallback carries the SAME commandId as an `Idempotency-Key`, so a channel attempt and its REST retry are ONE operation to the server's ledger: a committed-but-unacked command replays instead of re-executing, for every kind including creates. (The interim reviewer-P0 guard — refusing an unconfirmed create with `COMMAND_UNCONFIRMED` — is superseded by identity; see §13.1) |
 | Broadcast stays on the house event bus, emitted post-commit by the transport | both transports converge on ONE fan-out path; every venue connection sees a single consistent stream |
 | `from-enquiry` stays REST-only | the tray conversion is not a board-latency surface; deliberately not a command kind |
 
@@ -441,3 +441,24 @@ File map: types `diary-command.ts` (envelope + ack schemas) · api
 `drizzle/0061_diary_commands.sql` · web `lib/diary-command-channel.ts`
 (registry + ApiError mapping) · `hooks/useDiaryLive.ts` (in-flight acks) ·
 `api/diary.ts` (channel-first mutations).
+
+### 13.1 REST idempotency — one ledger, both transports (T-538)
+
+The reviewer's "complete fix", implemented: the REST surface accepts the
+same commandId identity the ws transport always carried, so a genuine
+resend across EITHER transport dedupes identically.
+
+| Decision | Rationale |
+| --- | --- |
+| `Idempotency-Key` header (uuid) on POST /bookings, PATCH /bookings/:id, POST /bookings/:id/transition | the commandId rides a header so the request BODIES stay byte-identical to the shared ws payload schemas — zero schema drift between transports |
+| A keyed request runs THROUGH `executeDiaryCommand` + `realDiaryCommandDeps` | literally one function for both transports: ledger write inside the mutation tx, savepoint law, duplicate replay, and the replay venue-authorization all inherited, never re-implemented |
+| `ackToHttpReply` (pure, unit-tested) maps the ack to the EXACT keyless reply shapes | `{ data }` / `{ data, resequence }` / sendDeny `{ error, code, details? }` — a keyed request is wire-identical to a keyless one for the same outcome; an applied replay whose booking was later deleted maps to an honest 404 |
+| `Idempotency-Replay: true\|false` response header (CORS-exposed) | operators and clients can SEE a dedupe happen; bodies stay unchanged |
+| Keyed requests require a venue-scoped session (400 `IDEMPOTENCY_REQUIRES_VENUE`) | the ledger records the actor's venue (ws-door parity: "the diary is a venue surface"); keyless requests from the same actor are untouched |
+| The web client mints ONE commandId per operation — channel attempt AND `restFallback(commandId)` share it | the T-537 unconfirmed-create refusal retires: every fallback retry is now identity-carrying, so the ledger replays a committed attempt instead of duplicating a hold/prospect |
+| Keyless requests, reads, and `from-enquiry` byte-identical | opt-in surface; the pre-T-538 route suite remains the behaviour pin |
+
+Live proof (seeded stack, diary-live e2e scenario 6): two in-page
+authenticated POSTs with one key → `201` + `Idempotency-Replay: false`,
+then `201` + `Idempotency-Replay: true`, SAME booking id, exactly one
+block on the board.

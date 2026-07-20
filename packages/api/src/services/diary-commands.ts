@@ -272,6 +272,57 @@ export async function executeDiaryCommand(
   }
 }
 
+// --- the REST half of "one dialect, two transports" (T-538) ---------------
+
+export interface DiaryCommandHttpReply {
+  readonly status: number;
+  /** Mirrors ack.replay — the route surfaces it as `Idempotency-Replay`. */
+  readonly replay: boolean;
+  readonly body: Record<string, unknown>;
+}
+
+/**
+ * Map a command ack onto the EXACT reply shapes the keyless routes send —
+ * `{ data }` (+ `resequence` for transitions) on success, the sendDeny
+ * `{ error, code, details? }` shape on rejection — so a keyed request is
+ * wire-identical to a keyless one for the same outcome.
+ */
+export function ackToHttpReply(
+  kind: DiaryCommand["kind"],
+  ack: DiaryCommandAck,
+): DiaryCommandHttpReply {
+  if (ack.outcome === "applied") {
+    if (ack.booking === undefined) {
+      // A replayed applied outcome whose booking has since been deleted:
+      // `{ data: undefined }` would breach the response contract, so the
+      // truthful CURRENT state is reported instead.
+      return {
+        status: 404,
+        replay: ack.replay,
+        body: { error: "Booking not found", code: "BOOKING_NOT_FOUND" },
+      };
+    }
+    return {
+      status: ack.status,
+      replay: ack.replay,
+      body:
+        kind === "booking.transition"
+          ? { data: ack.booking, resequence: ack.resequence ?? null }
+          : { data: ack.booking },
+    };
+  }
+  return {
+    status: ack.status,
+    replay: ack.replay,
+    body: {
+      // Same fallbacks the web client uses when rebuilding an ApiError.
+      error: ack.error ?? "The command was rejected",
+      code: ack.code ?? "COMMAND_REJECTED",
+      ...(ack.details === undefined ? {} : { details: ack.details }),
+    },
+  };
+}
+
 // --- the real (non-test) dependency wiring --------------------------------
 
 export function realDiaryCommandDeps(db: Database): DiaryCommandDeps {

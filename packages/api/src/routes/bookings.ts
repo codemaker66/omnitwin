@@ -1,6 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
-import { ConvertEnquirySchema, CreateBookingSchema, TransitionBookingSchema, UpdateBookingSchema } from "@omnitwin/types";
+import {
+  ConvertEnquirySchema,
+  CreateBookingSchema,
+  TransitionBookingSchema,
+  UpdateBookingSchema,
+  type DiaryCommand,
+} from "@omnitwin/types";
 import { z } from "zod";
 import { bookings, enquiries, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -18,6 +24,11 @@ import {
   type BookingMutationDeny,
   type BookingRow,
 } from "../services/booking-mutations.js";
+import {
+  ackToHttpReply,
+  executeDiaryCommand,
+  realDiaryCommandDeps,
+} from "../services/diary-commands.js";
 
 // ---------------------------------------------------------------------------
 // Booking write surface (T-487/T-488/T-491; Canon §1–§3).
@@ -70,6 +81,77 @@ function publishDiaryChanged(
 
 export { serializeBooking } from "../services/booking-mutations.js";
 
+// --- REST command idempotency (T-538) --------------------------------------
+// A mutation carrying an `Idempotency-Key` header (a client-minted uuid
+// commandId) runs THROUGH executeDiaryCommand — the same envelope dispatch,
+// diary_commands ledger, savepoint law, and replay authorization the
+// /ws/diary transport uses. One dialect, two transports, ONE ledger: a
+// resend across EITHER transport replays the recorded outcome instead of
+// re-executing. Keyless requests take the exact pre-T-538 path.
+
+const IdempotencyKeyValue = z.string().uuid();
+
+type IdempotencyHeader =
+  | { readonly kind: "absent" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "key"; readonly commandId: string };
+
+function readIdempotencyKey(request: FastifyRequest): IdempotencyHeader {
+  const raw = request.headers["idempotency-key"];
+  if (raw === undefined) return { kind: "absent" };
+  const parsed = IdempotencyKeyValue.safeParse(raw);
+  if (!parsed.success) return { kind: "invalid" };
+  return { kind: "key", commandId: parsed.data };
+}
+
+function invalidIdempotencyKey(reply: FastifyReply): FastifyReply {
+  return validationError(reply, [
+    { path: ["idempotency-key"], message: "Idempotency-Key must be a uuid" },
+  ]);
+}
+
+/** Dispatch a keyed mutation through the command path and shape the reply
+ *  exactly like the keyless adapters (plus the Idempotency-Replay header). */
+async function runKeyedCommand(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  command: DiaryCommand,
+): Promise<FastifyReply> {
+  const actorVenueId = request.user.venueId;
+  if (actorVenueId === null) {
+    // The ledger records the actor's venue scope (the ws door has the same
+    // requirement — "the diary is a venue surface"). Keyless requests from
+    // the same actor are unaffected.
+    return reply.status(400).send({
+      error: "Idempotent diary writes require a venue-scoped session",
+      code: "IDEMPOTENCY_REQUIRES_VENUE",
+    });
+  }
+  const execution = await executeDiaryCommand(
+    db,
+    request.user,
+    actorVenueId,
+    command,
+    realDiaryCommandDeps(db),
+  );
+  if (execution.changed !== null) {
+    // Fresh commit → broadcast, exactly like the keyless adapters (the
+    // booking's own venue scopes the event). Replays publish nothing.
+    publishDiaryChanged(
+      request,
+      execution.ack.booking?.venueId ?? actorVenueId,
+      execution.changed.kind,
+      execution.changed.bookingId,
+    );
+  }
+  const http = ackToHttpReply(command.kind, execution.ack);
+  return reply
+    .status(http.status)
+    .header("idempotency-replay", String(http.replay))
+    .send(http.body);
+}
+
 export async function bookingRoutes(
   server: FastifyInstance,
   opts: { db: Database },
@@ -79,6 +161,16 @@ export async function bookingRoutes(
   server.post("", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateBookingSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+
+    const key = readIdempotencyKey(request);
+    if (key.kind === "invalid") return invalidIdempotencyKey(reply);
+    if (key.kind === "key") {
+      return runKeyedCommand(db, request, reply, {
+        kind: "booking.create",
+        commandId: key.commandId,
+        payload: parsed.data,
+      });
+    }
 
     const result = await createBookingCore(db, request.user, parsed.data);
     if (!result.ok) return sendDeny(reply, result);
@@ -103,6 +195,17 @@ export async function bookingRoutes(
     const parsed = UpdateBookingSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
 
+    const key = readIdempotencyKey(request);
+    if (key.kind === "invalid") return invalidIdempotencyKey(reply);
+    if (key.kind === "key") {
+      return runKeyedCommand(db, request, reply, {
+        kind: "booking.update",
+        commandId: key.commandId,
+        bookingId: params.data.id,
+        payload: parsed.data,
+      });
+    }
+
     const result = await updateBookingCore(db, request.user, params.data.id, parsed.data);
     if (!result.ok) return sendDeny(reply, result);
     publishDiaryChanged(request, result.booking.venueId, result.changeKind, result.booking.id);
@@ -114,6 +217,17 @@ export async function bookingRoutes(
     if (!params.success) return validationError(reply, params.error.issues);
     const parsed = TransitionBookingSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+
+    const key = readIdempotencyKey(request);
+    if (key.kind === "invalid") return invalidIdempotencyKey(reply);
+    if (key.kind === "key") {
+      return runKeyedCommand(db, request, reply, {
+        kind: "booking.transition",
+        commandId: key.commandId,
+        bookingId: params.data.id,
+        payload: parsed.data,
+      });
+    }
 
     const result = await transitionBookingCore(db, request.user, params.data.id, parsed.data);
     if (!result.ok) return sendDeny(reply, result);

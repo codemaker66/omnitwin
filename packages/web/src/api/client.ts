@@ -65,6 +65,10 @@ interface RequestOptions {
   readonly body?: unknown;
   readonly skipAuth?: boolean;
   readonly signal?: AbortSignal;
+  /** T-538: a client-minted uuid commandId sent as `Idempotency-Key` —
+   *  keyed diary mutations dedupe server-side via the diary_commands
+   *  ledger, so a retry can never re-execute a committed write. */
+  readonly idempotencyKey?: string;
 }
 
 type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
@@ -73,6 +77,10 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
+
+  if (opts.idempotencyKey !== undefined) {
+    headers["Idempotency-Key"] = opts.idempotencyKey;
+  }
 
   if (opts.skipAuth !== true) {
     const token = await getAuthToken();
@@ -159,11 +167,22 @@ export const api = {
   get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
     request<T>({ method: "GET", path, signal }, schema),
 
-  post: <T>(path: string, body?: unknown, skipAuth?: boolean, schema?: ResponseSchema<T>): Promise<T> =>
-    request<T>({ method: "POST", path, body, skipAuth }, schema),
+  post: <T>(
+    path: string,
+    body?: unknown,
+    skipAuth?: boolean,
+    schema?: ResponseSchema<T>,
+    options?: { idempotencyKey?: string },
+  ): Promise<T> =>
+    request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 
-  patch: <T>(path: string, body: unknown, schema?: ResponseSchema<T>): Promise<T> =>
-    request<T>({ method: "PATCH", path, body }, schema),
+  patch: <T>(
+    path: string,
+    body: unknown,
+    schema?: ResponseSchema<T>,
+    options?: { idempotencyKey?: string },
+  ): Promise<T> =>
+    request<T>({ method: "PATCH", path, body, ...options }, schema),
 
   delete: <T = void>(path: string): Promise<T> =>
     request<T>({ method: "DELETE", path }),
