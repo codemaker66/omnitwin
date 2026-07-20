@@ -158,10 +158,19 @@ export interface E57ScanTranslation {
 const TRANSLATION_PATTERN =
   /<translation[^>]*>\s*<x[^>]*>([-+0-9.eE]+)<\/x>\s*<y[^>]*>([-+0-9.eE]+)<\/y>\s*<z[^>]*>([-+0-9.eE]+)<\/z>/gu;
 
-/** Extract data3D pose translations in document order from E57 XML text. */
+/**
+ * Extract data3D pose translations in document order from E57 XML text.
+ * Scoped strictly to the data3D section: the images2D section carries 894
+ * camera-pose translations in this venue's file that must never be counted
+ * as scan poses.
+ */
 export function extractE57ScanTranslations(xml: string): E57ScanTranslation[] {
+  const sectionStart = xml.search(/<data3D[\s>]/u);
+  if (sectionStart < 0) return [];
+  const sectionEnd = xml.indexOf("</data3D>", sectionStart);
+  const section = xml.slice(sectionStart, sectionEnd < 0 ? xml.length : sectionEnd);
   const translations: E57ScanTranslation[] = [];
-  for (const match of xml.matchAll(TRANSLATION_PATTERN)) {
+  for (const match of section.matchAll(TRANSLATION_PATTERN)) {
     translations.push({
       index: translations.length,
       x: Number(match[1]),

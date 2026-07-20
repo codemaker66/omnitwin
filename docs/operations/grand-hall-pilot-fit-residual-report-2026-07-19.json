@@ -6,7 +6,7 @@
     "e57": "e57-main",
     "colmapImagesBin": "colmap-sparse-images-bin",
     "registeredImages": 231,
-    "e57ScanTranslations": 1043,
+    "e57ScanTranslations": 149,
     "sweepCorrespondences": 50
   },
   "disposition": "PROPOSED DIAGNOSTIC ONLY - diagnostic of the derived COLMAP image set against E57 pose translations; not a reviewed TransformArtifact, no runtime or public authority, and per the T-507 audit NOT the governing transform of the E57-native 149-node release.",

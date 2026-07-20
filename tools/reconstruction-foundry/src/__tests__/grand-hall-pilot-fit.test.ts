@@ -107,6 +107,18 @@ describe("deterministic E57 metadata inspection", () => {
     const translations = extractE57ScanTranslations(new TextDecoder().decode(logical));
     expect(translations).toEqual([{ index: 0, x: 1.5, y: -2.25, z: 0.75 }]);
   });
+
+  it("counts only data3D scan poses, never images2D camera poses", () => {
+    const xml =
+      '<e57Root><data3D><vectorChild><pose><translation type="Structure">' +
+      '<x type="Float">1</x><y type="Float">2</y><z type="Float">3</z>' +
+      "</translation></pose></vectorChild></data3D>" +
+      '<images2D><vectorChild><pose><translation type="Structure">' +
+      '<x type="Float">9</x><y type="Float">9</y><z type="Float">9</z>' +
+      "</translation></pose></vectorChild></images2D></e57Root>";
+    const translations = extractE57ScanTranslations(xml);
+    expect(translations).toEqual([{ index: 0, x: 1, y: 2, z: 3 }]);
+  });
 });
 
 describe("similarity fit with held-out sweep centres", () => {
