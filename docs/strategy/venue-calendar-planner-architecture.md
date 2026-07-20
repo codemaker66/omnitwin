@@ -399,3 +399,32 @@ injected-send orchestration + fetch) · `api/src/services/email-templates.tsx`
 (`POST /admin/diary/hold-reminders`) · `api/src/scripts/run-hold-reminders.ts`
 (cron path) · tests: `services/hold-reminders.test.ts` (16),
 `admin-hold-reminders.test.ts` (5, service-mocked in an isolated file).
+
+## 13. Command envelopes — the §9 mutation channel (T-537; Canon §9)
+
+The tail deferred in §11 is closed: "Mutations = commands validated in a
+Neon transaction (exclusion constraint = final arbiter) → commit →
+broadcast." One validation dialect, two transports.
+
+| Decision | Rationale |
+| --- | --- |
+| Mutation cores extracted to `services/booking-mutations.ts`, routes become adapters | REST and /ws/diary MUST run identical validation/transactions/errors; the pre-extraction route suite is the behaviour pin (38/38, every status/code/string unchanged) |
+| `BookingDbConn = Database \| transaction` on every core | the command path wraps core + ledger row in ONE transaction (drizzle savepoint nesting); REST passes db unchanged |
+| `diary_commands` ledger (0061), client-minted uuid pk, recorded INSIDE the mutation's transaction | exactly-once: command and record commit or vanish together; a resend aborts on the pk and replays the recorded outcome (`replay: true`) |
+| The core runs in a NESTED SAVEPOINT within the command transaction | a 23P01 (the ink race) aborts the sub-transaction even though the core returns a calm deny; rolling back only the savepoint keeps the ledger write alive so the loser's ack carries the TRUE `INK_SLOT_TAKEN` — found by the live two-coordinator e2e, not by unit tests |
+| Acks speak the REST vocabulary verbatim (status/code/error/details) | the client rebuilds a REAL `ApiError` from a rejected ack — every existing error branch (drawer copy, board 409 handling) works unchanged |
+| Client: channel-first via a module registry (`diary-command-channel.ts`), REST fallback | progressive enhancement — the socket is never load-bearing for correctness; channel absence or channel-level failure degrades to exactly the pre-T-537 behaviour |
+| Broadcast stays on the house event bus, emitted post-commit by the transport | both transports converge on ONE fan-out path; every venue connection sees a single consistent stream |
+| `from-enquiry` stays REST-only | the tray conversion is not a board-latency surface; deliberately not a command kind |
+
+Live proof (seeded local stack): diary-live e2e 6/6 — the five Slice-4
+scenarios now channel-backed (the ink race arbitrated over ws) plus a new
+scenario asserting a drawer create lands with ZERO REST booking mutations
+fired.
+
+File map: types `diary-command.ts` (envelope + ack schemas) · api
+`services/booking-mutations.ts` (cores) · `services/diary-commands.ts`
+(executeDiaryCommand + real deps) · `ws/diary-live.ts` (frame dispatch) ·
+`drizzle/0061_diary_commands.sql` · web `lib/diary-command-channel.ts`
+(registry + ApiError mapping) · `hooks/useDiaryLive.ts` (in-flight acks) ·
+`api/diary.ts` (channel-first mutations).
