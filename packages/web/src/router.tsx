@@ -396,10 +396,11 @@ export const router = createBrowserRouter([
   },
   {
     // Memorable public entry to the flagship walkthrough — printable,
-    // sayable on the phone. /twin is NOT usable here: that path is the
-    // asset proxy to the tile bucket.
+    // sayable on the phone, and the address bar KEEPS this short URL
+    // (TwinPage defaults to the flagship venue when no :venueSlug).
+    // /twin is NOT usable here: that path proxies the tile bucket.
     path: "/tour",
-    element: <Navigate to="/venues/trades-hall/twin" replace />,
+    element: withSuspense(<TwinPage />),
   },
   {
     // Public room showcase. Uses only the client-safe room visual endpoint and
