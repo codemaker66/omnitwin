@@ -8,6 +8,7 @@ import {
   type CreateBookingInput,
 } from "@omnitwin/types";
 import { api } from "./client.js";
+import { sendViaChannelOrRest } from "../pages/diary/lib/diary-command-channel.js";
 
 // ---------------------------------------------------------------------------
 // Diary API client (T-493). One read model for every calendar view, plus the
@@ -32,7 +33,12 @@ export interface MoveBookingPatch {
 }
 
 export async function moveBooking(bookingId: string, patch: MoveBookingPatch): Promise<Booking> {
-  return api.patch(`/bookings/${bookingId}`, patch, BookingSchema);
+  // T-537: command-first while the live channel is open, REST otherwise —
+  // one validation dialect either way (see diary-command-channel.ts).
+  return sendViaChannelOrRest(
+    (commandId) => ({ kind: "booking.update", commandId, bookingId, payload: patch }),
+    () => api.patch(`/bookings/${bookingId}`, patch, BookingSchema),
+  );
 }
 
 export interface EditBookingPatch extends MoveBookingPatch {
@@ -47,11 +53,17 @@ export interface EditBookingPatch extends MoveBookingPatch {
 }
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
-  return api.post("/bookings", input, undefined, BookingSchema);
+  return sendViaChannelOrRest(
+    (commandId) => ({ kind: "booking.create", commandId, payload: input }),
+    () => api.post("/bookings", input, undefined, BookingSchema),
+  );
 }
 
 export async function updateBooking(bookingId: string, patch: EditBookingPatch): Promise<Booking> {
-  return api.patch(`/bookings/${bookingId}`, patch, BookingSchema);
+  return sendViaChannelOrRest(
+    (commandId) => ({ kind: "booking.update", commandId, bookingId, payload: patch }),
+    () => api.patch(`/bookings/${bookingId}`, patch, BookingSchema),
+  );
 }
 
 export async function transitionBooking(
@@ -59,7 +71,10 @@ export async function transitionBooking(
   toState: BookingState,
   note?: string,
 ): Promise<Booking> {
-  return api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, BookingSchema);
+  return sendViaChannelOrRest(
+    (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note } }),
+    () => api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, BookingSchema),
+  );
 }
 
 export async function convertEnquiry(input: ConvertEnquiryInput): Promise<Booking> {

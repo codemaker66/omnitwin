@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DiaryCommandAckSchema } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Diary live protocol (T-497) — the client half of /ws/diary. Pure parsing
@@ -43,6 +44,9 @@ export const LiveServerMessageSchema = z.discriminatedUnion("type", [
   HelloMessage,
   PresenceMessage,
   DiaryEventMessage,
+  // T-537: command outcomes ride the same stream — the SHARED ack schema
+  // (booking embedded and validated here, once).
+  DiaryCommandAckSchema,
   PingMessage,
   PongMessage,
   ErrorMessage,
@@ -65,6 +69,10 @@ export function parseLiveMessage(raw: unknown): LiveServerMessage | null {
 
 export const RECONNECT_BASE_MS = 1_000;
 export const RECONNECT_MAX_MS = 30_000;
+
+/** How long a command waits for its ack before the api layer falls back to
+ *  REST (T-537). Generous versus the p99 mutation, small versus a human. */
+export const COMMAND_ACK_TIMEOUT_MS = 10_000;
 
 /** Exponential backoff (Canon §15: client exponential-backoff reconnect). */
 export function nextBackoffMs(attempt: number): number {

@@ -42,9 +42,16 @@ const BOOKING_ROW = {
   venueId: VENUE,
 } as never;
 
+/** A fake connection whose .transaction nests like drizzle's savepoints
+ *  (rethrows the callback's error after "rolling back" — i.e. doing
+ *  nothing, exactly like the unit fake's absent state). */
+function fakeConn(): { transaction: <T>(cb: (inner: never) => Promise<T>) => Promise<T> } {
+  return { transaction: (cb) => cb(fakeConn() as never) };
+}
+
 function deps(overrides: Partial<DiaryCommandDeps> = {}): DiaryCommandDeps {
   return {
-    runInTransaction: vi.fn(async (work) => work({} as never)),
+    runInTransaction: vi.fn(async (work) => work(fakeConn() as never)),
     recordCommand: vi.fn().mockResolvedValue("recorded"),
     readRecordedCommand: vi.fn().mockResolvedValue(null),
     createBooking: vi.fn().mockResolvedValue({

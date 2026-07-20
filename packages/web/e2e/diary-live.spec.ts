@@ -110,6 +110,43 @@ test("the drawer writes a real booking into the diary", async () => {
   await expect(pageA.getByRole("button", { name: new RegExp(title) }).first()).toBeVisible();
 });
 
+test("a live create travels as a command envelope, not REST (T-537; Canon §9)", async () => {
+  const title = `Command envelope ${RUN_TAG}`;
+  const [starts, ends] = slot("16", 2, 60);
+
+  // The channel must be up — the command path only engages while connected.
+  await expect(pageA.getByText(/Live · \d/)).toBeVisible({ timeout: 15_000 });
+
+  const restMutations: string[] = [];
+  const recorder = (request: import("@playwright/test").Request): void => {
+    const url = request.url();
+    const method = request.method();
+    if (/\/bookings(\/|$|\?)/.test(url) && (method === "POST" || method === "PATCH")) {
+      restMutations.push(`${method} ${url}`);
+    }
+  };
+  pageA.on("request", recorder);
+  try {
+    await pageA.getByRole("button", { name: "New booking" }).click();
+    const drawer = pageA.getByRole("dialog", { name: "New booking" });
+    await expect(drawer).toBeVisible();
+    await drawer.getByLabel("Commitment").selectOption({ label: "House block" });
+    await drawer.getByLabel("Room").selectOption({ label: "Robert Adam Room" });
+    await drawer.getByLabel("Title", { exact: true }).fill(title);
+    await drawer.getByLabel("Event type").fill("maintenance");
+    await fillDrawerTimes(drawer, starts, ends);
+    await drawer.getByRole("button", { name: "Add to the diary" }).click();
+
+    // The booking lands (ack applied → toast; diary.event → board refetch)…
+    await expect(pageA.getByText(`Added ${title} to the diary.`)).toBeVisible({ timeout: 15_000 });
+    await expect(pageA.getByRole("button", { name: new RegExp(title) }).first()).toBeVisible();
+  } finally {
+    pageA.off("request", recorder);
+  }
+  // …and NO REST mutation fired: the websocket envelope carried it.
+  expect(restMutations).toEqual([]);
+});
+
 test("a public enquiry becomes a pencil through the tray (T-496)", async () => {
   const guest = `Isla Munro ${RUN_TAG}`;
   const [starts, ends] = slot("16", 1, 120);

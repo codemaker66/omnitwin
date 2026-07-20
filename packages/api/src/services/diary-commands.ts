@@ -84,6 +84,16 @@ class DuplicateCommandSignal extends Error {
   }
 }
 
+/** Control-flow signal: a core DENY must roll its savepoint back (a 23P01
+ *  puts the sub-transaction in aborted state even though the core catches
+ *  the exception in JS) so the OUTER transaction stays healthy for the
+ *  ledger write. Carries the deny out of the rollback. */
+class CoreDenySignal extends Error {
+  constructor(readonly deny: Extract<BookingMutationResult, { ok: false }>) {
+    super("core deny");
+  }
+}
+
 const DIARY_COMMAND_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
 
 function rejectedAck(
@@ -136,12 +146,28 @@ export async function executeDiaryCommand(
 
   try {
     const fresh = await deps.runInTransaction(async (tx) => {
-      const result: BookingMutationResult =
-        command.kind === "booking.create"
-          ? await deps.createBooking(tx, actor, command.payload)
-          : command.kind === "booking.update"
-            ? await deps.updateBooking(tx, actor, command.bookingId, command.payload)
-            : await deps.transitionBooking(tx, actor, command.bookingId, command.payload);
+      // The core runs in a SAVEPOINT: when the exclusion constraint fires
+      // (23P01 — the ink race, arbitrated by Postgres), the sub-transaction
+      // is aborted even though the core returns a calm deny. Rolling the
+      // savepoint back keeps THIS transaction healthy, so the ledger can
+      // still record the rejected outcome and the ack carries the true
+      // code — never a generic failure.
+      let result: BookingMutationResult;
+      try {
+        result = await tx.transaction(async (inner) => {
+          const coreResult: BookingMutationResult =
+            command.kind === "booking.create"
+              ? await deps.createBooking(inner, actor, command.payload)
+              : command.kind === "booking.update"
+                ? await deps.updateBooking(inner, actor, command.bookingId, command.payload)
+                : await deps.transitionBooking(inner, actor, command.bookingId, command.payload);
+          if (!coreResult.ok) throw new CoreDenySignal(coreResult);
+          return coreResult;
+        });
+      } catch (error) {
+        if (!(error instanceof CoreDenySignal)) throw error;
+        result = error.deny;
+      }
 
       const recorded = await deps.recordCommand(tx, {
         commandId: command.commandId,
