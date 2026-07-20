@@ -1,0 +1,19 @@
+# Trim the `railway up` upload to what the API Docker build consumes.
+# The web package ballooned with committed splat assets (~hundreds of MB),
+# which pushed the upload past the CLI's timeout. The Docker build needs
+# every workspace member's package.json (frozen install) but only the
+# types/api/foundry sources.
+.git/
+docs/
+state/
+infra/
+configs/
+e2e/
+.claude/
+output/
+packages/web/*
+!packages/web/package.json
+tools/capture-factory/*
+!tools/capture-factory/package.json
+tools/twin-forge/*
+!tools/twin-forge/package.json

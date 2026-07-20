@@ -33,8 +33,13 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/api/package.json ./packages/api/
-# web's package.json is required because pnpm-workspace.yaml references it.
+# Every workspace member's manifest must be present for a frozen install —
+# pnpm-workspace.yaml globs packages/* AND tools/*.
 COPY packages/web/package.json ./packages/web/
+COPY packages/reconstruction-foundry/package.json ./packages/reconstruction-foundry/
+COPY tools/capture-factory/package.json ./tools/capture-factory/
+COPY tools/reconstruction-foundry/package.json ./tools/reconstruction-foundry/
+COPY tools/twin-forge/package.json ./tools/twin-forge/
 
 # --ignore-scripts skips the root postinstall (types build), which we
 # rerun in the build stage with source files available.
@@ -57,13 +62,21 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/types/node_modules ./packages/types/node_modules
 COPY --from=deps /app/packages/api/node_modules ./packages/api/node_modules
+COPY --from=deps /app/packages/reconstruction-foundry/node_modules ./packages/reconstruction-foundry/node_modules
+COPY --from=deps /app/tools/reconstruction-foundry/node_modules ./tools/reconstruction-foundry/node_modules
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/types ./packages/types
 COPY packages/api ./packages/api
+COPY packages/reconstruction-foundry ./packages/reconstruction-foundry
+COPY tools/reconstruction-foundry ./tools/reconstruction-foundry
 
-# Build @omnitwin/types first (dependency of api), then @omnitwin/api.
+# Build order: types → foundry package → foundry CLI → api. The foundry
+# packages' exports point runtime ("omnitwin-dist" condition) at dist/, so
+# they MUST be compiled before the api artifact can boot against them.
 RUN pnpm --filter @omnitwin/types build \
+ && pnpm --filter @omnitwin/reconstruction-foundry build \
+ && pnpm --filter @omnitwin/reconstruction-foundry-cli build \
  && pnpm --filter @omnitwin/api build
 
 # Prune dev deps; `pnpm deploy` produces a self-contained directory
@@ -94,4 +107,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget --quiet --spider http://127.0.0.1:${PORT:-3001}/health/live || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/index.js"]
+# --conditions=omnitwin-dist resolves the foundry workspace packages to their
+# compiled dist/ output (their default export condition is TS source, which
+# Node cannot execute). Keep in sync with railway.json deploy.startCommand.
+CMD ["node", "--conditions=omnitwin-dist", "dist/index.js"]
