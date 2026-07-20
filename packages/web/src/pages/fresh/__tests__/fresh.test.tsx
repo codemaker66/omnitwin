@@ -243,6 +243,32 @@ describe("the walkthrough — wired from the front door", () => {
     expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
   });
+
+  it("deep-links each validated room dossier to its framed viewpoint", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    const expectHref = (index: number, marker: string): void => {
+      fireEvent.click(openButtons[index] as HTMLElement);
+      const link = screen.getByRole("link", {
+        name: "See this room in the walkthrough",
+      });
+      expect(link.getAttribute("href")).toContain(marker);
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    };
+    expectHref(0, "scan_028");
+    expectHref(1, "scan_058");
+    expectHref(3, "scan_105");
+  });
+
+  it("sends the Reception Room dossier to the in-page capture instead", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    fireEvent.click(openButtons[2] as HTMLElement);
+    const walkLink = screen.getByRole("link", {
+      name: "Step into this room on this page",
+    });
+    expect(walkLink.getAttribute("href")).toBe("#walk");
+  });
 });
 
 describe("contact — real destinations", () => {

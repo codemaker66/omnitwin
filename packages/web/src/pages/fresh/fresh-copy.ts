@@ -40,6 +40,9 @@ export const FRESH_TOUR_TITLE = "Then walk the whole building";
 export const FRESH_TOUR_LINE =
   "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
 export const FRESH_TOUR_CTA = "Open the walkthrough";
+export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
+export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
+export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
 
 export const FRESH_ROOMS_TITLE = "Six rooms, one house";
 export const FRESH_ROOMS_LEDE =
@@ -59,6 +62,10 @@ export interface FreshRoom {
   readonly portrait?: boolean;
   /** object-position focus, when the subject is not centred. */
   readonly focus?: string;
+  /** Walkthrough deep link (?node/look query) — hero framing for this room,
+   *  validated against this photography before shipping. Absent when the
+   *  room's better doorway is the in-page capture (the Reception Room). */
+  readonly twinLook?: string;
 }
 
 /** Responsive delivery: pre-encoded webp rungs live in
@@ -102,6 +109,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     width: 1535,
     height: 1024,
     ladder: [480, 768, 1120, 1535],
+    twinLook: "node=scan_028&look=scan_028%2C90%2C6%2C75",
   },
   {
     slug: "saloon",
@@ -112,6 +120,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     width: 1535,
     height: 1025,
     ladder: [480, 768, 1120, 1535],
+    twinLook: "node=scan_058&look=scan_058%2C-90%2C5%2C75",
   },
   {
     slug: "reception-room",
@@ -134,6 +143,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     ladder: [480, 768, 1122],
     portrait: true,
     focus: "center 18%",
+    twinLook: "node=scan_105&look=scan_105%2C0%2C4%2C72",
   },
 ] as const;
 
@@ -243,6 +253,8 @@ export function allFreshCopy(): readonly string[] {
     FRESH_TOUR_TITLE,
     FRESH_TOUR_LINE,
     FRESH_TOUR_CTA,
+    FRESH_DOSSIER_TWIN_CTA,
+    FRESH_DOSSIER_WALK_CTA,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
     FRESH_HERO_ALT,
