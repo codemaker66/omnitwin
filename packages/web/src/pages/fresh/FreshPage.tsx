@@ -221,7 +221,12 @@ function useDomeAperture(): DomeApertureRefs {
     if (!frameEl || !imgEl || !svgEl) return;
     const w = frameEl.clientWidth;
     const h = frameEl.clientHeight;
-    if (w === 0 || h === 0 || w / h < APERTURE_MIN_ASPECT) {
+    // The aperture's dome fractions are measured on the full aerial. When
+    // the art-directed portrait crop is the rendered source (narrow
+    // windows), those fractions are meaningless — and the crop centres the
+    // dome by design, so the aperture stands down rather than drifting.
+    const portraitSource = imgEl.currentSrc.includes("portrait");
+    if (w === 0 || h === 0 || portraitSource || w / h < APERTURE_MIN_ASPECT) {
       imgEl.style.clipPath = "";
       svgEl.style.display = "none";
       return;
@@ -248,15 +253,23 @@ function useDomeAperture(): DomeApertureRefs {
   }, []);
 
   useEffect(() => {
+    // The browser can swap <picture> sources without any layout change
+    // (crossing the art-direction breakpoint), so the img's load event —
+    // not just the ResizeObserver — must re-run the aperture check.
+    const imgEl = img.current;
+    imgEl?.addEventListener("load", apply);
     if (typeof ResizeObserver === "undefined") {
       apply();
-      return;
+      return () => {
+        imgEl?.removeEventListener("load", apply);
+      };
     }
     const observer = new ResizeObserver(apply);
     if (frame.current) observer.observe(frame.current);
     apply();
     return () => {
       observer.disconnect();
+      imgEl?.removeEventListener("load", apply);
     };
   }, [apply]);
 
