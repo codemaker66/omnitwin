@@ -235,6 +235,16 @@ describe("walk the room — poster-first", () => {
   });
 });
 
+describe("the walkthrough — wired from the front door", () => {
+  it("offers the whole-building walkthrough from the hero and the walk section", () => {
+    render(<FreshPage />);
+    const tourLinks = [...document.querySelectorAll('a[href="/tour"]')];
+    expect(tourLinks.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
+  });
+});
+
 describe("contact — real destinations", () => {
   it("offers phone, email, and a map link under their labels", () => {
     render(<FreshPage />);

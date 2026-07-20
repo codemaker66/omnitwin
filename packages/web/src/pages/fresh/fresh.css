@@ -908,6 +908,36 @@
   font-size: 13px;
   color: var(--fr-ink-2);
 }
+/* The doorway to the whole building. */
+.fr-tour-door {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 36px;
+  flex-wrap: wrap;
+  max-width: 900px;
+  margin: clamp(28px, 4vh, 44px) 0 0;
+  padding: clamp(20px, 3vw, 30px) clamp(20px, 3.4vw, 36px);
+  background: var(--fr-paper);
+  border: 1px solid var(--fr-rule);
+  border-left: 3px solid var(--fr-green);
+  border-radius: 3px;
+}
+.fr-tour-door h3 {
+  margin: 0 0 6px;
+  font-family: var(--fr-display);
+  font-weight: 480;
+  font-variation-settings: "opsz" 60;
+  font-size: clamp(20px, 2.6vw, 26px);
+}
+.fr-tour-door p {
+  max-width: 52ch;
+  margin: 0;
+  color: var(--fr-ink-2);
+}
+.fr-tour-door .fr-cta {
+  flex-shrink: 0;
+}
 
 /* ————————————————— the room dossiers ————————————————— */
 

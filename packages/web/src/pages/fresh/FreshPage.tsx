@@ -27,6 +27,11 @@ import {
   FRESH_CONTACT_VISIT_LABEL,
   FRESH_CTA_DATES,
   FRESH_CTA_ROOMS,
+  FRESH_CTA_TOUR,
+  FRESH_TOUR_CTA,
+  FRESH_TOUR_HREF,
+  FRESH_TOUR_LINE,
+  FRESH_TOUR_TITLE,
   FRESH_FOOTER_NOTE,
   FRESH_ARMS,
   FRESH_ARMS_ALT,
@@ -567,6 +572,9 @@ export function FreshPage(): ReactElement {
               <a className="fr-cta-quiet" href="#rooms">
                 {FRESH_CTA_ROOMS}
               </a>
+              <a className="fr-cta-quiet" href={FRESH_TOUR_HREF}>
+                {FRESH_CTA_TOUR}
+              </a>
             </div>
           </div>
         </section>
@@ -683,6 +691,16 @@ export function FreshPage(): ReactElement {
           <p className="fr-walk-hint">
             {walkState === "live" ? FRESH_WALK_HINT : FRESH_WALK_NOTE}
           </p>
+          {/* The doorway to the whole building — the Twin, at its alias. */}
+          <aside className="fr-tour-door" ref={reveal}>
+            <div>
+              <h3>{FRESH_TOUR_TITLE}</h3>
+              <p>{FRESH_TOUR_LINE}</p>
+            </div>
+            <a className="fr-cta" href={FRESH_TOUR_HREF}>
+              {FRESH_TOUR_CTA}
+            </a>
+          </aside>
         </section>
 
         {/* ——— rates: the venue's own numbers, plainly ——— */}

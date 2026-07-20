@@ -395,6 +395,13 @@ export const router = createBrowserRouter([
     element: withSuspense(<TwinPage />),
   },
   {
+    // Memorable public entry to the flagship walkthrough — printable,
+    // sayable on the phone. /twin is NOT usable here: that path is the
+    // asset proxy to the tile bucket.
+    path: "/tour",
+    element: <Navigate to="/venues/trades-hall/twin" replace />,
+  },
+  {
     // Public room showcase. Uses only the client-safe room visual endpoint and
     // planning-grade copy; internal package/debug data stays out of the route.
     path: "/venues/:venueSlug/rooms/:roomSlug",
