@@ -148,7 +148,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(cors, {
     origin: allowedOrigins,
     credentials: true,
-    exposedHeaders: ["x-content-sha256"],
+    // idempotency-replay: T-538 — lets browser clients see whether a keyed
+    // diary mutation was deduped (replayed) rather than freshly executed.
+    exposedHeaders: ["x-content-sha256", "idempotency-replay"],
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.

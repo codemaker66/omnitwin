@@ -50,16 +50,22 @@ export interface EditBookingPatch extends MoveBookingPatch {
 }
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
+  // T-538: the REST fallback carries the SAME commandId as an
+  // Idempotency-Key, so a channel attempt and its retry are ONE operation
+  // to the server's ledger — a committed-but-unacked create replays
+  // instead of duplicating.
   return sendViaChannelOrRest(
     (commandId) => ({ kind: "booking.create", commandId, payload: input }),
-    () => api.post("/bookings", input, undefined, BookingSchema),
+    (commandId) =>
+      api.post("/bookings", input, undefined, BookingSchema, { idempotencyKey: commandId }),
   );
 }
 
 export async function updateBooking(bookingId: string, patch: EditBookingPatch): Promise<Booking> {
   return sendViaChannelOrRest(
     (commandId) => ({ kind: "booking.update", commandId, bookingId, payload: patch }),
-    () => api.patch(`/bookings/${bookingId}`, patch, BookingSchema),
+    (commandId) =>
+      api.patch(`/bookings/${bookingId}`, patch, BookingSchema, { idempotencyKey: commandId }),
   );
 }
 
@@ -70,7 +76,10 @@ export async function transitionBooking(
 ): Promise<Booking> {
   return sendViaChannelOrRest(
     (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note } }),
-    () => api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, BookingSchema),
+    (commandId) =>
+      api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, BookingSchema, {
+        idempotencyKey: commandId,
+      }),
   );
 }
 

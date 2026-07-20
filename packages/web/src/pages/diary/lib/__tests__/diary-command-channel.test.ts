@@ -14,12 +14,12 @@ import {
 // The api layer routes mutations through here: command-first when the live
 // socket has registered a sender, REST otherwise. A rejected ack becomes a
 // REAL ApiError (status/code/details verbatim) so every existing error
-// branch — drawer copy, board 409 handling — keeps working unchanged. A
-// channel-level failure falls back to REST ONLY when that retry cannot
-// duplicate work: always for update/transition (their cores re-apply to
-// the same row), but for a create only when the frame provably never left
-// this client — an unconfirmed create surfaces COMMAND_UNCONFIRMED instead
-// of re-executing as a new operation (reviewer P0, T-537).
+// branch — drawer copy, board 409 handling — keeps working unchanged.
+// ONE commandId is minted per logical operation and travels with BOTH
+// transports (T-538): the REST fallback carries it as an Idempotency-Key,
+// so a channel attempt and its retry dedupe on the server's ledger — the
+// T-537 invariant ("an unconfirmed create must never duplicate") is now
+// enforced by identity instead of refusal.
 // ---------------------------------------------------------------------------
 
 afterEach(() => {
@@ -40,7 +40,7 @@ function appliedAck(commandId: string): DiaryCommandAck {
 }
 
 describe("sendViaChannelOrRest", () => {
-  it("uses REST when no channel is registered", async () => {
+  it("uses REST when no channel is registered — still carrying a minted commandId", async () => {
     const rest = vi.fn().mockResolvedValue(BOOKING);
     const result = await sendViaChannelOrRest(
       (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
@@ -48,6 +48,8 @@ describe("sendViaChannelOrRest", () => {
     );
     expect(result).toBe(BOOKING);
     expect(rest).toHaveBeenCalledTimes(1);
+    // T-538: even the pure-REST path is keyed, so ITS retries can dedupe.
+    expect(rest.mock.calls[0]?.[0]).toMatch(/^[0-9a-f-]{36}$/u);
   });
 
   it("routes through the channel when registered and returns the ack's booking", async () => {
@@ -96,15 +98,18 @@ describe("sendViaChannelOrRest", () => {
     expect(rest).not.toHaveBeenCalled();
   });
 
-  it("an applied ack without a booking payload falls back to REST (defensive)", async () => {
-    setDiaryCommandChannel(((command: { commandId: string }) =>
-      Promise.resolve({
+  it("an applied ack without a booking payload falls back to REST (defensive) — same id", async () => {
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.resolve({
         type: "diary.ack",
         commandId: command.commandId,
         outcome: "applied",
         replay: false,
         status: 201,
-      } satisfies DiaryCommandAck)) as never);
+      } satisfies DiaryCommandAck);
+    }) as never);
     const rest = vi.fn().mockResolvedValue(BOOKING);
     const result = await sendViaChannelOrRest(
       (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
@@ -112,13 +117,18 @@ describe("sendViaChannelOrRest", () => {
     );
     expect(result).toBe(BOOKING);
     expect(rest).toHaveBeenCalledTimes(1);
+    // The keyed REST call replays the recorded outcome with a fresh read.
+    expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
   });
 
-  it("a channel-level failure (timeout / socket died) falls back to REST for an update", async () => {
-    // update/transition cores re-apply to the SAME row — a repeat is a
-    // no-op or a clean 4xx, so even a sent-but-unacked failure may retry.
-    setDiaryCommandChannel((() =>
-      Promise.reject(new ChannelDispatchError(true, "command ack timed out"))) as never);
+  it("a channel-level failure (timeout / socket died) retries REST with the SAME commandId", async () => {
+    // T-538: the id IS the dedupe identity — if the ws attempt committed,
+    // the keyed REST call replays the recorded outcome, never re-executes.
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.reject(new ChannelDispatchError(true, "command ack timed out"));
+    }) as never);
     const rest = vi.fn().mockResolvedValue(BOOKING);
     const result = await sendViaChannelOrRest(
       (commandId) => ({
@@ -131,32 +141,18 @@ describe("sendViaChannelOrRest", () => {
     );
     expect(result).toBe(BOOKING);
     expect(rest).toHaveBeenCalledTimes(1);
+    expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
   });
 
-  it("an unconfirmed CREATE (sent, then timeout/drop) refuses the REST retry (reviewer P0)", async () => {
-    // The REST surface carries no commandId — a blind retry of a create
-    // that may have committed would insert a SECOND booking.
-    setDiaryCommandChannel((() =>
-      Promise.reject(new ChannelDispatchError(true, "command ack timed out"))) as never);
-    const rest = vi.fn();
-    await expect(
-      sendViaChannelOrRest(
-        (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
-        rest,
-      ),
-    ).rejects.toSatisfy((caught: unknown) => {
-      expect(caught).toBeInstanceOf(ApiError);
-      const error = caught as ApiError;
-      expect(error.code).toBe("COMMAND_UNCONFIRMED");
-      expect(error.status).toBe(0);
-      return true;
-    });
-    expect(rest).not.toHaveBeenCalled();
-  });
-
-  it("a create the channel provably never dispatched still falls back to REST", async () => {
-    setDiaryCommandChannel((() =>
-      Promise.reject(new ChannelDispatchError(false, "command channel closed"))) as never);
+  it("an unconfirmed CREATE (sent, then timeout/drop) retries with the SAME id — never a new operation", async () => {
+    // T-537's P0 invariant, now enforced by identity: a create that may
+    // have committed retries as the SAME command, so the ledger replays it
+    // instead of inserting a second booking.
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.reject(new ChannelDispatchError(true, "command ack timed out"));
+    }) as never);
     const rest = vi.fn().mockResolvedValue(BOOKING);
     const result = await sendViaChannelOrRest(
       (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
@@ -164,22 +160,38 @@ describe("sendViaChannelOrRest", () => {
     );
     expect(result).toBe(BOOKING);
     expect(rest).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveLength(1);
+    expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
   });
 
-  it("an UNTYPED channel failure on a create is treated as possibly-sent (conservative)", async () => {
-    setDiaryCommandChannel((() => Promise.reject(new Error("boom"))) as never);
-    const rest = vi.fn();
-    await expect(
-      sendViaChannelOrRest(
-        (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
-        rest,
-      ),
-    ).rejects.toSatisfy((caught: unknown) => {
-      expect(caught).toBeInstanceOf(ApiError);
-      expect((caught as ApiError).code).toBe("COMMAND_UNCONFIRMED");
-      return true;
-    });
-    expect(rest).not.toHaveBeenCalled();
+  it("a create the channel provably never dispatched falls back with the same id too", async () => {
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.reject(new ChannelDispatchError(false, "command channel closed"));
+    }) as never);
+    const rest = vi.fn().mockResolvedValue(BOOKING);
+    const result = await sendViaChannelOrRest(
+      (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
+      rest,
+    );
+    expect(result).toBe(BOOKING);
+    expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
+  });
+
+  it("an UNTYPED channel failure on a create also retries with the same id", async () => {
+    const seen: string[] = [];
+    setDiaryCommandChannel(((command: { commandId: string }) => {
+      seen.push(command.commandId);
+      return Promise.reject(new Error("boom"));
+    }) as never);
+    const rest = vi.fn().mockResolvedValue(BOOKING);
+    const result = await sendViaChannelOrRest(
+      (commandId) => ({ kind: "booking.create", commandId, payload: {} as never }),
+      rest,
+    );
+    expect(result).toBe(BOOKING);
+    expect(rest.mock.calls[0]?.[0]).toBe(seen[0]);
   });
 
   it("unregistering restores pure REST behaviour", async () => {

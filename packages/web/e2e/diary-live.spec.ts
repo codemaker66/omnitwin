@@ -22,6 +22,9 @@ import {
 //   5. the ws live channel: a booking created by one coordinator appears on
 //      the other's board without any reload, and presence shows both
 //      (T-497)
+//   6. a keyed REST resend (same Idempotency-Key) replays the recorded
+//      outcome — same booking id, Idempotency-Replay: true, ONE block on
+//      the board (T-538: both transports share the diary_commands ledger)
 //
 // Serial: the tests share signed-in contexts and build on each other's
 // state. Each run uses unique titles + a run-scoped slot so repeated runs
@@ -43,7 +46,10 @@ test.skip(
 // Seeded bookings all start 08:00+, so 00:15–05:45 windows stay clear;
 // the minute offset varies per run to dodge leftovers from earlier runs.
 const RUN_TAG = new Date().toISOString().slice(11, 19).replace(/:/gu, "");
-const SLOT_MINUTE = ((Date.now() >> 6) % 4) * 15;
+// Math.floor, NOT `>> 6`: the epoch overflows Int32, so a bit-shift goes
+// NEGATIVE in some ~40-hour windows — SLOT_MINUTE = -15 produced
+// "T01:-15" datetime fills that only failed on certain evenings.
+const SLOT_MINUTE = (Math.floor(Date.now() / 64) % 4) * 15;
 const slot = (day: string, hour: number, durationMinutes: number): [string, string] => {
   const pad = (value: number): string => String(value).padStart(2, "0");
   const endTotal = hour * 60 + SLOT_MINUTE + durationMinutes;
@@ -275,6 +281,106 @@ test("the live channel carries a colleague's booking without a reload (T-497)", 
   await expect(pageA.getByText(`Added ${title} to the diary.`)).toBeVisible({ timeout: 15_000 });
 
   await expect(pageB.getByRole("button", { name: new RegExp(title) }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+});
+
+test("a keyed REST resend replays the recorded outcome instead of duplicating (T-538)", async () => {
+  const title = `Keyed resend ${RUN_TAG}`;
+  const apiOrigin = process.env["E2E_API_URL"] ?? "http://localhost:3001";
+  // An out-of-hours window on the seeded Tuesday — clear of every seeded
+  // booking (08:00+ local) and of every other scenario's slot.
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  const endTotal = 3 * 60 + SLOT_MINUTE + 45;
+  const startsAt = `2026-09-15T03:${pad(SLOT_MINUTE)}:00.000Z`;
+  const endsAt = `2026-09-15T${pad(Math.floor(endTotal / 60))}:${pad(endTotal % 60)}:00.000Z`;
+
+  // In-page (real Clerk token, real CORS): two POST /bookings with the SAME
+  // Idempotency-Key. The second must REPLAY the first's committed booking —
+  // the T-537 review's duplicate-create hole, closed by the shared ledger.
+  const proof = await pageA.evaluate(
+    async (input: { apiOrigin: string; title: string; startsAt: string; endsAt: string }) => {
+      interface PostOutcome {
+        status: number;
+        replay: string | null;
+        id: string | null;
+      }
+      // Window carries no Clerk declaration — an all-optional shape is a
+      // legal single-assertion view of it (no `as unknown as`).
+      const clerk = (
+        window as { Clerk?: { session?: { getToken: () => Promise<string | null> } } }
+      ).Clerk;
+      const token = (await clerk?.session?.getToken()) ?? null;
+      if (token === null) return { failure: "no Clerk session token in page" };
+      const authed = { Authorization: `Bearer ${token}` };
+      const unwrap = (json: { data?: unknown }): unknown => json.data ?? json;
+
+      const venuesRes = await fetch(`${input.apiOrigin}/venues`, { headers: authed });
+      if (!venuesRes.ok) return { failure: `GET /venues -> ${String(venuesRes.status)}` };
+      const venues = unwrap((await venuesRes.json()) as { data?: unknown }) as { id: string }[];
+      const venueId = venues[0]?.id;
+      if (venueId === undefined) return { failure: "no accessible venue" };
+
+      const calendarRes = await fetch(
+        `${input.apiOrigin}/calendar?venueId=${venueId}` +
+          "&from=2026-09-14T00:00:00.000Z&to=2026-09-21T00:00:00.000Z",
+        { headers: authed },
+      );
+      if (!calendarRes.ok) return { failure: `GET /calendar -> ${String(calendarRes.status)}` };
+      const calendar = unwrap((await calendarRes.json()) as { data?: unknown }) as {
+        rooms: { id: string; name: string }[];
+      };
+      const room = calendar.rooms.find((candidate) => candidate.name.includes("Robert Adam"));
+      if (room === undefined) return { failure: "Robert Adam Room not in the calendar" };
+
+      const key = crypto.randomUUID();
+      const post = async (): Promise<PostOutcome> => {
+        const res = await fetch(`${input.apiOrigin}/bookings`, {
+          method: "POST",
+          headers: {
+            ...authed,
+            "Content-Type": "application/json",
+            "Idempotency-Key": key,
+          },
+          body: JSON.stringify({
+            venueId,
+            spaceId: room.id,
+            kind: "internal_block",
+            title: input.title,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+          }),
+        });
+        const body = (await res.json()) as { data?: { id?: string } };
+        return {
+          status: res.status,
+          replay: res.headers.get("idempotency-replay"),
+          id: body.data?.id ?? null,
+        };
+      };
+
+      const first = await post();
+      const second = await post();
+      return { first, second };
+    },
+    { apiOrigin, title, startsAt, endsAt },
+  );
+
+  if ("failure" in proof) {
+    throw new Error(`keyed-resend proof setup failed: ${String(proof.failure)}`);
+  }
+  const { first, second } = proof;
+  expect(first.status).toBe(201);
+  expect(first.replay).toBe("false");
+  expect(first.id).not.toBeNull();
+  // The resend is the SAME operation to the server — replayed, not re-run.
+  expect(second.status).toBe(201);
+  expect(second.replay).toBe("true");
+  expect(second.id).toBe(first.id);
+
+  // And the board agrees: exactly ONE block carries the title.
+  await openSeededWeek(pageA);
+  await expect(pageA.getByRole("button", { name: new RegExp(title) })).toHaveCount(1, {
     timeout: 15_000,
   });
 });
