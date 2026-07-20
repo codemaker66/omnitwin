@@ -96,6 +96,7 @@ describe("action_log schema (G4 slice 3)", () => {
     ) as { entries: { idx: number; tag: string }[] };
     const entry = journal.entries.find((candidate) => candidate.tag === MIGRATION_TAG);
     expect(entry).toBeDefined();
-    expect(journal.entries.at(-1)?.tag).toBe(MIGRATION_TAG); // the new tail
+    // Which migration is the journal's tail is owned by migration-tail-readiness
+    // (EXPECTED_TAIL) — pinning it here too broke this suite when 0060/0061 landed.
   });
 });
