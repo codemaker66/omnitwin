@@ -63,9 +63,11 @@ export interface FreshRoom {
   /** object-position focus, when the subject is not centred. */
   readonly focus?: string;
   /** Walkthrough deep link (?node/look query) — hero framing for this room,
-   *  validated against this photography before shipping. Absent when the
-   *  room's better doorway is the in-page capture (the Reception Room). */
+   *  validated against this photography before shipping. */
   readonly twinLook?: string;
+  /** True when this room also lives on the page itself (the splat embed) —
+   *  its dossier offers the in-page doorway alongside the walkthrough. */
+  readonly inPageWalk?: boolean;
 }
 
 /** Responsive delivery: pre-encoded webp rungs live in
@@ -126,6 +128,8 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     slug: "reception-room",
     name: "The Reception Room",
     line: "Where an evening at Trades Hall begins.",
+    twinLook: "node=scan_126&look=scan_126%2C-20%2C4%2C75",
+    inPageWalk: true,
     image: tradesHallVenueImages.receptionRoom,
     alt: "The Reception Room dressed for a ceremony, candles along the aisle",
     width: 1536,

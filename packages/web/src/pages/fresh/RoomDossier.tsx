@@ -153,14 +153,15 @@ export function RoomDossier({ room, onClose }: RoomDossierProps): ReactElement {
             <a className="fr-cta" href="#enquire" onClick={onClose}>
               {FRESH_DOSSIER_CTA}
             </a>
-            {room.twinLook !== undefined ? (
+            {room.twinLook !== undefined && (
               <a
                 className="fr-cta-quiet"
                 href={`${FRESH_TWIN_BASE}?${room.twinLook}`}
               >
                 {FRESH_DOSSIER_TWIN_CTA}
               </a>
-            ) : (
+            )}
+            {room.inPageWalk === true && (
               <a className="fr-cta-quiet" href="#walk" onClick={onClose}>
                 {FRESH_DOSSIER_WALK_CTA}
               </a>
