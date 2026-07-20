@@ -31,6 +31,15 @@ export const FRESH_LEDE =
 
 export const FRESH_CTA_DATES = "Ask about a date";
 export const FRESH_CTA_ROOMS = "See the rooms";
+export const FRESH_CTA_TOUR = "Walk the building";
+
+/** The whole-building walkthrough — the Twin, at its memorable alias.
+ *  149 viewpoints is a capture fact (the scan's own sweep count). */
+export const FRESH_TOUR_HREF = "/tour";
+export const FRESH_TOUR_TITLE = "Then walk the whole building";
+export const FRESH_TOUR_LINE =
+  "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
+export const FRESH_TOUR_CTA = "Open the walkthrough";
 
 export const FRESH_ROOMS_TITLE = "Six rooms, one house";
 export const FRESH_ROOMS_LEDE =
@@ -230,6 +239,10 @@ export function allFreshCopy(): readonly string[] {
     FRESH_LEDE,
     FRESH_CTA_DATES,
     FRESH_CTA_ROOMS,
+    FRESH_CTA_TOUR,
+    FRESH_TOUR_TITLE,
+    FRESH_TOUR_LINE,
+    FRESH_TOUR_CTA,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
     FRESH_HERO_ALT,
