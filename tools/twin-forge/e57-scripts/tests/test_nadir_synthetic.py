@@ -407,6 +407,31 @@ def test_donorless_pixels_fall_back_without_crashing():
     print(f"  synthesized px: {report['synthesized_px']} (fallback exercised)")
 
 
+def test_detection_catches_detached_smear_lobe():
+    # The scan_045 entry-node failure: the tripod smear can arrive SPLIT —
+    # a beige lobe detached from the nadir-connected component (a texture
+    # band or threshold divides it). Keep-centre-component drops it; it is
+    # wood-coloured so the chroma stages don't catch it either. The
+    # detector must union smear-LIKE components: low-variance patches whose
+    # colour matches the central smear, within the tripod zone.
+    dirs = nf.gnomonic_nadir_dirs(640, 58.0)
+    view = nf.render_view(IMG_A, dirs)  # IMG_A already has the central smear
+    smear_colour = view[300:340, 300:340].mean(axis=(0, 1))
+    lobe = np.zeros((640, 640), dtype=bool)
+    yy, xx = np.mgrid[0:640, 0:640]
+    # detached lobe ~30 px off the main disc's edge, same colour as the smear
+    lobe[(np.hypot(yy - 320, xx - 470) < 38)] = True
+    view_lobed = view.copy()
+    view_lobed[lobe] = smear_colour
+    mask = nf.detect_smear_view(view_lobed)
+    coverage = float((mask & lobe).sum()) / float(lobe.sum())
+    print(f"  detached-lobe coverage: {coverage:.2f}")
+    assert coverage >= 0.85, f"detached smear lobe missed: {coverage:.2f}"
+    # and sanity: the main disc is still fully claimed
+    centre_cov = float(mask[280:360, 280:360].mean())
+    assert centre_cov > 0.95, centre_cov
+
+
 def test_pattern_core_synthesis_rebuilds_blanked_parquet():
     # Pure-function test: blank the centre of an analytic parquet view to a
     # featureless disc (the "soft core"), then rebuild it ONLY from patches
