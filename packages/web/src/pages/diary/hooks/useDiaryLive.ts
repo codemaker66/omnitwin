@@ -8,7 +8,12 @@ import {
   parseLiveMessage,
   type LivePresenceUser,
 } from "../lib/live-protocol.js";
-import { setDiaryCommandChannel } from "../lib/diary-command-channel.js";
+import {
+  ChannelDispatchError,
+  releaseDiaryCommandChannel,
+  setDiaryCommandChannel,
+  type DiaryCommandSender,
+} from "../lib/diary-command-channel.js";
 
 // ---------------------------------------------------------------------------
 // useDiaryLive (T-497; Canon §15) — the Board's live subscription.
@@ -22,8 +27,10 @@ import { setDiaryCommandChannel } from "../lib/diary-command-channel.js";
 //   - commands     → T-537: while authenticated, the hook registers a sender
 //                    with the command-channel registry; api/diary.ts routes
 //                    mutations through it. Acks settle in-flight promises by
-//                    commandId; a drop rejects every in-flight command so
-//                    the api layer falls back to REST.
+//                    commandId; a drop rejects every in-flight command with
+//                    a ChannelDispatchError carrying sent=true/false so the
+//                    api layer can apply the per-kind retry policy (an
+//                    unconfirmed create is never blindly retried over REST).
 //
 // Presence is advisory display, never a correctness mechanism (Canon §9).
 // ---------------------------------------------------------------------------
@@ -57,10 +64,25 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
       { resolve: (ack: DiaryCommandAck) => void; reject: (reason: Error) => void; timer: number }
     >();
 
+    // Whatever sender THIS effect registered — released with an identity
+    // check so a stale cleanup never tears down a successor's registration
+    // (reviewer P2, T-537).
+    let activeSender: DiaryCommandSender | null = null;
+
+    const releaseChannel = (): void => {
+      if (activeSender !== null) {
+        releaseDiaryCommandChannel(activeSender);
+        activeSender = null;
+      }
+    };
+
     const rejectAllInFlight = (reason: string): void => {
       for (const [, pending] of inFlight) {
         window.clearTimeout(pending.timer);
-        pending.reject(new Error(reason));
+        // Everything in this map got past the pre-send guard and was handed
+        // to ws.send — the server MAY have executed it (sent: true), so the
+        // channel layer refuses a blind REST retry for creates.
+        pending.reject(new ChannelDispatchError(true, reason));
       }
       inFlight.clear();
     };
@@ -119,20 +141,31 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
           setConnected(true);
           setPresence(message.presence);
           // T-537: the channel is open for commands — register the sender.
-          setDiaryCommandChannel((command: DiaryCommand) => {
+          const sender: DiaryCommandSender = (command: DiaryCommand) => {
             return new Promise<DiaryCommandAck>((resolve, reject) => {
               if (socket !== ws || ws.readyState !== WebSocket.OPEN) {
-                reject(new Error("command channel closed"));
+                // Provably never dispatched — REST retry is safe (sent: false).
+                reject(new ChannelDispatchError(false, "command channel closed"));
                 return;
               }
               const timer = window.setTimeout(() => {
                 inFlight.delete(command.commandId);
-                reject(new Error("command ack timed out"));
+                // Sent but unacknowledged — the server may have executed it.
+                reject(new ChannelDispatchError(true, "command ack timed out"));
               }, COMMAND_ACK_TIMEOUT_MS);
               inFlight.set(command.commandId, { resolve, reject, timer });
-              ws.send(JSON.stringify({ type: "diary.command", command }));
+              try {
+                ws.send(JSON.stringify({ type: "diary.command", command }));
+              } catch {
+                // A synchronous send throw means the frame never left.
+                inFlight.delete(command.commandId);
+                window.clearTimeout(timer);
+                reject(new ChannelDispatchError(false, "command channel closed"));
+              }
             });
-          });
+          };
+          activeSender = sender;
+          setDiaryCommandChannel(sender);
           // Snapshot/delta doctrine: after a drop, refetch — never trust
           // whatever was missed while offline.
           if (isReconnect) onEventRef.current();
@@ -170,9 +203,10 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
         if (socket !== ws) return;
         socket = null;
         stopPing();
-        // T-537: the channel died — unregister and fail every in-flight
-        // command so the api layer falls back to REST immediately.
-        setDiaryCommandChannel(null);
+        // T-537: the channel died — unregister (identity-checked) and fail
+        // every in-flight command; the api layer rules on each per its
+        // retry policy (in-flight = sent, so creates refuse a blind retry).
+        releaseChannel();
         rejectAllInFlight("command channel closed");
         scheduleReconnect();
       };
@@ -188,7 +222,7 @@ export function useDiaryLive(enabled: boolean, onEvent: () => void): DiaryLive {
       disposed = true;
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       stopPing();
-      setDiaryCommandChannel(null);
+      releaseChannel();
       rejectAllInFlight("diary live unmounted");
       socket?.close();
       socket = null;

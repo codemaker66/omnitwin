@@ -33,12 +33,9 @@ export interface MoveBookingPatch {
 }
 
 export async function moveBooking(bookingId: string, patch: MoveBookingPatch): Promise<Booking> {
-  // T-537: command-first while the live channel is open, REST otherwise —
-  // one validation dialect either way (see diary-command-channel.ts).
-  return sendViaChannelOrRest(
-    (commandId) => ({ kind: "booking.update", commandId, bookingId, payload: patch }),
-    () => api.patch(`/bookings/${bookingId}`, patch, BookingSchema),
-  );
+  // A move IS an update whose patch is the space/time subset — one code
+  // path, one envelope shape (reviewer P2, T-537).
+  return updateBooking(bookingId, patch);
 }
 
 export interface EditBookingPatch extends MoveBookingPatch {

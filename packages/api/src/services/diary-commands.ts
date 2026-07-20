@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Booking, DiaryCommand, DiaryCommandAck } from "@omnitwin/types";
 import { bookings, diaryCommands } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import { canManageVenue } from "../utils/query.js";
 import {
   createBookingCore,
   pgErrorCode,
@@ -35,6 +36,11 @@ import {
 
 export interface RecordedCommand {
   readonly commandId: string;
+  /** The venue the recorded command ran against — a commandId is a bare
+   *  global PK, so replay authorization MUST re-check the actor against
+   *  THIS venue, never trust the id itself (reviewer P0, T-537). */
+  readonly venueId: string;
+  readonly userId: string;
   readonly outcome: string;
   readonly statusCode: number;
   readonly errorCode: string | null;
@@ -225,6 +231,17 @@ export async function executeDiaryCommand(
       // Resend of a completed command: replay the recorded outcome.
       const recorded = await deps.readRecordedCommand(db, command.commandId);
       if (recorded !== null) {
+        // The ledger PK is global, not venue-scoped: before replaying,
+        // prove THIS actor may see the recorded command's venue, or a
+        // colliding id would hand another venue's booking to a stranger
+        // (reviewer P0, T-537). Same deny loadAccessibleBooking issues on
+        // the fresh path; checked before any row is read at all.
+        if (!canManageVenue(actor, recorded.venueId)) {
+          return {
+            ack: rejectedAck(command, 403, "FORBIDDEN", "Forbidden"),
+            changed: null,
+          };
+        }
         const row =
           recorded.bookingId === null
             ? null
@@ -287,6 +304,8 @@ export function realDiaryCommandDeps(db: Database): DiaryCommandDeps {
       if (row === undefined) return null;
       return {
         commandId: row.commandId,
+        venueId: row.venueId,
+        userId: row.userId,
         outcome: row.outcome,
         statusCode: row.statusCode,
         errorCode: row.errorCode,
@@ -297,9 +316,10 @@ export function realDiaryCommandDeps(db: Database): DiaryCommandDeps {
     updateBooking: updateBookingCore,
     transitionBooking: transitionBookingCore,
     serialize: serializeBooking,
-    // Replay re-serialization loads the row directly by id: the ledger row
-    // proves this exact actor already completed a command against it, so an
-    // access re-check would only re-verify what the record establishes.
+    // Replay re-serialization loads the row directly by id. This load is
+    // NOT an access grant: executeDiaryCommand has already checked the
+    // actor against the RECORDED command's venue before calling it — the
+    // direct read only refreshes state for the ack (snapshot doctrine).
     loadBookingById: async (database, bookingId) => {
       const [row] = await database
         .select()

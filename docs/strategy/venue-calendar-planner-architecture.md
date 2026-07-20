@@ -413,7 +413,7 @@ broadcast." One validation dialect, two transports.
 | `diary_commands` ledger (0061), client-minted uuid pk, recorded INSIDE the mutation's transaction | exactly-once: command and record commit or vanish together; a resend aborts on the pk and replays the recorded outcome (`replay: true`) |
 | The core runs in a NESTED SAVEPOINT within the command transaction | a 23P01 (the ink race) aborts the sub-transaction even though the core returns a calm deny; rolling back only the savepoint keeps the ledger write alive so the loser's ack carries the TRUE `INK_SLOT_TAKEN` — found by the live two-coordinator e2e, not by unit tests |
 | Acks speak the REST vocabulary verbatim (status/code/error/details) | the client rebuilds a REAL `ApiError` from a rejected ack — every existing error branch (drawer copy, board 409 handling) works unchanged |
-| Client: channel-first via a module registry (`diary-command-channel.ts`), REST fallback | progressive enhancement — the socket is never load-bearing for correctness; channel absence or channel-level failure degrades to exactly the pre-T-537 behaviour |
+| Client: channel-first via a module registry (`diary-command-channel.ts`), REST fallback | progressive enhancement — the socket is never load-bearing for correctness; channel absence degrades to exactly the pre-T-537 behaviour. Channel FAILURE is split (reviewer P0): a frame that provably never left the client retries over REST for any kind; a SENT-but-unconfirmed command retries only for update/transition (row-idempotent cores) — an unconfirmed create surfaces `COMMAND_UNCONFIRMED` instead of re-executing, because REST carries no commandId and a blind retry could commit a second hold/prospect |
 | Broadcast stays on the house event bus, emitted post-commit by the transport | both transports converge on ONE fan-out path; every venue connection sees a single consistent stream |
 | `from-enquiry` stays REST-only | the tray conversion is not a board-latency surface; deliberately not a command kind |
 
@@ -421,6 +421,19 @@ Live proof (seeded local stack): diary-live e2e 6/6 — the five Slice-4
 scenarios now channel-backed (the ink race arbitrated over ws) plus a new
 scenario asserting a drawer create lands with ZERO REST booking mutations
 fired.
+
+Review outcome (typescript-reviewer, FIX-FIRST → fixed, re-proven 6/6):
+two P0s implemented literally — (1) replay authorization: the ledger PK is
+global, so the replay path now checks `canManageVenue` against the RECORDED
+command's venue before serializing anything (a colliding id from another
+venue gets `403 FORBIDDEN`, and the row is never even read); (2) the
+create-fallback split in the row above. P2 fold-ins: GET /:id delegates to
+`loadAccessibleBooking` (one copy of the read policy), `moveBooking`
+delegates to `updateBooking`, and the channel registry release is
+identity-checked. Known P2 tail: `diary_commands` stores no `resequence`,
+so a REPLAYED transition ack cannot restate the Canon §3 promotion ping —
+wire a column in when the frontend starts consuming `resequence` (it does
+not today).
 
 File map: types `diary-command.ts` (envelope + ack schemas) · api
 `services/booking-mutations.ts` (cores) · `services/diary-commands.ts`

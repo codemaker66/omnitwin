@@ -4,7 +4,11 @@ import {
   executeDiaryCommand,
   type DiaryCommandDeps,
 } from "../../services/diary-commands.js";
-import type { MutationActor } from "../../services/booking-mutations.js";
+import type {
+  BookingDbConn,
+  BookingRow,
+  MutationActor,
+} from "../../services/booking-mutations.js";
 import type { Database } from "../../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -37,10 +41,12 @@ const CREATE_COMMAND: DiaryCommand = {
   },
 };
 
+// A minimal row double — the dispatcher only ever forwards it (to
+// serialize/the ledger), so the two consulted columns suffice.
 const BOOKING_ROW = {
   id: "00000000-0000-4000-8000-00000000eeee",
   venueId: VENUE,
-} as never;
+} as BookingRow;
 
 /** A fake connection whose .transaction nests like drizzle's savepoints
  *  (rethrows the callback's error after "rolling back" — i.e. doing
@@ -51,7 +57,11 @@ function fakeConn(): { transaction: <T>(cb: (inner: never) => Promise<T>) => Pro
 
 function deps(overrides: Partial<DiaryCommandDeps> = {}): DiaryCommandDeps {
   return {
-    runInTransaction: vi.fn(async (work) => work(fakeConn() as never)),
+    // Typed impl for lint; `as never` because vitest's Mock wrapper cannot
+    // re-expose a generic call signature (same idiom as the other fakes).
+    runInTransaction: vi.fn(async <T>(work: (tx: BookingDbConn) => Promise<T>): Promise<T> => {
+      return await work(fakeConn() as never);
+    }) as never,
     recordCommand: vi.fn().mockResolvedValue("recorded"),
     readRecordedCommand: vi.fn().mockResolvedValue(null),
     createBooking: vi.fn().mockResolvedValue({
@@ -168,6 +178,8 @@ describe("executeDiaryCommand", () => {
       recordCommand: vi.fn().mockResolvedValue("duplicate"),
       readRecordedCommand: vi.fn().mockResolvedValue({
         commandId: CREATE_COMMAND.commandId,
+        venueId: VENUE,
+        userId: ACTOR.id,
         outcome: "applied",
         statusCode: 201,
         errorCode: null,
@@ -186,6 +198,35 @@ describe("executeDiaryCommand", () => {
     expect(result.ack.booking).toEqual({ id: BOOKING_ROW.id });
     // The mutation must NOT have run again, and nothing new to broadcast.
     expect(d.createBooking).toHaveBeenCalledTimes(1); // first (aborted) tx attempt only
+    expect(result.changed).toBeNull();
+  });
+
+  it("refuses to replay a colliding commandId recorded for ANOTHER venue (reviewer P0)", async () => {
+    // The ledger PK is global — if Venue A's staff resend an id that Venue B
+    // already used, the replay must deny, never serialize B's booking.
+    const d = deps({
+      recordCommand: vi.fn().mockResolvedValue("duplicate"),
+      readRecordedCommand: vi.fn().mockResolvedValue({
+        commandId: CREATE_COMMAND.commandId,
+        venueId: "00000000-0000-4000-8000-00000000f0f0",
+        userId: "00000000-0000-4000-8000-00000000f1f1",
+        outcome: "applied",
+        statusCode: 201,
+        errorCode: null,
+        bookingId: BOOKING_ROW.id,
+      }),
+    });
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+    expect(result.ack).toMatchObject({
+      outcome: "rejected",
+      status: 403,
+      code: "FORBIDDEN",
+      replay: false,
+    });
+    expect(result.ack.booking).toBeUndefined();
+    // The foreign booking must never even be read, let alone serialized.
+    expect(d.loadBookingById).not.toHaveBeenCalled();
+    expect(d.serialize).not.toHaveBeenCalled();
     expect(result.changed).toBeNull();
   });
 

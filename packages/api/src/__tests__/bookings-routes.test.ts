@@ -345,9 +345,13 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
     const coreSource = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
     expect(coreSource).toContain('new Set(["staff", "admin"])');
     expect(coreSource).toContain("canWriteBookings(actor, input.venueId)");
-    // Reads still use the shared helper (hallkeeper stays read-facing).
+    // Reads still use the shared venue policy (hallkeeper stays
+    // read-facing) — since the reviewer P2 fold-in, GET /:id routes through
+    // loadAccessibleBooking, the ONE copy of the fetch + canManageVenue
+    // check the mutation cores already use.
     const routeSource = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
-    expect(routeSource).toContain("canManageVenue(request.user, row.venueId)");
+    expect(routeSource).toContain("loadAccessibleBooking(db, request.user, params.data.id)");
+    expect(coreSource).toContain("canManageVenue(actor, row.venueId)");
   });
 
   it("enforces hold hygiene on edits of live holds", async () => {

@@ -6,10 +6,10 @@ import { bookings, enquiries, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { emit, type EventPayload } from "../observability/event-bus.js";
-import { canManageVenue } from "../utils/query.js";
 import {
   canWriteBookings,
   createBookingCore,
+  loadAccessibleBooking,
   pgErrorCode,
   PG_CHECK_VIOLATION,
   serializeBooking,
@@ -89,17 +89,11 @@ export async function bookingRoutes(
   server.get("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
-    const [row] = await db
-      .select()
-      .from(bookings)
-      .where(and(eq(bookings.id, params.data.id), isNull(bookings.deletedAt)))
-      .limit(1);
-    if (row === undefined) {
-      return reply.status(404).send({ error: "Booking not found", code: "BOOKING_NOT_FOUND" });
-    }
-    if (!canManageVenue(request.user, row.venueId)) {
-      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
-    }
+    // One copy of the fetch + venue policy — the same loadAccessibleBooking
+    // the mutation cores use (reviewer P2, T-537). Wire shape unchanged:
+    // 404 BOOKING_NOT_FOUND / 403 FORBIDDEN, exactly as before.
+    const row = await loadAccessibleBooking(db, request.user, params.data.id);
+    if ("ok" in row) return sendDeny(reply, row);
     return { data: serializeBooking(row) };
   });
 
