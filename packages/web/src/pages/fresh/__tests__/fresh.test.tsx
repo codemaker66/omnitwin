@@ -257,13 +257,19 @@ describe("the walkthrough — wired from the front door", () => {
     };
     expectHref(0, "scan_028");
     expectHref(1, "scan_058");
+    expectHref(2, "scan_126");
     expectHref(3, "scan_105");
   });
 
-  it("sends the Reception Room dossier to the in-page capture instead", () => {
+  it("gives the Reception Room dossier both doorways — walkthrough and in-page", () => {
     render(<FreshPage />);
     const openButtons = screen.getAllByRole("button", { name: "Open the room" });
     fireEvent.click(openButtons[2] as HTMLElement);
+    expect(
+      screen
+        .getByRole("link", { name: "See this room in the walkthrough" })
+        .getAttribute("href"),
+    ).toContain("scan_126");
     const walkLink = screen.getByRole("link", {
       name: "Step into this room on this page",
     });
