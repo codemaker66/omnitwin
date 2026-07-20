@@ -78,6 +78,29 @@ Review cycle (typescript-reviewer, Block → fixed same-session, reproductions p
 
 Slice-4 DoD note: "Change history visible in the drawer from real data" is proven by the component suite driving the real model + hook against the read contract; the live-drawer walkthrough was blocked by the shared dev stack's API being down (parallel-lane owned) and stays on the verification tail with the descending-order paging param.
 
+## Programme closeout — 2026-07-20 (T-522 CLOSED)
+
+Four slices, four commits (`0cf75d36` → `a79217d7` → `da146ed8` → `d574bfdf`), all ancestors of the branch tip at closeout. The retrospective scores every promise in the two source texts, softened nowhere.
+
+**Against 06 §4's gap definition** — *"retrofit placement/editor stores to typed invertible Actions (unlocks deep undo, audit, AI tools, future sync)"*:
+
+| Promise | Verdict | The honest detail |
+|---|---|---|
+| Editor store → Actions | **Closed** | Slice 1, at the emission seam — the audited verdict stands: the T-447 delta engine already WAS invertible-command-sourced; the programme enveloped it (seq-sealed gestures) rather than rewriting it. Pinned byte-identical. |
+| Placement store → Actions | **Closed via the bridge** | Closeout finding: `placement-store` is a real independent mutation surface the slice audits never named — but `EditorBridge` syncs every placement interaction into editor-store *for auto-save*, so those mutations reach the log through the covered seam. Standing caution: any future placement mutation that bypasses the bridge bypasses the log. |
+| Unlocks deep undo | **Unlocked, not delivered** | The persisted trail carries every inverse, eviction-exempt — deep undo is now buildable. The undo timeline itself still caps at 100 entries; no deep-undo feature shipped, and none was in any slice's scope. |
+| Unlocks audit | **Delivered** | End to end: append-only table (0059), bounded ingest, ordinal-paged read model, Change history in the Evidence lens — claim-safe at every layer. |
+| Unlocks AI tools | **Contract delivered** | The typed ghost contract (discriminated union; accepted ⟺ recorded operator acceptance in the type). Implementation Phase-8 gated, by design, per the slice table from day one. |
+| Unlocks future sync | **Posture unchanged** | Deliberately out of scope for the whole programme (T-105 stays deferred); the envelope is CRDT-adoptable, which is all the programme ever promised. |
+
+**Against 03 §1's "this single decision buys" list** (seven purchases): undo/redo — pre-existing (T-447), preserved byte-identical, now enveloped. Version history — **partial**: the revision-anchored trail exists; no restore-to-version feature. Multiplayer sync — **not built** (deliberate). Audit trail — **bought**. AI tool-use — **contract bought** (the Action schema is now literally the copilot's tool API). Phase diffs — **not built**: no slice touched phase diffing; open, honestly. Session replay — **bought** at dev grade (`replayActions` + `__venReplay`); not operator-facing.
+
+**06 §5's hygiene flag** (*"20+ stores with overlapping concerns — G2/G4 are the moments to consolidate"*): **not addressed** — the programme added three store-layer modules (action-log, planner-action-log, action-log-sync) and consolidated nothing. The flag stands for a future pass.
+
+**The meta-lesson worth the price of the programme:** all four typescript-reviewer passes returned Block, and every one caught a genuine CRITICAL in the same class — an async continuation crossing a cap/fold/config boundary (id-remap + cap-evict sealing; the cross-config save; the fold-during-flight cursor; the config-identity stale guard). None was caught by the TDD suites first. Any future work on this system — and any programme like it — should aim the reviewer at that seam explicitly and treat "the tests are green" as necessary, never sufficient.
+
+**Carried-forward tail** (owned, logged, not blocking closure): live-drawer walkthrough of Change history (blocked by the shared dev stack at slice-4 verification); descending-order paging param; DB-backed intra-statement idempotency test (live-DB harness lane); the slice-1.1 hardening list; migrations 0059–0061 pending in the production deploy tail.
+
 ## Standing constraints
 
 - TDD throughout; typescript-reviewer per slice; the frame-budget and pixel gates may not regress (the log must never do per-frame work — batch on the existing save/idle boundaries).
