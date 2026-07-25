@@ -40,6 +40,14 @@ export const FRESH_TOUR_TITLE = "Then walk the whole building";
 export const FRESH_TOUR_LINE =
   "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
 export const FRESH_TOUR_CTA = "Open the walkthrough";
+/** The door's ground: the walkthrough's own dollhouse view — product
+ *  output, not photography, so the no-repeat photo law is untouched. */
+export const FRESH_TOUR_GROUND = "/images/venue/tour-door-1800.webp";
+export const FRESH_TOUR_GROUND_SRCSET =
+  "/images/venue/tour-door-900.webp 900w, /images/venue/tour-door-1800.webp 1800w";
+export const FRESH_TOUR_GROUND_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
+export const FRESH_TOUR_GROUND_ALT =
+  "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
 export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
 export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
 export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
@@ -266,6 +274,7 @@ export function allFreshCopy(): readonly string[] {
     FRESH_TOUR_TITLE,
     FRESH_TOUR_LINE,
     FRESH_TOUR_CTA,
+    FRESH_TOUR_GROUND_ALT,
     FRESH_DOSSIER_TWIN_CTA,
     FRESH_DOSSIER_WALK_CTA,
     FRESH_KICKER_ROOMS,

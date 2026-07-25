@@ -29,6 +29,10 @@ import {
   FRESH_CTA_ROOMS,
   FRESH_CTA_TOUR,
   FRESH_TOUR_CTA,
+  FRESH_TOUR_GROUND,
+  FRESH_TOUR_GROUND_ALT,
+  FRESH_TOUR_GROUND_SIZES,
+  FRESH_TOUR_GROUND_SRCSET,
   FRESH_TOUR_HREF,
   FRESH_TOUR_LINE,
   FRESH_TOUR_TITLE,
@@ -721,15 +725,29 @@ export function FreshPage(): ReactElement {
           <p className="fr-walk-hint">
             {walkState === "live" ? FRESH_WALK_HINT : FRESH_WALK_NOTE}
           </p>
-          {/* The doorway to the whole building — the Twin, at its alias. */}
+          {/* The doorway to the whole building — grounded on the
+              walkthrough's own dollhouse view of the hall. */}
           <aside className="fr-tour-door" ref={reveal}>
-            <div>
-              <h3>{FRESH_TOUR_TITLE}</h3>
-              <p>{FRESH_TOUR_LINE}</p>
+            <img
+              className="fr-tour-ground"
+              src={FRESH_TOUR_GROUND}
+              srcSet={FRESH_TOUR_GROUND_SRCSET}
+              sizes={FRESH_TOUR_GROUND_SIZES}
+              alt={FRESH_TOUR_GROUND_ALT}
+              loading="lazy"
+              decoding="async"
+              width={1800}
+              height={840}
+            />
+            <div className="fr-tour-veil">
+              <div>
+                <h3>{FRESH_TOUR_TITLE}</h3>
+                <p>{FRESH_TOUR_LINE}</p>
+              </div>
+              <a className="fr-cta" href={FRESH_TOUR_HREF}>
+                {FRESH_TOUR_CTA}
+              </a>
             </div>
-            <a className="fr-cta" href={FRESH_TOUR_HREF}>
-              {FRESH_TOUR_CTA}
-            </a>
           </aside>
         </section>
 
