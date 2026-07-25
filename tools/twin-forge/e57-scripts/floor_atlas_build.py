@@ -105,7 +105,9 @@ def main() -> int:
             Image.open(os.path.join(args.equirect, name)).convert("RGB"),
             dtype=np.uint8)
 
-    sources = [(load(nid), nodes[nid]["t"]) for _d, nid in picks]
+    # lazy loaders, not rasters: the 8192 tier is ~100 MB per sweep and
+    # the two-pass fusion would otherwise need 40 of them resident twice
+    sources = [((lambda n=nid: load(n)), nodes[nid]["t"]) for _d, nid in picks]
     atlas, report = fa.accumulate_floor_atlas(
         sources, grid, z_floor=z_floor, occluder=occluder)
 
