@@ -40,6 +40,12 @@ import {
   FRESH_HEADLINE_AFTER,
   FRESH_HEADLINE_BEFORE,
   FRESH_HEADLINE_KINETIC,
+  FRESH_KICKER_CONTACT,
+  FRESH_KICKER_ENQUIRE,
+  FRESH_KICKER_HERITAGE,
+  FRESH_KICKER_RATES,
+  FRESH_KICKER_ROOMS,
+  FRESH_KICKER_WALK,
   FRESH_HERITAGE_ART,
   FRESH_HERITAGE_ART_ALT,
   FRESH_HERITAGE_BODY,
@@ -595,6 +601,7 @@ export function FreshPage(): ReactElement {
         {/* ——— the rooms: asymmetric, alternating, honest capacities ——— */}
         <section className="fr-rooms" id="rooms" aria-labelledby="fr-rooms-title">
           <div className="fr-arch" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_ROOMS}</p>
           <h2 id="fr-rooms-title">{FRESH_ROOMS_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_ROOMS_LEDE}</p>
           <div className="fr-room-flow">
@@ -647,6 +654,7 @@ export function FreshPage(): ReactElement {
         {/* ——— walk the room: the capture, poster-first ——— */}
         <section className="fr-walk" id="walk" aria-labelledby="fr-walk-title">
           <div className="fr-arch is-flipped" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_WALK}</p>
           <h2 id="fr-walk-title">{FRESH_WALK_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_WALK_LEDE}</p>
           <div className="fr-walk-stage" data-walk-state={walkState}>
@@ -719,6 +727,7 @@ export function FreshPage(): ReactElement {
         {/* ——— rates: the venue's own numbers, plainly ——— */}
         <section className="fr-rates" aria-labelledby="fr-rates-title">
           <div className="fr-arch is-flipped" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_RATES}</p>
           <h2 id="fr-rates-title">{FRESH_RATES_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_RATES_NOTE}</p>
           <div className="fr-rate-columns">
@@ -740,6 +749,7 @@ export function FreshPage(): ReactElement {
         {/* ——— the enquiry composer: the page answers, then writes the email ——— */}
         <section className="fr-enquiry" id="enquire" aria-labelledby="fr-enquiry-title">
           <div className="fr-arch" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_ENQUIRE}</p>
           <h2 id="fr-enquiry-title">{FRESH_ENQUIRY_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_ENQUIRY_LEDE}</p>
           <FreshEnquiry />
@@ -759,6 +769,7 @@ export function FreshPage(): ReactElement {
             height={1086}
           />
           <div className="fr-heritage-words" ref={reveal}>
+            <p className="fr-kicker">{FRESH_KICKER_HERITAGE}</p>
             <h2 id="fr-heritage-title">{FRESH_HERITAGE_TITLE}</h2>
             <p>{FRESH_HERITAGE_BODY}</p>
           </div>
@@ -773,6 +784,7 @@ export function FreshPage(): ReactElement {
       />
 
       <footer className="fr-contact" id="contact" aria-labelledby="fr-contact-title">
+        <p className="fr-kicker">{FRESH_KICKER_CONTACT}</p>
         <h2 id="fr-contact-title">{FRESH_CONTACT_TITLE}</h2>
         <div className="fr-contact-grid">
           <div className="fr-contact-ways">

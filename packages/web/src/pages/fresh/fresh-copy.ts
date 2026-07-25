@@ -44,6 +44,15 @@ export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
 export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
 export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
 
+/** Section kickers — the page's running heads: small letterspaced marks
+ *  above each heading. Written sentence case; CSS sets them uppercase. */
+export const FRESH_KICKER_ROOMS = "The house";
+export const FRESH_KICKER_WALK = "The capture";
+export const FRESH_KICKER_RATES = "The rates";
+export const FRESH_KICKER_ENQUIRE = "The first word";
+export const FRESH_KICKER_HERITAGE = "The story";
+export const FRESH_KICKER_CONTACT = "The people";
+
 export const FRESH_ROOMS_TITLE = "Six rooms, one house";
 export const FRESH_ROOMS_LEDE =
   "Every room is photographed as it is. Capacities are the venue's own published figures.";
@@ -259,6 +268,12 @@ export function allFreshCopy(): readonly string[] {
     FRESH_TOUR_CTA,
     FRESH_DOSSIER_TWIN_CTA,
     FRESH_DOSSIER_WALK_CTA,
+    FRESH_KICKER_ROOMS,
+    FRESH_KICKER_WALK,
+    FRESH_KICKER_RATES,
+    FRESH_KICKER_ENQUIRE,
+    FRESH_KICKER_HERITAGE,
+    FRESH_KICKER_CONTACT,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
     FRESH_HERO_ALT,

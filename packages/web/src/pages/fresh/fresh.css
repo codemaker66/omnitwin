@@ -19,14 +19,30 @@
   --fr-green-soft: rgba(31, 74, 56, 0.14);
   --fr-ochre: #b7862f;
   --fr-rule: #d5cbb6;
-  --fr-arc: #d5cbb6;
+  --fr-arc: #c6b795;
   color-scheme: light;
   --fr-display: "Fraunces", "Georgia", serif;
   --fr-body: "Newsreader", "Georgia", serif;
   --fr-ui: "Geist", system-ui, sans-serif;
   --fr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Top-light: the faint highlight along a panel's upper edge — paper
+     catching the room's light. Dark theme dims it to a breath. */
+  --fr-toplight: rgba(255, 252, 244, 0.55);
+  /* Paper tooth: one tiny turbulence tile, black at 4.5% — material, not
+     decoration. The dark theme swaps in white grain. */
+  --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
 
-  background: var(--fr-paper);
+  background-color: var(--fr-paper);
+  /* Light falls from above: a warmer sheet at the top settling into the
+     paper — depth without a single new element. */
+  background-image:
+    var(--fr-grain),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--fr-paper) 86%, #fff6e4 14%) 0,
+      var(--fr-paper) 460px
+    );
+  background-size: 180px 180px, auto;
   color: var(--fr-ink);
   font-family: var(--fr-body);
   line-height: 1.65;
@@ -45,6 +61,8 @@
     --fr-rule: #3a332a;
     /* Against dark paper the drawn arch needs warmth to read at all. */
     --fr-arc: rgba(216, 166, 76, 0.55);
+    --fr-toplight: rgba(255, 250, 238, 0.06);
+    --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -58,6 +76,8 @@
   --fr-ochre: #d8a64c;
   --fr-rule: #3a332a;
   --fr-arc: rgba(216, 166, 76, 0.55);
+  --fr-toplight: rgba(255, 250, 238, 0.06);
+  --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -234,6 +254,9 @@
      exactly at every size. */
   object-position: 50% 0;
   border-radius: 0 clamp(48px, 12vw, 160px) 0 0 / 0 clamp(36px, 9vw, 120px) 0 0;
+  /* A printer's grade, not a fabrication: gentle warmth and lift so the
+     shadowed rooftops carry the same evening light as the dome. */
+  filter: sepia(0.05) saturate(1.06) brightness(1.015);
 }
 /* The fanlight: the photo's drawn top edge, lifting over the real dome. */
 .fr-hero-fanlight {
@@ -261,6 +284,7 @@
   background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
   border-radius: 3px clamp(28px, 6vw, 72px) 3px 3px / 3px clamp(22px, 4vw, 48px) 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
 }
 .fr-hero h1 {
   margin: 0 0 0.45em;
@@ -358,12 +382,45 @@
   left: clamp(16px, 4vw, 44px);
   right: clamp(16px, 4vw, 44px);
   height: 44px;
-  border-top: 1px solid var(--fr-rule);
+  border-top: 1px solid var(--fr-arc);
   border-radius: 100% 100% 0 0 / 200% 200% 0 0;
+}
+/* Each arch carries its keystone — the same ochre mark the hero's
+   fanlight wears, rhymed through the page. */
+.fr-arch::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--fr-ochre);
 }
 .fr-arch.is-flipped {
   transform: scaleX(-1);
 }
+/* The running heads: a small letterspaced mark with a short ochre rule —
+   the page keeping its own index. */
+.fr-kicker {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--fr-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+.fr-kicker::before {
+  content: "";
+  width: 22px;
+  height: 1px;
+  background: var(--fr-ochre);
+}
+
 .fr-rooms h2,
 .fr-rates h2,
 .fr-enquiry h2,
@@ -471,38 +528,59 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: clamp(20px, 4vw, 44px);
 }
+/* The tariff, engraved: a fine double frame, the season set in display,
+   rows ruled like a ledger. Paper, not a slab. */
 .fr-rate-columns dl {
-  margin: 0;
-  padding: clamp(18px, 3vw, 28px);
-  background: var(--fr-paper-2);
+  margin: 4px;
+  padding: clamp(20px, 3.2vw, 30px);
+  background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
+  outline: 1px solid var(--fr-rule);
+  outline-offset: 3px;
   border-radius: 3px 40px 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
 }
 .fr-rate-columns dt {
   font-family: var(--fr-display);
-  font-weight: 550;
-  font-size: 21px;
-  margin-bottom: 14px;
+  font-weight: 500;
+  font-variation-settings: "opsz" 60;
+  font-size: 27px;
+  letter-spacing: -0.01em;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--fr-rule);
 }
 .fr-rate {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
-  padding: 9px 0;
-  border-top: 1px solid var(--fr-rule);
+  padding: 11px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--fr-rule) 55%, transparent);
+}
+.fr-rate:last-of-type {
+  border-bottom: 0;
 }
 .fr-rate dd {
   margin: 0;
+}
+.fr-rate dd:first-child {
+  font-size: 16px;
 }
 .fr-price {
   font-family: var(--fr-ui);
   font-variant-numeric: tabular-nums;
   color: var(--fr-green);
   font-weight: 600;
+  font-size: 16.5px;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 .fr-scope {
-  margin: 1.6em 0 0;
+  max-width: 52ch;
+  margin: 2em 4px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--fr-rule);
   font-family: var(--fr-ui);
   font-size: 12.5px;
   color: var(--fr-ink-2);
@@ -525,7 +603,7 @@
   background: var(--fr-paper-2);
   border: 1px solid var(--fr-rule);
   border-radius: 3px;
-  box-shadow: 0 8px 26px rgba(38, 32, 22, 0.1);
+  box-shadow: 0 8px 26px rgba(38, 32, 22, 0.1), inset 0 1px 0 var(--fr-toplight);
 }
 .fr-heritage-words {
   max-width: 560px;
@@ -539,6 +617,16 @@
 .fr-heritage-words p {
   margin: 0;
   color: var(--fr-ink-2);
+}
+/* One drop cap on the page — the story earns it. */
+.fr-heritage-words p::first-letter {
+  font-family: var(--fr-display);
+  font-weight: 500;
+  font-size: 3.1em;
+  line-height: 0.82;
+  float: left;
+  padding: 5px 9px 0 0;
+  color: var(--fr-ochre);
 }
 
 /* ————————————————— contact ————————————————— */
@@ -723,18 +811,26 @@
   flex-wrap: wrap;
   gap: 20px 28px;
 }
+/* Fields write on the paper itself: underline, not box. Focus thickens
+   the line green — clearly visible, no outline ring needed. */
 .fr-enq-field input {
   font-family: var(--fr-body);
-  font-size: 16px;
+  font-size: 17px;
   color: var(--fr-ink);
-  background: var(--fr-paper);
-  border: 1px solid var(--fr-rule);
-  border-radius: 4px;
-  padding: 9px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--fr-rule);
+  border-radius: 0;
+  padding: 8px 2px;
   transition: border-color 180ms var(--fr-ease);
 }
 .fr-enq-field input:hover {
   border-color: var(--fr-ink-2);
+}
+.fr-enq-field input:focus-visible {
+  outline: none;
+  border-bottom: 2px solid var(--fr-green);
+  margin-bottom: -1px;
 }
 .fr-enq-field input[type="number"] {
   width: 110px;
@@ -747,13 +843,20 @@
    sentence changing never shoves the page around. */
 .fr-enq-answer {
   min-height: 5.2em;
-  padding-left: 18px;
-  border-left: 2px solid var(--fr-green);
+  padding-left: 20px;
+  border-left: 2px solid var(--fr-ochre);
 }
+/* The page's reply is spoken, not printed: display italic, like a line
+   of correspondence. */
 .fr-enq-fit {
   margin: 0 0 0.5em;
-  font-size: 19px;
-  line-height: 1.5;
+  font-family: var(--fr-display);
+  font-style: italic;
+  font-weight: 460;
+  font-variation-settings: "opsz" 44, "SOFT" 50;
+  font-size: clamp(20px, 2.4vw, 25px);
+  letter-spacing: -0.005em;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
 .fr-enq-also {
@@ -762,24 +865,43 @@
   color: var(--fr-ink-2);
   font-variant-numeric: tabular-nums;
 }
+/* The letter it writes, presented as one: paper sheet, a letterhead rule,
+   the arms ghosted low-right like a blind emboss. */
 .fr-enq-compose {
-  padding: clamp(18px, 3vw, 28px);
-  background: var(--fr-paper-2);
+  position: relative;
+  overflow: hidden;
+  padding: clamp(22px, 3.4vw, 34px);
+  background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
   border-radius: 3px clamp(22px, 4vw, 44px) 3px 3px / 3px clamp(18px, 3vw, 32px) 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
+}
+.fr-enq-compose::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  width: 84px;
+  height: 105px;
+  background: url("/images/brand/coat-of-arms-240.webp") center / contain no-repeat;
+  opacity: 0.07;
+  pointer-events: none;
 }
 .fr-enq-subject {
-  margin: 0 0 0.7em;
+  margin: 0 0 0.9em;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--fr-rule);
   font-family: var(--fr-ui);
   font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
 }
 .fr-enq-body {
+  position: relative;
   margin: 0 0 1.2em;
   font-family: var(--fr-body);
-  font-size: 15.5px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.7;
   color: var(--fr-ink-2);
   white-space: pre-wrap;
 }
@@ -922,6 +1044,7 @@
   border: 1px solid var(--fr-rule);
   border-left: 3px solid var(--fr-green);
   border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
 }
 .fr-tour-door h3 {
   margin: 0 0 6px;
