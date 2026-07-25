@@ -210,7 +210,13 @@ describe("EventArchitectPage", () => {
 
     expect(await screen.findByRole("main", { name: "Event Architect workspace" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Describe the event" })).toBeTruthy();
-    expect(screen.getByLabelText("Venue")).toHaveProperty("disabled", true);
+    // Await a control that exists ONLY after the venue fetch resolves. The
+    // `main` landmark above is the page shell and renders immediately — while
+    // the brief still shows "Loading venue rooms…" — so awaiting it settles
+    // nothing. A synchronous getByLabelText here therefore raced the fetch and
+    // failed under CI load while passing locally, where the mocked promise
+    // happened to resolve inside findByRole's first check.
+    expect(await screen.findByLabelText("Venue")).toHaveProperty("disabled", true);
     expect(screen.getByLabelText("Room")).toHaveProperty("value", SPACE_ID);
     expect(screen.getByRole("group", { name: "Accessibility requirements to carry into human review" })).toBeTruthy();
     expect(screen.getByText(/does not validate an accessibility route/i)).toBeTruthy();
