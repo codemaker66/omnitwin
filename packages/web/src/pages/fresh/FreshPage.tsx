@@ -565,7 +565,16 @@ export function FreshPage(): ReactElement {
                 alt={FRESH_HERO_ALT}
                 width={1536}
                 height={864}
-                fetchPriority="high"
+                /* Lowercase, via spread, deliberately. @types/react 18.3.18
+                   types `fetchPriority`, but react-dom 18.3.1 has never heard
+                   of it (zero occurrences in the installed runtime) — so TS
+                   accepted a prop React then warned about and DROPPED. The hero
+                   has had no LCP priority hint since bd86364a as a result, and
+                   the warning is a console error the acquisition audit counts.
+                   Emitting the real HTML attribute passes it through untouched.
+                   Revisit when this package moves to React 19, which supports
+                   the camelCase form natively. */
+                {...({ fetchpriority: "high" } as { readonly fetchpriority: string })}
                 decoding="async"
                 ref={aperture.imgRef}
               />

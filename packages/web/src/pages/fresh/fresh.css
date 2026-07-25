@@ -942,6 +942,16 @@
   text-decoration: underline;
   text-decoration-color: var(--fr-rule);
   text-underline-offset: 4px;
+  /* This is the phone-call CTA on the primary enquiry path, and it inherits
+     15px from .fr-enq-call — so it rendered 107x15 CSS px, under any sane
+     touch minimum and under the audit's lenient 18px floor. WCAG 2.5.8's
+     inline-in-a-sentence exception arguably excuses it, but "arguably
+     excused" is not the bar for the one control a nervous client taps to
+     phone a venue. inline-flex so the min-height is honoured on an inline
+     element without disturbing the surrounding sentence. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 /* ————————————————— walk the room ————————————————— */
