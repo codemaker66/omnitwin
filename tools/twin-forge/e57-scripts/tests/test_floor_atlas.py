@@ -173,6 +173,49 @@ def test_a_chair_in_one_view_cannot_smear_the_shared_floor():
     assert err < 12.0, f"the chair leaked into the shared floor: {err:.1f}"
 
 
+def test_moving_specular_highlights_are_suppressed():
+    # Found on the real Grand Hall: the first atlas showed a regular grid of
+    # bright discs — the chandeliers' reflections in the polished floor. A
+    # highlight moves with the viewpoint, so averaging many views smears each
+    # into a disc. Physics gives the fix for free: specular reflection only
+    # ever ADDS light, so the darker observations carry the diffuse truth.
+    # Each source here gets its own highlight in a different place; the fused
+    # floor must show none of them.
+    dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
+    dz = dirs[..., 2]
+    down = dz < -1e-9
+    dd = dirs[down]
+    glossy = []
+    spots = [(-0.4, -0.3), (0.35, -0.15), (-0.1, 0.42), (0.5, 0.3), (-0.45, 0.1)]
+    for (img, C), (sx, sy) in zip(PANOS, spots):
+        g = img.copy()
+        t = (Z_FLOOR - C[2]) / dd[:, 2]
+        P = C[None, :] + t[:, None] * dd
+        hot = np.hypot(P[:, 0] - sx, P[:, 1] - sy) < 0.22
+        sub = g[down]
+        sub[hot] = np.minimum(sub[hot] + 95.0, 255.0)      # blown highlight
+        g[down] = sub
+        glossy.append((g, C))
+
+    truth = _truth_raster()
+    atlas, report = fa.accumulate_floor_atlas(glossy, GRID, z_floor=Z_FLOOR)
+    worst = 0.0
+    for sx, sy in spots:
+        c, r = GRID.world_to_atlas(sx, sy)
+        r0, r1 = int(r) - 18, int(r) + 18
+        c0, c1 = int(c) - 18, int(c) + 18
+        if r0 < 0 or c0 < 0 or r1 > GRID.height or c1 > GRID.width:
+            continue
+        err = float(
+            np.abs(atlas[r0:r1, c0:c1].mean(axis=2)
+                   - truth[r0:r1, c0:c1].mean(axis=2)).mean()
+        )
+        worst = max(worst, err)
+    print(f"  worst highlight-region error: {worst:.1f}/255 "
+          f"(rejected {report['rejected_frac'] * 100:.1f}% of samples)")
+    assert worst < 10.0, f"chandelier reflections survived fusion: {worst:.1f}"
+
+
 def test_unobserved_floor_is_reported_not_invented():
     # The Foundry rule: never turn missing observations into captured fact.
     # A patch no source can see must come back flagged, not fabricated.

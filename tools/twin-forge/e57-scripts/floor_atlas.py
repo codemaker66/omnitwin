@@ -95,7 +95,7 @@ def _sample_source(
     C: np.ndarray,
     grid: AtlasGrid,
     z_floor: float,
-    tripod_radius: float,
+    self_blind_m: float,
     max_incidence_deg: float,
     occluder=None,
     z_exempt_m: float = 0.30,
@@ -107,7 +107,10 @@ def _sample_source(
     (rgb float32 HxWx3, weight float32 HxW); weight 0 means this source
     contributes nothing there.
     """
-    img = np.asarray(img)
+    # A source may be a raster OR a zero-arg loader. Lazy loading is what
+    # makes the 8192 tier usable: 40 sweeps x ~100 MB cannot all be resident,
+    # and the two-pass design would otherwise need them twice over.
+    img = np.asarray(img() if callable(img) else img)
     eq_h, eq_w = img.shape[:2]
     C = np.asarray(C, dtype=np.float64)
 
@@ -122,7 +125,12 @@ def _sample_source(
     overhead = np.abs(dz) / np.maximum(dist, 1e-9)
     cos_max = np.cos(np.radians(max_incidence_deg))
 
-    ok = (dz < -1e-6) & (off > tripod_radius) & (overhead > cos_max)
+    # self_blind_m excludes each source's OWN blind disc. It is the
+    # measured SMEAR extent (~24-25 deg => ~0.7 m at tripod height), NOT
+    # the tripod's physical footprint: at 0.45 m every scan donated its
+    # own smear ring to the shared surface, which showed up as a soft
+    # disc at every scanner position in the first Grand Hall atlas.
+    ok = (dz < -1e-6) & (off > self_blind_m) & (overhead > cos_max)
     if occluder is not None and np.any(ok):
         P = np.stack([xs[ok], ys[ok], np.full(int(ok.sum()), float(z_floor))], axis=1)
         blocked = occluder.blocked(C, P, z_exempt_below=z_floor + z_exempt_m)
@@ -151,14 +159,14 @@ def project_source_to_atlas(
     C: np.ndarray,
     grid: AtlasGrid,
     z_floor: float,
-    tripod_radius: float = 0.45,
+    self_blind_m: float = 0.80,
     max_incidence_deg: float = 80.0,
     occluder=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """A single photograph, orthorectified onto the grid. This is the
     BASELINE the fused atlas must beat."""
     return _sample_source(
-        img, C, grid, z_floor, tripod_radius, max_incidence_deg, occluder
+        img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
     )
 
 
@@ -166,10 +174,11 @@ def accumulate_floor_atlas(
     sources: list[tuple[np.ndarray, np.ndarray]],
     grid: AtlasGrid,
     z_floor: float,
-    tripod_radius: float = 0.45,
+    self_blind_m: float = 0.80,
     max_incidence_deg: float = 80.0,
     occluder=None,
     robust_sigma: float = 2.0,
+    specular_sigma: float = 0.5,
     min_robust_sources: int = 3,
 ) -> tuple[np.ndarray, dict]:
     """Fuse many panoramas into one super-resolved orthophoto.
@@ -209,7 +218,7 @@ def accumulate_floor_atlas(
     # scale to a whole building.
     for img, C in sources:
         rgb, w = _sample_source(
-            img, C, grid, z_floor, tripod_radius, max_incidence_deg, occluder
+            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
         )
         seen = w > 0
         counts += seen
@@ -228,18 +237,28 @@ def accumulate_floor_atlas(
     # --- pass 2: robust re-accumulation -----------------------------------
     acc2 = np.zeros(shape + (3,), dtype=np.float64)
     wsum2 = np.zeros(shape, dtype=np.float64)
-    gate = np.maximum(robust_sigma * sigma, 6.0)     # never gate on noise alone
+    # ASYMMETRIC by physics. A specular reflection only ever ADDS light, and
+    # it MOVES with the viewpoint — so on a polished floor the bright tail is
+    # the chandelier, and the darker observations carry the diffuse truth.
+    # (The first real Grand Hall atlas showed a regular grid of bright discs:
+    # the hall's chandeliers, smeared by averaging ~20 viewpoints. A symmetric
+    # gate cannot remove them; this can.) Dark outliers keep the looser gate —
+    # a shadow or an occluder is rarer and less damaging than a blown highlight.
+    dark_gate = np.maximum(robust_sigma * sigma, 6.0)
+    bright_gate = np.maximum(specular_sigma * sigma, 4.0)
     can_gate = counts >= min_robust_sources
     rejected = 0
     total = 0
     for img, C in sources:
         rgb, w = _sample_source(
-            img, C, grid, z_floor, tripod_radius, max_incidence_deg, occluder
+            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
         )
         seen = w > 0
         total += int(seen.sum())
-        dev = np.abs((rgb @ LUM_W) - mean_lum)
-        drop = seen & can_gate & (dev > gate)
+        signed = (rgb @ LUM_W) - mean_lum
+        drop = seen & can_gate & (
+            (signed > bright_gate) | (-signed > dark_gate)
+        )
         rejected += int(drop.sum())
         keep_w = np.where(drop, 0.0, w)
         acc2 += rgb * keep_w[..., None]
