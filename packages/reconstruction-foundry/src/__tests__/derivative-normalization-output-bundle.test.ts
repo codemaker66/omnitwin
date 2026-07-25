@@ -281,7 +281,14 @@ describe.sequential("authority-none derivative normalization output bundle", () 
     ).rejects.toThrow(/not canonical JSON/u);
 
     const extra = await writeBundle(join(root, "extra"));
-    await writeFile(join(extra.outputDirectory, "release.json"), "{}\n");
+    // mode 0o600 matches how the production writer creates artifacts
+    // (open(path, "wx+", 0o600)). Without it this file lands 0o644 and trips
+    // assertPrivateMetadataWhereSupported — which runs BEFORE the file-set
+    // check we are actually testing — so on POSIX the assertion below saw a
+    // privacy error instead of "exactly normalized.glb". That guard is a
+    // deliberate no-op on win32, which is why this was green on Windows and
+    // failed the first time CI ever reached this suite on Linux.
+    await writeFile(join(extra.outputDirectory, "release.json"), "{}\n", { mode: 0o600 });
     await expect(
       verifyFoundryDerivativeNormalizationOutputBundle({
         outputDirectory: extra.outputDirectory,
@@ -294,10 +301,14 @@ describe.sequential("authority-none derivative normalization output bundle", () 
     const root = await privateRoot();
     const partial = join(root, "partial");
     await mkdir(partial, { mode: 0o700 });
+    // mode 0o600 on each: these three are CREATED here (the directory above
+    // already uses 0o700), so without an explicit mode they land 0o644 and the
+    // POSIX privacy guard fires ahead of the "empty or exceeds" size check this
+    // test targets. See the note in the previous test for the full mechanism.
     await Promise.all([
-      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZED_GLB_PATH), glbFixture()),
-      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZATION_REPORT_PATH), "{}\n"),
-      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZATION_ARTIFACT_INDEX_PATH), ""),
+      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZED_GLB_PATH), glbFixture(), { mode: 0o600 }),
+      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZATION_REPORT_PATH), "{}\n", { mode: 0o600 }),
+      writeFile(join(partial, FOUNDRY_DERIVATIVE_NORMALIZATION_ARTIFACT_INDEX_PATH), "", { mode: 0o600 }),
     ]);
     await expect(
       verifyFoundryDerivativeNormalizationOutputBundle({

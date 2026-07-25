@@ -29,9 +29,15 @@ test.describe("private brief exposure", () => {
     const response = await page.goto(PRIVATE_BRIEF_PATH);
 
     expect(response?.status() ?? 200).toBeLessThan(500);
-    await expect(
-      page.getByRole("heading", { name: /See your evening before it happens/i }),
-    ).toBeVisible();
+    // Assert that SOME public landing rendered, not which one. This used to
+    // wait for /See your evening before it happens/ — the Spotlight page's h1 —
+    // which stopped being the homepage in 757efa67 (11 Jul), when "/" became
+    // FreshPage. The guard itself never broke: the catch-all route still
+    // redirects the private brief to "/". Only the copy moved. Re-coupling this
+    // to a specific headline would just re-break it the next time the homepage
+    // is rewritten, which happens often; the URL check below plus a rendered
+    // h1 is what this test actually needs to prove.
+    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
 
     const bodyText = await page.locator("body").innerText();
