@@ -34,6 +34,13 @@ import {
 
 const roots: string[] = [];
 const FIXED_MTIME = new Date("2026-07-17T12:00:00.000Z");
+/** Offset of the OS_CODE field in a gzip member header (RFC 1952 §2.3.1). */
+const GZIP_OS_BYTE_OFFSET = 9;
+/** The OS_CODE present in the .spz bytes the checked-in V2 goldens were recorded
+ *  from (a Windows zlib build). Pinning to it keeps those goldens valid rather
+ *  than rewriting them, so this stays a platform-portability fix and not a
+ *  silent change to a format-immutability record. */
+const GZIP_OS_CODE_RECORDED_IN_GOLDENS = 0x0a;
 const SMALL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64",
@@ -53,7 +60,16 @@ function smallLegacySpz(): Buffer {
   for (let index = 16; index < payload.length; index += 1) {
     payload[index] = index & 0xff;
   }
-  return gzipSync(payload);
+  // gzip header byte 9 is zlib's OS_CODE: 0x0a on a Windows build, 0x03 on Unix.
+  // It sits inside the .spz bytes whose sha256 the V2 goldens below record, so an
+  // un-normalised fixture makes those goldens PLATFORM-DEPENDENT. They were
+  // recorded on Windows, so the V2 hash moved — and only V2, because V1 (ascii
+  // .obj) and V3 (plain buffer .ply) carry no zlib bytes — the first time CI ever
+  // reached this suite on Linux. Pin the byte so the fixture is byte-identical
+  // everywhere and the checked-in goldens stay valid unchanged.
+  const gzipped = gzipSync(payload);
+  gzipped[GZIP_OS_BYTE_OFFSET] = GZIP_OS_CODE_RECORDED_IN_GOLDENS;
+  return gzipped;
 }
 
 function smallGaussianPly(): Buffer {
