@@ -142,7 +142,13 @@ jobs:
         run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts
 
       - name: Test (Vitest)
-        run: pnpm -r test
+        # --no-bail: without it, pnpm stops at the FIRST failing package, so a
+        # red package hides every package after it. That is how three latent
+        # Linux-only defects in @omnitwin/reconstruction-foundry stayed
+        # invisible for nine days behind packages/web, then surfaced together.
+        # Failures still fail the job (verified: exit code 1 with --no-bail);
+        # this only ensures every package reports on the day it breaks.
+        run: pnpm -r --no-bail test
 
   e2e:
     name: E2E
