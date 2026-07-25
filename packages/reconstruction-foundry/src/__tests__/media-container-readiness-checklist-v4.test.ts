@@ -34,12 +34,22 @@ import {
 
 const roots: string[] = [];
 const FIXED_MTIME = new Date("2026-07-17T12:00:00.000Z");
-/** Offset of the OS_CODE field in a gzip member header (RFC 1952 §2.3.1). */
+/** Offset of the OS field in a gzip member header — RFC 1952 §2.3.1 defines the
+ *  header layout and puts OS at byte 9. (The layout is the RFC's; the VALUE below
+ *  is not — see the warning there.) */
 const GZIP_OS_BYTE_OFFSET = 9;
-/** The OS_CODE present in the .spz bytes the checked-in V2 goldens were recorded
- *  from (a Windows zlib build). Pinning to it keeps those goldens valid rather
- *  than rewriting them, so this stays a platform-portability fix and not a
- *  silent change to a format-immutability record. */
+/** The OS byte present in the .spz bytes the checked-in V2 goldens were recorded
+ *  from. Pinning to it keeps those goldens valid rather than rewriting them, so
+ *  this stays a platform-portability fix and not a silent change to a
+ *  format-immutability record.
+ *
+ *  ⚠️ DO NOT "correct" this to 0x0b. This value comes from **zlib's own
+ *  `zutil.h`**, which does `#ifdef WIN32 → #define OS_CODE 0x0a`; it is an
+ *  implementation fact, not an RFC assignment. RFC 1952's OS table actually
+ *  assigns 0x0a to TOPS-20 and 0x0b to NTFS, so the RFC makes 0x0b look like the
+ *  "right" value for Windows — it is not what zlib emits, and changing it here
+ *  would break all three V2 goldens. Verified empirically on win32:
+ *  `gzipSync(...)` yields `1f 8b 08 00 00 00 00 00 00 0a`. */
 const GZIP_OS_CODE_RECORDED_IN_GOLDENS = 0x0a;
 const SMALL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
