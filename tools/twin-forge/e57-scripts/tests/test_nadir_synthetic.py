@@ -407,6 +407,45 @@ def test_donorless_pixels_fall_back_without_crashing():
     print(f"  synthesized px: {report['synthesized_px']} (fallback exercised)")
 
 
+def test_detection_grows_through_the_weak_collar():
+    # THE SHIPPED FAILURE (found by oblique certification 2026-07-22): a real
+    # tripod smear is GRADED — a dead core ringed by a weakly-flat collar
+    # that still reads as mush to the eye. Single-threshold detection claims
+    # the core, fills it, and leaves the collar as an unfilled ANNULUS
+    # (verifier prose: "partially-filled tripod ring with an unfilled outer
+    # collar"; measured grain dips to 0.38-0.60 of far-field at 15-20 deg).
+    # Detection must grow from the confident core through contiguous
+    # weakly-flat territory, without swallowing genuinely smooth floor.
+    from scipy.ndimage import gaussian_filter
+
+    dirs = nf.gnomonic_nadir_dirs(640, 58.0)
+    view = nf.render_view(GT_A, dirs)  # clean parquet, no smear
+    yy, xx = np.mgrid[0:640, 0:640]
+    rad = np.hypot(yy - 320, xx - 320)
+    core = rad < 60
+    collar = (rad >= 60) & (rad < 115)
+
+    graded = view.copy()
+    flat_colour = view[core].mean(axis=0, keepdims=True)
+    graded[core] = flat_colour
+    # collar keeps ~22% of its texture — above the strict threshold, far
+    # below real floor: exactly the band the shipped detector abandoned.
+    lp = gaussian_filter(view, (3.0, 3.0, 0.0))
+    graded[collar] = (lp[collar] * 0.78 + view[collar] * 0.22)
+
+    mask = nf.detect_smear_view(graded)
+    core_cov = float((mask & core).sum()) / float(core.sum())
+    collar_cov = float((mask & collar).sum()) / float(collar.sum())
+    outside = rad >= 150
+    leak = float((mask & outside).sum()) / float(outside.sum())
+    print(f"  core {core_cov:.2f} | collar {collar_cov:.2f} | leak {leak:.3f}")
+    # 0.95 is correct behaviour, not a moved goalpost: the local-std window
+    # erodes a ~half-window rim off any flat region before it can be seen.
+    assert core_cov >= 0.95, f"core lost: {core_cov:.2f}"
+    assert collar_cov >= 0.85, f"weak collar abandoned: {collar_cov:.2f}"
+    assert leak < 0.02, f"grew into real floor: {leak:.3f}"
+
+
 def test_detection_catches_detached_smear_lobe():
     # The scan_045 entry-node failure: the tripod smear can arrive SPLIT —
     # a beige lobe detached from the nadir-connected component (a texture

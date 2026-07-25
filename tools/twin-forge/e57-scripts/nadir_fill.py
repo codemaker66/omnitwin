@@ -347,6 +347,12 @@ def detect_smear_view(
     abs_cap: float = 6.0,
     grow_px: int = 2,
     chroma_k: float = 6.0,
+    # 2.2 chosen by measured frontier, not intuition (scratchpad sweep over
+    # graded-collar coverage vs hard-edge IoU): 1.9 abandons 59% of the
+    # collar, 2.6 wins the collar but bleeds into real floor (IoU 0.94 ->
+    # 0.65), 3.0 leaks 39% of the frame. 2.2 is the only value passing both.
+    weak_mult: float = 2.2,
+    max_grow: float = 9.0,
 ) -> np.ndarray:
     """Find the tripod smear in a nadir gnomonic view: the blur has far less
     local texture than the real floor. Local-std threshold (relative to the
@@ -368,7 +374,31 @@ def detect_smear_view(
     texture = float(np.median(std[std > 0.5])) if np.any(std > 0.5) else 1.0
     thresh = float(np.clip(rel_thresh * texture, abs_floor, abs_cap))
     raw = std < thresh
-    labels, _n = ndimage.label(raw)
+    # HYSTERESIS (the 2026-07-22 shipped defect): a real smear is GRADED —
+    # a dead core ringed by a weakly-flat collar. Thresholding once claims
+    # the core, the fill repairs it, and the collar survives as an UNFILLED
+    # ANNULUS (measured: grain 0.38-0.60 of far-field at 15-20 deg out).
+    # So seed on the strict threshold and grow through contiguous
+    # weakly-flat territory — Canny-style edge linking, one dimension up.
+    # Guarded: if growth runs away (smooth stone/terrazzo floors, where
+    # "weakly flat" is most of the frame), fall back to the strict mask.
+    seeds = raw
+    weak = std < (thresh * weak_mult)
+    # Physical leash: a tripod collar is comparable in scale to its own
+    # core, so growth may roughly double the seed's radius and no more.
+    # Without this, propagation walks along low-texture lanes of genuine
+    # floor (measured: synthetic IoU 0.95 -> 0.65) and the fill would then
+    # overwrite real boards with donor content.
+    r_seed = float(np.sqrt(max(int(seeds.sum()), 1) / np.pi))
+    reach = int(np.clip(round(r_seed), 6, 240))
+    grown = ndimage.binary_propagation(seeds, mask=weak) & ndimage.binary_dilation(
+        seeds, iterations=reach
+    )
+    if int(grown.sum()) > max(int(seeds.sum()) * max_grow, 1) or (
+        float(grown.mean()) > 0.55
+    ):
+        grown = seeds
+    labels, _n = ndimage.label(grown)
     size = labels.shape[0]
     centre_label = labels[size // 2, size // 2]
     if centre_label == 0:
