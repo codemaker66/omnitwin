@@ -118,7 +118,7 @@ describe("GET /health/version (build provenance)", () => {
   afterAll(() => {
     for (const key of KEYS) {
       const previous = saved.get(key);
-      if (previous === undefined) delete process.env[key];
+      if (previous === undefined) Reflect.deleteProperty(process.env, key);
       else process.env[key] = previous;
     }
   });
@@ -137,7 +137,7 @@ describe("GET /health/version (build provenance)", () => {
   });
 
   it("falls back to dev placeholders when nothing is stamped, keeping the shape stable", async () => {
-    for (const key of KEYS) delete process.env[key];
+    for (const key of KEYS) Reflect.deleteProperty(process.env, key);
 
     const response = await server.inject({ method: "GET", url: "/health/version" });
     expect(response.statusCode).toBe(200);

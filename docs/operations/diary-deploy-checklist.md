@@ -62,12 +62,14 @@ Consequence: **schema must precede code.** Apply migrations (§3) before pushing
 - [ ] **The fresh-checkout gate — and it must include a Docker build.** Previous versions of this doc built only the api package, which structurally **could not** catch the break that stopped the API deploying (a broken image recipe). Run at the ship SHA, in the clean worktree:
   ```powershell
   pnpm install --frozen-lockfile
+  pnpm -r run typecheck   # ALL projects — CI's Typecheck job; per-package misses tools/*
+  pnpm lint               # ALL projects — CI's Lint job
+  pnpm -r test            # ALL projects — CI's Test job; see the bail warning below
   pnpm --filter @omnitwin/api build
-  pnpm --filter @omnitwin/api test
-  pnpm --filter @omnitwin/web typecheck
-  pnpm --filter @omnitwin/web test
   docker build -t omnitwin-api-preflight .    # THE step that was missing
   ```
+  **Run the repo-wide forms, not per-package ones.** Learned the hard way on 2026-07-25: a gate of `--filter api` + `--filter web` typecheck/test passed, the push landed, and CI's **Lint** job then failed on a `no-dynamic-delete` error in a brand-new api test — because lint was never in the gate at all. One commit of avoidable red on master.
+  **`pnpm -r test` BAILS at the first failing package.** So a green-looking earlier package can hide later ones: fixing the `packages/web` failure on 2026-07-25 let the runner reach `packages/reconstruction-foundry` for the first time and expose two pre-existing failures there. Treat "Test went from one failure to a different failure" as progress, and expect to peel more than one layer.
   If Docker Desktop's engine will not start, the Railway build itself is the gate — watch it (§5) rather than skipping it.
 - [ ] **[OWNER] Neon backup branch:** console.neon.tech → your project → Branches → Create branch, from production/main, named `pre-deploy-YYYY-MM-DD`. **Use a Neon branch, not `pg_dump`** — Neon runs PG 17 and a local PG-16 `pg_dump` refuses to dump it.
 - [ ] **Confirm no other session is mid-push.** Ask the other lanes to hold; three separate mid-deploy pushes forced four re-gates on 2026-07-20.
