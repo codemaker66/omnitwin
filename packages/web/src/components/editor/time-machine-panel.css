@@ -1,0 +1,159 @@
+/* TimeMachinePanel — gold ink on captured dark, House restraint.
+   Sentence case throughout; motion is a single settle, and it stands down
+   entirely under prefers-reduced-motion. */
+
+.tm {
+  --tm-ink: #c9a84c;
+  --tm-line: rgba(201, 168, 76, 0.22);
+  --tm-bg: #17171a;
+  --tm-text: #e8e6e1;
+  --tm-muted: #9a978f;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--tm-bg);
+  border: 1px solid var(--tm-line);
+  border-radius: 12px;
+  color: var(--tm-text);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.tm__head { display: flex; flex-direction: column; gap: 3px; }
+
+.tm__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tm-ink);
+}
+
+.tm__title { margin: 0; font-size: 17px; font-weight: 500; color: #fff; }
+
+.tm__meta { margin: 0; font-size: 12px; color: var(--tm-muted); }
+
+.tm__note-inline { color: #6f6c66; }
+
+/* The top-down plan. Indicative geometry, deliberately unmeasured. */
+.tm__plan {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--tm-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(201, 168, 76, 0.05) 1px, transparent 1px) 0 0 / 100% 12.5%,
+    linear-gradient(90deg, rgba(201, 168, 76, 0.05) 1px, transparent 1px) 0 0 / 7.1% 100%,
+    #101012;
+  overflow: hidden;
+}
+
+.tm__object {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 1.5px solid var(--tm-ink);
+  border-radius: 50%;
+  background: rgba(201, 168, 76, 0.14);
+  /* A single settle as the room rearranges under the scrubber. */
+  transition: left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              top 260ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 260ms ease;
+}
+
+/* Read the plan at a glance: a dancefloor must not look like a dining
+   table. Silhouette carries the meaning; the ink stays one colour. */
+.tm__object--top-table {
+  width: 46px;
+  height: 16px;
+  margin: -8px 0 0 -23px;
+  border-radius: 3px;
+}
+
+.tm__object--dancefloor {
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 4px;
+  border-style: dashed;
+  background: rgba(201, 168, 76, 0.05);
+}
+
+.tm__object--chair {
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-width: 1px;
+}
+
+/* The object this moment actually touched — a quiet gold halo, so scrubbing
+   reads as "this is what changed here" rather than a static redraw. */
+.tm__object--touched {
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.28);
+}
+
+.tm__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #56534e;
+}
+
+.tm__scrub { display: flex; flex-direction: column; gap: 6px; }
+
+.tm__scrub-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tm-muted);
+}
+
+.tm__scrub input[type="range"] {
+  width: 100%;
+  accent-color: var(--tm-ink);
+  cursor: pointer;
+}
+
+/* Seen in a real browser: the default focus ring lands bright cyan, which
+   breaks the House palette. Gold it, and keep it clearly visible. */
+.tm__scrub input[type="range"]:focus-visible {
+  outline: 2px solid var(--tm-ink);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.tm__foot { display: flex; flex-direction: column; gap: 8px; }
+
+.tm__note { margin: 0; font-size: 12px; color: var(--tm-muted); }
+
+.tm__warn { margin: 0; font-size: 12px; color: #d9a24a; }
+
+.tm__restore {
+  align-self: flex-start;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #17171a;
+  background: var(--tm-ink);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: filter 160ms ease;
+}
+
+.tm__restore:hover { filter: brightness(1.08); }
+
+.tm__restore:focus-visible {
+  outline: 2px solid var(--tm-ink);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm__object,
+  .tm__restore { transition: none; }
+}

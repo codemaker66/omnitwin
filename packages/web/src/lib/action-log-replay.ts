@@ -35,6 +35,11 @@ function isLogManagement(intent: string): boolean {
   return intent.startsWith("log.");
 }
 
+/** Intents whose payload/inverse are document deltas this engine can apply. */
+function isDocumentMutation(intent: string): boolean {
+  return intent.startsWith("object.") || intent === "layout.restore";
+}
+
 export function verifyReplayable(entries: readonly AuditLogEntry[]): ReplayVerdict {
   const issues: string[] = [];
   const seenIds = new Set<string>();
@@ -163,15 +168,27 @@ function applyDelta(
   return next;
 }
 
-export function replayActions(entries: readonly AuditLogEntry[]): ReplayResult {
+/** Replay a trail onto a starting document.
+ *
+ *  `base` matters more than it looks: `loadConfiguration` writes a saved
+ *  configuration's objects straight into the store with an empty history and
+ *  emits NO Action for them, so the trail of a reopened configuration holds
+ *  only the gestures made SINCE. Replaying such a trail from an empty room
+ *  reconstructs a room missing all pre-existing furniture and reports every
+ *  follow-up edit as touching an absent object. Callers that have the loaded
+ *  objects (or a server-side revision snapshot) must pass them. */
+export function replayActions(
+  entries: readonly AuditLogEntry[],
+  base: readonly ReplayObject[] = [],
+): ReplayResult {
   const verdict = verifyReplayable(entries);
   if (!verdict.replayable) {
-    return { objects: [], applied: 0, undone: 0, redone: 0, skipped: [], issues: verdict.issues };
+    return { objects: [...base], applied: 0, undone: 0, redone: 0, skipped: [], issues: verdict.issues };
   }
 
   const issues: string[] = [];
   const skipped = new Map<string, number>();
-  let objects: readonly ReplayObject[] = [];
+  let objects: readonly ReplayObject[] = [...base];
   // Each applied gesture keeps BOTH recorded deltas so undo/redo replay
   // from the log's own inverses.
   const undoStack: { readonly payload: ReplayDelta; readonly inverse: ReplayDelta }[] = [];
@@ -207,7 +224,11 @@ export function replayActions(entries: readonly AuditLogEntry[]): ReplayResult {
       redone += 1;
       continue;
     }
-    if (!item.intent.startsWith("object.")) {
+    // Document mutations carry a replayable delta: the object.* gestures,
+    // plus `layout.restore` (the time machine's append-only restore, which
+    // must replay like any other mutation or the trail stops being
+    // self-sufficient). Everything else is another surface's business.
+    if (!isDocumentMutation(item.intent)) {
       skipped.set(item.intent, (skipped.get(item.intent) ?? 0) + 1);
       continue;
     }
