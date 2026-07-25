@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimePackageRevisionCreateResponse } from "@omnitwin/types";
@@ -34,7 +35,12 @@ import {
 const scriptPath = fileURLToPath(
   new URL("../scripts/register-reception-room-mobile-frontier.ts", import.meta.url),
 );
-const MANIFEST_PATH = "C:/checked/Reception Room Mobile.lcc2";
+// Absolute on the RUNNING platform. A literal "C:/checked/..." is absolute
+// only on win32; on POSIX it is a RELATIVE path into a directory named "C:",
+// so the script's isAbsolute guard correctly rejected it and all four tests
+// died at argument validation before reaching what they actually assert.
+// The embedded space is deliberate — it exercises spaced-path handling.
+const MANIFEST_PATH = resolve(sep, "checked", "Reception Room Mobile.lcc2");
 
 function validAssetRows(): readonly ReceptionFrontierAssetRecord[] {
   return RECEPTION_MOBILE_REGISTERED_ASSETS.map((asset) => ({
@@ -399,7 +405,7 @@ describe("Reception Room Mobile fine-frontier registration preparation", () => {
     expect(() => parseReceptionMobileFrontierArgs([])).toThrow("--manifest is required");
     expect(() => parseReceptionMobileFrontierArgs(["--unknown"])).toThrow("Unknown argument");
     expect(() => parseReceptionMobileFrontierArgs([
-      "--manifest", "C:/a.lcc2", "--manifest", "C:/b.lcc2",
+      "--manifest", resolve(sep, "a.lcc2"), "--manifest", resolve(sep, "b.lcc2"),
     ])).toThrow("only be supplied once");
     expect(() => parseReceptionMobileFrontierArgs([
       "--manifest", "relative/Reception Room Mobile.lcc2",
