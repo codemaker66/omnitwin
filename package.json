@@ -16,7 +16,7 @@
     "clean": "pnpm -r run clean",
     "capture:factory": "pnpm --filter @omnitwin/capture-factory capture --",
     "reconstruction:foundry": "pnpm --filter @omnitwin/reconstruction-foundry-cli foundry",
-    "postinstall": "node ./packages/types/node_modules/typescript/bin/tsc --project packages/types/tsconfig.build.json"
+    "postinstall": "node ./packages/types/node_modules/typescript/bin/tsc --project packages/types/tsconfig.build.json && node ./packages/reconstruction-foundry/node_modules/typescript/bin/tsc --project packages/reconstruction-foundry/tsconfig.build.json"
   },
   "pnpm": {
     "overrides": {
