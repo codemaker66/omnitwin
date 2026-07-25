@@ -128,12 +128,18 @@ The `--apply` flag on `apply-diary-rollout.ts` is an **emergency** tool (out-of-
 
 ## 5. Deploy the API — the step the old doc omitted entirely
 
-From the **clean** worktree at the pushed SHA:
+From the **clean** worktree at the pushed SHA. **Stamp the build first** — Railway passes a service variable in as a build arg only because the Dockerfile declares a matching `ARG`, and `railway up` uploads a tarball with `.git/` excluded, so the image cannot discover its own commit:
 
 ```powershell
 cd C:/Users/blake/omnitwin2-ship
+railway variables --service "@omnitwin/api" `
+  --set "BUILD_GIT_SHA=$(git rev-parse HEAD)" `
+  --set "BUILD_TIMESTAMP=$(Get-Date -Format o)" `
+  --set "BUILD_APP_VERSION=$(node -p ""require('./packages/api/package.json').version"")"
 railway up --detach --service "@omnitwin/api"
 ```
+
+Skip the stamp and the deploy still works — the args default to `dev`/`0.0.0`, exactly as production behaved before 2026-07-25 — but you lose the ability to verify §6 by SHA and are back to inferring from endpoint behaviour.
 
 - `.railwayignore` is what makes this finish — without it the committed web splat assets make the upload time out. Do not delete it.
 - `railway.json`'s `startCommand` carries **`node --conditions=omnitwin-dist`** and **overrides the Dockerfile `CMD`**. Both foundry workspace packages export raw TypeScript from `src/` on every other condition, and the compiled api imports them at boot. **Drop that flag and the API cannot boot.**
@@ -145,9 +151,18 @@ railway up --detach --service "@omnitwin/api"
 - **The health gate is your friend.** Railway retries `/health/ready` for ~60s and, if the new replica never becomes healthy, **keeps the old image serving**. A failed boot is therefore zero-downtime: production stays on the previous release while you fix and redeploy. That is exactly what happened on 2026-07-20.
 - After changing any variable, the process must **restart** for it to take effect (the R2 clients are cached at module level on first use).
 
-## 6. Verify — by behaviour, not by SHA
+## 6. Verify — SHA first, then behaviour
 
-**Do not try to compare SHAs.** `railway up` uploads a directory, `.railwayignore` excludes `.git/`, and `GIT_SHA` is never injected — so `/health/version` always returns `gitSha: "dev"` and `version: "0.0.0"` (the package is actually `0.0.4`). Until §9's stamping lands, verify by endpoint behaviour:
+**Since 2026-07-25 the image carries its own provenance**, so the fastest check is the direct one:
+
+```powershell
+curl.exe -s https://api.venviewer.com/health/version
+# {"version":"0.0.4","gitSha":"<the SHA you pushed>","builtAt":"<ISO timestamp>","nodeEnv":"production"}
+```
+
+`gitSha` matching the pushed SHA is conclusive proof the new image is serving. If it reads `dev`, you either skipped §5's stamp or the deploy did not land — check which before concluding anything.
+
+**Always also run the behaviour probes.** They are what caught the truth for months while the SHA lied, and they verify the app rather than its label:
 
 ```powershell
 curl.exe -s -o NUL -w "live %{http_code}`n"   https://api.venviewer.com/health/live      # 200
@@ -192,7 +207,7 @@ pnpm --filter @omnitwin/web exec playwright test e2e/production-smoke.spec.ts
 
 **Open work:**
 
-- **Build provenance is dead** — `/health/version` reports `gitSha: "dev"`, `builtAt: "dev"`, `version: "0.0.0"`. `railway up` genuinely cannot supply a SHA (Railway's `RAILWAY_GIT_*` vars exist only for GitHub-triggered deploys **[unverified — vendor docs]**; the CLI contains no git library and `.railwayignore` excludes `.git/`, both verified locally). Fix: declare a service variable as an `ARG` in the Dockerfile and pass it at deploy time; it then also works unchanged for any future git-triggered path. Until then, §6's behaviour check is the only honest verification. **Author this on master — not on `feature/diary-p0-slice-3`, whose Dockerfile predates the deploy fix (§2 landmine).**
+- ~~**Build provenance is dead**~~ — **FIXED 2026-07-25.** `/health/version` had reported `gitSha: "dev"`, `builtAt: "dev"`, `version: "0.0.0"` since the endpoint was written, while its own comment claimed CI injected them — nothing ever did, and nothing asserted it. The image now stamps all three via Dockerfile `ARG`s (`BUILD_GIT_SHA` / `BUILD_TIMESTAMP` / `BUILD_APP_VERSION`) fed by Railway service variables (§5), `version` reads `APP_VERSION` because `npm_package_version` is unset when the start command invokes node directly, and two tests in `packages/api/src/__tests__/health.test.ts` now pin both the stamped and the unstamped fallback paths so it cannot rot silently again. `railway up` genuinely cannot supply a SHA by itself (Railway's `RAILWAY_GIT_*` vars exist only for GitHub-triggered deploys **[unverified — vendor docs]**; the CLI contains no git library and `.railwayignore` excludes `.git/`, both verified locally) — hence the build-arg route, which also works unchanged for any future git-triggered deploy.
 - **R2 credentials need rotating.** The `RUNTIME_PROFILE_R2_*` values on the production service were copied from this machine's rclone tile-publishing token — far broader than needed. The API uses that credential for **`GetObject` only, on `venviewer-prod-runtime-profiles-private` only** (two call sites; no Put/Delete/List/Head/multipart/presign, and no bucket- or account-level calls), so a Cloudflare **"Object Read only"** token scoped to that one bucket is sufficient and cannot break a code path. Keep it **separate** from the legacy `R2_*` credential, which is a genuine read+write surface (presigned browser uploads, PDF writes, ranged reads) on `venviewer-prod`. The bucket must live in the **default** jurisdiction — an EU-jurisdiction bucket needs a different endpoint host and would fail with this code. Also **treat the borrowed tile token as exposed and regenerate it for its original rclone use.** Nothing probes R2 at boot, so a bad token boots green and fails on the first byte request as a 502/504.
 - **`T-538` is not shipped** (§0). Shipping it means merging the branch — read §2's landmine first.
 - Cron wiring for hold reminders; Redis backplane before a second API replica; Clerk production claims copied into the dev instance.

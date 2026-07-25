@@ -98,8 +98,22 @@ COPY --from=build --chown=omnitwin:omnitwin /app/deploy ./
 
 USER omnitwin
 
+# Build provenance. Railway injects a *service variable* as a build arg only
+# when the Dockerfile declares a matching ARG — and `railway up` uploads a
+# tarball with .git/ excluded (.railwayignore), so the image cannot discover
+# its own commit. Set BUILD_GIT_SHA/BUILD_TIMESTAMP/BUILD_APP_VERSION as
+# service variables before deploying (see docs/operations/diary-deploy-checklist.md
+# §5) and the running container reports them at /health/version. Defaults keep
+# a plain `docker build` working unchanged.
+ARG BUILD_GIT_SHA=dev
+ARG BUILD_TIMESTAMP=dev
+ARG BUILD_APP_VERSION=0.0.0
+
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=3001 \
+    GIT_SHA=${BUILD_GIT_SHA} \
+    BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
+    APP_VERSION=${BUILD_APP_VERSION}
 
 EXPOSE 3001
 

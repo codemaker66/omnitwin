@@ -226,15 +226,22 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //
   // `/health/version` returns the package version + git-SHA + build-
   // time so an on-call engineer correlating a Sentry event to a
-  // release doesn't have to guess. Every deploy stamps these via
-  // env (injected at build time in CI). When env is unset (local
-  // dev), sensible fallbacks keep the response shape stable.
+  // release doesn't have to guess.
+  //
+  // These are stamped into the image by the Dockerfile's BUILD_GIT_SHA /
+  // BUILD_TIMESTAMP / BUILD_APP_VERSION args (Railway passes matching
+  // service variables through as build args). NOTHING injects them in CI —
+  // an earlier version of this comment claimed that, which is why all three
+  // fields read "dev"/"0.0.0" in production for months and deploys had to be
+  // verified by endpoint-behaviour flips instead. `npm_package_version` is
+  // unset in production because the start command invokes node directly
+  // rather than through a pnpm script, hence the APP_VERSION source.
   //
   // Unauthenticated + unrate-limited — `/health*` routes are ops
   // surfaces. Contents are public-safe (commit SHA is not a secret).
   server.get("/health/version", async () => {
     return {
-      version: process.env["npm_package_version"] ?? "0.0.0",
+      version: process.env["APP_VERSION"] ?? process.env["npm_package_version"] ?? "0.0.0",
       gitSha: process.env["GIT_SHA"] ?? "dev",
       builtAt: process.env["BUILD_TIMESTAMP"] ?? "dev",
       nodeEnv: env.NODE_ENV,

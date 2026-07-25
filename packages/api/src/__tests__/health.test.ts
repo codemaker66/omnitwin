@@ -91,6 +91,64 @@ describe("GET /health/ready (K8s readiness alias)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Build provenance — these assertions exist because the endpoint reported
+// gitSha "dev" / version "0.0.0" in production for months while its own
+// comment claimed CI injected them. Nothing asserted it, so nothing caught
+// it, and deploys had to be verified by endpoint-behaviour flips instead.
+// The image now stamps GIT_SHA / BUILD_TIMESTAMP / APP_VERSION via Dockerfile
+// build args; these tests pin that the route actually surfaces them.
+// ---------------------------------------------------------------------------
+
+interface VersionBody {
+  readonly version: string;
+  readonly gitSha: string;
+  readonly builtAt: string;
+  readonly nodeEnv: string;
+}
+
+describe("GET /health/version (build provenance)", () => {
+  const KEYS = ["GIT_SHA", "BUILD_TIMESTAMP", "APP_VERSION", "npm_package_version"] as const;
+  const saved = new Map<string, string | undefined>();
+
+  beforeAll(() => {
+    for (const key of KEYS) saved.set(key, process.env[key]);
+  });
+
+  afterAll(() => {
+    for (const key of KEYS) {
+      const previous = saved.get(key);
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+
+  it("surfaces the stamped image provenance when the build args are set", async () => {
+    process.env["GIT_SHA"] = "abc1234";
+    process.env["BUILD_TIMESTAMP"] = "2026-01-01T00:00:00Z";
+    process.env["APP_VERSION"] = "1.2.3";
+
+    const response = await server.inject({ method: "GET", url: "/health/version" });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as VersionBody;
+    expect(body.gitSha).toBe("abc1234");
+    expect(body.builtAt).toBe("2026-01-01T00:00:00Z");
+    expect(body.version).toBe("1.2.3");
+  });
+
+  it("falls back to dev placeholders when nothing is stamped, keeping the shape stable", async () => {
+    for (const key of KEYS) delete process.env[key];
+
+    const response = await server.inject({ method: "GET", url: "/health/version" });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as VersionBody;
+    expect(body.gitSha).toBe("dev");
+    expect(body.builtAt).toBe("dev");
+    expect(body.version).toBe("0.0.0");
+    expect(typeof body.nodeEnv).toBe("string");
+  });
+});
+
 describe("GET /health/observability", () => {
   it("reports missing optional observability env without exposing secrets", async () => {
     const response = await server.inject({ method: "GET", url: "/health/observability" });
