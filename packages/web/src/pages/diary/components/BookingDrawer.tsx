@@ -54,6 +54,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  /** An event created by startPlan whose link has not landed yet — so a
+   *  retry finishes the job instead of orphaning another plan. */
+  const startedEventRef = useRef<string | null>(null);
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -63,6 +66,11 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     () => (mode.kind === "edit" ? allowedTransitionTargets(mode.booking.state, role) : []),
     [mode, role],
   );
+
+  // The same staff/admin gate the API applies to diary writes (hallkeeper
+  // reads the diary but never edits it) — a read-only role must not be
+  // offered a control whose every path ends in a 403.
+  const canWriteDiary = role === "staff" || role === "admin";
 
   const isHold = form.kind === "hold";
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
@@ -178,23 +186,42 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     const booking = mode.booking;
     setSubmitError(null);
     setBusy(true);
-    createEvent({
-      venueId,
-      name: booking.title,
-      eventType: booking.eventType,
-      // Honest defaults: a plan begun from a booking is a draft, and the
-      // headcount is genuinely unknown until someone enters it.
-      status: "draft",
-      guestCount: 0,
-      startsAt: booking.startsAt,
-      endsAt: booking.endsAt,
-    })
-      .then((graph) => updateBooking(booking.id, { eventId: graph.event.id }))
+    // Starting a plan is TWO writes that cannot be one transaction: create the
+    // event, then link it. If the link fails the event is already committed,
+    // and there is no endpoint that can list or delete it — so a naive retry
+    // would mint a second orphan every time. Remembering the id makes the
+    // retry FINISH the operation instead of repeating its first half.
+    const existing = startedEventRef.current;
+    const eventIdPromise =
+      existing === null ? createEvent({
+        venueId,
+        name: booking.title,
+        eventType: booking.eventType,
+        // Honest defaults: a plan begun from a booking is a draft, and the
+        // headcount is genuinely unknown until someone enters it.
+        status: "draft",
+        guestCount: 0,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+      }).then((graph) => {
+        startedEventRef.current = graph.event.id;
+        return graph.event.id;
+      })
+      : Promise.resolve(existing);
+
+    eventIdPromise
+      .then((eventId) => updateBooking(booking.id, { eventId }))
       .then((saved) => {
+        startedEventRef.current = null;
         onSaved(BOARD_COPY.drawer.planStarted(saved.title));
       })
       .catch((caught: unknown) => {
-        // The event may exist while the link failed — say only what is true.
+        // Which half failed decides what is true to say. Once the plan
+        // exists, "the booking is unchanged" would hide it.
+        if (startedEventRef.current !== null) {
+          setSubmitError(BOARD_COPY.drawer.planLinkFailed);
+          return;
+        }
         setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.planFailed);
       })
       .finally(() => {
@@ -413,7 +440,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       </form>
 
-      {mode.kind === "edit" ? (
+      {mode.kind === "edit" && canWriteDiary ? (
         <div className="diary-drawer-plan">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.planTitle}</h3>
           {mode.booking.eventId === null ? (

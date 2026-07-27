@@ -171,6 +171,59 @@ describe("BookingDrawer — floor plan section", () => {
     expect(onSaved).not.toHaveBeenCalled();
   });
 
+  it("a failed LINK is reported honestly — the plan exists, and is not claimed otherwise", async () => {
+    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
+    updateBookingMock.mockRejectedValue(new Error("network"));
+    const { onSaved } = renderEdit(booking());
+
+    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
+
+    await waitFor(() => {
+      const alert = screen.getByRole("alert").textContent ?? "";
+      expect(alert).toContain("created but could not be attached");
+      // "the booking is unchanged" would hide the plan that now exists.
+      expect(alert).not.toContain("unchanged");
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("retrying after a failed link finishes the job instead of orphaning a second plan", async () => {
+    createEventMock.mockResolvedValue({ event: { id: EVENT_ID } });
+    updateBookingMock.mockRejectedValueOnce(new Error("network"));
+    renderEdit(booking());
+
+    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeTruthy();
+    });
+
+    updateBookingMock.mockResolvedValue(booking({ eventId: EVENT_ID }));
+    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
+
+    await waitFor(() => {
+      expect(updateBookingMock).toHaveBeenCalledTimes(2);
+    });
+    // The retry must NOT mint a second event — nothing can list or delete
+    // orphans, so every stray one is invisible litter forever.
+    expect(createEventMock).toHaveBeenCalledTimes(1);
+    expect(updateBookingMock).toHaveBeenLastCalledWith(BOOKING_ID, { eventId: EVENT_ID });
+  });
+
+  it("offers no plan control to a read-only role", () => {
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: booking() }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="hallkeeper"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+    expect(screen.queryByText("Floor plan")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+  });
+
   it("shows no plan section while creating a booking that does not exist yet", () => {
     render(
       <BookingDrawer

@@ -71,7 +71,7 @@ export const BOARD_COPY = {
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
     transitionsTitle: "Lifecycle",
     planTitle: "Floor plan",
-    planNone: "No floor plan yet. Starting one opens the planner with this booking's name, date and times already filled in.",
+    planNone: "No floor plan yet. Starting one creates a plan carrying this booking's name, date and times — you can open it from here afterwards.",
     planAttached: "A floor plan is attached to this booking.",
     planStart: "Start a floor plan",
     planOpen: "Open the plan",
@@ -79,6 +79,11 @@ export const BOARD_COPY = {
     planStarted: (title: string): string => `Started a floor plan for ${title}.`,
     planDetached: (title: string): string => `Detached the floor plan from ${title}.`,
     planFailed: "The floor plan could not be started — the booking is unchanged.",
+    // The second leg failed: the plan EXISTS but is not attached yet. Saying
+    // "the booking is unchanged" here would be true and useless; saying
+    // nothing about the created plan would be dishonest. Retrying re-uses
+    // the plan that was already made rather than creating a second one.
+    planLinkFailed: "The floor plan was created but could not be attached to this booking yet. Try again to finish attaching it.",
     fields: {
       kind: "Commitment",
       room: "Room",
