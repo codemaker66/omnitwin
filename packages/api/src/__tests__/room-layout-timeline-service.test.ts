@@ -336,6 +336,11 @@ describe("resolveRoomLayoutTimelineKeyframe", () => {
       overrides: { guestCount: PAYLOAD.guestCount + 1 },
       reason: "guest_count_mismatch",
     },
+    {
+      label: "a null legacy guest count",
+      overrides: { guestCount: null },
+      reason: "guest_count_mismatch",
+    },
   ])("marks $label invalid", ({ overrides, reason }) => {
     const keyframe = resolve([
       candidate("77777777-7777-4777-8777-777777777779", overrides),
