@@ -1323,7 +1323,7 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   canonicalSnapshotId: uuid("canonical_snapshot_id"),
   proofDigest: varchar("proof_digest", { length: 64 }),
   supersedesSnapshotId: uuid("supersedes_snapshot_id"),
-  frozenBy: uuid("frozen_by").references(() => users.id, { onDelete: "set null" }),
+  frozenBy: uuid("frozen_by").references(() => users.id, { onDelete: "restrict" }),
   snapshotHash: varchar("snapshot_hash", { length: 64 }),
   status: varchar("status", { length: 30 }).notNull().default("draft"),
   objectCount: integer("object_count").notNull().default(0),

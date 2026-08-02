@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { canAccessResource, canManageVenue } from "../../utils/query.js";
+import {
+  canAccessResource,
+  canManageVenue,
+  canReadVenuePlanningData,
+  canWriteEvents,
+  isEventWriteRole,
+} from "../../utils/query.js";
 import type { JwtUser } from "../../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -144,5 +150,57 @@ describe("canAccessResource", () => {
   it("null ownerId + platform admin → granted (the anonymous-owned-resource path)", () => {
     const user = makeUser({ role: "admin", platformRole: "admin", venueId: null });
     expect(canAccessResource(user, null, VENUE_A)).toBe(true);
+  });
+});
+
+describe("event write policy", () => {
+  it("admits staff/admin roles and refuses read-only roles", () => {
+    expect(isEventWriteRole(makeUser({ role: "staff", venueId: VENUE_A }))).toBe(true);
+    expect(isEventWriteRole(makeUser({ role: "admin", venueId: VENUE_A }))).toBe(true);
+    expect(isEventWriteRole(makeUser({ role: "hallkeeper", venueId: VENUE_A }))).toBe(false);
+    expect(isEventWriteRole(makeUser({ role: "planner", venueId: VENUE_A }))).toBe(false);
+    expect(isEventWriteRole(makeUser({ role: "client", venueId: VENUE_A }))).toBe(false);
+  });
+
+  it("requires the persisted venue for staff/admin and preserves platform admin scope", () => {
+    expect(canWriteEvents(makeUser({ role: "staff", venueId: VENUE_A }), VENUE_A)).toBe(true);
+    expect(canWriteEvents(makeUser({ role: "staff", venueId: VENUE_A }), VENUE_B)).toBe(false);
+    expect(canWriteEvents(makeUser({ role: "admin", venueId: VENUE_B }), VENUE_A)).toBe(false);
+    expect(canWriteEvents(makeUser({ role: "hallkeeper", venueId: VENUE_A }), VENUE_A)).toBe(false);
+    expect(canWriteEvents(
+      makeUser({ role: "admin", platformRole: "admin", venueId: null }),
+      VENUE_B,
+    )).toBe(true);
+  });
+});
+
+describe("venue planning-data read policy", () => {
+  it("admits each same-venue planning role", () => {
+    for (const role of ["planner", "staff", "hallkeeper", "admin"] as const) {
+      expect(canReadVenuePlanningData(makeUser({ role, venueId: VENUE_A }), VENUE_A))
+        .toBe(true);
+    }
+  });
+
+  it("admits platform admins independent of tenant assignment", () => {
+    expect(canReadVenuePlanningData(
+      makeUser({ role: "admin", platformRole: "admin", venueId: null }),
+      VENUE_A,
+    )).toBe(true);
+    expect(canReadVenuePlanningData(
+      makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }),
+      VENUE_A,
+    )).toBe(true);
+  });
+
+  it("fails closed for clients, unknown roles, null venues, and cross-venue actors", () => {
+    expect(canReadVenuePlanningData(makeUser({ role: "client", venueId: VENUE_A }), VENUE_A))
+      .toBe(false);
+    expect(canReadVenuePlanningData(makeUser({ role: "future_role", venueId: VENUE_A }), VENUE_A))
+      .toBe(false);
+    expect(canReadVenuePlanningData(makeUser({ role: "planner", venueId: null }), VENUE_A))
+      .toBe(false);
+    expect(canReadVenuePlanningData(makeUser({ role: "planner", venueId: VENUE_B }), VENUE_A))
+      .toBe(false);
   });
 });
