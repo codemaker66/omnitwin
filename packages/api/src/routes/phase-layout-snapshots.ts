@@ -162,7 +162,10 @@ export async function phaseLayoutSnapshotRoutes(
             spaceId: eventPhases.spaceId,
             templateKey: eventPhases.templateKey,
             name: eventPhases.name,
-          }).from(eventPhases).where(eq(eventPhases.id, params.data.phaseId)).limit(1);
+          }).from(eventPhases).where(and(
+            eq(eventPhases.id, params.data.phaseId),
+            eq(eventPhases.eventId, event.id),
+          )).limit(1);
           if (phase === undefined) return { state: "not_found", resource: "phase" };
 
           // A non-locking revision observation lets a queued optimistic edit
@@ -174,6 +177,7 @@ export async function phaseLayoutSnapshotRoutes(
             venueId: configurations.venueId,
           }).from(configurations).where(and(
             eq(configurations.id, body.data.configurationId),
+            eq(configurations.venueId, event.venueId),
             isNull(configurations.deletedAt),
           )).limit(1);
           if (observedConfiguration === undefined) {
@@ -195,6 +199,7 @@ export async function phaseLayoutSnapshotRoutes(
             updatedAt: configurations.updatedAt,
           }).from(configurations).where(and(
             eq(configurations.id, body.data.configurationId),
+            eq(configurations.venueId, event.venueId),
             isNull(configurations.deletedAt),
           )).for("share").limit(1);
           if (configuration === undefined) {

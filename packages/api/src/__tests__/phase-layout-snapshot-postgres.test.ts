@@ -85,6 +85,11 @@ const OTHER_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444445";
 const MATCHING_REVENUE_SCENARIO_ID = "12121212-1212-4212-8212-121212121212";
 const OTHER_VENUE_ID = "11111111-1111-4111-8111-111111111112";
 const CROSS_VENUE_SPACE_ID = "33333333-3333-4333-8333-333333333334";
+const CROSS_TENANT_EVENT_ID = "99999999-9999-4999-8999-999999999998";
+const CROSS_TENANT_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8";
+const CROSS_TENANT_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444446";
+const MISSING_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7";
+const MISSING_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444449";
 const DELETED_SPACE_ID = "33333333-3333-4333-8333-333333333335";
 const MISSING_SPACE_ID = "33333333-3333-4333-8333-333333333336";
 const INCOMPLETE_CAPACITY_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444447";
@@ -319,6 +324,17 @@ async function seedFixture(db: Database): Promise<void> {
     createdAt: new Date(SNAPSHOT.createdFromConfigurationUpdatedAt),
     updatedAt: new Date(SNAPSHOT.createdFromConfigurationUpdatedAt),
   });
+  await db.insert(configurations).values({
+    id: CROSS_TENANT_CONFIGURATION_ID,
+    spaceId: CROSS_VENUE_SPACE_ID,
+    venueId: OTHER_VENUE_ID,
+    userId: ACTOR_ID,
+    name: "Foreign tenant secret layout",
+    layoutStyle: SNAPSHOT.layoutStyle,
+    guestCount: SNAPSHOT.guestCount,
+    visibility: "private",
+    slug: "foreign-tenant-secret-layout",
+  });
   await db.insert(assetDefinitions).values(SNAPSHOT.objects.map((object, index) => ({
     id: object.assetDefinition.assetDefinitionId,
     name: index === 0 ? "Timeline round table" : "Timeline dining chair",
@@ -371,6 +387,18 @@ async function seedFixture(db: Database): Promise<void> {
     guestCount: SNAPSHOT.guestCount,
     clientName: "Elaine & James",
   });
+  await db.insert(events).values({
+    id: CROSS_TENANT_EVENT_ID,
+    venueId: OTHER_VENUE_ID,
+    createdBy: ACTOR_ID,
+    name: "Foreign tenant secret event",
+    eventType: "dinner",
+    status: "confirmed",
+    startsAt: new Date("2026-06-07T17:00:00.000Z"),
+    endsAt: new Date("2026-06-08T00:30:00.000Z"),
+    guestCount: SNAPSHOT.guestCount,
+    clientName: "Foreign tenant secret client",
+  });
   await db.insert(eventPhases).values({
     id: PHASE_ID,
     eventId: EVENT_ID,
@@ -391,6 +419,17 @@ async function seedFixture(db: Database): Promise<void> {
     sortOrder: 3,
     startsAt: new Date("2026-06-08T22:30:00.000Z"),
     durationMinutes: 180,
+    guestCount: SNAPSHOT.guestCount,
+  });
+  await db.insert(eventPhases).values({
+    id: CROSS_TENANT_PHASE_ID,
+    eventId: CROSS_TENANT_EVENT_ID,
+    spaceId: CROSS_VENUE_SPACE_ID,
+    templateKey: "dinner",
+    name: "Foreign tenant secret phase",
+    sortOrder: 1,
+    startsAt: PHASE_START,
+    durationMinutes: 105,
     guestCount: SNAPSHOT.guestCount,
   });
   await db.insert(canonicalLayoutSnapshots).values({
@@ -550,6 +589,47 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       payload: { configurationId: SNAPSHOT.configurationId },
     });
     expect(crossTenant.statusCode, crossTenant.body).toBe(403);
+  });
+
+  it("makes missing and cross-tenant phase or configuration ids indistinguishable", async () => {
+    const app = requiredServer();
+    const freeze = (phaseId: string, configurationId: string) => app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/phases/${phaseId}/layout-snapshots`,
+      headers: authHeaders(),
+      payload: { configurationId },
+    });
+
+    const [missingPhase, crossTenantPhase] = await Promise.all([
+      freeze(MISSING_PHASE_ID, SNAPSHOT.configurationId),
+      freeze(CROSS_TENANT_PHASE_ID, SNAPSHOT.configurationId),
+    ]);
+    expect(missingPhase.statusCode, missingPhase.body).toBe(404);
+    expect(crossTenantPhase.statusCode, crossTenantPhase.body).toBe(404);
+    expect(missingPhase.json()).toEqual({ error: "Phase not found", code: "NOT_FOUND" });
+    expect(crossTenantPhase.body).toBe(missingPhase.body);
+    expect(crossTenantPhase.json()).toEqual(missingPhase.json());
+
+    const [missingConfiguration, crossTenantConfiguration] = await Promise.all([
+      freeze(PHASE_ID, MISSING_CONFIGURATION_ID),
+      freeze(PHASE_ID, CROSS_TENANT_CONFIGURATION_ID),
+    ]);
+    expect(missingConfiguration.statusCode, missingConfiguration.body).toBe(404);
+    expect(crossTenantConfiguration.statusCode, crossTenantConfiguration.body).toBe(404);
+    expect(missingConfiguration.json()).toEqual({
+      error: "Configuration not found",
+      code: "NOT_FOUND",
+    });
+    expect(crossTenantConfiguration.body).toBe(missingConfiguration.body);
+    expect(crossTenantConfiguration.json()).toEqual(missingConfiguration.json());
+
+    for (const response of [crossTenantPhase, crossTenantConfiguration]) {
+      expect(response.body).not.toContain(CROSS_TENANT_EVENT_ID);
+      expect(response.body).not.toContain(CROSS_TENANT_PHASE_ID);
+      expect(response.body).not.toContain(CROSS_TENANT_CONFIGURATION_ID);
+      expect(response.body).not.toContain(OTHER_VENUE_ID);
+      expect(response.body).not.toContain("Foreign tenant secret");
+    }
   });
 
   it("serializes concurrent freezes and serves the resulting canonical keyframe", async () => {
