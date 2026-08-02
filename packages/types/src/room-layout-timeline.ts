@@ -120,7 +120,7 @@ const AvailableKeyframeSchema = z.object({
   createdAt: z.string().datetime(),
   frozenAt: z.string().datetime(),
   objectCount: z.number().int().nonnegative(),
-  guestCount: z.number().int().nonnegative().nullable(),
+  guestCount: z.number().int().nonnegative(),
   payload: CanonicalLayoutSnapshotV0Schema,
 }).strict();
 
@@ -241,7 +241,64 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   staffConflictsLabel: z.string().trim().min(1).max(120),
   keyframe: RoomLayoutTimelineKeyframeSchema,
   figures: RoomLayoutTimelineFiguresSchema,
-}).strict();
+}).strict().superRefine((frame, context) => {
+  if (frame.id !== frame.phaseId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phaseId"],
+      message: "Frame id must match phaseId",
+    });
+  }
+
+  const startsAtMs = Date.parse(frame.startsAt);
+  const endsAtMs = Date.parse(frame.endsAt);
+  if (endsAtMs <= startsAtMs) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["endsAt"],
+      message: "Frame endsAt must be later than startsAt",
+    });
+  }
+
+  if (
+    frame.kind === "room_flip"
+    && !(frame.keyframe.state === "missing" && frame.keyframe.reason === "room_flip_gap")
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["keyframe"],
+      message: "Room-flip frames must carry a missing room_flip_gap keyframe",
+    });
+  }
+  if (
+    frame.kind !== "room_flip"
+    && frame.keyframe.state === "missing"
+    && frame.keyframe.reason === "room_flip_gap"
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["keyframe", "reason"],
+      message: "Only room-flip frames may carry a room_flip_gap keyframe",
+    });
+  }
+
+  if (frame.keyframe.state === "available") {
+    if (frame.keyframe.objectCount !== frame.keyframe.payload.objects.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["keyframe", "objectCount"],
+        message: "Available keyframe objectCount must match its payload",
+      });
+    }
+    if (frame.keyframe.guestCount !== frame.keyframe.payload.guestCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["keyframe", "guestCount"],
+        message: "Available keyframe guestCount must match its payload",
+      });
+    }
+  }
+});
 export type RoomLayoutTimelineFrame = z.infer<typeof RoomLayoutTimelineFrameSchema>;
 
 const ExplicitAuthoritativeRangeSchema = z.object({
@@ -280,6 +337,51 @@ export const RoomLayoutTimelineResponseSchema = z.object({
       path: ["range"],
       message: "Authoritative range must match top-level from/to",
     });
+  }
+
+  const fromMs = Date.parse(response.range.from);
+  const toMs = Date.parse(response.range.to);
+  if (toMs <= fromMs) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["range", "to"],
+      message: "Authoritative range to must be later than from",
+    });
+  }
+
+  for (const [index, frame] of response.frames.entries()) {
+    const startsAtMs = Date.parse(frame.startsAt);
+    const endsAtMs = Date.parse(frame.endsAt);
+    if (startsAtMs >= toMs || endsAtMs <= fromMs) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["frames", index],
+        message: "Frame must overlap the authoritative range",
+      });
+    }
+
+    if (frame.keyframe.state !== "available") continue;
+    const payload = frame.keyframe.payload;
+    if (
+      payload.venueId !== response.venueId
+      || payload.venueRuntime.venueId !== response.venueId
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["frames", index, "keyframe", "payload", "venueId"],
+        message: "Available keyframe venue identity must match the timeline response",
+      });
+    }
+    if (
+      payload.spaceId !== response.spaceId
+      || payload.venueRuntime.spaceId !== response.spaceId
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["frames", index, "keyframe", "payload", "spaceId"],
+        message: "Available keyframe space identity must match the timeline response",
+      });
+    }
   }
 });
 export type RoomLayoutTimelineResponse = z.infer<typeof RoomLayoutTimelineResponseSchema>;

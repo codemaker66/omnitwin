@@ -216,6 +216,7 @@ export async function roomLayoutTimelineRoutes(
         isNull(events.deletedAt),
         eq(eventPhases.spaceId, query.spaceId),
         isNotNull(eventPhases.startsAt),
+        gt(eventPhases.durationMinutes, 0),
         lt(eventPhases.startsAt, to),
         gt(
           sql`${eventPhases.startsAt} + make_interval(mins => ${eventPhases.durationMinutes})`,

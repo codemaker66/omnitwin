@@ -8,8 +8,8 @@ import {
   RoomLayoutTimelineResponseSchema,
 } from "../index.js";
 
-const VENUE_ID = "11111111-1111-4111-8111-111111111111";
-const SPACE_ID = "33333333-3333-4333-8333-333333333333";
+const VENUE_ID = CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueId;
+const SPACE_ID = CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.spaceId;
 const EVENT_ID = "55555555-5555-4555-8555-555555555555";
 const PHASE_ID = "66666666-6666-4666-8666-666666666666";
 const SNAPSHOT_ID = "77777777-7777-4777-8777-777777777777";
@@ -124,30 +124,141 @@ describe("RoomLayoutTimelineResponseSchema", () => {
       },
     },
   };
+  const availableKeyframe = {
+    state: "available" as const,
+    snapshotId: SNAPSHOT_ID,
+    snapshotStatus: "frozen" as const,
+    canonicalSnapshotId: "88888888-8888-4888-8888-888888888888",
+    proofDigest: "b".repeat(64),
+    frozenBy: "99999999-9999-4999-8999-999999999999",
+    supersedesSnapshotId: null,
+    createdAt: "2026-10-24T12:00:00.000Z",
+    frozenAt: "2026-10-24T12:05:00.000Z",
+    objectCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.objects.length,
+    guestCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.guestCount,
+    payload: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  };
+
+  function availableResponse() {
+    return {
+      ...baseResponse,
+      frames: [{ ...baseFrame, keyframe: availableKeyframe }],
+    };
+  }
 
   it("accepts an available keyframe carrying an immutable canonical payload", () => {
-    const parsed = RoomLayoutTimelineResponseSchema.parse({
-      ...baseResponse,
-      frames: [{
-        ...baseFrame,
-        keyframe: {
-          state: "available",
-          snapshotId: SNAPSHOT_ID,
-          snapshotStatus: "frozen",
-          canonicalSnapshotId: "88888888-8888-4888-8888-888888888888",
-          proofDigest: "b".repeat(64),
-          frozenBy: "99999999-9999-4999-8999-999999999999",
-          supersedesSnapshotId: null,
-          createdAt: "2026-10-24T12:00:00.000Z",
-          frozenAt: "2026-10-24T12:05:00.000Z",
-          objectCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.objects.length,
-          guestCount: 180,
-          payload: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
-        },
-      }],
-    });
+    const parsed = RoomLayoutTimelineResponseSchema.parse(availableResponse());
 
     expect(parsed.frames[0]?.keyframe.state).toBe("available");
+  });
+
+  it("rejects mismatched frame and phase identities", () => {
+    const response = availableResponse();
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{
+        ...response.frames[0],
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects available payloads from another venue or room", () => {
+    const response = availableResponse();
+    for (const payload of [
+      {
+        ...availableKeyframe.payload,
+        venueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+      {
+        ...availableKeyframe.payload,
+        spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      },
+      {
+        ...availableKeyframe.payload,
+        venueRuntime: {
+          ...availableKeyframe.payload.venueRuntime,
+          spaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        },
+      },
+    ]) {
+      expect(RoomLayoutTimelineResponseSchema.safeParse({
+        ...response,
+        frames: [{
+          ...response.frames[0],
+          keyframe: { ...availableKeyframe, payload },
+        }],
+      }).success).toBe(false);
+    }
+  });
+
+  it("requires room flips to carry only an explicit room-flip gap", () => {
+    const response = availableResponse();
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{ ...response.frames[0], kind: "room_flip" }],
+    }).success).toBe(false);
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{
+        ...response.frames[0],
+        keyframe: {
+          state: "missing",
+          reason: "room_flip_gap",
+          message: "Room flip transition gap.",
+        },
+      }],
+    }).success).toBe(false);
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{
+        ...response.frames[0],
+        kind: "room_flip",
+        keyframe: {
+          state: "missing",
+          reason: "room_flip_gap",
+          message: "Room flip transition gap.",
+        },
+      }],
+    }).success).toBe(true);
+  });
+
+  it("requires ordered frame times that overlap the authoritative range", () => {
+    const response = availableResponse();
+    for (const frame of [
+      { ...response.frames[0], endsAt: response.frames[0]?.startsAt },
+      {
+        ...response.frames[0],
+        startsAt: "2026-10-26T00:00:00.000Z",
+        endsAt: "2026-10-26T01:00:00.000Z",
+      },
+      {
+        ...response.frames[0],
+        startsAt: "2026-10-24T22:00:00.000Z",
+        endsAt: "2026-10-25T00:00:00.000Z",
+      },
+    ]) {
+      expect(RoomLayoutTimelineResponseSchema.safeParse({
+        ...response,
+        frames: [frame],
+      }).success).toBe(false);
+    }
+  });
+
+  it("requires available snapshot counts to match the canonical payload", () => {
+    const response = availableResponse();
+    for (const keyframe of [
+      { ...availableKeyframe, objectCount: availableKeyframe.objectCount + 1 },
+      { ...availableKeyframe, guestCount: availableKeyframe.guestCount + 1 },
+      // The database remains nullable for legacy rows, but the API resolver
+      // marks a null count invalid before it can become an available keyframe.
+      { ...availableKeyframe, guestCount: null },
+    ]) {
+      expect(RoomLayoutTimelineResponseSchema.safeParse({
+        ...response,
+        frames: [{ ...response.frames[0], keyframe }],
+      }).success).toBe(false);
+    }
   });
 
   it("rejects a response whose compatibility fields disagree with its authoritative range", () => {
