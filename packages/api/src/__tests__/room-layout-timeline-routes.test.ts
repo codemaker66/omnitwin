@@ -115,6 +115,7 @@ describe("room layout timeline — source contract", () => {
   it("uses half-open room-scoped phase overlap semantics", async () => {
     const source = await readFile(resolve("src/routes/room-layout-timeline.ts"), "utf-8");
     expect(source).toContain("eq(eventPhases.spaceId, query.spaceId)");
+    expect(source).toContain("gt(eventPhases.durationMinutes, 0)");
     expect(source).toContain("lt(eventPhases.startsAt, to)");
     expect(source).toContain("make_interval(mins =>");
   });
