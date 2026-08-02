@@ -104,10 +104,13 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     staffConflictsStatus: "not_checked" as const,
     staffConflictsLabel: "Staff conflicts not checked",
     figures: {
-      guests: { value: 180, source: "frozen_snapshot" as const },
+      guests: {
+        value: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.guestCount,
+        source: "frozen_snapshot" as const,
+      },
       seatedCapacity: {
         state: "available" as const,
-        value: 180,
+        value: 1,
         source: "frozen_snapshot" as const,
         basis: "chair_objects" as const,
       },
@@ -138,12 +141,36 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     guestCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.guestCount,
     payload: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
   };
+  const missingKeyframe = {
+    state: "missing" as const,
+    reason: "no_snapshot" as const,
+    message: "No saved layout for this phase.",
+  };
+  const missingFigures = {
+    guests: { value: baseFrame.guestCount, source: "phase" as const },
+    seatedCapacity: {
+      state: "unavailable" as const,
+      reason: "no_valid_frozen_keyframe" as const,
+    },
+    staffing: baseFrame.figures.staffing,
+    revenue: {
+      state: "unavailable" as const,
+      reason: "no_valid_frozen_keyframe" as const,
+    },
+  };
 
   function availableResponse() {
     return {
       ...baseResponse,
       frames: [{ ...baseFrame, keyframe: availableKeyframe }],
     };
+  }
+
+  function acceptsFrame(frame: unknown): boolean {
+    return RoomLayoutTimelineResponseSchema.safeParse({
+      ...baseResponse,
+      frames: [frame],
+    }).success;
   }
 
   it("accepts an available keyframe carrying an immutable canonical payload", () => {
@@ -192,34 +219,254 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     }
   });
 
-  it("requires room flips to carry only an explicit room-flip gap", () => {
+  it("requires exact bidirectional room-flip kind, template, and gap identity", () => {
     const response = availableResponse();
+    expect(acceptsFrame({
+      ...response.frames[0],
+      kind: "room_flip",
+      keyframe: {
+        state: "missing",
+        reason: "room_flip_gap",
+        message: "Room flip transition gap.",
+      },
+      figures: missingFigures,
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      templateKey: "room-flip",
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      keyframe: {
+        state: "missing",
+        reason: "room_flip_gap",
+        message: "Room flip transition gap.",
+      },
+      figures: missingFigures,
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      kind: "room_flip",
+      templateKey: "room-flip",
+      keyframe: {
+        state: "missing",
+        reason: "room_flip_gap",
+        message: "Room flip transition gap.",
+      },
+      figures: missingFigures,
+    })).toBe(true);
+  });
+
+  it("keeps guest figures coherent with frozen, phase, and event sources", () => {
+    const response = availableResponse();
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: {
+        ...response.frames[0]?.figures,
+        guests: { value: availableKeyframe.payload.guestCount, source: "phase" },
+      },
+    })).toBe(false);
+
+    const missingFrame = {
+      ...baseFrame,
+      keyframe: missingKeyframe,
+      figures: missingFigures,
+    };
+    expect(acceptsFrame(missingFrame)).toBe(true);
+    expect(acceptsFrame({
+      ...missingFrame,
+      figures: {
+        ...missingFigures,
+        guests: { value: baseFrame.eventGuestCount, source: "event" },
+      },
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...missingFrame,
+      guestCount: null,
+      figures: {
+        ...missingFigures,
+        guests: { value: baseFrame.eventGuestCount, source: "event" },
+      },
+    })).toBe(true);
+  });
+
+  it("derives capacity from complete chair-first or table seating evidence", () => {
+    const response = availableResponse();
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: {
+        ...response.frames[0]?.figures,
+        seatedCapacity: {
+          state: "available",
+          value: 10,
+          source: "frozen_snapshot",
+          basis: "table_seat_counts",
+        },
+      },
+    })).toBe(false);
+
+    const tableFallbackPayload = {
+      ...availableKeyframe.payload,
+      objects: availableKeyframe.payload.objects.map((object) => (
+        object.assetDefinition.category === "chair"
+          ? {
+              ...object,
+              assetDefinition: { ...object.assetDefinition, seatCount: null },
+            }
+          : object
+      )),
+    };
+    expect(acceptsFrame({
+      ...response.frames[0],
+      keyframe: { ...availableKeyframe, payload: tableFallbackPayload },
+      figures: {
+        ...response.frames[0]?.figures,
+        seatedCapacity: {
+          state: "available",
+          value: 10,
+          source: "frozen_snapshot",
+          basis: "table_seat_counts",
+        },
+      },
+    })).toBe(true);
+
+    const incompletePayload = {
+      ...tableFallbackPayload,
+      objects: tableFallbackPayload.objects.map((object) => ({
+        ...object,
+        assetDefinition: { ...object.assetDefinition, seatCount: null },
+      })),
+    };
+    expect(acceptsFrame({
+      ...response.frames[0],
+      keyframe: { ...availableKeyframe, payload: incompletePayload },
+      figures: {
+        ...response.frames[0]?.figures,
+        seatedCapacity: {
+          state: "unavailable",
+          reason: "capacity_evidence_incomplete",
+        },
+      },
+    })).toBe(true);
+    expect(acceptsFrame({
+      ...baseFrame,
+      keyframe: missingKeyframe,
+      figures: {
+        ...missingFigures,
+        seatedCapacity: baseFrame.figures.seatedCapacity,
+      },
+    })).toBe(false);
+  });
+
+  it("keeps revenue guest counts and keyframe availability coherent", () => {
+    const response = availableResponse();
+    const availableRevenue = {
+      state: "available" as const,
+      source: "planning_scenario" as const,
+      scenario: {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        name: "Dinner planning estimate",
+        status: "active" as const,
+        scenarioKind: "layout_based" as const,
+        currency: "GBP" as const,
+        plannedGuestCount: availableKeyframe.payload.guestCount,
+        estimatedRevenueMinor: 2_875_000,
+        comfortStatus: "not_checked" as const,
+        reviewGateCount: 1,
+        updatedAt: "2026-10-24T13:00:00.000Z",
+      },
+      disclosure: "Planning scenario estimate; not a quote or approval." as const,
+    };
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: { ...response.frames[0]?.figures, revenue: availableRevenue },
+    })).toBe(true);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: {
+        ...response.frames[0]?.figures,
+        revenue: {
+          ...availableRevenue,
+          scenario: {
+            ...availableRevenue.scenario,
+            plannedGuestCount: availableRevenue.scenario.plannedGuestCount + 1,
+          },
+        },
+      },
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...baseFrame,
+      keyframe: missingKeyframe,
+      figures: { ...missingFigures, revenue: availableRevenue },
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: {
+        ...response.frames[0]?.figures,
+        revenue: { state: "unavailable", reason: "no_valid_frozen_keyframe" },
+      },
+    })).toBe(false);
+  });
+
+  it("requires duplicated staffing evidence to match the frame", () => {
+    const response = availableResponse();
+    expect(acceptsFrame({
+      ...response.frames[0],
+      figures: {
+        ...response.frames[0]?.figures,
+        staffing: {
+          ...baseFrame.figures.staffing,
+          staffConflictsLabel: "Different evidence label",
+        },
+      },
+    })).toBe(false);
+    expect(acceptsFrame({
+      ...response.frames[0],
+      staffConflictsStatus: "current",
+      figures: {
+        ...response.frames[0]?.figures,
+        staffing: baseFrame.figures.staffing,
+      },
+    })).toBe(false);
+  });
+
+  it("requires unique frames ordered by startsAt and then id", () => {
+    const response = availableResponse();
+    const first = response.frames[0];
+    const earlierId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const laterId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const withIdentity = (id: string, startsAt: string, endsAt: string) => ({
+      ...first,
+      id,
+      phaseId: id,
+      startsAt,
+      endsAt,
+    });
+
     expect(RoomLayoutTimelineResponseSchema.safeParse({
       ...response,
-      frames: [{ ...response.frames[0], kind: "room_flip" }],
+      frames: [first, first],
     }).success).toBe(false);
     expect(RoomLayoutTimelineResponseSchema.safeParse({
       ...response,
-      frames: [{
-        ...response.frames[0],
-        keyframe: {
-          state: "missing",
-          reason: "room_flip_gap",
-          message: "Room flip transition gap.",
-        },
-      }],
+      frames: [
+        withIdentity(earlierId, "2026-10-25T20:00:00.000Z", "2026-10-25T21:00:00.000Z"),
+        withIdentity(laterId, "2026-10-25T18:00:00.000Z", "2026-10-25T19:00:00.000Z"),
+      ],
     }).success).toBe(false);
     expect(RoomLayoutTimelineResponseSchema.safeParse({
       ...response,
-      frames: [{
-        ...response.frames[0],
-        kind: "room_flip",
-        keyframe: {
-          state: "missing",
-          reason: "room_flip_gap",
-          message: "Room flip transition gap.",
-        },
-      }],
+      frames: [
+        withIdentity(laterId, "2026-10-25T18:00:00.000Z", "2026-10-25T19:00:00.000Z"),
+        withIdentity(earlierId, "2026-10-25T18:00:00.000Z", "2026-10-25T19:00:00.000Z"),
+      ],
+    }).success).toBe(false);
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [
+        withIdentity(earlierId, "2026-10-25T18:00:00.000Z", "2026-10-25T19:00:00.000Z"),
+        withIdentity(laterId, "2026-10-25T18:00:00.000Z", "2026-10-25T19:00:00.000Z"),
+      ],
     }).success).toBe(true);
   });
 

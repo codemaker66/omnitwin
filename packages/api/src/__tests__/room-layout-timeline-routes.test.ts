@@ -144,6 +144,7 @@ describe("room layout timeline — source contract", () => {
     const source = await readFile(resolve("src/routes/room-layout-timeline.ts"), "utf-8");
     expect(source).toContain("RoomLayoutTimelineResponseSchema.parse({");
     expect(source).toContain('row.templateKey === "room-flip"');
+    expect(source).toContain('templateKey: isRoomFlip ? "room-flip" as const : row.templateKey');
   });
 
   it("resolves day/week bounds from the persisted venue timezone in PostgreSQL", async () => {
@@ -193,8 +194,10 @@ describe("room layout timeline — aggregate response limits", () => {
       figures: {
         guests: { value: payload.guestCount, source: "frozen_snapshot" },
         seatedCapacity: {
-          state: "unavailable",
-          reason: "capacity_evidence_incomplete",
+          state: "available",
+          value: 1,
+          source: "frozen_snapshot",
+          basis: "chair_objects",
         },
         staffing: {
           state: "not_checked",
