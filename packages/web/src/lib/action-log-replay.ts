@@ -117,11 +117,13 @@ const ReplayPatchSchema = z.object({
   id: z.string(),
   before: z.record(z.unknown()),
   after: z.record(z.unknown()),
+  unset: z.array(z.string()).default([]),
 });
 
 const ReplayDeltaSchema = z.object({
   added: z.array(ReplayPlacedSchema).default([]),
   removed: z.array(ReplayPlacedSchema).default([]),
+  order: z.array(z.string()).nullable().default(null),
   updated: z.array(ReplayPatchSchema).default([]),
 });
 type ReplayDelta = z.infer<typeof ReplayDeltaSchema>;
@@ -158,11 +160,35 @@ function applyDelta(
   }
   next = next.map((candidate) => {
     const patch = delta.updated.find((update) => update.id === candidate.id);
-    return patch === undefined ? candidate : { ...candidate, ...patch.after };
+    if (patch === undefined) return candidate;
+    const unset = new Set(patch.unset);
+    return Object.fromEntries(
+      Object.entries({ ...candidate, ...patch.after })
+        .filter(([key]) => !unset.has(key)),
+    ) as ReplayObject;
   });
   for (const patch of delta.updated) {
     if (!next.some((candidate) => candidate.id === patch.id)) {
       issues.push(`ordinal ${String(ordinal)} updates ${patch.id}, which is not present`);
+    }
+  }
+  if (delta.order !== null) {
+    const orderedIds = new Set(delta.order);
+    const currentIds = new Set(next.map((object) => object.id));
+    const exactOrder = orderedIds.size === delta.order.length
+      && currentIds.size === next.length
+      && delta.order.length === next.length
+      && delta.order.every((id) => currentIds.has(id));
+    if (!exactOrder) {
+      issues.push(`ordinal ${String(ordinal)} carries an object order that does not match the document`);
+    } else {
+      const byId = new Map(next.map((object) => [object.id, object]));
+      const reordered: ReplayObject[] = [];
+      for (const id of delta.order) {
+        const object = byId.get(id);
+        if (object !== undefined) reordered.push(object);
+      }
+      next = reordered;
     }
   }
   return next;
