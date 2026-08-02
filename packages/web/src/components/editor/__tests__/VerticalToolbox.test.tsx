@@ -6,6 +6,7 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useBookmarkStore } from "../../../stores/bookmark-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 
 // ---------------------------------------------------------------------------
 // VerticalToolbox undo/redo — must drive the editor-store history timeline
@@ -26,11 +27,13 @@ beforeEach(() => {
     tour: null,
     nextId: 1,
   });
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
 afterEach(() => {
   cleanup();
   useEditorStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
 function renderToolbox(): void {
@@ -42,6 +45,26 @@ function renderToolbox(): void {
 }
 
 describe("VerticalToolbox undo buttons", () => {
+  it("does not open F/D mutation tools while a timeline preview is active", () => {
+    useLayoutTimelinePreviewStore.getState().showUnavailable({
+      id: "phase-1",
+      eventId: "event-1",
+      eventName: "Dinner",
+      phaseId: "phase-1",
+      phaseName: "Dinner",
+      startsAt: null,
+      endsAt: null,
+      venueRuntime: null,
+    }, "No frozen layout");
+    renderToolbox();
+
+    fireEvent.keyDown(window, { code: "KeyF", key: "f" });
+    fireEvent.keyDown(window, { code: "KeyD", key: "d" });
+
+    expect(screen.queryByTestId("furniture-panel")).toBeNull();
+    expect(screen.queryByTestId("markup-panel")).toBeNull();
+  });
+
   it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
     renderToolbox();
 

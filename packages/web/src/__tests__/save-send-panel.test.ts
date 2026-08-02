@@ -12,6 +12,7 @@ vi.mock("../api/configurations.js", () => ({
   parseRevisionConflict: vi.fn(() => null),
   claimConfig: vi.fn(),
   submitGuestEnquiry: vi.fn(),
+  updatePublicThumbnail: vi.fn(),
 }));
 
 vi.mock("../api/spaces.js", () => ({
@@ -174,9 +175,11 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
 
   it("the shared send flow calls flushAutoSave before the modal can open", async () => {
     const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
-    // Positive: flushAutoSave is called somewhere in the click handler
-    expect(codeOnly).toContain("await flushAutoSave()");
-    expect(codeOnly).toContain("if (!saved) return false");
+    const flushIndex = codeOnly.indexOf("await flushAutoSave()");
+    const failedSaveGateIndex = codeOnly.indexOf("!saved", flushIndex);
+    expect(flushIndex).toBeGreaterThan(-1);
+    expect(failedSaveGateIndex).toBeGreaterThan(flushIndex);
+    expect(codeOnly.slice(failedSaveGateIndex, failedSaveGateIndex + 120)).toContain("return false");
   });
 
   it("SaveSendPanel does not use the old direct-open click handler", async () => {

@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactElement,
+} from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -24,6 +33,10 @@ import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import {
+  useLayoutTimelinePreviewStore,
+  type LayoutTimelinePreviewSessionMode,
+} from "../../stores/layout-timeline-preview-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
@@ -35,6 +48,12 @@ import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
+import { TimelinePreviewFurniture } from "./TimelinePreviewFurniture.js";
+import { SAVED_LAYOUT_FURNITURE_GROUP } from "../../lib/layout-timeline-capture.js";
+import {
+  retainFrozenLayoutRoomModel,
+  type FrozenLayoutRoomModel,
+} from "../../lib/frozen-layout-room.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -111,11 +130,13 @@ function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean
 
 function PlannerMotionOverlayLayers({
   renderSceneOverlays,
+  timelinePreviewActive,
 }: {
   readonly renderSceneOverlays: boolean;
+  readonly timelinePreviewActive: boolean;
 }): ReactElement | null {
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
-  if (!shouldRenderPlannerMotionOverlays(cameraInteractionActive)) return null;
+  if (timelinePreviewActive || !shouldRenderPlannerMotionOverlays(cameraInteractionActive)) return null;
 
   return (
     <>
@@ -132,8 +153,10 @@ function PlannerMotionOverlayLayers({
 
 function PlannerScenePrecompiler({
   signature,
+  asynchronous,
 }: {
   readonly signature: string;
+  readonly asynchronous: boolean;
 }): null {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
@@ -145,6 +168,17 @@ function PlannerScenePrecompiler({
 
     const warmScenePrograms = async (): Promise<void> => {
       invalidate();
+      // Timeline preview materials are harvested after mount and may be
+      // replaced while a transition settles. Three's asynchronous compiler
+      // polls those material programs after the render tree has changed,
+      // which can dereference a disposed currentProgram. Compile the dynamic
+      // presentation lens synchronously; keep the non-blocking warm-up for
+      // the stable editable scene.
+      if (!asynchronous) {
+        gl.compile(scene, camera);
+        if (!cancelled) invalidate();
+        return;
+      }
       try {
         await gl.compileAsync(scene, camera);
       } catch {
@@ -158,12 +192,12 @@ function PlannerScenePrecompiler({
     return () => {
       cancelled = true;
     };
-  }, [camera, gl, invalidate, scene, signature]);
+  }, [asynchronous, camera, gl, invalidate, scene, signature]);
 
   return null;
 }
 
-function useRoomDimensions(): SpaceDimensions {
+function useLiveRoomDimensions(): SpaceDimensions {
   const space = useEditorStore((s) => s.space);
   return useMemo(() => {
     if (space === null) return GRAND_HALL_RENDER_DIMENSIONS;
@@ -181,13 +215,83 @@ function useRoomDimensions(): SpaceDimensions {
 }
 
 /**
+ * Shader programs do not change merely because a frozen preview moves from a
+ * keyframe into a transition or settles again. Keeping one active-preview
+ * warm-up identity prevents synchronous gl.compile calls from landing on the
+ * two busiest frames of a high-cardinality morph.
+ */
+export function plannerSceneWarmupMode(
+  mode: LayoutTimelinePreviewSessionMode,
+): "live" | "timeline-preview" {
+  return mode === "inactive" ? "live" : "timeline-preview";
+}
+
+/**
+ * Publishes a production render-readiness signal for the frozen timeline
+ * scene. A timeline response becoming visible in the dock only proves that
+ * React has committed the controls; it does not prove that R3F has uploaded
+ * the selected snapshot's instance matrices and drawn them. This probe waits
+ * for that demand-rendered frame, then publishes readiness on the following
+ * browser frame so diagnostics and automation never measure scene setup as
+ * steady-state interaction work.
+ */
+function TimelinePreviewRenderReadiness({
+  renderPhase,
+  renderRevision,
+  roomEnvelopeKey,
+}: {
+  readonly renderPhase: "keyframe" | "transition" | null;
+  readonly renderRevision: number;
+  readonly roomEnvelopeKey: string | null;
+}): null {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const generationRef = useRef(0);
+  const renderedGenerationRef = useRef<number | null>(null);
+  const completionFrameRef = useRef<number | null>(null);
+
+  const canvasHost = useCallback((): HTMLElement | null => (
+    gl.domElement.closest<HTMLElement>(".planner-scene-canvas-host")
+  ), [gl]);
+
+  const cancelCompletionFrame = useCallback((): void => {
+    if (completionFrameRef.current === null) return;
+    window.cancelAnimationFrame(completionFrameRef.current);
+    completionFrameRef.current = null;
+  }, []);
+
+  useLayoutEffect(() => {
+    generationRef.current += 1;
+    renderedGenerationRef.current = null;
+    cancelCompletionFrame();
+    canvasHost()?.setAttribute("data-timeline-preview-render-ready", "false");
+    if (renderPhase !== null) invalidate();
+    return cancelCompletionFrame;
+  }, [cancelCompletionFrame, canvasHost, invalidate, renderPhase, renderRevision, roomEnvelopeKey]);
+
+  useFrame(() => {
+    if (renderPhase === null || completionFrameRef.current !== null) return;
+    const generation = generationRef.current;
+    if (renderedGenerationRef.current === generation) return;
+    completionFrameRef.current = window.requestAnimationFrame(() => {
+      completionFrameRef.current = null;
+      if (generationRef.current !== generation) return;
+      renderedGenerationRef.current = generation;
+      canvasHost()?.setAttribute("data-timeline-preview-render-ready", "true");
+    });
+  });
+
+  return null;
+}
+
+/**
  * The live editable planner scene — the single R3F canvas plus every editing
  * system (room geometry, furniture, selection, markup, circulation, camera).
  * Extracted from App so the planner cockpit can host it in its stage cell.
  */
 export function PlannerScene(): ReactElement {
   const space = useEditorStore((s) => s.space);
-  const dimensions = useRoomDimensions();
+  const liveDimensions = useLiveRoomDimensions();
   const viewportWidth = usePlannerViewportWidth();
   const canvasDpr = useMemo(() => plannerCanvasDprForViewportWidth(viewportWidth), [viewportWidth]);
   const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
@@ -197,18 +301,49 @@ export function PlannerScene(): ReactElement {
   // allocates a fresh wallPolygon per call, and this component re-renders on
   // every chunk arrival — an unmemoized call would thrash the ink layer's
   // geometry memo during the develop window (reviewer MEDIUM finding).
-  const roomGeometry = useMemo(
+  const liveRoomGeometry = useMemo(
     () => (space !== null ? resolveRoomGeometry(space) : null),
     [space],
   );
-  const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const activeVenueRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
+  const timelineRenderRevision = useLayoutTimelinePreviewStore((state) => state.renderRevision);
+  const timelinePreviewActive = timelinePreviewMode !== "inactive";
+  const authoritativeFrozenPreview = timelinePreviewMode === "keyframe"
+    || timelinePreviewMode === "transition";
+  const frozenRoomRef = useRef<FrozenLayoutRoomModel | null>(null);
+  const frozenRoom = retainFrozenLayoutRoomModel(
+    frozenRoomRef.current,
+    activeVenueRuntime,
+  );
+  frozenRoomRef.current = frozenRoom;
+  // An authoritative saved-layout preview must never fall back to the current
+  // room shell. The store only enters keyframe/transition with venueRuntime,
+  // but null still fails closed here if that invariant is ever violated.
+  const roomGeometry = authoritativeFrozenPreview
+    ? frozenRoom?.geometry ?? null
+    : timelinePreviewActive ? null : liveRoomGeometry;
+  const dimensions = frozenRoom?.renderDimensions ?? liveDimensions;
+  const roomVariant = authoritativeFrozenPreview
+    ? "generic"
+    : space?.name === "Grand Hall" ? "grand-hall" : "generic";
+  const furnitureOffset = frozenRoom?.furnitureOffset ?? [0, 0, 0] as const;
+
+  useEffect(() => {
+    if (!timelinePreviewActive) return;
+    const cockpit = useCockpitStore.getState();
+    cockpit.clearBeam();
+    cockpit.clearFocus();
+    cockpit.setLayersOpen(false);
+  }, [timelinePreviewActive]);
 
   // Mesh ↔ Splat ↔ Hybrid: the procedural room stays visible unless a measured
   // splat is mounted AND the user has switched to pure Splat. The splat fades
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
   const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
-  const meshVisible = !hasAsset || layerMode !== "splat";
+  const meshVisible = authoritativeFrozenPreview
+    || (!timelinePreviewActive && (!hasAsset || layerMode !== "splat"));
   const splatActive = hasAsset && layerMode !== "mesh";
 
   // CARD A2 — "the room resolves": count chunk arrivals, derive the resolve
@@ -227,7 +362,16 @@ export function PlannerScene(): ReactElement {
   // persists over any region whose chunk failed.
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   const cameraInteractionClearTimer = useRef<number | null>(null);
-  const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
+  const sceneWarmupSignature = [
+    space?.id ?? "fallback-grand-hall",
+    roomVariant,
+    layerMode,
+    String(hasAsset),
+    plannerSceneWarmupMode(timelinePreviewMode),
+    frozenRoom?.envelopeKey ?? "live-envelope",
+    activeVenueRuntime?.runtimeVenueManifestDigest ?? "no-frozen-manifest",
+    activeVenueRuntime?.runtimePackageId ?? "no-frozen-package",
+  ].join(":");
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -258,6 +402,11 @@ export function PlannerScene(): ReactElement {
     <PlannerCanvasBoundary>
       <div
         className="planner-scene-canvas-host"
+        data-room-authority={authoritativeFrozenPreview ? "frozen" : timelinePreviewActive ? "unavailable" : "live"}
+        data-room-envelope-key={frozenRoom?.envelopeKey}
+        data-room-render-dimensions={`${String(dimensions.width)},${String(dimensions.length)},${String(dimensions.height)}`}
+        data-room-furniture-offset={furnitureOffset.join(",")}
+        data-current-splat-suppressed={String(timelinePreviewActive)}
         onPointerDownCapture={markCameraInteractionActive}
         onPointerUpCapture={markCameraInteractionSettling}
         onPointerCancelCapture={markCameraInteractionSettling}
@@ -274,25 +423,28 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           <fog attach="fog" args={["#efe9dc", 54, 138]} />
           <SceneProvider />
-          <PlannerScenePrecompiler signature={sceneWarmupSignature} />
+          <PlannerScenePrecompiler
+            signature={sceneWarmupSignature}
+            asynchronous={!timelinePreviewActive}
+          />
           <SectionPlane />
           <InvalidateOnToggle />
           {meshVisible && (roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} />
-          ) : (
+          ) : !timelinePreviewActive ? (
             <>
               <AutoWallSelector />
               <GrandHallRoom />
             </>
-          ))}
+          ) : null)}
           {roomGeometry !== null && (
             <InkArchitectureLayer
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
-              targetOpacity={inkOpacity}
+              targetOpacity={authoritativeFrozenPreview ? 1 : inkOpacity}
             />
           )}
-          {hasAsset && (
+          {hasAsset && !timelinePreviewActive && (
             <CockpitSplatLayer
               urls={splatUrls}
               transform={transform}
@@ -301,15 +453,28 @@ export function PlannerScene(): ReactElement {
               onChunkFailed={arrivals.markFailed}
             />
           )}
-          <CockpitCameraFocus />
-          <CockpitPlanningCamera />
+          {!timelinePreviewActive && <CockpitCameraFocus />}
+          <CockpitPlanningCamera dimensionsOverride={authoritativeFrozenPreview ? dimensions : undefined} />
           <XrayToggle />
-          <MeasurementTool />
-          <TapeMeasure />
-          <PlacedFurniture />
-          <PlacementGhost />
-          <SelectionSystem />
-          <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
+          {!timelinePreviewActive && <MeasurementTool />}
+          {!timelinePreviewActive && <TapeMeasure />}
+          <group name={SAVED_LAYOUT_FURNITURE_GROUP} visible={!timelinePreviewActive}>
+            <PlacedFurniture />
+          </group>
+          <group position={furnitureOffset}>
+            <TimelinePreviewFurniture />
+          </group>
+          <TimelinePreviewRenderReadiness
+            renderPhase={authoritativeFrozenPreview ? timelinePreviewMode : null}
+            renderRevision={timelineRenderRevision}
+            roomEnvelopeKey={frozenRoom?.envelopeKey ?? null}
+          />
+          {!timelinePreviewActive && <PlacementGhost />}
+          {!timelinePreviewActive && <SelectionSystem />}
+          <PlannerMotionOverlayLayers
+            renderSceneOverlays={renderSceneOverlays}
+            timelinePreviewActive={timelinePreviewActive}
+          />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
           {import.meta.env.DEV && <PerfMonitor />}
         </Canvas>

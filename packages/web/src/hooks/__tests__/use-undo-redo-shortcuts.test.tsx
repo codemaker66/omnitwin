@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useUndoRedoShortcuts } from "../use-undo-redo-shortcuts.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 
 function Harness(): null {
   useUndoRedoShortcuts();
@@ -22,11 +23,13 @@ function pressKey(init: KeyboardEventInit, target: EventTarget = window): Keyboa
 beforeEach(() => {
   useEditorStore.getState().reset();
   useMarkupStore.setState({ active: false });
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
 afterEach(() => {
   cleanup();
   useEditorStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
 describe("useUndoRedoShortcuts", () => {
@@ -137,6 +140,26 @@ describe("useUndoRedoShortcuts", () => {
 
     pressKey({ key: "z", ctrlKey: true });
 
+    expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+
+  it("consumes global undo without changing live history during a timeline preview", () => {
+    useEditorStore.getState().addObject("a1", 0, 0, 0);
+    useLayoutTimelinePreviewStore.getState().showUnavailable({
+      id: "phase-1",
+      eventId: "event-1",
+      eventName: "Dinner",
+      phaseId: "phase-1",
+      phaseName: "Dinner",
+      startsAt: null,
+      endsAt: null,
+      venueRuntime: null,
+    }, "No frozen layout");
+    render(<Harness />);
+
+    const event = pressKey({ key: "z", ctrlKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
     expect(useEditorStore.getState().objects).toHaveLength(1);
   });
 });

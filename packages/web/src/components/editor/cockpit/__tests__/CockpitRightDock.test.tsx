@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
 // Stand in for the real panels so this stays a routing test, not a render test.
 vi.mock("../FlowLensPanel.js", () => ({ FlowLensPanel: () => <div data-testid="flow-panel-mock" /> }));
@@ -16,8 +17,13 @@ vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <div data-tes
 
 const { CockpitRightDock, panelForMode } = await import("../CockpitRightDock.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
+const { useLayoutTimelinePreviewStore } = await import("../../../../stores/layout-timeline-preview-store.js");
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+afterEach(() => {
+  cleanup();
+  useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
+});
 
 describe("panelForMode (registry)", () => {
   it("returns a panel for a registered lens and null otherwise", () => {
@@ -102,5 +108,34 @@ describe("CockpitRightDock", () => {
     useCockpitStore.getState().setMode("av");
     render(<CockpitRightDock />);
     expect(screen.getByTestId("av-panel-mock")).toBeTruthy();
+  });
+
+  it("replaces every interactive lens with a read-only lock during phase preview", () => {
+    useCockpitStore.getState().setMode("costs");
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: null,
+      endsAt: null,
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+
+    render(<CockpitRightDock />);
+    expect(screen.getByTestId("cockpit-right-dock-preview-lock").getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText("Dinner service")).toBeTruthy();
+    expect(screen.queryByTestId("costs-panel-mock")).toBeNull();
+  });
+
+  it("keeps the read-only lock with a non-stale label while a range loads", () => {
+    useCockpitStore.getState().setMode("costs");
+    useLayoutTimelinePreviewStore.getState().showPending("Loading the authoritative room timeline…");
+
+    render(<CockpitRightDock />);
+    expect(screen.getByText("Loading room timeline")).toBeTruthy();
+    expect(screen.getByText(/Loading the authoritative room timeline/u)).toBeTruthy();
+    expect(screen.queryByTestId("costs-panel-mock")).toBeNull();
   });
 });

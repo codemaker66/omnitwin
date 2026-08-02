@@ -1,5 +1,6 @@
 import { type FC, type ReactElement } from "react";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import type { CockpitMode } from "../../../lib/cockpit-modes.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { FlowLensPanel } from "./FlowLensPanel.js";
@@ -43,6 +44,27 @@ export function panelForMode(mode: CockpitMode): FC | null {
 
 export function CockpitRightDock(): ReactElement {
   const activeMode = useCockpitStore((state) => state.activeMode);
+  const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const previewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
+  const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
+  if (previewMode !== "inactive") {
+    return (
+      <aside
+        className="cockpit-panel cockpit-preview-lock"
+        data-testid="cockpit-right-dock-preview-lock"
+        aria-label="Right dock disabled during phase preview"
+        aria-disabled="true"
+      >
+        <p className="cockpit-preview-lock__title">Phase preview</p>
+        <strong>{previewMode === "schedule-gap"
+          ? "No scheduled phase"
+          : previewFrame?.phaseName ?? "Loading room timeline"}</strong>
+        <p>{previewMode === "unavailable" || previewMode === "schedule-gap"
+          ? `${previewMessage ?? "No frozen layout is available."} No room shell or saved layout is shown.`
+          : "Saved plan unchanged. Exit the timeline preview to use editing and review tools."}</p>
+      </aside>
+    );
+  }
   const Panel = panelForMode(activeMode);
   return Panel !== null ? <Panel /> : <CockpitTruthRail />;
 }

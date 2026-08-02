@@ -5,6 +5,7 @@ import { EventDetailsPanel } from "../EventDetailsPanel.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useActionLogStore } from "../../../stores/action-log-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 
 // G4 Slice 2: saving event details logs event.details.update whose inverse
 // is the blob the server held BEFORE the save — hydrated at panel-open and
@@ -37,9 +38,13 @@ beforeEach(() => {
   useEditorStore.setState({ configId: "cfg-evt", isPublicPreview: false });
   useActionLogStore.getState().reset();
   useActionLogStore.getState().beginLog("cfg-evt");
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useLayoutTimelinePreviewStore.getState().clear();
+});
 
 async function openPanelAndAwaitHydration(): Promise<HTMLElement> {
   render(<EventDetailsPanel open onClose={() => undefined} />);
@@ -123,6 +128,21 @@ describe("event details save actions", () => {
     await waitFor(() => { expect(patchMock).toHaveBeenCalledTimes(1); });
     await screen.findByRole("alert");
 
+    expect(loggedIntents()).toEqual([]);
+  });
+
+  it("hides an already-open panel and sends no PATCH when timeline preview starts", async () => {
+    const textarea = await openPanelAndAwaitHydration();
+    fireEvent.change(textarea, { target: { value: "Unsaved event details" } });
+    const detachedSaveButton = screen.getByRole("button", { name: "Save" });
+
+    useLayoutTimelinePreviewStore.getState().showScheduleGap("No room phase is scheduled now.");
+
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Unsaved event details")).toBeNull();
+    });
+    fireEvent.click(detachedSaveButton);
+    expect(patchMock).not.toHaveBeenCalled();
     expect(loggedIntents()).toEqual([]);
   });
 });

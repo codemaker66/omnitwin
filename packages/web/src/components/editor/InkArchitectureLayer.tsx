@@ -31,7 +31,9 @@ export function buildInkSegments(
   ceilingHeightM: number,
 ): Float32Array {
   if (polygon.length < 3) return new Float32Array(0);
-  const ceilingY = toRenderSpace(ceilingHeightM);
+  // X/Z use the planner's comfort scale; Y is always real-world height (see
+  // scale.ts). Scaling the ceiling here puts authoritative ink above its room.
+  const ceilingY = ceilingHeightM;
   const floats: number[] = [];
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i];

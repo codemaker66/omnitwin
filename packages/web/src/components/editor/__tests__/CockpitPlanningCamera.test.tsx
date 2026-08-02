@@ -31,6 +31,7 @@ vi.mock("@react-three/fiber", () => ({
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { useRoomDimensionsStore } = await import("../../../stores/room-dimensions-store.js");
 const { CockpitPlanningCamera } = await import("../CockpitPlanningCamera.js");
+const { planningCameraGoal } = await import("../../../lib/cockpit-planning-camera.js");
 
 const GRAND_HALL_RENDER: SpaceDimensions = { width: 42, length: 21, height: 7 };
 
@@ -105,5 +106,29 @@ describe("CockpitPlanningCamera", () => {
       });
     }).not.toThrow();
     expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("uses renderer-local frozen dimensions without mutating the live room store", () => {
+    const frozenDimensions: SpaceDimensions = { width: 24, length: 12, height: 4 };
+    const expected = planningCameraGoal(
+      frozenDimensions,
+      [0, 2, 20],
+      [0, 0, 0],
+      2,
+      55,
+    );
+    render(<CockpitPlanningCamera dimensionsOverride={frozenDimensions} />);
+
+    act(() => {
+      useCockpitStore.getState().setMode("flow");
+    });
+    act(() => {
+      r3fMock.frameCallbacks[0]?.();
+    });
+
+    expect(r3fMock.cameraPosition.x).toBeCloseTo(expected.position[0] * 0.12);
+    expect(r3fMock.cameraPosition.y).toBeCloseTo(2 + (expected.position[1] - 2) * 0.12);
+    expect(r3fMock.cameraPosition.z).toBeCloseTo(20 + (expected.position[2] - 20) * 0.12);
+    expect(useRoomDimensionsStore.getState().dimensions).toEqual(GRAND_HALL_RENDER);
   });
 });

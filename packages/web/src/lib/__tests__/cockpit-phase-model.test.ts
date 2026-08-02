@@ -8,6 +8,7 @@ function phase(overrides: Partial<EventPhase>): EventPhase {
   return {
     id: "p1",
     eventId: "e1",
+    spaceId: null,
     templateKey: null,
     name: "Ceremony",
     sortOrder: 0,
