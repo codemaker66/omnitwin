@@ -7,6 +7,7 @@ import {
   EVENT_STATUSES,
   EventPhaseGraphSchema,
   PhaseLayoutSnapshotSchema,
+  UpdateEventPhaseSchema,
   defaultEventPhaseInputs,
 } from "../event-phase-graph.js";
 
@@ -19,6 +20,7 @@ const CONFIG_ID = "00000000-0000-4000-8000-000000000006";
 const LINK_ID = "00000000-0000-4000-8000-000000000007";
 const SNAPSHOT_ID = "00000000-0000-4000-8000-000000000008";
 const SCENARIO_ID = "00000000-0000-4000-8000-000000000009";
+const SPACE_ID = "00000000-0000-4000-8000-00000000000a";
 const NOW = "2026-06-11T10:00:00.000Z";
 
 describe("event phase graph contracts", () => {
@@ -54,6 +56,18 @@ describe("event phase graph contracts", () => {
       expect(input.opsTasksCount).toBe(0);
       expect(input.reviewGatesCount).toBe(0);
     }
+  });
+
+  it("accepts assigned, unassigned, and omitted room identity but rejects malformed UUIDs", () => {
+    expect(CreateEventPhaseSchema.parse({ name: "Dinner", spaceId: SPACE_ID }).spaceId)
+      .toBe(SPACE_ID);
+    expect(CreateEventPhaseSchema.parse({ name: "Dinner", spaceId: null }).spaceId)
+      .toBeNull();
+    expect(CreateEventPhaseSchema.parse({ name: "Dinner" })).not.toHaveProperty("spaceId");
+    expect(UpdateEventPhaseSchema.parse({ spaceId: SPACE_ID }).spaceId).toBe(SPACE_ID);
+    expect(UpdateEventPhaseSchema.parse({ spaceId: null }).spaceId).toBeNull();
+    expect(UpdateEventPhaseSchema.parse({})).not.toHaveProperty("spaceId");
+    expect(UpdateEventPhaseSchema.safeParse({ spaceId: "not-a-uuid" }).success).toBe(false);
   });
 
   it("parses event creation with safe planning defaults", () => {
@@ -125,6 +139,7 @@ describe("event phase graph contracts", () => {
       phases: [{
         id: PHASE_ID,
         eventId: EVENT_ID,
+        spaceId: SPACE_ID,
         templateKey: "dinner",
         name: "Dinner",
         sortOrder: 3,

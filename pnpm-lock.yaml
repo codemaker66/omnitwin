@@ -117,6 +117,9 @@ importers:
       '@types/pdfkit':
         specifier: 0.17.5
         version: 0.17.5
+      '@types/pg':
+        specifier: 8.11.6
+        version: 8.11.6
       '@types/qrcode':
         specifier: 1.5.6
         version: 1.5.6
@@ -3432,9 +3435,6 @@ packages:
     peerDependencies:
       pg: '>=8.0'
 
-  pg-protocol@1.13.0:
-    resolution: {integrity: sha512-zzdvXfS6v89r6v7OcFCHfHlyG/wvry1ALxZo4LqgUoy7W9xhBDMaqOuMiF3qEV45VqsN6rdlcehHrfDtlCPc8w==}
-
   pg-protocol@1.15.0:
     resolution: {integrity: sha512-cq9sECI5s0+uPUXjbz8ioyPJni6RzsRib0US67i5IoTZKw8fNeYlVE7u8F4dG7vEJJtc5wdD1K189lCCUwqWTQ==}
 
@@ -6347,7 +6347,7 @@ snapshots:
   '@types/pg@8.11.6':
     dependencies:
       '@types/node': 25.5.0
-      pg-protocol: 1.13.0
+      pg-protocol: 1.15.0
       pg-types: 4.1.0
 
   '@types/prop-types@15.7.15': {}
@@ -7649,8 +7649,6 @@ snapshots:
   pg-pool@3.14.0(pg@8.22.0):
     dependencies:
       pg: 8.22.0
-
-  pg-protocol@1.13.0: {}
 
   pg-protocol@1.15.0: {}
 

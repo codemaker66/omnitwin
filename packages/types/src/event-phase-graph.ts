@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ConfigurationIdSchema } from "./configuration.js";
 import { VenueIdSchema } from "./venue.js";
 import { UserIdSchema } from "./user.js";
+import { SpaceIdSchema } from "./space.js";
 
 // ---------------------------------------------------------------------------
 // Event Phase Graph v0
@@ -116,6 +117,7 @@ export type Event = z.infer<typeof EventSchema>;
 export const EventPhaseSchema = z.object({
   id: EventPhaseIdSchema,
   eventId: EventIdSchema,
+  spaceId: SpaceIdSchema.nullable(),
   templateKey: EventPhaseTemplateKeySchema.nullable(),
   name: z.string().trim().min(1).max(100),
   sortOrder: z.number().int().nonnegative(),
@@ -212,6 +214,7 @@ export type UpdateEvent = z.infer<typeof UpdateEventSchema>;
 
 export const CreateEventPhaseSchema = z.object({
   templateKey: EventPhaseTemplateKeySchema.nullable().optional(),
+  spaceId: SpaceIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(100),
   startsAt: z.string().datetime().nullable().optional(),
   durationMinutes: z.number().int().nonnegative().default(30),
@@ -223,6 +226,7 @@ export const CreateEventPhaseSchema = z.object({
 export type CreateEventPhase = z.infer<typeof CreateEventPhaseSchema>;
 
 export const UpdateEventPhaseSchema = z.object({
+  spaceId: SpaceIdSchema.nullable().optional(),
   name: z.string().trim().min(1).max(100).optional(),
   startsAt: z.string().datetime().nullable().optional(),
   durationMinutes: z.number().int().nonnegative().optional(),
