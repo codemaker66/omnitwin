@@ -88,6 +88,15 @@ const CROSS_VENUE_SPACE_ID = "33333333-3333-4333-8333-333333333334";
 const CROSS_TENANT_EVENT_ID = "99999999-9999-4999-8999-999999999998";
 const CROSS_TENANT_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8";
 const CROSS_TENANT_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444446";
+const SIBLING_SPACE_ID = "33333333-3333-4333-8333-333333333337";
+const SIBLING_SPACE_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6";
+const SIBLING_SPACE_SNAPSHOT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea";
+const FOREIGN_VENUE_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5";
+const FOREIGN_VENUE_SNAPSHOT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeeb";
+const SIBLING_SPACE_PHASE_NAME = "Sibling room confidential phase";
+const FOREIGN_VENUE_PHASE_NAME = "Foreign venue confidential phase";
+const SIBLING_SPACE_GUEST_COUNT = 9_123;
+const FOREIGN_VENUE_GUEST_COUNT = 9_876;
 const MISSING_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7";
 const MISSING_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444449";
 const DELETED_SPACE_ID = "33333333-3333-4333-8333-333333333335";
@@ -722,6 +731,101 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     expect(frame.keyframe.objectCount).toBe(SNAPSHOT.objects.length);
     expect(frame.keyframe.guestCount).toBe(SNAPSHOT.guestCount);
     expect(frame.keyframe.payload).toEqual(SNAPSHOT);
+  });
+
+  it("does not leak same-range phases, figures, or keyframes from other rooms or venues", async () => {
+    const db = requiredDatabase();
+    await db.insert(spaces).values({
+      id: SIBLING_SPACE_ID,
+      venueId: SNAPSHOT.venueId,
+      name: "Sibling room",
+      slug: "timeline-sibling-room",
+      widthM: "10.00",
+      lengthM: "10.00",
+      heightM: "3.00",
+      floorPlanOutline: SNAPSHOT.venueRuntime.floorPlanOutline,
+    });
+    await db.insert(eventPhases).values([
+      {
+        id: SIBLING_SPACE_PHASE_ID,
+        eventId: EVENT_ID,
+        spaceId: SIBLING_SPACE_ID,
+        templateKey: null,
+        name: SIBLING_SPACE_PHASE_NAME,
+        sortOrder: 90,
+        startsAt: PHASE_START,
+        durationMinutes: 105,
+        guestCount: SIBLING_SPACE_GUEST_COUNT,
+      },
+      {
+        id: FOREIGN_VENUE_PHASE_ID,
+        eventId: CROSS_TENANT_EVENT_ID,
+        spaceId: CROSS_VENUE_SPACE_ID,
+        templateKey: null,
+        name: FOREIGN_VENUE_PHASE_NAME,
+        sortOrder: 91,
+        startsAt: PHASE_START,
+        durationMinutes: 105,
+        guestCount: FOREIGN_VENUE_GUEST_COUNT,
+      },
+    ]);
+    await db.insert(phaseLayoutSnapshots).values([
+      {
+        id: SIBLING_SPACE_SNAPSHOT_ID,
+        eventPhaseId: SIBLING_SPACE_PHASE_ID,
+        status: "draft",
+        objectCount: 91,
+        guestCount: SIBLING_SPACE_GUEST_COUNT,
+      },
+      {
+        id: FOREIGN_VENUE_SNAPSHOT_ID,
+        eventPhaseId: FOREIGN_VENUE_PHASE_ID,
+        status: "draft",
+        objectCount: 92,
+        guestCount: FOREIGN_VENUE_GUEST_COUNT,
+      },
+    ]);
+
+    const response = await requiredServer().inject({
+      method: "GET",
+      url: `/calendar/layout-timeline?${new URLSearchParams({
+        venueId: SNAPSHOT.venueId,
+        spaceId: SNAPSHOT.spaceId,
+        from: "2026-06-07T18:00:00.000Z",
+        to: "2026-06-07T23:00:00.000Z",
+      }).toString()}`,
+      headers: authHeaders(),
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const timeline = TimelineEnvelopeSchema.parse(response.json()).data;
+    expect(timeline.frames.map((frame) => frame.phaseId)).toEqual([PHASE_ID]);
+
+    const keyframeSnapshotIds = timeline.frames.flatMap((frame) => (
+      "snapshotId" in frame.keyframe ? [frame.keyframe.snapshotId] : []
+    ));
+    for (const foreignPhase of [
+      {
+        phaseId: SIBLING_SPACE_PHASE_ID,
+        phaseName: SIBLING_SPACE_PHASE_NAME,
+        guestCount: SIBLING_SPACE_GUEST_COUNT,
+        snapshotId: SIBLING_SPACE_SNAPSHOT_ID,
+      },
+      {
+        phaseId: FOREIGN_VENUE_PHASE_ID,
+        phaseName: FOREIGN_VENUE_PHASE_NAME,
+        guestCount: FOREIGN_VENUE_GUEST_COUNT,
+        snapshotId: FOREIGN_VENUE_SNAPSHOT_ID,
+      },
+    ] as const) {
+      expect(timeline.frames.map((frame) => frame.phaseId)).not.toContain(foreignPhase.phaseId);
+      expect(timeline.frames.map((frame) => frame.phaseName)).not.toContain(foreignPhase.phaseName);
+      expect(timeline.frames.map((frame) => frame.figures.guests.value))
+        .not.toContain(foreignPhase.guestCount);
+      expect(keyframeSnapshotIds).not.toContain(foreignPhase.snapshotId);
+      expect(response.body).not.toContain(foreignPhase.phaseId);
+      expect(response.body).not.toContain(foreignPhase.phaseName);
+      expect(response.body).not.toContain(foreignPhase.snapshotId);
+    }
   });
 
   it("applies the room-planning read matrix without widening write authority", async () => {
