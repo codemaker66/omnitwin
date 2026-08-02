@@ -191,6 +191,7 @@ function eventGraph(): EventPhaseGraph {
       {
         id: "00000000-0000-4000-8000-000000000311",
         eventId: EVENT_ID,
+        spaceId: null,
         templateKey: "ceremony",
         name: "Ceremony",
         sortOrder: 0,
@@ -210,6 +211,7 @@ function eventGraph(): EventPhaseGraph {
       {
         id: PHASE_ID,
         eventId: EVENT_ID,
+        spaceId: null,
         templateKey: "room-flip",
         name: "Room Flip",
         sortOrder: 1,
@@ -229,6 +231,7 @@ function eventGraph(): EventPhaseGraph {
       {
         id: "00000000-0000-4000-8000-000000000312",
         eventId: EVENT_ID,
+        spaceId: null,
         templateKey: "dinner",
         name: "Dinner",
         sortOrder: 2,
