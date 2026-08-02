@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactElement } from "react";
 import type { Action } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
+import type { ReplayObject } from "../../lib/action-log-replay.js";
 import { documentAtOrdinal, planRestore, timelineMarkers } from "../../lib/time-machine.js";
 import { plannerActionContext } from "../../stores/planner-action-log.js";
 import "./time-machine-panel.css";
@@ -20,6 +21,10 @@ import "./time-machine-panel.css";
 
 export interface TimeMachinePanelProps {
   readonly entries: readonly AuditLogEntry[];
+  /** The persisted objects that existed before the first recorded action. */
+  readonly baseObjects: readonly ReplayObject[];
+  /** The actual current document, including edits not yet flushed to the log. */
+  readonly liveObjects: readonly ReplayObject[];
   /** Called with the restore Action to append. Absent = preview only. */
   readonly onRestore?: (action: Action) => void;
 }
@@ -62,7 +67,7 @@ function touchedByEntry(entry: AuditLogEntry | undefined): ReadonlySet<string> {
   return ids;
 }
 
-export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps): ReactElement {
+export function TimeMachinePanel({ entries, baseObjects, liveObjects, onRestore }: TimeMachinePanelProps): ReactElement {
   const markers = useMemo(() => timelineMarkers(entries), [entries]);
   // Markers are newest-first; the scrubber reads left-to-right as oldest to
   // newest, so slider index 0 is the OLDEST recorded point.
@@ -72,17 +77,11 @@ export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps):
   const lastIndex = Math.max(0, oldestFirst.length - 1);
   const clamped = index === null ? lastIndex : Math.min(index, lastIndex);
   const selected = oldestFirst[clamped];
-  const latest = oldestFirst[lastIndex];
 
   const at = useMemo(
-    () => documentAtOrdinal(entries, selected?.ordinal ?? 0),
-    [entries, selected?.ordinal],
+    () => documentAtOrdinal(entries, selected?.ordinal ?? 0, baseObjects),
+    [baseObjects, entries, selected?.ordinal],
   );
-  const live = useMemo(
-    () => documentAtOrdinal(entries, latest?.ordinal ?? 0),
-    [entries, latest?.ordinal],
-  );
-
   const touchedIds = useMemo(
     () => touchedByEntry(entries.find((candidate) => candidate.ordinal === selected?.ordinal)),
     [entries, selected?.ordinal],
@@ -90,10 +89,10 @@ export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps):
 
   const restore = useMemo(() => {
     if (selected === undefined) return null;
-    return planRestore(live.objects, at.objects, plannerActionContext(), {
+    return planRestore(liveObjects, at.objects, plannerActionContext(), {
       targetOrdinal: selected.ordinal,
     });
-  }, [live.objects, at.objects, selected]);
+  }, [at.objects, liveObjects, selected]);
 
   const restoreSummary = useMemo(() => {
     if (restore === null) return null;

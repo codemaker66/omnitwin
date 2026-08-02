@@ -111,10 +111,14 @@ interface RestoreDelta {
   readonly targetOrdinal: number;
   readonly added: readonly { readonly object: ReplayObject; readonly index: number }[];
   readonly removed: readonly { readonly object: ReplayObject; readonly index: number }[];
+  /** Exact object order after the delta, when order differs. */
+  readonly order: readonly string[] | null;
   readonly updated: readonly {
     readonly id: string;
     readonly before: Record<string, unknown>;
     readonly after: Record<string, unknown>;
+    /** Keys present before the patch that must be absent afterwards. */
+    readonly unset: readonly string[];
   }[];
 }
 
@@ -122,17 +126,23 @@ interface RestoreDelta {
 function changedFields(
   from: ReplayObject,
   to: ReplayObject,
-): { before: Record<string, unknown>; after: Record<string, unknown> } | null {
+): { before: Record<string, unknown>; after: Record<string, unknown>; unset: readonly string[] } | null {
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};
+  const unset: string[] = [];
   const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
   keys.delete("id");
   for (const key of keys) {
     if (JSON.stringify(from[key]) === JSON.stringify(to[key])) continue;
-    before[key] = from[key];
-    after[key] = to[key];
+    const fromHasKey = Object.prototype.hasOwnProperty.call(from, key);
+    const toHasKey = Object.prototype.hasOwnProperty.call(to, key);
+    if (fromHasKey) before[key] = from[key];
+    if (toHasKey) after[key] = to[key];
+    if (fromHasKey && !toHasKey) unset.push(key);
   }
-  return Object.keys(after).length === 0 ? null : { before, after };
+  return Object.keys(after).length === 0 && unset.length === 0
+    ? null
+    : { before, after, unset };
 }
 
 /** Plan the restore of `current` to the historical `target`.
@@ -157,13 +167,24 @@ export function planRestore(
     const currentPlaced = currentById.get(id);
     if (currentPlaced === undefined) return [];
     const diff = changedFields(currentPlaced.object, targetPlaced.object);
-    return diff === null ? [] : [{ id, before: diff.before, after: diff.after }];
+    return diff === null ? [] : [{ id, before: diff.before, after: diff.after, unset: diff.unset }];
   });
+  const currentOrder = current.map((object) => object.id);
+  const targetOrder = target.map((object) => object.id);
+  const orderChanged = currentOrder.length !== targetOrder.length
+    || currentOrder.some((id, index) => id !== targetOrder[index]);
 
-  if (removed.length === 0 && added.length === 0 && updated.length === 0) return null;
+  if (removed.length === 0 && added.length === 0 && updated.length === 0 && !orderChanged) return null;
 
   const label = `Restore to change ${String(meta.targetOrdinal)}`;
-  const forward: RestoreDelta = { label, targetOrdinal: meta.targetOrdinal, added, removed, updated };
+  const forward: RestoreDelta = {
+    label,
+    targetOrdinal: meta.targetOrdinal,
+    added,
+    removed,
+    order: orderChanged ? targetOrder : null,
+    updated,
+  };
   // The inverse is the mirror: what the restore removed comes back, what it
   // added goes away, and every field patch is flipped.
   const backward: RestoreDelta = {
@@ -171,7 +192,15 @@ export function planRestore(
     targetOrdinal: meta.targetOrdinal,
     added: removed,
     removed: added,
-    updated: updated.map((patch) => ({ id: patch.id, before: patch.after, after: patch.before })),
+    order: orderChanged ? currentOrder : null,
+    updated: updated.map((patch) => ({
+      id: patch.id,
+      before: patch.after,
+      after: patch.before,
+      unset: Object.keys(patch.after).filter(
+        (key) => !Object.prototype.hasOwnProperty.call(patch.before, key),
+      ),
+    })),
   };
 
   return {

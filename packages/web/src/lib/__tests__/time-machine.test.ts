@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ActionSchema } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
 import type { ReplayObject } from "../action-log-replay.js";
+import { replayActions } from "../action-log-replay.js";
+import { asJson } from "../action-log.js";
 import { documentAtOrdinal, planRestore, timelineMarkers } from "../time-machine.js";
 
 // ---------------------------------------------------------------------------
@@ -50,8 +52,8 @@ function entry(ordinal: number, overrides: Partial<AuditLogEntry> = {}): AuditLo
 function place(ordinal: number, object: ReplayObject, index = 0): AuditLogEntry {
   return entry(ordinal, {
     intent: "object.place",
-    payload: { label: `Place ${String(object.kind)}`, added: [{ object, index }], removed: [], updated: [] },
-    inverse: { label: `Place ${String(object.kind)}`, added: [], removed: [{ object, index }], updated: [] },
+    payload: asJson({ label: `Place ${String(object.kind)}`, added: [{ object, index }], removed: [], updated: [] }),
+    inverse: asJson({ label: `Place ${String(object.kind)}`, added: [], removed: [{ object, index }], updated: [] }),
   });
 }
 
@@ -207,8 +209,7 @@ describe("planRestore", () => {
     expect(planRestore(current, current, CTX, { targetOrdinal: 40 })).toBeNull();
   });
 
-  it("the restore action is itself replayable — the trail stays self-sufficient", async () => {
-    const { replayActions } = await import("../action-log-replay.js");
+  it("the restore action is itself replayable — the trail stays self-sufficient", () => {
     const current = documentAtOrdinal(TRAIL, 40).objects;
     const target = documentAtOrdinal(TRAIL, 10).objects;
     const action = planRestore(current, target, CTX, { targetOrdinal: 10 });
@@ -223,6 +224,47 @@ describe("planRestore", () => {
     const replayed = replayActions(appended);
     expect(replayed.issues).toEqual([]);
     expect(replayed.objects).toEqual(target);
+  });
+
+  it("removes fields absent from the target and restores them on undo", () => {
+    const current: readonly ReplayObject[] = [{ ...TABLE, note: "remove me" }];
+    const target: readonly ReplayObject[] = [TABLE];
+    const action = planRestore(current, target, CTX, { targetOrdinal: 10 });
+    if (action === null) throw new Error("expected a restore action");
+
+    const restoreEntry = entry(10, {
+      intent: action.intent,
+      payload: action.payload,
+      inverse: action.inverse,
+    });
+    const restored = replayActions([restoreEntry], current);
+    expect(restored.issues).toEqual([]);
+    expect(restored.objects).toEqual(target);
+
+    const undone = replayActions([
+      restoreEntry,
+      entry(20, { intent: "history.undo", payload: { label: "Undo restore" }, inverse: { label: "Redo restore" } }),
+    ], current);
+    expect(undone.issues).toEqual([]);
+    expect(undone.objects).toEqual(current);
+  });
+
+  it("restores and reverses object ordering without deleting shared objects", () => {
+    const current: readonly ReplayObject[] = [TABLE, CHAIR];
+    const target: readonly ReplayObject[] = [CHAIR, TABLE];
+    const action = planRestore(current, target, CTX, { targetOrdinal: 10 });
+    if (action === null) throw new Error("expected a restore action");
+    const restoreEntry = entry(10, {
+      intent: action.intent,
+      payload: action.payload,
+      inverse: action.inverse,
+    });
+
+    expect(replayActions([restoreEntry], current).objects).toEqual(target);
+    expect(replayActions([
+      restoreEntry,
+      entry(20, { intent: "history.undo", payload: { label: "Undo restore" }, inverse: { label: "Redo restore" } }),
+    ], current).objects).toEqual(current);
   });
 
   it("deep undo is the same engine: N gestures back, beyond the in-memory cap", () => {
