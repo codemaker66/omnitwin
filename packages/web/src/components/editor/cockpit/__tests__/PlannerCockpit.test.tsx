@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
+import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
@@ -12,7 +14,11 @@ vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+afterEach(() => {
+  cleanup();
+  useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
+});
 
 describe("PlannerCockpit", () => {
   it("renders the grid regions, the live editor, and the nav rail", () => {
@@ -56,5 +62,59 @@ describe("PlannerCockpit", () => {
 
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("fallback");
     expect(screen.getByTestId("room-resolve-caption").getAttribute("data-visible")).toBe("false");
+  });
+
+  it("marks timeline preview as read-only and shows the saved-plan honesty caption", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: "2026-07-18T19:00:00.000Z",
+      endsAt: "2026-07-18T21:15:00.000Z",
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+
+    const { container } = render(<PlannerCockpit />);
+    expect(screen.getByTestId("cockpit-shell").getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(container.querySelector(".cockpit-stage")?.getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
+      "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved",
+    );
+    expect(screen.queryByTestId("room-resolve-caption")).toBeNull();
+    expect(container.querySelector(".cockpit-layer-controls")).toBeNull();
+    expect(screen.queryByTestId("cockpit-dock-mock")).toBeNull();
+    expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
+  });
+
+  it("states that the saved plan is hidden when the selected timeline interval has no keyframe", () => {
+    useLayoutTimelinePreviewStore.getState().showUnavailable({
+      id: "event-a:phase-arrival",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-arrival",
+      phaseName: "Guest arrival",
+      startsAt: "2026-07-18T18:00:00.000Z",
+      endsAt: "2026-07-18T19:00:00.000Z",
+      venueRuntime: null,
+    }, "No frozen layout was saved for this phase.");
+
+    render(<PlannerCockpit />);
+
+    expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
+      "Layout unavailable · No frozen layout was saved for this phase. · no room shell or saved layout shown",
+    );
+    expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
+  });
+
+  it("states that the scene is empty during a real schedule gap", () => {
+    useLayoutTimelinePreviewStore.getState().showScheduleGap("No room phase is scheduled now.");
+    render(<PlannerCockpit />);
+
+    expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
+      "Schedule gap · No room phase is scheduled now. · no room shell or saved layout shown",
+    );
+    expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
   });
 });

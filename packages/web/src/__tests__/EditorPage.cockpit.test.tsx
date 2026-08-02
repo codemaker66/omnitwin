@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,7 +13,9 @@ vi.mock("../components/editor/SubmitForReviewPanel.js", () => ({ SubmitForReview
 vi.mock("../components/editor/EditorBridge.js", () => ({ EditorBridge: () => null }));
 vi.mock("../components/editor/ObjectNotePanel.js", () => ({ ObjectNotePanel: () => null }));
 vi.mock("../components/editor/EventDetailsPanel.js", () => ({ EventDetailsPanel: () => null }));
-vi.mock("../components/truth/TruthModeIndicator.js", () => ({ TruthModeIndicator: () => null }));
+vi.mock("../components/truth/TruthModeIndicator.js", () => ({
+  TruthModeIndicator: () => <div data-testid="truth-mode-indicator" />,
+}));
 vi.mock("../hooks/use-media-query.js", () => ({
   useIsCoarsePointer: () => false,
   useIsNarrowViewport: () => false,
@@ -21,9 +23,11 @@ vi.mock("../hooks/use-media-query.js", () => ({
 
 const { EditorPage } = await import("../pages/EditorPage.js");
 const { useEditorStore } = await import("../stores/editor-store.js");
+const { useLayoutTimelinePreviewStore } = await import("../stores/layout-timeline-preview-store.js");
 const originalLoadConfiguration = useEditorStore.getState().loadConfiguration;
 
 beforeEach(() => {
+  useLayoutTimelinePreviewStore.getState().clear();
   useEditorStore.setState({
     configId: "cfg-1",
     isLoading: false,
@@ -34,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useLayoutTimelinePreviewStore.getState().clear();
 });
 
 describe("EditorPage cockpit", () => {
@@ -82,5 +87,29 @@ describe("EditorPage cockpit", () => {
       expect(screen.getByTestId("planner-3d-shell").getAttribute("data-planner-config-id"))
         .toBe("cfg-requested");
     });
+  });
+
+  it("keeps 3D and the mutation lock active when 2D is requested during timeline preview", async () => {
+    render(
+      <MemoryRouter initialEntries={["/plan/cfg-1"]}>
+        <Routes><Route path="/plan/:code" element={<EditorPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => { expect(screen.getByTestId("planner-cockpit")).toBeTruthy(); });
+    act(() => {
+      useLayoutTimelinePreviewStore.getState().showPending("Loading timeline…");
+    });
+
+    const twoDimensional = screen.getByRole("button", { name: "2D" });
+    expect(twoDimensional.getAttribute("disabled")).not.toBeNull();
+    fireEvent.click(twoDimensional);
+
+    expect(screen.getByTestId("planner-cockpit")).toBeTruthy();
+    expect(screen.queryByTestId("mock-blueprint")).toBeNull();
+    expect(screen.getByTestId("planner-3d-shell").getAttribute("data-layout-timeline-preview"))
+      .toBe("unavailable");
+    expect(screen.getByTestId("planner-3d-shell").getAttribute("data-layout-timeline-mutation-locked"))
+      .toBe("true");
+    expect(screen.queryByTestId("truth-mode-indicator")).toBeNull();
   });
 });

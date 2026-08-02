@@ -1,5 +1,5 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
-import type { SpaceDimensions } from "@omnitwin/types";
+import type { LayoutSnapshotAssetDefinition, SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem } from "./catalogue.js";
 import type { CatalogueItem } from "./catalogue.js";
 
@@ -432,6 +432,10 @@ export interface PlacedItem {
   readonly y: number;
   readonly z: number;
   readonly rotationY: number;
+  /** Uniform presentation scale. Editor-authored items default to 1 when omitted. */
+  readonly scale?: number;
+  /** Canonical geometry witness used only when a historical asset is absent from today's catalogue. */
+  readonly embeddedAssetDefinition?: LayoutSnapshotAssetDefinition;
   /** Whether a cloth is draped over this item (tables only). */
   readonly clothed: boolean;
   /** Cloth colour/style draped over this table. Null when not clothed. */

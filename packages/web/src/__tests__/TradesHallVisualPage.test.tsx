@@ -308,6 +308,7 @@ function makePhaseGraph(): EventPhaseGraph {
     phases: [{
       id: phaseId,
       eventId,
+      spaceId: null,
       templateKey: "dinner",
       name: "Dinner service",
       sortOrder: 0,

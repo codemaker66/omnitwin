@@ -4,7 +4,9 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
 import { updatePublicThumbnail } from "../../api/configurations.js";
+import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { flushAutoSave } from "./EditorBridge.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import {
   getAvailableTransitions,
   submitForReview,
@@ -107,6 +109,63 @@ const PLANNER_EDITABLE: ReadonlySet<ConfigurationReviewStatus> =
     "rejected",
   ]);
 
+export const TIMELINE_PREVIEW_REVIEW_MESSAGE =
+  "Exit the room timeline preview before changing this saved plan's review status.";
+
+function assertReviewMutationAllowed(): void {
+  if (isLayoutTimelineMutationLocked()) {
+    throw new Error(TIMELINE_PREVIEW_REVIEW_MESSAGE);
+  }
+}
+
+/**
+ * The review mutation boundary. It deliberately owns the preview checks so a
+ * caller cannot bypass the panel's disabled state by invoking the flow itself.
+ */
+export async function submitConfigurationForReview(
+  configId: string,
+): Promise<ConfigurationReviewStatus> {
+  assertReviewMutationAllowed();
+  const saved = await flushAutoSave();
+  assertReviewMutationAllowed();
+  if (!saved) {
+    throw new Error("Save failed. Retry before submitting the layout.");
+  }
+
+  // Best-effort floor-plan capture. A capture problem is non-blocking, but a
+  // timeline lock appearing across either await must stop the review mutation.
+  try {
+    const { scene, space, isPublicPreview } = useEditorStore.getState();
+    assertReviewMutationAllowed();
+    if (scene !== null && space !== null && isPublicPreview) {
+      const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
+      const dataUrl = captureOrthographic(scene, w, l, { width: 800, height: 533 });
+      assertReviewMutationAllowed();
+      if (dataUrl !== null) {
+        await updatePublicThumbnail(configId, dataUrl);
+        assertReviewMutationAllowed();
+      }
+    }
+  } catch (error) {
+    if (isLayoutTimelineMutationLocked()) throw error;
+    // Capture/upload failure is non-blocking for the review submission.
+  }
+
+  assertReviewMutationAllowed();
+  const result = await submitForReview(configId);
+  assertReviewMutationAllowed();
+  return result.reviewStatus;
+}
+
+export async function withdrawConfigurationReview(
+  configId: string,
+): Promise<ConfigurationReviewStatus> {
+  assertReviewMutationAllowed();
+  const next = await withdrawReview(configId);
+  assertReviewMutationAllowed();
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -119,6 +178,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // auth-gated available-transitions call so we don't generate 401 noise
   // for anonymous visitors.
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
 
   const [reviewStatus, setReviewStatus] = useState<ConfigurationReviewStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -183,29 +243,8 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     setError(null);
     void (async () => {
       try {
-        const saved = await flushAutoSave();
-        if (!saved) {
-          throw new Error("Save failed. Retry before submitting the layout.");
-        }
-
-        // Best-effort floor-plan capture. Same pattern as SaveSendPanel —
-        // if the capture fails the submit still proceeds (sheet renders
-        // a placeholder for missing diagramUrl).
-        try {
-          const { scene, space, isPublicPreview } = useEditorStore.getState();
-          if (scene !== null && space !== null && isPublicPreview) {
-            const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
-            const dataUrl = captureOrthographic(scene, w, l, { width: 800, height: 533 });
-            if (dataUrl !== null) {
-              await updatePublicThumbnail(configId, dataUrl);
-            }
-          }
-        } catch {
-          // Non-blocking.
-        }
-
-        const result = await submitForReview(configId);
-        setReviewStatus(result.reviewStatus);
+        const next = await submitConfigurationForReview(configId);
+        setReviewStatus(next);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to submit for review");
       } finally {
@@ -219,7 +258,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     setError(null);
     void (async () => {
       try {
-        const next = await withdrawReview(configId);
+        const next = await withdrawConfigurationReview(configId);
         setReviewStatus(next);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to withdraw");
@@ -240,25 +279,30 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
       {isEditable && (
         <button
           type="button"
-          style={{ ...primaryBtn, opacity: inFlight ? 0.6 : 1 }}
+          style={{ ...primaryBtn, opacity: inFlight || timelinePreviewActive ? 0.6 : 1 }}
           onClick={handleSubmit}
-          disabled={inFlight}
+          disabled={inFlight || timelinePreviewActive}
           data-testid="submit-for-review-button"
+          title={timelinePreviewActive ? TIMELINE_PREVIEW_REVIEW_MESSAGE : undefined}
         >
-          {inFlight ? "Submitting…" : "Submit for Approval"}
+          {inFlight
+            ? "Submitting…"
+            : timelinePreviewActive ? "Exit preview to submit" : "Submit for Approval"}
         </button>
       )}
 
       {isLocked && (
         <button
           type="button"
-          style={{ ...secondaryBtn, opacity: inFlight ? 0.6 : 1 }}
+          style={{ ...secondaryBtn, opacity: inFlight || timelinePreviewActive ? 0.6 : 1 }}
           onClick={handleWithdraw}
-          disabled={inFlight}
+          disabled={inFlight || timelinePreviewActive}
           data-testid="withdraw-review-button"
-          title="Withdraw your submission to edit the layout"
+          title={timelinePreviewActive
+            ? TIMELINE_PREVIEW_REVIEW_MESSAGE
+            : "Withdraw your submission to edit the layout"}
         >
-          {inFlight ? "Withdrawing…" : "Withdraw"}
+          {inFlight ? "Withdrawing…" : timelinePreviewActive ? "Exit preview to withdraw" : "Withdraw"}
         </button>
       )}
 

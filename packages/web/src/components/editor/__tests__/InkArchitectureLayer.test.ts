@@ -33,7 +33,7 @@ describe("buildInkSegments", () => {
     const positions = buildInkSegments(SQUARE, 3.2);
     const points = triples(positions);
     // The buffer stores 32-bit floats — compare against fround'd expectations.
-    const ceilingY = Math.fround(toRenderSpace(3.2));
+    const ceilingY = Math.fround(3.2);
     const lift = Math.fround(INK_FLOOR_LIFT);
 
     // Every vertex sits on the floor lift or the ceiling plane.
@@ -49,7 +49,7 @@ describe("buildInkSegments", () => {
   it("connects each corner's floor and ceiling with a vertical", () => {
     const positions = buildInkSegments(SQUARE, 3.2);
     const points = triples(positions);
-    const ceilingY = Math.fround(toRenderSpace(3.2));
+    const ceilingY = Math.fround(3.2);
     const lift = Math.fround(INK_FLOOR_LIFT);
     const corner = Math.fround(toRenderSpace(10));
 

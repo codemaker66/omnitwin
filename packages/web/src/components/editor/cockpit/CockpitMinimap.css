@@ -87,3 +87,22 @@
 @media (prefers-reduced-motion: reduce) {
   .cockpit-minimap__conflict { animation: none; }
 }
+
+.cockpit-minimap__unavailable {
+  margin: 0;
+  min-width: 132px;
+  padding: 18px 12px;
+  border: 1px dashed rgba(201, 168, 76, 0.34);
+  border-radius: 6px;
+  color: rgba(244, 239, 230, 0.74);
+  background: #0c0b09;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.cockpit-minimap__preview-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}

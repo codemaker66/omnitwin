@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { act, render, cleanup } from "@testing-library/react";
 
 // Mock @react-three/fiber — happy-dom has no WebGL context.
 const CanvasMock = vi.hoisted(() =>
@@ -39,6 +39,7 @@ vi.mock("react-router-dom", () => ({
 vi.mock("../components/editor/CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
 
 import { App } from "../App.js";
+import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 
 /** Extract the props object from the first CanvasMock call. */
 function getCanvasProps(): Record<string, unknown> {
@@ -51,6 +52,7 @@ function getCanvasProps(): Record<string, unknown> {
 
 describe("App", () => {
   beforeEach(() => {
+    useLayoutTimelinePreviewStore.getState().clear();
     vi.useFakeTimers();
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
@@ -58,7 +60,12 @@ describe("App", () => {
       value: 1440,
     });
   });
-  afterEach(() => { cleanup(); vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+  afterEach(() => {
+    cleanup();
+    useLayoutTimelinePreviewStore.getState().clear();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
 
   it("renders without crashing", () => {
     const { getByTestId } = render(<App />);
@@ -118,5 +125,21 @@ describe("App", () => {
     CanvasMock.mockClear();
     render(<App />);
     expect(CanvasMock).toHaveBeenCalled();
+  });
+
+  it("hides live layout grade and capacity intelligence until explicit preview exit", () => {
+    const { queryByTestId } = render(<App />);
+    expect(queryByTestId("planner-spatial-hud")).not.toBeNull();
+
+    act(() => {
+      useLayoutTimelinePreviewStore.getState().showPending("Loading timeline…");
+    });
+    expect(queryByTestId("planner-spatial-hud")).toBeNull();
+    expect(document.querySelector(".planner-command-deck")).toBeNull();
+
+    act(() => {
+      useLayoutTimelinePreviewStore.getState().clear();
+    });
+    expect(queryByTestId("planner-spatial-hud")).not.toBeNull();
   });
 });

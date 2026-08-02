@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -36,6 +37,10 @@ export function useUndoRedoShortcuts(): void {
       if (!isUndo && !isRedo) return;
       if (isTypingTarget(event.target)) return;
       if (useMarkupStore.getState().active) return;
+      if (isLayoutTimelineMutationLocked()) {
+        event.preventDefault();
+        return;
+      }
 
       event.preventDefault();
       const editor = useEditorStore.getState();

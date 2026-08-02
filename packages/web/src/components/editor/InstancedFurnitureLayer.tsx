@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Instances, Instance } from "@react-three/drei";
 import {
+  type BufferGeometry,
   Group,
   Material,
   Mesh,
@@ -46,6 +47,13 @@ import {
 interface HarvestedVariant {
   readonly groups: readonly MergedMaterialGroup[];
   readonly materialByKey: ReadonlyMap<string, Material>;
+  readonly appearanceByKey: ReadonlyMap<string, MaterialAppearance>;
+}
+
+interface MaterialAppearance {
+  readonly opacity: number;
+  readonly transparent: boolean;
+  readonly depthWrite: boolean;
 }
 
 const noRaycast: Object3D["raycast"] = () => undefined;
@@ -82,13 +90,21 @@ function harvestVariant(root: Object3D): HarvestedVariant {
   const rootInverse = root.matrixWorld.clone().invert();
   const parts: ExtractedPart[] = [];
   const materialByKey = new Map<string, Material>();
+  const appearanceByKey = new Map<string, MaterialAppearance>();
 
   root.traverse((obj) => {
     if (!isMesh(obj)) return;
     const material = obj.material;
     if (Array.isArray(material)) return; // composite procedural meshes are single-material
     const key = materialSignature(material);
-    if (!materialByKey.has(key)) materialByKey.set(key, material.clone());
+    if (!materialByKey.has(key)) {
+      materialByKey.set(key, material.clone());
+      appearanceByKey.set(key, {
+        opacity: material.opacity,
+        transparent: material.transparent,
+        depthWrite: material.depthWrite,
+      });
+    }
     parts.push({
       geometry: obj.geometry,
       materialKey: key,
@@ -96,7 +112,7 @@ function harvestVariant(root: Object3D): HarvestedVariant {
     });
   });
 
-  return { groups: mergePartsByMaterial(parts), materialByKey };
+  return { groups: mergePartsByMaterial(parts), materialByKey, appearanceByKey };
 }
 
 function disposeVariant(variant: HarvestedVariant): void {
@@ -104,10 +120,90 @@ function disposeVariant(variant: HarvestedVariant): void {
   for (const material of variant.materialByKey.values()) material.dispose();
 }
 
+function applyHarvestedOpacity(
+  harvested: ReadonlyMap<string, HarvestedVariant>,
+  opacity: number,
+): void {
+  const clampedOpacity = Math.min(1, Math.max(0, opacity));
+  for (const variant of harvested.values()) {
+    for (const [key, material] of variant.materialByKey) {
+      const base = variant.appearanceByKey.get(key);
+      if (base === undefined) continue;
+      const transparent = base.transparent || clampedOpacity < 1;
+      material.opacity = base.opacity * clampedOpacity;
+      material.depthWrite = clampedOpacity >= 1 ? base.depthWrite : false;
+      if (material.transparent !== transparent) {
+        material.transparent = transparent;
+        material.needsUpdate = true;
+      }
+    }
+  }
+}
+
+function DirectInstanceBatch({
+  geometry,
+  material,
+  items,
+  itemScale,
+  setNonPickable,
+}: {
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  readonly items: readonly PlacedItem[];
+  readonly itemScale: number;
+  readonly setNonPickable: (mesh: InstancedMesh | null) => void;
+}): React.ReactElement {
+  const meshRef = useRef<InstancedMesh | null>(null);
+  const matrixSource = useMemo(() => new Group(), []);
+  const invalidate = useThree((state) => state.invalidate);
+  const assignMesh = useCallback((mesh: InstancedMesh | null): void => {
+    meshRef.current = mesh;
+    setNonPickable(mesh);
+  }, [setNonPickable]);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (mesh === null) return;
+    mesh.count = items.length;
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (item === undefined) continue;
+      matrixSource.position.set(item.x, item.y, item.z);
+      matrixSource.rotation.set(0, item.rotationY, 0);
+      matrixSource.scale.setScalar((item.scale ?? 1) * itemScale);
+      matrixSource.updateMatrix();
+      mesh.setMatrixAt(index, matrixSource.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    invalidate();
+  }, [invalidate, itemScale, items, matrixSource]);
+
+  return (
+    <instancedMesh
+      ref={assignMesh}
+      args={[geometry, material, Math.max(1, items.length)]}
+      count={items.length}
+      frustumCulled={false}
+    />
+  );
+}
+
 export function InstancedFurnitureLayer({
   items,
+  opacity = 1,
+  itemScale = 1,
+  opacitySource,
+  directInstances = false,
 }: {
   readonly items: readonly PlacedItem[];
+  /** Presentation-only opacity. The editable furniture path leaves this at 1. */
+  readonly opacity?: number;
+  /** Uniform per-item scale used by timeline strike/materialize transitions. */
+  readonly itemScale?: number;
+  /** Optional imperative driver used by timeline crossfades without reconciling item trees. */
+  readonly opacitySource?: () => number;
+  /** Timeline-only fast path: one raw InstancedMesh update instead of one React child per item. */
+  readonly directInstances?: boolean;
 }): React.ReactElement {
   const invalidate = useThree((state) => state.invalidate);
 
@@ -130,6 +226,7 @@ export function InstancedFurnitureLayer({
   }, [items]);
 
   const templateRef = useRef<Group>(null);
+  const lastDrivenOpacity = useRef<number | null>(null);
   const [harvested, setHarvested] = useState<ReadonlyMap<string, HarvestedVariant>>(new Map());
 
   // Re-harvest only when the SET of variants changes (not on every drag). The
@@ -163,6 +260,21 @@ export function InstancedFurnitureLayer({
     if (mesh !== null) mesh.raycast = noRaycast;
   }, []);
 
+  useLayoutEffect(() => {
+    const resolvedOpacity = opacitySource?.() ?? opacity;
+    applyHarvestedOpacity(harvested, resolvedOpacity);
+    lastDrivenOpacity.current = resolvedOpacity;
+    invalidate();
+  }, [harvested, invalidate, opacity, opacitySource]);
+
+  useFrame(() => {
+    if (opacitySource === undefined) return;
+    const nextOpacity = opacitySource();
+    if (nextOpacity === lastDrivenOpacity.current) return;
+    applyHarvestedOpacity(harvested, nextOpacity);
+    lastDrivenOpacity.current = nextOpacity;
+  });
+
   return (
     <group name="instanced-furniture">
       {/* Hidden templates — one model per variant at the origin, harvested once. */}
@@ -190,6 +302,18 @@ export function InstancedFurnitureLayer({
         return variant.groups.map((group, groupIndex) => {
           const material = variant.materialByKey.get(group.materialKey);
           if (material === undefined) return null;
+          if (directInstances) {
+            return (
+              <DirectInstanceBatch
+                key={`${key}-${String(groupIndex)}`}
+                geometry={group.geometry}
+                material={material}
+                items={variantItems}
+                itemScale={itemScale}
+                setNonPickable={setNonPickable}
+              />
+            );
+          }
           return (
             <Instances
               key={`${key}-${String(groupIndex)}`}
@@ -204,6 +328,7 @@ export function InstancedFurnitureLayer({
                   key={item.id}
                   position={[item.x, item.y, item.z]}
                   rotation={[0, item.rotationY, 0]}
+                  scale={(item.scale ?? 1) * itemScale}
                 />
               ))}
             </Instances>

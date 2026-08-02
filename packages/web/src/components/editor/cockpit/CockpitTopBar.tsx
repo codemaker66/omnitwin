@@ -3,6 +3,7 @@ import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
@@ -40,8 +41,9 @@ function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
  */
 export function CockpitTopBar(): ReactElement {
   const space = useEditorStore((s) => s.space);
+  const venueId = useEditorStore((s) => s.venueId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
-  const objectCount = useEditorStore((s) => s.objects.length);
+  const savedObjectCount = useEditorStore((s) => s.objects.length);
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
   const saveError = useEditorStore((s) => s.saveError);
@@ -51,10 +53,17 @@ export function CockpitTopBar(): ReactElement {
   const layersOpen = useCockpitStore((s) => s.layersOpen);
   const overlayVisibility = useCockpitStore((s) => s.overlayVisibility);
   const selectedPhaseId = useCockpitStore((s) => s.selectedPhaseId);
-  const linked = useLinkedEvent();
+  const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const previewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
+  const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
+  const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
+  const previewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
+  const linked = useLinkedEvent(venueId);
+  const previewActive = previewMode !== "inactive";
+  const objectCount = previewActive ? previewObjectCount : savedObjectCount;
 
   const model = buildTopBarModel({
-    spaceName: space?.name ?? null,
+    spaceName: previewActive ? previewRuntime?.spaceName ?? null : space?.name ?? null,
     isPublicPreview,
     objectCount,
     userName: user?.name ?? null,
@@ -65,10 +74,37 @@ export function CockpitTopBar(): ReactElement {
   const activePhase = linked.graph !== null
     ? (linked.graph.phases.find((phase) => phase.id === selectedPhaseId) ?? linked.graph.phases[0] ?? null)
     : null;
-  const event = eventCell(linked, activePhase?.name ?? null);
+  const event = !previewActive
+    ? eventCell(linked, activePhase?.name ?? null)
+    : previewMode === "schedule-gap" ? {
+        kicker: "Schedule gap",
+        value: "No scheduled phase",
+      } : previewFrame === null ? {
+        kicker: "Phase preview",
+        value: "Loading room timeline",
+      } : {
+        kicker: "Phase preview",
+        value: `${previewFrame.eventName} → ${previewFrame.phaseName}`,
+      };
+  const previewCountLabel = objectCount === 1 ? "1 phase preview item" : `${objectCount.toLocaleString("en-GB")} phase preview items`;
+  const summaryLabel = !previewActive
+    ? model.summaryLabel
+    : previewMode === "unavailable" || previewMode === "schedule-gap"
+      ? `${previewMessage ?? "Layout unavailable"} · no room shell or saved layout shown`
+      : `${previewCountLabel} · saved plan unchanged`;
+  const runtimeLabel = previewActive
+    ? previewRuntime === null
+      ? "Room preview unavailable"
+      : "Frozen outline · historical capture unavailable"
+    : model.runtimeLabel;
 
   return (
-    <header className="cockpit-topbar" data-testid="cockpit-topbar" aria-label="Planner status">
+    <header
+      className="cockpit-topbar"
+      data-testid="cockpit-topbar"
+      data-layout-timeline-preview={String(previewActive)}
+      aria-label="Planner status"
+    >
       <div className="cockpit-topbar__brand">
         <span className="cockpit-topbar__mark" aria-hidden="true">Vv</span>
         <span className="cockpit-topbar__brand-copy">
@@ -103,15 +139,15 @@ export function CockpitTopBar(): ReactElement {
       <div
         className="cockpit-topbar__cell cockpit-topbar__cell--runtime"
         data-testid="cockpit-runtime-chip"
-        title={model.runtimeLabel}
+        title={runtimeLabel}
       >
         <span className="cockpit-topbar__kicker">Runtime asset</span>
-        <strong className="cockpit-topbar__value">{model.runtimeLabel}</strong>
+        <strong className="cockpit-topbar__value">{runtimeLabel}</strong>
       </div>
 
       <div className="cockpit-topbar__actions">
-        <span className="cockpit-topbar__summary">{model.summaryLabel}</span>
-        <div className="cockpit-topbar__layers">
+        <span className="cockpit-topbar__summary">{summaryLabel}</span>
+        {!previewActive && <div className="cockpit-topbar__layers">
           <button
             type="button"
             className={layersOpen ? "cockpit-topbar__layers-btn is-open" : "cockpit-topbar__layers-btn"}
@@ -144,7 +180,7 @@ export function CockpitTopBar(): ReactElement {
               <p className="cockpit-topbar__menu-note">Overlays are planning aids · human review required.</p>
             </div>
           )}
-        </div>
+        </div>}
         {model.userInitials !== null && (
           <span className="cockpit-topbar__avatar" aria-label={`Signed in as ${user?.name ?? "user"}`}>
             {model.userInitials}

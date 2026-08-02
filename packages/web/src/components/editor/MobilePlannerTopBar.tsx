@@ -7,6 +7,8 @@ import {
 } from "../../lib/editor-save-status.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";
@@ -157,6 +159,15 @@ export function MobilePlannerTopBar({
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const timelinePreviewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
+  const timelinePreviewActive = timelinePreviewMode !== "inactive";
+  const roomName = timelinePreviewActive
+    ? timelinePreviewRuntime?.spaceName ?? "Room unavailable"
+    : space?.name ?? "Grand Hall";
+  const layoutName = timelinePreviewActive
+    ? timelinePreviewRuntime === null ? "Room preview unavailable" : "Frozen phase preview"
+    : "Banquet Draft";
   const online = useOnlineStatus();
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [sending, setSending] = useState(false);
@@ -179,6 +190,7 @@ export function MobilePlannerTopBar({
   const saveCopy = copyForEditorSaveStatus(status);
 
   const retrySave = (): void => {
+    if (timelinePreviewActive || isLayoutTimelineMutationLocked()) return;
     if (saveConflict !== null) {
       void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
       return;
@@ -188,7 +200,7 @@ export function MobilePlannerTopBar({
   };
 
   const sendLayout = (): void => {
-    if (configId === null) return;
+    if (configId === null || timelinePreviewActive) return;
     setSending(true);
     void prepareLayoutForGuestEnquiry(configId)
       .then((readyToSend) => {
@@ -209,16 +221,20 @@ export function MobilePlannerTopBar({
     <>
       <div data-testid="mobile-planner-topbar" style={topBarStyle}>
         <div style={titleStyle}>
-          <div style={roomStyle}>{space?.name ?? "Grand Hall"}</div>
-          <div style={layoutStyle}>Banquet Draft</div>
+          <div data-testid="mobile-planner-room-name" style={roomStyle}>{roomName}</div>
+          <div data-testid="mobile-planner-layout-name" style={layoutStyle}>{layoutName}</div>
           {status === "failed" ? (
             <button
               type="button"
               style={saveRetryStyle}
               onClick={retrySave}
               aria-label={saveConflict === null ? "Save failed - retry" : "Save conflict - reload"}
+              disabled={timelinePreviewActive}
+              title={timelinePreviewActive ? "Exit the room timeline preview before retrying this save." : undefined}
             >
-              {saveConflict === null ? saveCopy.label : "Reload layout"}
+              {timelinePreviewActive
+                ? saveConflict === null ? "Exit preview to retry" : "Exit preview to reload"
+                : saveConflict === null ? saveCopy.label : "Reload layout"}
             </button>
           ) : (
             <div role="status" aria-live="polite" style={saveStyle}>
@@ -231,8 +247,10 @@ export function MobilePlannerTopBar({
           <button
             type="button"
             style={segmentButtonStyle(mode === "2d")}
-            onClick={() => { onModeChange("2d"); }}
+            onClick={() => { if (!timelinePreviewActive) onModeChange("2d"); }}
             aria-pressed={mode === "2d"}
+            disabled={timelinePreviewActive}
+            title={timelinePreviewActive ? "Exit the room timeline preview to view 2D." : undefined}
           >
             2D
           </button>
@@ -251,13 +269,16 @@ export function MobilePlannerTopBar({
             type="button"
             style={{
               ...sendStyle,
-              opacity: sending ? 0.68 : 1,
+              opacity: sending || timelinePreviewActive ? 0.68 : 1,
             }}
             aria-label="Send to Events Team"
             onClick={sendLayout}
-            disabled={sending}
+            disabled={sending || timelinePreviewActive}
+            title={timelinePreviewActive
+              ? "Exit the room timeline preview before sending this saved plan."
+              : undefined}
           >
-            {sending ? "Sending" : "Send"}
+            {sending ? "Sending" : timelinePreviewActive ? "Exit preview" : "Send"}
           </button>
         ) : null}
       </div>

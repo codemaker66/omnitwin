@@ -238,6 +238,7 @@ function eventDayBoardFixture(): EventDayOpsBoard {
       {
         id: "00000000-0000-4000-8000-000000004006",
         eventId: EVENT_ID,
+        spaceId: SPACE_ID,
         templateKey: "arrival",
         name: "Arrival",
         sortOrder: 0,
