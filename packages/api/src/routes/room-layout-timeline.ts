@@ -348,7 +348,7 @@ export async function roomLayoutTimelineRoutes(
         eventGuestCount: row.eventGuestCount,
         phaseId: row.phaseId,
         phaseName: row.phaseName,
-        templateKey: row.templateKey,
+        templateKey: isRoomFlip ? "room-flip" as const : row.templateKey,
         sortOrder: row.sortOrder,
         startsAt: row.startsAt.toISOString(),
         endsAt: endsAt.toISOString(),

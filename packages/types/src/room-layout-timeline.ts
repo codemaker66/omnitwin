@@ -250,6 +250,14 @@ export const RoomLayoutTimelineFrameSchema = z.object({
     });
   }
 
+  if ((frame.kind === "room_flip") !== (frame.templateKey === "room-flip")) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["templateKey"],
+      message: "Frame kind and templateKey must agree on room-flip identity",
+    });
+  }
+
   const startsAtMs = Date.parse(frame.startsAt);
   const endsAtMs = Date.parse(frame.endsAt);
   if (endsAtMs <= startsAtMs) {
@@ -297,6 +305,111 @@ export const RoomLayoutTimelineFrameSchema = z.object({
         message: "Available keyframe guestCount must match its payload",
       });
     }
+  }
+
+  const expectedGuests = frame.keyframe.state === "available"
+    ? { source: "frozen_snapshot" as const, value: frame.keyframe.payload.guestCount }
+    : frame.guestCount !== null
+      ? { source: "phase" as const, value: frame.guestCount }
+      : { source: "event" as const, value: frame.eventGuestCount };
+  if (
+    frame.figures.guests.source !== expectedGuests.source
+    || frame.figures.guests.value !== expectedGuests.value
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["figures", "guests"],
+      message: "Guests figure must match the authoritative keyframe, phase, or event source",
+    });
+  }
+
+  const capacity = frame.figures.seatedCapacity;
+  if (frame.keyframe.state !== "available") {
+    if (capacity.state !== "unavailable" || capacity.reason !== "no_valid_frozen_keyframe") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["figures", "seatedCapacity"],
+        message: "Capacity without an available keyframe must report no_valid_frozen_keyframe",
+      });
+    }
+  } else {
+    const objects = frame.keyframe.payload.objects;
+    const chairs = objects.filter((object) => object.assetDefinition.category === "chair");
+    const tables = objects.filter((object) => object.assetDefinition.category === "table");
+    const complete = (candidates: typeof objects): boolean => candidates.length > 0
+      && candidates.every((object) => (
+        object.assetDefinition.seatCount !== null
+        && Number.isInteger(object.assetDefinition.seatCount)
+        && object.assetDefinition.seatCount > 0
+      ));
+    const seatingBasis = complete(chairs) ? chairs : complete(tables) ? tables : null;
+    if (seatingBasis === null) {
+      if (capacity.state !== "unavailable" || capacity.reason !== "capacity_evidence_incomplete") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figures", "seatedCapacity"],
+          message: "Incomplete seating evidence must report capacity_evidence_incomplete",
+        });
+      }
+    } else {
+      const expectedBasis = seatingBasis === chairs ? "chair_objects" : "table_seat_counts";
+      const expectedValue = seatingBasis.reduce(
+        (sum, object) => sum + (object.assetDefinition.seatCount ?? 0),
+        0,
+      );
+      if (
+        capacity.state !== "available"
+        || capacity.basis !== expectedBasis
+        || capacity.value !== expectedValue
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figures", "seatedCapacity"],
+          message: "Available capacity must match chair-first canonical seating evidence",
+        });
+      }
+    }
+  }
+
+  const revenue = frame.figures.revenue;
+  if (frame.keyframe.state === "available") {
+    if (
+      revenue.state === "available"
+      && revenue.scenario.plannedGuestCount !== frame.keyframe.payload.guestCount
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["figures", "revenue", "scenario", "plannedGuestCount"],
+        message: "Available revenue scenario guest count must match the frozen payload",
+      });
+    }
+    if (revenue.state === "unavailable" && revenue.reason === "no_valid_frozen_keyframe") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["figures", "revenue", "reason"],
+        message: "An available keyframe cannot report no_valid_frozen_keyframe revenue",
+      });
+    }
+  } else if (
+    revenue.state === "available"
+    || (revenue.state === "unavailable" && revenue.reason !== "no_valid_frozen_keyframe")
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["figures", "revenue"],
+      message: "Revenue without an available keyframe must be restricted or unavailable for that reason",
+    });
+  }
+
+  if (
+    frame.figures.staffing.staffConflictsStatus !== frame.staffConflictsStatus
+    || frame.figures.staffing.staffConflictsLabel !== frame.staffConflictsLabel
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["figures", "staffing"],
+      message: "Staffing figure must match frame-level staff-conflict evidence",
+    });
   }
 });
 export type RoomLayoutTimelineFrame = z.infer<typeof RoomLayoutTimelineFrameSchema>;
@@ -349,7 +462,34 @@ export const RoomLayoutTimelineResponseSchema = z.object({
     });
   }
 
+  const seenPhaseIds = new Set<string>();
+  let previousFrame: RoomLayoutTimelineFrame | undefined;
   for (const [index, frame] of response.frames.entries()) {
+    if (seenPhaseIds.has(frame.phaseId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["frames", index, "phaseId"],
+        message: "Timeline frames must have unique phase identities",
+      });
+    }
+    seenPhaseIds.add(frame.phaseId);
+
+    if (previousFrame !== undefined) {
+      const previousStartsAtMs = Date.parse(previousFrame.startsAt);
+      const frameStartsAtMs = Date.parse(frame.startsAt);
+      if (
+        previousStartsAtMs > frameStartsAtMs
+        || (previousStartsAtMs === frameStartsAtMs && previousFrame.id.localeCompare(frame.id) > 0)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["frames", index],
+          message: "Timeline frames must be ordered by startsAt and then id",
+        });
+      }
+    }
+    previousFrame = frame;
+
     const startsAtMs = Date.parse(frame.startsAt);
     const endsAtMs = Date.parse(frame.endsAt);
     if (startsAtMs >= toMs || endsAtMs <= fromMs) {
