@@ -8,12 +8,18 @@ import { z } from "zod";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
   CANONICAL_ASSETS,
+  CanonicalLayoutSnapshotV0Schema,
   EventArchitectCandidateSelectionSchema,
   EventPhaseGraphSchema,
   EventPhaseSchema,
   FreezePhaseLayoutSnapshotResponseSchema,
   PersistedEventArchitectRunSchema,
+  RUNTIME_QA_CHECK_KEYS,
+  RegisterRuntimePackageInputSchema,
   RoomLayoutTimelineResponseSchema,
+  RuntimePackageManifestJsonSchema,
+  RuntimeQaRecordV0Schema,
+  TransformArtifactV0Schema,
   canonicalLayoutSnapshotDigest,
   runLayoutValidator,
   type CanonicalLayoutSnapshotV0,
@@ -21,6 +27,7 @@ import {
 import { createDb, type Database } from "../db/client.js";
 import {
   assetDefinitions,
+  assetVersions,
   canonicalLayoutSnapshots,
   configurations,
   eventPhases,
@@ -28,11 +35,33 @@ import {
   layoutValidationRuns,
   phaseLayoutSnapshots,
   placedObjects,
+  reconstructionReviewEvidenceArtifacts,
   revenueScenarios,
+  runtimePackages,
+  runtimePresentationAdmissionMembers,
+  runtimePresentationAdmissions,
+  runtimePresentationRightsEvidence,
+  runtimeQaRecords,
+  runtimeTransformArtifacts,
   spaces,
   users,
   venues,
 } from "../db/schema.js";
+import { validateEnv } from "../env.js";
+import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
+import { runtimePackageProfileManifestFingerprint } from "../lib/reception-reviewed-runtime-profile.js";
+import { runtimeQaRecordSha256 } from "../lib/runtime-qa-record-receipt.js";
+import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+import {
+  RuntimePresentationAdmissionBodySchema,
+  RuntimePresentationRightsEvidenceBodySchema,
+  resolvePhaseLayoutRuntimeAdmission,
+  runtimePackageManifestDigest,
+  runtimePresentationAdmissionDigest,
+  runtimePresentationRightsEvidenceDigest,
+  runtimePresentationRightsSetDigest,
+} from "../services/phase-layout-runtime-admission.js";
+import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 
 const RUN_ENABLED = process.env["RUN_PHASE_LAYOUT_POSTGRES"] === "1";
 const DATABASE_URL = process.env["DATABASE_URL"] ?? "";
@@ -112,6 +141,18 @@ const PRECEDENCE_T3_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeed3";
 const PRECEDENCE_MUTABLE_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeed4";
 const RESTRICT_ACTOR_ID = "44444444-4444-4444-8444-444444444448";
 const RESTRICT_SNAPSHOT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeed5";
+const SYNTHETIC_RUNTIME_PHASE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4";
+const SYNTHETIC_RUNTIME_CONFIGURATION_ID = "44444444-4444-4444-8444-444444444443";
+const SYNTHETIC_RUNTIME_CANONICAL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4";
+const SYNTHETIC_RUNTIME_VALIDATION_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccc4";
+const SYNTHETIC_RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_ASSET_ID = "20000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_TRANSFORM_ROW_ID = "30000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_QA_ROW_ID = "40000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_SCENE_ROW_ID = "50000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_RIGHTS_ROW_ID = "60000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_ADMISSION_ID = "70000000-0000-4000-8000-000000000004";
+const SYNTHETIC_RUNTIME_BYTES = Buffer.from("synthetic-reviewed-runtime-member-v1", "utf8");
 
 const FreezeEnvelopeSchema = z.object({
   data: FreezePhaseLayoutSnapshotResponseSchema,
@@ -465,6 +506,463 @@ async function seedFixture(db: Database): Promise<void> {
   });
 }
 
+/**
+ * Synthetic contract evidence only. These rows exercise the exact normalized
+ * admission graph; they are not evidence that Trades Hall has granted real
+ * presentation rights or issued a real Scene Authority decision.
+ */
+async function seedSyntheticHistoricalRuntimeContract(db: Database): Promise<{
+  readonly payload: CanonicalLayoutSnapshotV0;
+  readonly packageContentDigest: string;
+  readonly manifestDigest: string;
+  readonly assetSha256: string;
+  readonly r2Key: string;
+  readonly rightsEvidenceDigest: string;
+  readonly rightsBody: z.infer<typeof RuntimePresentationRightsEvidenceBodySchema>;
+  readonly admissionDigest: string;
+  readonly admissionBody: z.infer<typeof RuntimePresentationAdmissionBodySchema>;
+}> {
+  const evidenceCreatedAt = new Date("2026-07-01T08:00:00.000Z");
+  const rightsReviewedAt = new Date("2026-07-01T08:15:00.000Z");
+  const qaReviewedAt = new Date("2026-07-01T08:20:00.000Z");
+  const admissionReviewedAt = new Date("2026-07-01T08:30:00.000Z");
+  const configurationUpdatedAt = new Date("2026-07-01T09:00:00.000Z");
+  const snapshotCreatedAt = new Date("2026-07-01T09:05:00.000Z");
+  const fileName = "synthetic-grand-hall.sog";
+  const r2Key = "r2:/historical-runtime/synthetic-grand-hall.sog";
+  const assetSha256 = createHash("sha256").update(SYNTHETIC_RUNTIME_BYTES).digest("hex");
+  const storageKeySha256 = runtimeAssetStorageKeySha256(r2Key);
+
+  await db.insert(assetVersions).values({
+    id: SYNTHETIC_RUNTIME_ASSET_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    assetKind: "splat",
+    sourceType: "xgrids",
+    fileName,
+    fileExt: ".sog",
+    r2Key,
+    externalUrl: null,
+    mimeType: "application/octet-stream",
+    sha256: assetSha256,
+    sizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+    evidenceStatus: "human_reviewed",
+    runtimeStatus: "usable",
+    notes: "Synthetic historical-runtime contract bytes; not production evidence.",
+    createdAt: evidenceCreatedAt,
+    updatedAt: evidenceCreatedAt,
+  });
+
+  const manifest = RuntimePackageManifestJsonSchema.parse({
+    schemaVersion: "venviewer.runtime-package.v1",
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    packageType: "room-runtime",
+    assets: {
+      primaryVisualAssetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+      visualAssetVersionIds: [SYNTHETIC_RUNTIME_ASSET_ID],
+      visualAssetReceipts: [{
+        assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+        fileName,
+        fileExt: ".sog",
+        sha256: assetSha256,
+        sizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+        storageKeySha256,
+      }],
+      semanticMeshAssetVersionId: null,
+      collisionAssetVersionId: null,
+      pointCloudAssetVersionId: null,
+    },
+    notes: "Synthetic normalized-admission contract fixture.",
+  });
+  const packageInput = RegisterRuntimePackageInputSchema.parse({
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    primaryVisualAssetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+    semanticMeshAssetVersionId: null,
+    collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
+    manifestJson: manifest,
+    evidenceStatus: "human_reviewed",
+    runtimeStatus: "internal_ready",
+  });
+  const packageContentDigest = computeRuntimePackageRevisionDigest(packageInput);
+  const manifestDigest = runtimePackageManifestDigest(manifest);
+  const profileFingerprint = runtimePackageProfileManifestFingerprint(manifest);
+  if (profileFingerprint === null) throw new Error("Synthetic profile fingerprint was not derivable.");
+  await db.insert(runtimePackages).values({
+    id: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    ...packageInput,
+    revision: 1,
+    identityKind: "content_sha256",
+    contentDigest: packageContentDigest,
+    createdAt: evidenceCreatedAt,
+    updatedAt: evidenceCreatedAt,
+  });
+
+  const transform = TransformArtifactV0Schema.parse({
+    id: "synthetic-grand-hall-rrf-arf-v1",
+    sourceFrame: "RRF",
+    targetFrame: "ARF",
+    units: "meters",
+    matrix: [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ],
+    alignmentMethod: "manual_alignment",
+    residualRmseM: null,
+    landmarks: [],
+    provenance: {
+      state: "measured",
+      refs: [{
+        refType: "control_network",
+        ref: "synthetic-contract-control-network-v1",
+        role: "alignment",
+      }],
+    },
+    creator: { actorType: "pipeline", id: "synthetic-contract", role: "registration" },
+    reviewer: { actorType: "human", id: "synthetic-reviewer", role: "spatial-reviewer" },
+    date: "2026-07-01T08:10:00.000Z",
+  });
+  const transformDigest = runtimeTransformArtifactSha256(transform);
+  await db.insert(runtimeTransformArtifacts).values({
+    id: SYNTHETIC_RUNTIME_TRANSFORM_ROW_ID,
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    transformArtifactId: transform.id,
+    transformArtifact: transform,
+    artifactDigest: transformDigest,
+    reviewNote: "Synthetic direct RRF↔ARF transform contract.",
+    registeredBy: ACTOR_ID,
+    createdAt: evidenceCreatedAt,
+    updatedAt: evidenceCreatedAt,
+  });
+
+  const evidenceRef = {
+    label: "Synthetic historical runtime contract",
+    ref: "packages/api/src/__tests__/phase-layout-snapshot-postgres.test.ts",
+  };
+  const qaRecord = RuntimeQaRecordV0Schema.parse({
+    schemaVersion: "runtime-qa-record.v0",
+    recordId: "synthetic-grand-hall-runtime-qa-v1",
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    recordedAt: qaReviewedAt.toISOString(),
+    recordedBy: "synthetic-contract-reviewer",
+    assetEvidenceStatus: "human_reviewed",
+    runtimeStatus: "internal_ready",
+    sourceBundle: {
+      sourceLabel: "Synthetic contract bundle",
+      sourceBundleHash: "1".repeat(64),
+      totalSourceFiles: 1,
+      totalSourceBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+      totalSplats: 1,
+    },
+    sparkLoad: {
+      renderer: "@sparkjsdev/spark",
+      route: "/command-centre",
+      loadStatus: "loaded",
+      visualChunkCount: 1,
+      excludedChunkCount: 0,
+      loadedSplats: 1,
+      evidenceRefs: [evidenceRef],
+    },
+    viewTransform: {
+      posture: "signed_room_local_transform",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: 1,
+      signedTransformArtifactId: transform.id,
+      signedTransformArtifactSha256: transformDigest,
+      note: "Synthetic exact transform binding.",
+    },
+    cameraProfile: {
+      position: [0, 2, 8],
+      target: [0, 1, 0],
+      arrivalPosition: null,
+      arrivalTarget: null,
+      arrivalDurationMs: 0,
+      fov: 48,
+      targetBounds: null,
+      cameraBounds: null,
+      note: "Synthetic viewer profile.",
+    },
+    checks: RUNTIME_QA_CHECK_KEYS.map((checkKey) => ({
+      checkKey,
+      status: "passed",
+      summary: `Synthetic contract passed ${checkKey}.`,
+      evidenceRefs: [evidenceRef],
+    })),
+    limitations: ["Synthetic contract fixture; no real presentation authority."],
+    publicExposure: {
+      decision: "approved_internal_preview",
+      reason: "Synthetic authenticated test only.",
+      requiredBeforeApproval: ["Obtain real Trades Hall rights and Scene Authority evidence."],
+    },
+  });
+  const qaDigest = runtimeQaRecordSha256(qaRecord);
+  await db.insert(runtimeQaRecords).values({
+    id: SYNTHETIC_RUNTIME_QA_ROW_ID,
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    recordId: qaRecord.recordId,
+    recordJson: qaRecord,
+    recordDigest: qaDigest,
+    signedTransformArtifactId: transform.id,
+    publicExposureDecision: "approved_internal_preview",
+    assetEvidenceStatus: "human_reviewed",
+    runtimeStatus: "internal_ready",
+    reviewedBy: ACTOR_ID,
+    reviewedAt: qaReviewedAt,
+    createdAt: evidenceCreatedAt,
+    updatedAt: evidenceCreatedAt,
+  });
+
+  const sceneAuthorityMapDigest = "2".repeat(64);
+  await db.insert(reconstructionReviewEvidenceArtifacts).values({
+    id: SYNTHETIC_RUNTIME_SCENE_ROW_ID,
+    venueSlug: "trades-hall",
+    artifactKind: "scene_authority_map_v0",
+    artifactId: "synthetic-grand-hall-scene-authority-v1",
+    artifactDigest: sceneAuthorityMapDigest,
+    objectKey: "private/synthetic-grand-hall-scene-authority-v1.json",
+    objectSha256: sceneAuthorityMapDigest,
+    sizeBytes: 128,
+    schemaVersion: "scene-authority-map.v0",
+    idempotencyKey: "synthetic-grand-hall-scene-authority-v1",
+    requestDigest: "4".repeat(64),
+    registeredBy: ACTOR_ID,
+    registeredAt: new Date("2026-07-01T08:12:00.000Z"),
+  });
+
+  const rightsBody = {
+    schemaVersion: "runtime-presentation-rights-evidence.v1" as const,
+    evidenceId: SYNTHETIC_RUNTIME_RIGHTS_ROW_ID,
+    assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+    venueSlug: "trades-hall" as const,
+    roomSlug: "grand-hall",
+    assetSha256,
+    assetSizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+    decision: "approved" as const,
+    rightsBasis: "synthetic_contract_only",
+    termsReference: "integration-test://synthetic-not-production-authority",
+    reviewedBy: ACTOR_ID,
+    reviewedAt: rightsReviewedAt.toISOString(),
+  };
+  const rightsEvidenceDigest = runtimePresentationRightsEvidenceDigest(rightsBody);
+  await db.insert(runtimePresentationRightsEvidence).values({
+    id: SYNTHETIC_RUNTIME_RIGHTS_ROW_ID,
+    assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    assetSha256,
+    assetSizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+    evidenceDigest: rightsEvidenceDigest,
+    evidenceBody: rightsBody,
+    decision: "approved",
+    reviewedBy: ACTOR_ID,
+    reviewedAt: rightsReviewedAt,
+    createdAt: evidenceCreatedAt,
+  });
+  const rightsSetDigest = runtimePresentationRightsSetDigest([{
+    memberIndex: 0,
+    assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+    rightsEvidenceDigest,
+    rightsDecision: "approved",
+    rightsReviewedBy: ACTOR_ID,
+    rightsReviewedAt,
+  }]);
+  const admissionBody = {
+    schemaVersion: "runtime-presentation-admission.v1" as const,
+    admissionId: SYNTHETIC_RUNTIME_ADMISSION_ID,
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    runtimePackageContentDigest: packageContentDigest,
+    venueSlug: "trades-hall" as const,
+    roomSlug: "grand-hall",
+    runtimeManifestDigest: manifestDigest,
+    reviewedProfileId: "synthetic-grand-hall-v1",
+    reviewedProfileManifestFingerprint: profileFingerprint,
+    runtimeQaRecordId: SYNTHETIC_RUNTIME_QA_ROW_ID,
+    runtimeQaRecordKey: qaRecord.recordId,
+    runtimeQaRecordDigest: qaDigest,
+    runtimeQaDecision: "approved_internal_preview" as const,
+    runtimeQaReviewedBy: ACTOR_ID,
+    runtimeQaReviewedAt: qaReviewedAt.toISOString(),
+    runtimeTransformArtifactRowId: SYNTHETIC_RUNTIME_TRANSFORM_ROW_ID,
+    runtimeTransformArtifactId: transform.id,
+    runtimeTransformArtifactDigest: transformDigest,
+    sceneAuthorityArtifactRowId: SYNTHETIC_RUNTIME_SCENE_ROW_ID,
+    sceneAuthorityArtifactKind: "scene_authority_map_v0" as const,
+    sceneAuthorityArtifactId: "synthetic-grand-hall-scene-authority-v1",
+    sceneAuthorityMapDigest,
+    rightsEvidenceDigest: rightsSetDigest,
+    memberCount: 1,
+    decision: "approved" as const,
+    reviewedBy: ACTOR_ID,
+    reviewedAt: admissionReviewedAt.toISOString(),
+  };
+  const admissionDigest = runtimePresentationAdmissionDigest(admissionBody);
+  await db.insert(runtimePresentationAdmissions).values({
+    id: SYNTHETIC_RUNTIME_ADMISSION_ID,
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    runtimePackageContentDigest: packageContentDigest,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    runtimeManifestDigest: manifestDigest,
+    reviewedProfileId: admissionBody.reviewedProfileId,
+    reviewedProfileManifestFingerprint: profileFingerprint,
+    runtimeQaRecordId: SYNTHETIC_RUNTIME_QA_ROW_ID,
+    runtimeQaRecordKey: qaRecord.recordId,
+    runtimeQaRecordDigest: qaDigest,
+    runtimeQaDecision: "approved_internal_preview",
+    runtimeQaReviewedBy: ACTOR_ID,
+    runtimeQaReviewedAt: qaReviewedAt,
+    runtimeTransformArtifactRowId: SYNTHETIC_RUNTIME_TRANSFORM_ROW_ID,
+    runtimeTransformArtifactId: transform.id,
+    runtimeTransformArtifactDigest: transformDigest,
+    sceneAuthorityArtifactRowId: SYNTHETIC_RUNTIME_SCENE_ROW_ID,
+    sceneAuthorityArtifactKind: "scene_authority_map_v0",
+    sceneAuthorityArtifactId: admissionBody.sceneAuthorityArtifactId,
+    sceneAuthorityMapDigest,
+    rightsEvidenceDigest: rightsSetDigest,
+    memberCount: 1,
+    decision: "approved",
+    admissionDigest,
+    admissionBody,
+    reviewedBy: ACTOR_ID,
+    reviewedAt: admissionReviewedAt,
+    createdAt: evidenceCreatedAt,
+  });
+  await db.insert(runtimePresentationAdmissionMembers).values({
+    admissionId: SYNTHETIC_RUNTIME_ADMISSION_ID,
+    runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    runtimePackageContentDigest: packageContentDigest,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    memberIndex: 0,
+    assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+    fileName,
+    fileExt: ".sog",
+    mimeType: "application/octet-stream",
+    sha256: assetSha256,
+    sizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+    storageKeySha256,
+    rightsEvidenceRowId: SYNTHETIC_RUNTIME_RIGHTS_ROW_ID,
+    rightsEvidenceDigest,
+    rightsDecision: "approved",
+    rightsReviewedBy: ACTOR_ID,
+    rightsReviewedAt,
+  });
+
+  const objectIds = [
+    "55555555-5555-4555-8555-555555555554",
+    "77777777-7777-4777-8777-777777777774",
+  ] as const;
+  const payload = CanonicalLayoutSnapshotV0Schema.parse({
+    ...SNAPSHOT,
+    configurationId: SYNTHETIC_RUNTIME_CONFIGURATION_ID,
+    layoutName: "Synthetic historical runtime contract layout",
+    createdFromConfigurationUpdatedAt: configurationUpdatedAt.toISOString(),
+    snapshotCreatedAt: snapshotCreatedAt.toISOString(),
+    venueRuntime: {
+      ...SNAPSHOT.venueRuntime,
+      runtimeVenueManifestDigest: manifestDigest,
+      runtimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+    },
+    objects: SNAPSHOT.objects.map((object, index) => ({
+      ...object,
+      objectId: objectIds[index],
+    })),
+  });
+  await db.insert(configurations).values({
+    id: SYNTHETIC_RUNTIME_CONFIGURATION_ID,
+    spaceId: SNAPSHOT.spaceId,
+    venueId: SNAPSHOT.venueId,
+    userId: ACTOR_ID,
+    name: payload.layoutName,
+    layoutStyle: payload.layoutStyle,
+    guestCount: payload.guestCount,
+    visibility: payload.visibility,
+    slug: "synthetic-historical-runtime-contract",
+    createdAt: configurationUpdatedAt,
+    updatedAt: configurationUpdatedAt,
+  });
+  await db.insert(placedObjects).values(payload.objects.map((object) => ({
+    id: object.objectId,
+    configurationId: SYNTHETIC_RUNTIME_CONFIGURATION_ID,
+    assetDefinitionId: object.assetDefinition.assetDefinitionId,
+    positionX: fixed(object.position.x, 3),
+    positionY: fixed(object.position.y, 3),
+    positionZ: fixed(object.position.z, 3),
+    rotationX: fixed(object.rotation.x, 5),
+    rotationY: fixed(object.rotation.y, 5),
+    rotationZ: fixed(object.rotation.z, 5),
+    scale: fixed(object.scale, 3),
+    sortOrder: object.sortOrder,
+    metadata: { ...(object.metadata ?? {}), groupId: object.groupId },
+    coordinateSpace: "real_m_v1" as const,
+    coordinateWriteToken: randomUUID(),
+  })));
+  await db.insert(eventPhases).values({
+    id: SYNTHETIC_RUNTIME_PHASE_ID,
+    eventId: EVENT_ID,
+    spaceId: SNAPSHOT.spaceId,
+    templateKey: "speeches",
+    name: "Synthetic reviewed runtime phase",
+    sortOrder: 4,
+    startsAt: new Date("2026-06-10T21:30:00.000Z"),
+    durationMinutes: 45,
+    guestCount: payload.guestCount,
+  });
+  const snapshotDigest = canonicalLayoutSnapshotDigest(payload);
+  const proof = runLayoutValidator(payload, {
+    policyBundleId: payload.policyBundle.policyBundleId,
+    policyBundleDigest: payload.policyBundle.policyBundleDigest,
+    policyBundleVersion: payload.policyBundle.policyBundleVersion,
+    minPrimaryFurnitureClearanceM: 1,
+    clearanceWarningMarginM: 0.2,
+    pricing: null,
+  });
+  await db.insert(canonicalLayoutSnapshots).values({
+    id: SYNTHETIC_RUNTIME_CANONICAL_ID,
+    configurationId: SYNTHETIC_RUNTIME_CONFIGURATION_ID,
+    venueId: SNAPSHOT.venueId,
+    spaceId: SNAPSHOT.spaceId,
+    schemaVersion: payload.schemaVersion,
+    snapshotDigest,
+    payload,
+    createdBy: ACTOR_ID,
+    createdAt: snapshotCreatedAt,
+  });
+  await db.insert(layoutValidationRuns).values({
+    id: SYNTHETIC_RUNTIME_VALIDATION_ID,
+    snapshotId: SYNTHETIC_RUNTIME_CANONICAL_ID,
+    snapshotDigest,
+    validatorVersion: proof.validatorVersion,
+    validatorDigest: proof.validatorDigest,
+    contextDigest: proof.contextDigest,
+    proofDigest: proof.proofDigest,
+    payload: proof,
+    createdAt: snapshotCreatedAt,
+  });
+  return {
+    payload,
+    packageContentDigest,
+    manifestDigest,
+    assetSha256,
+    r2Key,
+    rightsEvidenceDigest,
+    rightsBody,
+    admissionDigest,
+    admissionBody,
+  };
+}
+
 describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
   beforeAll(async () => {
     process.env["NODE_ENV"] = "test";
@@ -491,10 +989,10 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     );
     expect(migration0060Entries).toHaveLength(1);
     expect(ledger.rows.map((entry) => entry.createdAt).slice(-4)).toEqual([
-      "1784376000000",
       "1784383200000",
       "1784469600000",
       "1785672000000",
+      "1785758400000",
     ]);
 
     const migrationBytes = await readFile(new URL(
@@ -683,6 +1181,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       objectCount: phaseLayoutSnapshots.objectCount,
       guestCount: phaseLayoutSnapshots.guestCount,
       coordinateSpace: phaseLayoutSnapshots.coordinateSpace,
+      runtimeBindingState: phaseLayoutSnapshots.runtimeBindingState,
+      runtimeBinding: phaseLayoutSnapshots.runtimeBinding,
     }).from(phaseLayoutSnapshots).where(eq(phaseLayoutSnapshots.eventPhaseId, PHASE_ID));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
@@ -696,6 +1196,13 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       objectCount: SNAPSHOT.objects.length,
       guestCount: SNAPSHOT.guestCount,
       coordinateSpace: "real_m_v1",
+      runtimeBindingState: "unavailable",
+      runtimeBinding: expect.objectContaining({
+        availability: "unavailable",
+        unavailableReason: "runtime_not_declared",
+        expectedRuntimePackageId: null,
+        expectedRuntimeManifestDigest: null,
+      }),
     });
 
     const timelineQuery = new URLSearchParams({
@@ -731,7 +1238,227 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     expect(frame.keyframe.objectCount).toBe(SNAPSHOT.objects.length);
     expect(frame.keyframe.guestCount).toBe(SNAPSHOT.guestCount);
     expect(frame.keyframe.payload).toEqual(SNAPSHOT);
+    expect(frame.keyframe.historicalRuntime).toMatchObject({
+      state: "unavailable",
+      reason: "runtime_not_declared",
+      binding: {
+        availability: "unavailable",
+        unavailableReason: "runtime_not_declared",
+      },
+    });
   });
+
+  it("freezes, timelines, and privately delivers a synthetic exact runtime admission", async () => {
+    const db = requiredDatabase();
+    const fixture = await seedSyntheticHistoricalRuntimeContract(db);
+
+    // A persisted package without an admission valid at the decision instant
+    // must stay unavailable; later evidence cannot rewrite that instant.
+    await expect(resolvePhaseLayoutRuntimeAdmission(db, {
+      venueId: SNAPSHOT.venueId,
+      venueSlug: "trades-hall",
+      spaceId: SNAPSHOT.spaceId,
+      spaceSlug: "grand-hall",
+      expectedRuntimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+      expectedRuntimeManifestDigest: fixture.manifestDigest,
+      frozenAt: new Date("2026-07-01T08:25:00.000Z"),
+    })).resolves.toEqual({
+      availability: "unavailable",
+      unavailableReason: "provenance_incomplete",
+      expectedRuntimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+      expectedRuntimeManifestDigest: fixture.manifestDigest,
+    });
+
+    const [rightsRow] = await db.select().from(runtimePresentationRightsEvidence)
+      .where(eq(runtimePresentationRightsEvidence.id, SYNTHETIC_RUNTIME_RIGHTS_ROW_ID))
+      .limit(1);
+    if (rightsRow === undefined) throw new Error("Synthetic rights row was not persisted.");
+    const badRightsId = "60000000-0000-4000-8000-000000000005";
+    const badRightsSha256 = "9".repeat(64);
+    const badRightsBody = {
+      ...fixture.rightsBody,
+      evidenceId: badRightsId,
+      assetSha256: badRightsSha256,
+    };
+    await expectForeignKeyViolation(
+      () => db.insert(runtimePresentationRightsEvidence).values({
+        ...rightsRow,
+        id: badRightsId,
+        assetSha256: badRightsSha256,
+        evidenceBody: badRightsBody,
+        evidenceDigest: runtimePresentationRightsEvidenceDigest(badRightsBody),
+      }),
+      "runtime_presentation_rights_evidence_asset_fk",
+    );
+
+    const [admissionRow] = await db.select().from(runtimePresentationAdmissions)
+      .where(eq(runtimePresentationAdmissions.id, SYNTHETIC_RUNTIME_ADMISSION_ID))
+      .limit(1);
+    if (admissionRow === undefined) throw new Error("Synthetic admission row was not persisted.");
+    const badAdmissionId = "70000000-0000-4000-8000-000000000005";
+    const {
+      sceneAuthorityArtifactId: _omittedSceneAuthorityIdentity,
+      ...invalidAdmissionBody
+    } = {
+      ...fixture.admissionBody,
+      admissionId: badAdmissionId,
+    };
+    await expectDatabaseViolation(
+      () => db.insert(runtimePresentationAdmissions).values({
+        ...admissionRow,
+        id: badAdmissionId,
+        admissionBody: invalidAdmissionBody,
+        admissionDigest: "8".repeat(64),
+      }),
+      "23514",
+      "runtime_presentation_admissions_shape",
+    );
+
+    const [unsealedMemberRow] = await db.select().from(runtimePresentationAdmissionMembers)
+      .where(eq(runtimePresentationAdmissionMembers.admissionId, SYNTHETIC_RUNTIME_ADMISSION_ID))
+      .limit(1);
+    if (unsealedMemberRow === undefined) {
+      throw new Error("Synthetic admission member was not persisted before freeze.");
+    }
+    await expectDatabaseViolation(
+      () => db.insert(runtimePresentationAdmissionMembers).values({
+        ...unsealedMemberRow,
+        memberIndex: 1,
+        sizeBytes: 16 * 1024 * 1024 + 1,
+      }),
+      "23514",
+      "runtime_presentation_admission_members_shape",
+    );
+
+    const app = requiredServer();
+    const freezeResponse = await app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/phases/${SYNTHETIC_RUNTIME_PHASE_ID}/layout-snapshots`,
+      headers: authHeaders(),
+      payload: { configurationId: SYNTHETIC_RUNTIME_CONFIGURATION_ID },
+    });
+    expect(freezeResponse.statusCode, freezeResponse.body).toBe(201);
+    const frozen = FreezeEnvelopeSchema.parse(freezeResponse.json()).data;
+
+    const timelineResponse = await app.inject({
+      method: "GET",
+      url: `/calendar/layout-timeline?${new URLSearchParams({
+        venueId: SNAPSHOT.venueId,
+        spaceId: SNAPSHOT.spaceId,
+        from: "2026-06-10T21:00:00.000Z",
+        to: "2026-06-10T23:00:00.000Z",
+      }).toString()}`,
+      headers: authHeaders(),
+    });
+    expect(timelineResponse.statusCode, timelineResponse.body).toBe(200);
+    const timeline = TimelineEnvelopeSchema.parse(timelineResponse.json()).data;
+    const frame = timeline.frames.find((candidate) => candidate.phaseId === SYNTHETIC_RUNTIME_PHASE_ID);
+    expect(frame?.keyframe.state).toBe("available");
+    if (frame?.keyframe.state !== "available") {
+      throw new Error("Synthetic historical runtime keyframe was not available.");
+    }
+    expect(frame.keyframe.snapshotId).toBe(frozen.snapshotId);
+    expect(frame.keyframe.payload).toEqual(fixture.payload);
+    expect(frame.keyframe.historicalRuntime.state).toBe("available");
+    if (frame.keyframe.historicalRuntime.state !== "available") {
+      throw new Error("Synthetic exact runtime admission was not preserved by the timeline.");
+    }
+    const binding = frame.keyframe.historicalRuntime.binding;
+    expect(binding.runtimePackageId).toBe(SYNTHETIC_RUNTIME_PACKAGE_ID);
+    expect(binding.runtimePackageContentDigest).toBe(fixture.packageContentDigest);
+    expect(binding.runtimeManifestDigest).toBe(fixture.manifestDigest);
+    expect(binding.visualAssets).toEqual([expect.objectContaining({
+      memberIndex: 0,
+      assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
+      fileName: "synthetic-grand-hall.sog",
+      mimeType: "application/octet-stream",
+      sha256: fixture.assetSha256,
+      sizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
+    })]);
+
+    const { buildServer } = await import("../index.js");
+    let deliveredBytes = SYNTHETIC_RUNTIME_BYTES;
+    const memberApp = await buildServer(validateEnv(), {
+      historicalRuntimeMemberByteLoader: (storageKey, expectedSizeBytes) => {
+        expect(storageKey).toBe(fixture.r2Key);
+        expect(expectedSizeBytes).toBe(SYNTHETIC_RUNTIME_BYTES.byteLength);
+        return Promise.resolve(deliveredBytes);
+      },
+    });
+    const memberUrl = `/calendar/venues/${SNAPSHOT.venueId}/spaces/${SNAPSHOT.spaceId}` +
+      `/runtime-bindings/${frozen.snapshotId}/members/0/synthetic-grand-hall.sog`;
+    try {
+      const memberResponse = await memberApp.inject({
+        method: "GET",
+        url: memberUrl,
+        headers: authHeaders(),
+      });
+      expect(memberResponse.statusCode, memberResponse.body).toBe(200);
+      expect(memberResponse.rawPayload.equals(SYNTHETIC_RUNTIME_BYTES)).toBe(true);
+      expect(memberResponse.headers["content-type"]).toBe("application/octet-stream");
+      expect(memberResponse.headers["cache-control"]).toBe("private, no-store");
+      expect(memberResponse.headers["x-runtime-binding-digest"]).toBe(binding.bindingDigest);
+      expect(memberResponse.headers["x-runtime-package-content-digest"])
+        .toBe(fixture.packageContentDigest);
+      expect(memberResponse.headers["x-asset-version-id"]).toBe(SYNTHETIC_RUNTIME_ASSET_ID);
+      expect(memberResponse.headers).not.toHaveProperty("x-r2-key");
+
+      deliveredBytes = Buffer.alloc(SYNTHETIC_RUNTIME_BYTES.byteLength, 0x78);
+      const byteMismatch = await memberApp.inject({
+        method: "GET",
+        url: memberUrl,
+        headers: authHeaders(),
+      });
+      expect(byteMismatch.statusCode, byteMismatch.body).toBe(409);
+      expect(byteMismatch.json()).toMatchObject({ code: "RUNTIME_MEMBER_INTEGRITY_FAILED" });
+
+      for (const denied of [
+        {
+          url: `/calendar/venues/${OTHER_VENUE_ID}/spaces/${CROSS_VENUE_SPACE_ID}` +
+            `/runtime-bindings/${frozen.snapshotId}/members/0/synthetic-grand-hall.sog`,
+          headers: authHeaders({ venueId: OTHER_VENUE_ID }),
+        },
+        {
+          url: `/calendar/venues/${SNAPSHOT.venueId}/spaces/${MISSING_SPACE_ID}` +
+            `/runtime-bindings/${frozen.snapshotId}/members/0/synthetic-grand-hall.sog`,
+          headers: authHeaders(),
+        },
+        {
+          url: memberUrl.replace("synthetic-grand-hall.sog", "substituted.sog"),
+          headers: authHeaders(),
+        },
+      ]) {
+        const deniedResponse = await memberApp.inject({
+          method: "GET",
+          url: denied.url,
+          headers: denied.headers,
+        });
+        expect(deniedResponse.statusCode, deniedResponse.body).toBe(404);
+      }
+    } finally {
+      await memberApp.close();
+    }
+
+    const [memberRow] = await db.select().from(runtimePresentationAdmissionMembers)
+      .where(eq(runtimePresentationAdmissionMembers.admissionId, SYNTHETIC_RUNTIME_ADMISSION_ID))
+      .limit(1);
+    if (memberRow === undefined) throw new Error("Synthetic admission member was not persisted.");
+    await expectDatabaseViolation(
+      () => db.insert(runtimePresentationAdmissionMembers).values({
+        ...memberRow,
+        memberIndex: 1,
+      }),
+      "55000",
+      "runtime_presentation_admission_members_sealed",
+    );
+    await expectDatabaseViolation(
+      () => db.update(runtimePresentationAdmissions)
+        .set({ admissionDigest: "7".repeat(64) })
+        .where(eq(runtimePresentationAdmissions.id, SYNTHETIC_RUNTIME_ADMISSION_ID)),
+      "55000",
+      "runtime_presentation_admissions_append_only",
+    );
+  }, 60_000);
 
   it("does not leak same-range phases, figures, or keyframes from other rooms or venues", async () => {
     const db = requiredDatabase();
@@ -865,7 +1592,7 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
         url,
         headers: authHeaders(denied),
       });
-      expect(response.statusCode, response.body).toBe(403);
+      expect(response.statusCode, response.body).toBe(404);
     }
   });
 
@@ -1225,8 +1952,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       headers: authHeaders(),
       payload: { configurationId: selection.configurationId },
     });
-    expect(unassignedFreeze.statusCode, unassignedFreeze.body).toBe(409);
-    expect(unassignedFreeze.json()).toMatchObject({ code: "PHASE_ROOM_UNSCOPED" });
+    expect(unassignedFreeze.statusCode, unassignedFreeze.body).toBe(404);
+    expect(unassignedFreeze.json()).toMatchObject({ code: "NOT_FOUND" });
 
     const spaceMismatch = {
       error: "Event phase room must be an active room at the event venue",

@@ -48,6 +48,10 @@ import { bookingRoutes } from "./routes/bookings.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { roomLayoutTimelineRoutes } from "./routes/room-layout-timeline.js";
 import { phaseLayoutSnapshotRoutes } from "./routes/phase-layout-snapshots.js";
+import {
+  historicalRuntimeMemberRoutes,
+  type HistoricalRuntimeMemberByteLoader,
+} from "./routes/historical-runtime-members.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
 import {
@@ -75,7 +79,14 @@ import { registerMetrics } from "./observability/metrics.js";
 /** Builds and configures the Fastify instance (exported for testing).
  *  Accepts a pre-validated Env so the direct-run entry point can validate
  *  once and pass the result in, avoiding the double-validation on startup. */
-export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<typeof Fastify>> {
+export interface BuildServerOptions {
+  readonly historicalRuntimeMemberByteLoader?: HistoricalRuntimeMemberByteLoader;
+}
+
+export async function buildServer(
+  env: Env = validateEnv(),
+  options: BuildServerOptions = {},
+): Promise<ReturnType<typeof Fastify>> {
 
   // Initialise Sentry BEFORE Fastify so its HTTP instrumentation
   // patches the global fetch/http layer before any request handler
@@ -152,7 +163,13 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     credentials: true,
     // idempotency-replay: T-538 — lets browser clients see whether a keyed
     // diary mutation was deduped (replayed) rather than freshly executed.
-    exposedHeaders: ["x-content-sha256", "idempotency-replay"],
+    exposedHeaders: [
+      "x-content-sha256",
+      "idempotency-replay",
+      "x-runtime-binding-digest",
+      "x-runtime-package-content-digest",
+      "x-asset-version-id",
+    ],
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
@@ -368,6 +385,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(bookingRoutes, { db, prefix: "/bookings" });
   await server.register(calendarRoutes, { db, prefix: "/calendar" });
   await server.register(roomLayoutTimelineRoutes, { db, prefix: "/calendar" });
+  await server.register(historicalRuntimeMemberRoutes, {
+    db,
+    env,
+    loadMemberBytes: options.historicalRuntimeMemberByteLoader,
+    prefix: "/calendar",
+  });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });

@@ -18,6 +18,9 @@ export const PHASE_LAYOUT_RUNTIME_BINDING_SCHEMA_VERSION =
   "phase-layout-runtime-binding.v1";
 export const PHASE_LAYOUT_RUNTIME_ADMISSION_POLICY =
   "trades-hall-reviewed-presentation.v1";
+export const PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS = 8;
+export const PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES = 16 * 1024 * 1024;
+export const PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES = 96 * 1024 * 1024;
 
 const FILE_NAME = /^[^/\\]+$/u;
 
@@ -62,15 +65,23 @@ const BindingCommonShape = {
 } as const;
 
 export const PhaseLayoutRuntimeVisualAssetSchema = z.object({
-  memberIndex: z.number().int().nonnegative().max(1_023),
+  memberIndex: z.number().int().nonnegative().max(PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS - 1),
   assetVersionId: z.string().uuid(),
   fileName: z.string().trim().min(1).max(255).regex(FILE_NAME),
   fileExt: z.enum([".sog", ".spz"]),
-  mimeType: z.string().trim().min(1).max(120).nullable(),
+  mimeType: z.string().trim().min(1).max(120),
   sha256: RuntimePackageContentDigestSchema,
-  sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  sizeBytes: z.number().int().positive().max(PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES),
   evidenceStatus: z.literal("human_reviewed"),
-}).strict();
+}).strict().superRefine((asset, context) => {
+  if (!asset.fileName.endsWith(asset.fileExt)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["fileName"],
+      message: "Runtime visual member fileName must end with its exact fileExt.",
+    });
+  }
+});
 export type PhaseLayoutRuntimeVisualAsset = z.infer<
   typeof PhaseLayoutRuntimeVisualAssetSchema
 >;
@@ -98,7 +109,9 @@ const AvailableBindingObjectSchema = z.object({
   transformArtifactId: RuntimeManifestKeySchema,
   transformArtifactDigest: RuntimePackageContentDigestSchema,
   transformArtifact: TransformArtifactV0Schema,
-  visualAssets: z.array(PhaseLayoutRuntimeVisualAssetSchema).min(1).max(1_024),
+  visualAssets: z.array(PhaseLayoutRuntimeVisualAssetSchema)
+    .min(1)
+    .max(PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS),
   compositionDigest: RuntimePackageContentDigestSchema,
 }).strict();
 
@@ -123,6 +136,7 @@ export const PhaseLayoutRuntimeAvailableBindingSchema =
       });
     }
     const seenAssetIds = new Set<string>();
+    let totalSizeBytes = 0;
     for (const [index, asset] of binding.visualAssets.entries()) {
       if (asset.memberIndex !== index) {
         context.addIssue({
@@ -139,6 +153,14 @@ export const PhaseLayoutRuntimeAvailableBindingSchema =
         });
       }
       seenAssetIds.add(asset.assetVersionId);
+      totalSizeBytes += asset.sizeBytes;
+    }
+    if (totalSizeBytes > PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["visualAssets"],
+        message: "Runtime visual members exceed the historical viewer byte ceiling.",
+      });
     }
     if (
       phaseLayoutRuntimeCompositionDigest({
