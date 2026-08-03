@@ -161,6 +161,34 @@ describe("Spark renderer shutdown", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("caps the final retirement wait at the remaining deadline", async () => {
+    const renderer = rendererWith(pendingWorker());
+    const waits: number[] = [];
+    let now = 0;
+    let resolveQuarantined: (() => void) | undefined;
+    const quarantined = new Promise<void>((resolve) => {
+      resolveQuarantined = resolve;
+    });
+
+    await expect(disposeSparkRendererAfterWorkerDrain(renderer, {
+      drainTimeoutMs: 0,
+      retirementPollIntervalMs: 10,
+      retirementTimeoutMs: 23,
+      now: () => now,
+      wait: (milliseconds) => {
+        waits.push(milliseconds);
+        now += milliseconds;
+        return Promise.resolve();
+      },
+      onQuarantined: () => { resolveQuarantined?.(); },
+    })).resolves.toBe("deferred");
+    await quarantined;
+
+    expect(waits).toEqual([10, 10, 3]);
+    expect(now).toBe(23);
+    expect(renderer.dispose).not.toHaveBeenCalled();
+  });
+
   it("does not dispose across a transient idle sample", async () => {
     const worker: MutableWorker = { queue: null, messages: {} };
     const renderer = rendererWith(worker);

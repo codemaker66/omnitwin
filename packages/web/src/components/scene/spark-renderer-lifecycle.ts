@@ -185,8 +185,9 @@ async function disposeAfterStableIdle(
       idleSamples = 0;
     }
 
-    if (now() >= deadline) return false;
-    await wait(pollIntervalMs);
+    const remainingMs = deadline - now();
+    if (remainingMs <= 0) return false;
+    await wait(Math.min(pollIntervalMs, remainingMs));
   }
 }
 
@@ -240,7 +241,7 @@ export function disposeSparkRendererAfterWorkerDrain(
   const existing = rendererDisposeJobs.get(renderer);
   if (existing !== undefined) return existing;
 
-  const now = options.now ?? (() => Date.now());
+  const now = options.now ?? (() => globalThis.performance.now());
   const wait = options.wait ?? ((milliseconds: number) => new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   }));
