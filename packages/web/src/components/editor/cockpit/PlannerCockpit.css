@@ -191,6 +191,23 @@
   pointer-events: none;
 }
 
+.layout-timeline-preview-caption__retry {
+  margin-inline-start: 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--house-accent-brass);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--house-accent-brass);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.layout-timeline-preview-caption__retry:focus-visible {
+  outline: 2px solid var(--house-accent-brass);
+  outline-offset: 2px;
+}
+
 .cockpit-preview-lock {
   display: grid;
   align-content: center;

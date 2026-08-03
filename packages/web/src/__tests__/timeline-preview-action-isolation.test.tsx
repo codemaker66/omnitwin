@@ -93,6 +93,7 @@ function enterCrossPhasePreview(): void {
     phaseName: "Evening party",
     startsAt: "2026-07-18T22:00:00.000Z",
     endsAt: "2026-07-18T23:30:00.000Z",
+    historicalRuntime: null,
     venueRuntime: {
       ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
       spaceName: "Frozen Grand Hall",

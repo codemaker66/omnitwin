@@ -73,7 +73,7 @@ function applyLayerProps(
   }
 }
 
-function SparkRendererHost(): ReactElement {
+export function SparkRendererHost(): ReactElement {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const sparkRenderer = useMemo(
@@ -130,6 +130,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
 
   useEffect(() => {
     let disposed = false;
+    let meshDisposed = false;
     const splatMesh = new SplatMesh({
       url,
       editable: false,
@@ -140,9 +141,18 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     setMesh(splatMesh);
     invalidate();
 
+    const disposeOnce = (): void => {
+      if (meshDisposed) return;
+      meshDisposed = true;
+      splatMesh.dispose();
+    };
+
     void splatMesh.initialized
       .then((loadedMesh) => {
-        if (disposed) return;
+        if (disposed) {
+          disposeOnce();
+          return;
+        }
         applyLayerProps(loadedMesh, latestLayerPropsRef.current);
         onLoad?.({
           url,
@@ -156,7 +166,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
         if (!disposed) {
           onError?.({ url, error });
         }
-        splatMesh.dispose();
+        disposeOnce();
         if (!disposed) {
           meshRef.current = null;
           setMesh(null);
@@ -169,7 +179,10 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
       if (meshRef.current === splatMesh) {
         meshRef.current = null;
       }
-      splatMesh.dispose();
+      splatMesh.visible = false;
+      splatMesh.opacity = 0;
+      if (splatMesh.isInitialized) disposeOnce();
+      invalidate();
     };
   }, [invalidate, onError, onLoad, url]);
 

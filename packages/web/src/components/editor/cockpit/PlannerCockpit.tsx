@@ -8,6 +8,7 @@ import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useHistoricalRuntimeStatusStore } from "../../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import "./PlannerCockpit.css";
 
@@ -30,6 +31,19 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const timelineUnavailableMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
+  const historicalRuntimeState = useHistoricalRuntimeStatusStore((state) => state.state);
+  const historicalRuntimeMessage = useHistoricalRuntimeStatusStore((state) => state.message);
+  const historicalRuntimeBindingId = useHistoricalRuntimeStatusStore((state) => state.bindingId);
+  const requestHistoricalRuntimeRetry = useHistoricalRuntimeStatusStore((state) => state.requestRetry);
+  const availablePreviewCaption = historicalRuntimeState === "ready"
+    ? "Visualizing phase change · exact historical capture + frozen furniture are synchronized · motion is not saved"
+    : historicalRuntimeState === "loading"
+      ? `Visualizing phase change · ${historicalRuntimeMessage ?? "Loading the exact historical room capture…"} · frozen outline + furniture remain synchronized`
+      : historicalRuntimeState === "error"
+        ? `Visualizing phase change · ${historicalRuntimeMessage ?? "The exact historical room capture could not be verified."} · frozen outline + furniture remain available`
+        : historicalRuntimeState === "unavailable"
+          ? `Visualizing phase change · ${historicalRuntimeMessage ?? "Exact historical room capture unavailable."} · frozen outline + furniture remain available`
+          : "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved";
   return (
     <div
       className={`cockpit-shell${mobile ? " is-mobile" : ""}`}
@@ -44,6 +58,8 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
         data-cockpit-mode={activeMode}
         data-resolve-phase={resolvePhase}
         data-layout-timeline-preview={String(timelinePreviewActive)}
+        data-historical-runtime-state={historicalRuntimeState}
+        data-historical-runtime-binding-id={historicalRuntimeBindingId ?? undefined}
         aria-label="Planner scene"
       >
         <Editor3D />
@@ -52,13 +68,28 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
           <p
             className="layout-timeline-preview-caption"
             data-testid="layout-timeline-preview-caption"
+            data-historical-runtime-state={historicalRuntimeState}
             role="status"
+            aria-live="polite"
           >
             {timelinePreviewMode === "unavailable"
               ? `Layout unavailable · ${timelineUnavailableMessage ?? "No frozen keyframe for this time"} · no room shell or saved layout shown`
               : timelinePreviewMode === "schedule-gap"
                 ? `Schedule gap · ${timelineUnavailableMessage ?? "No room phase is scheduled for this time"} · no room shell or saved layout shown`
-                : "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved"}
+                : (
+                    <>
+                      {availablePreviewCaption}
+                      {historicalRuntimeState === "error" && (
+                        <button
+                          className="layout-timeline-preview-caption__retry"
+                          type="button"
+                          onClick={requestHistoricalRuntimeRetry}
+                        >
+                          Retry capture
+                        </button>
+                      )}
+                    </>
+                  )}
           </p>
         )}
         {mobile || timelinePreviewActive ? null : <CanvasLayerControls />}

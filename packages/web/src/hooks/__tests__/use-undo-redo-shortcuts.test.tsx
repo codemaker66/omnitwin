@@ -153,6 +153,7 @@ describe("useUndoRedoShortcuts", () => {
       phaseName: "Dinner",
       startsAt: null,
       endsAt: null,
+      historicalRuntime: null,
       venueRuntime: null,
     }, "No frozen layout");
     render(<Harness />);

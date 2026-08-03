@@ -45,6 +45,7 @@ function frame(id: string, eventId: string): LayoutTimelinePreviewFrameMetadata 
     phaseName: id,
     startsAt: null,
     endsAt: null,
+    historicalRuntime: null,
     venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
   };
 }

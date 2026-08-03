@@ -54,6 +54,7 @@ describe("VerticalToolbox undo buttons", () => {
       phaseName: "Dinner",
       startsAt: null,
       endsAt: null,
+      historicalRuntime: null,
       venueRuntime: null,
     }, "No frozen layout");
     renderToolbox();

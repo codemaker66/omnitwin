@@ -86,6 +86,7 @@ describe("CockpitMinimap", () => {
       phaseName: "Dinner service",
       startsAt: null,
       endsAt: null,
+      historicalRuntime: null,
       venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
     }, [createPlacedItem(table.id, 0, 0, 0), createPlacedItem(table.id, 4, 0, 0)]);
 
@@ -125,6 +126,7 @@ describe("CockpitMinimap", () => {
       phaseName: "Shifted room",
       startsAt: null,
       endsAt: null,
+      historicalRuntime: null,
       venueRuntime: shiftedRuntime,
     }, []);
     const { container } = render(<CockpitMinimap />);

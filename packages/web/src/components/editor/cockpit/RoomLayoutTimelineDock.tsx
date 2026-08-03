@@ -125,6 +125,9 @@ function previewFrameMetadata(
     venueRuntime: frame.keyframe.state === "available"
       ? frame.keyframe.payload.venueRuntime
       : null,
+    historicalRuntime: frame.keyframe.state === "available"
+      ? frame.keyframe.historicalRuntime
+      : null,
   };
 }
 
@@ -414,8 +417,16 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
   const availableIndices = useMemo(() => availableFrameIndices(frames), [frames]);
   const [collapsed, setCollapsed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [thumbnailWindowCenter, setThumbnailWindowCenter] = useState(0);
   const [playing, setPlaying] = useState(false);
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const previewTransitionFromFrame = useLayoutTimelinePreviewStore(
+    (state) => state.transition?.fromFrame ?? null,
+  );
+  const previewTransitionToFrame = useLayoutTimelinePreviewStore(
+    (state) => state.transition?.toFrame ?? null,
+  );
+  const previewActiveFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
   const previewActive = previewMode !== "inactive";
   const selectionAnimationRef = useRef<number | null>(null);
   const playbackAnimationRef = useRef<number | null>(null);
@@ -459,6 +470,64 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     () => timelinePhaseBlocks(frames, displayRange.fromMs, displayRange.toMs),
     [displayRange.fromMs, displayRange.toMs, frames],
   );
+
+  useEffect(() => {
+    if (playing || previewMode === "transition") return;
+    let cancelled = false;
+    const commit = (): void => {
+      if (!cancelled) setThumbnailWindowCenter(activeIndex);
+    };
+    if (
+      typeof window.requestIdleCallback === "function"
+      && typeof window.cancelIdleCallback === "function"
+    ) {
+      const requestId = window.requestIdleCallback(commit);
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(requestId);
+      };
+    }
+    const timeoutId = window.setTimeout(commit, 16);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeIndex, playing, previewMode]);
+
+  useEffect(() => {
+    const store = useLayoutTimelinePreviewStore.getState();
+    if (!previewActive) {
+      store.setAdjacentHistoricalRuntime(null);
+      return;
+    }
+    if (
+      previewTransitionFromFrame !== null
+      && previewTransitionToFrame !== null
+      && previewActiveFrame !== null
+    ) {
+      const opposite = previewActiveFrame.id === previewTransitionFromFrame.id
+        ? previewTransitionToFrame
+        : previewTransitionFromFrame;
+      store.setAdjacentHistoricalRuntime(opposite.historicalRuntime);
+      return;
+    }
+    const nextIndex = adjacentAvailableFrameIndex(availableIndices, activeIndex, 1)
+      ?? adjacentAvailableFrameIndex(availableIndices, activeIndex, -1);
+    const nextFrame = nextIndex === null ? undefined : frames[nextIndex];
+    store.setAdjacentHistoricalRuntime(
+      nextFrame?.keyframe.state === "available"
+        ? nextFrame.keyframe.historicalRuntime
+        : null,
+    );
+  }, [
+    activeIndex,
+    availableIndices,
+    frames,
+    previewActive,
+    previewActiveFrame,
+    previewTransitionFromFrame,
+    previewTransitionToFrame,
+  ]);
   const linkedEventId = linkedEvent.graph?.event.id;
   const roomAnchorKey = venueId === null || spaceId === null
     ? null
@@ -1416,8 +1485,13 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
                         else showUnavailableFrame(index);
                       }}
                     >
-                      {frame.keyframe.state === "available" && shouldMountTimelineThumbnail(index, activeIndex) ? (
-                        <LayoutPlanThumbnail snapshot={frame.keyframe.payload} label={`${frame.eventName} ${frame.phaseName}`} />
+                      {frame.keyframe.state === "available" && shouldMountTimelineThumbnail(index, thumbnailWindowCenter) ? (
+                        <LayoutPlanThumbnail
+                          snapshot={frame.keyframe.payload}
+                          label={`${frame.eventName} ${frame.phaseName}`}
+                          proofKey={`plan-v1:${frame.keyframe.canonicalSnapshotId}:${frame.keyframe.proofDigest}`}
+                          paused={playing || previewMode === "transition"}
+                        />
                       ) : frame.keyframe.state === "available" ? (
                         <span className="layout-filmstrip__deferred" aria-hidden="true">
                           <Clock3 size={15} />

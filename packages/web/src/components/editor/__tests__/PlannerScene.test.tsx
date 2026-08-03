@@ -60,8 +60,10 @@ const {
   plannerAdaptiveResolutionForViewportWidth,
   plannerCanvasDprForViewportWidth,
   plannerCanvasGlForViewportWidth,
+  plannerRuntimeRendererRequested,
   plannerSceneWarmupMode,
   shouldRenderPlannerSceneOverlays,
+  shouldMountLiveRuntimeSplat,
   shouldUseSmoothPlannerControls,
 } = await import("../PlannerScene.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
@@ -189,6 +191,8 @@ describe("PlannerScene", () => {
     expect(source).toContain('setAttribute("data-timeline-preview-render-ready", "false")');
     expect(source).toContain('setAttribute("data-timeline-preview-render-ready", "true")');
     expect(source).toContain("window.requestAnimationFrame");
+    expect(source).toContain("runtimePresentationReady");
+    expect(source).toContain("historicalRuntimeBindingId === expectedHistoricalRuntime.bindingId");
     expect(source).toContain("renderPhase={authoritativeFrozenPreview ? timelinePreviewMode : null}");
   });
 
@@ -217,6 +221,7 @@ describe("PlannerScene", () => {
       phaseName: "Dinner service",
       startsAt: "2026-07-18T19:00:00.000Z",
       endsAt: "2026-07-18T21:15:00.000Z",
+      historicalRuntime: null,
       venueRuntime: runtime,
     }, []);
 
@@ -233,10 +238,28 @@ describe("PlannerScene", () => {
   it("suppresses latest room assets and drives both camera paths from frozen bounds", async () => {
     const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
 
-    expect(source).toContain("hasAsset && !timelinePreviewActive");
+    expect(shouldMountLiveRuntimeSplat(true, false)).toBe(true);
+    expect(shouldMountLiveRuntimeSplat(true, true)).toBe(false);
+    expect(source).toContain("shouldMountLiveRuntimeSplat(hasAsset, timelinePreviewActive)");
     expect(source).toContain("<CameraRig dimensions={dimensions}");
     expect(source).toContain("<CockpitPlanningCamera dimensionsOverride={authoritativeFrozenPreview ? dimensions : undefined}");
     expect(source).toContain("<group position={furnitureOffset}>");
+    expect(source).toContain("{runtimeRendererRequested && (");
+    expect(source).toContain("{expectedHistoricalRuntime !== null && (");
+    expect(source.match(/<LazySparkRendererHost\s*\/>/gu)).toHaveLength(1);
+    expect(source).toContain("includeRendererHost={false}");
+  });
+
+  it("does not churn Spark for no-capture previews and retains one requested host through exit", () => {
+    let requested = plannerRuntimeRendererRequested(false, false, false);
+    expect(requested).toBe(false);
+    requested = plannerRuntimeRendererRequested(requested, false, false);
+    expect(requested).toBe(false);
+
+    requested = plannerRuntimeRendererRequested(requested, false, true);
+    expect(requested).toBe(true);
+    requested = plannerRuntimeRendererRequested(requested, false, false);
+    expect(requested).toBe(true);
   });
 
   it("fails closed for pending, unavailable, and schedule-gap previews, then restores live room on exit", () => {
@@ -265,6 +288,7 @@ describe("PlannerScene", () => {
         phaseName: "Missing layout",
         startsAt: null,
         endsAt: null,
+        historicalRuntime: null,
         venueRuntime: null,
       }, "No frozen layout.");
     });

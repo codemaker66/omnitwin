@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   CANONICAL_ASSETS,
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  historicalRuntimeFromBinding,
   type CanonicalLayoutSnapshotV0,
 } from "@omnitwin/types";
 
@@ -236,8 +237,8 @@ function availableFrame(
       state: "available",
       snapshotId,
       snapshotStatus: "frozen",
-      canonicalSnapshotId: "89898989-8989-4989-8989-898989898989",
-      proofDigest: "b".repeat(64),
+      canonicalSnapshotId: snapshotId,
+      proofDigest: snapshotId.replaceAll("-", "").repeat(2),
       frozenBy: "67676767-6767-4767-8767-676767676767",
       supersedesSnapshotId: null,
       createdAt: "2026-07-17T10:00:00.000Z",
@@ -245,6 +246,7 @@ function availableFrame(
       objectCount: payload.objects.length,
       guestCount: payload.guestCount,
       payload,
+      historicalRuntime: historicalRuntimeFromBinding(null),
     },
   } as const;
 }
