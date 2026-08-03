@@ -31,7 +31,7 @@ ALTER TABLE "phase_layout_snapshots"
       OR "runtime_package_content_digest" ~ '^[a-f0-9]{64}$'
     ),
   ADD CONSTRAINT "phase_layout_snapshots_runtime_binding_coherent"
-    CHECK (
+    CHECK ((
       (
         "runtime_binding_state" = 'legacy_unbound'
         AND "runtime_binding_digest" IS NULL
@@ -65,9 +65,9 @@ ALTER TABLE "phase_layout_snapshots"
         AND "runtime_qa_record_id" IS NOT NULL
         AND "runtime_transform_artifact_row_id" IS NOT NULL
       )
-    ),
+    ) IS TRUE),
   ADD CONSTRAINT "phase_layout_snapshots_runtime_binding_json_identity"
-    CHECK (
+    CHECK ((
       "runtime_binding_state" = 'legacy_unbound'
       OR (
         "runtime_binding"->>'schemaVersion' = 'phase-layout-runtime-binding.v1'
@@ -80,15 +80,15 @@ ALTER TABLE "phase_layout_snapshots"
         AND "runtime_binding"->>'availability' = "runtime_binding_state"
         AND "runtime_binding"->>'bindingDigest' = "runtime_binding_digest"
       )
-    ),
+    ) IS TRUE),
   ADD CONSTRAINT "phase_layout_snapshots_runtime_binding_package_identity"
-    CHECK (
+    CHECK ((
       "runtime_binding_state" <> 'available'
       OR (
         "runtime_binding"->>'runtimePackageId' = "runtime_package_id"::text
         AND "runtime_binding"->>'runtimePackageContentDigest' = "runtime_package_content_digest"
       )
-    ),
+    ) IS TRUE),
   ADD CONSTRAINT "phase_layout_snapshots_runtime_package_digest_fk"
     FOREIGN KEY ("runtime_package_id", "runtime_package_content_digest")
     REFERENCES "runtime_packages" ("id", "content_digest")
