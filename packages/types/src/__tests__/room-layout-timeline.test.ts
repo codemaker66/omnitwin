@@ -4,6 +4,7 @@ import {
   FreezePhaseLayoutSnapshotBodySchema,
   FreezePhaseLayoutSnapshotParamsSchema,
   FreezePhaseLayoutSnapshotResponseSchema,
+  historicalRuntimeFromBinding,
   RoomLayoutTimelineQuerySchema,
   RoomLayoutTimelineResponseSchema,
 } from "../index.js";
@@ -140,6 +141,7 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     objectCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.objects.length,
     guestCount: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.guestCount,
     payload: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+    historicalRuntime: historicalRuntimeFromBinding(null),
   };
   const missingKeyframe = {
     state: "missing" as const,

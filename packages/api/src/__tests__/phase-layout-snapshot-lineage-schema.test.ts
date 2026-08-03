@@ -51,9 +51,13 @@ describe("phase layout snapshot lineage migration", () => {
       idx: 59,
       tag: "0061_diary_commands",
     }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+    expect(journal.entries[migration0060Index + 2]).toEqual(expect.objectContaining({
       idx: 60,
       tag: "0062_phase_layout_snapshot_immutability",
+    }));
+    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+      idx: 61,
+      tag: "0063_phase_layout_runtime_bindings",
     }));
   });
 

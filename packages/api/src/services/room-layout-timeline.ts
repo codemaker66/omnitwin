@@ -1,11 +1,15 @@
 import {
   CanonicalLayoutSnapshotV0Schema,
+  PhaseLayoutRuntimeBindingV1Schema,
   PhaseLayoutSnapshotIdSchema,
   PhaseLayoutSnapshotStatusSchema,
   RoomLayoutTimelineRevenueFigureSchema,
   UserIdSchema,
   canonicalLayoutSnapshotDigest,
+  historicalRuntimeFromBinding,
+  invalidHistoricalRuntimeBinding,
   type PhaseLayoutSnapshotStatus,
+  type PhaseLayoutHistoricalRuntime,
   type RoomLayoutTimelineFigures,
   type RoomLayoutTimelineInvalidReason,
   type RoomLayoutTimelineKeyframe,
@@ -53,6 +57,9 @@ export interface LayoutTimelineSnapshotCandidate {
   readonly frozenAt: Date | null;
   readonly configurationSpaceId: string | null;
   readonly configurationVenueId: string | null;
+  readonly runtimeBindingState?: string;
+  readonly runtimeBindingDigest?: string | null;
+  readonly runtimeBinding?: unknown;
 }
 
 const SNAPSHOT_STATUS_RANK: Readonly<Record<PhaseLayoutSnapshotStatus, number>> = {
@@ -251,6 +258,28 @@ function invalidKeyframe(
   };
 }
 
+function resolveHistoricalRuntime(
+  candidate: LayoutTimelineSnapshotCandidate,
+): PhaseLayoutHistoricalRuntime {
+  const state = candidate.runtimeBindingState ?? "legacy_unbound";
+  if (state === "legacy_unbound") return historicalRuntimeFromBinding(null);
+  if (
+    candidate.runtimeBindingDigest === null ||
+    candidate.runtimeBindingDigest === undefined
+  ) {
+    return invalidHistoricalRuntimeBinding();
+  }
+  const parsed = PhaseLayoutRuntimeBindingV1Schema.safeParse(candidate.runtimeBinding);
+  if (
+    !parsed.success ||
+    parsed.data.availability !== state ||
+    parsed.data.bindingDigest !== candidate.runtimeBindingDigest
+  ) {
+    return invalidHistoricalRuntimeBinding();
+  }
+  return historicalRuntimeFromBinding(parsed.data);
+}
+
 /** Resolve one phase's truthful keyframe state for the room timeline. */
 export function resolveRoomLayoutTimelineKeyframe(
   input: ResolveKeyframeInput,
@@ -412,5 +441,6 @@ export function resolveRoomLayoutTimelineKeyframe(
     objectCount: candidate.objectCount,
     guestCount: candidate.guestCount,
     payload: payload.data,
+    historicalRuntime: resolveHistoricalRuntime(candidate),
   };
 }
