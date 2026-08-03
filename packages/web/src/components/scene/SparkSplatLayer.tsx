@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import {
+  disposeSparkRendererAfterWorkerDrain,
+  sparkRendererAdmissionGate,
+  type SparkRendererAdmissionLease,
+} from "./spark-renderer-lifecycle.js";
 
 type Vector3Tuple = readonly [number, number, number];
 type ScaleValue = number | Vector3Tuple;
@@ -73,26 +78,57 @@ function applyLayerProps(
   }
 }
 
-export function SparkRendererHost(): ReactElement {
+export function SparkRendererHost(): ReactElement | null {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
-  const sparkRenderer = useMemo(
-    () => new SparkRenderer({
-      renderer: gl,
-      onDirty: invalidate,
-      transparent: true,
-      depthWrite: false,
-    }),
-    [gl, invalidate],
-  );
+  const [sparkRenderer, setSparkRenderer] = useState<SparkRenderer | null>(null);
 
   useEffect(() => {
-    return () => {
-      sparkRenderer.dispose();
+    let active = true;
+    let constructorFailed = false;
+    let renderer: SparkRenderer | null = null;
+    let lease: SparkRendererAdmissionLease | null = null;
+    const acquire = (): void => {
+      if (!active || constructorFailed || renderer !== null) return;
+      const nextLease = sparkRendererAdmissionGate.acquire(gl);
+      if (nextLease === null) return;
+      try {
+        renderer = new SparkRenderer({
+          renderer: gl,
+          onDirty: invalidate,
+          transparent: true,
+          depthWrite: false,
+        });
+      } catch (error: unknown) {
+        constructorFailed = true;
+        nextLease.quarantine();
+        setTimeout(() => { throw error; }, 0);
+        return;
+      }
+      lease = nextLease;
+      setSparkRenderer(renderer);
     };
-  }, [sparkRenderer]);
+    acquire();
+    const unsubscribe = sparkRendererAdmissionGate.subscribe(acquire);
 
-  return <primitive object={sparkRenderer} />;
+    return () => {
+      active = false;
+      unsubscribe();
+      const retiringRenderer = renderer;
+      const retiringLease = lease;
+      renderer = null;
+      lease = null;
+      setSparkRenderer((current) => current === retiringRenderer ? null : current);
+      if (retiringRenderer !== null && retiringLease !== null) {
+        void disposeSparkRendererAfterWorkerDrain(retiringRenderer, {
+          onDisposed: retiringLease.release,
+          onQuarantined: retiringLease.quarantine,
+        });
+      }
+    };
+  }, [gl, invalidate]);
+
+  return sparkRenderer === null ? null : <primitive object={sparkRenderer} />;
 }
 
 export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | null {

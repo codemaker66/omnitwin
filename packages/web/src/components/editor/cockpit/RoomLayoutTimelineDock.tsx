@@ -733,6 +733,11 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     setPlaying(true);
   }, [availableIndices, cancelAnimations, displayRange.fromMs, playing]);
 
+  const shortcutStateRef = useRef({ canExpand, moveKeyframe, togglePlayback });
+  useLayoutEffect(() => {
+    shortcutStateRef.current = { canExpand, moveKeyframe, togglePlayback };
+  }, [canExpand, moveKeyframe, togglePlayback]);
+
   useEffect(() => {
     if (!playing || availableIndices.length < 2) return;
     const generation = animationGenerationRef.current;
@@ -950,15 +955,16 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (!canExpand || !shortcutContextRef.current || isTypingTarget(event.target)) return;
+      const shortcutState = shortcutStateRef.current;
+      if (!shortcutState.canExpand || !shortcutContextRef.current || isTypingTarget(event.target)) return;
       if (event.key === "[") {
         if (event.repeat) return;
         event.preventDefault();
-        moveKeyframe(-1);
+        shortcutState.moveKeyframe(-1);
       } else if (event.key === "]") {
         if (event.repeat) return;
         event.preventDefault();
-        moveKeyframe(1);
+        shortcutState.moveKeyframe(1);
       } else if (event.code === "Space") {
         event.preventDefault();
         if (!event.repeat && spaceDownAtRef.current === null) {
@@ -969,16 +975,17 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     const onKeyUp = (event: globalThis.KeyboardEvent): void => {
       if (event.code !== "Space") return;
       const startedAt = spaceDownAtRef.current;
+      const shortcutState = shortcutStateRef.current;
       spaceDownAtRef.current = null;
       if (
-        !canExpand
+        !shortcutState.canExpand
         || !shortcutContextRef.current
         || startedAt === null
         || isTypingTarget(event.target)
       ) return;
       if (performance.now() - startedAt <= 240) {
         event.preventDefault();
-        togglePlayback();
+        shortcutState.togglePlayback();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -988,7 +995,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       window.removeEventListener("keyup", onKeyUp);
       spaceDownAtRef.current = null;
     };
-  }, [canExpand, moveKeyframe, togglePlayback]);
+  }, []);
 
   const changeScope = useCallback((nextScope: TimelineScope): void => {
     if (nextScope === scope) return;

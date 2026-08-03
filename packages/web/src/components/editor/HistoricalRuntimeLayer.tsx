@@ -36,6 +36,7 @@ import {
 import { resolveHistoricalRuntimeAssetToRrfTransform } from "../../lib/historical-runtime-transform.js";
 import { useHistoricalRuntimeStatusStore } from "../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { sparkRendererAdmissionGate } from "../scene/spark-renderer-lifecycle.js";
 
 const HISTORICAL_RUNTIME_CROSSFADE_MS = 240;
 const MAX_REMEMBERED_SPLAT_COUNTS = 32;
@@ -222,6 +223,11 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     historicalRuntimeCache.getSnapshot,
     historicalRuntimeCache.getSnapshot,
   );
+  const rendererAdmissionState = useSyncExternalStore(
+    sparkRendererAdmissionGate.subscribe,
+    sparkRendererAdmissionGate.getSnapshot,
+    sparkRendererAdmissionGate.getSnapshot,
+  );
   const [display, setDisplay] = useState<DisplayedResources>(EMPTY_DISPLAY);
   const displayRef = useRef<DisplayedResources>(EMPTY_DISPLAY);
   const selectedKeyRef = useRef<string | null>(null);
@@ -253,7 +259,10 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const activeFitsBudget = availableBinding !== null &&
     availableBinding.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
     historicalRuntimeCompressedBytes(availableBinding) <= viewerCapacity.maxCompressedBytes;
-  const candidateBinding = transform?.ok === true && activeFitsBudget ? availableBinding : null;
+  const rendererQuarantined = rendererAdmissionState === "quarantined";
+  const candidateBinding = transform?.ok === true && activeFitsBudget && !rendererQuarantined
+    ? availableBinding
+    : null;
   const candidateKey = candidateBinding === null ? null : historicalRuntimeBindingKey(candidateBinding);
   const candidateRecord = candidateKey === null ? undefined : snapshot.records.get(candidateKey);
   const knownActiveSplatCount = candidateKey === null
@@ -375,6 +384,14 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       publish({ state: "inactive", bindingId: null, message: null });
       return;
     }
+    if (rendererQuarantined) {
+      publish({
+        state: "unavailable",
+        bindingId: historicalRuntime?.binding?.bindingId ?? null,
+        message: "Historical room rendering is unavailable until this page is reloaded because the previous renderer could not retire safely.",
+      });
+      return;
+    }
     if (historicalRuntime === null) {
       publish({
         state: "unavailable",
@@ -442,6 +459,7 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     historicalRuntime,
     presentedKey,
     previewMode,
+    rendererQuarantined,
     transform,
   ]);
 

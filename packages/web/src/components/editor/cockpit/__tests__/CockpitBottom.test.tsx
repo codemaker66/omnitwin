@@ -1399,6 +1399,36 @@ describe("CockpitBottom room layout timeline", () => {
     expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
   });
 
+  it("keeps one stable shortcut listener through immediate playback state changes", async () => {
+    const addListener = vi.spyOn(window, "addEventListener");
+    const removeListener = vi.spyOn(window, "removeEventListener");
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom();
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+
+    const listenerCount = (spy: typeof addListener, eventName: string): number => (
+      spy.mock.calls.filter(([registeredName]) => registeredName === eventName).length
+    );
+    const initialKeyDownAdds = listenerCount(addListener, "keydown");
+    const initialKeyUpAdds = listenerCount(addListener, "keyup");
+    const initialKeyDownRemovals = listenerCount(removeListener, "keydown");
+    const initialKeyUpRemovals = listenerCount(removeListener, "keyup");
+    const dock = screen.getByTestId("cockpit-bottom");
+    fireEvent.pointerDown(dock);
+
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.getByRole("button", { name: /pause timeline/i })).toBeTruthy();
+    fireEvent.keyDown(window, { key: " ", code: "Space" });
+    fireEvent.keyUp(window, { key: " ", code: "Space" });
+    expect(screen.getByRole("button", { name: /play full timeline/i })).toBeTruthy();
+
+    expect(listenerCount(addListener, "keydown")).toBe(initialKeyDownAdds);
+    expect(listenerCount(addListener, "keyup")).toBe(initialKeyUpAdds);
+    expect(listenerCount(removeListener, "keydown")).toBe(initialKeyDownRemovals);
+    expect(listenerCount(removeListener, "keyup")).toBe(initialKeyUpRemovals);
+  });
+
   it("keeps playback honest across leading, invalid, and trailing intervals", async () => {
     const callbacks = new Map<number, FrameRequestCallback>();
     let nextRequest = 0;
