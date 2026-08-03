@@ -73,6 +73,7 @@ import {
   RuntimeProfileVerifiedByteCache,
 } from "../lib/runtime-profile-verified-byte-cache.js";
 import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+import { runtimeQaRecordSha256 } from "../lib/runtime-qa-record-receipt.js";
 import {
   isReceptionReviewedProfilePresentationCandidate,
   matchReceptionReviewedRuntimeProfile,
@@ -2605,6 +2606,7 @@ export async function adminAssetRoutes(
         roomSlug: input.roomSlug,
         transformArtifactId: input.transformArtifact.id,
         transformArtifact: input.transformArtifact,
+        artifactDigest: runtimeTransformArtifactSha256(input.transformArtifact),
         reviewNote: input.reviewNote ?? null,
         registeredBy: request.user.id,
         updatedAt: new Date(),
@@ -2869,11 +2871,13 @@ export async function adminAssetRoutes(
         roomSlug: input.roomSlug,
         recordId: boundRecord.recordId,
         recordJson: boundRecord,
+        recordDigest: runtimeQaRecordSha256(boundRecord),
         signedTransformArtifactId: runtimeQaRecordSignedTransformArtifactId(boundRecord),
         publicExposureDecision: boundRecord.publicExposure.decision,
         assetEvidenceStatus: boundRecord.assetEvidenceStatus,
         runtimeStatus: boundRecord.runtimeStatus,
         reviewedBy: request.user.id,
+        reviewedAt: new Date(boundRecord.recordedAt),
         updatedAt: new Date(),
       };
 

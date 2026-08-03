@@ -76,7 +76,7 @@ function manifestFingerprintPayload(manifest: RuntimePackageManifestJson): strin
   });
 }
 
-export function receptionRuntimeProfileManifestFingerprint(
+export function runtimePackageProfileManifestFingerprint(
   manifestJson: unknown,
 ): string | null {
   const parsed = RuntimePackageManifestJsonSchema.safeParse(manifestJson);
@@ -85,6 +85,9 @@ export function receptionRuntimeProfileManifestFingerprint(
     .update(manifestFingerprintPayload(parsed.data), "utf8")
     .digest("hex");
 }
+
+export const receptionRuntimeProfileManifestFingerprint =
+  runtimePackageProfileManifestFingerprint;
 
 function immutablePackageContentMatches(record: RuntimeProfilePackageRecord): boolean {
   if (
@@ -164,7 +167,7 @@ export function matchReceptionReviewedRuntimeProfile(
     return null;
   }
 
-  const fingerprint = receptionRuntimeProfileManifestFingerprint(parsedManifest.data);
+  const fingerprint = runtimePackageProfileManifestFingerprint(parsedManifest.data);
   return REVIEWED_RECEPTION_PROFILES.find((profile) =>
     profile.manifestFingerprintSha256 === fingerprint
   )?.id ?? null;

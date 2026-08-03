@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   PHASE_LAYOUT_RUNTIME_ADMISSION_POLICY,
   PHASE_LAYOUT_RUNTIME_BINDING_SCHEMA_VERSION,
+  PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES,
+  PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES,
   PhaseLayoutHistoricalRuntimeSchema,
   PhaseLayoutRuntimeAvailableBindingSchema,
   PhaseLayoutRuntimeUnavailableBindingSchema,
@@ -155,6 +157,56 @@ describe("phase layout historical runtime binding", () => {
       ...binding,
       bindingDigest: "7".repeat(64),
     }).success).toBe(false);
+    expect(PhaseLayoutRuntimeAvailableBindingSchema.safeParse({
+      ...binding,
+      visualAssets: [{ ...binding.visualAssets[0], mimeType: null }],
+    }).success).toBe(false);
+    expect(PhaseLayoutRuntimeAvailableBindingSchema.safeParse({
+      ...binding,
+      visualAssets: [{ ...binding.visualAssets[0], fileName: "grand-hall.spz" }],
+    }).success).toBe(false);
+    expect(PhaseLayoutRuntimeAvailableBindingSchema.safeParse({
+      ...binding,
+      visualAssets: [{
+        ...binding.visualAssets[0],
+        sizeBytes: PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES + 1,
+      }],
+    }).success).toBe(false);
+  });
+
+  it("fails closed when the exact member set exceeds the 96 MiB viewer ceiling", () => {
+    const binding = availableBinding();
+    const visualAssets = Array.from({ length: 7 }, (_unused, index) => ({
+      ...binding.visualAssets[0],
+      memberIndex: index,
+      assetVersionId: `99999999-9999-4999-8999-${String(index + 1).padStart(12, "0")}`,
+      fileName: `grand-hall-${String(index)}.sog`,
+      sizeBytes: index < 6 ? PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES : 1,
+    }));
+    expect(visualAssets.reduce((total, asset) => total + asset.sizeBytes, 0))
+      .toBe(PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES + 1);
+    const compositionDigest = phaseLayoutRuntimeCompositionDigest({
+      runtimePackageId: binding.runtimePackageId,
+      runtimePackageContentDigest: binding.runtimePackageContentDigest,
+      reviewedProfileId: binding.reviewedProfileId,
+      transformArtifactDigest: binding.transformArtifactDigest,
+      visualAssets,
+    });
+    const { bindingDigest: _previousDigest, ...unsigned } = {
+      ...binding,
+      visualAssets,
+      compositionDigest,
+    };
+    const result = PhaseLayoutRuntimeAvailableBindingSchema.safeParse({
+      ...unsigned,
+      bindingDigest: phaseLayoutRuntimeBindingDigest(unsigned),
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected total visual byte limit rejection.");
+    expect(result.error.issues).toContainEqual(expect.objectContaining({
+      path: ["visualAssets"],
+      message: "Runtime visual members exceed the historical viewer byte ceiling.",
+    }));
   });
 
   it("persists an honest unavailable decision without attaching a package later", () => {

@@ -19,6 +19,7 @@ import {
   verifiedLayoutProofDigest,
   type LayoutProofSource,
 } from "./phase-layout-snapshot.js";
+import { isDirectHistoricalPresentationTransform } from "./phase-layout-runtime-admission.js";
 
 export interface LayoutTimelinePredecessorCandidate {
   readonly id: string;
@@ -60,6 +61,28 @@ export interface LayoutTimelineSnapshotCandidate {
   readonly runtimeBindingState?: string;
   readonly runtimeBindingDigest?: string | null;
   readonly runtimeBinding?: unknown;
+  readonly runtimePresentationAdmissionId?: string | null;
+  readonly runtimePresentationAdmissionDecision?: string | null;
+  readonly runtimePresentationAdmissionReviewedAt?: Date | null;
+  readonly runtimePresentationAdmissionDigest?: string | null;
+  readonly runtimePackageId?: string | null;
+  readonly runtimePackageContentDigest?: string | null;
+  readonly runtimeVenueSlug?: string | null;
+  readonly runtimeRoomSlug?: string | null;
+  readonly runtimeManifestDigest?: string | null;
+  readonly runtimeReviewedProfileId?: string | null;
+  readonly runtimeReviewedProfileFingerprint?: string | null;
+  readonly runtimeRightsEvidenceDigest?: string | null;
+  readonly runtimeSceneAuthorityMapDigest?: string | null;
+  readonly runtimeQaRecordId?: string | null;
+  readonly runtimeQaRecordKey?: string | null;
+  readonly runtimeQaRecordDigest?: string | null;
+  readonly runtimeQaDecision?: string | null;
+  readonly runtimeQaReviewedBy?: string | null;
+  readonly runtimeQaReviewedAt?: Date | null;
+  readonly runtimeTransformArtifactRowId?: string | null;
+  readonly runtimeTransformArtifactId?: string | null;
+  readonly runtimeTransformArtifactDigest?: string | null;
 }
 
 const SNAPSHOT_STATUS_RANK: Readonly<Record<PhaseLayoutSnapshotStatus, number>> = {
@@ -277,7 +300,68 @@ function resolveHistoricalRuntime(
   ) {
     return invalidHistoricalRuntimeBinding();
   }
-  return historicalRuntimeFromBinding(parsed.data);
+  const binding = parsed.data;
+  const payload = CanonicalLayoutSnapshotV0Schema.safeParse(candidate.payload);
+  if (
+    !payload.success || candidate.frozenAt === null || candidate.frozenBy === null ||
+    binding.bindingId !== candidate.id ||
+    binding.phaseLayoutSnapshotId !== candidate.id ||
+    binding.canonicalSnapshotId !== candidate.canonicalSnapshotId ||
+    binding.snapshotHash !== candidate.snapshotHash ||
+    binding.venueId !== payload.data.venueId ||
+    binding.spaceId !== payload.data.spaceId ||
+    binding.venueSlug !== payload.data.venueRuntime.venueSlug ||
+    binding.spaceSlug !== payload.data.venueRuntime.spaceSlug ||
+    binding.boundBy !== candidate.frozenBy ||
+    new Date(binding.boundAt).getTime() !== candidate.frozenAt.getTime()
+  ) {
+    return invalidHistoricalRuntimeBinding();
+  }
+  if (binding.availability === "unavailable") {
+    if (
+      binding.expectedRuntimePackageId !== payload.data.venueRuntime.runtimePackageId ||
+      binding.expectedRuntimeManifestDigest !==
+        payload.data.venueRuntime.runtimeVenueManifestDigest
+    ) return invalidHistoricalRuntimeBinding();
+    return historicalRuntimeFromBinding(binding);
+  }
+  if (
+    candidate.runtimePresentationAdmissionId === null ||
+    candidate.runtimePresentationAdmissionId === undefined ||
+    candidate.runtimePresentationAdmissionDecision !== "approved" ||
+    candidate.runtimePresentationAdmissionReviewedAt === null ||
+    candidate.runtimePresentationAdmissionReviewedAt === undefined ||
+    candidate.runtimePresentationAdmissionDigest === null ||
+    candidate.runtimePresentationAdmissionDigest === undefined ||
+    candidate.runtimePresentationAdmissionReviewedAt > candidate.frozenAt ||
+    candidate.runtimePackageId !== binding.runtimePackageId ||
+    candidate.runtimePackageContentDigest !== binding.runtimePackageContentDigest ||
+    candidate.runtimeVenueSlug !== binding.venueSlug ||
+    candidate.runtimeRoomSlug !== binding.spaceSlug ||
+    candidate.runtimeManifestDigest !== binding.runtimeManifestDigest ||
+    candidate.runtimeReviewedProfileId !== binding.reviewedProfileId ||
+    candidate.runtimeReviewedProfileFingerprint !== binding.reviewedProfileManifestFingerprint ||
+    candidate.runtimeRightsEvidenceDigest !== binding.rightsEvidenceDigest ||
+    candidate.runtimeSceneAuthorityMapDigest !== binding.sceneAuthorityMapDigest ||
+    candidate.runtimeQaRecordId !== binding.runtimeQaRecordId ||
+    candidate.runtimeQaRecordKey !== binding.runtimeQaRecordKey ||
+    candidate.runtimeQaRecordDigest !== binding.runtimeQaRecordDigest ||
+    candidate.runtimeQaDecision !== binding.runtimeQaDecision ||
+    candidate.runtimeQaReviewedBy !== binding.runtimeQaReviewedBy ||
+    candidate.runtimeQaReviewedAt === null || candidate.runtimeQaReviewedAt === undefined ||
+    candidate.runtimeQaReviewedAt.toISOString() !== binding.runtimeQaReviewedAt ||
+    candidate.runtimeQaReviewedAt > candidate.frozenAt ||
+    candidate.runtimeTransformArtifactRowId !== binding.transformArtifactRowId ||
+    candidate.runtimeTransformArtifactId !== binding.transformArtifactId ||
+    candidate.runtimeTransformArtifactDigest !== binding.transformArtifactDigest ||
+    new Date(binding.transformArtifact.date) > candidate.frozenAt ||
+    !isDirectHistoricalPresentationTransform(binding.transformArtifact) ||
+    binding.runtimePackageId !== payload.data.venueRuntime.runtimePackageId ||
+    binding.runtimeManifestDigest !== payload.data.venueRuntime.runtimeVenueManifestDigest
+  ) {
+    return invalidHistoricalRuntimeBinding();
+  }
+  return historicalRuntimeFromBinding(binding);
 }
 
 /** Resolve one phase's truthful keyframe state for the room timeline. */

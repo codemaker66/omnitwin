@@ -5,6 +5,7 @@ import {
   FreezePhaseLayoutSnapshotBodySchema,
   FreezePhaseLayoutSnapshotParamsSchema,
   FreezePhaseLayoutSnapshotResponseSchema,
+  PhaseLayoutRuntimeBindingV1Schema,
   canonicalLayoutSnapshotDigest,
   type FreezePhaseLayoutSnapshotResponse,
 } from "@omnitwin/types";
@@ -19,6 +20,8 @@ import {
   layoutValidationRuns,
   phaseLayoutSnapshots,
   placedObjects,
+  spaces,
+  venues,
 } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
 import {
@@ -27,6 +30,13 @@ import {
   phaseLayoutSnapshotAppendId,
   verifyFreezablePhaseLayoutSnapshot,
 } from "../services/phase-layout-snapshot.js";
+import {
+  admissionDecisionFromBinding,
+  buildPhaseLayoutRuntimeBinding,
+  resolvePhaseLayoutRuntimeAdmission,
+  runtimeAdmissionDecisionDigest,
+  type RuntimeAdmissionDecision,
+} from "../services/phase-layout-runtime-admission.js";
 import { canWriteEvents, isEventWriteRole } from "../utils/query.js";
 
 type FreezeRouteResult =
@@ -85,6 +95,83 @@ function isCurrentFrozenRow(
   ) return false;
   const payload = CanonicalLayoutSnapshotV0Schema.safeParse(row.payload);
   return payload.success && canonicalLayoutSnapshotDigest(payload.data) === snapshotHash;
+}
+
+function currentRuntimeDecisionMatches(
+  row: {
+    readonly runtimeBindingState: string;
+    readonly runtimeBindingDigest: string | null;
+    readonly runtimeBinding: unknown;
+    readonly runtimePresentationAdmissionId: string | null;
+    readonly runtimePresentationAdmissionDecision: "approved" | null;
+    readonly runtimePresentationAdmissionReviewedAt: Date | null;
+    readonly runtimePresentationAdmissionDigest: string | null;
+  },
+  decision: RuntimeAdmissionDecision,
+): boolean {
+  if (
+    row.runtimeBindingState !== decision.availability ||
+    row.runtimeBindingDigest === null
+  ) return false;
+  const parsed = PhaseLayoutRuntimeBindingV1Schema.safeParse(row.runtimeBinding);
+  if (!parsed.success || parsed.data.bindingDigest !== row.runtimeBindingDigest) return false;
+  if (parsed.data.availability === "unavailable") {
+    return runtimeAdmissionDecisionDigest(admissionDecisionFromBinding(parsed.data, {
+      id: "00000000-0000-4000-8000-000000000000",
+      decision: "approved",
+      reviewedAt: new Date(0),
+      digest: "0".repeat(64),
+    })) === runtimeAdmissionDecisionDigest(decision);
+  }
+  if (
+    row.runtimePresentationAdmissionId === null ||
+    row.runtimePresentationAdmissionDecision !== "approved" ||
+    row.runtimePresentationAdmissionReviewedAt === null ||
+    row.runtimePresentationAdmissionDigest === null
+  ) return false;
+  return runtimeAdmissionDecisionDigest(admissionDecisionFromBinding(parsed.data, {
+    id: row.runtimePresentationAdmissionId,
+    decision: row.runtimePresentationAdmissionDecision,
+    reviewedAt: row.runtimePresentationAdmissionReviewedAt,
+    digest: row.runtimePresentationAdmissionDigest,
+  })) === runtimeAdmissionDecisionDigest(decision);
+}
+
+function runtimeBindingColumns(
+  decision: RuntimeAdmissionDecision,
+  binding: ReturnType<typeof buildPhaseLayoutRuntimeBinding>,
+): Partial<typeof phaseLayoutSnapshots.$inferInsert> {
+  const common = {
+    runtimeBindingState: binding.availability,
+    runtimeBindingDigest: binding.bindingDigest,
+    runtimeBinding: binding,
+  };
+  if (decision.availability === "unavailable") return common;
+  return {
+    ...common,
+    runtimePresentationAdmissionId: decision.presentationAdmissionId,
+    runtimePresentationAdmissionDecision: decision.presentationAdmissionDecision,
+    runtimePresentationAdmissionReviewedAt: new Date(decision.presentationAdmissionReviewedAt),
+    runtimePresentationAdmissionDigest: decision.presentationAdmissionDigest,
+    runtimePackageId: decision.runtimePackageId,
+    runtimePackageContentDigest: decision.runtimePackageContentDigest,
+    runtimeVenueSlug: binding.venueSlug,
+    runtimeRoomSlug: binding.spaceSlug,
+    runtimeManifestDigest: decision.runtimeManifestDigest,
+    runtimeReviewedProfileId: decision.reviewedProfileId,
+    runtimeReviewedProfileFingerprint: decision.reviewedProfileManifestFingerprint,
+    runtimeRightsEvidenceDigest: decision.rightsEvidenceDigest,
+    runtimeSceneAuthorityMapDigest: decision.sceneAuthorityMapDigest,
+    runtimeQaRecordId: decision.runtimeQaRecordId,
+    runtimeQaRecordKey: decision.runtimeQaRecordKey,
+    runtimeQaRecordDigest: decision.runtimeQaRecordDigest,
+    runtimeQaDecision: decision.runtimeQaDecision,
+    runtimeQaReviewedBy: decision.runtimeQaReviewedBy,
+    runtimeQaReviewedAt: new Date(decision.runtimeQaReviewedAt),
+    runtimeTransformArtifactRowId: decision.transformArtifactRowId,
+    runtimeTransformArtifactId: decision.transformArtifactId,
+    runtimeTransformArtifactDigest: decision.transformArtifactDigest,
+  };
 }
 
 function responseFromRow(input: {
@@ -147,9 +234,13 @@ export async function phaseLayoutSnapshotRoutes(
           const [event] = await tx.select({
             id: events.id,
             venueId: events.venueId,
-          }).from(events).where(and(
+            venueSlug: venues.slug,
+          }).from(events)
+            .innerJoin(venues, eq(events.venueId, venues.id))
+            .where(and(
             eq(events.id, params.data.eventId),
             isNull(events.deletedAt),
+            isNull(venues.deletedAt),
           )).limit(1);
           if (event === undefined) return { state: "not_found", resource: "event" };
           if (!canWriteEvents(request.user, event.venueId)) {
@@ -159,12 +250,17 @@ export async function phaseLayoutSnapshotRoutes(
           const [phase] = await tx.select({
             id: eventPhases.id,
             eventId: eventPhases.eventId,
-            spaceId: eventPhases.spaceId,
+            spaceId: spaces.id,
+            spaceSlug: spaces.slug,
             templateKey: eventPhases.templateKey,
             name: eventPhases.name,
-          }).from(eventPhases).where(and(
+          }).from(eventPhases)
+            .innerJoin(spaces, eq(eventPhases.spaceId, spaces.id))
+            .where(and(
             eq(eventPhases.id, params.data.phaseId),
             eq(eventPhases.eventId, event.id),
+            eq(spaces.venueId, event.venueId),
+            isNull(spaces.deletedAt),
           )).limit(1);
           if (phase === undefined) return { state: "not_found", resource: "phase" };
 
@@ -291,6 +387,16 @@ export async function phaseLayoutSnapshotRoutes(
             guestCount: phaseLayoutSnapshots.guestCount,
             createdAt: phaseLayoutSnapshots.createdAt,
             frozenAt: phaseLayoutSnapshots.frozenAt,
+            runtimeBindingState: phaseLayoutSnapshots.runtimeBindingState,
+            runtimeBindingDigest: phaseLayoutSnapshots.runtimeBindingDigest,
+            runtimeBinding: phaseLayoutSnapshots.runtimeBinding,
+            runtimePresentationAdmissionId: phaseLayoutSnapshots.runtimePresentationAdmissionId,
+            runtimePresentationAdmissionDecision:
+              phaseLayoutSnapshots.runtimePresentationAdmissionDecision,
+            runtimePresentationAdmissionReviewedAt:
+              phaseLayoutSnapshots.runtimePresentationAdmissionReviewedAt,
+            runtimePresentationAdmissionDigest:
+              phaseLayoutSnapshots.runtimePresentationAdmissionDigest,
           }).from(phaseLayoutSnapshots).where(and(
             eq(phaseLayoutSnapshots.eventPhaseId, phase.id),
             eq(phaseLayoutSnapshots.status, "frozen"),
@@ -299,6 +405,17 @@ export async function phaseLayoutSnapshotRoutes(
             desc(phaseLayoutSnapshots.id),
           ).limit(2);
           const current = priorRows[0] ?? null;
+          const frozenAt = nextPhaseLayoutSnapshotFrozenAt(new Date(), current);
+          const runtimeDecision = await resolvePhaseLayoutRuntimeAdmission(tx, {
+            venueId: event.venueId,
+            venueSlug: event.venueSlug,
+            spaceId: phase.spaceId,
+            spaceSlug: phase.spaceSlug,
+            expectedRuntimePackageId: verified.payload.venueRuntime.runtimePackageId,
+            expectedRuntimeManifestDigest:
+              verified.payload.venueRuntime.runtimeVenueManifestDigest,
+            frozenAt,
+          });
           if (
             current !== null
             && current.frozenAt !== null
@@ -312,6 +429,7 @@ export async function phaseLayoutSnapshotRoutes(
               verified.objectCount,
               verified.guestCount,
             )
+            && currentRuntimeDecisionMatches(current, runtimeDecision)
           ) {
             return {
               state: "success",
@@ -334,12 +452,22 @@ export async function phaseLayoutSnapshotRoutes(
             };
           }
 
-          const frozenAt = nextPhaseLayoutSnapshotFrozenAt(new Date(), current);
           const snapshotId = phaseLayoutSnapshotAppendId(
             phase.id,
             verified.snapshotHash,
             current?.id ?? null,
           );
+          const runtimeBinding = buildPhaseLayoutRuntimeBinding(runtimeDecision, {
+            bindingId: snapshotId,
+            canonicalSnapshotId: verified.canonicalSnapshotId,
+            snapshotHash: verified.snapshotHash,
+            venueId: event.venueId,
+            venueSlug: event.venueSlug,
+            spaceId: phase.spaceId,
+            spaceSlug: phase.spaceSlug,
+            boundBy: request.user.id,
+            boundAt: frozenAt,
+          });
           const [inserted] = await tx.insert(phaseLayoutSnapshots).values({
             id: snapshotId,
             eventPhaseId: phase.id,
@@ -357,6 +485,7 @@ export async function phaseLayoutSnapshotRoutes(
             coordinateSpace: REAL_METRE_COORDINATE_SPACE,
             createdAt: frozenAt,
             frozenAt,
+            ...runtimeBindingColumns(runtimeDecision, runtimeBinding),
           }).returning({
             id: phaseLayoutSnapshots.id,
             createdAt: phaseLayoutSnapshots.createdAt,

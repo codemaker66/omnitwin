@@ -76,6 +76,7 @@ function transformArtifact(runtimePackageId: string): RuntimeTransformArtifactRo
     venueSlug: "trades-hall",
     roomSlug: "reception-room",
     transformArtifactId: TRANSFORM_ARTIFACT_ID,
+    artifactDigest: null,
     transformArtifact: {
       id: TRANSFORM_ARTIFACT_ID,
       sourceFrame: "COLMAP_RDF",
@@ -228,11 +229,13 @@ function runtimeQaRecord(
     roomSlug: "reception-room",
     recordId: recordJson.recordId,
     recordJson,
+    recordDigest: null,
     signedTransformArtifactId,
     publicExposureDecision: "blocked_internal_only",
     assetEvidenceStatus: "machine_checked",
     runtimeStatus: "internal_ready",
     reviewedBy: "10000000-0000-4000-8000-000000000007",
+    reviewedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
   };

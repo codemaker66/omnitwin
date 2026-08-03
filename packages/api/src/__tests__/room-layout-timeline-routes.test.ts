@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
   RoomLayoutTimelineResponseSchema,
+  historicalRuntimeFromBinding,
 } from "@omnitwin/types";
 import { assessRoomLayoutTimelineResponse } from "../routes/room-layout-timeline.js";
 
@@ -106,7 +107,26 @@ describe("room layout timeline — auth and validation boundary", () => {
       url: timelineUrl(validQuery),
       headers: { authorization: `Bearer ${staffToken(OTHER_VENUE_ID)}` },
     });
-    expect(response.statusCode, response.body).toBe(403);
+    expect(response.statusCode, response.body).toBe(404);
+  });
+
+  it("registers private historical member delivery and exposes its integrity headers to browsers", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: `/calendar/venues/${VENUE_ID}/spaces/${SPACE_ID}/runtime-bindings/not-a-binding/members/0/room.sog`,
+      headers: {
+        authorization: `Bearer ${staffToken()}`,
+        origin: "http://localhost:5173",
+      },
+    });
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:5173");
+    expect(response.headers["access-control-expose-headers"]?.toLowerCase())
+      .toContain("x-runtime-binding-digest");
+    expect(response.headers["access-control-expose-headers"]?.toLowerCase())
+      .toContain("x-runtime-package-content-digest");
+    expect(response.headers["access-control-expose-headers"]?.toLowerCase())
+      .toContain("x-asset-version-id");
   });
 
 });
@@ -224,6 +244,7 @@ describe("room layout timeline — aggregate response limits", () => {
         objectCount: payload.objects.length,
         guestCount: payload.guestCount,
         payload,
+        historicalRuntime: historicalRuntimeFromBinding(null),
       },
     }],
   });

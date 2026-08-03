@@ -164,7 +164,7 @@ export async function roomLayoutTimelineRoutes(
     const query: RoomLayoutTimelineQuery = parsed.data;
 
     if (!canReadVenuePlanningData(request.user, query.venueId)) {
-      return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+      return reply.status(404).send({ error: "Room not found", code: "NOT_FOUND" });
     }
 
     const [room] = await db
@@ -179,10 +179,7 @@ export async function roomLayoutTimelineRoutes(
       ))
       .limit(1);
     if (room === undefined) {
-      return validationError(reply, [{
-        path: ["spaceId"],
-        message: "Requested space does not belong to this venue.",
-      }]);
+      return reply.status(404).send({ error: "Room not found", code: "NOT_FOUND" });
     }
 
     const range = await resolveRoomLayoutTimelineRange(db, query, room.timeZone);
@@ -288,6 +285,35 @@ export async function roomLayoutTimelineRoutes(
           frozenAt: phaseLayoutSnapshots.frozenAt,
           configurationSpaceId: configurations.spaceId,
           configurationVenueId: configurations.venueId,
+          runtimeBindingState: phaseLayoutSnapshots.runtimeBindingState,
+          runtimeBindingDigest: phaseLayoutSnapshots.runtimeBindingDigest,
+          runtimeBinding: phaseLayoutSnapshots.runtimeBinding,
+          runtimePresentationAdmissionId: phaseLayoutSnapshots.runtimePresentationAdmissionId,
+          runtimePresentationAdmissionDecision:
+            phaseLayoutSnapshots.runtimePresentationAdmissionDecision,
+          runtimePresentationAdmissionReviewedAt:
+            phaseLayoutSnapshots.runtimePresentationAdmissionReviewedAt,
+          runtimePresentationAdmissionDigest:
+            phaseLayoutSnapshots.runtimePresentationAdmissionDigest,
+          runtimePackageId: phaseLayoutSnapshots.runtimePackageId,
+          runtimePackageContentDigest: phaseLayoutSnapshots.runtimePackageContentDigest,
+          runtimeVenueSlug: phaseLayoutSnapshots.runtimeVenueSlug,
+          runtimeRoomSlug: phaseLayoutSnapshots.runtimeRoomSlug,
+          runtimeManifestDigest: phaseLayoutSnapshots.runtimeManifestDigest,
+          runtimeReviewedProfileId: phaseLayoutSnapshots.runtimeReviewedProfileId,
+          runtimeReviewedProfileFingerprint:
+            phaseLayoutSnapshots.runtimeReviewedProfileFingerprint,
+          runtimeRightsEvidenceDigest: phaseLayoutSnapshots.runtimeRightsEvidenceDigest,
+          runtimeSceneAuthorityMapDigest: phaseLayoutSnapshots.runtimeSceneAuthorityMapDigest,
+          runtimeQaRecordId: phaseLayoutSnapshots.runtimeQaRecordId,
+          runtimeQaRecordKey: phaseLayoutSnapshots.runtimeQaRecordKey,
+          runtimeQaRecordDigest: phaseLayoutSnapshots.runtimeQaRecordDigest,
+          runtimeQaDecision: phaseLayoutSnapshots.runtimeQaDecision,
+          runtimeQaReviewedBy: phaseLayoutSnapshots.runtimeQaReviewedBy,
+          runtimeQaReviewedAt: phaseLayoutSnapshots.runtimeQaReviewedAt,
+          runtimeTransformArtifactRowId: phaseLayoutSnapshots.runtimeTransformArtifactRowId,
+          runtimeTransformArtifactId: phaseLayoutSnapshots.runtimeTransformArtifactId,
+          runtimeTransformArtifactDigest: phaseLayoutSnapshots.runtimeTransformArtifactDigest,
         })
         .from(rankedSnapshotIds)
         .innerJoin(phaseLayoutSnapshots, eq(phaseLayoutSnapshots.id, rankedSnapshotIds.id))
