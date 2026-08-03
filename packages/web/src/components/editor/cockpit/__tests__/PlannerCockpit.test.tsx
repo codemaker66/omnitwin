@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useHistoricalRuntimeStatusStore } from "../../../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
@@ -18,6 +19,11 @@ afterEach(() => {
   cleanup();
   useCockpitStore.getState().reset();
   useLayoutTimelinePreviewStore.getState().clear();
+  useHistoricalRuntimeStatusStore.getState().publish({
+    state: "inactive",
+    bindingId: null,
+    message: null,
+  });
 });
 
 describe("PlannerCockpit", () => {
@@ -73,6 +79,7 @@ describe("PlannerCockpit", () => {
       phaseName: "Dinner service",
       startsAt: "2026-07-18T19:00:00.000Z",
       endsAt: "2026-07-18T21:15:00.000Z",
+      historicalRuntime: null,
       venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
     }, []);
 
@@ -97,6 +104,7 @@ describe("PlannerCockpit", () => {
       phaseName: "Guest arrival",
       startsAt: "2026-07-18T18:00:00.000Z",
       endsAt: "2026-07-18T19:00:00.000Z",
+      historicalRuntime: null,
       venueRuntime: null,
     }, "No frozen layout was saved for this phase.");
 
@@ -116,5 +124,30 @@ describe("PlannerCockpit", () => {
       "Schedule gap · No room phase is scheduled now. · no room shell or saved layout shown",
     );
     expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
+  });
+
+  it("offers an explicit retry after historical capture verification fails", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: "2026-07-18T19:00:00.000Z",
+      endsAt: "2026-07-18T21:15:00.000Z",
+      historicalRuntime: null,
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+    useHistoricalRuntimeStatusStore.getState().publish({
+      state: "error",
+      bindingId: "11111111-1111-4111-8111-111111111111",
+      message: "The exact historical room capture could not be verified.",
+    });
+    const before = useHistoricalRuntimeStatusStore.getState().retryRevision;
+
+    render(<PlannerCockpit />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry capture" }));
+
+    expect(useHistoricalRuntimeStatusStore.getState().retryRevision).toBe(before + 1);
   });
 });

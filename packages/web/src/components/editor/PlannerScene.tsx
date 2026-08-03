@@ -1,4 +1,6 @@
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -33,6 +35,7 @@ import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { useHistoricalRuntimeStatusStore } from "../../stores/historical-runtime-status-store.js";
 import {
   useLayoutTimelinePreviewStore,
   type LayoutTimelinePreviewSessionMode,
@@ -54,6 +57,16 @@ import {
   retainFrozenLayoutRoomModel,
   type FrozenLayoutRoomModel,
 } from "../../lib/frozen-layout-room.js";
+
+const LazySparkRendererHost = lazy(async () => {
+  const module = await import("../scene/SparkSplatLayer.js");
+  return { default: module.SparkRendererHost };
+});
+
+const LazyHistoricalRuntimeLayer = lazy(async () => {
+  const module = await import("./HistoricalRuntimeLayer.js");
+  return { default: module.HistoricalRuntimeLayer };
+});
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -105,6 +118,23 @@ export function shouldUseSmoothPlannerControls(viewportWidth: number): boolean {
 
 export function shouldRenderPlannerSceneOverlays(viewportWidth: number): boolean {
   return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH;
+}
+
+/** Timeline playback releases the live capture so it cannot consume a third GPU budget or flash stale. */
+export function shouldMountLiveRuntimeSplat(
+  hasAsset: boolean,
+  timelinePreviewActive: boolean,
+): boolean {
+  return hasAsset && !timelinePreviewActive;
+}
+
+/** Once requested, the one Spark renderer lives until its owning Canvas unmounts. */
+export function plannerRuntimeRendererRequested(
+  previouslyRequested: boolean,
+  hasLiveRuntime: boolean,
+  hasHistoricalRuntime: boolean,
+): boolean {
+  return previouslyRequested || hasLiveRuntime || hasHistoricalRuntime;
 }
 
 function readViewportWidth(): number {
@@ -239,10 +269,12 @@ function TimelinePreviewRenderReadiness({
   renderPhase,
   renderRevision,
   roomEnvelopeKey,
+  runtimePresentationReady,
 }: {
   readonly renderPhase: "keyframe" | "transition" | null;
   readonly renderRevision: number;
   readonly roomEnvelopeKey: string | null;
+  readonly runtimePresentationReady: boolean;
 }): null {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
@@ -265,12 +297,24 @@ function TimelinePreviewRenderReadiness({
     renderedGenerationRef.current = null;
     cancelCompletionFrame();
     canvasHost()?.setAttribute("data-timeline-preview-render-ready", "false");
-    if (renderPhase !== null) invalidate();
+    if (renderPhase !== null && runtimePresentationReady) invalidate();
     return cancelCompletionFrame;
-  }, [cancelCompletionFrame, canvasHost, invalidate, renderPhase, renderRevision, roomEnvelopeKey]);
+  }, [
+    cancelCompletionFrame,
+    canvasHost,
+    invalidate,
+    renderPhase,
+    renderRevision,
+    roomEnvelopeKey,
+    runtimePresentationReady,
+  ]);
 
   useFrame(() => {
-    if (renderPhase === null || completionFrameRef.current !== null) return;
+    if (
+      renderPhase === null ||
+      !runtimePresentationReady ||
+      completionFrameRef.current !== null
+    ) return;
     const generation = generationRef.current;
     if (renderedGenerationRef.current === generation) return;
     completionFrameRef.current = window.requestAnimationFrame(() => {
@@ -306,11 +350,23 @@ export function PlannerScene(): ReactElement {
     [space],
   );
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const activeTimelineFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
   const activeVenueRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const timelineRenderRevision = useLayoutTimelinePreviewStore((state) => state.renderRevision);
+  const historicalRuntimeState = useHistoricalRuntimeStatusStore((state) => state.state);
+  const historicalRuntimeBindingId = useHistoricalRuntimeStatusStore((state) => state.bindingId);
   const timelinePreviewActive = timelinePreviewMode !== "inactive";
   const authoritativeFrozenPreview = timelinePreviewMode === "keyframe"
     || timelinePreviewMode === "transition";
+  const expectedHistoricalRuntime = authoritativeFrozenPreview &&
+    activeTimelineFrame?.historicalRuntime?.state === "available"
+    ? activeTimelineFrame.historicalRuntime.binding
+    : null;
+  const historicalRuntimeTerminal = historicalRuntimeState === "ready" ||
+    historicalRuntimeState === "error" ||
+    historicalRuntimeState === "unavailable";
+  const runtimePresentationReady = expectedHistoricalRuntime === null ||
+    (historicalRuntimeBindingId === expectedHistoricalRuntime.bindingId && historicalRuntimeTerminal);
   const frozenRoomRef = useRef<FrozenLayoutRoomModel | null>(null);
   const frozenRoom = retainFrozenLayoutRoomModel(
     frozenRoomRef.current,
@@ -342,9 +398,46 @@ export function PlannerScene(): ReactElement {
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
   const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
+  const runtimeRendererRequestedRef = useRef(false);
+  runtimeRendererRequestedRef.current = plannerRuntimeRendererRequested(
+    runtimeRendererRequestedRef.current,
+    hasAsset,
+    expectedHistoricalRuntime !== null,
+  );
+  const runtimeRendererRequested = runtimeRendererRequestedRef.current;
   const meshVisible = authoritativeFrozenPreview
     || (!timelinePreviewActive && (!hasAsset || layerMode !== "splat"));
   const splatActive = hasAsset && layerMode !== "mesh";
+
+  useLayoutEffect(() => {
+    const statusStore = useHistoricalRuntimeStatusStore.getState();
+    if (expectedHistoricalRuntime !== null) {
+      if (statusStore.bindingId !== expectedHistoricalRuntime.bindingId) {
+        statusStore.publish({
+          state: "loading",
+          bindingId: expectedHistoricalRuntime.bindingId,
+          message: "Loading the exact historical room capture…",
+        });
+      }
+      return;
+    }
+    if (!timelinePreviewActive) {
+      statusStore.publish({ state: "inactive", bindingId: null, message: null });
+      return;
+    }
+    const descriptor = activeTimelineFrame?.historicalRuntime ?? null;
+    statusStore.publish(descriptor?.state === "unavailable"
+      ? {
+          state: "unavailable",
+          bindingId: descriptor.binding?.bindingId ?? null,
+          message: descriptor.message,
+        }
+      : {
+          state: "unavailable",
+          bindingId: null,
+          message: "No exact historical room capture is bound to this timeline frame.",
+        });
+  }, [activeTimelineFrame?.historicalRuntime, expectedHistoricalRuntime, timelinePreviewActive]);
 
   // CARD A2 — "the room resolves": count chunk arrivals, derive the resolve
   // phase, and publish it for the quiet caption + the stage's honesty
@@ -407,6 +500,8 @@ export function PlannerScene(): ReactElement {
         data-room-render-dimensions={`${String(dimensions.width)},${String(dimensions.length)},${String(dimensions.height)}`}
         data-room-furniture-offset={furnitureOffset.join(",")}
         data-current-splat-suppressed={String(timelinePreviewActive)}
+        data-historical-runtime-state={historicalRuntimeState}
+        data-historical-runtime-binding-id={historicalRuntimeBindingId ?? undefined}
         onPointerDownCapture={markCameraInteractionActive}
         onPointerUpCapture={markCameraInteractionSettling}
         onPointerCancelCapture={markCameraInteractionSettling}
@@ -423,6 +518,16 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           <fog attach="fog" args={["#efe9dc", 54, 138]} />
           <SceneProvider />
+          {runtimeRendererRequested && (
+            <Suspense fallback={null}>
+              <LazySparkRendererHost />
+            </Suspense>
+          )}
+          {expectedHistoricalRuntime !== null && (
+            <Suspense fallback={null}>
+              <LazyHistoricalRuntimeLayer />
+            </Suspense>
+          )}
           <PlannerScenePrecompiler
             signature={sceneWarmupSignature}
             asynchronous={!timelinePreviewActive}
@@ -444,11 +549,12 @@ export function PlannerScene(): ReactElement {
               targetOpacity={authoritativeFrozenPreview ? 1 : inkOpacity}
             />
           )}
-          {hasAsset && !timelinePreviewActive && (
+          {shouldMountLiveRuntimeSplat(hasAsset, timelinePreviewActive) && (
             <CockpitSplatLayer
               urls={splatUrls}
               transform={transform}
               active={splatActive}
+              includeRendererHost={false}
               onChunkLoaded={arrivals.markLoaded}
               onChunkFailed={arrivals.markFailed}
             />
@@ -468,6 +574,7 @@ export function PlannerScene(): ReactElement {
             renderPhase={authoritativeFrozenPreview ? timelinePreviewMode : null}
             renderRevision={timelineRenderRevision}
             roomEnvelopeKey={frozenRoom?.envelopeKey ?? null}
+            runtimePresentationReady={runtimePresentationReady}
           />
           {!timelinePreviewActive && <PlacementGhost />}
           {!timelinePreviewActive && <SelectionSystem />}

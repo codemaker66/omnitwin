@@ -1,5 +1,8 @@
 import { create } from "zustand";
-import type { LayoutSnapshotVenueRuntimeReference } from "@omnitwin/types";
+import type {
+  LayoutSnapshotVenueRuntimeReference,
+  PhaseLayoutHistoricalRuntime,
+} from "@omnitwin/types";
 import type { PlacedItem } from "../lib/placement.js";
 import { setLayoutTimelineMutationLock } from "../lib/layout-timeline-preview-lock.js";
 import {
@@ -21,6 +24,8 @@ export interface LayoutTimelinePreviewFrameMetadata {
   readonly endsAt: string | null;
   /** Present only for a schema-valid immutable keyframe. */
   readonly venueRuntime: LayoutSnapshotVenueRuntimeReference | null;
+  /** Exact frozen runtime proof for this endpoint; unavailable is explicit. */
+  readonly historicalRuntime: PhaseLayoutHistoricalRuntime | null;
 }
 
 export type LayoutTimelinePreviewTransitionMode =
@@ -74,6 +79,11 @@ export interface LayoutTimelinePreviewState {
   /** Nearest immutable endpoint, updated only when the scrub crosses its midpoint. */
   readonly captureItems: readonly PlacedItem[];
   readonly transition: LayoutTimelinePreviewTransition | null;
+  /** At most one non-active frozen package selected for bounded prefetch. */
+  readonly adjacentHistoricalRuntime: PhaseLayoutHistoricalRuntime | null;
+  readonly setAdjacentHistoricalRuntime: (
+    runtime: PhaseLayoutHistoricalRuntime | null,
+  ) => void;
   readonly beginTransition: (input: BeginLayoutTimelinePreviewTransitionInput) => void;
   readonly setProgress: (progress: number) => void;
   readonly settle: (
@@ -100,6 +110,7 @@ const CLEARED_PREVIEW = {
   currentItems: [],
   captureItems: [],
   transition: null,
+  adjacentHistoricalRuntime: null,
 } as const;
 
 function clampProgress(progress: number): number {
@@ -131,6 +142,12 @@ function transitionMode(
  */
 export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>()((set, get) => ({
   ...CLEARED_PREVIEW,
+
+  setAdjacentHistoricalRuntime: (runtime) => {
+    set((state) => state.adjacentHistoricalRuntime === runtime
+      ? state
+      : { adjacentHistoricalRuntime: runtime });
+  },
 
   beginTransition: (input) => {
     if (

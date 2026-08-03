@@ -76,8 +76,8 @@ function available(
     state: "available",
     snapshotId,
     snapshotStatus: "frozen",
-    canonicalSnapshotId: "88888888-8888-4888-8888-888888888888",
-    proofDigest: "b".repeat(64),
+    canonicalSnapshotId: snapshotId,
+    proofDigest: snapshotId.replaceAll("-", "").repeat(2),
     frozenBy: "99999999-9999-4999-8999-999999999999",
     supersedesSnapshotId: null,
     createdAt: "2026-07-17T10:00:00.000Z",
@@ -1631,6 +1631,17 @@ describe("CockpitBottom room layout timeline", () => {
   });
 
   it("bounds mounted canonical previews while every frame card remains navigable", async () => {
+    const animationCallbacks = new Map<number, FrameRequestCallback>();
+    let nextAnimationId = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback): number => {
+      nextAnimationId += 1;
+      animationCallbacks.set(nextAnimationId, callback);
+      return nextAnimationId;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number): void => {
+      animationCallbacks.delete(id);
+    });
+    vi.spyOn(performance, "now").mockReturnValue(0);
     const frames = Array.from({ length: 20 }, (_, index) => frame(
       `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       `Phase ${String(index + 1)}`,
@@ -1645,8 +1656,21 @@ describe("CockpitBottom room layout timeline", () => {
     await screen.findByRole("slider", { name: /scrub room layout/i });
 
     expect(document.querySelectorAll(".layout-filmstrip__card")).toHaveLength(20);
-    expect(screen.getAllByRole("img", { name: /canonical plan preview/i }).length)
+    expect(document.querySelectorAll(".layout-filmstrip__image").length)
       .toBeLessThanOrEqual(MAX_MOUNTED_TIMELINE_THUMBNAILS);
+    const mountedFrameIndices = (): readonly string[] => Array.from(
+      document.querySelectorAll<HTMLElement>(".layout-filmstrip__item"),
+    ).filter((itemNode) => itemNode.querySelector(".layout-filmstrip__image") !== null)
+      .map((itemNode) => itemNode.dataset["frameIndex"] ?? "missing");
+    const beforeMidpoint = mountedFrameIndices();
+    fireEvent.click(screen.getAllByRole(
+      "button",
+      { name: /Phase 11.*Frozen layout/i },
+    )[0] ?? document.body);
+    const selectionAnimationId = nextAnimationId;
+    act(() => { animationCallbacks.get(selectionAnimationId)?.(400); });
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("transition");
+    expect(mountedFrameIndices()).toEqual(beforeMidpoint);
     expect(Array.from({ length: 20 }, (_, index) => shouldMountTimelineThumbnail(index, 10))
       .filter(Boolean)).toHaveLength(MAX_MOUNTED_TIMELINE_THUMBNAILS);
   });

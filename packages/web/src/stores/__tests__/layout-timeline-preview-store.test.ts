@@ -36,6 +36,7 @@ function frame(id: string, eventId = "event-a"): LayoutTimelinePreviewFrameMetad
     phaseName: id,
     startsAt: "2026-07-18T18:00:00.000Z",
     endsAt: "2026-07-18T19:00:00.000Z",
+    historicalRuntime: null,
     venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
   };
 }

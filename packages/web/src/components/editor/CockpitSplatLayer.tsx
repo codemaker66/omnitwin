@@ -8,6 +8,8 @@ export interface CockpitSplatLayerProps {
   readonly transform: RuntimeAssetViewTransform;
   /** Whether the splat should be shown for the current layer mode. */
   readonly active: boolean;
+  /** False when the owning Canvas already mounts its one persistent host. */
+  readonly includeRendererHost?: boolean;
   /** Fires once per chunk when its captured bytes finish decoding (CARD A2). */
   readonly onChunkLoaded?: (url: string) => void;
   /** Fires once per chunk whose decode fails permanently, so the resolve
@@ -134,7 +136,14 @@ function RevealingSplatChunk({
  * under `frameloop="demand"`. Honours `prefers-reduced-motion` by snapping
  * instead of animating.
  */
-export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onChunkFailed }: CockpitSplatLayerProps): ReactElement | null {
+export function CockpitSplatLayer({
+  urls,
+  transform,
+  active,
+  includeRendererHost = true,
+  onChunkLoaded,
+  onChunkFailed,
+}: CockpitSplatLayerProps): ReactElement | null {
   const sharedOpacity = useEasedOpacity(active ? 1 : 0, DISSOLVE_EASE);
   const onChunkLoadedRef = useRef(onChunkLoaded);
   const onChunkFailedRef = useRef(onChunkFailed);
@@ -156,7 +165,7 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
           url={url}
           transform={transform}
           sharedOpacity={sharedOpacity}
-          includeRendererHost={index === 0}
+          includeRendererHost={includeRendererHost && index === 0}
           onLoaded={handleChunkLoaded}
           onFailed={handleChunkFailed}
         />

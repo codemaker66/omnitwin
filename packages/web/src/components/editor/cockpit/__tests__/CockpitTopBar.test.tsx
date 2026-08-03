@@ -76,6 +76,7 @@ describe("CockpitTopBar", () => {
       phaseName: "Dinner service",
       startsAt: null,
       endsAt: null,
+      historicalRuntime: null,
       venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
     }, [previewItem("one"), previewItem("two")]);
 
