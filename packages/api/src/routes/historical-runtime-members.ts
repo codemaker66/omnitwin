@@ -32,6 +32,7 @@ import {
 } from "../services/phase-layout-runtime-admission.js";
 import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 import { canReadVenuePlanningData } from "../utils/query.js";
+import { bindPublicRuntimeProfileTransferToResponse } from "./assets.js";
 
 const HistoricalRuntimeMemberParamsSchema = z.object({
   venueId: z.string().uuid(),
@@ -44,6 +45,7 @@ const HistoricalRuntimeMemberParamsSchema = z.object({
 export type HistoricalRuntimeMemberByteLoader = (
   storageKey: string,
   expectedSizeBytes: number,
+  signal: AbortSignal,
 ) => Promise<Buffer>;
 
 interface HistoricalRuntimeMemberDescriptor {
@@ -61,6 +63,22 @@ interface HistoricalRuntimeMemberDescriptor {
 }
 
 let cachedS3: import("@aws-sdk/client-s3").S3Client | null = null;
+const MAX_CONCURRENT_HISTORICAL_RUNTIME_TRANSFERS = 4;
+const HISTORICAL_RUNTIME_UPSTREAM_TIMEOUT_MS = 60_000;
+let activeHistoricalRuntimeTransfers = 0;
+
+export function tryAcquireHistoricalRuntimeTransfer(): (() => void) | null {
+  if (activeHistoricalRuntimeTransfers >= MAX_CONCURRENT_HISTORICAL_RUNTIME_TRANSFERS) {
+    return null;
+  }
+  activeHistoricalRuntimeTransfers += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeHistoricalRuntimeTransfers -= 1;
+  };
+}
 
 function runtimeProfileR2Configured(env: Env): boolean {
   return env.RUNTIME_PROFILE_R2_ACCOUNT_ID !== undefined &&
@@ -87,7 +105,17 @@ function privateObjectKey(storageKey: string): string {
   return storageKey.replace(/^r2:/u, "").replace(/^\/+/u, "");
 }
 
-async function readBounded(body: Readable, expectedSizeBytes: number): Promise<Buffer> {
+function historicalRuntimeAbortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("Historical runtime transfer was cancelled", "AbortError");
+}
+
+export async function readBoundedHistoricalRuntimeMember(
+  body: Readable,
+  expectedSizeBytes: number,
+  signal: AbortSignal,
+): Promise<Buffer> {
   if (
     !Number.isSafeInteger(expectedSizeBytes) || expectedSizeBytes <= 0 ||
     expectedSizeBytes > MAX_HISTORICAL_RUNTIME_MEMBER_BYTES
@@ -95,6 +123,11 @@ async function readBounded(body: Readable, expectedSizeBytes: number): Promise<B
     body.destroy();
     throw new Error("Historical runtime member exceeds the verified byte limit");
   }
+  const abortBody = (): void => {
+    if (!body.destroyed) body.destroy(historicalRuntimeAbortError(signal));
+  };
+  signal.addEventListener("abort", abortBody, { once: true });
+  if (signal.aborted) abortBody();
   const bytes = Buffer.allocUnsafe(expectedSizeBytes);
   let offset = 0;
   try {
@@ -111,6 +144,7 @@ async function readBounded(body: Readable, expectedSizeBytes: number): Promise<B
       offset += part.byteLength;
     }
   } finally {
+    signal.removeEventListener("abort", abortBody);
     if (!body.destroyed) body.destroy();
   }
   if (offset !== expectedSizeBytes) {
@@ -120,22 +154,25 @@ async function readBounded(body: Readable, expectedSizeBytes: number): Promise<B
 }
 
 function productionLoader(env: Env): HistoricalRuntimeMemberByteLoader {
-  return async (storageKey, expectedSizeBytes) => {
+  return async (storageKey, expectedSizeBytes, signal) => {
     if (!runtimeProfileR2Configured(env)) {
       throw new Error("Historical runtime private storage is not configured");
     }
     const { GetObjectCommand } = await import("@aws-sdk/client-s3");
     const client = await s3Client(env);
-    const object = await client.send(new GetObjectCommand({
-      Bucket: env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
-      Key: privateObjectKey(storageKey),
-    }));
+    const object = await client.send(
+      new GetObjectCommand({
+        Bucket: env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
+        Key: privateObjectKey(storageKey),
+      }),
+      { abortSignal: signal },
+    );
     if (!(object.Body instanceof Readable)) {
       const possibleBody = object.Body as { destroy?: () => void } | undefined;
       possibleBody?.destroy?.();
       throw new Error("Historical runtime member was not a server byte stream");
     }
-    return readBounded(object.Body, expectedSizeBytes);
+    return readBoundedHistoricalRuntimeMember(object.Body, expectedSizeBytes, signal);
   };
 }
 
@@ -361,43 +398,92 @@ export async function historicalRuntimeMemberRoutes(
     "/venues/:venueId/spaces/:spaceId/runtime-bindings/:bindingId/members/:memberIndex/:fileName",
     { preHandler: [authenticate] },
     async (request, reply) => {
-      const params = HistoricalRuntimeMemberParamsSchema.safeParse(request.params);
-      if (!params.success) return notFound(reply);
-      if (!canReadVenuePlanningData(request.user, params.data.venueId)) return notFound(reply);
-
-      const before = await resolveMemberDescriptor(opts.db, params.data);
-      if (before === null) return notFound(reply);
-      let bytes: Buffer;
+      const upstreamController = new AbortController();
+      let clientDisconnected = false;
+      const abortForClientDisconnect = (): void => {
+        if (reply.raw.writableFinished) return;
+        clientDisconnected = true;
+        upstreamController.abort(
+          new DOMException("Historical runtime client disconnected", "AbortError"),
+        );
+      };
+      // Register before database work so a rapid scrub cannot leave a later
+      // private-object read orphaned after its browser request is cancelled.
+      reply.raw.once("close", abortForClientDisconnect);
+      let markWorkSettled: (() => void) | null = null;
       try {
-        bytes = await loadMemberBytes(before.storageKey, before.sizeBytes);
-      } catch {
-        return reply.status(503).send({
-          error: "Historical runtime member bytes are temporarily unavailable",
-          code: "RUNTIME_MEMBER_UNAVAILABLE",
-        });
-      }
-      if (
-        bytes.byteLength !== before.sizeBytes ||
-        createHash("sha256").update(bytes).digest("hex") !== before.sha256
-      ) {
-        return reply.status(409).send({
-          error: "Historical runtime member failed its immutable byte verification",
-          code: "RUNTIME_MEMBER_INTEGRITY_FAILED",
-        });
-      }
-      const after = await resolveMemberDescriptor(opts.db, params.data);
-      if (after === null || !sameDescriptor(before, after)) return notFound(reply);
+        const params = HistoricalRuntimeMemberParamsSchema.safeParse(request.params);
+        if (!params.success) return notFound(reply);
+        if (!canReadVenuePlanningData(request.user, params.data.venueId)) return notFound(reply);
 
-      return reply
-        .header("content-type", before.mimeType)
-        .header("content-length", String(bytes.byteLength))
-        .header("cache-control", "private, no-store")
-        .header("x-content-type-options", "nosniff")
-        .header("x-content-sha256", before.sha256)
-        .header("x-runtime-binding-digest", before.bindingDigest)
-        .header("x-runtime-package-content-digest", before.runtimePackageContentDigest)
-        .header("x-asset-version-id", before.assetVersionId)
-        .send(bytes);
+        const before = await resolveMemberDescriptor(opts.db, params.data);
+        if (clientDisconnected || reply.raw.destroyed) return reply;
+        if (before === null) return notFound(reply);
+        const releaseTransfer = tryAcquireHistoricalRuntimeTransfer();
+        if (releaseTransfer === null) {
+          return reply
+            .header("retry-after", "1")
+            .header("cache-control", "private, no-store")
+            .status(429)
+            .send({
+              error: "Historical runtime delivery is busy; try again shortly",
+              code: "RUNTIME_MEMBER_BUSY",
+            });
+        }
+        if (clientDisconnected || reply.raw.destroyed) {
+          releaseTransfer();
+          return reply;
+        }
+        markWorkSettled = bindPublicRuntimeProfileTransferToResponse(
+          reply.raw,
+          releaseTransfer,
+          () => { upstreamController.abort(); },
+          HISTORICAL_RUNTIME_UPSTREAM_TIMEOUT_MS,
+        );
+        reply.raw.off("close", abortForClientDisconnect);
+        let bytes: Buffer;
+        try {
+          bytes = await loadMemberBytes(
+            before.storageKey,
+            before.sizeBytes,
+            upstreamController.signal,
+          );
+        } catch {
+          if (clientDisconnected || reply.raw.destroyed || upstreamController.signal.aborted) {
+            return reply;
+          }
+          return reply.status(503).send({
+            error: "Historical runtime member bytes are temporarily unavailable",
+            code: "RUNTIME_MEMBER_UNAVAILABLE",
+          });
+        }
+        if (clientDisconnected || reply.raw.destroyed) return reply;
+        if (
+          bytes.byteLength !== before.sizeBytes ||
+          createHash("sha256").update(bytes).digest("hex") !== before.sha256
+        ) {
+          return reply.status(409).send({
+            error: "Historical runtime member failed its immutable byte verification",
+            code: "RUNTIME_MEMBER_INTEGRITY_FAILED",
+          });
+        }
+        const after = await resolveMemberDescriptor(opts.db, params.data);
+        if (after === null || !sameDescriptor(before, after)) return notFound(reply);
+
+        return reply
+          .header("content-type", before.mimeType)
+          .header("content-length", String(bytes.byteLength))
+          .header("cache-control", "private, no-store")
+          .header("x-content-type-options", "nosniff")
+          .header("x-content-sha256", before.sha256)
+          .header("x-runtime-binding-digest", before.bindingDigest)
+          .header("x-runtime-package-content-digest", before.runtimePackageContentDigest)
+          .header("x-asset-version-id", before.assetVersionId)
+          .send(bytes);
+      } finally {
+        reply.raw.off("close", abortForClientDisconnect);
+        markWorkSettled?.();
+      }
     },
   );
 }

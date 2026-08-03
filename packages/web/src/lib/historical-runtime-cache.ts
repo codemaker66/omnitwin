@@ -1,4 +1,8 @@
-import type { PhaseLayoutRuntimeAvailableBinding } from "@omnitwin/types";
+import {
+  PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS,
+  PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES,
+  type PhaseLayoutRuntimeAvailableBinding,
+} from "@omnitwin/types";
 import type { VerifiedHistoricalRuntimeAsset } from "../api/historical-runtime-assets.js";
 
 export type HistoricalRuntimeCacheStatus =
@@ -55,9 +59,11 @@ export interface HistoricalRuntimeCacheWindow {
   readonly decodeAdjacent: boolean;
 }
 
-export const HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET = 96 * 1_024 * 1_024;
+export const HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET =
+  PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES;
 export const HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS = 15_000;
-export const HISTORICAL_RUNTIME_MAX_MEMBERS = 8;
+export const HISTORICAL_RUNTIME_MAX_MEMBERS =
+  PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS;
 export const HISTORICAL_RUNTIME_MAX_SPLATS_PER_RESOURCE = 4_000_000;
 export const HISTORICAL_RUNTIME_CROSSFADE_SPLAT_BUDGET = 4_000_000;
 export const HISTORICAL_RUNTIME_LOW_MEMORY_BYTE_BUDGET = 32 * 1_024 * 1_024;
@@ -356,6 +362,9 @@ export class HistoricalRuntimeCache<TResource> {
   #ensureDecoded(record: MutableRecord<TResource>): Promise<TResource | null> {
     if (record.resource !== null) return Promise.resolve(record.resource);
     if (record.decodePromise !== null) return record.decodePromise;
+    // The verified-only TTL applies while an adjacent package is waiting to
+    // be selected, not once a deliberately scheduled decode owns the bytes.
+    this.#cancelVerifiedExpiry(record);
 
     const job = async (): Promise<TResource | null> => {
       let assets: readonly VerifiedHistoricalRuntimeAsset[];
@@ -425,7 +434,12 @@ export class HistoricalRuntimeCache<TResource> {
     this.#cancelVerifiedExpiry(record);
     record.verifiedExpiryTimer = setTimeout(() => {
       record.verifiedExpiryTimer = null;
-      if (!this.#isCurrent(record) || record.key === this.#activeKey || record.resource !== null) return;
+      if (
+        !this.#isCurrent(record) ||
+        record.key === this.#activeKey ||
+        record.resource !== null ||
+        record.status !== "verified"
+      ) return;
       record.controller.abort();
       record.verifiedAssets = null;
       this.#records.delete(record.key);

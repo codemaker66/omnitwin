@@ -9,7 +9,7 @@ import { historicalRuntimeBindingFixture } from "../../test-utils/historical-run
 
 function verifiedHeaders(binding = historicalRuntimeBindingFixture()): Record<string, string> {
   const member = binding.visualAssets[0];
-  if (member === undefined || member.mimeType === null) throw new Error("Fixture member missing");
+  if (member === undefined) throw new Error("Fixture member missing");
   return {
     "content-type": member.mimeType,
     "content-length": String(member.sizeBytes),
@@ -204,17 +204,4 @@ describe("fetchVerifiedHistoricalRuntimeAsset", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ redirect: "error" }));
   });
 
-  it("fails closed when the descriptor cannot authenticate an exact content type", async () => {
-    const binding = historicalRuntimeBindingFixture({ sizeBytes: 3, mimeType: null });
-    const member = binding.visualAssets[0];
-    if (member === undefined) throw new Error("Fixture member missing");
-    const fetchMock = vi.fn<typeof fetch>();
-    await expect(fetchVerifiedHistoricalRuntimeAsset(
-      binding,
-      member,
-      new AbortController().signal,
-      { fetch: fetchMock, getAuthToken: vi.fn(), digest: vi.fn() },
-    )).rejects.toMatchObject({ code: "HEADER_MISMATCH" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

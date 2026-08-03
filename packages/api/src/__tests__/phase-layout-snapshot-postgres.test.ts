@@ -1379,9 +1379,11 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     const { buildServer } = await import("../index.js");
     let deliveredBytes = SYNTHETIC_RUNTIME_BYTES;
     const memberApp = await buildServer(validateEnv(), {
-      historicalRuntimeMemberByteLoader: (storageKey, expectedSizeBytes) => {
+      historicalRuntimeMemberByteLoader: (storageKey, expectedSizeBytes, signal) => {
         expect(storageKey).toBe(fixture.r2Key);
         expect(expectedSizeBytes).toBe(SYNTHETIC_RUNTIME_BYTES.byteLength);
+        expect(signal).toBeInstanceOf(AbortSignal);
+        expect(signal.aborted).toBe(false);
         return Promise.resolve(deliveredBytes);
       },
     });
@@ -1396,7 +1398,10 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       expect(memberResponse.statusCode, memberResponse.body).toBe(200);
       expect(memberResponse.rawPayload.equals(SYNTHETIC_RUNTIME_BYTES)).toBe(true);
       expect(memberResponse.headers["content-type"]).toBe("application/octet-stream");
+      expect(memberResponse.headers["content-length"])
+        .toBe(String(SYNTHETIC_RUNTIME_BYTES.byteLength));
       expect(memberResponse.headers["cache-control"]).toBe("private, no-store");
+      expect(memberResponse.headers["x-content-sha256"]).toBe(fixture.assetSha256);
       expect(memberResponse.headers["x-runtime-binding-digest"]).toBe(binding.bindingDigest);
       expect(memberResponse.headers["x-runtime-package-content-digest"])
         .toBe(fixture.packageContentDigest);

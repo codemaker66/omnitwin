@@ -228,9 +228,16 @@ describe("HistoricalRuntimeCache", () => {
   });
 
   it("does not fetch or decode an active package over the supported byte budget", async () => {
-    const oversized = historicalRuntimeBindingFixture({
-      sizeBytes: HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET + 1,
-    });
+    const base = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const firstMember = base.visualAssets[0];
+    if (firstMember === undefined) throw new Error("Fixture member missing");
+    const oversized: PhaseLayoutRuntimeAvailableBinding = {
+      ...base,
+      visualAssets: [{
+        ...firstMember,
+        sizeBytes: HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET + 1,
+      }],
+    };
     const harness = cacheWith({});
     harness.cache.setWindow({ active: oversized, adjacent: null, decodeAdjacent: false });
     await Promise.resolve();
@@ -262,19 +269,23 @@ describe("HistoricalRuntimeCache", () => {
   });
 
   it("does not fetch an adjacent package when its combined bytes exceed the budget", async () => {
-    const active = historicalRuntimeBindingFixture({ sizeBytes: 60 * 1_024 * 1_024 });
+    const active = historicalRuntimeBindingFixture({
+      memberSizeBytes: Array.from({ length: 4 }, () => 15 * 1_024 * 1_024),
+    });
     const adjacent = historicalRuntimeBindingFixture({
       bindingId: "12111111-1111-4111-8111-111111111111",
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
-      sizeBytes: 40 * 1_024 * 1_024,
+      memberSizeBytes: [14 * 1_024 * 1_024, 13 * 1_024 * 1_024, 13 * 1_024 * 1_024],
     });
     const harness = cacheWith({});
     harness.cache.setWindow({ active, adjacent, decodeAdjacent: true });
     await vi.waitFor(() => { expect(harness.decode).toHaveBeenCalledOnce(); });
-    expect(harness.fetchMember).toHaveBeenCalledOnce();
-    expect(harness.fetchMember.mock.calls[0]?.[0].bindingId).toBe(active.bindingId);
+    expect(harness.fetchMember).toHaveBeenCalledTimes(active.visualAssets.length);
+    expect(harness.fetchMember.mock.calls.every(([binding]) =>
+      binding.bindingId === active.bindingId,
+    )).toBe(true);
     expect(harness.cache.getSnapshot().records.has(historicalRuntimeBindingKey(adjacent))).toBe(false);
     harness.cache.clear();
   });
@@ -297,6 +308,45 @@ describe("HistoricalRuntimeCache", () => {
     });
     await vi.advanceTimersByTimeAsync(HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS);
     expect(harness.cache.getSnapshot().records.has(historicalRuntimeBindingKey(adjacent))).toBe(false);
+    harness.cache.clear();
+  });
+
+  it("does not expire an adjacent package while its scheduled decode is still running", async () => {
+    vi.useFakeTimers();
+    const active = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const adjacent = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sizeBytes: 1,
+    });
+    let finishAdjacentDecode = (_value: TestResource): void => {
+      throw new Error("Adjacent decode was not started");
+    };
+    const harness = cacheWith({
+      decode: (binding) => binding.bindingId === active.bindingId
+        ? Promise.resolve(resource("active"))
+        : new Promise<TestResource>((resolve) => { finishAdjacentDecode = resolve; }),
+    });
+
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("verified");
+    });
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: true });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("decoding");
+    });
+    await vi.advanceTimersByTimeAsync(HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS + 1);
+    expect(harness.cache.getSnapshot().records.has(historicalRuntimeBindingKey(adjacent))).toBe(true);
+    finishAdjacentDecode(resource("adjacent"));
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("ready");
+    });
     harness.cache.clear();
   });
 });

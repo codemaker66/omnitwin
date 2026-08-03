@@ -186,7 +186,7 @@
   border-radius: 7px;
   background: var(--house-bg-1);
   color: var(--house-text-2);
-  font: 600 10px/1.2 "Inter", system-ui, sans-serif;
+  font: 600 12px/1.25 "Inter", system-ui, sans-serif;
   letter-spacing: 0.045em;
   pointer-events: none;
 }

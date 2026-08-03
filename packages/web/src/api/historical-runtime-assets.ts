@@ -123,13 +123,6 @@ export async function fetchVerifiedHistoricalRuntimeAsset(
       "Historical runtime member does not belong to the frozen binding.",
     );
   }
-  if (member.mimeType === null) {
-    throw new HistoricalRuntimeAssetError(
-      "HEADER_MISMATCH",
-      "Historical runtime member has no exact content type to authenticate.",
-    );
-  }
-
   const token = await dependencies.getAuthToken();
   throwIfAborted(signal);
   if (token === null) {

@@ -39,7 +39,8 @@ export interface HistoricalRuntimeBindingFixtureOptions {
   readonly assetVersionId?: string;
   readonly sha256?: string;
   readonly sizeBytes?: number;
-  readonly mimeType?: string | null;
+  readonly memberSizeBytes?: readonly number[];
+  readonly mimeType?: string;
   readonly fileName?: string;
   readonly transformArtifact?: TransformArtifactV0;
 }
@@ -51,16 +52,24 @@ export function historicalRuntimeBindingFixture(
   const runtimePackageId = options.runtimePackageId ?? "66666666-6666-4666-8666-666666666666";
   const transformArtifact = options.transformArtifact ?? DEFAULT_TRANSFORM;
   const transformArtifactDigest = runtimeTransformArtifactDigest(transformArtifact);
-  const visualAssets = [{
-    memberIndex: 0,
-    assetVersionId: options.assetVersionId ?? "99999999-9999-4999-8999-999999999999",
-    fileName: options.fileName ?? "grand-hall.sog",
-    fileExt: (options.fileName ?? "grand-hall.sog").endsWith(".spz") ? ".spz" as const : ".sog" as const,
-    mimeType: options.mimeType === undefined ? "application/octet-stream" : options.mimeType,
-    sha256: options.sha256 ?? "a".repeat(64),
-    sizeBytes: options.sizeBytes ?? 1_024,
-    evidenceStatus: "human_reviewed" as const,
-  }];
+  const memberSizeBytes = options.memberSizeBytes ?? [options.sizeBytes ?? 1_024];
+  const visualAssets = memberSizeBytes.map((sizeBytes, memberIndex) => {
+    const fileName = memberIndex === 0
+      ? options.fileName ?? "grand-hall.sog"
+      : `grand-hall-${String(memberIndex)}.sog`;
+    return {
+      memberIndex,
+      assetVersionId: memberIndex === 0
+        ? options.assetVersionId ?? "99999999-9999-4999-8999-999999999999"
+        : `99999999-9999-4999-8999-${String(999_999_999_999 - memberIndex).padStart(12, "0")}`,
+      fileName,
+      fileExt: fileName.endsWith(".spz") ? ".spz" as const : ".sog" as const,
+      mimeType: options.mimeType ?? "application/octet-stream",
+      sha256: options.sha256 ?? "a".repeat(64),
+      sizeBytes,
+      evidenceStatus: "human_reviewed" as const,
+    };
+  });
   const runtimePackageContentDigest = "b".repeat(64);
   const compositionDigest = phaseLayoutRuntimeCompositionDigest({
     runtimePackageId,
