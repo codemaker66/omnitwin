@@ -333,7 +333,9 @@ export class HistoricalRuntimeCache<TResource> {
       if (!this.#isCurrent(record)) throw new DOMException("Aborted", "AbortError");
       record.verifiedAssets = assets;
       record.status = "verified";
-      if (record.key !== this.#activeKey) this.#scheduleVerifiedExpiry(record);
+      if (record.key !== this.#activeKey && record.decodePromise === null) {
+        this.#scheduleVerifiedExpiry(record);
+      }
       this.#publish();
       return assets;
     };
@@ -365,11 +367,15 @@ export class HistoricalRuntimeCache<TResource> {
     // The verified-only TTL applies while an adjacent package is waiting to
     // be selected, not once a deliberately scheduled decode owns the bytes.
     this.#cancelVerifiedExpiry(record);
+    // Queue verification now, before the serialized decoder job runs. This
+    // gives the selected package fetch priority over the adjacent prefetch
+    // scheduled later in setWindow, while decode work remains one-at-a-time.
+    const verifiedAssets = this.#ensureFetched(record);
 
     const job = async (): Promise<TResource | null> => {
       let assets: readonly VerifiedHistoricalRuntimeAsset[];
       try {
-        assets = await this.#ensureFetched(record);
+        assets = await verifiedAssets;
       } catch {
         return null;
       }
@@ -437,6 +443,7 @@ export class HistoricalRuntimeCache<TResource> {
       if (
         !this.#isCurrent(record) ||
         record.key === this.#activeKey ||
+        record.decodePromise !== null ||
         record.resource !== null ||
         record.status !== "verified"
       ) return;

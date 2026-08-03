@@ -83,6 +83,38 @@ describe("HistoricalRuntimeCache", () => {
     harness.cache.clear();
   });
 
+  it("fetches the selected package before its adjacent prefetch", async () => {
+    const active = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const adjacent = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sizeBytes: 1,
+    });
+    const started: string[] = [];
+    const finishFetch = new Map<string, () => void>();
+    const harness = cacheWith({
+      fetchMember: (binding) => new Promise<VerifiedHistoricalRuntimeAsset>((resolve) => {
+        started.push(binding.bindingId);
+        finishFetch.set(binding.bindingId, () => { resolve(verifiedAsset(binding)); });
+      }),
+    });
+
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: false });
+    await vi.waitFor(() => { expect(started).toEqual([active.bindingId]); });
+    finishFetch.get(active.bindingId)?.();
+    await vi.waitFor(() => {
+      expect(started).toEqual([active.bindingId, adjacent.bindingId]);
+    });
+    finishFetch.get(adjacent.bindingId)?.();
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(active))?.status)
+        .toBe("ready");
+    });
+    harness.cache.clear();
+  });
+
   it("runs only one package decoder at a time", async () => {
     const first = historicalRuntimeBindingFixture({
       bindingId: "11111111-1111-4111-8111-111111111111",
@@ -347,6 +379,66 @@ describe("HistoricalRuntimeCache", () => {
       expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
         .toBe("ready");
     });
+    harness.cache.clear();
+  });
+
+  it("does not expire an adjacent package while its decode waits behind the active package", async () => {
+    vi.useFakeTimers();
+    const active = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const adjacent = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sizeBytes: 1,
+    });
+    let adjacentFetchStarted = false;
+    let finishAdjacentFetch = (): void => {
+      throw new Error("Adjacent fetch was not started");
+    };
+    let finishActiveDecode = (_value: TestResource): void => {
+      throw new Error("Active decode was not started");
+    };
+    const harness = cacheWith({
+      fetchMember: (binding) => {
+        if (binding.bindingId === active.bindingId) {
+          return Promise.resolve(verifiedAsset(binding));
+        }
+        adjacentFetchStarted = true;
+        return new Promise<VerifiedHistoricalRuntimeAsset>((resolve) => {
+          finishAdjacentFetch = () => { resolve(verifiedAsset(binding)); };
+        });
+      },
+      decode: (binding) => binding.bindingId === active.bindingId
+        ? new Promise<TestResource>((resolve) => { finishActiveDecode = resolve; })
+        : Promise.resolve(resource("adjacent")),
+    });
+
+    harness.cache.setWindow({ active, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.decode).toHaveBeenCalledOnce();
+    });
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(adjacentFetchStarted).toBe(true);
+    });
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: true });
+    finishAdjacentFetch();
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("verified");
+    });
+
+    await vi.advanceTimersByTimeAsync(HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS + 1);
+    expect(harness.cache.getSnapshot().records.has(historicalRuntimeBindingKey(adjacent))).toBe(true);
+    expect(harness.decode).toHaveBeenCalledOnce();
+
+    finishActiveDecode(resource("active"));
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("ready");
+    });
+    expect(harness.decode).toHaveBeenCalledTimes(2);
     harness.cache.clear();
   });
 });
