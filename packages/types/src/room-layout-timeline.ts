@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { CanonicalLayoutSnapshotV0Schema } from "./canonical-layout-snapshot.js";
+import {
+  CanonicalLayoutSnapshotV0Schema,
+  canonicalLayoutSnapshotDigest,
+} from "./canonical-layout-snapshot.js";
 import { ConfigurationIdSchema } from "./configuration.js";
 import {
   EventIdSchema,
@@ -21,6 +24,7 @@ import {
   RevenueScenarioKindSchema,
   RevenueScenarioStatusSchema,
 } from "./revenue-analytics.js";
+import { PhaseLayoutHistoricalRuntimeSchema } from "./phase-layout-runtime-binding.js";
 
 /**
  * Eight elapsed days admits a seven-wall-day venue week across both DST
@@ -122,6 +126,7 @@ const AvailableKeyframeSchema = z.object({
   objectCount: z.number().int().nonnegative(),
   guestCount: z.number().int().nonnegative(),
   payload: CanonicalLayoutSnapshotV0Schema,
+  historicalRuntime: PhaseLayoutHistoricalRuntimeSchema,
 }).strict();
 
 const MissingKeyframeSchema = z.object({
@@ -303,6 +308,40 @@ export const RoomLayoutTimelineFrameSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ["keyframe", "guestCount"],
         message: "Available keyframe guestCount must match its payload",
+      });
+    }
+    const runtimeBinding = frame.keyframe.historicalRuntime.binding;
+    if (
+      runtimeBinding !== null &&
+      (
+        runtimeBinding.phaseLayoutSnapshotId !== frame.keyframe.snapshotId ||
+        runtimeBinding.canonicalSnapshotId !== frame.keyframe.canonicalSnapshotId ||
+        runtimeBinding.snapshotHash !== canonicalLayoutSnapshotDigest(frame.keyframe.payload) ||
+        runtimeBinding.venueId !== frame.keyframe.payload.venueId ||
+        runtimeBinding.spaceId !== frame.keyframe.payload.spaceId ||
+        runtimeBinding.venueSlug !== frame.keyframe.payload.venueRuntime.venueSlug ||
+        runtimeBinding.spaceSlug !== frame.keyframe.payload.venueRuntime.spaceSlug
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["keyframe", "historicalRuntime", "binding"],
+        message: "Historical runtime binding must match the exact frozen snapshot and room.",
+      });
+    }
+    if (
+      frame.keyframe.historicalRuntime.state === "available" &&
+      (
+        frame.keyframe.payload.venueRuntime.runtimePackageId !==
+          frame.keyframe.historicalRuntime.binding.runtimePackageId ||
+        frame.keyframe.payload.venueRuntime.runtimeVenueManifestDigest !==
+          frame.keyframe.historicalRuntime.binding.runtimeManifestDigest
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["keyframe", "historicalRuntime", "binding", "runtimePackageId"],
+        message: "Available historical runtime must match the package frozen into the layout payload.",
       });
     }
   }

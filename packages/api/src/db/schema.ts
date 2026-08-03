@@ -62,6 +62,7 @@ import type {
   EventArchitectStrategy,
   LayoutValidatorRun,
   PricingAssumptionInput,
+  PhaseLayoutRuntimeBindingV1,
   ProposalVersionPayload,
   ReconstructionQaReport,
   ReconstructionReleaseArtifactRef,
@@ -1066,6 +1067,7 @@ export const runtimePackages = pgTable("runtime_packages", {
     table.roomSlug,
     table.contentDigest,
   ),
+  unique("runtime_packages_id_digest_unique").on(table.id, table.contentDigest),
   index("runtime_packages_venue_room_status_idx").on(table.venueSlug, table.roomSlug, table.runtimeStatus),
   index("runtime_packages_primary_visual_idx").on(table.primaryVisualAssetVersionId),
   index("runtime_packages_point_cloud_idx").on(table.pointCloudAssetVersionId),
@@ -1325,6 +1327,16 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   supersedesSnapshotId: uuid("supersedes_snapshot_id"),
   frozenBy: uuid("frozen_by").references(() => users.id, { onDelete: "restrict" }),
   snapshotHash: varchar("snapshot_hash", { length: 64 }),
+  runtimeBindingState: varchar("runtime_binding_state", { length: 24 })
+    .$type<"legacy_unbound" | "available" | "unavailable">()
+    .default("legacy_unbound")
+    .notNull(),
+  runtimeBindingDigest: varchar("runtime_binding_digest", { length: 64 }),
+  runtimeBinding: jsonb("runtime_binding").$type<PhaseLayoutRuntimeBindingV1 | null>(),
+  runtimePackageId: uuid("runtime_package_id"),
+  runtimePackageContentDigest: varchar("runtime_package_content_digest", { length: 64 }),
+  runtimeQaRecordId: uuid("runtime_qa_record_id"),
+  runtimeTransformArtifactRowId: uuid("runtime_transform_artifact_row_id"),
   status: varchar("status", { length: 30 }).notNull().default("draft"),
   objectCount: integer("object_count").notNull().default(0),
   guestCount: integer("guest_count"),
@@ -1341,6 +1353,23 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   index("phase_layout_snapshots_config_idx").on(table.configurationId),
   index("phase_layout_snapshots_canonical_idx").on(table.canonicalSnapshotId),
   index("phase_layout_snapshots_supersedes_idx").on(table.supersedesSnapshotId),
+  index("phase_layout_snapshots_runtime_package_idx").on(table.runtimePackageId),
+  index("phase_layout_snapshots_runtime_binding_state_idx").on(table.runtimeBindingState),
+  foreignKey({
+    columns: [table.runtimePackageId, table.runtimePackageContentDigest],
+    foreignColumns: [runtimePackages.id, runtimePackages.contentDigest],
+    name: "phase_layout_snapshots_runtime_package_digest_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.runtimeQaRecordId],
+    foreignColumns: [runtimeQaRecords.id],
+    name: "phase_layout_snapshots_runtime_qa_record_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.runtimeTransformArtifactRowId],
+    foreignColumns: [runtimeTransformArtifacts.id],
+    name: "phase_layout_snapshots_runtime_transform_artifact_fk",
+  }).onDelete("restrict"),
 ]);
 
 // ---------------------------------------------------------------------------

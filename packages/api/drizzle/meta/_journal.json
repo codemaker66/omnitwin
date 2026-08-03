@@ -428,6 +428,13 @@
       "when": 1785672000000,
       "tag": "0062_phase_layout_snapshot_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1785758400000,
+      "tag": "0063_phase_layout_runtime_bindings",
+      "breakpoints": true
     }
   ]
 }

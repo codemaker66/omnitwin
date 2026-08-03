@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import type { ReactElement } from "react";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  historicalRuntimeFromBinding,
   type CanonicalLayoutSnapshotV0,
   type EventPhaseGraph,
 } from "@omnitwin/types";
@@ -84,6 +85,7 @@ function available(
     objectCount: snapshot.objects.length,
     guestCount: snapshot.guestCount,
     payload: snapshot,
+    historicalRuntime: historicalRuntimeFromBinding(null),
   };
 }
 
