@@ -53,6 +53,7 @@ describe("phase layout historical runtime binding migration", () => {
     expect(migration).toContain('"runtime_binding"->>\'canonicalSnapshotId\' = "canonical_snapshot_id"::text');
     expect(migration).toContain('"runtime_binding"->>\'snapshotHash\' = "snapshot_hash"');
     expect(migration).toContain('"runtime_binding"->>\'boundBy\' = "frozen_by"::text');
+    expect(migration.match(/\) IS TRUE\)/gu)).toHaveLength(3);
     expect(migration).toContain("ON DELETE RESTRICT");
     expect(migration).not.toMatch(/\bUPDATE\s+"phase_layout_snapshots"/iu);
     expect(migration).not.toMatch(/\b(?:DROP|TRUNCATE|RENAME)\s+TABLE\b/iu);
