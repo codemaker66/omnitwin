@@ -72,4 +72,58 @@ describe("createRoundTableProxy", () => {
     expect(details.some((mesh) => mesh.name.endsWith("hinge-plate-detail"))).toBe(true);
     expect(details.some((mesh) => mesh.name.endsWith("foot-cap-detail"))).toBe(true);
   });
+
+  // This factory predates the Gen-2 batch harness, so it carries its own copy
+  // of the floating-part invariant. The defect was measured, not guessed: the
+  // crossbar stopped 4mm short of the cleat it was meant to bolt to, and was
+  // the only mesh across all six proxies with no neighbour of any kind.
+  it("has no part floating free of the assembly", () => {
+    const table = createRoundTableProxy();
+    table.updateMatrixWorld(true);
+    const boxes = modelMeshes(table).map((mesh) => ({
+      mesh,
+      box: new Box3().setFromObject(mesh),
+    }));
+    const isRelated = (a: Object3D, b: Object3D): boolean => {
+      for (let n: Object3D | null = a; n !== null; n = n.parent) if (n === b) return true;
+      for (let n: Object3D | null = b; n !== null; n = n.parent) if (n === a) return true;
+      return false;
+    };
+
+    const orphans = boxes
+      .filter(({ mesh, box }) => {
+        const grown = box.clone().expandByScalar(0.001);
+        return !boxes.some(({ mesh: other, box: otherBox }) => (
+          other !== mesh && !isRelated(mesh, other) && grown.intersectsBox(otherBox)
+        ));
+      })
+      .map(({ mesh }) => mesh.name);
+
+    expect(orphans).toEqual([]);
+  });
+
+  // The rim is a 7mm bead. Buried at mid-depth it sat inside 24mm of oak and
+  // rendered nothing; it has to break the tabletop's lower surface to be the
+  // edge moulding it is modelled as — while staying inside the 0.915m radius
+  // the canonical 1.83m width allows.
+  it("shows the tabletop rim below the top rather than sealing it inside", () => {
+    const table = createRoundTableProxy();
+    table.updateMatrixWorld(true);
+    const meshes = modelMeshes(table);
+    const rim = meshes.find((mesh) => mesh.name === "tabletop-rim-detail");
+    const top = meshes.find((mesh) => mesh.name === "tabletop");
+    expect(rim).toBeDefined();
+    expect(top).toBeDefined();
+    if (rim === undefined || top === undefined) return;
+
+    const rimBox = new Box3().setFromObject(rim);
+    const topBox = new Box3().setFromObject(top);
+
+    // Proud of the tabletop's underside, so it is actually visible.
+    expect(rimBox.min.y).toBeLessThan(topBox.min.y);
+    // Still tucked under the top, not floating below it.
+    expect(rimBox.max.y).toBeGreaterThanOrEqual(topBox.min.y);
+    // Never wider than the canonical half-width.
+    expect(rimBox.max.x).toBeLessThanOrEqual(0.915 + 1e-6);
+  });
 });

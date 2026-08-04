@@ -158,6 +158,13 @@ function addTabletop(
     options,
   ));
   rim.rotateX(Math.PI / 2);
+  // Sit the bead on the tabletop's lower edge instead of buried at mid-depth.
+  // The extruded top sustains radius 0.915 through y ±0.0195 about this pivot,
+  // so a 0.9125-radius torus at y=0 was sealed inside 24mm of oak and never
+  // rendered a pixel. Dropping it to the underside (top of the bead meeting
+  // the tabletop's bottom face at -0.0275) makes it read as the edge moulding
+  // it was modelled to be, and it stays inside the 0.915 canonical radius.
+  rim.position.y = -0.0275 - 0.0035 / 2;
   const apron = markSurfaceDetail(configureMesh(
     new Mesh(new CylinderGeometry(0.84, 0.84, 0.018, 48, 1), materials.oakEdge),
     "tabletop-underside-apron-detail",
@@ -326,7 +333,11 @@ function addCrossbar(
   options: RoundTableProxyOptions,
 ): Group {
   const pivot = namedGroup("frame-crossbar");
-  pivot.position.y = 0.65;
+  // 0.654, not 0.65: the beam is 0.04 deep, so its top lands exactly on the
+  // underside cleat at y=0.674. At 0.65 it stopped 4mm short and was the only
+  // mesh in any proxy with no neighbour it actually touched — a beam bolted to
+  // nothing, which reads as a modelling error the moment the table is exploded.
+  pivot.position.y = 0.654;
   const crossbar = configureMesh(
     new Mesh(new BoxGeometry(1.16, 0.04, 0.05), material),
     "frame-crossbar-beam",

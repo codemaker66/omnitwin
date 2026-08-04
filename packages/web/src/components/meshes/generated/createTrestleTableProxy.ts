@@ -511,10 +511,16 @@ function createStretcher(
       stretcher,
       registry,
       `${side}-stretcher-bracket-detail`,
-      new RoundedBoxGeometry(0.02, 0.12, 0.11, 1, 0.004),
+      // 0.56 deep, not 0.11. The legs stand at z ±0.2177..0.3323 while the
+      // stretcher runs down the centreline at z ±0.0275, so a 0.11-deep
+      // bracket bolted the stretcher to thin air — nothing in the assembly
+      // came within 18mm of it. A gusset spanning z ±0.28 reaches both the
+      // front and rear leg at this height, which is how a real trestle's
+      // H-frame is tied together. Stays inside the canonical 0.76 depth.
+      new RoundedBoxGeometry(0.02, 0.12, 0.56, 1, 0.004),
       materials.hardware,
       [x, 0, 0],
-      boxCollider([0.02, 0.12, 0.11]),
+      boxCollider([0.02, 0.12, 0.56]),
       options,
     );
   });

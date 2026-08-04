@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ActionSchema } from "@omnitwin/types";
+import { ActionSchema, type JsonValue } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
 import type { ReplayObject } from "../action-log-replay.js";
 import { documentAtOrdinal, planRestore, timelineMarkers } from "../time-machine.js";
@@ -47,11 +47,28 @@ function entry(ordinal: number, overrides: Partial<AuditLogEntry> = {}): AuditLo
   };
 }
 
+/**
+ * Round-trip a fixture through JSON to land it in `JsonValue`.
+ *
+ * `ReplayObject` is `Record<string, unknown>` by design — its contents are
+ * validated at runtime by Zod, not by the compiler — so a payload containing
+ * one is not statically assignable to `JsonValue`. Serialising proves the
+ * fixture really is JSON, which is what the production path does before an
+ * action reaches the log.
+ */
+function jsonPayload(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
 function place(ordinal: number, object: ReplayObject, index = 0): AuditLogEntry {
   return entry(ordinal, {
     intent: "object.place",
-    payload: { label: `Place ${String(object.kind)}`, added: [{ object, index }], removed: [], updated: [] },
-    inverse: { label: `Place ${String(object.kind)}`, added: [], removed: [{ object, index }], updated: [] },
+    payload: jsonPayload({
+      label: `Place ${String(object.kind)}`, added: [{ object, index }], removed: [], updated: [],
+    }),
+    inverse: jsonPayload({
+      label: `Place ${String(object.kind)}`, added: [], removed: [{ object, index }], updated: [],
+    }),
   });
 }
 

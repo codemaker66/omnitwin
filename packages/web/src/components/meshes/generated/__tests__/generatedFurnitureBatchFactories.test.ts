@@ -144,5 +144,42 @@ for (const fixture of GENERATED_FACTORY_FIXTURES) {
       expect([...modelMaterials(first)].every((material) => !secondMaterials.has(material)))
         .toBe(true);
     });
+
+    // Every mesh must physically touch something. A part floating in space is
+    // invisible in the assembled view but obvious the moment the inspector
+    // explodes the model, and it is the signature of a mis-measured constant.
+    // This shape of defect was found three times in the Gen-1 factories: a
+    // crossbar bolted to nothing 4mm short of its cleat, a stretcher bracket
+    // 18mm from any leg, and a rim sealed inside 24mm of solid oak.
+    it(`${fixture.slug} has no part floating free of the assembly`, () => {
+      const root = fixture.factory();
+      root.updateMatrixWorld(true);
+      const boxes = modelMeshes(root).map((mesh) => ({
+        mesh,
+        box: new Box3().setFromObject(mesh),
+      }));
+
+      const TOUCH_EPSILON = 0.001; // 1mm — a fabrication tolerance, not a gap.
+      const isRelated = (a: Object3D, b: Object3D): boolean => {
+        for (let node: Object3D | null = a; node !== null; node = node.parent) {
+          if (node === b) return true;
+        }
+        for (let node: Object3D | null = b; node !== null; node = node.parent) {
+          if (node === a) return true;
+        }
+        return false;
+      };
+
+      const orphans = boxes
+        .filter(({ mesh, box }) => {
+          const grown = box.clone().expandByScalar(TOUCH_EPSILON);
+          return !boxes.some(({ mesh: other, box: otherBox }) => (
+            other !== mesh && !isRelated(mesh, other) && grown.intersectsBox(otherBox)
+          ));
+        })
+        .map(({ mesh }) => mesh.name);
+
+      expect(orphans, `floating parts in ${fixture.slug}`).toEqual([]);
+    });
   });
 }
