@@ -216,6 +216,81 @@ def test_moving_specular_highlights_are_suppressed():
     assert worst < 10.0, f"chandelier reflections survived fusion: {worst:.1f}"
 
 
+def test_per_source_sheen_is_harmonised_before_fusion():
+    # THE DISC BUG, in the lab. On the real Grand Hall the atlas showed a
+    # bright disc at every scanner position. Cause: inside a tripod's own
+    # blind circle the ONLY contributors are grazing views, and grazing views
+    # of polished oak return ceiling reflection, not wood. Outlier rejection
+    # cannot help — there is no minority to reject, the whole population at
+    # that pixel is bright.
+    #
+    # The fix is standard photogrammetry that was missing: before fusing,
+    # normalise each source against the consensus with a LOW-FREQUENCY gain
+    # field. That removes each view's own sheen gradient while leaving its
+    # texture untouched. Here each source carries a different smooth sheen
+    # ramp; the fused floor must come back flat.
+    lit = []
+    for i, (img, C) in enumerate(PANOS):
+        g = img.astype(np.float32).copy()
+        dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
+        down = dirs[..., 2] < -1e-9
+        dd = dirs[down]
+        t = (Z_FLOOR - C[2]) / dd[:, 2]
+        P = C[None, :] + t[:, None] * dd
+        off = np.hypot(P[:, 0] - C[0], P[:, 1] - C[1])
+        ramp = 1.0 + 0.42 * np.clip(off / 1.6, 0, 1) * (0.6 + 0.4 * ((i % 3) / 2))
+        sub = g[down]
+        g[down] = np.clip(sub * ramp[:, None], 0, 255)
+        lit.append((g, C))
+
+    truth = _truth_raster()
+    plain, _ = fa.accumulate_floor_atlas(lit, GRID, z_floor=Z_FLOOR, harmonise=False)
+    fixed, rep = fa.accumulate_floor_atlas(lit, GRID, z_floor=Z_FLOOR, harmonise=True)
+    seen = rep["counts"] >= 2
+
+    def flatness(a):
+        lo_a = ndimage.uniform_filter(a.mean(axis=2), 25)
+        lo_t = ndimage.uniform_filter(truth.mean(axis=2), 25)
+        d = (lo_a - lo_t)[seen]
+        return float(d.std())
+
+    f_plain, f_fixed = flatness(plain), flatness(fixed)
+    print(f"  residual sheen structure: unharmonised {f_plain:.2f} -> harmonised {f_fixed:.2f}")
+    assert f_fixed < f_plain * 0.55, (f_plain, f_fixed)
+
+
+def test_per_source_height_error_is_aligned_out():
+    # THE REAL CAUSE OF THE DISCS, measured on the Grand Hall: at a disc the
+    # sources disagree about where the floor IS by up to 36 mm, while on open
+    # floor they agree to ~0. Divide those offsets by tan(incidence) and they
+    # collapse to one number — every sweep's floor height is out by ~13-15 mm.
+    # A grazing ray amplifies that into centimetres of lateral slip, so twenty
+    # views land the same plank in twenty places and the average ERASES the
+    # texture. It reads as a pale blob, which is why three photometric
+    # theories in a row failed: it was never brightness, it is registration.
+    #
+    # One parameter per sweep fixes it. Here each source is given a deliberate
+    # height error; alignment must recover the texture.
+    rng = np.random.default_rng(5)
+    errs = rng.uniform(-0.018, 0.018, size=len(PANOS))
+    bad = [(img, np.array([C[0], C[1], C[2] + e])) for (img, C), e in zip(PANOS, errs)]
+
+    truth = _truth_raster()
+    naive, _ = fa.accumulate_floor_atlas(bad, GRID, z_floor=Z_FLOOR, align=False)
+    fixed, rep = fa.accumulate_floor_atlas(bad, GRID, z_floor=Z_FLOOR, align=True)
+    seen = rep["counts"] >= 3
+    c_naive = _fine_corr(naive, truth, seen)
+    c_fixed = _fine_corr(fixed, truth, seen)
+    est = rep.get("align_dz", [])
+    print(f"  detail corr with height errors: unaligned {c_naive:.3f} -> aligned {c_fixed:.3f}"
+          f"  (recovered dz mm: {[round(v * 1000) for v in est[:5]]})")
+    assert c_fixed > c_naive + 0.05, (c_naive, c_fixed)
+    # and the estimates should track the planted errors
+    if len(est) == len(errs):
+        resid = np.abs(np.array(est) - (-errs)).mean()
+        assert resid < 0.012, f"dz estimates off by {resid * 1000:.1f} mm"
+
+
 def test_unobserved_floor_is_reported_not_invented():
     # The Foundry rule: never turn missing observations into captured fact.
     # A patch no source can see must come back flagged, not fabricated.

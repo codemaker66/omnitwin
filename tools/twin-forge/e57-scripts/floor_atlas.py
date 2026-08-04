@@ -170,6 +170,126 @@ def project_source_to_atlas(
     )
 
 
+def _estimate_dz(
+    img,
+    C: np.ndarray,
+    grid: AtlasGrid,
+    z_floor: float,
+    consensus: np.ndarray,
+    seen_any: np.ndarray,
+    self_blind_m: float,
+    max_incidence_deg: float,
+    span_m: float = 0.030,
+    step_m: float = 0.003,
+) -> float:
+    """Recover ONE sweep's floor-height error by matching it to the consensus.
+
+    Why one parameter is the right model: if a sweep's floor sits δ below where
+    we assumed, every ray it casts lands short by δ·tan(incidence), radially
+    away from that scanner. Overhead views barely move; grazing views slip
+    centimetres. That single number therefore explains the whole displacement
+    field — measured on the Grand Hall, offsets at a disc divided by
+    tan(incidence) collapsed to a common ~13-15 mm.
+
+    Fitted by direct search on texture agreement (normalised correlation of the
+    high-pass), which is the quantity we actually care about: the δ that makes
+    this sweep's planks land on everyone else's.
+    """
+    from scipy import ndimage
+
+    # coarse grid: δ is global to the sweep, so estimate it cheaply
+    f = max(1, int(round(grid.mm_per_px and 24.0 / grid.mm_per_px)) or 1)
+    cg = AtlasGrid(
+        origin_xy=grid.origin_xy,
+        mm_per_px=grid.mm_per_px * f,
+        width=max(grid.width // f, 8),
+        height=max(grid.height // f, 8),
+    )
+    ref = consensus[: cg.height * f : f, : cg.width * f : f].mean(axis=2)
+    ref_ok = seen_any[: cg.height * f : f, : cg.width * f : f]
+    ref_hp = ref - ndimage.uniform_filter(ref, 9)
+
+    raster = img() if callable(img) else img          # load once, reuse per δ
+    best, best_score = 0.0, -2.0
+    n = int(round(span_m / step_m))
+    for k in range(-n, n + 1):
+        dz = k * step_m
+        rgb, w = _sample_source(
+            raster, C, cg, z_floor + dz, self_blind_m, max_incidence_deg, None
+        )
+        m = (w > 0) & ref_ok
+        if int(m.sum()) < 200:
+            continue
+        s = rgb.mean(axis=2)
+        s_hp = s - ndimage.uniform_filter(s, 9)
+        a, b = s_hp[m], ref_hp[m]
+        a = a - a.mean(); b = b - b.mean()
+        den = float(np.sqrt((a * a).sum() * (b * b).sum()))
+        score = float((a * b).sum() / den) if den > 1e-9 else -2.0
+        if score > best_score:
+            best_score, best = score, dz
+    return best
+
+
+N_BINS = 24
+
+
+def _harmonise_to_consensus(
+    rgb: np.ndarray,
+    seen: np.ndarray,
+    consensus: np.ndarray,
+    grid,
+    C: np.ndarray,
+    z_floor: float,
+) -> np.ndarray:
+    """Remove ONE view's own lighting signature before it is fused.
+
+    Every view of a polished floor carries its own sheen: a smooth, spatially
+    varying brightening that depends on where that camera stood, strongest
+    where the view grazes. It is not texture and it must not be averaged into
+    a shared surface — inside a tripod's blind circle EVERY contributor is
+    grazing, so the sheen has no minority to be rejected as, and it survives
+    as a bright disc (exactly what the first Grand Hall atlas showed).
+
+    The correction is fitted against INCIDENCE ANGLE rather than as a free
+    2-D field, because that is what the physics actually depends on: Fresnel
+    reflectance climbs as a view grazes. One gain curve per source per channel,
+    pooled over the whole floor, is therefore well-estimated from thousands of
+    samples and — crucially — CANNOT absorb real texture, since texture is not
+    a function of incidence. Clamped, so a genuinely dark floor can never be
+    scrubbed into agreement: this equalises illumination, it does not
+    manufacture it.
+    """
+    xs, ys = grid.pixel_centres_world()
+    dz = float(z_floor - C[2])
+    dist = np.sqrt((xs - C[0]) ** 2 + (ys - C[1]) ** 2 + dz * dz)
+    overhead = np.abs(dz) / np.maximum(dist, 1e-9)      # 1 = straight down
+
+    out = rgb.copy()
+    idx = np.clip((overhead * N_BINS).astype(np.int32), 0, N_BINS - 1)
+    valid = seen & (consensus.sum(axis=2) > 1e-3) & (rgb.sum(axis=2) > 1e-3)
+    if not np.any(valid):
+        return out
+
+    vi = idx[valid]
+    for ch in range(3):
+        s = rgb[..., ch][valid]
+        r = consensus[..., ch][valid]
+        num = np.bincount(vi, weights=r, minlength=N_BINS)
+        den = np.bincount(vi, weights=s, minlength=N_BINS)
+        n = np.bincount(vi, minlength=N_BINS)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            curve = np.where(n >= 40, num / np.maximum(den, 1e-6), 1.0)
+        curve = np.clip(np.nan_to_num(curve, nan=1.0), 0.65, 1.55)
+        # smooth across neighbouring angles: illumination varies gently with
+        # incidence, so a jagged curve would be noise, not physics
+        k = np.array([0.15, 0.7, 0.15])
+        curve = np.convolve(np.pad(curve, 1, mode="edge"), k, mode="valid")
+        out[..., ch] = rgb[..., ch] * curve[idx].astype(np.float32)
+    out[~seen] = 0.0
+    return out
+
+
 def accumulate_floor_atlas(
     sources: list[tuple[np.ndarray, np.ndarray]],
     grid: AtlasGrid,
@@ -180,6 +300,8 @@ def accumulate_floor_atlas(
     robust_sigma: float = 2.0,
     specular_sigma: float = 0.5,
     min_robust_sources: int = 3,
+    harmonise: bool = True,
+    align: bool = True,
 ) -> tuple[np.ndarray, dict]:
     """Fuse many panoramas into one super-resolved orthophoto.
 
@@ -218,7 +340,8 @@ def accumulate_floor_atlas(
     # scale to a whole building.
     for img, C in sources:
         rgb, w = _sample_source(
-            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
+            img, C, grid, z_floor, self_blind_m, max_incidence_deg,
+            occluder,
         )
         seen = w > 0
         counts += seen
@@ -232,6 +355,8 @@ def accumulate_floor_atlas(
     safe_w = np.where(wsum > 0, wsum, 1.0)
     mean_lum = lum_acc / safe_w
     var_lum = np.maximum(lum_sq / safe_w - mean_lum * mean_lum, 0.0)
+    # pass-1 consensus in colour — the reference each view is levelled against
+    mean_rgb = (acc / safe_w[..., None]).astype(np.float32)
     sigma = np.sqrt(var_lum)
 
     # --- pass 2: robust re-accumulation -----------------------------------
@@ -244,17 +369,32 @@ def accumulate_floor_atlas(
     # the hall's chandeliers, smeared by averaging ~20 viewpoints. A symmetric
     # gate cannot remove them; this can.) Dark outliers keep the looser gate —
     # a shadow or an occluder is rarer and less damaging than a blown highlight.
+    # --- alignment pass: recover each sweep's floor-height error ---------
+    dzs = [0.0] * len(sources)
+    if align:
+        seen_any = counts > 0
+        for i, (img, C) in enumerate(sources):
+            dzs[i] = _estimate_dz(
+                img, C, grid, z_floor, mean_rgb, seen_any,
+                self_blind_m, max_incidence_deg,
+            )
+
     dark_gate = np.maximum(robust_sigma * sigma, 6.0)
     bright_gate = np.maximum(specular_sigma * sigma, 4.0)
     can_gate = counts >= min_robust_sources
     rejected = 0
     total = 0
-    for img, C in sources:
+    for si, (img, C) in enumerate(sources):
         rgb, w = _sample_source(
-            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
+            img, C, grid, z_floor + dzs[si], self_blind_m, max_incidence_deg,
+            occluder,
         )
         seen = w > 0
         total += int(seen.sum())
+        if harmonise:
+            rgb = _harmonise_to_consensus(
+                rgb, seen, mean_rgb, grid, C, z_floor
+            )
         signed = (rgb @ LUM_W) - mean_lum
         drop = seen & can_gate & (
             (signed > bright_gate) | (-signed > dark_gate)
@@ -278,6 +418,7 @@ def accumulate_floor_atlas(
     report = {
         "observed": observed,
         "counts": counts,
+        "align_dz": [round(float(d), 4) for d in dzs],
         "covered_frac": float(observed.mean()),
         "rejected_frac": (rejected / total) if total else 0.0,
         "mean_looks": float(counts[observed].mean()) if observed.any() else 0.0,
