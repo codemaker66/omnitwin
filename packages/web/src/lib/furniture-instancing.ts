@@ -45,35 +45,61 @@ export interface MergedMaterialGroup {
  * for that variant rather than dropping the model.
  */
 export function mergePartsByMaterial(parts: readonly ExtractedPart[]): MergedMaterialGroup[] {
-  const byKey = new Map<string, BufferGeometry[]>();
+  interface CompatibleGeometryBucket {
+    readonly materialKey: string;
+    readonly geometries: BufferGeometry[];
+  }
+
+  const byKey = new Map<string, CompatibleGeometryBucket>();
   const order: string[] = [];
+  const untransferredGeometry = new Set<BufferGeometry>();
 
   for (const part of parts) {
     const baked = part.geometry.clone();
     baked.applyMatrix4(part.matrix);
-    let list = byKey.get(part.materialKey);
-    if (list === undefined) {
-      list = [];
-      byKey.set(part.materialKey, list);
-      order.push(part.materialKey);
+    untransferredGeometry.add(baked);
+    // BufferGeometryUtils cannot merge indexed and non-indexed geometry in
+    // one call. Keep both under the same material identity while emitting two
+    // compatible draw groups when a procedural model mixes those topologies.
+    const bucketKey = `${part.materialKey}\u0000${baked.index === null ? "non-indexed" : "indexed"}`;
+    let bucket = byKey.get(bucketKey);
+    if (bucket === undefined) {
+      bucket = { materialKey: part.materialKey, geometries: [] };
+      byKey.set(bucketKey, bucket);
+      order.push(bucketKey);
     }
-    list.push(baked);
+    bucket.geometries.push(baked);
   }
 
   const groups: MergedMaterialGroup[] = [];
-  for (const materialKey of order) {
-    const geometries = byKey.get(materialKey) ?? [];
-    let geometry: BufferGeometry | null;
-    if (geometries.length === 1) {
-      geometry = geometries[0] ?? null;
-    } else {
-      geometry = mergeGeometries(geometries, false);
+  try {
+    for (const bucketKey of order) {
+      const bucket = byKey.get(bucketKey);
+      if (bucket === undefined) continue;
+      const { geometries, materialKey } = bucket;
+      let geometry: BufferGeometry | null;
+      if (geometries.length === 1) {
+        geometry = geometries[0] ?? null;
+        if (geometry !== null) untransferredGeometry.delete(geometry);
+      } else {
+        try {
+          geometry = mergeGeometries(geometries, false);
+        } finally {
+          for (const source of geometries) {
+            source.dispose();
+            untransferredGeometry.delete(source);
+          }
+        }
+      }
+      if (geometry === null) {
+        throw new Error(`mergePartsByMaterial: could not merge geometries for material "${materialKey}"`);
+      }
+      groups.push({ materialKey, geometry });
     }
-    if (geometry === null) {
-      throw new Error(`mergePartsByMaterial: could not merge geometries for material "${materialKey}"`);
-    }
-    groups.push({ materialKey, geometry });
+    return groups;
+  } catch (error: unknown) {
+    for (const geometry of untransferredGeometry) geometry.dispose();
+    for (const group of groups) group.geometry.dispose();
+    throw error;
   }
-
-  return groups;
 }

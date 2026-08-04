@@ -62,6 +62,7 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
     y: obj.positionY,
     z: obj.positionZ,
     rotationY: obj.rotationY,
+    scale: obj.scale,
     clothed: obj.clothed,
     clothStyle: obj.clothStyle,
     tableSetting: obj.tableSetting,
@@ -72,10 +73,15 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
 /**
  * Convert a PlacedItem (from user interaction) to an EditorObject (for save).
  *
- * Scene-only state (clothed, groupId) round-trips through here. The
- * placement system doesn't model rotationX/Z or scale (no tilted items, no
- * non-uniform scaling), so those flow through as zeros — when those features
- * land, this function is the place to thread them through.
+ * Scene-only state (clothed, groupId) round-trips through here. The placement
+ * system doesn't model rotationX/Z (no tilted items), so those flow through
+ * from the existing object — when that feature lands, this function is the
+ * place to thread it through.
+ *
+ * `scale` IS modelled (uniform only). It is persisted, undoable ("Resize") and
+ * settable via editor-store `updateObject`, so it must round-trip here or a
+ * resize is silently discarded on the next save. Collision and capacity math
+ * still use the unscaled canonical footprint — see PlacedItem.scale.
  *
  * sortOrder is preserved by looking up the existing editor object so reload
  * doesn't scramble user-defined ordering. New items get sortOrder=0 here and
@@ -91,7 +97,7 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     rotationX: existing?.rotationX ?? 0,
     rotationY: item.rotationY,
     rotationZ: existing?.rotationZ ?? 0,
-    scale: existing?.scale ?? 1,
+    scale: item.scale ?? existing?.scale ?? 1,
     sortOrder: existing?.sortOrder ?? 0,
     clothed: item.clothed,
     clothStyle: item.clothStyle,
@@ -113,6 +119,10 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     if (pa.id !== eb.id) return false;
     if (pa.x !== eb.positionX || pa.y !== eb.positionY || pa.z !== eb.positionZ) return false;
     if (pa.rotationY !== eb.rotationY) return false;
+    // scale round-trips (see editorToPlacedItem). Omitting it here would let a
+    // resize compare "equal", so the bridge would push the pre-resize value
+    // back and then persist that revert.
+    if ((pa.scale ?? 1) !== eb.scale) return false;
     if (pa.clothed !== eb.clothed) return false;
     if (pa.clothStyle !== eb.clothStyle) return false;
     if (pa.tableSetting !== eb.tableSetting) return false;

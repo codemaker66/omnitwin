@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { Instances, Instance } from "@react-three/drei";
 import {
+  type BufferGeometry,
   Group,
   Material,
   Mesh,
@@ -12,7 +13,10 @@ import {
 } from "three";
 import type { PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
-import { FurnitureProxy } from "../FurnitureProxy.js";
+import {
+  FurnitureProxy,
+  normalizedFurniturePresentationScale,
+} from "../FurnitureProxy.js";
 import {
   mergePartsByMaterial,
   type ExtractedPart,
@@ -46,6 +50,19 @@ import {
 interface HarvestedVariant {
   readonly groups: readonly MergedMaterialGroup[];
   readonly materialByKey: ReadonlyMap<string, Material>;
+  readonly appearanceByKey: ReadonlyMap<string, MaterialAppearance>;
+  readonly shadowsByKey: ReadonlyMap<string, MaterialShadows>;
+}
+
+interface MaterialAppearance {
+  readonly opacity: number;
+  readonly transparent: boolean;
+  readonly depthWrite: boolean;
+}
+
+interface MaterialShadows {
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
 }
 
 const noRaycast: Object3D["raycast"] = () => undefined;
@@ -76,19 +93,44 @@ function isMesh(object: Object3D): object is Mesh {
   return (object as { readonly isMesh?: boolean }).isMesh === true;
 }
 
+/** Growth step for the instance matrix pool. See `instanceCapacityFor`. */
+export const INSTANCE_CAPACITY_STEP = 32;
+
+/**
+ * Round an instance count up to the next capacity bucket.
+ *
+ * drei allocates `new Float32Array(limit * 16)` once per mount, so `limit`
+ * must never be exceeded by the live count. Bucketing trades a little unused
+ * buffer for stability: placing chairs 1..32 reuses one pool, and only the
+ * 33rd forces a remount. Chairs are placed in tens, so the alternative —
+ * keying on the exact count — would rebuild the pool on every single drop.
+ */
+export function instanceCapacityFor(count: number): number {
+  if (!Number.isFinite(count) || count <= 0) return INSTANCE_CAPACITY_STEP;
+  return Math.ceil(count / INSTANCE_CAPACITY_STEP) * INSTANCE_CAPACITY_STEP;
+}
+
 /** Harvest a rendered model template into merged-by-material geometries + cloned materials. */
 function harvestVariant(root: Object3D): HarvestedVariant {
   root.updateMatrixWorld(true);
   const rootInverse = root.matrixWorld.clone().invert();
   const parts: ExtractedPart[] = [];
+  const sourceMaterialByKey = new Map<string, Material>();
   const materialByKey = new Map<string, Material>();
+  const appearanceByKey = new Map<string, MaterialAppearance>();
+  const shadowsByKey = new Map<string, MaterialShadows>();
 
   root.traverse((obj) => {
     if (!isMesh(obj)) return;
     const material = obj.material;
     if (Array.isArray(material)) return; // composite procedural meshes are single-material
     const key = materialSignature(material);
-    if (!materialByKey.has(key)) materialByKey.set(key, material.clone());
+    if (!sourceMaterialByKey.has(key)) sourceMaterialByKey.set(key, material);
+    const shadows = shadowsByKey.get(key);
+    shadowsByKey.set(key, {
+      castShadow: (shadows?.castShadow ?? false) || obj.castShadow,
+      receiveShadow: (shadows?.receiveShadow ?? false) || obj.receiveShadow,
+    });
     parts.push({
       geometry: obj.geometry,
       materialKey: key,
@@ -96,7 +138,22 @@ function harvestVariant(root: Object3D): HarvestedVariant {
     });
   });
 
-  return { groups: mergePartsByMaterial(parts), materialByKey };
+  const groups = mergePartsByMaterial(parts);
+  try {
+    for (const [key, material] of sourceMaterialByKey) {
+      materialByKey.set(key, material.clone());
+      appearanceByKey.set(key, {
+        opacity: material.opacity,
+        transparent: material.transparent,
+        depthWrite: material.depthWrite,
+      });
+    }
+    return { groups, materialByKey, appearanceByKey, shadowsByKey };
+  } catch (error: unknown) {
+    for (const group of groups) group.geometry.dispose();
+    for (const material of materialByKey.values()) material.dispose();
+    throw error;
+  }
 }
 
 function disposeVariant(variant: HarvestedVariant): void {
@@ -104,10 +161,101 @@ function disposeVariant(variant: HarvestedVariant): void {
   for (const material of variant.materialByKey.values()) material.dispose();
 }
 
+function applyHarvestedOpacity(
+  harvested: ReadonlyMap<string, HarvestedVariant>,
+  opacity: number,
+): void {
+  const clampedOpacity = Math.min(1, Math.max(0, opacity));
+  for (const variant of harvested.values()) {
+    for (const [key, material] of variant.materialByKey) {
+      const base = variant.appearanceByKey.get(key);
+      if (base === undefined) continue;
+      const transparent = base.transparent || clampedOpacity < 1;
+      material.opacity = base.opacity * clampedOpacity;
+      material.depthWrite = clampedOpacity >= 1 ? base.depthWrite : false;
+      if (material.transparent !== transparent) {
+        material.transparent = transparent;
+        material.needsUpdate = true;
+      }
+    }
+  }
+}
+
+function DirectInstanceBatch({
+  geometry,
+  material,
+  items,
+  itemScale,
+  castShadow,
+  receiveShadow,
+  setNonPickable,
+}: {
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  readonly items: readonly PlacedItem[];
+  readonly itemScale: number;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly setNonPickable: (mesh: InstancedMesh | null) => void;
+}): React.ReactElement {
+  const meshRef = useRef<InstancedMesh | null>(null);
+  const matrixSource = useMemo(() => new Group(), []);
+  const invalidate = useThree((state) => state.invalidate);
+  const assignMesh = useCallback((mesh: InstancedMesh | null): void => {
+    meshRef.current = mesh;
+    setNonPickable(mesh);
+  }, [setNonPickable]);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (mesh === null) return;
+    mesh.count = items.length;
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (item === undefined) continue;
+      matrixSource.position.set(item.x, item.y, item.z);
+      matrixSource.rotation.set(0, item.rotationY, 0);
+      matrixSource.scale.setScalar(
+        normalizedFurniturePresentationScale(item.scale) * itemScale,
+      );
+      matrixSource.updateMatrix();
+      mesh.setMatrixAt(index, matrixSource.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    invalidate();
+  }, [invalidate, itemScale, items, matrixSource]);
+
+  return (
+    <instancedMesh
+      ref={assignMesh}
+      args={[geometry, material, Math.max(1, items.length)]}
+      count={items.length}
+      frustumCulled={false}
+      castShadow={castShadow}
+      receiveShadow={receiveShadow}
+    />
+  );
+}
+
 export function InstancedFurnitureLayer({
   items,
+  opacity = 1,
+  itemScale = 1,
+  opacitySource,
+  directInstances = false,
+  onFailedVariantIdsChange,
 }: {
   readonly items: readonly PlacedItem[];
+  /** Presentation-only opacity. The editable furniture path leaves this at 1. */
+  readonly opacity?: number;
+  /** Uniform per-item scale used by timeline strike/materialize transitions. */
+  readonly itemScale?: number;
+  /** Optional imperative driver used by timeline crossfades without reconciling item trees. */
+  readonly opacitySource?: () => number;
+  /** Timeline-only fast path: one raw InstancedMesh update instead of one React child per item. */
+  readonly directInstances?: boolean;
+  /** Catalogue IDs that must use the caller's per-item visible fallback. */
+  readonly onFailedVariantIdsChange?: (ids: ReadonlySet<string>) => void;
 }): React.ReactElement {
   const invalidate = useThree((state) => state.invalidate);
 
@@ -130,6 +278,7 @@ export function InstancedFurnitureLayer({
   }, [items]);
 
   const templateRef = useRef<Group>(null);
+  const lastDrivenOpacity = useRef<number | null>(null);
   const [harvested, setHarvested] = useState<ReadonlyMap<string, HarvestedVariant>>(new Map());
 
   // Re-harvest only when the SET of variants changes (not on every drag). The
@@ -141,27 +290,47 @@ export function InstancedFurnitureLayer({
     const root = templateRef.current;
     if (root === null) return undefined;
     const next = new Map<string, HarvestedVariant>();
+    const failedVariantIds = new Set<string>();
     for (const key of variantOrder) {
       const node = root.getObjectByName(`furniture-template-${key}`);
-      if (node === undefined) continue;
+      if (node === undefined) {
+        failedVariantIds.add(key);
+        continue;
+      }
       try {
         next.set(key, harvestVariant(node));
       } catch {
-        // Incompatible attributes for this variant — leave it un-instanced
-        // rather than crash the scene. (Rare; procedural meshes are uniform.)
+        // Preserve visibility through the caller's named per-item model path.
+        failedVariantIds.add(key);
       }
     }
     setHarvested(next);
+    onFailedVariantIdsChange?.(failedVariantIds);
     invalidate();
     return () => {
       for (const variant of next.values()) disposeVariant(variant);
     };
     // variantSignature is the derived key for the variantOrder set read inside.
-  }, [variantSignature, invalidate]);
+  }, [variantSignature, invalidate, onFailedVariantIdsChange]);
 
   const setNonPickable = useCallback((mesh: InstancedMesh | null) => {
     if (mesh !== null) mesh.raycast = noRaycast;
   }, []);
+
+  useLayoutEffect(() => {
+    const resolvedOpacity = opacitySource?.() ?? opacity;
+    applyHarvestedOpacity(harvested, resolvedOpacity);
+    lastDrivenOpacity.current = resolvedOpacity;
+    invalidate();
+  }, [harvested, invalidate, opacity, opacitySource]);
+
+  useFrame(() => {
+    if (opacitySource === undefined) return;
+    const nextOpacity = opacitySource();
+    if (nextOpacity === lastDrivenOpacity.current) return;
+    applyHarvestedOpacity(harvested, nextOpacity);
+    lastDrivenOpacity.current = nextOpacity;
+  });
 
   return (
     <group name="instanced-furniture">
@@ -189,21 +358,48 @@ export function InstancedFurnitureLayer({
         }
         return variant.groups.map((group, groupIndex) => {
           const material = variant.materialByKey.get(group.materialKey);
-          if (material === undefined) return null;
+          const shadows = variant.shadowsByKey.get(group.materialKey);
+          if (material === undefined || shadows === undefined) return null;
+          if (directInstances) {
+            return (
+              <DirectInstanceBatch
+                key={`${key}-${String(groupIndex)}`}
+                geometry={group.geometry}
+                material={material}
+                items={variantItems}
+                itemScale={itemScale}
+                castShadow={shadows.castShadow}
+                receiveShadow={shadows.receiveShadow}
+                setNonPickable={setNonPickable}
+              />
+            );
+          }
+          // `limit` sizes drei's matrix buffer ONCE, inside a useState
+          // initialiser, but the mesh's `count` is recomputed from live props
+          // every frame. Passing the raw length means adding an item of a type
+          // already on screen grows count past the buffer, and the extra
+          // matrices are silently swallowed by typed-array semantics — the
+          // item vanishes while staying selectable and saveable. Bucketing the
+          // capacity and keying on it remounts the pool only when it genuinely
+          // has to grow, rather than on every placement.
+          const capacity = instanceCapacityFor(variantItems.length);
           return (
             <Instances
-              key={`${key}-${String(groupIndex)}`}
+              key={`${key}-${String(groupIndex)}-cap${String(capacity)}`}
               ref={setNonPickable}
-              limit={variantItems.length}
+              limit={capacity}
               range={variantItems.length}
               geometry={group.geometry}
               material={material}
+              castShadow={shadows.castShadow}
+              receiveShadow={shadows.receiveShadow}
             >
               {variantItems.map((item) => (
                 <Instance
                   key={item.id}
                   position={[item.x, item.y, item.z]}
                   rotation={[0, item.rotationY, 0]}
+                  scale={normalizedFurniturePresentationScale(item.scale) * itemScale}
                 />
               ))}
             </Instances>

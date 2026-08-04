@@ -432,6 +432,15 @@ export interface PlacedItem {
   readonly y: number;
   readonly z: number;
   readonly rotationY: number;
+  /**
+   * Uniform presentation scale, round-tripped from `EditorObject.scale`.
+   * Defaults to 1 when omitted (items created directly by the placement store).
+   *
+   * NOTE: collision, capacity and hallkeeper figures derive from the canonical
+   * unscaled footprint in @omnitwin/types — a scaled item renders larger than
+   * it is planned against. Keep scale at 1 until footprint math consumes it.
+   */
+  readonly scale?: number;
   /** Whether a cloth is draped over this item (tables only). */
   readonly clothed: boolean;
   /** Cloth colour/style draped over this table. Null when not clothed. */

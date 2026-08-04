@@ -55,6 +55,16 @@ import { footprintCorners, type FurnitureFootprint } from "./circulation.js";
 export const BAR_CATALOGUE_SLUG = "bar-counter";
 
 /**
+ * Canonical slug of the parquet dance floor panel. It is categorised `stage`
+ * so it reaches the hallkeeper's `structure` setup phase, but it is the one
+ * `stage` asset guests walk ONTO rather than around: a 50mm panel is a floor
+ * finish, not an obstruction. Without this exception a tiled dance floor would
+ * present as a solid block in the middle of the room and the sim would route
+ * every guest around the very thing they came to stand on.
+ */
+export const DANCEFLOOR_CATALOGUE_SLUG = "dancefloor-panel";
+
+/**
  * Furniture categories whose footprint meaningfully blocks circulation, so
  * guests route AROUND them. Chairs are excluded on purpose: they cluster at
  * their table (the table footprint already represents the group) and including
@@ -172,6 +182,8 @@ function resolvePlacedItems(placedItems: readonly PlacedItem[]): ResolvedItem[] 
 }
 
 function isObstacle(item: CatalogueItem, categories: ReadonlySet<FurnitureCategory>): boolean {
+  // The dance floor is walkable despite being a `stage` — see the slug's docs.
+  if (item.slug === DANCEFLOOR_CATALOGUE_SLUG) return false;
   return categories.has(item.category) || item.slug === BAR_CATALOGUE_SLUG;
 }
 

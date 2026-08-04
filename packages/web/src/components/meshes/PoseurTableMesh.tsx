@@ -23,9 +23,11 @@ export function PoseurTableMesh({
   const height = item.height;
   const isTransparent = opacity < 1;
 
-  // Determine variant from item ID
-  const isBlackCloth = item.id === "poseur-table-black";
-  const isWhiteCloth = item.id === "poseur-table-white";
+  // Determine variant from the slug. `item.id` is a deterministic UUID v5
+  // (packages/types/src/asset-catalogue.ts), so comparing it to a kebab-case
+  // name never matched and both clothed variants rendered as bare aluminium.
+  const isBlackCloth = item.slug === "poseur-table-black";
+  const isWhiteCloth = item.slug === "poseur-table-white";
   const hasCloth = isBlackCloth || isWhiteCloth;
 
   const metalColor = colorOverride ?? "#c0c0c8";
