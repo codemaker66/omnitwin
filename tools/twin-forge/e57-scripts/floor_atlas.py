@@ -170,65 +170,285 @@ def project_source_to_atlas(
     )
 
 
-def _estimate_dz(
-    img,
+ALIGN_COARSE_MM = 24.0      # cell size the height fit is scored on
+ALIGN_HP_PX = 9             # high-pass kernel, in coarse cells
+ALIGN_MIN_OVERLAP_PX = 200  # below this there is no evidence, only noise
+UNSCORED = -np.inf          # a rung never scored can never win the argmax
+
+
+def _shifted_centre(C: np.ndarray, dz: float) -> np.ndarray:
+    """A sweep's centre with a height correction applied.
+
+    The correction belongs to the POSE, never to the floor. There is one floor
+    and it is shared; what disagrees is where each scanner thinks it stood. Move
+    the plane instead and two things quietly break — every occlusion ray gets
+    aimed at a target that is no longer on the real floor, and the atlas stops
+    being a measuring surface at a known height.
+    """
+    Ck = np.asarray(C, dtype=np.float64).copy()
+    Ck[2] += dz
+    return Ck
+
+
+def _coarse_factor(grid: AtlasGrid, coarse_mm: float) -> int:
+    """One decimation factor for the whole alignment fit.
+
+    δ is a single scalar per sweep, so identifying it does not need the atlas's
+    own resolution — and a coarser cell averages away the sub-pixel resampling
+    ripple that a one-parameter model cannot explain anyway. The clamp keeps the
+    block reduction EXACT (f must divide into the grid) and leaves enough cells
+    for the high-pass kernel to mean anything.
+    """
+    if grid.mm_per_px <= 0:
+        return 1
+    f = int(round(coarse_mm / grid.mm_per_px))
+    return max(1, min(f, max(grid.height // 8, 1), max(grid.width // 8, 1)))
+
+
+def _block_sum(a: np.ndarray, f: int, ch: int, cw: int) -> np.ndarray:
+    """Total each f x f fine block into one coarse cell.
+
+    Summing rather than sampling every f-th pixel is what keeps the coarse
+    reference REGISTERED with the raster fitted to it: a block's centroid is the
+    coarse pixel centre, whereas a strided sample sits (f-1)/2 fine pixels off it
+    in both axes — at 5 mm pixels and f=5 that is a fixed 10 mm diagonal shift,
+    and a search that can only move texture radially has to pay for that constant
+    shift with a δ it invents. Summing is also the only reduction that
+    band-limits: point-sampling a 5 mm raster onto a 24 mm grid folds the 12 mm
+    grain into a pattern belonging nowhere, living in exactly the band the
+    correlation scores.
+    """
+    a = a[: ch * f, : cw * f]
+    if a.ndim == 2:
+        return a.reshape(ch, f, cw, f).sum(axis=(1, 3))
+    return a.reshape(ch, f, cw, f, a.shape[2]).sum(axis=(1, 3))
+
+
+def _fit_pose_dz(
+    raster: np.ndarray,
     C: np.ndarray,
-    grid: AtlasGrid,
+    cg: AtlasGrid,
     z_floor: float,
-    consensus: np.ndarray,
-    seen_any: np.ndarray,
+    ref_hp: np.ndarray,
+    ref_ok: np.ndarray,
     self_blind_m: float,
     max_incidence_deg: float,
+    occluder,
+    span_m: float,
+    step_m: float,
+) -> float:
+    """Direct search for the height correction that lands this sweep's planks on
+    the reference's, scored by normalised correlation of the high-pass — the
+    quantity the atlas is actually judged on, not a proxy for it.
+
+    WHAT THIS SWEEP CAN SEE IS DECIDED ONCE, not re-decided at every candidate.
+    Visibility is a property of where the scanner stood; asking the occluder
+    again at each δ makes the shadow boundary crawl across the grid as the
+    search runs, so the score starts tracking WHICH pixels are being compared
+    instead of how well they agree — and a correlation over a moving support is
+    not a comparison at all. Measured on a scene where the obstruction is
+    present in both the mesh AND the imagery (so a shadowed pixel really does
+    show the table top rather than clean floor), re-testing per candidate
+    recovers +0.034 of detail at 6.8 mm residual where freezing recovers +0.077
+    at 3.7 mm. Freezing also drops the occlusion query from twenty-one per sweep
+    to one, which is the difference between a search that is free and a search
+    that dominates a building-scale build.
+
+    Beyond that fixed visibility each candidate is scored on its own overlap,
+    with the minimum-overlap gate keeping that honest: a candidate too thin to
+    mean anything is left UNSCORED rather than allowed to win on a small,
+    flattering patch.
+
+    Pixels are NOT weighted by tan²(incidence), and that deserves a word because
+    the physics argues for it: tan(incidence) is the derivative of lateral slip
+    with respect to δ, so an overhead pixel carries almost no evidence about
+    height while a grazing one carries nearly all of it. Implemented and
+    measured, it is a wash — better at twenty open sweeps (1.7 -> 1.2 mm), worse
+    under an occluder (4.1 -> 4.7 mm), a tie elsewhere. A weighting that cannot
+    be shown to help is a claim this floor does not support, so it is not here.
+
+    Returns 0.0 rather than a guess when no candidate ever had enough
+    independent overlap, or when the sweep carries no texture to register:
+    floor nobody else saw must not be handed a confident correction.
+    """
+    from scipy import ndimage
+
+    n = int(round(span_m / step_m))
+    vis = ref_ok
+    if occluder is not None:
+        _, w0 = _sample_source(
+            raster, C, cg, z_floor, self_blind_m, max_incidence_deg, occluder,
+        )
+        vis = ref_ok & (w0 > 0)
+
+    best, best_score = 0.0, UNSCORED
+    for k in range(-n, n + 1):
+        rgb, w = _sample_source(
+            raster, _shifted_centre(C, k * step_m), cg, z_floor,
+            self_blind_m, max_incidence_deg, None,
+        )
+        m = vis & (w > 0)
+        if int(m.sum()) < ALIGN_MIN_OVERLAP_PX:
+            continue
+        s = rgb.mean(axis=2)
+        a = (s - ndimage.uniform_filter(s, ALIGN_HP_PX))[m]
+        b = ref_hp[m]
+        a = a - a.mean()
+        b = b - b.mean()
+        den = float(np.sqrt((a * a).sum() * (b * b).sum()))
+        if den <= 1e-12:
+            continue
+        score = float((a * b).sum()) / den
+        if score > best_score:
+            best_score, best = score, k * step_m
+    # Deliberately NOT refined to sub-step by fitting the peak's two neighbours.
+    # Measured both ways: it is a wash (2.94 mm against 3.05 mm mean residual
+    # over four seeds, but 4.88 against 4.66 mm under an occluder), and a wash
+    # is not a lever. What it does cost is the one property worth more than a
+    # tenth of a millimetre — on a perfectly level scene the quantised search
+    # returns EXACTLY zero, while the parabola invents a few tenths of a
+    # millimetre of displacement at every sweep. A correction that is not
+    # measurably real should read as no correction.
+    return float(best)
+
+
+def _align_pose_heights(
+    sources: list[tuple[np.ndarray, np.ndarray]],
+    grid: AtlasGrid,
+    z_floor: float,
+    acc: np.ndarray,
+    wsum: np.ndarray,
+    counts: np.ndarray,
+    self_blind_m: float,
+    max_incidence_deg: float,
+    occluder,
     span_m: float = 0.030,
     step_m: float = 0.003,
-) -> float:
-    """Recover ONE sweep's floor-height error by matching it to the consensus.
+) -> list[float]:
+    """Recover every sweep's height error against a LEAVE-ONE-OUT consensus.
+    Returned values are metres to ADD to each source's recorded centre z.
 
-    Why one parameter is the right model: if a sweep's floor sits δ below where
-    we assumed, every ray it casts lands short by δ·tan(incidence), radially
+    Why one parameter is the right model: if a sweep's centre sits δ above where
+    its pose claims, every ray it casts lands long by δ·tan(incidence), radially
     away from that scanner. Overhead views barely move; grazing views slip
     centimetres. That single number therefore explains the whole displacement
     field — measured on the Grand Hall, offsets at a disc divided by
     tan(incidence) collapsed to a common ~13-15 mm.
 
-    Fitted by direct search on texture agreement (normalised correlation of the
-    high-pass), which is the quantity we actually care about: the δ that makes
-    this sweep's planks land on everyone else's.
+    LEAVE-ONE-OUT because a sweep must not be scored against a consensus it
+    helped write. At zero correction it already agrees with its own
+    contribution, however wrong its pose is, so the score carries a spurious peak
+    at zero and the search is pulled into it. The bias is proportional to the
+    share the sweep owns of the mean, which is why the measured value of this
+    subtraction collapses as sweeps are added — worth 4.5 -> 1.9 mm of residual
+    at five sweeps and nothing at all at twenty. It is kept for the case that
+    made the atlas necessary: WITH A MESH OCCLUDER, where every sweep's shadow
+    removes a different part of the floor, five sweeps go from +0.017 to +0.110
+    of recovered detail. Shadowed floor is thin evidence, and thin evidence is
+    exactly where a self-vote decides the answer.
+
+    That subtraction only cancels if the contribution removed was built the same
+    way as the sum it is removed from — same occluder, same gates. Sample the
+    source unoccluded here and subtract it from an occluded accumulator and the
+    reference goes NEGATIVE exactly where the shadow fell, which is worse than
+    having no leave-one-out at all.
+
+    Memory stays bounded, which is the constraint that lets this run over a whole
+    building: per-source rasters are never stacked, only the ONE source being
+    excluded is re-sampled, and it is re-sampled from a raster the search has to
+    load anyway, so a lazily-loaded 8192 tier is read once per sweep here.
     """
     from scipy import ndimage
 
-    # coarse grid: δ is global to the sweep, so estimate it cheaply
-    f = max(1, int(round(grid.mm_per_px and 24.0 / grid.mm_per_px)) or 1)
+    f = _coarse_factor(grid, ALIGN_COARSE_MM)
+    ch, cw = grid.height // f, grid.width // f
     cg = AtlasGrid(
         origin_xy=grid.origin_xy,
         mm_per_px=grid.mm_per_px * f,
-        width=max(grid.width // f, 8),
-        height=max(grid.height // f, 8),
+        width=cw,
+        height=ch,
     )
-    ref = consensus[: cg.height * f : f, : cg.width * f : f].mean(axis=2)
-    ref_ok = seen_any[: cg.height * f : f, : cg.width * f : f]
-    ref_hp = ref - ndimage.uniform_filter(ref, 9)
+    block_acc = _block_sum(acc, f, ch, cw)
+    block_w = _block_sum(wsum, f, ch, cw)
+    block_n = _block_sum(counts.astype(np.int64), f, ch, cw)
 
-    raster = img() if callable(img) else img          # load once, reuse per δ
-    best, best_score = 0.0, -2.0
-    n = int(round(span_m / step_m))
-    for k in range(-n, n + 1):
-        dz = k * step_m
+    dzs: list[float] = []
+    for img, C in sources:
+        raster = img() if callable(img) else img     # load once, reuse per rung
         rgb, w = _sample_source(
-            raster, C, cg, z_floor + dz, self_blind_m, max_incidence_deg, None
+            raster, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder,
         )
-        m = (w > 0) & ref_ok
-        if int(m.sum()) < 200:
-            continue
-        s = rgb.mean(axis=2)
-        s_hp = s - ndimage.uniform_filter(s, 9)
-        a, b = s_hp[m], ref_hp[m]
-        a = a - a.mean(); b = b - b.mean()
-        den = float(np.sqrt((a * a).sum() * (b * b).sum()))
-        score = float((a * b).sum() / den) if den > 1e-9 else -2.0
-        if score > best_score:
-            best_score, best = score, dz
-    return best
+        # Counted, not thresholded on weight: a cell only THIS source ever saw
+        # cancels to a floating-point residue rather than a clean zero, and
+        # "did anyone else look here" is an integer question.
+        ref_n = block_n - _block_sum((w > 0).astype(np.int64), f, ch, cw)
+        ref_ok = ref_n > 0
+        ref_w = np.maximum(block_w - _block_sum(w, f, ch, cw), 0.0)
+        ref_acc = block_acc - _block_sum(rgb * w[..., None], f, ch, cw)
+        safe = np.where(ref_ok & (ref_w > 0), ref_w, 1.0)
+        ref = (ref_acc / safe[..., None]).mean(axis=2)
+        # Flat-fill the excluded cells before the high-pass. Left at zero they
+        # are a cliff edge, and the filter spreads that artificial edge back over
+        # cells that ARE valid — manufacturing structure for the search to lock
+        # onto exactly where the evidence ran out.
+        ref = np.where(ref_ok, ref, ref[ref_ok].mean() if ref_ok.any() else 0.0)
+        ref_hp = ref - ndimage.uniform_filter(ref, ALIGN_HP_PX)
+        dzs.append(
+            _fit_pose_dz(
+                raster, C, cg, z_floor, ref_hp, ref_ok,
+                self_blind_m, max_incidence_deg, occluder, span_m, step_m,
+            )
+        )
+    return dzs
+
+
+def _accumulate_pass1(
+    sources: list[tuple[np.ndarray, np.ndarray]],
+    grid: AtlasGrid,
+    z_floor: float,
+    dzs: list[float],
+    self_blind_m: float,
+    max_incidence_deg: float,
+    occluder,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Weighted colour, luminance and luminance-square sums over every source,
+    each sampled from its own corrected height.
+
+    Split out because it is run TWICE when alignment is on: once to get a
+    consensus good enough to MEASURE the misregistration against, and again on
+    the registered geometry, because everything downstream — the robust gate's
+    mean and σ, the harmonisation target — is only as sharp as the surface it was
+    accumulated from. Recover δ and then fuse against the smeared consensus that
+    the bad δ produced, and you have fixed the geometry while keeping the
+    radiometry the bad geometry caused: an inflated σ that lets outliers through,
+    and a blurred levelling target.
+
+    Returns running SUMS, not means, so a caller can subtract one source's
+    contribution back out without a second pass over the data.
+    """
+    shape = (grid.height, grid.width)
+    acc = np.zeros(shape + (3,), dtype=np.float64)
+    wsum = np.zeros(shape, dtype=np.float64)
+    lum_acc = np.zeros(shape, dtype=np.float64)
+    lum_sq = np.zeros(shape, dtype=np.float64)
+    counts = np.zeros(shape, dtype=np.int32)
+    # Deliberately NOT caching the per-source rasters: at Grand Hall scale
+    # (2600x1250 px, ~50 sources) that stack is ~2.5 GB. Re-sampling later
+    # trades compute for a hard memory bound, which is what lets this scale to
+    # a whole building.
+    for (img, C), dz in zip(sources, dzs):
+        rgb, w = _sample_source(
+            img, _shifted_centre(C, dz), grid, z_floor,
+            self_blind_m, max_incidence_deg, occluder,
+        )
+        seen = w > 0
+        counts += seen
+        acc += rgb * w[..., None]
+        wsum += w
+        lum = rgb @ LUM_W
+        lum_acc += lum * w
+        lum_sq += (lum * lum) * w
+    return acc, wsum, lum_acc, lum_sq, counts
 
 
 N_BINS = 24
@@ -305,15 +525,27 @@ def accumulate_floor_atlas(
 ) -> tuple[np.ndarray, dict]:
     """Fuse many panoramas into one super-resolved orthophoto.
 
-    Two passes, memory-bounded (no per-pixel sample stacks — a building-scale
+    Memory-bounded throughout (no per-pixel sample stacks — a building-scale
     atlas cannot hold N samples per pixel):
       pass 1  weighted mean and variance of luminance per pixel;
+      align   one height correction per SWEEP, fitted against the consensus of
+              the others, after which pass 1 is re-measured on the registered
+              geometry (skipped entirely when `align` is off, or when every
+              sweep already agrees);
       pass 2  re-accumulate, rejecting samples beyond robust_sigma of that
               mean — a chair, a person or a specular flare in ONE capture
               cannot smear a surface that many captures agree on.
     Robust rejection only engages where at least min_robust_sources saw the
     pixel; with fewer looks there is no majority to appeal to, so everything
     observed is kept (and the count is reported).
+
+    Registration comes before radiometry on purpose, because it is prior to it.
+    A misregistered stack lands the same plank in several places, so the mean
+    ERASES the very texture the fusion exists to sharpen and reports an inflated
+    σ for it — which then reads as a pale blob, which is why three photometric
+    theories in a row failed on the real Grand Hall discs. It was never
+    brightness; it is registration, and a levelling curve fitted to a smeared
+    consensus cannot fix a geometric fault.
 
     Super-resolution falls out of the geometry: the grid is finer than any
     single view's ground sampling, and each source lands on it at a different
@@ -322,34 +554,28 @@ def accumulate_floor_atlas(
 
     Returns (atlas float32 HxWx3, report). The report carries `observed`
     (bool), `counts` (int per pixel), `covered_frac` and `rejected_frac` —
-    unobserved floor is FLAGGED, never invented.
+    unobserved floor is FLAGGED, never invented — and `align_dz`, the metres to
+    ADD to each source's recorded centre z, in source order.
     """
     if not sources:
         raise ValueError("no sources")
 
     shape = (grid.height, grid.width)
-    acc = np.zeros(shape + (3,), dtype=np.float64)
-    wsum = np.zeros(shape, dtype=np.float64)
-    lum_acc = np.zeros(shape, dtype=np.float64)
-    lum_sq = np.zeros(shape, dtype=np.float64)
-    counts = np.zeros(shape, dtype=np.int32)
+    dzs = [0.0] * len(sources)
+    acc, wsum, lum_acc, lum_sq, counts = _accumulate_pass1(
+        sources, grid, z_floor, dzs, self_blind_m, max_incidence_deg, occluder,
+    )
 
-    # Deliberately NOT caching the per-source rasters: at Grand Hall scale
-    # (2600x1250 px, ~50 sources) that stack is ~2.5 GB. Re-sampling in
-    # pass 2 trades compute for a hard memory bound, which is what lets this
-    # scale to a whole building.
-    for img, C in sources:
-        rgb, w = _sample_source(
-            img, C, grid, z_floor, self_blind_m, max_incidence_deg,
-            occluder,
+    if align:
+        dzs = _align_pose_heights(
+            sources, grid, z_floor, acc, wsum, counts,
+            self_blind_m, max_incidence_deg, occluder,
         )
-        seen = w > 0
-        counts += seen
-        acc += rgb * w[..., None]
-        wsum += w
-        lum = rgb @ LUM_W
-        lum_acc += lum * w
-        lum_sq += (lum * lum) * w
+        if any(d != 0.0 for d in dzs):
+            acc, wsum, lum_acc, lum_sq, counts = _accumulate_pass1(
+                sources, grid, z_floor, dzs,
+                self_blind_m, max_incidence_deg, occluder,
+            )
 
     observed = counts > 0
     safe_w = np.where(wsum > 0, wsum, 1.0)
@@ -369,16 +595,6 @@ def accumulate_floor_atlas(
     # the hall's chandeliers, smeared by averaging ~20 viewpoints. A symmetric
     # gate cannot remove them; this can.) Dark outliers keep the looser gate —
     # a shadow or an occluder is rarer and less damaging than a blown highlight.
-    # --- alignment pass: recover each sweep's floor-height error ---------
-    dzs = [0.0] * len(sources)
-    if align:
-        seen_any = counts > 0
-        for i, (img, C) in enumerate(sources):
-            dzs[i] = _estimate_dz(
-                img, C, grid, z_floor, mean_rgb, seen_any,
-                self_blind_m, max_incidence_deg,
-            )
-
     dark_gate = np.maximum(robust_sigma * sigma, 6.0)
     bright_gate = np.maximum(specular_sigma * sigma, 4.0)
     can_gate = counts >= min_robust_sources
@@ -386,14 +602,17 @@ def accumulate_floor_atlas(
     total = 0
     for si, (img, C) in enumerate(sources):
         rgb, w = _sample_source(
-            img, C, grid, z_floor + dzs[si], self_blind_m, max_incidence_deg,
-            occluder,
+            img, _shifted_centre(C, dzs[si]), grid, z_floor,
+            self_blind_m, max_incidence_deg, occluder,
         )
         seen = w > 0
         total += int(seen.sum())
         if harmonise:
+            # the CORRECTED centre, because the sheen curve is indexed by
+            # incidence angle and incidence is measured from where the scanner
+            # actually stood, not from where its pose claimed
             rgb = _harmonise_to_consensus(
-                rgb, seen, mean_rgb, grid, C, z_floor
+                rgb, seen, mean_rgb, grid, _shifted_centre(C, dzs[si]), z_floor
             )
         signed = (rgb @ LUM_W) - mean_lum
         drop = seen & can_gate & (
