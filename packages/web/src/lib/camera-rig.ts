@@ -100,6 +100,18 @@ export const DAMPING_SETTLE_FRAMES = 24;
 export const ZOOM_IMPULSE = 0.025;
 export const ZOOM_FRICTION = 0.16;
 export const ZOOM_VELOCITY_THRESHOLD = 0.001;
+export const MAX_ZOOM_FRAME_DELTA_SECONDS = 1 / 30;
+
+/**
+ * Converts a frame delta to the zoom integrator's ~60fps scale while capping
+ * the first frame after an idle demand-render period. Without the cap, a
+ * single wheel tick can inherit seconds of idle time and jump to a distance
+ * limit before the next frame is requested.
+ */
+export function computeZoomFrameScale(deltaSeconds: number): number {
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return 0;
+  return Math.min(deltaSeconds, MAX_ZOOM_FRAME_DELTA_SECONDS) * 60;
+}
 
 export const PAN_KEYS: ReadonlySet<string> = new Set([
   "KeyW",

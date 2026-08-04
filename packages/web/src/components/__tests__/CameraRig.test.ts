@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   DAMPING_FACTOR,
   DAMPING_SETTLE_FRAMES,
+  MAX_ZOOM_FRAME_DELTA_SECONDS,
   ZOOM_FRICTION,
   ZOOM_VELOCITY_THRESHOLD,
+  computeZoomFrameScale,
 } from "../../lib/camera-rig.js";
 
 describe("CameraRig source guards", () => {
@@ -46,5 +48,21 @@ describe("CameraRig source guards", () => {
     expect(source).toContain("onStart={markCameraInteractionActive}");
     expect(source).toContain("onEnd={markCameraInteractionSettling}");
     expect(source).not.toContain("setCameraInteractionActive(true);\\n    invalidate();");
+  });
+
+  it("keeps wheel zoom active while selection only suspends keyboard panning", async () => {
+    const source = await readFile("src/components/CameraRig.tsx", "utf8");
+    const zoomStep = source.indexOf("// Inertial zoom — apply velocity then decay via friction");
+    const keyboardGuard = source.indexOf("if (keyboardPanSuspended) return;");
+
+    expect(zoomStep).toBeGreaterThan(-1);
+    expect(keyboardGuard).toBeGreaterThan(zoomStep);
+  });
+
+  it("caps an idle demand-render frame before applying wheel zoom", () => {
+    expect(computeZoomFrameScale(1 / 60)).toBeCloseTo(1);
+    expect(computeZoomFrameScale(1 / 30)).toBeCloseTo(2);
+    expect(computeZoomFrameScale(2)).toBeCloseTo(MAX_ZOOM_FRAME_DELTA_SECONDS * 60);
+    expect(computeZoomFrameScale(Number.NaN)).toBe(0);
   });
 });

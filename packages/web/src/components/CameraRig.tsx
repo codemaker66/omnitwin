@@ -36,6 +36,7 @@ import {
   computeDistanceLimits,
   computeKeyboardPanDirection,
   computePanBounds,
+  computeZoomFrameScale,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
   type CameraKeyboardPlannerState,
@@ -57,6 +58,7 @@ export {
   computeEdgeScrollDirection,
   computeKeyboardPanDirection,
   computePanBounds,
+  computeZoomFrameScale,
   isCameraKeyboardInputLocked,
   isCameraKeyboardPanSuspendedByPlannerState,
   type CameraKeyboardPlannerState,
@@ -557,12 +559,12 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       return;
     }
 
-    if (
+    const keyboardPanSuspended = (
       (typeof document !== "undefined" && isCameraKeyboardInputLocked(document.activeElement)) ||
       isCameraKeyboardPanSuspended()
-    ) {
+    );
+    if (keyboardPanSuspended) {
       if (keyboardKeys.size > 0) keyboardKeys.clear();
-      return;
     }
 
     // Keep rendering while damping settles after orbit/pan
@@ -578,7 +580,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       const dir = zoomDir.current;
       dir.subVectors(camera.position, controls.target).normalize();
 
-      const move = zoomVelocity.current * delta * 60; // Normalize to ~60fps feel
+      const move = zoomVelocity.current * computeZoomFrameScale(delta);
       camera.position.addScaledVector(dir, move);
 
       // Clamp distance to limits
@@ -605,6 +607,10 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
 
       controls.update();
     }
+
+    // Focused controls and selected furniture suspend keyboard translation,
+    // but wheel zoom remains available for close inspection of that selection.
+    if (keyboardPanSuspended) return;
 
     // Keyboard pan direction
     const [dx, dz] = computeKeyboardPanDirection(keyboardKeys);
