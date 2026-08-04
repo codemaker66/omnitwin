@@ -38,6 +38,10 @@ import { stepSpring, type SpringState } from "../lib/springs.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
 import { decodeTwinLook, encodeTwinLook, type TwinLook } from "./twin-look.js";
 import { MAX_USHER_HOPS, shortestRoute } from "./travel-route.js";
+import { FloorConstellation } from "./shell/FloorConstellation.js";
+import { QuickActions, type QuickActionDestination } from "./shell/QuickActions.js";
+import { RoomDossier } from "./shell/RoomDossier.js";
+import { VERIFIED_ROOM_NODES } from "./shell/twin-rooms.js";
 import {
   TWIN_DISCLOSURE,
   TWIN_MODE_DOLLHOUSE_LABEL,
@@ -1116,6 +1120,58 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     return url.toString();
   }, [mode, walk.currentId]);
 
+  // The Usher, as one function rather than two copies. The minimap and the
+  // quick-action rail must behave identically — a room reached by naming it
+  // should glide exactly as a room reached by pointing at it — and the fallback
+  // ladder below is subtle enough that two hand-maintained versions would drift.
+  const usherTo = useCallback(
+    (id: string): void => {
+      // Reduced motion keeps the instant teleport: a chain of instant swaps
+      // would strobe, which is the very thing the preference asks us not to do.
+      if (prefersReducedMotion()) {
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      // A second pick mid-ride short-circuits to that target rather than
+      // queueing behind the journey the visitor has just changed their mind
+      // about.
+      if (usherQueue.length > 0) {
+        setUsherQueue([]);
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      const route = shortestRoute(walk.currentId, id, manifest.edges);
+      // Unreachable or marathon routes teleport instead of trapping the visitor
+      // in a two-minute walk they cannot cancel.
+      if (route === null || route.length === 0 || route.length > MAX_USHER_HOPS) {
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      setUsherQueue(route);
+    },
+    [manifest.edges, usherQueue.length, walk],
+  );
+
+  // Rooms worth offering in the rail: one chip per ROOM, not per viewpoint.
+  // Several verified viewpoints share a slug — the Grand Hall was validated
+  // from both ends — and two chips both reading "Walk to Grand Hall" would give
+  // a screen-reader user identically named controls going to different places.
+  // The room underfoot is dropped too: "Walk to Grand Hall" while standing in
+  // it is not an offer, it is noise.
+  const hereSlug = VERIFIED_ROOM_NODES[walk.currentId];
+  const roomDestinations = useMemo<readonly QuickActionDestination[]>(() => {
+    const seen = new Set<string>();
+    const out: QuickActionDestination[] = [];
+    for (const [nodeId, slug] of Object.entries(VERIFIED_ROOM_NODES)) {
+      if (slug === hereSlug || seen.has(slug)) {
+        continue;
+      }
+      seen.add(slug);
+      out.push({ nodeId, slug });
+    }
+    return out;
+  }, [hereSlug]);
+
   if (currentNode === undefined) {
     // Unreachable in practice: the walk only yields ids from this manifest.
     return null;
@@ -1216,6 +1272,19 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   progress={walk.progress}
                 />
               </Suspense>
+            )}
+            {/* The building's own navigation graph, drawn on the floor it
+                describes. Mounted BEFORE the nav rings so the rings paint over
+                it: the constellation is the map, the rings are the affordance,
+                and the map must never be the brighter of the two. Hidden during
+                a hop, like the rings — a graph sliding under a moving camera
+                reads as an artefact rather than as ground. */}
+            {!hopping && (
+              <FloorConstellation
+                nodes={manifest.nodes}
+                edges={manifest.edges}
+                currentId={walk.currentId}
+              />
             )}
             {!hopping && (
               <NavMarkers
@@ -1369,6 +1438,36 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         viewerRef={viewerRef}
         shareUrl={shareUrl}
       />
+      {/* The first place the twin is allowed to name a room. It renders only at
+          the handful of viewpoints whose room a human validated against
+          ground-truth photography (shell/twin-rooms.ts) and is silent
+          everywhere else — the manifest's roomSlug is null on every node, and a
+          guest told they are in the Grand Hall while looking at the Saloon has
+          been lied to about the most basic claim the product makes. */}
+      {mode === "walk" && (
+        <RoomDossier currentId={walk.currentId} venueName={manifest.name} />
+      )}
+
+      {/* Offered next moves. Every chip is gated on a capability that exists:
+          the plan view only where there is a mesh to switch to, and room
+          destinations only where the nav graph can actually carry the walk
+          there. The mockup's other three concierge suggestions had no backend,
+          so they are simply absent rather than present and inert. */}
+      {mode === "walk" && (
+        <QuickActions
+          onSeeThePlan={
+            hasMesh
+              ? () => {
+                  setWarmMesh(true);
+                  setMode("plan");
+                }
+              : undefined
+          }
+          onWalkTo={usherTo}
+          destinations={roomDestinations}
+        />
+      )}
+
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
       {/* The coach waits in the wings until the overture has played. */}
       {mode === "walk" && firstLight === "done" && <TwinCoachHint />}
@@ -1377,28 +1476,8 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           nodes={manifest.nodes}
           currentId={walk.currentId}
           yaw={yaw}
-          onSelect={(id) => {
-            // The Usher: glide the real corridor route to the picked node.
-            // Reduced motion keeps the instant teleport (a chain of instant
-            // swaps would strobe); a second pick mid-ride short-circuits
-            // straight to that target; unreachable or marathon routes fall
-            // back to the teleport rather than trap the visitor.
-            if (prefersReducedMotion()) {
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            if (usherQueue.length > 0) {
-              setUsherQueue([]);
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            const route = shortestRoute(walk.currentId, id, manifest.edges);
-            if (route === null || route.length === 0 || route.length > MAX_USHER_HOPS) {
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            setUsherQueue(route);
-          }}
+          // The Usher: glide the real corridor route to the picked node.
+          onSelect={usherTo}
         />
       )}
     </div>

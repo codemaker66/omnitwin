@@ -1,0 +1,229 @@
+/* -----------------------------------------------------------------------------
+ * room-dossier.css — chrome and placement for the /tour room dossier.
+ *
+ * Component-adjacent, matching quick-actions.css, so this lands without editing
+ * twin.css while another lane has that file open. Palette tokens are declared on
+ * `.vv-twin` and inherit, so every var() here is a read, never a redeclaration;
+ * the fallbacks exist for a fixture rendered outside `.vv-twin`.
+ *
+ * PLACEMENT IS LOAD-BEARING, not decoration. Every other HUD element is
+ * position:absolute inside `.vv-twin-viewer`, and the only in-flow sibling is
+ * R3F's canvas wrapper at 100% height — so an unpositioned panel is laid out a
+ * full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }`. Without these rules the dossier is not
+ * merely unstyled, it is invisible while remaining in the tab order.
+ *
+ * The slot is the left column between the node label (top 18, ends ~49) and the
+ * disclosure (bottom 14). It deliberately avoids the right-hand stack — mode 18,
+ * surface 62, controls 106 — and the minimap at bottom right, so the width is
+ * capped rather than fluid: a full-bleed card would slide under those controls
+ * on a phone.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-dossier {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top));
+  left: calc(18px + env(safe-area-inset-left));
+  z-index: 3;
+  /* Never wide enough to reach the right-hand control stack. The reserve is
+   * MEASURED, not guessed: .vv-twin-controls renders 112px wide at its 18px
+   * inset, and the Surface pill 103px — 112 + 18 + a 20px gap. An earlier
+   * guess of 44px (the icon buttons alone) put the card straight through
+   * Surface and Enquire on a phone. */
+  width: min(340px, calc(100vw - 150px));
+  /* Stops short of the chip rail and the disclosure below it. */
+  max-height: calc(100dvh - 200px);
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic, so only the card itself may take the pointer. */
+  pointer-events: none;
+}
+
+.vv-twin-dossier-card {
+  pointer-events: auto;
+  overflow-y: auto;
+  max-height: inherit;
+  padding: 12px 14px 13px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  /* Matches the node label's halo: the HUD sits over correctly sRGB-encoded
+   * panos that are brighter than the grade this chrome was first tuned to. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  animation: vv-twin-dossier-rise 420ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.vv-twin-dossier-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.vv-twin-dossier-names {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The room name is the news, so it takes the display face — the only place in
+ * the walkthrough HUD that does. Everything else here stays quiet UI type. */
+.vv-twin-dossier-room {
+  margin: 0;
+  font-family: var(--display, "Newsreader", "Times New Roman", serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  color: var(--ink, #fbf2df);
+}
+
+.vv-twin-dossier-venue {
+  margin: 3px 0 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2, #e7d8bb);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+
+.vv-twin-dossier-toggle:hover {
+  border-color: var(--gold, #d7a64b);
+  color: var(--gold-2, #f0c66b);
+}
+
+.vv-twin-dossier-toggle:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
+}
+
+.vv-twin-dossier-body {
+  /* No `display` rule here: the component keeps this wrapper mounted so
+   * aria-controls always resolves, and a display toggle would fight that. */
+  margin: 0;
+}
+
+.vv-twin-dossier-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 12px;
+  margin: 12px 0 0;
+  padding: 11px 0 0;
+  border-top: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+}
+
+.vv-twin-dossier-stat-label {
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-stat-value {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--ink, #fbf2df);
+}
+
+/* The venue's own qualifier, e.g. the further height inside the dome. Its
+ * leading separator is DOM text, not a margin here — see RoomDossier.tsx. */
+.vv-twin-dossier-stat-note {
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-footnote {
+  margin: 11px 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-action {
+  display: inline-flex;
+  align-items: center;
+  margin: 11px 0 0;
+  padding: 8px 14px;
+  border: 1px solid var(--gold, #d7a64b);
+  border-radius: 999px;
+  background: rgba(215, 166, 75, 0.14);
+  color: var(--gold-2, #f0c66b);
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.vv-twin-dossier-action:hover {
+  background: rgba(215, 166, 75, 0.24);
+}
+
+.vv-twin-dossier-action:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
+}
+
+@keyframes vv-twin-dossier-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Phone: the right-hand stack and the minimap both move in, so the card takes
+ * the freed width but still stops clear of the control column. */
+@media (max-width: 700px) {
+  .vv-twin-dossier {
+    top: calc(56px + env(safe-area-inset-top));
+    left: calc(12px + env(safe-area-inset-left));
+    /* Phone: the control stack tightens to ~90px at a 12px inset, so the card
+     * may run to 100vw − (12 left + 90 stack + 12 inset + 16 gap). Measured on
+     * a 390px viewport, where the earlier 96px reserve overlapped Enquire. */
+    width: min(320px, calc(100vw - 130px));
+    max-height: calc(100dvh - 230px);
+  }
+
+  .vv-twin-dossier-room {
+    font-size: 19px;
+  }
+}
+
+/* Short viewports (landscape phones) have no room for a stats grid over a live
+ * view; the card keeps its name and scrolls the rest. */
+@media (max-height: 460px) {
+  .vv-twin-dossier {
+    max-height: calc(100dvh - 120px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-dossier-card {
+    animation: none;
+  }
+
+  .vv-twin-dossier-toggle,
+  .vv-twin-dossier-action {
+    transition: none;
+  }
+}
