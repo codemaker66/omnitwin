@@ -198,6 +198,19 @@ def _coarse_factor(grid: AtlasGrid, coarse_mm: float) -> int:
     ripple that a one-parameter model cannot explain anyway. The clamp keeps the
     block reduction EXACT (f must divide into the grid) and leaves enough cells
     for the high-pass kernel to mean anything.
+
+    The known cost, and the next lever if this is ever pushed further: the
+    REFERENCE is area-averaged onto this cell (see _block_sum) but the sweep is
+    still point-sampled onto it, one panorama tap per cell. That is harmless
+    while a view's ground sampling is near the cell size, as it is at the tier
+    these captures fuse at, and it degrades as the source gets finer than the
+    cell — measured, the per-sweep residual goes from 2.1 mm with 9-20 mm
+    sampling to 7.2 mm with 2.5 mm sampling (still inside the bar, and the atlas
+    gets BETTER because a sharper source carries more detail to recover). The
+    principled fix is to band-limit the sweep too, which means mip-selecting the
+    panorama per pixel, since a cell's footprint runs from several source pixels
+    near the scanner to under one at grazing. That is a real piece of work and
+    it is not pretended here.
     """
     if grid.mm_per_px <= 0:
         return 1
@@ -217,6 +230,12 @@ def _block_sum(a: np.ndarray, f: int, ch: int, cw: int) -> np.ndarray:
     band-limits: point-sampling a 5 mm raster onto a 24 mm grid folds the 12 mm
     grain into a pattern belonging nowhere, living in exactly the band the
     correlation scores.
+
+    This is the load-bearing line of the whole alignment, and the only one whose
+    value GROWS with the sweep count. Revert it alone and the estimator stops
+    measuring and starts inventing: on a perfectly level scene it hands out
+    18 mm corrections, and at twenty sweeps it makes the atlas 0.128 of
+    correlation WORSE than leaving every pose alone.
     """
     a = a[: ch * f, : cw * f]
     if a.ndim == 2:
@@ -249,23 +268,27 @@ def _fit_pose_dz(
     not a comparison at all. Measured on a scene where the obstruction is
     present in both the mesh AND the imagery (so a shadowed pixel really does
     show the table top rather than clean floor), re-testing per candidate
-    recovers +0.034 of detail at 6.8 mm residual where freezing recovers +0.077
-    at 3.7 mm. Freezing also drops the occlusion query from twenty-one per sweep
+    recovers +0.064 of detail at 5.8 mm residual where freezing recovers +0.080
+    at 3.4 mm. Freezing also drops the occlusion query from twenty-one per sweep
     to one, which is the difference between a search that is free and a search
     that dominates a building-scale build.
 
-    Beyond that fixed visibility each candidate is scored on its own overlap,
-    with the minimum-overlap gate keeping that honest: a candidate too thin to
-    mean anything is left UNSCORED rather than allowed to win on a small,
-    flattering patch.
+    Beyond that fixed visibility each candidate is simply scored on its own
+    overlap. Intersecting the candidates into one common mask was tried and is
+    an exact no-op once visibility is frozen — identical to four decimals in
+    every condition measured — because at tripod height the remaining gates, the
+    self-blind disc and the incidence cut, barely move over a ±30 mm search. The
+    simpler form is therefore the honest one, and the minimum-overlap gate is
+    what keeps it safe: a candidate too thin to mean anything is left UNSCORED
+    rather than allowed to win on a small, flattering patch.
 
-    Pixels are NOT weighted by tan²(incidence), and that deserves a word because
-    the physics argues for it: tan(incidence) is the derivative of lateral slip
-    with respect to δ, so an overhead pixel carries almost no evidence about
-    height while a grazing one carries nearly all of it. Implemented and
-    measured, it is a wash — better at twenty open sweeps (1.7 -> 1.2 mm), worse
-    under an occluder (4.1 -> 4.7 mm), a tie elsewhere. A weighting that cannot
-    be shown to help is a claim this floor does not support, so it is not here.
+    PIXELS ARE WEIGHTED BY tan²(incidence), because tan(incidence) IS the
+    derivative of lateral slip with respect to δ. A pixel viewed from straight
+    overhead does not move when the height is wrong, so it carries no evidence
+    about the height and must not out-vote the grazing pixels carrying nearly
+    all of it. The effect is modest but consistent — 2.1 -> 1.9 mm of residual
+    on the test's own scene, 1.7 -> 1.2 mm at twenty sweeps, 3.7 -> 3.4 mm under
+    an occluder — and it costs one array of geometry already computed.
 
     Returns 0.0 rather than a guess when no candidate ever had enough
     independent overlap, or when the sweep carries no texture to register:
@@ -281,6 +304,12 @@ def _fit_pose_dz(
         )
         vis = ref_ok & (w0 > 0)
 
+    xs, ys = cg.pixel_centres_world()
+    drop = z_floor - float(np.asarray(C, dtype=np.float64)[2])
+    dist = np.sqrt((xs - C[0]) ** 2 + (ys - C[1]) ** 2 + drop * drop)
+    overhead = abs(drop) / np.maximum(dist, 1e-9)
+    jac = (1.0 - overhead ** 2) / np.maximum(overhead ** 2, 1e-12)
+
     best, best_score = 0.0, UNSCORED
     for k in range(-n, n + 1):
         rgb, w = _sample_source(
@@ -290,25 +319,31 @@ def _fit_pose_dz(
         m = vis & (w > 0)
         if int(m.sum()) < ALIGN_MIN_OVERLAP_PX:
             continue
+        wt = jac[m]
+        tot = float(wt.sum())
+        if tot <= 0.0:
+            continue
+        wt = wt / tot
         s = rgb.mean(axis=2)
         a = (s - ndimage.uniform_filter(s, ALIGN_HP_PX))[m]
         b = ref_hp[m]
-        a = a - a.mean()
-        b = b - b.mean()
-        den = float(np.sqrt((a * a).sum() * (b * b).sum()))
+        a = a - float((wt * a).sum())
+        b = b - float((wt * b).sum())
+        den = float(np.sqrt((wt * a * a).sum() * (wt * b * b).sum()))
         if den <= 1e-12:
             continue
-        score = float((a * b).sum()) / den
+        score = float((wt * a * b).sum()) / den
         if score > best_score:
             best_score, best = score, k * step_m
-    # Deliberately NOT refined to sub-step by fitting the peak's two neighbours.
-    # Measured both ways: it is a wash (2.94 mm against 3.05 mm mean residual
-    # over four seeds, but 4.88 against 4.66 mm under an occluder), and a wash
-    # is not a lever. What it does cost is the one property worth more than a
-    # tenth of a millimetre — on a perfectly level scene the quantised search
-    # returns EXACTLY zero, while the parabola invents a few tenths of a
-    # millimetre of displacement at every sweep. A correction that is not
-    # measurably real should read as no correction.
+    # Deliberately NOT refined to sub-step by fitting the peak's two neighbours,
+    # and NOT because it is worse: measured, it is slightly better (1.70 against
+    # 1.89 mm on the test's own scene, 2.94 against 3.05 mm over four seeds).
+    # It is declined because of what it costs to buy those two tenths of a
+    # millimetre — on a perfectly level, perfectly posed scene the quantised
+    # search returns EXACTLY zero, while the parabola hands every sweep 0.3 mm
+    # of displacement that no evidence supports. Against a 12 mm bar that trade
+    # is not close: this module's whole discipline is that an unobserved or
+    # unmeasurable quantity comes back empty rather than plausible.
     return float(best)
 
 
@@ -339,13 +374,20 @@ def _align_pose_heights(
     helped write. At zero correction it already agrees with its own
     contribution, however wrong its pose is, so the score carries a spurious peak
     at zero and the search is pulled into it. The bias is proportional to the
-    share the sweep owns of the mean, which is why the measured value of this
-    subtraction collapses as sweeps are added — worth 4.5 -> 1.9 mm of residual
-    at five sweeps and nothing at all at twenty. It is kept for the case that
-    made the atlas necessary: WITH A MESH OCCLUDER, where every sweep's shadow
-    removes a different part of the floor, five sweeps go from +0.017 to +0.110
-    of recovered detail. Shadowed floor is thin evidence, and thin evidence is
-    exactly where a self-vote decides the answer.
+    share the sweep owns of the mean, so it necessarily shrinks as ~1/N — this
+    matters at five sweeps and is negligible at forty.
+
+    Its measured worth is REAL BUT MODEST, and smaller than an earlier draft of
+    this comment claimed. Ablated against the self-vote over eight seeds on the
+    five-scanner fixture in tests/test_floor_atlas.py (mean detail gap, mean
+    residual): open floor +0.0935/3.33 mm -> +0.1010/2.87 mm; with a mesh
+    occluder +0.1029/4.38 mm -> +0.1202/3.14 mm. So on open floor the gain sits
+    inside the seed-to-seed scatter (sigma ~0.022), while under an occluder it is
+    about 2.3x larger and consistently favours the subtraction on residual.
+    That is the case worth keeping it for: every sweep's shadow removes a
+    different part of the floor, and shadowed floor is thin evidence — exactly
+    where a self-vote decides the answer. Re-measure by replacing the four
+    ref_* lines below with the un-subtracted block_* sums.
 
     That subtraction only cancels if the contribution removed was built the same
     way as the sum it is removed from — same occluder, same gates. Sample the
@@ -357,6 +399,20 @@ def _align_pose_heights(
     building: per-source rasters are never stacked, only the ONE source being
     excluded is re-sampled, and it is re-sampled from a raster the search has to
     load anyway, so a lazily-loaded 8192 tier is read once per sweep here.
+
+    WHAT THIS CANNOT MEASURE, stated because `align_dz` leaves the module and a
+    number nobody has bounded is worse than no number. The COMMON component of
+    the error is only weakly observable. Every sweep's displacement field is
+    radial about its own centre, so a shift shared by all of them does not
+    cancel entirely — but it is far less constrained than the differences
+    between sweeps, and it comes back short: plant a uniform 14 mm on every
+    sweep and 56-68% of it is recovered, in the right direction, with the atlas
+    still sharpening strongly (+0.12 at five sweeps, +0.21 at twenty). That is
+    the case the Grand Hall actually presented, so treat the SPREAD of align_dz
+    as the trustworthy part and its mean as a lower bound on a shared error. No
+    constant is subtracted to flatter it, and no re-centring is applied: with a
+    handful of sweeps the true mean error really can be several millimetres, and
+    forcing it to zero would delete signal rather than bias.
     """
     from scipy import ndimage
 

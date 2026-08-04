@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import extract_equirect_v2 as ext  # noqa: E402  (production ray convention)
 import floor_atlas as fa  # noqa: E402
+from nadir_fill import VoxelOccluder  # noqa: E402  (the occluder that ships)
 
 W, H = 1024, 512          # source pano size — ~9-20 mm ground sampling
 Z_FLOOR = 0.0
@@ -289,6 +290,68 @@ def test_per_source_height_error_is_aligned_out():
     if len(est) == len(errs):
         resid = np.abs(np.array(est) - (-errs)).mean()
         assert resid < 0.012, f"dz estimates off by {resid * 1000:.1f} mm"
+
+
+def test_a_level_capture_is_left_exactly_alone():
+    # The estimator must be able to say "nothing is wrong here".
+    #
+    # Sub-step refinement was rejected for this reason, and this test is what
+    # makes that decision enforceable: fitting a parabola through the peak's
+    # neighbours hands back a few tenths of a millimetre at every sweep even
+    # when the capture is perfect, and a pipeline that always finds something
+    # to correct cannot be trusted when it reports a real 15 mm fault. The
+    # quantised search returns the zero rung, so a correction that is not
+    # measurably real reads as no correction.
+    _, report = fa.accumulate_floor_atlas(PANOS, GRID, z_floor=Z_FLOOR, align=True)
+    est = report["align_dz"]
+    print(f"  level capture -> dz mm: {[round(v * 1000, 3) for v in est]}")
+    assert all(v == 0.0 for v in est), est
+
+
+def test_alignment_survives_a_mesh_occluder():
+    # The path that ships and the path that was tested were not the same one.
+    #
+    # Every other test here runs with occluder=None, but floor_atlas_build.py
+    # always builds a VoxelOccluder when the venue has a mesh — so the real
+    # pipeline exercises code no test covered. The specific hazard is the
+    # leave-one-out subtraction: the reference is the accumulated sum MINUS
+    # this source's contribution, and that only cancels if the contribution was
+    # sampled the same way the sum was. Remove an UNOCCLUDED contribution from
+    # an accumulator built WITH the occluder and the reference goes negative
+    # exactly where the shadow fell, which is worse than no subtraction at all.
+    # Nothing about that failure is visible without an occluder in the loop.
+    slab = np.array(
+        [
+            [(-0.35, -0.30, 0.55), (0.45, -0.30, 0.55), (0.45, 0.50, 0.55)],
+            [(-0.35, -0.30, 0.55), (0.45, 0.50, 0.55), (-0.35, 0.50, 0.55)],
+        ],
+        dtype=np.float64,
+    )
+    occluder = VoxelOccluder.from_triangles(slab, voxel=0.05)
+
+    rng = np.random.default_rng(5)
+    errs = rng.uniform(-0.018, 0.018, size=len(PANOS))
+    bad = [(img, np.array([C[0], C[1], C[2] + e])) for (img, C), e in zip(PANOS, errs)]
+
+    truth = _truth_raster()
+    naive, _ = fa.accumulate_floor_atlas(
+        bad, GRID, z_floor=Z_FLOOR, align=False, occluder=occluder
+    )
+    fixed, rep = fa.accumulate_floor_atlas(
+        bad, GRID, z_floor=Z_FLOOR, align=True, occluder=occluder
+    )
+    seen = rep["counts"] >= 3
+    c_naive = _fine_corr(naive, truth, seen)
+    c_fixed = _fine_corr(fixed, truth, seen)
+    resid = np.abs(np.array(rep["align_dz"]) - (-errs)).mean()
+    print(
+        f"  under a mesh occluder: {c_naive:.3f} -> {c_fixed:.3f}"
+        f"  (residual {resid * 1000:.1f} mm)"
+    )
+    assert c_fixed > c_naive + 0.05, (c_naive, c_fixed)
+    # The injected-error signature of the mismatched subtraction is a residual
+    # the size of the fault being corrected, so the bar is the same 12 mm.
+    assert resid < 0.012, f"dz estimates off by {resid * 1000:.1f} mm"
 
 
 def test_unobserved_floor_is_reported_not_invented():
