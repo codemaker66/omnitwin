@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tradeshallglasgow.co.uk/schemas/craft-quiz.schema.json",
+  "title": "Discover Your Craft — quiz content",
+  "description": "Editable copy and scoring weights for the Trades House of Glasgow Craft quiz. Structure (which fourteen Crafts exist, how ranking works, which icons are drawable) is fixed in TypeScript and is deliberately not expressible here; this file carries content only.",
+  "type": "object",
+  "required": ["crafts", "questions"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Relative pointer to this schema, so editors validate on save."
+    },
+    "crafts": {
+      "type": "object",
+      "description": "Exactly the fourteen Incorporated Trades, keyed by Craft id. Adding or removing a key is a structural change and must be made in CRAFT_ORDER first.",
+      "required": [
+        "hammermen",
+        "wrights",
+        "masons",
+        "coopers",
+        "tailors",
+        "weavers",
+        "dyers",
+        "skinners",
+        "cordiners",
+        "bakers",
+        "fleshers",
+        "maltmen",
+        "gardeners",
+        "barbers"
+      ],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(hammermen|wrights|masons|coopers|tailors|weavers|dyers|skinners|cordiners|bakers|fleshers|maltmen|gardeners|barbers)$": {
+          "$ref": "#/$defs/craft"
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "The quiz questions, asked in this order.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/question" }
+    }
+  },
+  "$defs": {
+    "craft": {
+      "type": "object",
+      "description": "One Craft's result-screen copy.",
+      "required": ["name", "archetype", "omen", "motto", "essence", "reveal"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name, upper case, conventionally prefixed 'THE '. Also used in the introduction email subject."
+        },
+        "archetype": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short character title shown under the Craft name, e.g. 'The Forge-Mind'."
+        },
+        "omen": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Sensory fragment used mid-quiz in 'The Chain senses X and Y'. Must read naturally in that sentence, so no leading article and no trailing punctuation."
+        },
+        "motto": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Upper-case maxim shown beneath the reveal."
+        },
+        "essence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One sentence on what the Craft historically did."
+        },
+        "reveal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The personal reading. House convention is to end on a named challenge or limitation, so the result flatters without being uncritical."
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["prompt", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The question as shown to the visitor."
+        },
+        "options": {
+          "type": "array",
+          "description": "Answer choices. Four per question is the established layout; the grid is built for four.",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/option" }
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "required": ["title", "subtitle", "icon", "weights"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Upper-case answer label."
+        },
+        "subtitle": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Lower-case supporting line."
+        },
+        "icon": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key into the drawable icon set in CraftOptionIcon.tsx. An unknown key silently falls back to the hammer, so the checker treats unknown keys as an error."
+        },
+        "weights": {
+          "type": "object",
+          "description": "Points added to each Craft when this option is chosen. Omitted Crafts score nothing.",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(hammermen|wrights|masons|coopers|tailors|weavers|dyers|skinners|cordiners|bakers|fleshers|maltmen|gardeners|barbers)$": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "description": "Positive whole points. The established scale is 1 (a nod), 2 (a clear pull) and 3 (a defining choice)."
+            }
+          }
+        }
+      }
+    }
+  }
+}

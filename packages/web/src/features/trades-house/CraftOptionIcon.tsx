@@ -37,6 +37,13 @@ const ICON_PATHS = {
 
 type IconKey = keyof typeof ICON_PATHS;
 
+/**
+ * Every icon an option in craft-quiz.content.json may name. An unknown key
+ * still renders — as the hammer — so nothing here can crash the quiz, which is
+ * exactly why the content checks assert against this list instead.
+ */
+export const DRAWABLE_ICON_KEYS: readonly string[] = Object.keys(ICON_PATHS);
+
 function pathsForIcon(icon: string): readonly string[] {
   return Object.hasOwn(ICON_PATHS, icon) ? ICON_PATHS[icon as IconKey] : ICON_PATHS.hammer;
 }

@@ -20,6 +20,11 @@ Current priority:
 - T-087 Spark/Three runtime is prerequisite.
 - Avoid new product ideation unless explicitly requested.
 
+Self-contained sub-projects:
+- Trades House leaflet and Craft quiz — read `projects/trades-house/AGENTS.md`
+  instead of this file. It needs none of the Venviewer stack, and its content
+  can be edited, previewed and checked with no install.
+
 Engineering rules:
 - TypeScript strict.
 - No any types.

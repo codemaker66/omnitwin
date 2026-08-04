@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:,">
+<title>Discover Your Craft — content preview</title>
+<style>
+  :root{
+    --navy:#15273f; --navy-deep:#0e1828; --cream:#f4eee1; --gold:#cda85f;
+    --gold-deep:#a8823c; --parchment:#e7ddca; --muted:#8fa0b8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--navy-deep); color:var(--parchment);
+    font-family:Georgia,'Times New Roman',serif; line-height:1.5;
+    display:flex; flex-direction:column; align-items:center; padding:24px 16px 64px;
+  }
+  a{color:var(--gold);}
+  .banner{
+    width:100%; max-width:960px; border:1px solid rgba(205,168,95,.4);
+    background:rgba(205,168,95,.07); padding:10px 14px; font-size:13px;
+    color:var(--muted); margin-bottom:20px;
+  }
+  .banner strong{color:var(--gold); font-weight:normal; letter-spacing:.5px;}
+  .layout{width:100%; max-width:960px; display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:20px; align-items:start;}
+  @media (max-width:820px){ .layout{grid-template-columns:minmax(0,1fr);} }
+  .stage{
+    background:var(--navy); border:1px solid rgba(205,168,95,.35);
+    padding:32px 28px 36px; min-height:420px; text-align:center;
+  }
+  h1{font-size:26px; letter-spacing:1px; margin:0 0 4px; color:#f3ecdc; font-weight:600;}
+  .rule{display:flex; align-items:center; justify-content:center; gap:8px; margin:14px 0;}
+  .rule span{flex:1; max-width:90px; height:1px; background:linear-gradient(90deg,transparent,var(--gold-deep));}
+  .rule span+span{background:linear-gradient(90deg,var(--gold-deep),transparent);}
+  .rule i{color:var(--gold); font-style:normal; font-size:11px;}
+  .kicker{font-size:11px; letter-spacing:2.4px; text-transform:uppercase; color:var(--gold); margin:0;}
+  .lede{font-style:italic; color:#d6ccb6; margin:6px 0 0;}
+  button{font-family:inherit; cursor:pointer;}
+  .begin{
+    margin-top:22px; background:transparent; border:1px solid var(--gold);
+    color:var(--gold); padding:11px 34px; letter-spacing:2px; font-size:13px;
+    text-transform:uppercase;
+  }
+  .begin:hover{background:var(--gold); color:var(--navy-deep);}
+  .prompt{font-size:20px; color:#f3ecdc; margin:14px 0 22px; line-height:1.35;}
+  .options{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  @media (max-width:640px){ .options{grid-template-columns:1fr;} }
+  .option{
+    display:flex; gap:12px; align-items:flex-start; text-align:left;
+    background:rgba(255,255,255,.03); border:1px solid rgba(205,168,95,.35);
+    color:var(--parchment); padding:13px 14px;
+  }
+  .option:hover{border-color:var(--gold); background:rgba(205,168,95,.1);}
+  .option svg{flex:none; width:26px; height:26px; fill:none; stroke:var(--gold); stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .option b{display:block; font-size:13px; letter-spacing:.8px; color:#e6cf9b; font-weight:600;}
+  .option small{display:block; font-size:12.5px; color:#bdb2a0; margin-top:2px;}
+  .option em{display:block; font-size:11px; color:var(--muted); margin-top:5px; font-style:normal;}
+  .omen{font-style:italic; color:var(--gold); font-size:14px; margin:0 0 10px;}
+  .pips{letter-spacing:6px; color:rgba(205,168,95,.28); font-size:12px;}
+  .pips b{color:var(--gold);}
+  .crest{width:132px; height:132px; object-fit:contain; margin:6px auto 10px; display:block;
+    filter:drop-shadow(0 3px 10px rgba(0,0,0,.5));}
+  .archetype{color:var(--gold); font-style:italic; font-size:17px; margin:2px 0 12px;}
+  .body-copy{color:#d6ccb6; font-size:14.5px; max-width:52ch; margin:0 auto 12px;}
+  .motto{color:#e6cf9b; letter-spacing:1.6px; font-size:12.5px; margin:16px 0 0;}
+  .affinity{color:var(--muted); font-size:13px; margin:14px 0 0;}
+  .again{margin-top:20px; background:transparent; border:1px solid rgba(205,168,95,.5); color:var(--gold);
+    padding:9px 24px; letter-spacing:1.5px; font-size:12px; text-transform:uppercase;}
+  .panel{background:var(--navy); border:1px solid rgba(205,168,95,.28); padding:16px 16px 18px; font-size:12.5px;}
+  .panel h2{font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--gold);
+    margin:0 0 12px; font-weight:normal;}
+  .score{display:flex; align-items:center; gap:8px; margin-bottom:5px;}
+  .score span:first-child{width:74px; color:#bdb2a0;}
+  .score .bar{flex:1; height:7px; background:rgba(255,255,255,.07);}
+  .score .bar i{display:block; height:100%; background:var(--gold-deep);}
+  .score .bar i.lead{background:var(--gold);}
+  .score span:last-child{width:20px; text-align:right; color:var(--parchment);}
+  .toggle{margin-top:14px; color:var(--muted); font-size:12px; display:flex; align-items:center; gap:7px;}
+  .fault{border:1px solid #c2603f; background:rgba(194,96,63,.12); color:#f0c4b4; padding:16px 18px; max-width:640px;}
+  .fault code{background:rgba(0,0,0,.35); padding:2px 6px; color:#f3ecdc;}
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <strong>Content preview.</strong>
+  Reads the same <code>craft-quiz.content.json</code>, crest images and icon set as the shipped quiz, so
+  wording, weights and icons are faithful. Layout and animation are not — the real quiz is the React route
+  at <code>/trades-house/discover-your-craft</code>.
+</div>
+
+<div class="layout">
+  <main class="stage" id="stage"></main>
+  <aside class="panel" id="panel" hidden>
+    <h2>Live scores</h2>
+    <div id="scores"></div>
+    <label class="toggle"><input type="checkbox" id="showWeights" checked> Show weights on options</label>
+  </aside>
+</div>
+
+<script type="module">
+const ROOT = "../../../";
+const CONTENT = `${ROOT}packages/web/src/features/trades-house/craft-quiz.content.json`;
+const MODEL = `${ROOT}packages/web/src/features/trades-house/craft-quiz-model.ts`;
+const ICONS = `${ROOT}packages/web/src/features/trades-house/CraftOptionIcon.tsx`;
+const CRESTS = `${ROOT}packages/web/public/trades-house-media/assets/crests`;
+
+const stage = document.getElementById("stage");
+const panel = document.getElementById("panel");
+const scoresEl = document.getElementById("scores");
+const showWeights = document.getElementById("showWeights");
+
+async function text(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+  return response.text();
+}
+
+/* CRAFT_ORDER and the icon paths stay defined in TypeScript, so read them from
+   there rather than keeping a second copy that could quietly fall behind. */
+function parseCraftOrder(source) {
+  const block = /export const CRAFT_ORDER = \[([\s\S]*?)\] as const;/.exec(source);
+  if (!block) throw new Error("CRAFT_ORDER not found in craft-quiz-model.ts");
+  return [...block[1].matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+}
+
+function parseIcons(source) {
+  const block = /const ICON_PATHS = \{([\s\S]*?)\n\} as const/.exec(source);
+  if (!block) throw new Error("ICON_PATHS not found in CraftOptionIcon.tsx");
+  const icons = {};
+  for (const entry of block[1].matchAll(/^ {2}([A-Za-z]\w*): \[([\s\S]*?)\],$/gm)) {
+    icons[entry[1]] = [...entry[2].matchAll(/"([^"]+)"/g)].map((path) => path[1]);
+  }
+  return icons;
+}
+
+let content;
+let craftOrder;
+let icons;
+
+try {
+  const [contentSource, modelSource, iconSource] = await Promise.all([
+    text(CONTENT), text(MODEL), text(ICONS),
+  ]);
+  content = JSON.parse(contentSource);
+  craftOrder = parseCraftOrder(modelSource);
+  icons = parseIcons(iconSource);
+} catch (cause) {
+  stage.outerHTML = `<div class="fault">
+    <p><strong>Could not load the quiz.</strong> ${cause.message}</p>
+    <p>This page reads sibling files, which browsers block over <code>file://</code>.
+    Serve the repository instead — from the repository root run:</p>
+    <p><code>python3 -m http.server 8000</code></p>
+    <p>then open <code>http://localhost:8000/projects/trades-house/preview/quiz.html</code>.</p>
+  </div>`;
+  panel.hidden = true;
+  throw cause;
+}
+
+const label = (craftId) => content.crafts[craftId].name.replace(/^THE /, "");
+
+let scores = {};
+let lastWeights = {};
+let questionIndex = 0;
+
+function applyAnswer(option) {
+  for (const [craftId, weight] of Object.entries(option.weights)) {
+    scores[craftId] = (scores[craftId] ?? 0) + weight;
+  }
+  lastWeights = option.weights;
+}
+
+/* Mirrors rankCrafts in craft-quiz-model.ts: score, then the final answer's
+   pull, then CRAFT_ORDER. */
+function ranking() {
+  return craftOrder
+    .map((craftId, stableOrder) => ({
+      craftId,
+      score: scores[craftId] ?? 0,
+      last: lastWeights[craftId] ?? 0,
+      stableOrder,
+    }))
+    .sort((a, b) => b.score - a.score || b.last - a.last || a.stableOrder - b.stableOrder);
+}
+
+function iconSvg(name) {
+  const paths = icons[name] ?? icons.hammer;
+  const marker = icons[name] ? "" : ` data-unknown-icon="${name}"`;
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"${marker}>${
+    paths.map((path) => `<path d="${path}"/>`).join("")
+  }</svg>`;
+}
+
+function renderScores() {
+  const ranked = ranking();
+  const peak = Math.max(1, ranked[0].score);
+  scoresEl.innerHTML = ranked
+    .map(({ craftId, score }, index) => `
+      <div class="score">
+        <span>${label(craftId)}</span>
+        <span class="bar"><i class="${index === 0 && score > 0 ? "lead" : ""}"
+          style="width:${(score / peak) * 100}%"></i></span>
+        <span>${score}</span>
+      </div>`)
+    .join("");
+}
+
+function renderIntro() {
+  panel.hidden = true;
+  stage.innerHTML = `
+    <p class="kicker">Trades House of Glasgow · Est. 1605</p>
+    <div class="rule"><span></span><i>&#10070;</i><span></span></div>
+    <h1>Which Craft is yours?</h1>
+    <p class="lede">${content.questions.length} questions · four centuries · one fellowship</p>
+    <button class="begin" id="begin">Begin</button>`;
+  document.getElementById("begin").addEventListener("click", () => {
+    scores = {};
+    lastWeights = {};
+    questionIndex = 0;
+    renderQuestion();
+  });
+}
+
+function renderQuestion() {
+  panel.hidden = false;
+  renderScores();
+
+  const question = content.questions[questionIndex];
+  const midpoint = Math.floor(content.questions.length / 2);
+  const [first, second] = ranking();
+  const omen = questionIndex === midpoint && first.score > 0
+    ? `The Chain senses ${content.crafts[first.craftId].omen} and ${content.crafts[second.craftId].omen}. It is not yet decided.`
+    : "";
+
+  const pips = content.questions
+    .map((_, index) => (index <= questionIndex ? "<b>&#9670;</b>" : "&#9670;"))
+    .join("");
+
+  stage.innerHTML = `
+    <p class="pips">${pips}</p>
+    <p class="kicker" style="margin-top:10px;">Question ${questionIndex + 1} of ${content.questions.length}</p>
+    ${omen ? `<p class="omen" style="margin-top:12px;">${omen}</p>` : ""}
+    <p class="prompt">${question.prompt}</p>
+    <div class="options">
+      ${question.options.map((option, index) => `
+        <button class="option" data-index="${index}">
+          ${iconSvg(option.icon)}
+          <span>
+            <b>${option.title}</b>
+            <small>${option.subtitle}</small>
+            ${showWeights.checked ? `<em>${
+              Object.entries(option.weights)
+                .sort((a, b) => b[1] - a[1])
+                .map(([craftId, weight]) => `${label(craftId)} +${weight}`)
+                .join(" · ")
+            }</em>` : ""}
+          </span>
+        </button>`).join("")}
+    </div>`;
+
+  for (const button of stage.querySelectorAll(".option")) {
+    button.addEventListener("click", () => {
+      applyAnswer(question.options[Number(button.dataset.index)]);
+      if (questionIndex === content.questions.length - 1) renderResult();
+      else {
+        questionIndex += 1;
+        renderQuestion();
+      }
+    });
+  }
+}
+
+function renderResult() {
+  renderScores();
+  const [winner, runnerUp, third] = ranking();
+  const craft = content.crafts[winner.craftId];
+
+  stage.innerHTML = `
+    <p class="kicker">The Chain has chosen</p>
+    <img class="crest" src="${CRESTS}/${winner.craftId}.png" alt="${craft.name} crest">
+    <h1>${craft.name}</h1>
+    <p class="archetype">${craft.archetype}</p>
+    <div class="rule"><span></span><i>&#10070;</i><span></span></div>
+    <p class="body-copy">${craft.essence}</p>
+    <p class="body-copy">${craft.reveal}</p>
+    <p class="motto">${craft.motto}</p>
+    <p class="affinity">Close affinities: ${content.crafts[runnerUp.craftId].name}
+      and ${content.crafts[third.craftId].name}
+      &nbsp;·&nbsp; winning score ${winner.score}</p>
+    <button class="again" id="again">Take it again</button>`;
+
+  document.getElementById("again").addEventListener("click", renderIntro);
+}
+
+showWeights.addEventListener("change", () => {
+  if (!panel.hidden && stage.querySelector(".options")) renderQuestion();
+});
+
+renderIntro();
+</script>
+</body>
+</html>

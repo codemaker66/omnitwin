@@ -4,8 +4,9 @@
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "rootDir": "./src",
+    "resolveJsonModule": true,
     "outDir": "./dist",
     "composite": true
   },
-  "include": ["src"]
+  "include": ["src", "src/**/*.json"]
 }

@@ -238,6 +238,13 @@ core rules only. Do not speculatively load specific docs. Each doc below
 lists a trigger condition at its top; load it only when its trigger
 matches what you're about to do.
 
+- `projects/trades-house/AGENTS.md`
+  Read this when: touching the Trades House of Glasgow visitor leaflet or the
+  Discover Your Craft quiz — anything under `projects/trades-house/`,
+  `packages/web/public/trades-house-media/`, or
+  `packages/web/src/features/trades-house/`. That project is deliberately
+  self-contained and carries its own contract; its rules govern there.
+
 - `.claude/gotchas/spark-vs-drei-splat.md`
   Read this when: rendering a Gaussian splat (`.ply`, `.spz`, `.splat`
   file), modifying any 3D scene component that displays splats, or
