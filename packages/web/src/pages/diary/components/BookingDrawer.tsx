@@ -8,6 +8,7 @@ import {
   transitionBooking,
   updateBooking,
 } from "../../../api/diary.js";
+import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import {
   allowedTransitionTargets,
@@ -53,6 +54,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  /** An event created by startPlan whose link has not landed yet — so a
+   *  retry finishes the job instead of orphaning another plan. */
+  const startedEventRef = useRef<string | null>(null);
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -62,6 +66,11 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     () => (mode.kind === "edit" ? allowedTransitionTargets(mode.booking.state, role) : []),
     [mode, role],
   );
+
+  // The same staff/admin gate the API applies to diary writes (hallkeeper
+  // reads the diary but never edits it) — a read-only role must not be
+  // offered a control whose every path ends in a 403.
+  const canWriteDiary = role === "staff" || role === "admin";
 
   const isHold = form.kind === "hold";
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
@@ -159,6 +168,75 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     transitionBooking(mode.booking.id, toState)
       .then((booking) => {
         onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
+      })
+      .catch(failure)
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  // The corridor between the Diary and the planner. The API has always
+  // accepted `eventId` on a booking (updateBookingCore checks the event
+  // belongs to the booking's venue); nothing in the client ever sent it, so
+  // a coordinator had no way to say "this booking is the thing I am planning".
+  // Starting a plan seeds the event from the booking it belongs to, then
+  // links the two — the id is what /plan?eventId= reads.
+  function startPlan(): void {
+    if (mode.kind !== "edit") return;
+    const booking = mode.booking;
+    setSubmitError(null);
+    setBusy(true);
+    // Starting a plan is TWO writes that cannot be one transaction: create the
+    // event, then link it. If the link fails the event is already committed,
+    // and there is no endpoint that can list or delete it — so a naive retry
+    // would mint a second orphan every time. Remembering the id makes the
+    // retry FINISH the operation instead of repeating its first half.
+    const existing = startedEventRef.current;
+    const eventIdPromise =
+      existing === null ? createEvent({
+        venueId,
+        name: booking.title,
+        eventType: booking.eventType,
+        // Honest defaults: a plan begun from a booking is a draft, and the
+        // headcount is genuinely unknown until someone enters it.
+        status: "draft",
+        guestCount: 0,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+      }).then((graph) => {
+        startedEventRef.current = graph.event.id;
+        return graph.event.id;
+      })
+      : Promise.resolve(existing);
+
+    eventIdPromise
+      .then((eventId) => updateBooking(booking.id, { eventId }))
+      .then((saved) => {
+        startedEventRef.current = null;
+        onSaved(BOARD_COPY.drawer.planStarted(saved.title));
+      })
+      .catch((caught: unknown) => {
+        // Which half failed decides what is true to say. Once the plan
+        // exists, "the booking is unchanged" would hide it.
+        if (startedEventRef.current !== null) {
+          setSubmitError(BOARD_COPY.drawer.planLinkFailed);
+          return;
+        }
+        setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.planFailed);
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  function detachPlan(): void {
+    if (mode.kind !== "edit") return;
+    const booking = mode.booking;
+    setSubmitError(null);
+    setBusy(true);
+    updateBooking(booking.id, { eventId: null })
+      .then((saved) => {
+        onSaved(BOARD_COPY.drawer.planDetached(saved.title));
       })
       .catch(failure)
       .finally(() => {
@@ -361,6 +439,50 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           </button>
         </div>
       </form>
+
+      {mode.kind === "edit" && canWriteDiary ? (
+        <div className="diary-drawer-plan">
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.planTitle}</h3>
+          {mode.booking.eventId === null ? (
+            <>
+              <p className="diary-drawer-note">{BOARD_COPY.drawer.planNone}</p>
+              <div className="diary-drawer-actions">
+                <button
+                  type="button"
+                  className="diary-button"
+                  onClick={startPlan}
+                  disabled={busy}
+                >
+                  {BOARD_COPY.drawer.planStart}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="diary-drawer-note">{BOARD_COPY.drawer.planAttached}</p>
+              <div className="diary-drawer-actions">
+                {/* A real link, not a router push: the planner is a heavy 3D
+                    route and a deliberate context switch, and an anchor keeps
+                    this drawer testable without a router. */}
+                <a
+                  className="diary-button is-primary"
+                  href={`/plan?eventId=${encodeURIComponent(mode.booking.eventId)}`}
+                >
+                  {BOARD_COPY.drawer.planOpen}
+                </a>
+                <button
+                  type="button"
+                  className="diary-button"
+                  onClick={detachPlan}
+                  disabled={busy}
+                >
+                  {BOARD_COPY.drawer.planDetach}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {transitions.length > 0 ? (
         <div className="diary-drawer-transitions">
