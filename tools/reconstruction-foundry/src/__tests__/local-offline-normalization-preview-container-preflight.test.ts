@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1,
@@ -276,7 +276,7 @@ describe("local offline preview container preflight", () => {
       {
         ...base,
         seccompProfilePath:
-          `${resolve("fixtures", "subdirectory")}\\..\\offline-preview-seccomp.json`,
+          `${resolve("fixtures", "subdirectory")}${sep}..${sep}offline-preview-seccomp.json`,
       },
       "SECCOMP_PROFILE_PATH_REJECTED",
     );

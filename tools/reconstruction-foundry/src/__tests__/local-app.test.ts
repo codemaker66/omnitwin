@@ -2,7 +2,7 @@ import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import {
   FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V5_DIGEST_DOMAIN,
@@ -1062,7 +1062,8 @@ describe("Foundry local companion app", () => {
   });
 
   it("keeps absolute paths and private errors out of every browser response", async () => {
-    const source = "C:\\sensitive\\client-a\\secret-capture.e57";
+    const sensitiveDirectory = "client-a";
+    const source = resolve(sep, "sensitive", sensitiveDirectory, "secret-capture.e57");
     const app = await startLocalFoundryApp({
       source,
     });
@@ -1070,8 +1071,8 @@ describe("Foundry local companion app", () => {
 
     const failed = await waitForPhase(app, "failed");
     const encoded = JSON.stringify(failed);
-    expect(encoded).not.toContain("C:\\\\sensitive");
-    expect(encoded).not.toContain("client-a");
+    expect(encoded).not.toContain(dirname(source));
+    expect(encoded).not.toContain(sensitiveDirectory);
     expect(encoded).not.toContain("ENOENT");
     expect(failed.sourceLabel).toBe("secret-capture.e57");
     expect(failed.safeFailure).toContain("could not be read safely");
