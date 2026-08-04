@@ -202,6 +202,22 @@ export function evidenceStatusLabel(status: AssetEvidenceStatus): string {
   }
 }
 
+// The planner's honest no-splat state (01 §13): the atelier fallback is a
+// designed state, not an apology. One canonical string, shared by the cockpit
+// store default and the chip label derivation below.
+export const CAPTURED_LAYER_FALLBACK_STATUS =
+  "Captured visual layer not yet available — planning on reviewed geometry";
+
+/**
+ * Planner top-bar chip copy, derived from the runtime asset decision: the
+ * evidence-state label while a captured layer is mounted, the atelier
+ * fallback copy otherwise. The chip stays sourced from claim/evidence data —
+ * never component-local strings.
+ */
+export function plannerRuntimeChipLabel(decision: RuntimeAssetDecision): string {
+  return decision.isProceduralFallback ? CAPTURED_LAYER_FALLBACK_STATUS : decision.evidenceLabel;
+}
+
 export function runtimeAssetViewTransformForRoom(room: TradesHallRuntimeRoomSlug): RuntimeAssetViewTransform {
   if (room === "reception-room") return RECEPTION_ROOM_XGRIDS_VIEW_TRANSFORM;
   return IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM;

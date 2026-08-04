@@ -246,13 +246,16 @@ export const FOOTER_PHONE_HREF = "tel:+441415522418";
 export const FOOTER_EMAIL = "info@tradeshallglasgow.co.uk";
 
 /** Mailto for the events team, with the room carried in the subject so
- *  per-room "Enquire" links keep their context instead of dead-ending. */
-export function enquiryMailtoHref(roomName?: string): string {
+ *  per-room "Enquire" links keep their context instead of dead-ending. An
+ *  optional draft note travels in the body — the Living Hall attaches the
+ *  visitor's planning-draft facts so the enquiry arrives warm. */
+export function enquiryMailtoHref(roomName?: string, draftNote?: string): string {
   const subject =
     roomName === undefined
       ? "Event enquiry — Trades Hall Glasgow"
       : `Event enquiry — ${roomName}, Trades Hall Glasgow`;
-  return `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(subject)}`;
+  const body = draftNote === undefined ? "" : `&body=${encodeURIComponent(draftNote)}`;
+  return `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(subject)}${body}`;
 }
 
 export const FOOTER_BASELINE =

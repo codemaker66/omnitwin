@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 
 const verifyTokenMock = vi.hoisted(() => vi.fn());
@@ -7,14 +8,14 @@ vi.mock("@clerk/backend", () => ({
   verifyToken: verifyTokenMock,
 }));
 
-async function buildFreshServer(): Promise<FastifyInstance> {
-  vi.resetModules();
-  process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
+async function buildAuthProbeServer(): Promise<FastifyInstance> {
   process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
   process.env["CLERK_SECRET_KEY"] = "sk_test_dummy";
-  const mod: typeof import("../index.js") = await import("../index.js");
-  const server = await mod.buildServer();
-  return server as FastifyInstance;
+  const { authenticate } = await import("../middleware/auth.js");
+  const server = Fastify();
+  server.get("/probe", { preHandler: [authenticate] }, () => ({ ok: true }));
+  await server.ready();
+  return server;
 }
 
 describe("Clerk token email gate", () => {
@@ -33,11 +34,11 @@ describe("Clerk token email gate", () => {
 
   it("fails safely when Clerk token has no email", async () => {
     verifyTokenMock.mockResolvedValue({ sub: "clerk_missing_email" });
-    server = await buildFreshServer();
+    server = await buildAuthProbeServer();
 
     const res = await server.inject({
       method: "GET",
-      url: "/enquiries",
+      url: "/probe",
       headers: { authorization: "Bearer clerk-token-without-email" },
     });
 
@@ -50,11 +51,11 @@ describe("Clerk token email gate", () => {
       sub: "clerk_unverified_email",
       email: "person@example.com",
     });
-    server = await buildFreshServer();
+    server = await buildAuthProbeServer();
 
     const res = await server.inject({
       method: "GET",
-      url: "/enquiries",
+      url: "/probe",
       headers: { authorization: "Bearer clerk-token-unverified-email" },
     });
 

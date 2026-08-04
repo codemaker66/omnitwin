@@ -83,7 +83,7 @@ const panelStyle: React.CSSProperties = {
   borderRadius: 12,
   padding: 24,
   border: "1px solid rgba(215, 181, 109, 0.24)",
-  color: "#f6f1e8",
+  color: "var(--house-text-1, #f6f1e8)",
   boxShadow: "0 22px 70px rgba(0,0,0,0.28)",
 };
 

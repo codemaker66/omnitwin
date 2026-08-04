@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import { API_URL } from "../config/env.js";
 import { getTokenGetter } from "./auth-bridge.js";
 
@@ -64,12 +64,23 @@ interface RequestOptions {
   readonly path: string;
   readonly body?: unknown;
   readonly skipAuth?: boolean;
+  readonly signal?: AbortSignal;
+  /** T-538: a client-minted uuid commandId sent as `Idempotency-Key` —
+   *  keyed diary mutations dedupe server-side via the diary_commands
+   *  ledger, so a retry can never re-execute a committed write. */
+  readonly idempotencyKey?: string;
 }
 
-async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T> {
+type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
+
+async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
+
+  if (opts.idempotencyKey !== undefined) {
+    headers["Idempotency-Key"] = opts.idempotencyKey;
+  }
 
   if (opts.skipAuth !== true) {
     const token = await getAuthToken();
@@ -82,6 +93,10 @@ async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T>
     method: opts.method,
     headers,
   };
+
+  if (opts.signal !== undefined) {
+    fetchOpts.signal = opts.signal;
+  }
 
   if (opts.body !== undefined) {
     fetchOpts.body = JSON.stringify(opts.body);
@@ -149,14 +164,25 @@ async function request<T>(opts: RequestOptions, schema?: ZodType<T>): Promise<T>
 // ---------------------------------------------------------------------------
 
 export const api = {
-  get: <T>(path: string, schema?: ZodType<T>): Promise<T> =>
-    request<T>({ method: "GET", path }, schema),
+  get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
+    request<T>({ method: "GET", path, signal }, schema),
 
-  post: <T>(path: string, body?: unknown, skipAuth?: boolean, schema?: ZodType<T>): Promise<T> =>
-    request<T>({ method: "POST", path, body, skipAuth }, schema),
+  post: <T>(
+    path: string,
+    body?: unknown,
+    skipAuth?: boolean,
+    schema?: ResponseSchema<T>,
+    options?: { idempotencyKey?: string },
+  ): Promise<T> =>
+    request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 
-  patch: <T>(path: string, body: unknown, schema?: ZodType<T>): Promise<T> =>
-    request<T>({ method: "PATCH", path, body }, schema),
+  patch: <T>(
+    path: string,
+    body: unknown,
+    schema?: ResponseSchema<T>,
+    options?: { idempotencyKey?: string },
+  ): Promise<T> =>
+    request<T>({ method: "PATCH", path, body, ...options }, schema),
 
   delete: <T = void>(path: string): Promise<T> =>
     request<T>({ method: "DELETE", path }),

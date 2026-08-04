@@ -9,6 +9,7 @@ import {
   placedItemToEditor,
 } from "../components/editor/EditorBridge.js";
 import { getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { RENDER_SCALE } from "../constants/scale.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import type { PlacedItem } from "../lib/placement.js";
 
@@ -65,6 +66,69 @@ function simulateDbRoundTrip(
     metadata: batch.metadata ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Coordinate-space contract — render-space store <-> real-metre wire
+//
+// The editor store (and the R3F scene) work in RENDER space: real metres ×
+// RENDER_SCALE, inflated so interiors don't feel cramped on a flat screen.
+// The database / API is the real-world source of truth: the space polygon,
+// widthM/lengthM, and every server consumer (polygon validation, proposal
+// snapshot, hallkeeper zone classifier) are in REAL metres.
+//
+// So the wire boundary MUST convert: editorToBatch divides X/Z by
+// RENDER_SCALE (render -> real); placedObjectToEditor multiplies (real ->
+// render). Height (Y) is never scaled. Skipping this made every placement
+// beyond the central ~half of the room fail the server's polygon check.
+// ---------------------------------------------------------------------------
+
+describe("render-space store <-> real-metre wire conversion", () => {
+  it("editorToBatch converts X/Z render->real (÷ RENDER_SCALE), leaves Y", () => {
+    const editor: EditorObject = {
+      id: "550e8400-e29b-41d4-a716-4466554400aa",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 16, positionY: 1.4, positionZ: 8,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+    };
+    const batch = editorToBatch(editor);
+    expect(batch.positionX).toBeCloseTo(16 / RENDER_SCALE, 6); // 8m real
+    expect(batch.positionZ).toBeCloseTo(8 / RENDER_SCALE, 6);  // 4m real
+    expect(batch.positionY).toBe(1.4); // height is not render-scaled
+  });
+
+  it("placedObjectToEditor converts X/Z real->render (× RENDER_SCALE), leaves Y", () => {
+    const wire: PlacedObject = {
+      id: "w1", configurationId: "config-1", assetDefinitionId: CHAIR_ID,
+      positionX: "8", positionY: "1.4", positionZ: "4",
+      rotationX: "0", rotationY: "0", rotationZ: "0",
+      scale: "1", sortOrder: 0, metadata: null,
+    };
+    const editor = placedObjectToEditor(wire);
+    expect(editor.positionX).toBeCloseTo(8 * RENDER_SCALE, 6); // 16 render
+    expect(editor.positionZ).toBeCloseTo(4 * RENDER_SCALE, 6); // 8 render
+    expect(editor.positionY).toBe(1.4);
+  });
+
+  it("a render-space edge placement lands inside the real-metre Grand Hall polygon", () => {
+    // Grand Hall real polygon is x∈[-10.5,10.5], z∈[-5,5] (metres). A chair
+    // near the render-space far wall (render X ≈ 19.6, well inside the 42-wide
+    // render room) must serialise to a real X inside ±10.5 so the server's
+    // pointInPolygon check accepts it.
+    const editor: EditorObject = {
+      id: "550e8400-e29b-41d4-a716-4466554400bb",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 19.6, positionY: 0, positionZ: 8.7,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 1, sortOrder: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+    };
+    const batch = editorToBatch(editor);
+    expect(Math.abs(batch.positionX)).toBeLessThanOrEqual(10.5);
+    expect(Math.abs(batch.positionZ)).toBeLessThanOrEqual(5);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Wire format round-trip — EditorObject <-> API

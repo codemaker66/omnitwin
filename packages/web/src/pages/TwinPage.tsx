@@ -52,7 +52,9 @@ function twinErrorLine(): string {
 
 export function TwinPage(): ReactElement {
   const params = useParams<{ venueSlug: string }>();
-  const venueSlug = params.venueSlug ?? "";
+  // /tour mounts this page with no :venueSlug — the flagship is the
+  // default so the branded short address stays in the URL bar.
+  const venueSlug = params.venueSlug ?? "trades-hall";
   useTwinDocumentTitle();
   const manifest = useTwinManifest(venueSlug);
 

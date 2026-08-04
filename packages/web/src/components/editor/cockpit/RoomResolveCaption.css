@@ -1,0 +1,56 @@
+/* The quiet caption of "the room resolves" (CARD A2). Durations mirror
+   ROOM_RESOLVE_CAPTION_ENTER_MS / EXIT_MS / REDUCED_MOTION_MS in
+   lib/room-resolve-model.ts (pinned by its tests) — keep them in step.
+   No backdrop-filter: the cockpit shell disables compositor filters.
+   Sits in the stage's calm top-left corner (the top-center band belongs to
+   the floating Visual Layer / View Mode widgets). visibility flips after the
+   fade so the hidden caption is truly gone for hit-testing and AT. */
+.room-resolve-caption {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 6;
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  color: #e7dcc3;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  /* Exit: snappier than entry (160 ms vs 240 ms); visibility flips at the
+     end of the fade. */
+  transition:
+    opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 0s linear 160ms;
+}
+
+.room-resolve-caption[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  /* Entry: Deliberate tier (02 §6); visibility flips immediately. */
+  transition:
+    opacity 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-resolve-caption {
+    transform: translateY(0);
+    transition: opacity 120ms linear, visibility 0s linear 120ms;
+  }
+  .room-resolve-caption[data-visible="true"] {
+    transform: translateY(0);
+    transition: opacity 120ms linear, visibility 0s linear 0s;
+  }
+}

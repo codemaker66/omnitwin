@@ -13,6 +13,9 @@
 #
 # Required GitHub Secrets:
 #   DATABASE_URL — Neon production pooled connection string
+# One-time production Environment variable while migration 0044 is pending:
+#   APPROVED_MIGRATION_0044_SHA256 — exact SHA-256 of the reviewed 0044 SQL.
+# The read-only gate ignores this variable after 0044 is journaled.
 # =============================================================================
 
 name: Deploy
@@ -39,17 +42,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -59,6 +62,12 @@ jobs:
 
       - name: Build @omnitwin/types (required by api)
         run: pnpm --filter @omnitwin/types build
+
+      - name: Verify migration tail and explicit 0044 approval
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APPROVED_MIGRATION_0044_SHA256: ${{ vars.APPROVED_MIGRATION_0044_SHA256 }}
+        run: pnpm --filter @omnitwin/api db:verify-tail -- --deploy-gate
 
       - name: Apply pending Drizzle migrations
         env:

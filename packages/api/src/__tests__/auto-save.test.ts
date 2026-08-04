@@ -48,58 +48,48 @@ describe("WebSocket auto-save registration", () => {
 });
 
 describe("auto-save message schemas", () => {
-  it("update_objects schema validates correctly", async () => {
-    const { z } = await import("zod");
-    const ObjectDataSchema = z.object({
-      id: z.string().uuid().optional(),
-      assetId: z.string().uuid(),
-      position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      rotation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      scale: z.number().positive(),
-      clothed: z.boolean().optional(),
-      clothStyle: z.enum(["black", "white"]).nullable().optional(),
-      tableSetting: z.enum(["dinner"]).nullable().optional(),
-      groupId: z.string().nullable().optional(),
-    });
-
-    const valid = ObjectDataSchema.safeParse({
-      assetId: "00000000-0000-0000-0000-000000000001",
-      position: { x: 1, y: 0, z: 2 },
-      rotation: { x: 0, y: 1.57, z: 0 },
-      scale: 1,
-      clothed: true,
-      clothStyle: "white",
-      tableSetting: "dinner",
-      groupId: "group-table-1",
+  it("update_objects requires an optimistic-concurrency revision", async () => {
+    const { UpdateObjectsMessage } = await import("../ws/auto-save.js");
+    const valid = UpdateObjectsMessage.safeParse({
+      type: "update_objects",
+      expectedRevision: 7,
+      objects: [{
+        assetId: "00000000-0000-0000-0000-000000000001",
+        position: { x: 1, y: 0, z: 2 },
+        rotation: { x: 0, y: 1.57, z: 0 },
+        scale: 1,
+        clothed: true,
+        clothStyle: "white",
+        tableSetting: "dinner",
+        groupId: "group-table-1",
+      }],
     });
     expect(valid.success).toBe(true);
+    expect(UpdateObjectsMessage.safeParse({
+      type: "update_objects",
+      objects: valid.success ? valid.data.objects : [],
+    }).success).toBe(false);
   });
 
   it("update_objects rejects missing position", async () => {
-    const { z } = await import("zod");
-    const ObjectDataSchema = z.object({
-      assetId: z.string().uuid(),
-      position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      rotation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-      scale: z.number().positive(),
-    });
-
-    const invalid = ObjectDataSchema.safeParse({
-      assetId: "00000000-0000-0000-0000-000000000001",
-      scale: 1,
+    const { UpdateObjectsMessage } = await import("../ws/auto-save.js");
+    const invalid = UpdateObjectsMessage.safeParse({
+      type: "update_objects",
+      expectedRevision: 1,
+      objects: [{
+        assetId: "00000000-0000-0000-0000-000000000001",
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: 1,
+      }],
     });
     expect(invalid.success).toBe(false);
   });
 
-  it("delete_object requires valid UUID", async () => {
-    const { z } = await import("zod");
-    const DeleteSchema = z.object({
-      type: z.literal("delete_object"),
-      objectId: z.string().uuid(),
-    });
-
-    expect(DeleteSchema.safeParse({ type: "delete_object", objectId: "bad" }).success).toBe(false);
-    expect(DeleteSchema.safeParse({ type: "delete_object", objectId: "00000000-0000-0000-0000-000000000001" }).success).toBe(true);
+  it("delete_object requires a valid UUID and revision", async () => {
+    const { DeleteObjectMessage } = await import("../ws/auto-save.js");
+    expect(DeleteObjectMessage.safeParse({ type: "delete_object", expectedRevision: 1, objectId: "bad" }).success).toBe(false);
+    expect(DeleteObjectMessage.safeParse({ type: "delete_object", expectedRevision: 1, objectId: "00000000-0000-0000-0000-000000000001" }).success).toBe(true);
+    expect(DeleteObjectMessage.safeParse({ type: "delete_object", objectId: "00000000-0000-0000-0000-000000000001" }).success).toBe(false);
   });
 
   it("ping message is valid", async () => {
@@ -109,12 +99,7 @@ describe("auto-save message schemas", () => {
   });
 
   it("unknown message type is rejected", async () => {
-    const { z } = await import("zod");
-    const UpdateMsg = z.object({ type: z.literal("update_objects"), objects: z.array(z.unknown()).min(1) });
-    const DeleteMsg = z.object({ type: z.literal("delete_object"), objectId: z.string() });
-    const PingMsg = z.object({ type: z.literal("ping") });
-    const IncomingMessage = z.discriminatedUnion("type", [UpdateMsg, DeleteMsg, PingMsg]);
-
+    const { IncomingMessage } = await import("../ws/auto-save.js");
     expect(IncomingMessage.safeParse({ type: "invalid_type" }).success).toBe(false);
   });
 
@@ -152,6 +137,7 @@ describe("resolveWsUser — test-mode mock token path", () => {
     expect(result).not.toBeNull();
     expect(result?.userId).toBe("00000000-0000-0000-0000-00000000dead");
     expect(result?.userRole).toBe("admin");
+    expect(result?.platformRole).toBe("none");
     expect(result?.userVenueId).toBeNull();
   });
 
@@ -214,6 +200,126 @@ describe("resolveWsUser — test-mode mock token path", () => {
   });
 });
 
+describe("auto-save authorization and concurrency", () => {
+  const owner = {
+    userId: "00000000-0000-4000-8000-000000000011",
+    userRole: "planner",
+    platformRole: "none" as const,
+    userVenueId: null,
+  };
+  const config = {
+    userId: owner.userId,
+    venueId: "00000000-0000-4000-8000-000000000022",
+    reviewStatus: "draft",
+    revision: 4,
+  };
+
+  it("rejects a venue admin from a different venue", async () => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    expect(assessAutoSaveConfiguration({
+      userId: "00000000-0000-4000-8000-000000000033",
+      userRole: "admin",
+      platformRole: "none",
+      userVenueId: "00000000-0000-4000-8000-000000000044",
+    }, config, 4)).toEqual({ status: "forbidden" });
+  });
+
+  it("allows an explicit platform admin across venues", async () => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    expect(assessAutoSaveConfiguration({
+      userId: "00000000-0000-4000-8000-000000000055",
+      userRole: "admin",
+      platformRole: "admin",
+      userVenueId: null,
+    }, { ...config, reviewStatus: "approved" }, 4)).toEqual({ status: "ok" });
+  });
+
+  it("rejects planner writes while review evidence is locked", async () => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    expect(assessAutoSaveConfiguration(owner, { ...config, reviewStatus: "submitted" }, 4)).toEqual({
+      status: "locked",
+      reviewStatus: "submitted",
+    });
+  });
+
+  it("rejects a stale revision with the current revision", async () => {
+    const { assessAutoSaveConfiguration } = await import("../ws/auto-save.js");
+    expect(assessAutoSaveConfiguration(owner, config, 3)).toEqual({
+      status: "conflict",
+      expectedRevision: 3,
+      currentRevision: 4,
+    });
+  });
+});
+
+describe("AutoSaveBuffer retry safety", () => {
+  const update = {
+    assetId: "00000000-0000-4000-8000-000000000066",
+    position: { x: 1, y: 0, z: 2 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: 1,
+  };
+
+  it("retains an unacknowledged snapshot after persistence fails", async () => {
+    const { AutoSaveBuffer } = await import("../ws/auto-save.js");
+    const buffer = new AutoSaveBuffer();
+    expect(buffer.enqueueUpdates(1, [update])).toBe(true);
+
+    await expect(buffer.flush(() => Promise.reject(new Error("database unavailable"))))
+      .rejects.toThrow("database unavailable");
+
+    expect(buffer.pendingCount).toBe(1);
+    const saved = await buffer.flush(() => Promise.resolve({ status: "saved" as const, revision: 2, objectCount: 1 }));
+    expect(saved).toEqual({ status: "saved", revision: 2, objectCount: 1 });
+    expect(buffer.pendingCount).toBe(0);
+  });
+
+  it("does not discard buffered work after a conflict", async () => {
+    const { AutoSaveBuffer } = await import("../ws/auto-save.js");
+    const buffer = new AutoSaveBuffer();
+    expect(buffer.enqueueUpdates(2, [update])).toBe(true);
+    await buffer.flush(() => Promise.resolve({
+      status: "conflict" as const,
+      expectedRevision: 2,
+      currentRevision: 3,
+    }));
+    expect(buffer.pendingCount).toBe(1);
+  });
+
+  it("rebases changes received during a successful flush onto the committed revision", async () => {
+    const { AutoSaveBuffer } = await import("../ws/auto-save.js");
+    const buffer = new AutoSaveBuffer();
+    expect(buffer.enqueueUpdates(1, [update])).toBe(true);
+    let settle: ((result: { readonly status: "saved"; readonly revision: number; readonly objectCount: number }) => void) | undefined;
+    const first = buffer.flush(() => new Promise((resolve) => { settle = resolve; }));
+
+    expect(buffer.enqueueUpdates(1, [{ ...update, position: { x: 2, y: 0, z: 2 } }])).toBe(true);
+    settle?.({ status: "saved", revision: 2, objectCount: 1 });
+    await first;
+
+    await buffer.flush((snapshot) => {
+      expect(snapshot.expectedRevision).toBe(2);
+      return Promise.resolve({ status: "saved", revision: 3, objectCount: 1 });
+    });
+    expect(buffer.pendingCount).toBe(0);
+  });
+});
+
+describe("auto-save retry scheduling", () => {
+  it("continues automatically only after a successful flush with rebased work", async () => {
+    const { shouldScheduleBufferedFlush } = await import("../ws/auto-save.js");
+    expect(shouldScheduleBufferedFlush({ status: "saved", revision: 2, objectCount: 1 }, 1)).toBe(true);
+    expect(shouldScheduleBufferedFlush({ status: "saved", revision: 2, objectCount: 1 }, 0)).toBe(false);
+    expect(shouldScheduleBufferedFlush({
+      status: "conflict",
+      expectedRevision: 1,
+      currentRevision: 2,
+    }, 1)).toBe(false);
+    expect(shouldScheduleBufferedFlush({ status: "locked", reviewStatus: "submitted" }, 1)).toBe(false);
+    expect(shouldScheduleBufferedFlush(null, 1)).toBe(false);
+  });
+});
+
 describe("resolveWsUser — diligence regression marker", () => {
   it("resolved userId must be comparable to configurations.userId (both DB UUIDs)", async () => {
     // This test exists to make the invariant loud: whatever resolveWsUser
@@ -240,14 +346,14 @@ describe("resolveWsUser — diligence regression marker", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Future integration test additions needed:
+// Full network-path additions that remain useful for deployment smoke tests:
 // ---------------------------------------------------------------------------
 // 1. Connect with real WebSocket client, send update_objects, verify DB write
 // 2. Connect with invalid token, verify connection rejected
 // 3. Send ping, verify pong received
-// 4. Send update, wait 500ms debounce, verify "saved" message
+// 4. Send update with expectedRevision, verify "saved" includes the new revision
 // 5. Send invalid JSON, verify error message (connection stays open)
-// 6. Disconnect mid-buffer, verify buffered data is flushed
+// 6. Disconnect mid-buffer, verify buffered data is flushed or retained for retry
 // 7. Clerk path: mock @clerk/backend and db.select to prove
 //    getUserByClerkId's DB id flows through to ws ownership checks.
 // These require a running server (not Fastify inject) and a WS client lib.

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 
@@ -353,7 +353,7 @@ describe("TradesHallVisualPage", () => {
     expect(visualCanvasDprForViewportWidth(390)).toEqual([1, 1]);
     expect(visualCanvasDprForViewportWidth(768)).toEqual([0.75, 0.75]);
     expect(visualCanvasDprForViewportWidth(1024)).toEqual([0.75, 0.75]);
-    expect(visualCanvasDprForViewportWidth(1440)).toEqual([1, 2]);
+    expect(visualCanvasDprForViewportWidth(1440)).toEqual([1, 1]);
     expect(visualCanvasGlForViewportWidth(390)).toEqual({
       antialias: false,
       powerPreference: "high-performance",
@@ -389,9 +389,9 @@ describe("TradesHallVisualPage", () => {
       maxDpr: 0.75,
     });
     expect(visualAdaptiveResolutionForViewportWidth(1440)).toEqual({
-      enabled: true,
-      minDpr: 0.5,
-      maxDpr: 2,
+      enabled: false,
+      minDpr: 1,
+      maxDpr: 1,
     });
   });
 
@@ -399,7 +399,7 @@ describe("TradesHallVisualPage", () => {
     mount();
     const canvas = screen.getByTestId("visual-canvas");
     expect(canvas.getAttribute("data-frameloop")).toBe("demand");
-    expect(canvas.getAttribute("data-dpr")).toBe("[1,2]");
+    expect(canvas.getAttribute("data-dpr")).toBe("[1,1]");
     expect(canvas.getAttribute("data-antialias")).toBe("true");
     expect(canvas.getAttribute("data-power-preference")).toBe("high-performance");
     expect(canvas.getAttribute("data-performance-min")).toBe("0.25");
@@ -676,6 +676,36 @@ describe("TradesHallVisualPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Minimize Overlay controls" }));
     expect(overlayWidget.getAttribute("data-minimized")).toBe("true");
     expect(screen.getAllByText("Overlays").length).toBeGreaterThan(0);
+  });
+
+  it("auto-compacts visual widgets and clears overlay clutter while the camera moves", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual"]}>
+        <TradesHallVisualPage />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector(".visual-flow-line")).not.toBeNull();
+    const layerWidget = container.querySelector<HTMLElement>("[data-floating-widget-id='visual-layer-controls']");
+    const routeCallout = container.querySelector<HTMLElement>("[data-floating-widget-id='visual-callout-route-clearance-a']");
+    expect(layerWidget?.getAttribute("data-auto-compact")).toBe("false");
+    expect(routeCallout?.getAttribute("data-auto-compact")).toBe("false");
+
+    const latestCall = orbitControlsMock.mock.calls[orbitControlsMock.mock.calls.length - 1];
+    const controlsProps = latestCall?.[0];
+    const onStart = controlsProps?.["onStart"];
+    if (typeof onStart !== "function") {
+      throw new Error("Visual camera controls must expose an onStart handler.");
+    }
+
+    act(() => {
+      (onStart as () => void)();
+    });
+
+    expect(container.querySelector(".visual-flow-line")).toBeNull();
+    expect(layerWidget?.getAttribute("data-auto-compact")).toBe("true");
+    expect(routeCallout?.getAttribute("data-auto-compact")).toBe("true");
+    expect(routeCallout?.getAttribute("data-minimized")).toBe("false");
   });
 
   it("allows the event phase graph to select a phase", () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { RENDER_SCALE } from "../constants/scale.js";
 
 // ---------------------------------------------------------------------------
 // Editor store tests — mock API modules
@@ -19,6 +20,15 @@ vi.mock("../api/spaces.js", () => ({
   listVenues: vi.fn(),
   listSpaces: vi.fn(),
   getSpace: vi.fn(),
+}));
+
+// G4 slice 3: successful saves fire-and-forget an action-log flush; stub it
+// so this suite's save tests don't trip the real-traffic guard.
+vi.mock("../api/action-log.js", () => ({
+  postActionBatch: vi.fn(
+    (_configId: string, batch: { actions: readonly unknown[] }) =>
+      Promise.resolve({ accepted: batch.actions.length, duplicates: 0 }),
+  ),
 }));
 
 const configMock = vi.mocked(await import("../api/configurations.js"));
@@ -66,7 +76,9 @@ describe("loadConfiguration", () => {
     expect(s.configRevision).toBe(1);
     expect(s.isPublicPreview).toBe(true);
     expect(s.objects).toHaveLength(1);
-    expect(s.objects[0]?.positionX).toBe(1.0);
+    // Wire positions are real metres; the store is render-space (× RENDER_SCALE).
+    expect(s.objects[0]?.positionX).toBe(1.0 * RENDER_SCALE);
+    expect(s.objects[0]?.positionZ).toBe(2.0 * RENDER_SCALE);
     expect(s.isDirty).toBe(false);
     expect(s.isLoading).toBe(false);
   });

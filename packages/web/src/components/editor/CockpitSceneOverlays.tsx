@@ -403,6 +403,7 @@ function LightingProbeGrid({ dimensions }: { readonly dimensions: SpaceDimension
 export function CockpitSceneOverlays(): ReactElement | null {
   const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
   const activeMode = useCockpitStore((state) => state.activeMode);
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const invalidate = useThree((state) => state.invalidate);
 
@@ -437,7 +438,7 @@ export function CockpitSceneOverlays(): ReactElement | null {
     [artifact],
   );
 
-  const showReplayLayers = artifact !== null && bounds !== null;
+  const showReplayLayers = !cameraInteractionActive && artifact !== null && bounds !== null;
   const anyVisible = layers.flowPaths || layers.agentMotes || layers.densityHeatmap
     || layers.routeConflicts || layers.heritageBuffer || layers.lightingProbes;
   if (!anyVisible) return null;

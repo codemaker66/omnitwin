@@ -44,16 +44,17 @@ describe("router.tsx — lazy route loading (#16)", () => {
 
   it("lazy-loads all route page components, including internal Spark routes", async () => {
     const { codeOnly } = await readSource(SRC);
-    // Each page must be wrapped in lazy(() => import("./pages/X.js"))
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/LoginPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/RegisterPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/EditorPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/DashboardPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/HallkeeperPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/SplatFixturePage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallAssetStatusPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/RoomShowcasePage\.js["']/);
+    // Each page must be wrapped in lazy(() => import("./pages/X.js")),
+    // optionally through the cockpitImport retry helper (Wave-A refactor).
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/LoginPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/RegisterPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/EditorPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/DashboardPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/HallkeeperPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/SplatFixturePage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallAssetStatusPage\.js["']/);
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/RoomShowcasePage\.js["']/);
   });
 
   it("wraps lazy elements in Suspense with a fallback", async () => {
@@ -66,10 +67,25 @@ describe("router.tsx — lazy route loading (#16)", () => {
     const { codeOnly } = await readSource(SRC);
     // The static import form was the bug. Lazy-loaded pages must NOT also
     // be statically imported (which would force them into the main chunk
-    // alongside the lazy-loaded version).
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*LoginPage\s*\}\s+from\s+["']\.\/pages\/LoginPage/m);
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*EditorPage\s*\}\s+from\s+["']\.\/pages\/EditorPage/m);
-    expect(codeOnly).not.toMatch(/^import\s+\{\s*DashboardPage\s*\}\s+from\s+["']\.\/pages\/DashboardPage/m);
+    // alongside the lazy-loaded version). Every lazy-loaded page gets a
+    // negative assertion — a redundant static import alongside the lazy
+    // form silently defeats the split for that page.
+    const pages = [
+      "LoginPage",
+      "RegisterPage",
+      "EditorPage",
+      "DashboardPage",
+      "HallkeeperPage",
+      "SplatFixturePage",
+      "TradesHallVisualPage",
+      "TradesHallAssetStatusPage",
+      "RoomShowcasePage",
+    ] as const;
+    for (const pageName of pages) {
+      expect(codeOnly).not.toMatch(
+        new RegExp(String.raw`^import\s+\{\s*${pageName}\s*\}\s+from\s+["']\./pages/${pageName}`, "m"),
+      );
+    }
   });
 });
 

@@ -42,15 +42,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -66,15 +66,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -90,15 +90,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -109,20 +109,55 @@ jobs:
       - name: Typecheck (tsc --noEmit)
         run: pnpm -r typecheck
 
+  # A gate that never compiles the product is not a gate. Until this job
+  # existed, Vercel was the first thing to discover a broken bundle —
+  # typecheck passes on code that `vite build` still refuses (a bad dynamic
+  # import, a missing asset, an env assertion), and the api/foundry `tsc`
+  # BUILD configs are not the same as their --noEmit ones.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        # The web build asserts a Clerk publishable key is present. This is
+        # the documented build-CHECK fixture, not a credential: it proves the
+        # bundle compiles and the artifact is discarded. A bundle built with
+        # it must never be served — a real deploy supplies the real key.
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: pk_live_localbuildcheck
+        run: pnpm build
+
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -142,7 +177,13 @@ jobs:
         run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts
 
       - name: Test (Vitest)
-        run: pnpm -r test
+        # --no-bail: without it, pnpm stops at the FIRST failing package, so a
+        # red package hides every package after it. That is how three latent
+        # Linux-only defects in @omnitwin/reconstruction-foundry stayed
+        # invisible for nine days behind packages/web, then surfaced together.
+        # Failures still fail the job (verified: exit code 1 with --no-bail);
+        # this only ensures every package reports on the day it breaks.
+        run: pnpm -r --no-bail test
 
   e2e:
     name: E2E
@@ -154,15 +195,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4.4.0
         with:
           version: 9.15.4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm

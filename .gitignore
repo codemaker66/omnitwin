@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 .env
 .env.*
 !.env.example
@@ -25,6 +27,12 @@ packages/api/src/scripts/customers.json
 # Claude Code runtime state (locks/sessions are local; settings.json is committed).
 .claude/*.lock
 .claude/settings.local.json
+
+# Local dev-database binaries + data (portable Postgres; see infra/dev-db/).
+.dev-db/
+
+# Production-smoke saved auth session (playwright storage state; never commit).
+.smoke/
 
 # One-off `tree` scratchpads — regenerate locally as needed.
 web-structure.txt

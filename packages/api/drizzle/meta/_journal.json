@@ -295,6 +295,132 @@
       "when": 1781197200000,
       "tag": "0043_platform_admin_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1781200800000,
+      "tag": "0044_placed_objects_render_to_real",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1781204400000,
+      "tag": "0045_event_scenario_phase_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1781208000000,
+      "tag": "0046_event_mission_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1781211600000,
+      "tag": "0047_event_architect_proof",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1781215200000,
+      "tag": "0048_event_architect_ops_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1781301600000,
+      "tag": "0049_reconstruction_foundry",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1783776800000,
+      "tag": "0050_diary_bookings",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1783900800000,
+      "tag": "0051_diary_enquiry_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783933200000,
+      "tag": "0052_runtime_package_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783936800000,
+      "tag": "0053_foundry_execution_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1783940400000,
+      "tag": "0054_foundry_derivative_rights",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784026800000,
+      "tag": "0055_foundry_derivative_rights_custody",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784030400000,
+      "tag": "0056_foundry_derivative_execution_barrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784034000000,
+      "tag": "0057_foundry_derivative_execution_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784037600000,
+      "tag": "0058_foundry_derivative_activation_disabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784376000000,
+      "tag": "0059_action_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784383200000,
+      "tag": "0060_phase_layout_snapshot_lineage",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784469600000,
+      "tag": "0061_diary_commands",
+      "breakpoints": true
     }
   ]
 }

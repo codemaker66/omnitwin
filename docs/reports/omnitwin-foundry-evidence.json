@@ -1,0 +1,373 @@
+{
+  "schemaVersion": "omnitwin.foundry.root-investigation-evidence.v0",
+  "createdAt": "2026-07-12T00:00:00+01:00",
+  "evidenceCutoff": "2026-07-12",
+  "localStatusReconciliation": {
+    "date": "2026-07-14",
+    "scope": "Repository-local T-507/T-508/T-509/T-514 facts only; external-source claims retain the 2026-07-12 cutoff.",
+    "completedTasks": ["T-507", "T-509", "T-514"],
+    "activeTask": "T-508",
+    "exactNextTask": "T-508",
+    "rerunT507": false
+  },
+  "classificationPolicy": {
+    "verified": "Direct local inspection or an authoritative primary source.",
+    "supported_inference": "Strongly implied by verified evidence; decisive test remains.",
+    "hypothesis": "Candidate mechanism awaiting a discriminating experiment.",
+    "blocked": "Cannot lawfully or technically test with current authority or data."
+  },
+  "safety": {
+    "rawSourcesMutated": false,
+    "paidComputeLaunched": false,
+    "cloudResourcesChanged": false,
+    "proprietaryPayloadDecoded": false,
+    "encryptedCalibrationOpened": false,
+    "publicReleaseChanged": false,
+    "secretsRecorded": false
+  },
+  "repository": {
+    "rootAlias": "REPO_ROOT",
+    "branch": "feature/diary-p0-slice-3",
+    "auditedHeadRecordedPrivately": true,
+    "branchTrackingUpstreamConfigured": false,
+    "remoteVisibility": "public_origin_present",
+    "worktree": "dirty_user_owned",
+    "trainingRunLedger": {
+      "path": "state/training_runs.jsonl",
+      "bytes": 0,
+      "lines": 0,
+      "classification": "verified"
+    },
+    "foundryBoundary": {
+      "existing": "packages/reconstruction-foundry is the private review/sign/publish boundary",
+      "newFoundation": "packages/types/src/omnitwin-foundry.ts contains ingest-to-package control-plane contracts",
+      "collisionAvoided": true
+    }
+  },
+  "localAssets": [
+    {
+      "id": "matterport-e57-main",
+      "pathAlias": "E57_ASSET_ROOT/cloud_0.e57",
+      "bytes": 20518437888,
+      "signature": "ASTM-E57",
+      "scans": 149,
+      "pointRecords": 965520000,
+      "validPointTotalComputed": false,
+      "scan0ValiditySpotCheck": {
+        "records": 6480000,
+        "valid": 5205250,
+        "invalid": 1274750,
+        "classification": "verified"
+      },
+      "fields": ["cartesianX", "cartesianY", "cartesianZ", "cartesianInvalidState", "rowIndex", "columnIndex", "colorRed", "colorGreen", "colorBlue"],
+      "images2D": {
+        "count": 894,
+        "perScan": 6,
+        "width": 4096,
+        "height": 4096,
+        "representation": "pinhole",
+        "fxPixels": 2048,
+        "fyPixels": 2048,
+        "associatedScanPoseMatch": true
+      },
+      "acquisitionTimestampsPresent": false,
+      "diagnosticSampleFingerprint": {
+        "scheme": "sha256('omnitwin-sample-sha256-v1\\0' || uint64le(size) || first_1MiB || last_1MiB)",
+        "valueRecordedPrivately": true,
+        "notAnArchivalDigest": true
+      },
+      "classification": "verified"
+    },
+    {
+      "id": "colmap-v2",
+      "canonicalPathAlias": "COLMAP_PILOT_ROOT",
+      "duplicateCandidatePathAlias": "COLMAP_DUPLICATE_CANDIDATE_ROOT",
+      "duplicateCandidateFullHashEquivalenceRecorded": false,
+      "databaseImages": 300,
+      "registeredImages": 231,
+      "sharedCameraModelCount": 1,
+      "sparsePoints": 124617,
+      "camera": {
+        "model": "PINHOLE",
+        "width": 1024,
+        "height": 1024,
+        "fx": 512.4968878,
+        "fy": 512.5059949,
+        "cx": 512,
+        "cy": 512
+      },
+      "unreviewedDiagnosticSimilarityToE57": {
+        "candidateSweepRangeInclusive": [0, 48],
+        "excludedAdjacentSweepIndices": [49],
+        "scale": 1.7362021512269856,
+        "rmseMeters": 0.010604176377772601,
+        "historicAll50Reproduction": {
+          "scale": 1.7362602880766593,
+          "rmseMeters": 0.010670586778897446
+        },
+        "frozenHoldout": {
+          "sweepIndices": [5, 15, 25, 35, 44],
+          "rmseMeters": 0.005756579517772495
+        },
+        "reviewedTransformArtifact": false,
+        "savedReproducibilityArtifact": true,
+        "independentControl": false,
+        "runtimeAuthority": "none",
+        "publicAuthority": "none",
+        "classification": "verified_shared_lineage_internal_self_consistency_only"
+      },
+      "privateFullHashesRecorded": true,
+      "classification": "verified"
+    },
+    {
+      "id": "xgrids-raw-project-root",
+      "pathAlias": "XGRIDS_RAW_ROOT",
+      "projectCount": 10,
+      "privateProjectIdentifiersRecorded": true,
+      "aggregateXbinBytesApprox": 121600000000,
+      "smallestXbinBytesApprox": 814000000,
+      "largestXbinBytesApprox": 41100000000,
+      "allControlPointFilesEmpty": true,
+      "classification": "verified"
+    },
+    {
+      "id": "xgrids-grand-hall-raw",
+      "xbinSignature": "XBAG",
+      "xbinClassification": "proprietary_undocumented_boundary",
+      "posesRows": 42850,
+      "posesFields": ["timestamp", "position_3", "rotation_4_unknown_order"],
+      "ulog": {
+        "format": "ULog v1",
+        "durationSecondsApprox": 4288,
+        "imuHz": 200,
+        "lidarEventHz": 10,
+        "cameraEventHzApprox": 10.006,
+        "rgbEventHzApprox": 1.1118,
+        "containsEventMetadata": true,
+        "containsImageOrLidarPayloads": false
+      },
+      "previewPointCloud": {
+        "format": "Potree 2.0",
+        "points": 1159861,
+        "rgbPresent": false,
+        "authoritativeRawLidar": false
+      },
+      "calibrationArchive": {
+        "format": "ZIP",
+        "entriesNamed": ["camera.yaml", "imu.yaml", "lidar_param.yaml", "extrinsic_camera_lidar.yaml", "extrinsic_imu_lidar.yaml", "extrinsic_rtk.yaml"],
+        "entriesEncrypted": true,
+        "openedOrDecrypted": false
+      },
+      "privateFullHashesRecorded": true,
+      "classification": "verified"
+    },
+    {
+      "id": "xgrids-open-exports",
+      "rootAlias": "LCCSTUDIO_DATA_ROOT",
+      "availableKinds": ["gaussian_ply", "mesh_ply", "collision", "poses_json", "sog", "spz"],
+      "roomsWithFullDegree3SphericalHarmonics": 4,
+      "roomsWithDcOnlyObserved": 2,
+      "privateProjectLabelsRecorded": true,
+      "rgbFramesExported": false,
+      "classification": "verified"
+    }
+  ],
+  "grandHallT507": {
+    "taskState": "done",
+    "identityDecision": {
+      "code": "B",
+      "confirmedAnchorSweepIndices": [0, 10, 20, 40],
+      "excludedAdjacentSweepIndices": [49],
+      "candidateSweepRangeInclusive": [0, 48],
+      "allCandidateSweepsClassified": false,
+      "identityReviewSha256": "sha256:11a58296a03d907578c09c37f15dc97ac529e8c785d88e5dc1409d7bfba47ca2",
+      "externalAuthenticatedAttestation": "missing"
+    },
+    "boundedIngest": {
+      "assetCount": 308,
+      "composition": {
+        "e57": 1,
+        "cubefaces": 300,
+        "colmapDatabase": 1,
+        "sparseAndConfigurationFiles": 6
+      },
+      "ingestManifestSemanticSha256": "sha256:583b4fd025bb00e28a14683c8fcbeee2cb1e0091bdbd968acd1176b9090187c0",
+      "historicalDerivedLineageVerified": false,
+      "inventedProvenanceEdges": 0
+    },
+    "proposedSimilarityFit": {
+      "candidateSweepRangeInclusive": [0, 48],
+      "excludedAdjacentSweepIndices": [49],
+      "scale": 1.7362021512269856,
+      "rmseMeters": 0.010604176377772601,
+      "historicAll50Reproduction": {
+        "scale": 1.7362602880766593,
+        "rmseMeters": 0.010670586778897446
+      },
+      "frozenHoldoutSweepIndices": [5, 15, 25, 35, 44],
+      "frozenHoldoutRmseMeters": 0.005756579517772495,
+      "classification": "shared_lineage_internal_self_consistency_only",
+      "reviewState": "proposed_unreviewed",
+      "independentControl": false,
+      "runtimeAuthority": "none",
+      "publicAuthority": "none"
+    },
+    "remainingGates": [
+      "external_identity_attestation",
+      "matterport_and_source_rights",
+      "independent_control",
+      "full_scope_classification"
+    ],
+    "exactNextTask": "T-508",
+    "rerunRequired": false
+  },
+  "xgridsRecovery": {
+    "rawRgbFrames": "blocked",
+    "rawLidarOrDepth": "blocked",
+    "payloadPlacementInsideXbin": "supported_inference_not_decoded",
+    "timestamps": "verified_accessible",
+    "poses": "verified_accessible_convention_unknown",
+    "imu": "verified_accessible",
+    "cameraAndLidarEventClocks": "verified_accessible",
+    "intrinsics": "blocked_encrypted_calibration",
+    "extrinsics": "blocked_encrypted_calibration",
+    "officialRawSdkOrExportFoundInBoundedSearch": false,
+    "boundedSearch": {
+      "cutoff": "2026-07-12",
+      "scope": [
+        "official XGRIDS support/download pages",
+        "official XGRIDS manuals",
+        "official XGRIDS GitHub organization",
+        "public developer-platform landing pages"
+      ],
+      "limitation": "A bounded negative search is not proof that a private or partner SDK does not exist."
+    },
+    "lawfulNextStep": "request official sensor bundle, unencrypted calibration, SDK/export documentation, and written commercial independent-processing rights",
+    "prohibitedNextStep": "decode XBAG internals or bypass ZIP encryption",
+    "historicalFallback": "rights-approved open vendor exports aligned to independent E57, plus supplemental owned photography",
+    "classification": "blocked"
+  },
+  "trainerFindings": [
+    {
+      "id": "t514-local-contract-preflight",
+      "path": "docs/reports/omnitwin-config-b-trainer-contract-preflight-2026-07-14.md",
+      "state": "contract_valid_runtime_blocked",
+      "finding": "T-514 completed a dependency-light CPU-only Config B checker and deterministic synthetic preflight: 74 tests passed and two fresh same-host receipts were byte-identical. The check has authority none, does not load or verify the training runtime, and execute plus the legacy runner remain fail-closed with exit 78.",
+      "classification": "verified"
+    },
+    {
+      "id": "trainer-upstream-absent",
+      "paths": ["venviewer_training/_upstream_simple_trainer.py", "venviewer_training/_upstream_colmap.py"],
+      "state": "absent_required_files",
+      "classification": "verified"
+    },
+    {
+      "id": "trainer-entrypoint-mismatch",
+      "path": "venviewer_training/simple_trainer_depth.py",
+      "finding": "wrapper imports pinned gsplat example then calls main() with no arguments; upstream main requires local_rank, world_rank, world_size and cfg",
+      "classification": "verified"
+    },
+    {
+      "id": "trainer-config-mismatch",
+      "paths": ["infra/runpod/run_training.sh", "configs/training/config_b.yaml"],
+      "finding": "unsupported --config and --external_depth_dir flags; default rather than mcmc strategy; nested YAML not parsed",
+      "classification": "verified"
+    },
+    {
+      "id": "trainer-artifact-contract-missing",
+      "finding": "D-014 mandatory training bundle is not enforced; evaluation, resume and deterministic manifest paths are incomplete",
+      "classification": "verified"
+    }
+  ],
+  "externalSourceRetrieval": {
+    "retrievedAt": "2026-07-12T00:00:00+01:00",
+    "policy": "official or primary sources only",
+    "mutableLinksPinned": false,
+    "remainingGate": "Retain a dated content snapshot or immutable commit/tag and content digest before a production legal decision."
+  },
+  "externalSources": [
+    {"id": "xgrids-lcc1-whitepaper", "url": "https://github.com/xgrids/LCCWhitepaper", "authority": "official", "finding": "public format documentation under custom non-OSI restrictions"},
+    {"id": "xgrids-lcc2-whitepaper", "url": "https://github.com/xgrids/LCC2Whitepaper", "authority": "official", "finding": "public format documentation under custom non-OSI restrictions"},
+    {"id": "xgrids-lcc-studio-downloads", "url": "https://www.xgrids.com/support/download?page=LCCStudio", "authority": "official", "finding": "LCC Studio 2.1.0 listed 2026-07-02"},
+    {"id": "xgrids-lcc-studio-manual", "url": "https://docs.xgrids.com/en-us/06-lixel-cybercolor/01-lcc-studio/v2.0.0/02-version-and-updates.html", "authority": "official", "finding": "LCC/LCC2, PLY, USD, SOG/SPZ and exporter capabilities"},
+    {"id": "xgrids-terms", "url": "https://xgrids.com/UserAgreement", "authority": "official", "finding": "reverse-engineering/competition/commercial-exploitation restrictions; contract review required"},
+    {"id": "matterport-e57", "url": "https://matterport.com/en-gb/add-ons/e57", "authority": "official", "finding": "registered E57 preserves scan poses and more detail than XYZ"},
+    {"id": "matterport-terms-2026", "url": "https://matterport.com/terms-of-use", "authority": "official", "finding": "commercial AI/ML training using Matterport Data prohibited"},
+    {"id": "matterport-psa-2026", "url": "https://matterport.com/de/legal/platform-subscription-agreement", "authority": "official", "finding": "customer ownership language and export-access constraints"},
+    {"id": "gsplat", "url": "https://github.com/nerfstudio-project/gsplat", "authority": "official", "finding": "Apache-2.0 code; pinned example contract differs from repo wrapper"},
+    {"id": "3dgrut", "url": "https://github.com/nv-tlabs/3dgrut", "authority": "official", "finding": "Apache-2.0 candidate; assets/dependencies require review"},
+    {"id": "artifixer-code", "url": "https://github.com/nv-tlabs/ArtiFixer", "authority": "official", "finding": "Apache-2.0 code"},
+    {"id": "artifixer-checkpoint", "url": "https://huggingface.co/nvidia/ArtiFixer", "authority": "official", "finding": "released checkpoint restricted to R&D/noncommercial use"},
+    {"id": "sam2", "url": "https://github.com/facebookresearch/sam2", "authority": "official", "finding": "code and official checkpoints Apache-2.0; optional component BSD-3"},
+    {"id": "colmap", "url": "https://github.com/colmap/colmap", "authority": "official", "finding": "BSD-3; 4.0.4 on 2026-04-27; dependencies need review"},
+    {"id": "open3d", "url": "https://github.com/isl-org/Open3D", "authority": "official", "finding": "MIT core"},
+    {"id": "pdal", "url": "https://github.com/PDAL/PDAL", "authority": "official", "finding": "BSD-style; plugins/dependencies vary"},
+    {"id": "libe57format", "url": "https://github.com/asmaloney/libE57Format", "authority": "official", "finding": "Boost Software License 1.0"},
+    {"id": "poissonrecon", "url": "https://github.com/mkazhdan/PoissonRecon", "authority": "official", "finding": "MIT"},
+    {"id": "spz", "url": "https://github.com/nianticlabs/spz", "authority": "official", "finding": "MIT, lossy splat compression, v4 capable"},
+    {"id": "sog", "url": "https://developer.playcanvas.com/user-manual/gaussian-splatting/formats/sog/", "authority": "official", "finding": "public lossy WebP-based bundle specification"},
+    {"id": "splat-transform", "url": "https://github.com/playcanvas/splat-transform", "authority": "official", "finding": "MIT tooling; does not neutralize input format terms"},
+    {"id": "spark", "url": "https://github.com/sparkjsdev/spark", "authority": "official", "finding": "MIT; 2.1.0 released 2026-05-18"},
+    {"id": "khr-gaussian-splatting", "url": "https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_gaussian_splatting", "authority": "official", "finding": "release candidate, not ratified"},
+    {"id": "ogc-3d-tiles-2-work-item", "url": "https://www.ogc.org/requests/ogc-seeks-public-comment-on-proposed-3d-tiles-2-0-community-standard-work-item/", "authority": "official", "finding": "3D Tiles 2.0 proposed work item in 2026"},
+    {"id": "openusd-26-05", "url": "https://github.com/PixarAnimationStudios/OpenUSD/releases/tag/v26.05", "authority": "official", "finding": "release 26.05"},
+    {"id": "openusd-license-26-05", "url": "https://raw.githubusercontent.com/PixarAnimationStudios/OpenUSD/v26.05/LICENSE.txt", "authority": "official", "finding": "Tomorrow Open Source Technology License 1.0 plus bundled notices"},
+    {"id": "tauri", "url": "https://github.com/tauri-apps/tauri", "authority": "official", "finding": "MIT/Apache-2.0"},
+    {"id": "electron", "url": "https://github.com/electron/electron", "authority": "official", "finding": "MIT"},
+    {"id": "temporal", "url": "https://github.com/temporalio/temporal", "authority": "official", "finding": "MIT durable orchestration"},
+    {"id": "argo-workflows", "url": "https://github.com/argoproj/argo-workflows", "authority": "official", "finding": "Apache-2.0 Kubernetes-native orchestration"},
+    {"id": "oci-image-spec", "url": "https://github.com/opencontainers/image-spec", "authority": "official", "finding": "Apache-2.0 portable worker packaging"}
+  ],
+  "keyConclusions": [
+    {
+      "id": "prospective-independence",
+      "statement": "A fully owned future-capture Foundry is feasible with bounded engineering and research.",
+      "classification": "supported_inference",
+      "confidence": 0.9
+    },
+    {
+      "id": "historical-independence",
+      "statement": "Existing PortalCam full reconstruction is blocked without official raw payload, calibration and rights access; open-export salvage is feasible.",
+      "classification": "blocked",
+      "confidence": 0.9
+    },
+    {
+      "id": "representation",
+      "statement": "A multi-representation package is preferable to a monolithic splat or mesh.",
+      "classification": "supported_inference",
+      "confidence": 0.9
+    },
+    {
+      "id": "pilot",
+      "statement": "Grand Hall has the strongest evidence-to-effort ratio under the bounded T-507 scope: decision B confirms anchors 000/010/020/040 and excludes adjacent 049, but does not classify all candidate sweeps 0-48.",
+      "classification": "supported_inference",
+      "confidence": 0.85
+    }
+  ],
+  "unresolvedInventories": {
+    "e57ArchivalFullSha256": "not recorded in this evidence register; the diagnostic sample fingerprint is not an archival digest",
+    "validE57PointTotal": "not computed; 965,520,000 is the raw record total",
+    "roomExportInventory": "complete content-addressed inventories for Reception, Lady Convenor, North Gallery, and South Gallery exports are not recorded",
+    "portalcamFirmwareAndSchemaVersions": "firmware version and authoritative sidecar/schema versions are absent",
+    "legacyMatterportAndUnrealAssets": "legacy Matterport/crop/mesh inventory remains incomplete; the repository audit found zero Unreal artifacts",
+    "colmapImageLineage": "the 300 derived 1024x1024 JPEGs are distinct from the 4096x4096 E57 cubefaces, but their exact derivation/compression lineage is not proven",
+    "colmapDuplicateEquivalence": "candidate only; full-tree hash equivalence not recorded",
+    "diagnosticTransformArtifact": "T-507 saved deterministic fit and residual evidence, but the transform remains proposed/unreviewed with no independent control, typed reviewed TransformArtifact, or reviewer attestation",
+    "portalcamPayloadLocation": "supported inference only; payload placement inside xbin has not been decoded or verified",
+    "publicRawSdkOrExport": "not found in the bounded official-source search; vendor response still required",
+    "purposeAwareRights": "stage-specific validation is implemented, but the pilot has no trusted FoundryRightsApproval; global manifest approval remains all-purpose",
+    "grandHallIdentityScope": "decision B confirms only anchor sweeps 000/010/020/040 and excludes 049; full candidate-scope classification and external authenticated identity attestation remain open",
+    "pilotJobSpec": "no executable pilot JobSpec exists; T-507 supplies the bounded manifest digest, while full-scope classification, external identity attestation, stage purposes, worker digests, validated provider plan, trusted rights approval, short-lived execution confirmation, atomic confirmation consumption, and remote compute approval remain open",
+    "confirmationReplayProtection": "dispatch invokes consumeExecutionConfirmation only after all checks and denies false/throw; a truly atomic durable-store callback is not yet implemented",
+    "qualityProfileRegistry": "quality validation now requires an exact trusted profile/definition ID/digest catalogue match and package validation requires profileResolved; no durable approved profile-registry implementation exists"
+  },
+  "unresolved": [
+    {"id": "grand-hall-external-identity-and-scope", "nextTest": "obtain a digest-bound external venue-authority attestation for decision B and classify every node/sweep in the intended 0-48 scope", "cost": "GBP 0 before external review"},
+    {"id": "xgrids-raw-access", "nextTest": "official export/SDK and rights request", "cost": "GBP 0 before counsel"},
+    {"id": "matterport-training-rights", "nextTest": "contract-specific legal/vendor decision", "cost": "counsel TBD"},
+    {"id": "alignment-independent-control-review", "nextTest": "acquire independent fit and blind controls, then review the frozen transform and residual evidence without rerunning T-507", "cost": "acquisition and review TBD"},
+    {"id": "trainer-runnability", "nextTest": "T-514 completed the authority-none dependency-light contract preflight; repair and prove the real pinned v1.5.3 worker path including MCMC selection, external depth, distorted-camera policy, bilateral serialization, evaluation/resume and D-014 outputs before any approved D-016 smoke", "cost": "GBP 0 locally; remote approval required"},
+    {"id": "d016-training-smoke", "nextTest": "rights-valid approved minimal RunPod training smoke", "cost": "provider plan required; no approval granted"},
+    {"id": "visual-superiority", "nextTest": "fair held-out vendor/owned/hybrid bake-off", "cost": "deterministic preparation and QA local; actual splat training only through approved D-016 RunPod execution"}
+  ]
+}

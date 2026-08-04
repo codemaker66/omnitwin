@@ -1,0 +1,382 @@
+import { describe, it, expect, vi } from "vitest";
+import type { DiaryCommand } from "@omnitwin/types";
+import {
+  ackToHttpReply,
+  executeDiaryCommand,
+  type DiaryCommandDeps,
+} from "../../services/diary-commands.js";
+import type {
+  BookingDbConn,
+  BookingRow,
+  MutationActor,
+} from "../../services/booking-mutations.js";
+import type { Database } from "../../db/client.js";
+
+// ---------------------------------------------------------------------------
+// Diary command dispatch (T-537; Canon §9) — tests written FIRST.
+//
+// executeDiaryCommand is the transport-neutral heart of the /ws/diary
+// command channel: venue/role gating, atomic ledger + mutation execution,
+// and replay acks for resends. The mutation cores and the ledger I/O are
+// injected so every branch is unit-testable without sockets or Postgres.
+// ---------------------------------------------------------------------------
+
+const VENUE = "00000000-0000-4000-8000-00000000aaaa";
+const ACTOR: MutationActor = {
+  id: "00000000-0000-4000-8000-00000000bbbb",
+  role: "staff",
+  venueId: VENUE,
+  platformRole: "none",
+};
+
+const CREATE_COMMAND: DiaryCommand = {
+  kind: "booking.create",
+  commandId: "00000000-0000-4000-8000-00000000cccc",
+  payload: {
+    venueId: VENUE,
+    spaceId: "00000000-0000-4000-8000-00000000dddd",
+    kind: "internal_block",
+    title: "Deep clean",
+    startsAt: "2026-08-01T08:00:00.000Z",
+    endsAt: "2026-08-01T10:00:00.000Z",
+  },
+};
+
+// A minimal row double — the dispatcher only ever forwards it (to
+// serialize/the ledger), so the two consulted columns suffice.
+const BOOKING_ROW = {
+  id: "00000000-0000-4000-8000-00000000eeee",
+  venueId: VENUE,
+} as BookingRow;
+
+/** A fake connection whose .transaction nests like drizzle's savepoints
+ *  (rethrows the callback's error after "rolling back" — i.e. doing
+ *  nothing, exactly like the unit fake's absent state). */
+function fakeConn(): { transaction: <T>(cb: (inner: never) => Promise<T>) => Promise<T> } {
+  return { transaction: (cb) => cb(fakeConn() as never) };
+}
+
+function deps(overrides: Partial<DiaryCommandDeps> = {}): DiaryCommandDeps {
+  return {
+    // Typed impl for lint; `as never` because vitest's Mock wrapper cannot
+    // re-expose a generic call signature (same idiom as the other fakes).
+    runInTransaction: vi.fn(async <T>(work: (tx: BookingDbConn) => Promise<T>): Promise<T> => {
+      return await work(fakeConn() as never);
+    }) as never,
+    recordCommand: vi.fn().mockResolvedValue("recorded"),
+    readRecordedCommand: vi.fn().mockResolvedValue(null),
+    createBooking: vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      booking: BOOKING_ROW,
+      changeKind: "booking.created",
+    }),
+    updateBooking: vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      booking: BOOKING_ROW,
+      changeKind: "booking.updated",
+    }),
+    transitionBooking: vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      booking: BOOKING_ROW,
+      changeKind: "booking.transitioned",
+      resequence: null,
+    }),
+    serialize: vi.fn().mockReturnValue({ id: BOOKING_ROW.id } as never),
+    loadBookingById: vi.fn().mockResolvedValue(BOOKING_ROW),
+    ...overrides,
+  };
+}
+
+const DB = {} as Database;
+
+describe("executeDiaryCommand", () => {
+  it("rejects non-writing roles before touching the database", async () => {
+    const d = deps();
+    const result = await executeDiaryCommand(
+      DB,
+      { ...ACTOR, role: "hallkeeper" },
+      VENUE,
+      CREATE_COMMAND,
+      d,
+    );
+    expect(result.ack.outcome).toBe("rejected");
+    expect(result.ack.status).toBe(403);
+    expect(result.ack.code).toBe("FORBIDDEN");
+    expect(result.ack.replay).toBe(false);
+    expect(d.runInTransaction).not.toHaveBeenCalled();
+    expect(result.changed).toBeNull();
+  });
+
+  it("rejects a create aimed at another venue than the connection's", async () => {
+    const d = deps();
+    const foreign: DiaryCommand = {
+      ...CREATE_COMMAND,
+      payload: { ...CREATE_COMMAND.payload, venueId: "00000000-0000-4000-8000-00000000ffff" },
+    };
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, foreign, d);
+    expect(result.ack.outcome).toBe("rejected");
+    expect(result.ack.status).toBe(403);
+    expect(result.ack.code).toBe("VENUE_SCOPE_MISMATCH");
+    expect(d.runInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("applies a create atomically: core + ledger row in ONE transaction, ack carries the booking", async () => {
+    const d = deps();
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+
+    expect(d.runInTransaction).toHaveBeenCalledTimes(1);
+    expect(d.createBooking).toHaveBeenCalledTimes(1);
+    expect(d.recordCommand).toHaveBeenCalledTimes(1);
+    const recorded = (d.recordCommand as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as {
+      commandId: string;
+      outcome: string;
+      statusCode: number;
+      bookingId: string | null;
+    };
+    expect(recorded.commandId).toBe(CREATE_COMMAND.commandId);
+    expect(recorded.outcome).toBe("applied");
+    expect(recorded.statusCode).toBe(201);
+    expect(recorded.bookingId).toBe(BOOKING_ROW.id);
+
+    expect(result.ack).toMatchObject({
+      type: "diary.ack",
+      commandId: CREATE_COMMAND.commandId,
+      outcome: "applied",
+      replay: false,
+      status: 201,
+    });
+    expect(result.ack.booking).toEqual({ id: BOOKING_ROW.id });
+    expect(result.changed).toEqual({ kind: "booking.created", bookingId: BOOKING_ROW.id });
+  });
+
+  it("records rejected outcomes too — a deny is a completed command", async () => {
+    const d = deps({
+      createBooking: vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        code: "INK_SLOT_TAKEN",
+        error: "taken",
+      }),
+    });
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+    expect(result.ack).toMatchObject({ outcome: "rejected", status: 409, code: "INK_SLOT_TAKEN" });
+    const recorded = (d.recordCommand as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as {
+      outcome: string;
+      statusCode: number;
+      errorCode: string | null;
+    };
+    expect(recorded.outcome).toBe("rejected");
+    expect(recorded.statusCode).toBe(409);
+    expect(recorded.errorCode).toBe("INK_SLOT_TAKEN");
+    expect(result.changed).toBeNull();
+  });
+
+  it("a resend replays the recorded outcome instead of re-executing", async () => {
+    const d = deps({
+      recordCommand: vi.fn().mockResolvedValue("duplicate"),
+      readRecordedCommand: vi.fn().mockResolvedValue({
+        commandId: CREATE_COMMAND.commandId,
+        venueId: VENUE,
+        userId: ACTOR.id,
+        outcome: "applied",
+        statusCode: 201,
+        errorCode: null,
+        bookingId: BOOKING_ROW.id,
+      }),
+    });
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+    expect(result.ack).toMatchObject({
+      outcome: "applied",
+      status: 201,
+      replay: true,
+      commandId: CREATE_COMMAND.commandId,
+    });
+    // Fresh state on replays (snapshot doctrine) — loaded, not re-created.
+    expect(d.loadBookingById).toHaveBeenCalledWith(DB, BOOKING_ROW.id);
+    expect(result.ack.booking).toEqual({ id: BOOKING_ROW.id });
+    // The mutation must NOT have run again, and nothing new to broadcast.
+    expect(d.createBooking).toHaveBeenCalledTimes(1); // first (aborted) tx attempt only
+    expect(result.changed).toBeNull();
+  });
+
+  it("refuses to replay a colliding commandId recorded for ANOTHER venue (reviewer P0)", async () => {
+    // The ledger PK is global — if Venue A's staff resend an id that Venue B
+    // already used, the replay must deny, never serialize B's booking.
+    const d = deps({
+      recordCommand: vi.fn().mockResolvedValue("duplicate"),
+      readRecordedCommand: vi.fn().mockResolvedValue({
+        commandId: CREATE_COMMAND.commandId,
+        venueId: "00000000-0000-4000-8000-00000000f0f0",
+        userId: "00000000-0000-4000-8000-00000000f1f1",
+        outcome: "applied",
+        statusCode: 201,
+        errorCode: null,
+        bookingId: BOOKING_ROW.id,
+      }),
+    });
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+    expect(result.ack).toMatchObject({
+      outcome: "rejected",
+      status: 403,
+      code: "FORBIDDEN",
+      replay: false,
+    });
+    expect(result.ack.booking).toBeUndefined();
+    // The foreign booking must never even be read, let alone serialized.
+    expect(d.loadBookingById).not.toHaveBeenCalled();
+    expect(d.serialize).not.toHaveBeenCalled();
+    expect(result.changed).toBeNull();
+  });
+
+  it("routes update and transition commands to their cores with the bookingId", async () => {
+    const d = deps();
+    const update: DiaryCommand = {
+      kind: "booking.update",
+      commandId: "00000000-0000-4000-8000-000000000010",
+      bookingId: BOOKING_ROW.id,
+      payload: { title: "New title" },
+    };
+    const transition: DiaryCommand = {
+      kind: "booking.transition",
+      commandId: "00000000-0000-4000-8000-000000000011",
+      bookingId: BOOKING_ROW.id,
+      payload: { toState: "released" },
+    };
+    const u = await executeDiaryCommand(DB, ACTOR, VENUE, update, d);
+    const t = await executeDiaryCommand(DB, ACTOR, VENUE, transition, d);
+    expect(d.updateBooking).toHaveBeenCalledWith(expect.anything(), ACTOR, BOOKING_ROW.id, update.payload);
+    expect(d.transitionBooking).toHaveBeenCalledWith(expect.anything(), ACTOR, BOOKING_ROW.id, transition.payload);
+    expect(u.changed).toEqual({ kind: "booking.updated", bookingId: BOOKING_ROW.id });
+    expect(t.changed).toEqual({ kind: "booking.transitioned", bookingId: BOOKING_ROW.id });
+    expect(t.ack.resequence).toBeNull();
+  });
+
+  it("an unexpected throw becomes a calm rejected ack, never an unhandled rejection", async () => {
+    const d = deps({
+      runInTransaction: vi.fn().mockRejectedValue(new Error("connection lost")),
+    });
+    const result = await executeDiaryCommand(DB, ACTOR, VENUE, CREATE_COMMAND, d);
+    expect(result.ack).toMatchObject({
+      outcome: "rejected",
+      status: 500,
+      code: "COMMAND_FAILED",
+      replay: false,
+    });
+    expect(result.changed).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ackToHttpReply (T-538) — the REST half of "one dialect, two transports".
+// A keyed REST request runs THROUGH executeDiaryCommand; this pure mapper
+// turns the ack back into today's exact HTTP reply shapes, so the keyed
+// and keyless paths are wire-identical for the same outcome.
+// ---------------------------------------------------------------------------
+
+const SERIALIZED = { id: BOOKING_ROW.id, venueId: VENUE } as never;
+
+function appliedAck(overrides: Record<string, unknown> = {}): never {
+  return {
+    type: "diary.ack",
+    commandId: CREATE_COMMAND.commandId,
+    outcome: "applied",
+    replay: false,
+    status: 201,
+    booking: SERIALIZED,
+    ...overrides,
+  } as never;
+}
+
+describe("ackToHttpReply", () => {
+  it("maps an applied create to 201 { data } with no resequence key", () => {
+    const reply = ackToHttpReply("booking.create", appliedAck());
+    expect(reply.status).toBe(201);
+    expect(reply.replay).toBe(false);
+    expect(reply.body).toEqual({ data: SERIALIZED });
+    expect("resequence" in reply.body).toBe(false);
+  });
+
+  it("maps an applied update to 200 { data }", () => {
+    const reply = ackToHttpReply("booking.update", appliedAck({ status: 200 }));
+    expect(reply.status).toBe(200);
+    expect(reply.body).toEqual({ data: SERIALIZED });
+  });
+
+  it("a transition reply always carries resequence — the arrays when present, null otherwise", () => {
+    const resequence = {
+      changes: [{ id: BOOKING_ROW.id, fromRank: 2, toRank: 1 }],
+      promotedToFirst: [BOOKING_ROW.id],
+    };
+    const withPing = ackToHttpReply(
+      "booking.transition",
+      appliedAck({ status: 200, resequence }),
+    );
+    expect(withPing.body["resequence"]).toEqual(resequence);
+    const withoutPing = ackToHttpReply(
+      "booking.transition",
+      appliedAck({ status: 200, resequence: null }),
+    );
+    expect(withoutPing.body["resequence"]).toBeNull();
+    const absentPing = ackToHttpReply("booking.transition", appliedAck({ status: 200 }));
+    expect(absentPing.body["resequence"]).toBeNull();
+  });
+
+  it("carries the replay flag through for the Idempotency-Replay header", () => {
+    const reply = ackToHttpReply("booking.create", appliedAck({ replay: true }));
+    expect(reply.replay).toBe(true);
+  });
+
+  it("an applied replay whose booking has since vanished maps to an honest 404", () => {
+    // The recorded outcome says applied, but the row was deleted after —
+    // replaying { data: undefined } would breach the response contract;
+    // the truthful CURRENT state is not-found.
+    const reply = ackToHttpReply("booking.create", appliedAck({ replay: true, booking: undefined }));
+    expect(reply.status).toBe(404);
+    expect(reply.replay).toBe(true);
+    expect(reply.body).toEqual({ error: "Booking not found", code: "BOOKING_NOT_FOUND" });
+  });
+
+  it("maps a rejected ack to the sendDeny wire shape, details included only when present", () => {
+    const denied = ackToHttpReply("booking.create", {
+      type: "diary.ack",
+      commandId: CREATE_COMMAND.commandId,
+      outcome: "rejected",
+      replay: false,
+      status: 409,
+      code: "INK_SLOT_TAKEN",
+      error: "taken",
+    } as never);
+    expect(denied.status).toBe(409);
+    expect(denied.body).toEqual({ error: "taken", code: "INK_SLOT_TAKEN" });
+
+    const withDetails = ackToHttpReply("booking.update", {
+      type: "diary.ack",
+      commandId: CREATE_COMMAND.commandId,
+      outcome: "rejected",
+      replay: false,
+      status: 400,
+      code: "VALIDATION_ERROR",
+      error: "Validation failed",
+      details: [{ path: ["endsAt"] }],
+    } as never);
+    expect(withDetails.body["details"]).toEqual([{ path: ["endsAt"] }]);
+  });
+
+  it("falls back to the client's own rebuild vocabulary when a rejected ack omits code/error", () => {
+    const reply = ackToHttpReply("booking.create", {
+      type: "diary.ack",
+      commandId: CREATE_COMMAND.commandId,
+      outcome: "rejected",
+      replay: true,
+      status: 403,
+    } as never);
+    expect(reply.body).toEqual({
+      error: "The command was rejected",
+      code: "COMMAND_REJECTED",
+    });
+    expect(reply.replay).toBe(true);
+  });
+});

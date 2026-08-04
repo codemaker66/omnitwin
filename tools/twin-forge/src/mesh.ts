@@ -10,8 +10,8 @@ import sharp from "sharp";
 
 /**
  * Source GLB → bundle dollhouse: dedup/prune/weld, meshopt geometry
- * compression, WebP textures capped at 1024². Target ≤ 8 MB (program spec
- * §6 Phase 2); the CLI warns when the result misses the budget.
+ * compression, WebP textures capped at 1024². Target ≤ 8 MiB (program spec
+ * §6 Phase 2); forge promotion fails when the result misses the budget.
  */
 export async function optimizeMesh(
   srcGlb: string,

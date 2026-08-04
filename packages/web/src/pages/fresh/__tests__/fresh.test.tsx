@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+// The walk chunk carries three + Spark — far beyond jsdom. The page contract
+// under test is the poster-first wiring, so the lazy module becomes a stub.
+vi.mock("../FreshWalk.js", () => ({
+  default: () => <div data-testid="fresh-walk-stub" />,
+}));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
 import { FRESH_ROOMS, allFreshCopy } from "../fresh-copy.js";
@@ -98,6 +104,31 @@ describe("theme — respects the system, remembers the choice", () => {
   });
 });
 
+describe("responsive delivery — nobody downloads the originals", () => {
+  it("every content photograph carries a ladder srcset and sizes", () => {
+    render(<FreshPage />);
+    const content = [...document.querySelectorAll("img")].filter((img) => {
+      const src = img.getAttribute("src") ?? "";
+      return src.includes("/venue/") || src.includes("facade-art");
+    });
+    expect(content.length).toBeGreaterThanOrEqual(5);
+    for (const img of content) {
+      const srcset = img.getAttribute("srcset") ?? "";
+      expect(srcset, `missing srcset on ${img.getAttribute("src") ?? ""}`).toMatch(
+        / \d+w/,
+      );
+      expect(img.getAttribute("sizes")).toBeTruthy();
+    }
+  });
+
+  it("art-directs the hero to the portrait crop on narrow screens", () => {
+    render(<FreshPage />);
+    const source = document.querySelector(".fr-hero-frame picture source");
+    expect(source?.getAttribute("media")).toBe("(max-width: 760px)");
+    expect(source?.getAttribute("srcset")).toContain("trades-hall-exterior-portrait-");
+  });
+});
+
 describe("the enquiry composer", () => {
   it("answers with the snuggest published room and updates as numbers change", () => {
     render(<FreshPage />);
@@ -126,12 +157,148 @@ describe("the enquiry composer", () => {
   });
 });
 
+describe("the room dossiers", () => {
+  it("opens a dossier whose drawn plan counts exactly the published number", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    expect(openButtons).toHaveLength(FRESH_ROOMS.length);
+    const first = openButtons[0];
+    expect(first).toBeTruthy();
+    if (first === undefined) return;
+    fireEvent.click(first);
+    const dialog = document.querySelector("dialog.fr-dossier");
+    expect(dialog?.hasAttribute("open")).toBe(true);
+    // Dinner is the default lens — the Grand Hall draws all 180 covers.
+    expect(document.querySelectorAll(".fr-plan-dot")).toHaveLength(
+      TRADES_HALL_ROOM_CAPACITIES["grand-hall"].dinner,
+    );
+    expect(document.querySelectorAll(".fr-plan-table")).toHaveLength(18);
+    fireEvent.click(screen.getByRole("button", { name: "Theatre 250" }));
+    expect(document.querySelectorAll(".fr-plan-dot")).toHaveLength(250);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(document.querySelector("dialog.fr-dossier")?.hasAttribute("open")).toBe(
+      false,
+    );
+  });
+
+  it("states the published dimensions for rooms that publish them", () => {
+    render(<FreshPage />);
+    const buttons = screen.getAllByRole("button", { name: "Open the room" });
+    const first = buttons[0];
+    if (first === undefined) return;
+    fireEvent.click(first);
+    expect(screen.getByText(/21 × 10 m · 7 m high/)).toBeTruthy();
+    expect(screen.getByText(/a further 7 m under the dome/)).toBeTruthy();
+  });
+});
+
+describe("walk the room — poster-first", () => {
+  it("shows the rendered poster and pays nothing until invited", () => {
+    render(<FreshPage />);
+    const poster = screen.getByAltText(
+      "The Reception Room as a captured scene, rendered by Venviewer — not a photograph",
+    );
+    expect(poster.getAttribute("src")).toContain("walk-poster");
+    expect(screen.getByRole("button", { name: "Step in" })).toBeTruthy();
+    expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
+    expect(
+      document.querySelector('[data-walk-state="poster"]'),
+    ).toBeTruthy();
+  });
+
+  it("wakes into loading when WebGL is available", async () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as never);
+    try {
+      render(<FreshPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
+      expect(document.querySelector('[data-walk-state="loading"]')).toBeTruthy();
+      expect(await screen.findByTestId("fresh-walk-stub")).toBeTruthy();
+    } finally {
+      getContext.mockRestore();
+    }
+  });
+
+  it("fails honestly when WebGL is unavailable", () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    try {
+      render(<FreshPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
+      expect(document.querySelector('[data-walk-state="failed"]')).toBeTruthy();
+      expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
+    } finally {
+      getContext.mockRestore();
+    }
+  });
+});
+
+describe("the walkthrough — wired from the front door", () => {
+  it("offers the whole-building walkthrough from the hero and the walk section", () => {
+    render(<FreshPage />);
+    const tourLinks = [...document.querySelectorAll('a[href="/tour"]')];
+    expect(tourLinks.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
+  });
+
+  it("deep-links each validated room dossier to its framed viewpoint", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    const expectHref = (index: number, marker: string): void => {
+      fireEvent.click(openButtons[index] as HTMLElement);
+      const link = screen.getByRole("link", {
+        name: "See this room in the walkthrough",
+      });
+      expect(link.getAttribute("href")).toContain(marker);
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    };
+    expectHref(0, "scan_028");
+    expectHref(1, "scan_058");
+    expectHref(2, "scan_126");
+    expectHref(3, "scan_105");
+  });
+
+  it("gives the Reception Room dossier both doorways — walkthrough and in-page", () => {
+    render(<FreshPage />);
+    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
+    fireEvent.click(openButtons[2] as HTMLElement);
+    expect(
+      screen
+        .getByRole("link", { name: "See this room in the walkthrough" })
+        .getAttribute("href"),
+    ).toContain("scan_126");
+    const walkLink = screen.getByRole("link", {
+      name: "Step into this room on this page",
+    });
+    expect(walkLink.getAttribute("href")).toBe("#walk");
+  });
+});
+
 describe("contact — real destinations", () => {
-  it("offers phone, email, and a map link", () => {
+  it("offers phone, email, and a map link under their labels", () => {
     render(<FreshPage />);
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
     expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
     expect(document.querySelector('a[href*="maps.google.com"]')).toBeTruthy();
+    expect(screen.getByText("Telephone")).toBeTruthy();
+    expect(screen.getByText("Email")).toBeTruthy();
+    expect(screen.getByText("Visit")).toBeTruthy();
+  });
+});
+
+describe("theme — the compact cycle control", () => {
+  it("cycles auto → light → dark → auto and persists accordingly", () => {
+    render(<FreshPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Auto" }));
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBe("light");
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Light" }));
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBe("dark");
+    fireEvent.click(screen.getByRole("button", { name: "Theme: Dark" }));
+    expect(screen.getByRole("button", { name: "Theme: Auto" })).toBeTruthy();
+    expect(window.localStorage.getItem("fresh-theme.v1")).toBeNull();
   });
 });
 

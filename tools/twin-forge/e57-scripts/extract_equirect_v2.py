@@ -8,8 +8,8 @@ The scan poses (data3D) are healthy; the per-photo CAMERA orientation is not.
 v2 fits each photo's orientation EMPIRICALLY against laser truth before
 compositing:
 
-  TRUTH RASTER T (per sweep): the lidar panorama F:\\E57\\panoramas\\
-  scan_NNN.jpg is stored NADIR-AT-ROW-0 (vertically flipped vs standard
+  TRUTH RASTER T (per sweep): a separately regenerated, hash-manifested lidar
+  panorama scan_NNN.jpg is stored NADIR-AT-ROW-0 (vertically flipped vs standard
   equirect - validated on scans 000/040/100: the tripod blind cone is the
   black band at the TOP, and ceiling content (hanging chandeliers) sits in
   the lower half). We V-FLIP it to standard zenith-top. Its columns run
@@ -72,6 +72,12 @@ ever holds more than one band of float intermediates. Outputs per sweep:
 scan_NNN_8192.jpg (q85), scan_NNN.jpg (LANCZOS 4096x2048, q90 - the crisp
 delivery base) and scan_NNN_preview.jpg (LANCZOS 512x256, q85).
 
+Inputs are mandatory and provenance-checked: --stage selects the immutable
+capture stage, --truth-panos plus --truth-manifest select lidar rasters that
+declare regenerated_from_staged_e57, and --out must be disjoint from both.
+The old derived F:\\E57 workspace is intentionally not a default or accepted
+truth source.
+
 --bases-from: reuse per-photo orientations already solved by a previous run
 (its _equirect_v2_report.json) instead of re-running the 48-candidate fit.
 The full-res render never consumed anything but the fitted bases (the
@@ -86,15 +92,20 @@ import gc
 import io
 import json
 import os
+from pathlib import Path
 import sys
 
 import numpy as np
 import pye57
 from PIL import Image
 
-E57_PATH = r"F:\E57\cloud_0.e57"
-PANO_DIR = r"F:\E57\panoramas"
-OUT_DEFAULT = r"F:\E57\equirect"
+from e57_stage_guard import (
+    assert_disjoint_output,
+    load_stage,
+    load_truth_panos,
+    verify_stage_file,
+    verify_truth_panos,
+)
 # Native-resolution sampling (2026-07-05): the skybox photos are 4096 sq
 # (2048 px per 90 deg = an 8192-wide sphere equivalent); downsampling the
 # sources starves the output. 4096-wide output = 11.4 px/deg = sharpness
@@ -218,9 +229,9 @@ def scanner_pano_dirs(w, h):
     ], axis=2).astype(np.float32)
 
 
-def lidar_truth(scan):
+def lidar_truth(scan, pano_dir):
     """Truth raster T: lidar pano, V-FLIPPED to zenith-top, low-res gray."""
-    p = os.path.join(PANO_DIR, f"scan_{scan:03d}.jpg")
+    p = os.path.join(pano_dir, f"scan_{scan:03d}.jpg")
     if not os.path.exists(p):
         return None
     raw = np.asarray(
@@ -390,17 +401,57 @@ def parse_scans(spec, n_scans):
         return list(range(n_scans))
     targets = []
     for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            raise ValueError("--scans contains an empty item")
         if "-" in part:
-            lo, hi = part.split("-")
+            bounds = part.split("-")
+            if len(bounds) != 2:
+                raise ValueError(f"invalid --scans range: {part!r}")
+            lo, hi = bounds
+            if int(lo) > int(hi):
+                raise ValueError(f"invalid descending --scans range: {part!r}")
             targets.extend(range(int(lo), int(hi) + 1))
         else:
             targets.append(int(part))
-    return targets
+    if len(targets) != len(set(targets)):
+        raise ValueError("--scans must not contain duplicate scan indices")
+    invalid = [scan for scan in targets if scan < 0 or scan >= n_scans]
+    if invalid:
+        raise ValueError(f"--scans indices are outside 0..{n_scans - 1}: {invalid}")
+    return sorted(targets)
+
+
+def require_report_provenance(value, source, truth, label):
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    if value.get("source") != source or value.get("truth") != truth:
+        raise ValueError(
+            f"{label} is not anchored to this staged E57 and regenerated truth manifest")
+
+
+def write_json_atomic(path, value):
+    partial = f"{path}.partial"
+    if os.path.exists(partial):
+        os.remove(partial)
+    with open(partial, "x", encoding="utf8", newline="\n") as stream:
+        json.dump(value, stream, ensure_ascii=False, allow_nan=False, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(partial, path)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=OUT_DEFAULT)
+    ap.add_argument("--stage", required=True,
+                    help="verified capture stage root; the primary E57 is derived from its manifest")
+    ap.add_argument("--truth-panos", required=True,
+                    help="regenerated lidar truth panorama directory")
+    ap.add_argument("--truth-manifest", required=True,
+                    help="venviewer.lidar-truth-panos.v1 manifest inside --truth-panos")
+    ap.add_argument("--out", required=True,
+                    help="derived output directory disjoint from the capture stage and truth panos")
     ap.add_argument("--scans", default="all")
     ap.add_argument("--force", action="store_true",
                     help="re-render even when outputs + report entry exist")
@@ -414,17 +465,76 @@ def main():
                     help="run the fit even when --bases-from covers a sweep "
                          "and assert it reproduces that report's bases")
     args = ap.parse_args()
-    os.makedirs(args.out, exist_ok=True)
+
+    stage = load_stage(Path(args.stage))
+    truth_context = load_truth_panos(
+        stage, Path(args.truth_panos), Path(args.truth_manifest))
+    out_path = assert_disjoint_output(
+        Path(args.out), [stage.root, truth_context.root])
+    args.out = str(out_path)
+    source_provenance = {
+        "captureStagePlanSha256": stage.plan_sha256,
+        "e57TargetRelativePath": stage.primary_e57.target_relative_path,
+        "e57SizeBytes": stage.primary_e57.size_bytes,
+        "e57Sha256": stage.primary_e57.sha256,
+    }
+    truth_provenance = {
+        "manifestSha256": truth_context.manifest_sha256,
+        "generator": {
+            "name": truth_context.generator_name,
+            "version": truth_context.generator_version,
+            "parametersSha256": truth_context.generator_parameters_sha256,
+        },
+    }
 
     bases_src = {}
     if args.bases_from:
         with open(args.bases_from, "r", encoding="utf8") as f:
-            bases_src = json.load(f).get("sweeps", {})
+            bases_report = json.load(f)
+        require_report_provenance(
+            bases_report, source_provenance, truth_provenance, "--bases-from report")
+        bases_src = bases_report.get("sweeps", {})
+
+    e57 = pye57.E57(str(stage.primary_e57.path))
+    root = e57.image_file.root()
+    data3d = root["data3D"]
+    n_scans = data3d.childCount()
+    targets = parse_scans(args.scans, n_scans)
+    verify_stage_file(stage.primary_e57)
+    verify_truth_panos(truth_context, targets)
+    panos_by_index = {pano.scan_index: pano for pano in truth_context.panos}
+    for scan in targets:
+        pano = panos_by_index[scan]
+        with Image.open(truth_context.root / pano.relative_path) as image:
+            if image.size != (pano.width, pano.height):
+                raise ValueError(
+                    f"truth panorama dimensions drift for {pano.relative_path}: "
+                    f"expected {(pano.width, pano.height)}, got {image.size}")
+
+    if out_path.exists():
+        if not out_path.is_dir():
+            raise ValueError(f"--out exists and is not a directory: {out_path}")
+        unexpected = sorted(
+            item.name for item in out_path.iterdir()
+            if not (
+                item.is_file()
+                and (item.name == "_equirect_v2_report.json"
+                     or item.name.endswith(".jpg"))
+            ))
+        if unexpected:
+            raise ValueError(f"--out contains unexpected entries: {unexpected}")
+        existing_report = out_path / "_equirect_v2_report.json"
+        if any(out_path.iterdir()) and not existing_report.is_file():
+            raise ValueError("non-empty --out has no provenance report")
+    else:
+        out_path.mkdir(parents=True)
 
     report_path = os.path.join(args.out, "_equirect_v2_report.json")
     report = {
+        "source": source_provenance,
+        "truth": truth_provenance,
         "raster": "world-frame Z-up; row0=zenith; az=atan2(y,x) from +X toward +Y",
-        "truth": "lidar pano v-flipped to zenith-top (stored nadir-at-row-0), columns +az (CCW), scanner frame",
+        "truthRasterConvention": "lidar pano v-flipped to zenith-top (stored nadir-at-row-0), columns +az (CCW), scanner frame",
         "fit": "48 axis-aligned scanner-frame camera bases per photo, masked NCC vs lidar truth",
         "az_shift0": AZ_SHIFT0,
         "supersample": {"render": [SS_W, SS_H], "band_rows": BAND_ROWS,
@@ -434,12 +544,10 @@ def main():
     if os.path.exists(report_path):
         with open(report_path, "r", encoding="utf8") as f:
             prior = json.load(f)
+        require_report_provenance(
+            prior, source_provenance, truth_provenance, "existing output report")
         report["sweeps"] = prior.get("sweeps", {})
 
-    e57 = pye57.E57(E57_PATH)
-    root = e57.image_file.root()
-    data3d = root["data3D"]
-    n_scans = data3d.childCount()
     guid_to_scan = {data3d[i]["guid"].value(): i for i in range(n_scans)}
     scan_rot = {}
     for i in range(n_scans):
@@ -481,10 +589,8 @@ def main():
         report["ambiguous_photos"] = sorted(
             f"{k}#{j}" for k, v in report["sweeps"].items()
             if isinstance(v, dict) for j in v.get("ambiguous", []))
-        with open(report_path, "w", encoding="utf8") as f:
-            json.dump(report, f, indent=2)
+        write_json_atomic(report_path, report)
 
-    targets = parse_scans(args.scans, n_scans)
     for scan in targets:
         key = f"scan_{scan:03d}"
         full_path = os.path.join(args.out, f"{key}.jpg")
@@ -518,7 +624,7 @@ def main():
                 "bases_source": "loaded",
             }
         else:
-            truth = lidar_truth(scan)
+            truth = lidar_truth(scan, str(truth_context.root))
             if truth is None:
                 report["sweeps"][key] = "NO_LIDAR_PANO"
                 print(f"{key}: NO_LIDAR_PANO", flush=True)
@@ -599,4 +705,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as error:
+        print(f"equirect v2 failed: {error}", file=sys.stderr)
+        sys.exit(1)

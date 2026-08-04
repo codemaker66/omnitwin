@@ -7,6 +7,14 @@ import {
 
 const INERT_PLANE_CONSTANT = 1_000_000;
 const MIN_HORIZONTAL_DISTANCE_SQ = 1e-12;
+/**
+ * The cutaway exists for SIDE-ON views only, where the exterior scan shell
+ * blocks the interior. Once the camera climbs past this elevation angle the
+ * open-top scan already reveals the rooms — and the plane's "outward"
+ * direction (derived from a nearly-vertical view axis) becomes unstable and
+ * sweeps INTO the interior, visibly chopping floors. Above it: inert plane.
+ */
+const MAX_ENGAGE_ELEVATION_TAN = Math.tan((32 * Math.PI) / 180);
 
 export interface VerticalCutawayInput {
   readonly cameraPosition: Vector3;
@@ -51,6 +59,13 @@ export function updateVerticalCutawayPlane(
   const horizontalZ = cameraPosition.z - target.z;
   const horizontalDistanceSq = horizontalX * horizontalX + horizontalZ * horizontalZ;
   if (!Number.isFinite(horizontalDistanceSq) || horizontalDistanceSq <= MIN_HORIZONTAL_DISTANCE_SQ) {
+    return false;
+  }
+  // Elevated orbit: the interior is already open to view and a camera-derived
+  // section plane would sweep into the rooms (the "chops deep into the
+  // building" failure). Stay inert; only side-on views engage the cutaway.
+  const elevation = cameraPosition.y - target.y;
+  if (elevation > Math.sqrt(horizontalDistanceSq) * MAX_ENGAGE_ELEVATION_TAN) {
     return false;
   }
 

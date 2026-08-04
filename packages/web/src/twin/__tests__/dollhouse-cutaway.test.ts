@@ -19,8 +19,10 @@ import {
 describe("vertical dollhouse cutaway", () => {
   it("clips the camera-side shell while retaining the interior side", () => {
     const plane = new Plane();
+    // Side-on vantage: 10 m out horizontally, only 4 m up — inside the
+    // engagement elevation, so the section plane must activate.
     const updated = updateVerticalCutawayPlane(plane, {
-      cameraPosition: new Vector3(20, 50, -3),
+      cameraPosition: new Vector3(20, 8, -3),
       target: new Vector3(10, 4, -3),
       witnesses: [new Vector3(12, 1, -3), new Vector3(8, 1, -3)],
       insetM: 2,
@@ -32,30 +34,35 @@ describe("vertical dollhouse cutaway", () => {
     expect(plane.distanceToPoint(new Vector3(11, -200, -3))).toBeCloseTo(-1);
   });
 
-  it("uses only horizontal camera direction so elevation cannot slice floors or the dome", () => {
+  it("engages side-on with a horizontal normal, but goes inert when the camera climbs", () => {
     const lowPlane = new Plane();
-    const highPlane = new Plane();
+    const highPlane = new Plane(new Vector3(-1, 0, 0), 2);
     const input = {
       target: new Vector3(2, 3, 4),
       witnesses: [new Vector3(8, -10, 4), new Vector3(-2, 40, 4)],
       insetM: 2,
     };
 
+    // Eye-level orbit: engages, and the normal carries no vertical component
+    // (floors and the dome can never be sliced by the section itself).
     expect(
       updateVerticalCutawayPlane(lowPlane, {
         ...input,
         cameraPosition: new Vector3(20, 3, 4),
       }),
     ).toBe(true);
+    expect(lowPlane.normal.y).toBe(0);
+
+    // Elevated orbit: the open-top scan already shows the interior and a
+    // camera-derived section would sweep INTO the rooms (the "chops deep
+    // into the building" failure) — the plane must go inert instead.
     expect(
       updateVerticalCutawayPlane(highPlane, {
         ...input,
         cameraPosition: new Vector3(20, 300, 4),
       }),
-    ).toBe(true);
-    expect(highPlane.normal.toArray()).toEqual(lowPlane.normal.toArray());
-    expect(highPlane.constant).toBe(lowPlane.constant);
-    expect(highPlane.normal.y).toBe(0);
+    ).toBe(false);
+    expect(highPlane.distanceToPoint(new Vector3(2, 3, 4))).toBeGreaterThan(100_000);
   });
 
   it("moves the section inward by the requested inset", () => {

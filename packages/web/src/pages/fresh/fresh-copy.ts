@@ -31,6 +31,35 @@ export const FRESH_LEDE =
 
 export const FRESH_CTA_DATES = "Ask about a date";
 export const FRESH_CTA_ROOMS = "See the rooms";
+export const FRESH_CTA_TOUR = "Walk the building";
+
+/** The whole-building walkthrough — the Twin, at its memorable alias.
+ *  149 viewpoints is a capture fact (the scan's own sweep count). */
+export const FRESH_TOUR_HREF = "/tour";
+export const FRESH_TOUR_TITLE = "Then walk the whole building";
+export const FRESH_TOUR_LINE =
+  "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
+export const FRESH_TOUR_CTA = "Open the walkthrough";
+/** The door's ground: the walkthrough's own dollhouse view — product
+ *  output, not photography, so the no-repeat photo law is untouched. */
+export const FRESH_TOUR_GROUND = "/images/venue/tour-door-1800.webp";
+export const FRESH_TOUR_GROUND_SRCSET =
+  "/images/venue/tour-door-900.webp 900w, /images/venue/tour-door-1800.webp 1800w";
+export const FRESH_TOUR_GROUND_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
+export const FRESH_TOUR_GROUND_ALT =
+  "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
+export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
+export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
+export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
+
+/** Section kickers — the page's running heads: small letterspaced marks
+ *  above each heading. Written sentence case; CSS sets them uppercase. */
+export const FRESH_KICKER_ROOMS = "The house";
+export const FRESH_KICKER_WALK = "The capture";
+export const FRESH_KICKER_RATES = "The rates";
+export const FRESH_KICKER_ENQUIRE = "The first word";
+export const FRESH_KICKER_HERITAGE = "The story";
+export const FRESH_KICKER_CONTACT = "The people";
 
 export const FRESH_ROOMS_TITLE = "Six rooms, one house";
 export const FRESH_ROOMS_LEDE =
@@ -44,11 +73,42 @@ export interface FreshRoom {
   readonly alt: string;
   readonly width: number;
   readonly height: number;
+  /** Rung widths available in /images/venue/ladder/ for this photo. */
+  readonly ladder: readonly number[];
   /** Portrait photographs render taller so nobody in them loses their head. */
   readonly portrait?: boolean;
   /** object-position focus, when the subject is not centred. */
   readonly focus?: string;
+  /** Walkthrough deep link (?node/look query) — hero framing for this room,
+   *  validated against this photography before shipping. */
+  readonly twinLook?: string;
+  /** True when this room also lives on the page itself (the splat embed) —
+   *  its dossier offers the in-page doorway alongside the walkthrough. */
+  readonly inPageWalk?: boolean;
 }
+
+/** Responsive delivery: pre-encoded webp rungs live in
+ *  /images/venue/ladder/ as <basename>-<width>.webp — one visitor
+ *  downloads one rung, never the full-size original. */
+export function ladderSrcSet(imagePath: string, widths: readonly number[]): string {
+  const basename = (imagePath.split("/").pop() ?? "").replace(/\.[a-z0-9]+$/i, "");
+  return widths
+    .map((w) => `/images/venue/ladder/${basename}-${String(w)}.webp ${String(w)}w`)
+    .join(", ");
+}
+
+export const FRESH_HERO_LADDER = [480, 768, 1120, 1536] as const;
+export const FRESH_HERO_SIZES =
+  "(max-width: 760px) calc(100vw - 32px), calc(100vw - 88px)";
+/** Narrow screens get a purpose-cut portrait of the hall (dome centred) —
+ *  the landscape aerial survives no phone crop. Same photograph, one
+ *  rendered image: the no-repeat law counts elements, not crops. */
+export const FRESH_HERO_PORTRAIT_MEDIA = "(max-width: 760px)";
+export const FRESH_HERO_PORTRAIT_SRCSET =
+  "/images/venue/ladder/trades-hall-exterior-portrait-480.webp 480w, /images/venue/ladder/trades-hall-exterior-portrait-768.webp 768w";
+export const FRESH_ROOM_SIZES = "(max-width: 760px) calc(100vw - 32px), 558px";
+export const FRESH_HERITAGE_LADDER = [480, 768, 1120, 1448] as const;
+export const FRESH_HERITAGE_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
 
 /** The hero is the house itself, from above. */
 export const FRESH_HERO_IMAGE = tradesHallVenueImages.exterior;
@@ -67,6 +127,8 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "The Grand Hall dressed and candlelit beneath the dome",
     width: 1535,
     height: 1024,
+    ladder: [480, 768, 1120, 1535],
+    twinLook: "node=scan_028&look=scan_028%2C90%2C6%2C75",
   },
   {
     slug: "saloon",
@@ -76,15 +138,20 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "The Saloon, stained-glass windows above panelled walls",
     width: 1535,
     height: 1025,
+    ladder: [480, 768, 1120, 1535],
+    twinLook: "node=scan_058&look=scan_058%2C-90%2C5%2C75",
   },
   {
     slug: "reception-room",
     name: "The Reception Room",
     line: "Where an evening at Trades Hall begins.",
+    twinLook: "node=scan_126&look=scan_126%2C-20%2C4%2C75",
+    inPageWalk: true,
     image: tradesHallVenueImages.receptionRoom,
     alt: "The Reception Room dressed for a ceremony, candles along the aisle",
     width: 1536,
     height: 1024,
+    ladder: [480, 768, 1120, 1536],
   },
   {
     slug: "robert-adam-room",
@@ -94,8 +161,10 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     alt: "A bride mid-aisle at a ceremony in the Robert Adam Room",
     width: 1122,
     height: 1402,
+    ladder: [480, 768, 1122],
     portrait: true,
     focus: "center 18%",
+    twinLook: "node=scan_105&look=scan_105%2C0%2C4%2C72",
   },
 ] as const;
 
@@ -105,8 +174,8 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
 export const FRESH_HERITAGE_ART = "/images/brand/facade-art.webp";
 export const FRESH_HERITAGE_ART_ALT =
   "An illustrated portrait of the Trades Hall facade — dome, portico, and lit windows";
-export const FRESH_ARMS = "/images/brand/coat-of-arms.webp";
-export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark.png";
+export const FRESH_ARMS = "/images/brand/coat-of-arms-240.webp";
+export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark-64.webp";
 export const FRESH_ARMS_ALT = "The arms of the Trades House of Glasgow";
 export const FRESH_MOTTO = "Union is strength";
 export const FRESH_MOTTO_ATTR = "The motto of the Trades House of Glasgow";
@@ -133,11 +202,45 @@ export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
 
+/** Walk the room — the poster-first capture embed. The poster is a render
+ *  of the captured scene (never one of the venue photographs, so the
+ *  no-repeat law holds); the room itself loads only when invited. */
+export const FRESH_WALK_TITLE = "Walk the room";
+export const FRESH_WALK_LEDE =
+  "The Reception Room, captured — rendered live in your browser, not a photograph. Step in, look around from where the scanner stood, and move a table with your own hands.";
+export const FRESH_WALK_CHIP = "This is not a photograph.";
+export const FRESH_WALK_WAKE = "Step in";
+export const FRESH_WALK_SIZE_NOTE =
+  "Loads the captured room — about 60 MB, best on wifi.";
+export const FRESH_WALK_LOADING = "The room is arriving";
+export const FRESH_WALK_HINT =
+  "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
+export const FRESH_WALK_FAILED =
+  "The captured room couldn't open in this browser — the photographs above still tell the truth.";
+export const FRESH_WALK_NOTE =
+  "The same capture drives Venviewer, the planning tool beneath this page.";
+export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
+export const FRESH_WALK_POSTER_SRCSET =
+  "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
+export const FRESH_WALK_POSTER_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
+export const FRESH_WALK_POSTER_ALT =
+  "The Reception Room as a captured scene, rendered by Venviewer — not a photograph";
+
+/** The room dossiers — each card opens into the room's own page-within-
+ *  the-page: published dimensions, and every capacity drawn to count. */
+export const FRESH_DOSSIER_OPEN = "Open the room";
+export const FRESH_DOSSIER_CLOSE = "Close";
+export const FRESH_DOSSIER_CTA = "Ask about this room";
+export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
+
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
   "Trades Hall was designed by Robert Adam and has served as the meeting place of the Trades House of Glasgow — the city's fourteen incorporated crafts — since 1791. It is the oldest building in Glasgow still used for its original purpose. When you celebrate here, you are keeping its diary going.";
 
 export const FRESH_CONTACT_TITLE = "Speak with the events team";
+export const FRESH_CONTACT_TEL_LABEL = "Telephone";
+export const FRESH_CONTACT_EMAIL_LABEL = "Email";
+export const FRESH_CONTACT_VISIT_LABEL = "Visit";
 export const FRESH_CONTACT_PHONE_DISPLAY = FOOTER_PHONE_DISPLAY;
 export const FRESH_CONTACT_PHONE_HREF = FOOTER_PHONE_HREF;
 export const FRESH_CONTACT_EMAIL = FOOTER_EMAIL;
@@ -167,6 +270,19 @@ export function allFreshCopy(): readonly string[] {
     FRESH_LEDE,
     FRESH_CTA_DATES,
     FRESH_CTA_ROOMS,
+    FRESH_CTA_TOUR,
+    FRESH_TOUR_TITLE,
+    FRESH_TOUR_LINE,
+    FRESH_TOUR_CTA,
+    FRESH_TOUR_GROUND_ALT,
+    FRESH_DOSSIER_TWIN_CTA,
+    FRESH_DOSSIER_WALK_CTA,
+    FRESH_KICKER_ROOMS,
+    FRESH_KICKER_WALK,
+    FRESH_KICKER_RATES,
+    FRESH_KICKER_ENQUIRE,
+    FRESH_KICKER_HERITAGE,
+    FRESH_KICKER_CONTACT,
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
     FRESH_HERO_ALT,
@@ -188,9 +304,26 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_COPY_ACTION,
     FRESH_ENQUIRY_COPIED,
     FRESH_ENQUIRY_OR_CALL,
+    FRESH_DOSSIER_OPEN,
+    FRESH_DOSSIER_CLOSE,
+    FRESH_DOSSIER_CTA,
+    FRESH_DOSSIER_DRAWN_NOTE,
+    FRESH_WALK_TITLE,
+    FRESH_WALK_LEDE,
+    FRESH_WALK_CHIP,
+    FRESH_WALK_WAKE,
+    FRESH_WALK_SIZE_NOTE,
+    FRESH_WALK_LOADING,
+    FRESH_WALK_HINT,
+    FRESH_WALK_FAILED,
+    FRESH_WALK_NOTE,
+    FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,
+    FRESH_CONTACT_TEL_LABEL,
+    FRESH_CONTACT_EMAIL_LABEL,
+    FRESH_CONTACT_VISIT_LABEL,
     FRESH_ADDRESS,
     FRESH_THEME_LABEL,
     ...FRESH_THEME_OPTIONS.map((o) => o.label),

@@ -5,7 +5,11 @@ const TRIPOD_HEIGHT_M = 1.5;
 
 /** Bucket a scan height into a floor index (ground = 0). */
 export function floorOf(zMetres: number): number {
-  return Math.max(0, Math.round((zMetres - TRIPOD_HEIGHT_M) / STOREY_HEIGHT_M));
+  if (!Number.isFinite(zMetres)) {
+    throw new Error("scan height must be finite");
+  }
+  const floor = Math.round((zMetres - TRIPOD_HEIGHT_M) / STOREY_HEIGHT_M);
+  return Object.is(floor, -0) ? 0 : floor;
 }
 
 export interface NavGraphOptions {
@@ -19,6 +23,22 @@ export interface NavGraphOptions {
 
 function key(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function resolveOverridePair(
+  byId: ReadonlyMap<string, TwinScanNode>,
+  a: string,
+  b: string,
+): readonly [TwinScanNode, TwinScanNode] {
+  if (a === b) {
+    throw new Error(`nav override cannot connect a node to itself: ${a}`);
+  }
+  const nodeA = byId.get(a);
+  const nodeB = byId.get(b);
+  if (nodeA === undefined || nodeB === undefined) {
+    throw new Error(`nav override references unknown node: ${a} / ${b}`);
+  }
+  return [nodeA, nodeB];
 }
 
 function distance(a: TwinScanNode, b: TwinScanNode): number {
@@ -57,14 +77,16 @@ export function buildNavGraph(
     }
   }
 
+  const removedKeys = new Set<string>();
   for (const [x, y] of opts.overrides?.remove ?? []) {
+    resolveOverridePair(byId, x, y);
+    removedKeys.add(key(x, y));
     chosen.delete(key(x, y));
   }
   for (const [x, y] of opts.overrides?.add ?? []) {
-    const na = byId.get(x);
-    const nb = byId.get(y);
-    if (na === undefined || nb === undefined) {
-      throw new Error(`nav override references unknown node: ${x} / ${y}`);
+    const [na, nb] = resolveOverridePair(byId, x, y);
+    if (removedKeys.has(key(x, y))) {
+      throw new Error(`nav override cannot both add and remove the same edge: ${x} / ${y}`);
     }
     const [idA, idB] = x < y ? [x, y] : [y, x];
     chosen.set(key(x, y), { a: idA, b: idB, distanceM: Number(distance(na, nb).toFixed(3)) });

@@ -134,6 +134,19 @@ claude-mem and the auto-memory system are both active. Write `project`,
 next session — prior incidents, validated judgment calls, where external
 context lives. Read existing memories before starting relevant work.
 
+## Product plan and build cards (CORE — added 10 Jul 2026)
+
+The product/UX plan lives in `docs/plan/` (00–08: master plan, the Floor UX
+spec, House design language, architecture, red-team critique, wireframes, gap
+audit, execution playbook, frontier). Feature sessions consume one build card
+per session from `docs/plan/cards/` (protocol in its README).
+`docs/plan/06-GAP-AUDIT.md` supersedes all older "current gaps" lists.
+The booking/calendar domain ("the Diary") is governed by its own canon —
+see `docs/strategy/authority-map.md` for which rulebook wins where.
+Naming is hybrid: existing `cockpit*` code names stay; new modules, UI copy,
+and docs use Floor/House vocabulary. When a card conflicts with repo reality,
+flag it (Blake Clause) — do not silently reinterpret.
+
 ## Architecture state and decision log
 
 Active architecture work lives in `/docs/architecture/adr/` as immutable
@@ -242,3 +255,9 @@ matches what you're about to do.
   helper (e.g. `api.get<T>(path, schema)`), or debugging cascading
   `objectInputType vs objectOutputType is not assignable` errors at
   the api client boundary.
+
+- `.claude/gotchas/spark-splat-layer-callback-identity.md`
+  Read this when: passing `onLoad`/`onError` to `SparkSplatLayer`,
+  wiring a splat scene's progress to React state, or debugging a splat
+  scene that reaches its "loaded" state but renders a blank canvas
+  (especially when it works on localhost and fails deployed).

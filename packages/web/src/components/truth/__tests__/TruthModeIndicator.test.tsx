@@ -29,8 +29,11 @@ describe("TruthModeIndicator", () => {
     expect(screen.getByTestId("truth-mode-indicator")).toBeTruthy();
     expect(screen.getByText("Truth Mode L1")).toBeTruthy();
     expect(screen.getByText(/3D planning: Procedural preview/)).toBeTruthy();
-    expect(screen.getByText("Procedural content present")).toBeTruthy();
-    expect(screen.getByText("Measured runtime not loaded")).toBeTruthy();
+    expect(screen.getByText("Procedural")).toBeTruthy();
+    expect(screen.getByText("Runtime not loaded")).toBeTruthy();
+    expect(screen.getByTestId("truth-mode-status-line").getAttribute("aria-label")).toBe(
+      "Procedural content present, Measured runtime not loaded, 3 known issues",
+    );
   });
 
   it("opens and closes the L2 popover", () => {
@@ -40,6 +43,15 @@ describe("TruthModeIndicator", () => {
     expect(screen.getByText("Truth Mode L2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Close Truth Mode summary/i }));
+    expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();
+  });
+
+  it("closes the L2 summary with Escape", () => {
+    renderProceduralIndicator();
+    fireEvent.click(screen.getByTestId("truth-mode-toggle"));
+    expect(screen.getByRole("dialog", { name: /Truth Mode summary/i })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();
   });
 
@@ -70,18 +82,20 @@ describe("TruthModeIndicator", () => {
     expect(formatConfidenceTier("survey_grade")).toBe("Survey evidence tier");
   });
 
-  it("uses a viewport-constrained width for mobile", () => {
+  it("uses the movable floating-widget shell", () => {
     renderProceduralIndicator();
     const root = screen.getByTestId("truth-mode-indicator");
-    expect(root.getAttribute("style") ?? "").toContain("calc(100vw - 24px)");
+    expect(root.getAttribute("data-floating-widget-id")).toBe("truth-mode-indicator");
+    expect(root.className).toContain("vv-floating-widget");
+    expect(screen.getByRole("button", { name: /Move Truth Mode/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Minimize Truth Mode/i })).toBeTruthy();
   });
 
-  it("does not let the diagnostic shell intercept planner controls", () => {
+  it("does not render disabled fake drawer actions", () => {
     renderProceduralIndicator();
-    const root = screen.getByTestId("truth-mode-indicator");
-    const toggle = screen.getByTestId("truth-mode-toggle");
-    expect(root.getAttribute("style") ?? "").toContain("pointer-events: none");
-    expect(toggle.getAttribute("style") ?? "").toContain("pointer-events: auto");
+    fireEvent.click(screen.getByTestId("truth-mode-toggle"));
+    expect(screen.queryByRole("button", { name: /Provenance drawer unavailable/i })).toBeNull();
+    expect(screen.getByText(/Open the Evidence lens/i)).toBeTruthy();
   });
 
   it("is gated in production unless the query param is present", () => {

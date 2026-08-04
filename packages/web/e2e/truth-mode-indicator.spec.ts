@@ -32,15 +32,20 @@ test.describe("Truth Mode L1/L2 foundation", () => {
     const indicator = page.getByTestId("truth-mode-indicator");
     await expect(indicator).toBeVisible();
     await expect(indicator.getByText("Truth Mode L1")).toBeVisible();
-    await expect(indicator.getByText("Procedural content present")).toBeVisible();
-    await expect(indicator.getByText("Measured runtime not loaded")).toBeVisible();
+    const statusLine = indicator.getByTestId("truth-mode-status-line");
+    await expect(statusLine).toHaveAttribute(
+      "aria-label",
+      /Procedural content present, Measured runtime not loaded/u,
+    );
+    await expect(statusLine.getByText("Procedural", { exact: true })).toBeVisible();
+    await expect(statusLine.getByText("Runtime not loaded", { exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     await page.getByTestId("truth-mode-toggle").click();
     await expect(page.getByRole("dialog", { name: /Truth Mode summary/i })).toBeVisible();
     await expect(page.getByText("Procedural runtime", { exact: true })).toBeVisible();
     await expect(page.getByText(/No signed measured RuntimeVenueManifest asset/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /Provenance drawer unavailable/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /Provenance/i })).toHaveCount(0);
     await expect(page.getByText("Verified")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
 

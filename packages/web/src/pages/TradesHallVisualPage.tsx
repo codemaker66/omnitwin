@@ -38,7 +38,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { GrandHallRoom } from "../components/GrandHallRoom.js";
-import { AdaptiveResolution, type AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
+import type { AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
 import { RoomMesh } from "../components/editor/RoomMesh.js";
 import {
   computeCameraTarget,
@@ -183,7 +183,6 @@ const RUNTIME_SPLAT_MIN_SCALE = 0.2;
 const RUNTIME_SPLAT_MAX_SCALE = 4;
 export const LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH = 1099;
 export const TABLET_VISUAL_DPR = 0.75;
-export const DESKTOP_VISUAL_INTERACTION_MIN_DPR = 0.5;
 export const VISUAL_CANVAS_PERFORMANCE = {
   min: 0.25,
   debounce: 180,
@@ -211,7 +210,7 @@ export function visualCanvasDprForViewportWidth(viewportWidth: number): [number,
   if (viewportWidth > 480 && viewportWidth <= LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH) {
     return [TABLET_VISUAL_DPR, TABLET_VISUAL_DPR];
   }
-  return viewportWidth <= LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH ? [1, 1] : [1, 2];
+  return [1, 1];
 }
 
 export function visualCanvasGlForViewportWidth(viewportWidth: number): VisualCanvasGlOptions {
@@ -224,10 +223,8 @@ export function visualCanvasGlForViewportWidth(viewportWidth: number): VisualCan
 export function visualAdaptiveResolutionForViewportWidth(viewportWidth: number): AdaptiveResolutionOptions {
   const [minDpr, maxDpr] = visualCanvasDprForViewportWidth(viewportWidth);
   return {
-    enabled: viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH,
-    minDpr: viewportWidth > LEAN_VISUAL_SCENE_MAX_VIEWPORT_WIDTH
-      ? DESKTOP_VISUAL_INTERACTION_MIN_DPR
-      : minDpr,
+    enabled: false,
+    minDpr,
     maxDpr,
   };
 }
@@ -659,6 +656,7 @@ function VisualCalloutWidget({
   tone,
   defaultMinimized = false,
   storageScope,
+  autoCompact = false,
   children,
 }: {
   readonly id: string;
@@ -668,6 +666,7 @@ function VisualCalloutWidget({
   readonly tone?: "gold" | "danger";
   readonly defaultMinimized?: boolean;
   readonly storageScope?: string;
+  readonly autoCompact?: boolean;
   readonly children: ReactNode;
 }): ReactElement {
   const toneClassName = tone === undefined ? "" : `visual-callout-widget--${tone}`;
@@ -682,6 +681,7 @@ function VisualCalloutWidget({
       className={["visual-callout-widget", toneClassName].filter(Boolean).join(" ")}
       bodyClassName="visual-callout-widget__body"
       zIndex={7}
+      autoCompact={autoCompact}
     >
       <div className="visual-callout">
         {children}
@@ -696,12 +696,14 @@ function VenueCanvasOverlays({
   replayProgress,
   planningCuesVisible,
   isNarrowViewport,
+  cameraInteractionActive,
 }: {
   readonly overlays: OverlayState;
   readonly replay: GuestFlowReplayArtifact;
   readonly replayProgress: number;
   readonly planningCuesVisible: boolean;
   readonly isNarrowViewport: boolean;
+  readonly cameraInteractionActive: boolean;
 }): ReactElement {
   const flowTrajectories = replay.trajectories.slice(0, 4);
   const ghostTrajectories = replay.trajectories.slice(0, 8);
@@ -721,7 +723,7 @@ function VenueCanvasOverlays({
 
   return (
     <div className="visual-stage-overlay" aria-label="Venue spatial overlays">
-      {overlays.guestFlow && (
+      {!cameraInteractionActive && overlays.guestFlow && (
         <>
           {flowTrajectories.map((trajectory) => (
             <span
@@ -732,7 +734,7 @@ function VenueCanvasOverlays({
           ))}
         </>
       )}
-      {overlays.agentReplay && (
+      {!cameraInteractionActive && overlays.agentReplay && (
         <>
           {ghostTrajectories.map((trajectory, index) => (
             <span
@@ -743,7 +745,7 @@ function VenueCanvasOverlays({
           ))}
         </>
       )}
-      {overlays.densityHeatmap && (
+      {!cameraInteractionActive && overlays.densityHeatmap && (
         <>
           <span className="visual-density-heatmap" />
           {densityCells.map((cell) => (
@@ -764,6 +766,7 @@ function VenueCanvasOverlays({
             placement={calloutPlacement({ type: "percent", xPercent: 0.16, yPercent: 0.62 }, 112)}
             defaultMinimized={calloutDefaultMinimized}
             storageScope={calloutStorageScope}
+            autoCompact={cameraInteractionActive}
           >
             <strong>1.20 m</strong>
             <span>route clearance</span>
@@ -775,6 +778,7 @@ function VenueCanvasOverlays({
             placement={calloutPlacement({ type: "percent", xPercent: 0.72, yPercent: 0.7 }, 154)}
             defaultMinimized={calloutDefaultMinimized}
             storageScope={calloutStorageScope}
+            autoCompact={cameraInteractionActive}
           >
             <strong>1.20 m</strong>
             <span>route clearance</span>
@@ -791,6 +795,7 @@ function VenueCanvasOverlays({
             tone="gold"
             defaultMinimized={calloutDefaultMinimized}
             storageScope={calloutStorageScope}
+            autoCompact={cameraInteractionActive}
           >
             <strong>Heritage buffer</strong>
             <span>Do not place</span>
@@ -803,11 +808,12 @@ function VenueCanvasOverlays({
             tone="danger"
             defaultMinimized={calloutDefaultMinimized}
             storageScope={calloutStorageScope}
+            autoCompact={cameraInteractionActive}
           >
             <strong>Route conflict</strong>
             <span>review required</span>
           </VisualCalloutWidget>
-          {reviewConflicts.map((conflict) => (
+          {!cameraInteractionActive && reviewConflicts.map((conflict) => (
             <span
               key={conflict.id}
               className="visual-route-conflict-marker"
@@ -825,6 +831,7 @@ function VenueCanvasOverlays({
             placement={calloutPlacement({ type: "percent", xPercent: 0.45, yPercent: 0.57 }, 280)}
             defaultMinimized={calloutDefaultMinimized}
             storageScope={calloutStorageScope}
+            autoCompact={cameraInteractionActive}
           >
             <strong>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.label}</strong>
             <span>{TRADES_HALL_VISUAL_DEMO_STATE.selectedTable.guests} guests</span>
@@ -832,10 +839,10 @@ function VenueCanvasOverlays({
               <span key={note}>{note}</span>
             ))}
           </VisualCalloutWidget>
-          <span className="visual-selected-ring" />
+          {!cameraInteractionActive && <span className="visual-selected-ring" />}
         </>
       )}
-      {overlays.lightingProbes && (
+      {!cameraInteractionActive && overlays.lightingProbes && (
         <>
           <span className="visual-probe probe-a" />
           <span className="visual-probe probe-b" />
@@ -982,6 +989,7 @@ function VisualCameraControls({
   runtimeCameraView,
   smoothControls,
   mouseButtons,
+  onCameraInteractionChange,
 }: {
   readonly position: readonly [number, number, number];
   readonly target: readonly [number, number, number];
@@ -991,12 +999,14 @@ function VisualCameraControls({
   readonly runtimeCameraView: RuntimeAssetCameraView | null;
   readonly smoothControls: boolean;
   readonly mouseButtons: VisualMouseButtons | undefined;
+  readonly onCameraInteractionChange: (active: boolean) => void;
 }): ReactElement {
   const { camera, invalidate } = useThree();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const arrivalElapsedMsRef = useRef(0);
   const arrivalActiveRef = useRef(false);
   const userControlStartedRef = useRef(false);
+  const cameraSettleTimerRef = useRef<number | null>(null);
   const arrivalPositionRef = useRef(new Vector3());
   const arrivalTargetRef = useRef(new Vector3());
   const settledPositionRef = useRef(new Vector3());
@@ -1059,6 +1069,14 @@ function VisualCameraControls({
     target,
   ]);
 
+  useEffect(() => () => {
+    if (cameraSettleTimerRef.current !== null) {
+      window.clearTimeout(cameraSettleTimerRef.current);
+      cameraSettleTimerRef.current = null;
+    }
+    onCameraInteractionChange(false);
+  }, [onCameraInteractionChange]);
+
   useFrame((_state, delta) => {
     if (runtimeCameraView === null) return;
     const controls = controlsRef.current;
@@ -1092,7 +1110,22 @@ function VisualCameraControls({
   const handleControlsStart = useCallback((): void => {
     userControlStartedRef.current = true;
     arrivalActiveRef.current = false;
-  }, []);
+    if (cameraSettleTimerRef.current !== null) {
+      window.clearTimeout(cameraSettleTimerRef.current);
+      cameraSettleTimerRef.current = null;
+    }
+    onCameraInteractionChange(true);
+  }, [onCameraInteractionChange]);
+
+  const handleControlsEnd = useCallback((): void => {
+    if (cameraSettleTimerRef.current !== null) {
+      window.clearTimeout(cameraSettleTimerRef.current);
+    }
+    cameraSettleTimerRef.current = window.setTimeout(() => {
+      cameraSettleTimerRef.current = null;
+      onCameraInteractionChange(false);
+    }, smoothControls ? 120 : 40);
+  }, [onCameraInteractionChange, smoothControls]);
 
   const handleControlsChange = useCallback((): void => {
     if (runtimeCameraView !== null) {
@@ -1119,6 +1152,7 @@ function VisualCameraControls({
       maxPolarAngle={runtimeCameraView?.maxPolarAngle ?? Math.PI * 0.49}
       onStart={handleControlsStart}
       onChange={handleControlsChange}
+      onEnd={handleControlsEnd}
     />
   );
 }
@@ -1461,6 +1495,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("fixture");
   const [replayProgress, setReplayProgress] = useState(0.42);
   const [replayRunning, setReplayRunning] = useState(false);
+  const [visualCameraInteractionActive, setVisualCameraInteractionActive] = useState(false);
   const [splatLoadCounts, setSplatLoadCounts] = useState<Record<string, number>>({});
   const [splatLoadBounds, setSplatLoadBounds] = useState<Record<string, RuntimeSplatBounds>>({});
   const [visualState, setVisualState] = useState<VisualState>(() => {
@@ -1542,7 +1577,6 @@ export function TradesHallVisualPage(): ReactElement {
   const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
   const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
   const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
-  const visualAdaptiveResolution = visualAdaptiveResolutionForViewportWidth(viewportWidth);
   const isNarrowVisualViewport = viewportWidth <= 640;
   const visualWidgetStorageScope = isNarrowVisualViewport ? "mobile" : "desktop";
   const layerControlsPlacement: FloatingWidgetPlacement = isNarrowVisualViewport
@@ -1779,6 +1813,7 @@ export function TradesHallVisualPage(): ReactElement {
               runtimeCameraView={visualRuntimeCameraView}
               smoothControls={smoothVisualControls}
               mouseButtons={visualMouseButtons}
+              onCameraInteractionChange={setVisualCameraInteractionActive}
             />
             <color attach="background" args={["#111415"]} />
             <ambientLight intensity={0.75} />
@@ -1812,12 +1847,6 @@ export function TradesHallVisualPage(): ReactElement {
                 ))}
               </Suspense>
             ) : null}
-            {visualAdaptiveResolution.enabled === true && (
-              <AdaptiveResolution
-                minDpr={visualAdaptiveResolution.minDpr}
-                maxDpr={visualAdaptiveResolution.maxDpr}
-              />
-            )}
           </Canvas>
         </div>
         <FloatingWidgetFrame
@@ -1828,6 +1857,7 @@ export function TradesHallVisualPage(): ReactElement {
           defaultMinimized={isNarrowVisualViewport}
           storageScope={visualWidgetStorageScope}
           zIndex={9}
+          autoCompact={visualCameraInteractionActive}
         >
           <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
         </FloatingWidgetFrame>
@@ -1837,6 +1867,7 @@ export function TradesHallVisualPage(): ReactElement {
           replayProgress={replayProgress}
           planningCuesVisible={!hasRegisteredRuntimeAsset}
           isNarrowViewport={isNarrowVisualViewport}
+          cameraInteractionActive={visualCameraInteractionActive}
         />
         <FloatingWidgetFrame
           id="visual-overlay-legend"
@@ -1846,6 +1877,7 @@ export function TradesHallVisualPage(): ReactElement {
           defaultMinimized
           storageScope={visualWidgetStorageScope}
           zIndex={8}
+          autoCompact={visualCameraInteractionActive}
         >
           <VenueOverlayLegend
             overlays={overlays}
@@ -1870,6 +1902,7 @@ export function TradesHallVisualPage(): ReactElement {
           defaultMinimized
           storageScope={visualWidgetStorageScope}
           zIndex={8}
+          autoCompact={visualCameraInteractionActive}
         >
           <ViewTool activeMode={activeMode} />
         </FloatingWidgetFrame>

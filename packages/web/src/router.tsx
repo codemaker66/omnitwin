@@ -2,6 +2,9 @@ import { lazy, Suspense, type ReactElement } from "react";
 import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
+// Static like ProtectedRoute: the canonical evidence chip renders inside the
+// route-loading fallback itself, and it's tiny (per-icon lucide + one CSS page).
+import { EvidenceChip } from "./components/evidence/EvidenceChip.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -80,11 +83,23 @@ const PricingPage = lazy(() =>
 const SplatFixturePage = lazy(() =>
   cockpitImport(() => import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage }))),
 );
+const EvidenceChipFixturePage = lazy(() =>
+  import("./pages/EvidenceChipFixturePage.js").then((m) => ({ default: m.EvidenceChipFixturePage })),
+);
 const TradesHallVisualPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage }))),
 );
+const TradesHouseLeafletPage = lazy(() =>
+  import("./pages/TradesHouseLeafletPage.js").then((m) => ({ default: m.TradesHouseLeafletPage })),
+);
+const TradesHouseCraftQuizPage = lazy(() =>
+  import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
+);
 const TradesHallAssetStatusPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage }))),
+);
+const CaptureIntakePage = lazy(() =>
+  import("./pages/CaptureIntakePage.js").then((m) => ({ default: m.CaptureIntakePage })),
 );
 const ProposalPage = lazy(() =>
   cockpitImport(() => import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage }))),
@@ -98,6 +113,9 @@ const OpsHandoffPage = lazy(() =>
 const EventDayOpsPage = lazy(() =>
   cockpitImport(() => import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage }))),
 );
+const EventArchitectPage = lazy(() =>
+  import("./pages/EventArchitectPage.js").then((m) => ({ default: m.EventArchitectPage })),
+);
 const RoomShowcasePage = lazy(() =>
   cockpitImport(() => import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage }))),
 );
@@ -110,8 +128,13 @@ const LivingHallPage = lazy(() =>
     default: m.LivingHallPage,
   }))),
 );
+// Living Hall preview/preflight routes return WITH their pages when that
+// feature commits (in flight; see docs/sessions/2026-07-17.md, T-526).
 const TwinPage = lazy(() =>
   cockpitImport(() => import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage }))),
+);
+const DiaryBoardPage = lazy(() =>
+  import("./pages/diary/DiaryBoardPage.js").then((m) => ({ default: m.DiaryBoardPage })),
 );
 
 function LoadingFallback(): ReactElement {
@@ -121,7 +144,9 @@ function LoadingFallback(): ReactElement {
         <p className="vv-state-kicker">Venviewer</p>
         <h1>Preparing the room workspace</h1>
         <p>Loading the route shell, controls, and current planning context.</p>
-        <span className="vv-status-chip" data-tone="review">Human review required for operational decisions</span>
+        {/* CARD A4: canonical chip grammar; the SAFE wording stays verbatim
+            as the chip detail. */}
+        <EvidenceChip state="review-required" detail="Human review required for operational decisions" />
       </section>
     </div>
   );
@@ -252,6 +277,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
+    // The API enforces the same write split server-side.
+    path: "/diary",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+        <DiaryBoardPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     path: "/dashboard",
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff", "executive"]}>
@@ -276,10 +311,36 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/event-architect",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        <EventArchitectPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
+    path: "/event-architect/runs/:runId",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+        <EventArchitectPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     // Public SaaS pricing page. Entry point for prospective venues;
     // CTAs route to registration until the Stripe+onboarding phases ship.
     path: "/pricing",
     element: withSuspense(<PricingPage />),
+  },
+  {
+    // T-483 campaign preview. This is venue collateral and deliberately
+    // remains separate from the T-091 captured-runtime evidence routes.
+    path: "/trades-house",
+    element: <Navigate to="/trades-house/leaflet" replace />,
+  },
+  {
+    path: "/trades-hall-leaflet",
+    element: <Navigate to="/trades-house/leaflet" replace />,
   },
   {
     // Dev smoke route for T-087: proves the production renderer stack imports
@@ -294,12 +355,34 @@ export const router = createBrowserRouter([
     element: withSuspense(<TradesHallVisualPage />),
   },
   {
-    // Internal operator asset status view. Protected because it reflects
-    // capture/package registration state and links into dev runtime routes.
+    // CARD A4 fixture: every evidence-chip state and provenance badge on one
+    // page, for visual regression and manual review of the chip grammar.
+    path: "/dev/evidence-chips",
+    element: withSuspense(<EvidenceChipFixturePage />),
+  },
+  {
+    // Legacy room-level registry remains available during Foundry migration;
+    // the Runtime Foundry dashboard links to it as a named compatibility tool.
     path: "/dev/assets/rooms",
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
         <TradesHallAssetStatusPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
+    path: "/trades-house/leaflet",
+    element: withSuspense(<TradesHouseLeafletPage />),
+  },
+  {
+    path: "/trades-house/discover-your-craft",
+    element: withSuspense(<TradesHouseCraftQuizPage />),
+  },
+  {
+    path: "/dev/capture-intake",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+        <CaptureIntakePage />
       </ProtectedRoute>,
     ),
   },
@@ -309,6 +392,14 @@ export const router = createBrowserRouter([
     // :roomSlug matcher. The R3F viewer is its own lazy chunk behind this
     // page shell; marketing routes never pay for Three.js.
     path: "/venues/:venueSlug/twin",
+    element: withSuspense(<TwinPage />),
+  },
+  {
+    // Memorable public entry to the flagship walkthrough — printable,
+    // sayable on the phone, and the address bar KEEPS this short URL
+    // (TwinPage defaults to the flagship venue when no :venueSlug).
+    // /twin is NOT usable here: that path proxies the tile bucket.
+    path: "/tour",
     element: withSuspense(<TwinPage />),
   },
   {

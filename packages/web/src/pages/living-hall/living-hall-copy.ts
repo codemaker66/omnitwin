@@ -118,7 +118,17 @@ export const LH_ROOMS_TITLE = "Capacities, as published by the venue";
 export const LH_RATES_TITLE = "Wedding hire";
 
 export const LH_CTA_PLANNER_LABEL = "Begin with the room";
+/** When the visitor has placed their table, the planner door speaks to
+ *  what they already own. ("With your table" waits for frame registration —
+ *  the planner cannot yet show the exact placement, so we do not say it.) */
+export const LH_CTA_CONTINUE_LABEL = "Continue with this room";
+/** The Living Hall opens the planner on the room it performs. */
+export const LH_CTA_PLANNER_HREF = "/plan?space=reception-room";
 export const LH_CTA_TEAM_LABEL = "Speak with the events team";
+/** Travels in the enquiry body when the visitor engaged the sandbox —
+ *  facts only: what they did, on which surface. */
+export const LH_ENQUIRY_DRAFT_NOTE =
+  "I have been sketching a table layout in the Reception Room preview on your planning page.";
 
 export const LH_FOOTER_NOTE =
   "Built for Trades Hall of Glasgow by Venviewer — planning on the captured room.";
@@ -151,6 +161,8 @@ export function allLivingHallCopy(): readonly string[] {
     LH_ROOMS_TITLE,
     LH_RATES_TITLE,
     LH_CTA_PLANNER_LABEL,
+    LH_CTA_CONTINUE_LABEL,
+    LH_ENQUIRY_DRAFT_NOTE,
     LH_CTA_TEAM_LABEL,
     LH_FOOTER_NOTE,
   ] as const;

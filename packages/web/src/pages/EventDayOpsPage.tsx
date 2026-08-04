@@ -11,6 +11,7 @@ import {
   enqueueEventDayTaskStatus,
   listPendingEventDayOps,
 } from "../lib/event-day-offline-queue.js";
+import { EventMissionControl } from "../components/mission-control/EventMissionControl.js";
 import "./EventDayOpsPage.css";
 
 type LoadState =
@@ -136,6 +137,7 @@ export function EventDayOpsPage(): ReactElement {
   const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
   const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
   const [ackBusyId, setAckBusyId] = useState<string | null>(null);
+  const [missionActive, setMissionActive] = useState(false);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -332,6 +334,12 @@ export function EventDayOpsPage(): ReactElement {
 
       {notice !== null && <p className="event-day-notice">{notice}</p>}
 
+      <EventMissionControl
+        eventId={readyBoard.event.id}
+        handoffPackId={readyBoard.handoffPack?.pack.id ?? null}
+        onMissionActiveChange={setMissionActive}
+      />
+
       {readyBoard.sourceStatus === "missing_handoff" && (
         <section className="event-day-empty">
           <h2>No handoff pack linked</h2>
@@ -403,7 +411,9 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Task checklist"
-        subtitle="Live status for setup and room flip work."
+        subtitle={missionActive
+          ? "The frozen task projections are controlled by Mission Control above."
+          : "Pre-mission status for setup and room flip work."}
         icon={<CircleDashed aria-hidden="true" />}
       >
         {taskList.length === 0 ? (
@@ -417,17 +427,21 @@ export function EventDayOpsPage(): ReactElement {
                   <h3>{task.title}</h3>
                   <p>{task.detail}</p>
                 </div>
-                <div className="event-day-task-actions" aria-label={`${task.title} status actions`}>
-                  <button type="button" onClick={() => { setTaskStatus(task, "in_progress"); }}>
-                    Start
-                  </button>
-                  <button type="button" onClick={() => { setTaskStatus(task, "done"); }}>
-                    Done
-                  </button>
-                  <button type="button" onClick={() => { setTaskStatus(task, "blocked"); }}>
-                    Block
-                  </button>
-                </div>
+                {missionActive ? (
+                  <p className="event-day-task-authority">Managed by the revisioned mission task above.</p>
+                ) : (
+                  <div className="event-day-task-actions" aria-label={`${task.title} status actions`}>
+                    <button type="button" onClick={() => { setTaskStatus(task, "in_progress"); }}>
+                      Start
+                    </button>
+                    <button type="button" onClick={() => { setTaskStatus(task, "done"); }}>
+                      Done
+                    </button>
+                    <button type="button" onClick={() => { setTaskStatus(task, "blocked"); }}>
+                      Block
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
           </div>

@@ -11,6 +11,7 @@ import {
   runtimeQaRecordAllowsPublicExposure,
   runtimeQaRecordHasSignedRoomTransform,
   runtimeQaRecordSignedTransformArtifactId,
+  runtimeQaRecordSignedTransformArtifactSha256,
   type RuntimeQaRecordRegistrationReport,
   type RuntimeQaRecordV0,
 } from "../runtime-qa-record.js";
@@ -193,6 +194,41 @@ function withChecks(
   };
 }
 
+function publicApprovalChecks(): RuntimeQaRecordV0["checks"] {
+  return receptionRoomQaRecord.checks.map((check) => ({
+    ...check,
+    status: "passed" as const,
+    summary: "Required public QA check passed with reviewed evidence.",
+    evidenceRefs: check.evidenceRefs.length > 0
+      ? check.evidenceRefs
+      : [{
+          label: "Public approval evidence",
+          ref: `reviewed-public-qa/${check.checkKey}`,
+        }],
+  }));
+}
+
+function publiclyApprovedReceptionRoomQaRecord(): RuntimeQaRecordV0 {
+  return RuntimeQaRecordV0Schema.parse({
+    ...receptionRoomQaRecord,
+    assetEvidenceStatus: "human_reviewed",
+    viewTransform: {
+      ...receptionRoomQaRecord.viewTransform,
+      posture: "signed_room_local_transform",
+      signedTransformArtifactId: "t-reception-room-signed",
+      signedTransformArtifactSha256:
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      note: "Signed room-local transform for reviewed runtime alignment.",
+    },
+    checks: publicApprovalChecks(),
+    publicExposure: {
+      decision: "approved_public",
+      reason: "Human review and signed transform evidence are recorded.",
+      requiredBeforeApproval: ["No remaining approval blockers."],
+    },
+  });
+}
+
 function validRegistrationReport(
   overrides: Partial<RuntimeQaRecordRegistrationReport> = {},
 ): RuntimeQaRecordRegistrationReport {
@@ -285,6 +321,36 @@ describe("Runtime QA record", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects an unsigned transform posture whose signed-transform check says passed", () => {
+    const checkIndex = receptionRoomQaRecord.checks.findIndex((check) =>
+      check.checkKey === "signed_transform_artifact"
+    );
+    const checks = receptionRoomQaRecord.checks.map((check, index) =>
+      index === checkIndex
+        ? {
+            ...check,
+            status: "passed" as const,
+            evidenceRefs: [{ label: "Transform claim", ref: "claimed-transform" }],
+          }
+        : check
+    );
+    const result = RuntimeQaRecordV0Schema.safeParse({
+      ...receptionRoomQaRecord,
+      checks,
+    });
+
+    expect(checkIndex).toBeGreaterThanOrEqual(0);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          path: ["checks", checkIndex, "status"],
+          message: "Unsigned runtime QA records cannot pass the signed transform artifact check.",
+        }),
+      ]));
+    }
+  });
+
   it("rejects passed checks without evidence references", () => {
     const checks = receptionRoomQaRecord.checks.map((check) =>
       check.checkKey === "camera_framing" ? { ...check, evidenceRefs: [] } : check,
@@ -313,45 +379,137 @@ describe("Runtime QA record", () => {
   });
 
   it("allows public exposure only after human review and signed transform evidence", () => {
-    const checks = receptionRoomQaRecord.checks.map((check) => {
-      if (check.checkKey === "signed_transform_artifact") {
-        return {
-          ...check,
-          status: "passed",
-          summary: "Signed room-local transform artifact is recorded.",
-          evidenceRefs: [{ label: "Transform artifact", ref: "t-reception-room-signed" }],
-        } satisfies RuntimeQaRecordV0["checks"][number];
+    const signedRecord = publiclyApprovedReceptionRoomQaRecord();
+
+    expect(runtimeQaRecordHasSignedRoomTransform(signedRecord)).toBe(true);
+    expect(runtimeQaRecordSignedTransformArtifactId(signedRecord)).toBe("t-reception-room-signed");
+    expect(runtimeQaRecordSignedTransformArtifactSha256(signedRecord)).toBe(
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    );
+    expect(runtimeQaRecordAllowsPublicExposure(signedRecord)).toBe(true);
+  });
+
+  it.each(["failed", "not_run"] as const)(
+    "rejects approved public exposure when the Spark check passes but load status is %s",
+    (loadStatus) => {
+      const validRecord = publiclyApprovedReceptionRoomQaRecord();
+      const checkIndex = validRecord.checks.findIndex((check) =>
+        check.checkKey === "spark_payload_loads"
+      );
+      const invalidRecord: RuntimeQaRecordV0 = {
+        ...validRecord,
+        sparkLoad: {
+          ...validRecord.sparkLoad,
+          loadStatus,
+        },
+      };
+      const result = RuntimeQaRecordV0Schema.safeParse(invalidRecord);
+
+      expect(checkIndex).toBeGreaterThanOrEqual(0);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            path: ["checks", checkIndex, "status"],
+            message:
+              `The spark_payload_loads check cannot pass when sparkLoad.loadStatus is ${loadStatus}.`,
+          }),
+        ]));
       }
-      if (check.checkKey === "public_exposure_review") {
-        return {
-          ...check,
-          status: "passed",
-          summary: "Public exposure review is recorded.",
-          evidenceRefs: [{ label: "Exposure review", ref: "exposure-review-reception-room" }],
-        } satisfies RuntimeQaRecordV0["checks"][number];
+      expect(runtimeQaRecordAllowsPublicExposure(invalidRecord)).toBe(false);
+    },
+  );
+
+  it.each([
+    "failed",
+    "blocked",
+    "not_checked",
+    "requires_human_review",
+  ] as const)(
+    "rejects approved public exposure when a required QA check is %s",
+    (status) => {
+      const validRecord = publiclyApprovedReceptionRoomQaRecord();
+      const checkIndex = validRecord.checks.findIndex((check) =>
+        check.checkKey === "metric_scale_alignment"
+      );
+      const checks = validRecord.checks.map((check, index) =>
+        index === checkIndex ? { ...check, status } : check
+      );
+      const invalidRecord: RuntimeQaRecordV0 = {
+        ...validRecord,
+        checks,
+      };
+      const result = RuntimeQaRecordV0Schema.safeParse(invalidRecord);
+
+      expect(checkIndex).toBeGreaterThanOrEqual(0);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            path: ["checks", checkIndex, "status"],
+            message:
+              `Public runtime exposure requires every required QA check to pass; metric_scale_alignment is ${status}.`,
+          }),
+        ]));
       }
-      return check;
-    });
-    const signedRecord = RuntimeQaRecordV0Schema.parse({
+      expect(runtimeQaRecordAllowsPublicExposure(invalidRecord)).toBe(false);
+    },
+  );
+
+  it("keeps a signed transform without a digest internal-only", () => {
+    const checks = receptionRoomQaRecord.checks.map((check) =>
+      check.checkKey === "signed_transform_artifact"
+        ? {
+            ...check,
+            status: "passed" as const,
+            evidenceRefs: [{ label: "Transform artifact", ref: "t-reception-room-signed" }],
+          }
+        : check,
+    );
+    const internalSignedRecord = RuntimeQaRecordV0Schema.parse({
       ...receptionRoomQaRecord,
-      assetEvidenceStatus: "human_reviewed",
       viewTransform: {
         ...receptionRoomQaRecord.viewTransform,
         posture: "signed_room_local_transform",
         signedTransformArtifactId: "t-reception-room-signed",
-        note: "Signed room-local transform for reviewed runtime alignment.",
       },
       checks,
-      publicExposure: {
-        decision: "approved_public",
-        reason: "Human review and signed transform evidence are recorded.",
-        requiredBeforeApproval: ["No remaining approval blockers."],
-      },
     });
 
-    expect(runtimeQaRecordHasSignedRoomTransform(signedRecord)).toBe(true);
-    expect(runtimeQaRecordSignedTransformArtifactId(signedRecord)).toBe("t-reception-room-signed");
-    expect(runtimeQaRecordAllowsPublicExposure(signedRecord)).toBe(true);
+    expect(runtimeQaRecordHasSignedRoomTransform(internalSignedRecord)).toBe(true);
+    expect(runtimeQaRecordSignedTransformArtifactSha256(internalSignedRecord)).toBeNull();
+    expect(runtimeQaRecordAllowsPublicExposure(internalSignedRecord)).toBe(false);
+  });
+
+  it("rejects public approval without an exact lowercase transform digest", () => {
+    const validPublicRecord = publiclyApprovedReceptionRoomQaRecord();
+    const publicRecord = {
+      ...validPublicRecord,
+      viewTransform: {
+        ...validPublicRecord.viewTransform,
+        signedTransformArtifactSha256: undefined,
+      },
+    };
+
+    expect(RuntimeQaRecordV0Schema.safeParse(publicRecord).success).toBe(false);
+    expect(RuntimeQaRecordV0Schema.safeParse({
+      ...publicRecord,
+      viewTransform: {
+        ...publicRecord.viewTransform,
+        signedTransformArtifactSha256:
+          "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+      },
+    }).success).toBe(false);
+
+    const malformedTypedRecord: RuntimeQaRecordV0 = {
+      ...validPublicRecord,
+      viewTransform: {
+        ...validPublicRecord.viewTransform,
+        signedTransformArtifactSha256: "not-a-sha256",
+      },
+    };
+    expect(runtimeQaRecordSignedTransformArtifactSha256(malformedTypedRecord)).toBeNull();
+    expect(runtimeQaRecordAllowsPublicExposure(malformedTypedRecord)).toBe(false);
   });
 
   it("accepts a registration request only when the embedded QA record targets the same package and room", () => {

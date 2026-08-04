@@ -981,6 +981,9 @@ async function mockProposalShareRoutes(page: Page): Promise<void> {
 }
 
 async function mockEventDayRoutes(page: Page): Promise<void> {
+  await page.route(`${API}/events/${EVENT_ID}/mission`, (route) => {
+    void route.fulfill({ status: 404, json: { error: "No mission has been started." } });
+  });
   await page.route(`${API}/events/${EVENT_ID}/ops-board`, (route) => {
     void route.fulfill({ json: { data: eventDayBoardFixture() } });
   });
@@ -1310,6 +1313,15 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await page.getByTestId("comment-input").fill("Could we keep the main-door route wider for older guests?");
     await page.getByTestId("comment-submit").click();
     await expect(page.getByRole("alert")).toContainText("We couldn't post your comment");
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    await expect.poll(async () => page.evaluate(
+      () => Math.abs(
+        window.scrollY - (document.documentElement.scrollHeight - window.innerHeight),
+      ) <= 1,
+    )).toBe(true);
 
     await recordFrameAndVisualState(page, problems, "proposal-share-comment-error", "desktop", async () => {
       await page.mouse.move(720, 730);
@@ -1328,6 +1340,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
 
     await page.goto(`/ops/events/${EVENT_ID}`);
     await expect(page.getByRole("heading", { name: "Wilson wedding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start Mission Control" })).toBeVisible();
     await page.getByRole("button", { name: "Acknowledge change" }).click();
     await expect(page.getByText("Change acknowledgement could not be saved.")).toBeVisible();
 

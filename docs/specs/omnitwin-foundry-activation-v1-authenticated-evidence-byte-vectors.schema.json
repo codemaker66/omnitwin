@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnitwin.local/schemas/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.schema.json",
+  "title": "OmniTwin Foundry Activation V1 authenticated-evidence byte vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authority",
+    "semanticReceiptValidation",
+    "databaseAdmission",
+    "privateKeyMaterial",
+    "sourceContract",
+    "positiveVectors",
+    "positiveCanonicalJsonVectors",
+    "negativeCanonicalBase64Vectors",
+    "negativeCanonicalJsonVectors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "omnitwin.foundry.activation-v1-authenticated-evidence-byte-vectors.v1"
+    },
+    "authority": {
+      "const": "none"
+    },
+    "semanticReceiptValidation": {
+      "const": "not_performed"
+    },
+    "databaseAdmission": {
+      "const": "not_performed"
+    },
+    "privateKeyMaterial": {
+      "const": "not_included"
+    },
+    "sourceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "byteLength", "sha256"],
+      "properties": {
+        "path": {
+          "const": "docs/specs/omnitwin-foundry-authenticated-result-evidence-v1.md"
+        },
+        "byteLength": {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        "sha256": {
+          "$ref": "#/$defs/rawSha256"
+        }
+      }
+    },
+    "positiveVectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/positiveVector"
+      }
+    },
+    "positiveCanonicalJsonVectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/positiveCanonicalJsonVector"
+      }
+    },
+    "negativeCanonicalBase64Vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/negativeCanonicalBase64Vector"
+      }
+    },
+    "negativeCanonicalJsonVectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/negativeCanonicalJsonVector"
+      }
+    }
+  },
+  "$defs": {
+    "canonicalDecimal": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)$"
+    },
+    "rawSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "prefixedSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "canonicalBase64": {
+      "type": "string",
+      "minLength": 4,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$"
+    },
+    "positiveVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "evidenceKind",
+        "domain",
+        "payloadType",
+        "keyId",
+        "publicKeySpkiBase64",
+        "publicKeySpkiSha256",
+        "payloadCanonicalJson",
+        "payloadBase64",
+        "payloadByteLength",
+        "payloadSha256",
+        "receiptSha256",
+        "signatureBase64",
+        "envelopeCanonicalJson",
+        "envelopeBase64",
+        "envelopeByteLength",
+        "envelopeRawSha256",
+        "envelopeSha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "evidenceKind": {
+          "enum": [
+            "bootstrap_ceremony",
+            "admin_action",
+            "predecessor_source",
+            "gateway_token_commitment",
+            "runner_terminal",
+            "provider_result",
+            "storage_create",
+            "storage_read",
+            "glb_verifier"
+          ]
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[ -~]{1,128}$"
+        },
+        "publicKeySpkiBase64": {
+          "$ref": "#/$defs/canonicalBase64"
+        },
+        "publicKeySpkiSha256": {
+          "$ref": "#/$defs/prefixedSha256"
+        },
+        "payloadCanonicalJson": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadBase64": {
+          "$ref": "#/$defs/canonicalBase64"
+        },
+        "payloadByteLength": {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        "payloadSha256": {
+          "$ref": "#/$defs/rawSha256"
+        },
+        "receiptSha256": {
+          "$ref": "#/$defs/prefixedSha256"
+        },
+        "signatureBase64": {
+          "allOf": [
+            { "$ref": "#/$defs/canonicalBase64" },
+            { "type": "string", "minLength": 88, "maxLength": 88 }
+          ]
+        },
+        "envelopeCanonicalJson": {
+          "type": "string",
+          "minLength": 1
+        },
+        "envelopeBase64": {
+          "$ref": "#/$defs/canonicalBase64"
+        },
+        "envelopeByteLength": {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        "envelopeRawSha256": {
+          "$ref": "#/$defs/rawSha256"
+        },
+        "envelopeSha256": {
+          "$ref": "#/$defs/prefixedSha256"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            { "$ref": "#/$defs/bootstrapProfile" },
+            { "$ref": "#/$defs/adminProfile" },
+            { "$ref": "#/$defs/predecessorProfile" },
+            { "$ref": "#/$defs/gatewayProfile" },
+            { "$ref": "#/$defs/runnerProfile" },
+            { "$ref": "#/$defs/providerProfile" },
+            { "$ref": "#/$defs/storageCreateProfile" },
+            { "$ref": "#/$defs/storageReadProfile" },
+            { "$ref": "#/$defs/glbVerifierProfile" }
+          ]
+        }
+      ]
+    },
+    "positiveCanonicalJsonVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonicalJson", "rawBase64", "byteLength", "sha256"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "canonicalJson": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rawBase64": {
+          "$ref": "#/$defs/canonicalBase64"
+        },
+        "byteLength": {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        "sha256": {
+          "$ref": "#/$defs/rawSha256"
+        }
+      }
+    },
+    "negativeCanonicalBase64Vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "encoded", "expectedErrorCode"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "encoded": {
+          "type": "string"
+        },
+        "expectedErrorCode": {
+          "const": "FOUNDRY_ACTIVATION_V1_BASE64_INVALID"
+        }
+      }
+    },
+    "negativeCanonicalJsonVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "rawBase64", "maximumByteLength", "expectedErrorCode"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "rawBase64": {
+          "$ref": "#/$defs/canonicalBase64"
+        },
+        "maximumByteLength": {
+          "$ref": "#/$defs/canonicalDecimal"
+        },
+        "expectedErrorCode": {
+          "enum": [
+            "FOUNDRY_ACTIVATION_V1_UTF8_BOM_FORBIDDEN",
+            "FOUNDRY_ACTIVATION_V1_UTF8_INVALID",
+            "FOUNDRY_ACTIVATION_V1_JSON_DUPLICATE_KEY",
+            "FOUNDRY_ACTIVATION_V1_JSON_NUMBER_FORBIDDEN",
+            "FOUNDRY_ACTIVATION_V1_JSON_KEY_NOT_ASCII",
+            "FOUNDRY_ACTIVATION_V1_JSON_STRING_NOT_UNICODE_SCALAR",
+            "FOUNDRY_ACTIVATION_V1_JSON_NOT_CANONICAL"
+          ]
+        }
+      }
+    },
+    "bootstrapProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "bootstrap_ceremony" },
+        "domain": { "const": "omnitwin.foundry.derivative-bootstrap-ceremony.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-bootstrap-ceremony.v1+json" }
+      }
+    },
+    "adminProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "admin_action" },
+        "domain": { "const": "omnitwin.foundry.derivative-admin-action.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-admin-action.v1+json" }
+      }
+    },
+    "predecessorProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "predecessor_source" },
+        "domain": { "const": "omnitwin.foundry.derivative-predecessor-source.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-predecessor-source.v1+json" }
+      }
+    },
+    "gatewayProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "gateway_token_commitment" },
+        "domain": { "const": "omnitwin.foundry.derivative-gateway-token-commitment.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-gateway-token-commitment.v1+json" }
+      }
+    },
+    "runnerProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "runner_terminal" },
+        "domain": { "const": "omnitwin.foundry.derivative-runner-terminal-receipt.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-runner-terminal-receipt.v1+json" }
+      }
+    },
+    "providerProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "provider_result" },
+        "domain": { "const": "omnitwin.foundry.derivative-provider-result-evidence.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-provider-result-evidence.v1+json" }
+      }
+    },
+    "storageCreateProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "storage_create" },
+        "domain": { "const": "omnitwin.foundry.derivative-storage-create.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-storage-create.v1+json" }
+      }
+    },
+    "storageReadProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "storage_read" },
+        "domain": { "const": "omnitwin.foundry.derivative-storage-read.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-storage-read.v1+json" }
+      }
+    },
+    "glbVerifierProfile": {
+      "type": "object",
+      "required": ["evidenceKind", "domain", "payloadType"],
+      "properties": {
+        "evidenceKind": { "const": "glb_verifier" },
+        "domain": { "const": "omnitwin.foundry.derivative-glb-verifier-receipt.v1" },
+        "payloadType": { "const": "application/vnd.omnitwin.foundry.derivative-glb-verifier-receipt.v1+json" }
+      }
+    }
+  }
+}

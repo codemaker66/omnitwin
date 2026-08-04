@@ -242,8 +242,12 @@
   letter-spacing: 0.04em;
 }
 
+/* CARD A1: the runtime evidence chip is load-bearing at every cockpit width.
+   It truncates (title attribute carries the full label) — it never hides.
+   Bounded flex basis keeps the venue/event cells legible beside it. */
+.cockpit-topbar__cell--runtime { flex: 0 1 auto; max-width: 320px; }
 @media (max-width: 1500px) {
-  .cockpit-topbar__cell--runtime { display: none; }
+  .cockpit-topbar__cell--runtime { max-width: 230px; }
 }
 @media (max-width: 1240px) {
   .cockpit-topbar__badge { display: none; }

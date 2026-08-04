@@ -1,0 +1,132 @@
+.trades-house-leaflet-page {
+  --leaflet-navy: #0b1728;
+  --leaflet-navy-light: #15273f;
+  --leaflet-gold: #cda85f;
+  --leaflet-cream: #f4eee1;
+  background: #c7c2b6;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 540px;
+  overflow: hidden;
+}
+
+.trades-house-leaflet-toolbar {
+  align-items: center;
+  background:
+    linear-gradient(90deg, rgba(205, 168, 95, 0.08), transparent 26%, transparent 74%, rgba(205, 168, 95, 0.08)),
+    var(--leaflet-navy);
+  border-bottom: 1px solid rgba(205, 168, 95, 0.42);
+  box-shadow: 0 8px 24px rgba(8, 15, 27, 0.24);
+  color: var(--leaflet-cream);
+  display: grid;
+  gap: 10px 24px;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  min-height: 76px;
+  padding: 10px clamp(16px, 3vw, 42px);
+  position: relative;
+  z-index: 1;
+}
+
+.trades-house-leaflet-title span,
+.trades-house-leaflet-review-note {
+  color: #9aa8be;
+  font-family: Georgia, serif;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.trades-house-leaflet-title h1 {
+  color: #f3ecdc;
+  font-family: Georgia, serif;
+  font-size: clamp(18px, 2vw, 24px);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  margin: 2px 0 0;
+}
+
+.trades-house-leaflet-toolbar nav {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.trades-house-leaflet-action {
+  align-items: center;
+  border: 1px solid rgba(205, 168, 95, 0.5);
+  color: #e6cf9b;
+  display: inline-flex;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 9px 14px;
+  text-decoration: none;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.trades-house-leaflet-action.is-primary {
+  background: var(--leaflet-gold);
+  color: #172338;
+  font-weight: 700;
+}
+
+.trades-house-leaflet-action:hover {
+  background: rgba(205, 168, 95, 0.14);
+  border-color: var(--leaflet-gold);
+  color: #fff5da;
+}
+
+.trades-house-leaflet-action.is-primary:hover {
+  background: #e6cf9b;
+  color: #101d30;
+}
+
+.trades-house-leaflet-action:focus-visible {
+  outline: 2px solid #fff4cf;
+  outline-offset: 3px;
+}
+
+.trades-house-leaflet-review-note {
+  grid-column: 1 / -1;
+  letter-spacing: 0.03em;
+  margin: -6px 0 0;
+}
+
+.trades-house-leaflet-frame {
+  background: #c7c2b6;
+  border: 0;
+  height: 100%;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .trades-house-leaflet-toolbar {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    padding-block: 12px;
+  }
+
+  .trades-house-leaflet-toolbar nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .trades-house-leaflet-review-note {
+    margin-top: -2px;
+  }
+}
+
+@media (max-width: 470px) {
+  .trades-house-leaflet-toolbar nav {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trades-house-leaflet-action {
+    transition: none;
+  }
+}

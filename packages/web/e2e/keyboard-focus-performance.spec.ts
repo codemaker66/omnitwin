@@ -270,22 +270,6 @@ function reviewHistoryFixture(): ReviewHistoryEntry {
   };
 }
 
-function snapshotEnvelopeFixture() {
-  return {
-    id: SNAPSHOT_ID,
-    configurationId: CONFIG_ID,
-    version: 2,
-    payload: {},
-    diagramUrl: null,
-    pdfUrl: null,
-    sourceHash: HASH,
-    createdAt: NOW,
-    createdBy: null,
-    approvedAt: NOW,
-    approvedBy: null,
-  };
-}
-
 function loadoutFixture(): Loadout {
   return {
     id: LOADOUT_ID,
@@ -1157,7 +1141,7 @@ async function assertNoRuntimeBreakage(page: Page, problems: PageProblems): Prom
 
 async function activeElementInside(page: Page, container: Locator): Promise<boolean> {
   const handle = await container.elementHandle();
-  expect(handle).not.toBeNull();
+  if (handle === null) throw new Error("container has no element handle");
   return page.evaluate((node) => {
     const active = document.activeElement;
     return active instanceof Element && node.contains(active);
@@ -1204,6 +1188,11 @@ async function pressTabsInside(page: Page, container: Locator, label: string, co
 async function pressTabsAcrossPage(page: Page, label: string, count: number): Promise<void> {
   for (let index = 0; index < count; index += 1) {
     await page.keyboard.press("Tab");
+    if (await page.evaluate(() => document.activeElement === document.body)) {
+      // Headless Chromium briefly returns focus to the document between the
+      // last and first tabbable controls. Advance once to continue the cycle.
+      await page.keyboard.press("Tab");
+    }
     await expectActiveElementVisible(page, `${label} Tab ${String(index + 1)}`);
   }
 }
@@ -1501,7 +1490,7 @@ test("event-day mobile ops controls are keyboard reachable without horizontal ov
   await recordKeyboardBudget(page, problems, "event-day-mobile-keyboard-traversal", "mobile", async () => {
     await pressTabsAcrossPage(page, "event-day mobile", 14);
     await page.getByRole("button", { name: "Acknowledge change" }).click();
-    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
     await page.getByLabel("Title").fill("Late linen arrival");
     await page.getByLabel("Detail").fill("Supplier is running fifteen minutes late.");
     await page.getByRole("button", { name: "Log issue" }).click();

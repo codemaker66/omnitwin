@@ -418,3 +418,12 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+
+.event-day-task-authority {
+  border-left: 2px solid #8fd8d2;
+  color: #a9bbb6;
+  font-size: 0.78rem;
+  font-weight: 750;
+  margin: 12px 0 0;
+  padding-left: 9px;
+}

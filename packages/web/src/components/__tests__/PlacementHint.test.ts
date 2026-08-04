@@ -33,12 +33,12 @@ describe("PlacementHint", () => {
 
   it("has dismiss functionality with localStorage persistence", () => {
     const code = readSource();
-    expect(code).toContain("localStorage");
+    expect(code).toContain("window.localStorage");
     expect(code).toContain("dismissed");
     expect(code).toContain("handleDismiss");
   });
 
-  it("keeps desktop keyboard shortcuts; mobile uses the planner dock instead", () => {
+  it("keeps desktop placement shortcuts; mobile uses the planner dock instead", () => {
     const code = readSource();
     expect(code).toContain("Click");
     expect(code).toContain("Rotate");
@@ -46,16 +46,21 @@ describe("PlacementHint", () => {
     expect(code).toContain("isTouch || isNarrow");
   });
 
-  it("has enter/exit animations", () => {
+  it("uses the shared movable, minimizable floating widget frame", () => {
     const code = readSource();
-    expect(code).toContain("omni-hint-in");
-    expect(code).toContain("omni-hint-out");
+    expect(code).toContain("FloatingWidgetFrame");
+    expect(code).toContain("placement-coach");
+    expect(code).toContain("placement-coach-widget__body");
+    expect(code).toContain("AVOID_SELECTORS");
+    expect(code).toContain("compactLabel=\"Place\"");
   });
 
-  it("shows invalid placement reason with shake animation", () => {
+  it("shows invalid placement reason without hot-path filter animation", () => {
     const code = readSource();
-    expect(code).toContain("omni-hint-shake");
     expect(code).toContain("shownReason");
+    expect(code).not.toContain("filter:");
+    expect(code).not.toContain("backdropFilter");
+    expect(code).not.toContain("WebkitBackdropFilter");
   });
 
   it("auto-clears reason after timeout", () => {
@@ -65,8 +70,18 @@ describe("PlacementHint", () => {
     expect(code).toContain("reasonTimerRef");
   });
 
-  it("returns null when not mounted (no unnecessary DOM)", () => {
+  it("names the active item and reports snap mode", () => {
     const code = readSource();
-    expect(code).toContain("if (!mounted) return null");
+    expect(code).toContain("getCatalogueItem");
+    expect(code).toContain("selectedItem?.name");
+    expect(code).toContain("snapEnabled");
+    expect(code).toContain("Grid snap is on");
+    expect(code).toContain("Free placement is on");
+  });
+
+  it("returns null when inactive or dismissed reason-free", () => {
+    const code = readSource();
+    expect(code).toContain("if (suppressedForViewport || !isActive) return null");
+    expect(code).toContain("if (!showShortcutCoach && shownReason === null) return null");
   });
 });

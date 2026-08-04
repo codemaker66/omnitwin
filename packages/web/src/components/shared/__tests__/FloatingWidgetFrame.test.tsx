@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { FloatingWidgetFrame } from "../FloatingWidgetFrame.js";
 
 interface TransformPosition {
@@ -19,6 +19,22 @@ afterEach(() => {
 });
 
 describe("FloatingWidgetFrame", () => {
+  it("can expose a test id on the actual movable frame", () => {
+    const { container } = render(
+      <FloatingWidgetFrame
+        id="identified-overlay"
+        title="Identified overlay"
+        testId="identified-floating-widget"
+        defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 20 }}
+      >
+        <p>Panel content</p>
+      </FloatingWidgetFrame>,
+    );
+
+    const root = container.querySelector<HTMLElement>("[data-floating-widget-id='identified-overlay']");
+    expect(root?.getAttribute("data-testid")).toBe("identified-floating-widget");
+  });
+
   it("minimizes and restores without unmounting widget content", () => {
     const { container } = render(
       <FloatingWidgetFrame
@@ -39,6 +55,44 @@ describe("FloatingWidgetFrame", () => {
     expect(screen.getByText("Overlays")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
+    expect(body?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("auto-compacts without overwriting the saved minimized preference", () => {
+    const { container, rerender } = render(
+      <FloatingWidgetFrame
+        id="auto-compact-overlay"
+        title="Layout intelligence"
+        compactLabel="Grade B"
+        autoCompact
+        defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 20 }}
+      >
+        <p>Panel content</p>
+      </FloatingWidgetFrame>,
+    );
+
+    const root = container.querySelector<HTMLElement>("[data-floating-widget-id='auto-compact-overlay']");
+    const body = container.querySelector<HTMLElement>(".vv-floating-widget__body");
+
+    expect(root?.getAttribute("data-auto-compact")).toBe("true");
+    expect(root?.getAttribute("data-minimized")).toBe("false");
+    expect(body?.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByText("Grade B")).toBeTruthy();
+
+    rerender(
+      <FloatingWidgetFrame
+        id="auto-compact-overlay"
+        title="Layout intelligence"
+        compactLabel="Grade B"
+        autoCompact={false}
+        defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 20 }}
+      >
+        <p>Panel content</p>
+      </FloatingWidgetFrame>,
+    );
+
+    expect(root?.getAttribute("data-auto-compact")).toBe("false");
+    expect(root?.getAttribute("data-minimized")).toBe("false");
     expect(body?.hasAttribute("hidden")).toBe(false);
   });
 
@@ -199,6 +253,138 @@ describe("FloatingWidgetFrame", () => {
       const stored = window.localStorage.getItem("venviewer:floating-widget:avoid-overlay:v2");
       expect(stored).not.toBeNull();
       expect(stored).toContain("\"left\":292");
+    } finally {
+      if (originalDescriptor !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", originalDescriptor);
+      }
+    }
+  });
+
+  it("reclamps when late content growth would collide with reserved chrome", async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "getBoundingClientRect");
+    const originalResizeObserver = window.ResizeObserver;
+    let rootHeight = 48;
+    const resizeCallbackBox: { current?: ResizeObserverCallback } = {};
+    const callbackObserver: ResizeObserver = {
+      disconnect: () => {},
+      observe: () => {},
+      unobserve: () => {},
+    };
+
+    class TestResizeObserver implements ResizeObserver {
+      public constructor(callback: ResizeObserverCallback) {
+        resizeCallbackBox.current = callback;
+      }
+
+      public disconnect(): void {}
+      public observe(_target: Element): void {}
+      public unobserve(_target: Element): void {}
+    }
+
+    Object.defineProperty(window, "ResizeObserver", {
+      configurable: true,
+      writable: true,
+      value: TestResizeObserver,
+    });
+
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function getBoundingClientRect(this: HTMLElement): DOMRect {
+        if (this.dataset["testid"] === "floating-surface") {
+          return new DOMRect(0, 0, 320, 240);
+        }
+        if (this.dataset["testid"] === "reserved-bottom-chrome") {
+          return new DOMRect(0, 140, 320, 100);
+        }
+        if (this.dataset["floatingWidgetId"] === "resizing-overlay") {
+          return new DOMRect(0, 0, 180, rootHeight);
+        }
+        return new DOMRect(0, 0, 0, 0);
+      },
+    });
+
+    try {
+      const { container } = render(
+        <div data-testid="floating-surface">
+          <div data-testid="reserved-bottom-chrome">Command deck</div>
+          <FloatingWidgetFrame
+            id="resizing-overlay"
+            title="Growing overlay"
+            defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 24, offsetY: 80 }}
+            avoidSelectors={["[data-testid='reserved-bottom-chrome']"]}
+            avoidPaddingPx={8}
+          >
+            <p>Late content</p>
+          </FloatingWidgetFrame>
+        </div>,
+      );
+
+      const root = container.querySelector<HTMLElement>("[data-floating-widget-id='resizing-overlay']");
+      if (root === null) throw new Error("Floating widget root was not rendered.");
+
+      await waitFor(() => {
+        expect(transformPosition(root).top).toBe(80);
+      });
+
+      rootHeight = 112;
+      const callback = resizeCallbackBox.current;
+      if (callback === undefined) {
+        throw new Error("ResizeObserver was not installed.");
+      }
+      act(() => {
+        callback([], callbackObserver);
+      });
+
+      await waitFor(() => {
+        expect(transformPosition(root).top).toBe(12);
+      });
+    } finally {
+      if (originalDescriptor !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", originalDescriptor);
+      }
+      Object.defineProperty(window, "ResizeObserver", {
+        configurable: true,
+        writable: true,
+        value: originalResizeObserver,
+      });
+    }
+  });
+
+  it("clamps fixed widgets to a transformed containing block", async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "getBoundingClientRect");
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function getBoundingClientRect(this: HTMLElement): DOMRect {
+        if (this.dataset["testid"] === "transformed-stage") {
+          return new DOMRect(92, 64, 600, 400);
+        }
+        if (this.dataset["floatingWidgetId"] === "stage-fixed-overlay") {
+          return new DOMRect(0, 0, 120, 80);
+        }
+        return new DOMRect(0, 0, 0, 0);
+      },
+    });
+
+    try {
+      const { container } = render(
+        <div data-testid="transformed-stage" style={{ transform: "translateZ(0)" }}>
+          <FloatingWidgetFrame
+            id="stage-fixed-overlay"
+            title="Stage scoped"
+            strategy="fixed"
+            defaultPlacement={{ type: "anchor", anchor: "top-left", offsetX: 520, offsetY: 24 }}
+          >
+            <p>Scoped to stage</p>
+          </FloatingWidgetFrame>
+        </div>,
+      );
+
+      const root = container.querySelector<HTMLElement>("[data-floating-widget-id='stage-fixed-overlay']");
+      if (root === null) throw new Error("Floating widget root was not rendered.");
+
+      await waitFor(() => {
+        expect(transformPosition(root)).toEqual({ left: 472, top: 24 });
+      });
     } finally {
       if (originalDescriptor !== undefined) {
         Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", originalDescriptor);

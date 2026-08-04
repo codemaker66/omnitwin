@@ -62,4 +62,28 @@ describe("buildManifest", () => {
     expect(m.lods).toEqual([512, 4096, 8192]);
     expect(() => TwinManifestSchema.parse(m)).not.toThrow();
   });
+
+  it("keeps lower-ground scans off the ground-floor auto-navigation graph", () => {
+    const m = buildManifest(
+      {
+        "0": {
+          rotation: [1, 0, 0, 0],
+          translation: [0, 0, 1.5],
+        },
+        "1": {
+          rotation: [1, 0, 0, 0],
+          translation: [0.5, 0, -2.13],
+        },
+      },
+      {
+        venueSlug: "trades-hall",
+        name: "Trades Hall Glasgow",
+        tier: "ops-grade-2cm",
+        generatedAt: "2026-07-02T12:00:00.000Z",
+      },
+    );
+
+    expect(m.nodes.map(({ floor }) => floor)).toEqual([0, -1]);
+    expect(m.edges).toEqual([]);
+  });
 });

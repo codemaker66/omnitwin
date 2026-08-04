@@ -1,0 +1,502 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://venviewer.com/schemas/omnitwin-foundry-ingest-manifest-v0.schema.json",
+  "title": "OmniTwin Foundry universal ingest manifest v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "createdAt",
+    "createdBy",
+    "sourceRoots",
+    "coordinateFrames",
+    "transforms",
+    "assets",
+    "provenanceEdges",
+    "generatedRegions",
+    "legalReviewState",
+    "sourceMutationPermitted"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "omnitwin.foundry.ingest-manifest.v0"},
+    "projectId": {"$ref": "#/$defs/key"},
+    "createdAt": {"$ref": "#/$defs/utcInstant"},
+    "createdBy": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S"},
+    "sourceRoots": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/sourceRoot"}},
+    "coordinateFrames": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/frame"}},
+    "transforms": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/transform"}},
+    "assets": {"type": "array", "minItems": 1, "maxItems": 100000, "items": {"$ref": "#/$defs/asset"}},
+    "provenanceEdges": {"type": "array", "maxItems": 200000, "items": {"$ref": "#/$defs/provenanceEdge"}},
+    "generatedRegions": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/generatedRegion"}},
+    "legalReviewState": {"enum": ["not_reviewed", "requires_review", "approved", "blocked"]},
+    "sourceMutationPermitted": {"const": false}
+  },
+  "$defs": {
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "utcInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(?!\\s)(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*[<>:\"|?*])(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*(?:^|/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\\.[^/]*)?(?:/|$))(?!.*[. ](?:/|$))(?!.*/$)[^\\u0000-\\u001F\\u007F-\\u009F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]+$"
+    },
+    "sourceRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "displayName", "locationRedacted", "caseSensitivity", "readOnly"],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "kind": {"enum": ["local_directory", "removable_media", "object_prefix", "vendor_workspace"]},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 160},
+        "locationRedacted": {"type": "string", "minLength": 1, "maxLength": 500},
+        "caseSensitivity": {"enum": ["sensitive", "insensitive"]},
+        "readOnly": {"const": true}
+      }
+    },
+    "crs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority",
+        "code",
+        "axisOrder",
+        "horizontalDatum",
+        "verticalDatum",
+        "coordinateEpoch"
+      ],
+      "properties": {
+        "authority": {"type": "string", "minLength": 1, "maxLength": 32, "pattern": "\\S"},
+        "code": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
+        "axisOrder": {
+          "type": "string",
+          "enum": [
+            "longitude_latitude",
+            "latitude_longitude",
+            "easting_northing",
+            "northing_easting"
+          ]
+        },
+        "horizontalDatum": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S"},
+        "verticalDatum": {
+          "anyOf": [
+            {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S"},
+            {"type": "null"}
+          ]
+        },
+        "coordinateEpoch": {
+          "anyOf": [
+            {"type": "number", "minimum": 1800, "maximum": 2200},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "units", "handedness", "upAxis", "authority", "provenanceAssetIds", "crs"],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "kind": {"enum": ["venue_control", "room_local", "sensor", "camera", "lidar", "geodetic", "projected", "arbitrary"]},
+        "units": {"enum": ["meters", "millimeters", "centimeters", "feet", "degrees", "unitless"]},
+        "handedness": {"enum": ["right", "left", "unknown"]},
+        "upAxis": {"enum": ["x", "y", "z", "unknown"]},
+        "authority": {"enum": ["measured", "registered", "inferred", "vendor_declared", "unknown"]},
+        "provenanceAssetIds": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/key"}},
+        "crs": {"anyOf": [{"$ref": "#/$defs/crs"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"authority": {"const": "measured"}}, "required": ["authority"]},
+          "then": {
+            "properties": {
+              "units": {"enum": ["meters", "millimeters", "centimeters", "feet", "degrees"]},
+              "handedness": {"enum": ["right", "left"]},
+              "upAxis": {"enum": ["x", "y", "z"]},
+              "provenanceAssetIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {"$ref": "#/$defs/key"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "geodetic"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "units": {"const": "degrees"},
+              "crs": {
+                "allOf": [
+                  {"$ref": "#/$defs/crs"},
+                  {"type": "object", "properties": {"axisOrder": {"enum": ["longitude_latitude", "latitude_longitude"]}}}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "projected"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "units": {"enum": ["meters", "millimeters", "centimeters", "feet"]},
+              "crs": {
+                "allOf": [
+                  {"$ref": "#/$defs/crs"},
+                  {"type": "object", "properties": {"axisOrder": {"enum": ["easting_northing", "northing_easting"]}}}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {"enum": ["venue_control", "room_local", "sensor", "camera", "lidar", "arbitrary"]}
+            },
+            "required": ["kind"]
+          },
+          "then": {"properties": {"crs": {"type": "null"}}}
+        }
+      ]
+    },
+    "inspectionValue": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "unknown"]
+    },
+    "evidenceKind": {
+      "type": "string",
+      "enum": [
+        "transform_artifact",
+        "residual_report",
+        "projection_operation",
+        "quality_report",
+        "reviewer_attestation",
+        "scene_authority_map",
+        "release_manifest",
+        "mask",
+        "provenance_report",
+        "fixed_view",
+        "calibration_record",
+        "other"
+      ]
+    },
+    "assetInspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "geometryValue",
+        "appearanceValue",
+        "calibrationValue",
+        "scaleValue",
+        "metadataKeys",
+        "decisiveNextTest"
+      ],
+      "properties": {
+        "geometryValue": {"$ref": "#/$defs/inspectionValue"},
+        "appearanceValue": {"$ref": "#/$defs/inspectionValue"},
+        "calibrationValue": {"$ref": "#/$defs/inspectionValue"},
+        "scaleValue": {"$ref": "#/$defs/inspectionValue"},
+        "metadataKeys": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S"}
+        },
+        "decisiveNextTest": {"type": "string", "minLength": 1, "maxLength": 1000, "pattern": "\\S"}
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis", "commercialUse", "modelTrainingUse", "redistribution", "termsReviewedAt", "termsReference", "restrictions"],
+      "properties": {
+        "basis": {"enum": ["customer_owned", "explicit_licence", "vendor_export_terms", "written_permission", "public_domain", "unknown"]},
+        "commercialUse": {"enum": ["allowed", "restricted", "prohibited", "unknown"]},
+        "modelTrainingUse": {"enum": ["allowed", "requires_review", "prohibited", "unknown"]},
+        "redistribution": {"enum": ["allowed", "restricted", "prohibited", "unknown"]},
+        "termsReviewedAt": {"anyOf": [{"$ref": "#/$defs/utcInstant"}, {"type": "null"}]},
+        "termsReference": {
+          "anyOf": [
+            {"type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]://"},
+            {"type": "null"}
+          ]
+        },
+        "restrictions": {"type": "array", "maxItems": 50, "items": {"type": "string", "minLength": 1, "maxLength": 500}}
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceRootId",
+        "relativePath",
+        "inputType",
+        "mediaType",
+        "sizeBytes",
+        "sha256",
+        "immutable",
+        "captureState",
+        "accessState",
+        "capturedAt",
+        "coordinateFrameId",
+        "calibrationAssetIds",
+        "parentAssetIds",
+        "rights",
+        "provenanceClass",
+        "evidenceKinds",
+        "inspection",
+        "notes"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "sourceRootId": {"$ref": "#/$defs/key"},
+        "relativePath": {"$ref": "#/$defs/relativePath"},
+        "inputType": {
+          "enum": [
+            "matterport_e57",
+            "matterpak_bundle",
+            "generic_e57",
+            "las_laz",
+            "xyz_point_cloud",
+            "ply_point_cloud",
+            "matterport_panorama",
+            "dslr_image",
+            "generic_image",
+            "panorama_360",
+            "phone_image",
+            "drone_media",
+            "video",
+            "rgbd",
+            "sensor_log_mcap",
+            "imu",
+            "gnss_rtk",
+            "xgrids_xbin",
+            "lcc",
+            "lcc2",
+            "spz",
+            "sog",
+            "gaussian_ply",
+            "obj",
+            "fbx",
+            "glb_gltf",
+            "floor_plan",
+            "cad_bim",
+            "openusd",
+            "calibration_bundle",
+            "trajectory",
+            "control_network",
+            "colmap_database",
+            "colmap_sparse_model",
+            "manual_evidence",
+            "evidence_record"
+          ]
+        },
+        "mediaType": {"type": "string", "minLength": 1, "maxLength": 160},
+        "sizeBytes": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "immutable": {"const": true},
+        "captureState": {"enum": ["raw_capture", "official_export", "derived", "reference"]},
+        "accessState": {"enum": ["direct", "official_export", "official_api", "metadata_only", "blocked_technical", "blocked_legal", "unknown"]},
+        "capturedAt": {"anyOf": [{"$ref": "#/$defs/utcInstant"}, {"type": "null"}]},
+        "coordinateFrameId": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "calibrationAssetIds": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/key"}},
+        "parentAssetIds": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/key"}},
+        "rights": {"$ref": "#/$defs/rights"},
+        "provenanceClass": {"enum": ["captured", "enhanced_captured", "generated_cinematic", "concept_imagination"]},
+        "evidenceKinds": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/evidenceKind"}
+        },
+        "inspection": {"$ref": "#/$defs/assetInspection"},
+        "notes": {"type": "array", "maxItems": 50, "items": {"type": "string", "minLength": 1, "maxLength": 500}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"captureState": {"const": "raw_capture"}}, "required": ["captureState"]},
+          "then": {
+            "properties": {
+              "provenanceClass": {"const": "captured"},
+              "accessState": {"const": "direct"},
+              "parentAssetIds": {
+                "type": "array",
+                "maxItems": 0,
+                "items": {"$ref": "#/$defs/key"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"provenanceClass": {"enum": ["generated_cinematic", "concept_imagination"]}}, "required": ["provenanceClass"]},
+          "then": {
+            "properties": {
+              "captureState": {"const": "derived"},
+              "parentAssetIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {"$ref": "#/$defs/key"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"captureState": {"const": "derived"}}, "required": ["captureState"]},
+          "then": {
+            "properties": {
+              "parentAssetIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {"$ref": "#/$defs/key"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"inputType": {"const": "evidence_record"}}, "required": ["inputType"]},
+          "then": {
+            "properties": {
+              "evidenceKinds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "uniqueItems": true,
+                "items": {"$ref": "#/$defs/evidenceKind"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "matrix4d": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {"type": "number"}
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceFrameId",
+        "targetFrameId",
+        "operationKind",
+        "matrix",
+        "state",
+        "transformArtifactAssetId",
+        "residualReportAssetId",
+        "projectionArtifactAssetId",
+        "reviewerAttestationAssetId",
+        "provenanceAssetIds"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "sourceFrameId": {"$ref": "#/$defs/key"},
+        "targetFrameId": {"$ref": "#/$defs/key"},
+        "operationKind": {"enum": ["affine_similarity", "crs_projection"]},
+        "matrix": {"anyOf": [{"$ref": "#/$defs/matrix4d"}, {"type": "null"}]},
+        "state": {"enum": ["proposed", "reviewed", "rejected"]},
+        "transformArtifactAssetId": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "residualReportAssetId": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "projectionArtifactAssetId": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "reviewerAttestationAssetId": {"anyOf": [{"$ref": "#/$defs/key"}, {"type": "null"}]},
+        "provenanceAssetIds": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/key"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"state": {"const": "reviewed"}}, "required": ["state"]},
+          "then": {
+            "properties": {
+              "transformArtifactAssetId": {"$ref": "#/$defs/key"},
+              "residualReportAssetId": {"$ref": "#/$defs/key"},
+              "reviewerAttestationAssetId": {"$ref": "#/$defs/key"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"operationKind": {"const": "affine_similarity"}}, "required": ["operationKind"]},
+          "then": {
+            "properties": {
+              "matrix": {"$ref": "#/$defs/matrix4d"},
+              "projectionArtifactAssetId": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"operationKind": {"const": "crs_projection"}}, "required": ["operationKind"]},
+          "then": {
+            "properties": {
+              "matrix": {"type": "null"},
+              "projectionArtifactAssetId": {"$ref": "#/$defs/key"}
+            }
+          }
+        }
+      ]
+    },
+    "provenanceEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "operationId", "inputAssetIds", "outputAssetId", "operationVersion", "environmentDigest", "createdAt"],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "operationId": {"$ref": "#/$defs/key"},
+        "inputAssetIds": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {"$ref": "#/$defs/key"}},
+        "outputAssetId": {"$ref": "#/$defs/key"},
+        "operationVersion": {"type": "string", "minLength": 1, "maxLength": 160},
+        "environmentDigest": {"$ref": "#/$defs/sha256"},
+        "createdAt": {"$ref": "#/$defs/utcInstant"}
+      }
+    },
+    "generatedRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputAssetId",
+        "sourceAssetIds",
+        "maskAssetId",
+        "provenanceClass",
+        "modelName",
+        "modelVersion",
+        "checkpointSha256",
+        "promptOrConditionDigest",
+        "confidence",
+        "exportRestrictions",
+        "truthModeDisclosure"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/key"},
+        "outputAssetId": {"$ref": "#/$defs/key"},
+        "sourceAssetIds": {"type": "array", "minItems": 1, "maxItems": 1000, "items": {"$ref": "#/$defs/key"}},
+        "maskAssetId": {"$ref": "#/$defs/key"},
+        "provenanceClass": {"enum": ["generated_cinematic", "concept_imagination"]},
+        "modelName": {"type": "string", "minLength": 1, "maxLength": 160},
+        "modelVersion": {"type": "string", "minLength": 1, "maxLength": 160},
+        "checkpointSha256": {"$ref": "#/$defs/sha256"},
+        "promptOrConditionDigest": {"$ref": "#/$defs/sha256"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "exportRestrictions": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"type": "string", "minLength": 1, "maxLength": 500}},
+        "truthModeDisclosure": {"type": "string", "minLength": 20, "maxLength": 1000}
+      }
+    }
+  }
+}

@@ -135,6 +135,7 @@ export function SelectionSystem(): null {
   const rightClickMoved = useRef(false);
   const suppressNextContextMenu = useRef(false);
   const marqueeRafId = useRef<number>(0);
+  const touchTapCandidate = useRef(false);
   // floorCache removed — drag uses math plane intersection
 
   // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
@@ -242,7 +243,39 @@ export function SelectionSystem(): null {
     // Cache canvas rect — refreshed on pointer down (covers resize between interactions)
     let cachedRect = canvasEl.getBoundingClientRect();
 
+    function interactionTargetAt(clientX: number, clientY: number): { readonly itemId: string | null; readonly wallKey: WallKey | null } {
+      cachedRect = canvasEl.getBoundingClientRect();
+      const ndcX = ((clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
+      const ndcY = -((clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
+      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
+
+      const allIntersects = raycaster.intersectObjects(scene.children, true);
+      const found: { itemId: string | null; wallKey: WallKey | null } = { itemId: null, wallKey: null };
+      for (const inter of allIntersects) {
+        if (found.itemId === null) {
+          found.itemId = findFurnitureItemId(inter.object);
+          if (found.itemId !== null) break;
+        }
+        if (found.wallKey === null) {
+          const wk = findWallKey(inter.object);
+          if (wk !== null) {
+            found.wallKey = wk;
+            break;
+          }
+        }
+      }
+      return found;
+    }
+
+    function selectionToolsAreIdle(): boolean {
+      return !useMarkupStore.getState().active &&
+        useCatalogueStore.getState().selectedItemId === null &&
+        !useMeasurementStore.getState().active &&
+        !useGuidelineStore.getState().active;
+    }
+
     function onPointerDown(event: PointerEvent): void {
+      touchTapCandidate.current = false;
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
         rightClickMoved.current = false;
@@ -259,37 +292,22 @@ export function SelectionSystem(): null {
       dragStartScreen.current = { x: event.clientX, y: event.clientY };
       isDragging.current = false;
       isMarquee.current = false;
+      dragItemId.current = null;
+      wallClickKey.current = null;
+
+      // Mobile one-finger drag is the camera gesture. Do not start the
+      // selection/marquee pipeline until pointer-up proves this was a tap.
+      // This keeps orbiting snappy and preserves tap-to-select.
+      if (event.pointerType === "touch" && event.isPrimary && selectionToolsAreIdle()) {
+        touchTapCandidate.current = true;
+        return;
+      }
 
       // Refresh cached rect at interaction start (handles canvas resize)
       cachedRect = canvasEl.getBoundingClientRect();
 
       // Raycast to find if we clicked on a placed furniture item
-      const ndcX = ((event.clientX - cachedRect.left) / cachedRect.width) * 2 - 1;
-      const ndcY = -((event.clientY - cachedRect.top) / cachedRect.height) * 2 + 1;
-      raycaster.setFromCamera(_ndc.set(ndcX, ndcY), camera);
-
-      // Single raycast — process hits in distance order to find furniture or wall.
-      // Holds the in-progress results in an object so TS doesn't narrow the
-      // comparisons via control-flow analysis after the initial null assignment
-      // (object property access escapes literal narrowing in a way that bare
-      // `let` bindings do not).
-      const allIntersects = raycaster.intersectObjects(scene.children, true);
-      const found: { itemId: string | null; wallKey: WallKey | null } = { itemId: null, wallKey: null };
-      for (const inter of allIntersects) {
-        // Check furniture first (higher priority)
-        if (found.itemId === null) {
-          found.itemId = findFurnitureItemId(inter.object);
-          if (found.itemId !== null) break; // furniture found, stop
-        }
-        // Check wall (only if no furniture found yet)
-        if (found.wallKey === null) {
-          const wk = findWallKey(inter.object);
-          if (wk !== null) {
-            found.wallKey = wk;
-            break; // wall found, stop
-          }
-        }
-      }
+      const found = interactionTargetAt(event.clientX, event.clientY);
       dragItemId.current = found.itemId;
       wallClickKey.current = found.wallKey;
       dragGrabOffset.current = { x: 0, z: 0 };
@@ -388,6 +406,19 @@ export function SelectionSystem(): null {
 
     function onPointerMove(event: PointerEvent): void {
       if (useMarkupStore.getState().active) return;
+      if (event.pointerType === "touch" && touchTapCandidate.current) {
+        if (
+          screenDistance(
+            dragStartScreen.current.x,
+            dragStartScreen.current.y,
+            event.clientX,
+            event.clientY,
+          ) > DRAG_THRESHOLD_PX
+        ) {
+          touchTapCandidate.current = false;
+        }
+        return;
+      }
       if ((event.buttons & 2) !== 0 && rightClickStart.current !== null) {
         rightClickMoved.current =
           rightClickMoved.current ||
@@ -566,10 +597,25 @@ export function SelectionSystem(): null {
     function onPointerUp(event: PointerEvent): void {
       if (useMarkupStore.getState().active) return;
       if (handleRightButtonRelease(event)) return;
-      if (event.button !== 0) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       // Don't interfere with measurement or guideline tools
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
+
+      if (event.pointerType === "touch" && touchTapCandidate.current) {
+        touchTapCandidate.current = false;
+        const found = interactionTargetAt(event.clientX, event.clientY);
+        if (found.itemId !== null) {
+          useSelectionStore.getState().select(found.itemId);
+        } else if (found.wallKey !== null) {
+          useVisibilityStore.getState().toggleWall(found.wallKey);
+        } else {
+          useSelectionStore.getState().clearSelection();
+        }
+        invalidateRef.current();
+        return;
+      }
+      touchTapCandidate.current = false;
+      if (event.button !== 0) return;
 
       if (isMarquee.current) {
         // Cancel any pending rAF from marquee drag
@@ -673,6 +719,7 @@ export function SelectionSystem(): null {
 
     return () => {
       cancelAnimationFrame(marqueeRafId.current);
+      touchTapCandidate.current = false;
       canvasEl.removeEventListener("pointerdown", onPointerDown);
       canvasEl.removeEventListener("mousedown", onMouseDown);
       canvasEl.removeEventListener("pointermove", onPointerMove);

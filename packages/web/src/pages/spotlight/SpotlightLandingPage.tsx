@@ -132,7 +132,7 @@ export function SpotlightLandingPage(): ReactElement {
         </Link>
       </div>
 
-      <section
+      <main
         ref={sectionRef}
         className={`sp-hero${reducedMotion ? " is-static" : ""}`}
         aria-label={SPOTLIGHT_META_TITLE}
@@ -168,7 +168,7 @@ export function SpotlightLandingPage(): ReactElement {
             {SPOTLIGHT_CTA_LABEL} <span aria-hidden>→</span>
           </Link>
         </div>
-      </section>
+      </main>
     </div>
   );
 }

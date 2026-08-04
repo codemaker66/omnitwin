@@ -9,6 +9,7 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import { generatePlacedId } from "../lib/placement.js";
 import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
 import {
@@ -27,6 +28,11 @@ import type {
   ObjectFieldPatch,
 } from "../lib/editor-history.js";
 import { useSelectionStore } from "./selection-store.js";
+import { useActionLogStore } from "./action-log-store.js";
+import { createActionEmitter } from "../lib/action-log.js";
+import { plannerActionContext } from "./planner-action-log.js";
+import { flushActionLog } from "./action-log-sync.js";
+import { postActionBatch } from "../api/action-log.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -82,9 +88,12 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
   const editorObject: EditorObject = {
     id: p.id,
     assetDefinitionId: p.assetDefinitionId,
-    positionX: parseFloat(p.positionX),
+    // Wire/DB is the real-metre source of truth; the editor store and R3F
+    // scene work in render space (× RENDER_SCALE). Convert X/Z on the way in;
+    // height (Y) is never render-scaled.
+    positionX: toRenderSpace(parseFloat(p.positionX)),
     positionY: parseFloat(p.positionY),
-    positionZ: parseFloat(p.positionZ),
+    positionZ: toRenderSpace(parseFloat(p.positionZ)),
     rotationX: parseFloat(p.rotationX),
     rotationY: parseFloat(p.rotationY),
     rotationZ: parseFloat(p.rotationZ),
@@ -112,9 +121,12 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
   return {
     id: o.id.startsWith("local-") ? undefined : o.id,
     assetDefinitionId: catalogueItem?.id ?? o.assetDefinitionId,
-    positionX: o.positionX,
+    // Store/scene is render space; the DB is the real-metre source of truth
+    // (space polygon, widthM, and every server consumer are real metres).
+    // Convert X/Z on the way out; height (Y) is never render-scaled.
+    positionX: toRealWorld(o.positionX),
     positionY: o.positionY,
-    positionZ: o.positionZ,
+    positionZ: toRealWorld(o.positionZ),
     rotationX: o.rotationX,
     rotationY: o.rotationY,
     rotationZ: o.rotationZ,
@@ -257,6 +269,32 @@ const EDITOR_HISTORY_IDS: HistoryIdAdapter = {
   isLocalId: (id) => id.startsWith("local-"),
 };
 
+// G4 Slice 1: every sealed gesture ALSO lands in the append-only action log
+// (fire-and-forget — the undo timeline itself is unchanged). Actor/surface
+// stamping is shared with the direct-surface seams via plannerActionContext.
+const actionEmitter = createActionEmitter<EditorObject>({
+  emit: (action) => { useActionLogStore.getState().append(action); },
+  context: plannerActionContext,
+});
+
+/**
+ * The action-log config boundary: gesture seqs restart at 1 on a fresh
+ * (empty) timeline, so the emitter's seal cursor must reset together with
+ * the log's configuration scope. One entry point keeps the two in lockstep
+ * (loadConfiguration uses it; store-level tests mimic the boundary with it).
+ */
+export function beginActionLogForConfig(configId: string): void {
+  actionEmitter.reset();
+  useActionLogStore.getState().beginLog(configId);
+}
+
+/** Fire-and-forget flush of the log's unsent tail to the API (G4 slice 3).
+ *  flushActionLog snapshots the store synchronously, swallows failures, and
+ *  drops late acks after a config switch — safe on every boundary. */
+function flushActionLogToServer(revision: number): void {
+  void flushActionLog({ revision, post: postActionBatch });
+}
+
 let interactionEpoch = 0;
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
@@ -366,7 +404,7 @@ function recordedHistory(
     return null;
   }
   const selection = captureSelection(selectedObjectId);
-  return recordChange(history, {
+  const next = recordChange(history, {
     before,
     after,
     label: describeDelta(delta),
@@ -374,6 +412,9 @@ function recordedHistory(
     selectionBefore: selection,
     selectionAfter: selectionAfter ?? selection,
   });
+  // G4: an append over the previous top seals that gesture into the log.
+  actionEmitter.afterRecord(history, next);
+  return next;
 }
 
 function historyStepPatch(step: HistoryStep<EditorObject>): Partial<EditorState> {
@@ -428,6 +469,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         : null;
       const objects = localDraft?.objects ?? serverObjects;
       const restoredAnonymousDraft = localDraft !== null;
+      // G4: capture the outgoing timeline at the LAST moment before the
+      // reset — a gesture landing during the awaits above advances the live
+      // history, and a stale snapshot would lose it (reviewer HIGH).
+      const previousHistory = get().history;
+      const previousRevision = get().configRevision;
+      const previousWasPublic = get().isPublicPreview;
       set({
         configId: config.id,
         spaceId: config.spaceId,
@@ -440,6 +487,15 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         saveConflict: null,
         history: emptyHistory<EditorObject>(),
       });
+      // G4: config boundary — seal any open gesture from the previous
+      // config's timeline, ship its unsent tail (the flush snapshots the
+      // store before beginLog wipes it; late acks are config-guarded),
+      // then open the new configuration's log.
+      actionEmitter.flush(previousHistory);
+      if (previousRevision !== null && !previousWasPublic) {
+        flushActionLogToServer(previousRevision);
+      }
+      beginActionLogForConfig(config.id);
       // Load space data (name, dimensions) for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
@@ -578,6 +634,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   saveToServer: async (isAuthenticated) => {
     const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
+    // G4: a save is a gesture boundary — seal the open gesture into the log.
+    // Deliberately before the revision guard below: the local gesture
+    // happened regardless of whether this save can proceed.
+    actionEmitter.flush(get().history);
     if (configRevision === null) {
       set({
         saveError: "Cannot save because the layout revision is missing. Reload the layout and try again.",
@@ -638,6 +698,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         lastSavedAt: new Date(),
         saveConflict: null,
       });
+      // G4 slice 3: the save boundary ships the log's unsent tail, anchored
+      // to the revision this save produced. Auth path only — the ingest
+      // endpoint is authenticated, and public-preview planning stays local.
+      if (useAuthPath) flushActionLogToServer(saved.revision);
       return true;
     } catch (err) {
       const conflict = configApi.parseRevisionConflict(err);
@@ -688,6 +752,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const s = get();
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
+    actionEmitter.afterUndo(s.history); // G4: seals the popped gesture + logs history.undo
     interactionEpoch++;
     set(historyStepPatch(step));
     useSelectionStore.getState().selectMultiple(step.selection);
@@ -698,6 +763,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const s = get();
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
+    actionEmitter.afterRedo(step.history); // G4: logs history.redo
     interactionEpoch++;
     set(historyStepPatch(step));
     useSelectionStore.getState().selectMultiple(step.selection);

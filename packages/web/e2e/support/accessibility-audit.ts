@@ -571,7 +571,7 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
 
     function averageLayerColor(layer: string): Rgba | null {
       const colors = Array.from(layer.matchAll(/(?:rgba?|oklab|oklch)\([^)]+\)/giu))
-        .map((match) => parseCssColor(match[0] ?? ""))
+        .map((match) => parseCssColor(match[0]))
         .filter((color): color is Rgba => color !== null);
 
       if (colors.length === 0) return null;

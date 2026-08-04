@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -20,8 +22,20 @@ import {
   FRESH_CONTACT_PHONE_DISPLAY,
   FRESH_CONTACT_PHONE_HREF,
   FRESH_CONTACT_TITLE,
+  FRESH_CONTACT_TEL_LABEL,
+  FRESH_CONTACT_EMAIL_LABEL,
+  FRESH_CONTACT_VISIT_LABEL,
   FRESH_CTA_DATES,
   FRESH_CTA_ROOMS,
+  FRESH_CTA_TOUR,
+  FRESH_TOUR_CTA,
+  FRESH_TOUR_GROUND,
+  FRESH_TOUR_GROUND_ALT,
+  FRESH_TOUR_GROUND_SIZES,
+  FRESH_TOUR_GROUND_SRCSET,
+  FRESH_TOUR_HREF,
+  FRESH_TOUR_LINE,
+  FRESH_TOUR_TITLE,
   FRESH_FOOTER_NOTE,
   FRESH_ARMS,
   FRESH_ARMS_ALT,
@@ -30,6 +44,12 @@ import {
   FRESH_HEADLINE_AFTER,
   FRESH_HEADLINE_BEFORE,
   FRESH_HEADLINE_KINETIC,
+  FRESH_KICKER_CONTACT,
+  FRESH_KICKER_ENQUIRE,
+  FRESH_KICKER_HERITAGE,
+  FRESH_KICKER_RATES,
+  FRESH_KICKER_ROOMS,
+  FRESH_KICKER_WALK,
   FRESH_HERITAGE_ART,
   FRESH_HERITAGE_ART_ALT,
   FRESH_HERITAGE_BODY,
@@ -59,7 +79,37 @@ import {
   FRESH_ENQUIRY_OR_CALL,
   FRESH_ENQUIRY_SEND,
   FRESH_ENQUIRY_TITLE,
+  FRESH_HERO_LADDER,
+  FRESH_HERO_PORTRAIT_MEDIA,
+  FRESH_HERO_PORTRAIT_SRCSET,
+  FRESH_HERO_SIZES,
+  FRESH_HERITAGE_LADDER,
+  FRESH_HERITAGE_SIZES,
+  FRESH_ROOM_SIZES,
+  FRESH_DOSSIER_OPEN,
+  FRESH_WALK_CHIP,
+  FRESH_WALK_FAILED,
+  FRESH_WALK_HINT,
+  FRESH_WALK_LEDE,
+  FRESH_WALK_LOADING,
+  FRESH_WALK_NOTE,
+  FRESH_WALK_POSTER,
+  FRESH_WALK_POSTER_ALT,
+  FRESH_WALK_POSTER_SIZES,
+  FRESH_WALK_POSTER_SRCSET,
+  FRESH_WALK_SIZE_NOTE,
+  FRESH_WALK_TITLE,
+  FRESH_WALK_WAKE,
+  ladderSrcSet,
+  type FreshRoom,
 } from "./fresh-copy.js";
+import { RoomDossier } from "./RoomDossier.js";
+
+/** The captured room costs nothing until invited: three + Spark live in
+ *  this chunk, which only downloads when the visitor steps in. */
+const FreshWalk = lazy(() => import("./FreshWalk.js"));
+
+type WalkState = "poster" | "loading" | "live" | "failed";
 import {
   ENQUIRY_EVENT_TYPES,
   alsoFitsSentence,
@@ -181,7 +231,12 @@ function useDomeAperture(): DomeApertureRefs {
     if (!frameEl || !imgEl || !svgEl) return;
     const w = frameEl.clientWidth;
     const h = frameEl.clientHeight;
-    if (w === 0 || h === 0 || w / h < APERTURE_MIN_ASPECT) {
+    // The aperture's dome fractions are measured on the full aerial. When
+    // the art-directed portrait crop is the rendered source (narrow
+    // windows), those fractions are meaningless — and the crop centres the
+    // dome by design, so the aperture stands down rather than drifting.
+    const portraitSource = imgEl.currentSrc.includes("portrait");
+    if (w === 0 || h === 0 || portraitSource || w / h < APERTURE_MIN_ASPECT) {
       imgEl.style.clipPath = "";
       svgEl.style.display = "none";
       return;
@@ -208,15 +263,23 @@ function useDomeAperture(): DomeApertureRefs {
   }, []);
 
   useEffect(() => {
+    // The browser can swap <picture> sources without any layout change
+    // (crossing the art-direction breakpoint), so the img's load event —
+    // not just the ResizeObserver — must re-run the aperture check.
+    const imgEl = img.current;
+    imgEl?.addEventListener("load", apply);
     if (typeof ResizeObserver === "undefined") {
       apply();
-      return;
+      return () => {
+        imgEl?.removeEventListener("load", apply);
+      };
     }
     const observer = new ResizeObserver(apply);
     if (frame.current) observer.observe(frame.current);
     apply();
     return () => {
       observer.disconnect();
+      imgEl?.removeEventListener("load", apply);
     };
   }, [apply]);
 
@@ -392,8 +455,30 @@ const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
 
 export function FreshPage(): ReactElement {
   const [theme, setTheme] = useState<FreshTheme>(() => loadTheme());
+  const [dossierRoom, setDossierRoom] = useState<FreshRoom | null>(null);
+  const [walkState, setWalkState] = useState<WalkState>("poster");
+  const [walkPercent, setWalkPercent] = useState(0);
   const reveal = useRevealOnce();
   const aperture = useDomeAperture();
+
+  const wakeWalk = useCallback(() => {
+    // Cheap honesty check before paying for the chunk: no WebGL, no room.
+    const probe = document.createElement("canvas");
+    const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
+    setWalkState(gl === null ? "failed" : "loading");
+  }, []);
+
+  // Identity-stable for FreshWalk: new callback identities would make the
+  // splat layers dispose and refetch their tiles on every progress tick.
+  const walkLive = useCallback(() => {
+    setWalkState("live");
+  }, []);
+  const walkFailed = useCallback(() => {
+    setWalkState("failed");
+  }, []);
+  const walkProgress = useCallback((loaded: number, total: number) => {
+    setWalkPercent(Math.round((loaded / total) * 100));
+  }, []);
 
   useEffect(() => {
     document.title = FRESH_META_TITLE;
@@ -409,6 +494,17 @@ export function FreshPage(): ReactElement {
     }
   }, []);
 
+  // On narrow screens the three-pill row gives way to one cycling button —
+  // the header's prime pixels belong to the photograph, not a preference.
+  const cycleTheme = useCallback(() => {
+    const order: readonly FreshTheme[] = ["auto", "light", "dark"];
+    const next = order[(order.indexOf(theme) + 1) % order.length] ?? "auto";
+    applyTheme(next);
+  }, [applyTheme, theme]);
+
+  const themeLabel =
+    FRESH_THEME_OPTIONS.find((option) => option.key === theme)?.label ?? "Auto";
+
   return (
     <div className="fr-root" data-theme={theme === "auto" ? undefined : theme}>
       <a className="fr-skip" href="#rooms">
@@ -417,7 +513,7 @@ export function FreshPage(): ReactElement {
 
       <header className="fr-header">
         <p className="fr-brand">
-          <img className="fr-brand-mark" src={FRESH_ARMS_MARK} alt="" width={120} height={150} />
+          <img className="fr-brand-mark" src={FRESH_ARMS_MARK} alt="" width={64} height={80} />
           <span>
             <small>{FRESH_BRAND_SMALL}</small>
             <b>{FRESH_BRAND_NAME}</b>
@@ -438,6 +534,14 @@ export function FreshPage(): ReactElement {
               </button>
             ))}
           </fieldset>
+          <button
+            type="button"
+            className="fr-theme-cycle"
+            onClick={cycleTheme}
+            aria-label={`${FRESH_THEME_LABEL}: ${themeLabel}`}
+          >
+            {themeLabel}
+          </button>
           <a className="fr-header-cta" href="#enquire">
             {FRESH_CTA_DATES}
           </a>
@@ -448,16 +552,37 @@ export function FreshPage(): ReactElement {
         {/* ——— hero: the photograph, and the breathing word ——— */}
         <section className="fr-hero" aria-labelledby="fr-headline">
           <div className="fr-hero-frame" ref={aperture.frameRef}>
-            <img
-              className="fr-hero-photo"
-              src={FRESH_HERO_IMAGE}
-              alt={FRESH_HERO_ALT}
-              width={1536}
-              height={864}
-              fetchPriority="high"
-              decoding="async"
-              ref={aperture.imgRef}
-            />
+            <picture>
+              {/* Narrow screens: the purpose-cut portrait, dome centred. */}
+              <source
+                media={FRESH_HERO_PORTRAIT_MEDIA}
+                srcSet={FRESH_HERO_PORTRAIT_SRCSET}
+                sizes="calc(100vw - 32px)"
+                width={768}
+                height={864}
+              />
+              <img
+                className="fr-hero-photo"
+                src={FRESH_HERO_IMAGE}
+                srcSet={ladderSrcSet(FRESH_HERO_IMAGE, FRESH_HERO_LADDER)}
+                sizes={FRESH_HERO_SIZES}
+                alt={FRESH_HERO_ALT}
+                width={1536}
+                height={864}
+                /* Lowercase, via spread, deliberately. @types/react 18.3.18
+                   types `fetchPriority`, but react-dom 18.3.1 has never heard
+                   of it (zero occurrences in the installed runtime) — so TS
+                   accepted a prop React then warned about and DROPPED. The hero
+                   has had no LCP priority hint since bd86364a as a result, and
+                   the warning is a console error the acquisition audit counts.
+                   Emitting the real HTML attribute passes it through untouched.
+                   Revisit when this package moves to React 19, which supports
+                   the camelCase form natively. */
+                {...({ fetchpriority: "high" } as { readonly fetchpriority: string })}
+                decoding="async"
+                ref={aperture.imgRef}
+              />
+            </picture>
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
@@ -479,6 +604,9 @@ export function FreshPage(): ReactElement {
               <a className="fr-cta-quiet" href="#rooms">
                 {FRESH_CTA_ROOMS}
               </a>
+              <a className="fr-cta-quiet" href={FRESH_TOUR_HREF}>
+                {FRESH_CTA_TOUR}
+              </a>
             </div>
           </div>
         </section>
@@ -486,6 +614,7 @@ export function FreshPage(): ReactElement {
         {/* ——— the rooms: asymmetric, alternating, honest capacities ——— */}
         <section className="fr-rooms" id="rooms" aria-labelledby="fr-rooms-title">
           <div className="fr-arch" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_ROOMS}</p>
           <h2 id="fr-rooms-title">{FRESH_ROOMS_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_ROOMS_LEDE}</p>
           <div className="fr-room-flow">
@@ -498,6 +627,8 @@ export function FreshPage(): ReactElement {
                 <img
                   className={room.portrait === true ? "is-portrait" : undefined}
                   src={room.image}
+                  srcSet={ladderSrcSet(room.image, room.ladder)}
+                  sizes={FRESH_ROOM_SIZES}
                   alt={room.alt}
                   loading="lazy"
                   decoding="async"
@@ -515,6 +646,15 @@ export function FreshPage(): ReactElement {
                   <p className="fr-caps" data-room-caps={room.slug}>
                     {roomCaps(room.slug)}
                   </p>
+                  <button
+                    type="button"
+                    className="fr-room-open"
+                    onClick={() => {
+                      setDossierRoom(room);
+                    }}
+                  >
+                    {FRESH_DOSSIER_OPEN}
+                  </button>
                 </div>
               </article>
             ))}
@@ -524,9 +664,97 @@ export function FreshPage(): ReactElement {
           </p>
         </section>
 
+        {/* ——— walk the room: the capture, poster-first ——— */}
+        <section className="fr-walk" id="walk" aria-labelledby="fr-walk-title">
+          <div className="fr-arch is-flipped" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_WALK}</p>
+          <h2 id="fr-walk-title">{FRESH_WALK_TITLE}</h2>
+          <p className="fr-section-lede">{FRESH_WALK_LEDE}</p>
+          <div className="fr-walk-stage" data-walk-state={walkState}>
+            {(walkState === "loading" || walkState === "live") && (
+              <Suspense fallback={null}>
+                <FreshWalk
+                  onLive={walkLive}
+                  onFailed={walkFailed}
+                  onProgress={walkProgress}
+                />
+              </Suspense>
+            )}
+            <img
+              className="fr-walk-poster"
+              src={FRESH_WALK_POSTER}
+              srcSet={FRESH_WALK_POSTER_SRCSET}
+              sizes={FRESH_WALK_POSTER_SIZES}
+              alt={FRESH_WALK_POSTER_ALT}
+              loading="lazy"
+              decoding="async"
+              width={1120}
+              height={700}
+            />
+            {walkState === "poster" && (
+              <div className="fr-walk-veil">
+                <p className="fr-walk-chip">{FRESH_WALK_CHIP}</p>
+                <button type="button" className="fr-cta" onClick={wakeWalk}>
+                  {FRESH_WALK_WAKE}
+                </button>
+                <p className="fr-walk-size">{FRESH_WALK_SIZE_NOTE}</p>
+              </div>
+            )}
+            {walkState === "loading" && (
+              <div className="fr-walk-veil" aria-live="polite">
+                <p className="fr-walk-chip">
+                  {FRESH_WALK_LOADING} — {String(walkPercent)}%
+                </p>
+                <div
+                  className="fr-walk-bar"
+                  role="progressbar"
+                  aria-valuenow={walkPercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div style={{ width: `${String(walkPercent)}%` }} />
+                </div>
+              </div>
+            )}
+            {walkState === "failed" && (
+              <div className="fr-walk-veil">
+                <p className="fr-walk-chip">{FRESH_WALK_FAILED}</p>
+              </div>
+            )}
+          </div>
+          <p className="fr-walk-hint">
+            {walkState === "live" ? FRESH_WALK_HINT : FRESH_WALK_NOTE}
+          </p>
+          {/* The doorway to the whole building — grounded on the
+              walkthrough's own dollhouse view of the hall. */}
+          <aside className="fr-tour-door" ref={reveal}>
+            <img
+              className="fr-tour-ground"
+              src={FRESH_TOUR_GROUND}
+              srcSet={FRESH_TOUR_GROUND_SRCSET}
+              sizes={FRESH_TOUR_GROUND_SIZES}
+              alt={FRESH_TOUR_GROUND_ALT}
+              loading="lazy"
+              decoding="async"
+              width={1800}
+              height={840}
+            />
+            <div className="fr-tour-veil">
+              <div>
+                <h3>{FRESH_TOUR_TITLE}</h3>
+                <p>{FRESH_TOUR_LINE}</p>
+              </div>
+              <a className="fr-cta" href={FRESH_TOUR_HREF}>
+                {FRESH_TOUR_CTA}
+              </a>
+            </div>
+          </aside>
+        </section>
+
         {/* ——— rates: the venue's own numbers, plainly ——— */}
         <section className="fr-rates" aria-labelledby="fr-rates-title">
           <div className="fr-arch is-flipped" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_RATES}</p>
           <h2 id="fr-rates-title">{FRESH_RATES_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_RATES_NOTE}</p>
           <div className="fr-rate-columns">
@@ -548,6 +776,7 @@ export function FreshPage(): ReactElement {
         {/* ——— the enquiry composer: the page answers, then writes the email ——— */}
         <section className="fr-enquiry" id="enquire" aria-labelledby="fr-enquiry-title">
           <div className="fr-arch" aria-hidden />
+          <p className="fr-kicker">{FRESH_KICKER_ENQUIRE}</p>
           <h2 id="fr-enquiry-title">{FRESH_ENQUIRY_TITLE}</h2>
           <p className="fr-section-lede">{FRESH_ENQUIRY_LEDE}</p>
           <FreshEnquiry />
@@ -558,6 +787,8 @@ export function FreshPage(): ReactElement {
           <img
             className="fr-heritage-art"
             src={FRESH_HERITAGE_ART}
+            srcSet={ladderSrcSet(FRESH_HERITAGE_ART, FRESH_HERITAGE_LADDER)}
+            sizes={FRESH_HERITAGE_SIZES}
             alt={FRESH_HERITAGE_ART_ALT}
             loading="lazy"
             decoding="async"
@@ -565,27 +796,47 @@ export function FreshPage(): ReactElement {
             height={1086}
           />
           <div className="fr-heritage-words" ref={reveal}>
+            <p className="fr-kicker">{FRESH_KICKER_HERITAGE}</p>
             <h2 id="fr-heritage-title">{FRESH_HERITAGE_TITLE}</h2>
             <p>{FRESH_HERITAGE_BODY}</p>
           </div>
         </section>
       </main>
 
+      <RoomDossier
+        room={dossierRoom}
+        onClose={() => {
+          setDossierRoom(null);
+        }}
+      />
+
       <footer className="fr-contact" id="contact" aria-labelledby="fr-contact-title">
+        <p className="fr-kicker">{FRESH_KICKER_CONTACT}</p>
         <h2 id="fr-contact-title">{FRESH_CONTACT_TITLE}</h2>
-        <div className="fr-contact-ways">
-          <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
-          <a href={freshEnquiryHref()}>{FRESH_CONTACT_EMAIL}</a>
-          <a href={FRESH_MAPS_HREF} target="_blank" rel="noreferrer">
-            {FRESH_ADDRESS}
-          </a>
-        </div>
-        <div className="fr-colophon">
-          <img src={FRESH_ARMS} alt={FRESH_ARMS_ALT} loading="lazy" decoding="async" width={480} height={600} />
-          <p className="fr-motto">
-            <em>{FRESH_MOTTO}</em>
-            <span>{FRESH_MOTTO_ATTR}</span>
-          </p>
+        <div className="fr-contact-grid">
+          <div className="fr-contact-ways">
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_TEL_LABEL}</small>
+              <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+            </p>
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_EMAIL_LABEL}</small>
+              <a href={freshEnquiryHref()}>{FRESH_CONTACT_EMAIL}</a>
+            </p>
+            <p className="fr-contact-way">
+              <small>{FRESH_CONTACT_VISIT_LABEL}</small>
+              <a href={FRESH_MAPS_HREF} target="_blank" rel="noreferrer">
+                {FRESH_ADDRESS}
+              </a>
+            </p>
+          </div>
+          <div className="fr-colophon">
+            <img src={FRESH_ARMS} alt={FRESH_ARMS_ALT} loading="lazy" decoding="async" width={240} height={300} />
+            <p className="fr-motto">
+              <em>{FRESH_MOTTO}</em>
+              <span>{FRESH_MOTTO_ATTR}</span>
+            </p>
+          </div>
         </div>
         <p className="fr-footer-note">{FRESH_FOOTER_NOTE}</p>
       </footer>

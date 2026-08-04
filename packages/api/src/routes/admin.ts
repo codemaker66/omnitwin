@@ -8,6 +8,7 @@ import {
   pruneArchivedConfigSnapshots,
   pruneSnapshotsForConfig,
 } from "../services/sheet-snapshot.js";
+import { runHoldReminderPass } from "../services/hold-reminders.js";
 
 // ---------------------------------------------------------------------------
 // Plugin — admin-only endpoints
@@ -79,5 +80,36 @@ export async function adminRoutes(
         kept: result.kept,
       },
     };
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /admin/diary/hold-reminders — run the T-7/3/1 hold-reminder
+  // delivery pass (T-527). Idempotent: `email_sends` unique keys dedupe
+  // repeats, so an external cron can invoke this hourly without double
+  // sends. `dryRun: true` reports what WOULD send without sending —
+  // the rehearsal path (first-live-week runbook §reminders).
+  // -------------------------------------------------------------------------
+
+  const HoldRemindersBody = z.object({
+    dryRun: z.boolean().optional(),
+  });
+
+  server.post("/diary/hold-reminders", {
+    preHandler: [authenticate, authorizePlatformAdmin()],
+  }, async (request, reply) => {
+    const body = HoldRemindersBody.safeParse(request.body ?? {});
+    if (!body.success) {
+      return reply.status(400).send({
+        error: "Invalid body",
+        code: "VALIDATION_ERROR",
+        details: body.error.issues,
+      });
+    }
+    const summary = await runHoldReminderPass({
+      db,
+      dryRun: body.data.dryRun ?? false,
+      logger: request.log,
+    });
+    return { data: summary };
   });
 }

@@ -94,7 +94,14 @@ describe("SaveSendPanel cockpit placement", () => {
     expect(codeOnly).toContain("avoidRightDock");
     expect(codeOnly).toContain("COCKPIT_RIGHT_DOCK_WIDTH_PX");
     expect(codeOnly).toContain("COCKPIT_DOCK_CLEARANCE_PX");
-    expect(codeOnly).toMatch(/right:\s*avoidRightDock[\s\S]*?COCKPIT_RIGHT_DOCK_WIDTH_PX\s*\+\s*COCKPIT_DOCK_CLEARANCE_PX/);
+    expect(codeOnly).toContain("FloatingWidgetFrame");
+    expect(codeOnly).toContain('strategy="fixed"');
+    expect(codeOnly).toContain('id="save-send-panel"');
+    expect(codeOnly).toContain("saveSendPanelPlacement(avoidRightDock)");
+    expect(codeOnly).toMatch(/offsetX:\s*avoidRightDock[\s\S]*?COCKPIT_RIGHT_DOCK_WIDTH_PX\s*\+\s*COCKPIT_DOCK_CLEARANCE_PX/);
+    expect(codeOnly).toContain("[data-floating-widget-id='planner-spatial-hud']");
+    expect(codeOnly).toContain("[data-testid='cockpit-truth-rail']");
+    expect(codeOnly).toContain('".lens-panel"');
   });
 
   it("enables right-dock avoidance only for the desktop 3D planner cockpit", async () => {

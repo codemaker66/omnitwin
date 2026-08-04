@@ -1,0 +1,52 @@
+/* CARD A4 fixture route — a quiet BOH surface on the House tokens so the
+   chips are photographed against their real backgrounds. */
+
+.chip-fixture {
+  min-height: 100vh;
+  padding: 48px clamp(24px, 6vw, 96px);
+  background: var(--house-bg-0);
+  color: var(--house-text-1);
+}
+
+.chip-fixture__head h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.chip-fixture__head p {
+  margin: 0 0 32px;
+  max-width: 62ch;
+  color: var(--house-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chip-fixture__group {
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  border: 1px solid var(--house-hairline);
+  border-radius: 12px;
+  background: var(--house-bg-1);
+}
+
+.chip-fixture__group h2 {
+  margin: 0 0 12px;
+  color: var(--house-text-3);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chip-fixture__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip-fixture__note {
+  margin: 12px 0 0;
+  color: var(--house-text-3);
+  font-size: 12px;
+}

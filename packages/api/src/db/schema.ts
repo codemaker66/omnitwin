@@ -1,23 +1,33 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
   varchar,
+  char,
   text,
   timestamp,
   numeric,
   jsonb,
   integer,
   bigint,
+  bigserial,
   boolean,
   date,
   index,
+  uniqueIndex,
   unique,
+  foreignKey,
   primaryKey,
+  customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
   AgentTrajectory,
   AnalyticsSnapshotPayload,
+  BookingKind,
+  BookingLiveness,
+  BookingState,
+  CanonicalLayoutSnapshotV0,
   ComfortConstraintInput,
   CaptureControlSourceRecord,
   DensityHeatmapCell,
@@ -32,12 +42,46 @@ import type {
   EventPlanRiskLevel,
   EventPlanSourceKind,
   EventPlanNotificationSeverity,
+  EventMissionBaseline,
+  EventMissionEventKind,
+  EventMissionEventPayload,
+  EventMissionEntityType,
+  EventMissionIncidentSeverity,
+  EventMissionIncidentStatus,
+  EventMissionPhaseStatus,
+  EventMissionPresence,
+  EventMissionSpatialAnchor,
+  EventMissionStatus,
+  EventMissionTask,
+  EventArchitectCandidate,
+  EventArchitectOpsEvidenceWitness,
+  EventArchitectOpsReviewDecision,
+  EventArchitectOpsReviewerAuthority,
+  EventArchitectRequest,
+  EventArchitectRun,
+  EventArchitectStrategy,
+  LayoutValidatorRun,
   PricingAssumptionInput,
   ProposalVersionPayload,
+  ReconstructionQaReport,
+  ReconstructionReleaseArtifactRef,
+  ReconstructionReleaseManifest,
+  ReconstructionVisualEvidence,
   RuntimePackageManifestJson,
+  RuntimePackageRevisionIdentityKind,
   RuntimeQaRecordV0,
   TransformArtifactV0,
 } from "@omnitwin/types";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+// Keep the runtime schema self-contained so drizzle-kit can load this .ts file
+// directly. The type-only imports preserve the canonical coordinate contract
+// without leaving a runtime `./coordinate-space.js` require for drizzle-kit.
+type LayoutCoordinateSpace = import("./coordinate-space.js").LayoutCoordinateSpace;
+type RealMetreCoordinateSpace = typeof import("./coordinate-space.js").REAL_METRE_COORDINATE_SPACE;
+const REAL_METRE_COORDINATE_SPACE: RealMetreCoordinateSpace = "real_m_v1";
 
 // ---------------------------------------------------------------------------
 // 1. venues
@@ -106,6 +150,9 @@ export const spaces = pgTable("spaces", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   unique("spaces_venue_slug_unique").on(table.venueId, table.slug),
+  // Composite identity for tenant-integrity FKs (bookings_space_venue_fk) —
+  // the same move migration 0046 made on events. Added by migration 0050.
+  unique("spaces_id_venue_unique").on(table.id, table.venueId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -424,6 +471,10 @@ export const configurationLayoutRevisions = pgTable("configuration_layout_revisi
   source: varchar("source", { length: 40 }).notNull(),
   actorUserId: uuid("actor_user_id").references(() => users.id),
   payload: jsonb("payload").notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("configuration_layout_revisions_config_revision_unique").on(table.configurationId, table.revision),
@@ -488,6 +539,10 @@ export const configurationSheetSnapshots = pgTable("configuration_sheet_snapshot
   configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   payload: jsonb("payload").notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   diagramUrl: text("diagram_url"),
   pdfUrl: text("pdf_url"),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
@@ -518,6 +573,13 @@ export const placedObjects = pgTable("placed_objects", {
   scale: numeric("scale", { precision: 5, scale: 3 }).notNull().default("1.000"),
   sortOrder: integer("sort_order").notNull().default(0),
   metadata: jsonb("metadata"),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
+  // Application-generated on every X/Z write. Migration 0044's trigger uses
+  // this nonce to reject stale render-space writers during a rolling deploy.
+  coordinateWriteToken: uuid("coordinate_write_token").notNull(),
 }, (table) => [
   index("placed_objects_configuration_id_idx").on(table.configurationId),
 ]);
@@ -979,6 +1041,11 @@ export const runtimePackages = pgTable("runtime_packages", {
   id: uuid("id").primaryKey().defaultRandom(),
   venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
   roomSlug: varchar("room_slug", { length: 100 }).notNull(),
+  revision: integer("revision").notNull(),
+  identityKind: varchar("identity_kind", { length: 24 })
+    .$type<RuntimePackageRevisionIdentityKind>()
+    .notNull(),
+  contentDigest: varchar("content_digest", { length: 64 }),
   primaryVisualAssetVersionId: uuid("primary_visual_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
   semanticMeshAssetVersionId: uuid("semantic_mesh_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
   collisionAssetVersionId: uuid("collision_asset_version_id").references(() => assetVersions.id, { onDelete: "set null" }),
@@ -989,6 +1056,16 @@ export const runtimePackages = pgTable("runtime_packages", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  unique("runtime_packages_venue_room_revision_unique").on(
+    table.venueSlug,
+    table.roomSlug,
+    table.revision,
+  ),
+  unique("runtime_packages_venue_room_digest_unique").on(
+    table.venueSlug,
+    table.roomSlug,
+    table.contentDigest,
+  ),
   index("runtime_packages_venue_room_status_idx").on(table.venueSlug, table.roomSlug, table.runtimeStatus),
   index("runtime_packages_primary_visual_idx").on(table.primaryVisualAssetVersionId),
   index("runtime_packages_point_cloud_idx").on(table.pointCloudAssetVersionId),
@@ -1111,13 +1188,27 @@ export const events = pgTable("events", {
   endsAt: timestamp("ends_at", { withTimezone: true }),
   guestCount: integer("guest_count").notNull().default(0),
   clientName: varchar("client_name", { length: 200 }),
+  // CRM spine linkage (Canon §2.4, T-487) — events join the Sell→Hold journey
+  // instead of floating free of the pipeline. clientName stays as the legacy
+  // denormalised label; these FKs are authoritative where present.
+  clientAccountId: uuid("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
+  opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+  // Headcount triple (Canon §2.4, R2): guaranteed = contract floor, expected
+  // = working number, setFor = what the room is physically set for. The
+  // legacy single guestCount remains for existing consumers.
+  headcountGuaranteed: integer("headcount_guaranteed"),
+  headcountExpected: integer("headcount_expected"),
+  headcountSetFor: integer("headcount_set_for"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
+  unique("events_id_venue_unique").on(table.id, table.venueId),
   index("events_venue_status_idx").on(table.venueId, table.status),
   index("events_created_by_idx").on(table.createdBy),
+  index("events_client_account_idx").on(table.clientAccountId),
+  index("events_opportunity_idx").on(table.opportunityId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1131,6 +1222,10 @@ export const events = pgTable("events", {
 export const eventPhases = pgTable("event_phases", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  // Keystone Diary migration (Canon §2.3, T-487): phases become room-scoped —
+  // the Occupancy Footprint. Nullable: existing rows stay venue-global and
+  // are excluded from room lanes until scoped.
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "set null" }),
   templateKey: varchar("template_key", { length: 40 }),
   name: varchar("name", { length: 100 }).notNull(),
   sortOrder: integer("sort_order").notNull(),
@@ -1148,7 +1243,9 @@ export const eventPhases = pgTable("event_phases", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("event_phases_event_template_unique").on(table.eventId, table.templateKey),
+  unique("event_phases_event_id_id_unique").on(table.eventId, table.id),
   index("event_phases_event_order_idx").on(table.eventId, table.sortOrder),
+  index("event_phases_space_idx").on(table.spaceId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1166,6 +1263,14 @@ export const eventScenarios = pgTable("event_scenarios", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  // Migration 0045 applies PostgreSQL's column-targeted
+  // `ON DELETE SET NULL (phase_id)`. Drizzle 0.45 cannot encode the target
+  // column list, so the migration is authoritative for that delete action.
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_scenarios_event_phase_fk",
+  }),
   index("event_scenarios_event_idx").on(table.eventId),
   index("event_scenarios_phase_idx").on(table.phaseId),
 ]);
@@ -1215,17 +1320,27 @@ export const phaseLayoutSnapshots = pgTable("phase_layout_snapshots", {
   eventPhaseId: uuid("event_phase_id").notNull().references(() => eventPhases.id, { onDelete: "cascade" }),
   layoutVariantId: uuid("layout_variant_id").references(() => layoutVariants.id, { onDelete: "set null" }),
   configurationId: uuid("configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  canonicalSnapshotId: uuid("canonical_snapshot_id"),
+  proofDigest: varchar("proof_digest", { length: 64 }),
+  supersedesSnapshotId: uuid("supersedes_snapshot_id"),
+  frozenBy: uuid("frozen_by").references(() => users.id, { onDelete: "set null" }),
   snapshotHash: varchar("snapshot_hash", { length: 64 }),
   status: varchar("status", { length: 30 }).notNull().default("draft"),
   objectCount: integer("object_count").notNull().default(0),
   guestCount: integer("guest_count"),
   payload: jsonb("payload").$type<Record<string, unknown> | null>(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   frozenAt: timestamp("frozen_at", { withTimezone: true }),
 }, (table) => [
   index("phase_layout_snapshots_phase_idx").on(table.eventPhaseId),
   index("phase_layout_snapshots_variant_idx").on(table.layoutVariantId),
   index("phase_layout_snapshots_config_idx").on(table.configurationId),
+  index("phase_layout_snapshots_canonical_idx").on(table.canonicalSnapshotId),
+  index("phase_layout_snapshots_supersedes_idx").on(table.supersedesSnapshotId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1415,6 +1530,7 @@ export const handoffPacks = pgTable("handoff_packs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   unique("handoff_packs_snapshot_version_unique").on(table.snapshotId, table.version),
+  unique("handoff_packs_event_id_id_unique").on(table.eventId, table.id),
   index("handoff_packs_config_idx").on(table.configId),
   index("handoff_packs_event_idx").on(table.eventId),
   index("handoff_packs_status_idx").on(table.status),
@@ -1443,9 +1559,11 @@ export const opsTasks = pgTable("ops_tasks", {
   sortOrder: integer("sort_order").notNull().default(0),
   dueLabel: varchar("due_label", { length: 120 }),
   sourceRef: varchar("source_ref", { length: 300 }),
+  spatialAnchors: jsonb("spatial_anchors").$type<EventMissionSpatialAnchor[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  unique("ops_tasks_handoff_id_unique").on(table.handoffPackId, table.id),
   index("ops_tasks_pack_order_idx").on(table.handoffPackId, table.sortOrder),
   index("ops_tasks_group_idx").on(table.taskGroupId),
   index("ops_tasks_status_idx").on(table.status),
@@ -1921,6 +2039,10 @@ export const proposalVersions = pgTable("proposal_versions", {
   proposalId: uuid("proposal_id").notNull().references(() => proposals.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   payload: jsonb("payload").$type<ProposalVersionPayload>().notNull(),
+  coordinateSpace: varchar("coordinate_space", { length: 32 })
+    .$type<LayoutCoordinateSpace>()
+    .default(REAL_METRE_COORDINATE_SPACE)
+    .notNull(),
   sourceHash: varchar("source_hash", { length: 64 }).notNull(),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2348,4 +2470,2966 @@ export const integrationEvents = pgTable("integration_events", {
 }, (table) => [
   index("integration_events_venue_created_idx").on(table.venueId, table.createdAt),
   index("integration_events_connection_idx").on(table.integrationConnectionId),
+]);
+
+// ---------------------------------------------------------------------------
+// 26. event mission control — authoritative event-day execution and replay.
+//
+// The compiled handoff remains immutable. Mission phase/task rows are mutable
+// read projections guarded by entity revisions; event_mission_events is the
+// append-only audit/replay source. Presence rows are advisory and deliberately
+// excluded from replay.
+// ---------------------------------------------------------------------------
+
+export const eventMissions = pgTable("event_missions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id),
+  sourceSnapshotHash: varchar("source_snapshot_hash", { length: 64 }).notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionStatus>().notNull().default("live"),
+  baseline: jsonb("baseline").$type<EventMissionBaseline>().notNull(),
+  baselineHash: varchar("baseline_hash", { length: 64 }).notNull(),
+  lastSequence: bigint("last_sequence", { mode: "number" }).notNull().default(0),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_missions_id_event_unique").on(table.id, table.eventId),
+  unique("event_missions_id_event_handoff_unique").on(table.id, table.eventId, table.handoffPackId),
+  index("event_missions_event_created_idx").on(table.eventId, table.createdAt),
+  index("event_missions_venue_status_idx").on(table.venueId, table.status),
+  foreignKey({
+    columns: [table.eventId, table.venueId],
+    foreignColumns: [events.id, events.venueId],
+    name: "event_missions_event_venue_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.handoffPackId],
+    foreignColumns: [handoffPacks.eventId, handoffPacks.id],
+    name: "event_missions_event_handoff_fk",
+  }),
+]);
+
+export const eventMissionPhases = pgTable("event_mission_phases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  phaseId: uuid("phase_id").notNull().references(() => eventPhases.id),
+  name: varchar("name", { length: 100 }).notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionPhaseStatus>().notNull().default("pending"),
+  revision: integer("revision").notNull().default(1),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualEndedAt: timestamp("actual_ended_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_phases_mission_phase_unique").on(table.missionId, table.phaseId),
+  unique("event_mission_phases_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_phases_mission_order_idx").on(table.missionId, table.sortOrder),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_phases_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_phases_event_phase_fk",
+  }),
+]);
+
+export const eventMissionTasks = pgTable("event_mission_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  handoffPackId: uuid("handoff_pack_id").notNull().references(() => handoffPacks.id),
+  opsTaskId: uuid("ops_task_id").notNull().references(() => opsTasks.id),
+  phaseId: uuid("phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 30 }).$type<EventMissionTask["kind"]>().notNull(),
+  title: varchar("title", { length: 240 }).notNull(),
+  detail: text("detail").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionTask["status"]>().notNull().default("todo"),
+  revision: integer("revision").notNull().default(1),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  assigneeLabel: varchar("assignee_label", { length: 160 }),
+  spatialAnchors: jsonb("spatial_anchors").$type<EventMissionSpatialAnchor[]>().notNull().default([]),
+  actualStartedAt: timestamp("actual_started_at", { withTimezone: true }),
+  actualEndedAt: timestamp("actual_ended_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_tasks_mission_task_unique").on(table.missionId, table.opsTaskId),
+  unique("event_mission_tasks_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_tasks_mission_status_idx").on(table.missionId, table.status),
+  index("event_mission_tasks_assignee_idx").on(table.assignedTo),
+  foreignKey({
+    columns: [table.missionId, table.eventId, table.handoffPackId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId, eventMissions.handoffPackId],
+    name: "event_mission_tasks_mission_scope_fk",
+  }),
+  foreignKey({
+    columns: [table.handoffPackId, table.opsTaskId],
+    foreignColumns: [opsTasks.handoffPackId, opsTasks.id],
+    name: "event_mission_tasks_handoff_task_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_tasks_event_phase_fk",
+  }),
+]);
+
+export const eventMissionIncidents = pgTable("event_mission_incidents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  phaseId: uuid("phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  missionTaskId: uuid("mission_task_id").references(() => eventMissionTasks.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 180 }).notNull(),
+  detail: text("detail").notNull(),
+  status: varchar("status", { length: 20 }).$type<EventMissionIncidentStatus>().notNull().default("open"),
+  severity: varchar("severity", { length: 20 }).$type<EventMissionIncidentSeverity>().notNull().default("attention"),
+  spatialAnchor: jsonb("spatial_anchor").$type<EventMissionSpatialAnchor | null>(),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  reportedBy: uuid("reported_by").references(() => users.id, { onDelete: "set null" }),
+  revision: integer("revision").notNull().default(1),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_incidents_mission_id_unique").on(table.missionId, table.id),
+  index("event_mission_incidents_mission_status_idx").on(table.missionId, table.status),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_incidents_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.missionId, table.missionTaskId],
+    foreignColumns: [eventMissionTasks.missionId, eventMissionTasks.id],
+    name: "event_mission_incidents_mission_task_fk",
+  }),
+  foreignKey({
+    columns: [table.eventId, table.phaseId],
+    foreignColumns: [eventPhases.eventId, eventPhases.id],
+    name: "event_mission_incidents_event_phase_fk",
+  }),
+]);
+
+export const eventMissionEvents = pgTable("event_mission_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
+  kind: varchar("kind", { length: 40 }).$type<EventMissionEventKind>().notNull(),
+  entityType: varchar("entity_type", { length: 30 }).$type<EventMissionEntityType>().notNull(),
+  entityId: uuid("entity_id"),
+  entityRevision: integer("entity_revision"),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorRole: varchar("actor_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  actorLabel: varchar("actor_label", { length: 160 }).notNull(),
+  actorKey: varchar("actor_key", { length: 200 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requiresAcknowledgement: boolean("requires_acknowledgement").notNull().default(false),
+  payload: jsonb("payload").$type<EventMissionEventPayload>().notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_events_mission_sequence_unique").on(table.missionId, table.sequence),
+  unique("event_mission_events_mission_id_unique").on(table.missionId, table.id),
+  unique("event_mission_events_idempotency_unique").on(table.missionId, table.actorKey, table.idempotencyKey),
+  index("event_mission_events_mission_created_idx").on(table.missionId, table.createdAt),
+  index("event_mission_events_entity_idx").on(table.entityType, table.entityId),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_events_mission_event_fk",
+  }),
+]);
+
+export const eventMissionAcknowledgements = pgTable("event_mission_acknowledgements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  acknowledgedEventId: uuid("acknowledged_event_id").notNull().references(() => eventMissionEvents.id, { onDelete: "cascade" }),
+  acknowledgedBy: uuid("acknowledged_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  acknowledgedByRole: varchar("acknowledged_by_role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_mission_ack_event_user_unique").on(table.missionId, table.acknowledgedEventId, table.acknowledgedBy),
+  index("event_mission_ack_mission_created_idx").on(table.missionId, table.createdAt),
+  foreignKey({
+    columns: [table.missionId, table.eventId],
+    foreignColumns: [eventMissions.id, eventMissions.eventId],
+    name: "event_mission_ack_mission_event_fk",
+  }),
+  foreignKey({
+    columns: [table.missionId, table.acknowledgedEventId],
+    foreignColumns: [eventMissionEvents.missionId, eventMissionEvents.id],
+    name: "event_mission_ack_target_fk",
+  }),
+]);
+
+export const eventMissionSessions = pgTable("event_mission_sessions", {
+  missionId: uuid("mission_id").notNull().references(() => eventMissions.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  displayName: varchar("display_name", { length: 160 }).notNull(),
+  role: varchar("role", { length: 30 }).$type<EventPlanAudienceRole>().notNull(),
+  activePhaseId: uuid("active_phase_id").references(() => eventPhases.id, { onDelete: "set null" }),
+  activeTaskId: uuid("active_task_id").references(() => eventMissionTasks.id, { onDelete: "set null" }),
+  view: varchar("view", { length: 20 }).$type<EventMissionPresence["view"]>().notNull().default("board"),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.missionId, table.sessionId, table.userId] }),
+  index("event_mission_sessions_active_idx").on(table.missionId, table.lastSeenAt),
+  foreignKey({
+    columns: [table.missionId, table.activeTaskId],
+    foreignColumns: [eventMissionTasks.missionId, eventMissionTasks.id],
+    name: "event_mission_sessions_mission_task_fk",
+  }),
+]);
+
+// ---------------------------------------------------------------------------
+// 27. proof-carrying Event Architect.
+//
+// Every generated candidate is materialised as a real private draft
+// configuration in the same transaction as its canonical snapshot and
+// validator run. The browser never supplies frozen geometry, timestamps,
+// policy references, or evidence digests.
+// ---------------------------------------------------------------------------
+
+export const canonicalLayoutSnapshots = pgTable("canonical_layout_snapshots", {
+  id: uuid("id").primaryKey(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  schemaVersion: varchar("schema_version", { length: 60 }).notNull(),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  sourceKind: varchar("source_kind", { length: 40 }).notNull().default("event_architect_candidate"),
+  payload: jsonb("payload").$type<CanonicalLayoutSnapshotV0>().notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("canonical_layout_snapshots_config_unique").on(table.configurationId),
+  unique("canonical_layout_snapshots_digest_unique").on(table.snapshotDigest),
+  index("canonical_layout_snapshots_venue_created_idx").on(table.venueId, table.createdAt),
+  index("canonical_layout_snapshots_space_created_idx").on(table.spaceId, table.createdAt),
+]);
+
+export const layoutValidationRuns = pgTable("layout_validation_runs", {
+  id: uuid("id").primaryKey(),
+  snapshotId: uuid("snapshot_id").notNull().references(() => canonicalLayoutSnapshots.id, { onDelete: "cascade" }),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  validatorVersion: varchar("validator_version", { length: 40 }).notNull(),
+  validatorDigest: varchar("validator_digest", { length: 64 }).notNull(),
+  contextDigest: varchar("context_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  payload: jsonb("payload").$type<LayoutValidatorRun>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("layout_validation_runs_snapshot_unique").on(table.snapshotId),
+  unique("layout_validation_runs_proof_unique").on(table.proofDigest),
+  index("layout_validation_runs_snapshot_digest_idx").on(table.snapshotDigest),
+]);
+
+export const eventArchitectRuns = pgTable("event_architect_runs", {
+  id: uuid("id").primaryKey(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  engineVersion: varchar("engine_version", { length: 40 }).notNull(),
+  engineDigest: varchar("engine_digest", { length: 64 }).notNull(),
+  requestPayload: jsonb("request_payload").$type<EventArchitectRequest>().notNull(),
+  runPayload: jsonb("run_payload").$type<EventArchitectRun>().notNull(),
+  selectedCandidateId: uuid("selected_candidate_id"),
+  selectedConfigurationId: uuid("selected_configuration_id").references(() => configurations.id, { onDelete: "set null" }),
+  selectedSnapshotDigest: varchar("selected_snapshot_digest", { length: 64 }),
+  selectedProofDigest: varchar("selected_proof_digest", { length: 64 }),
+  selectionIdempotencyKey: varchar("selection_idempotency_key", { length: 160 }),
+  selectedBy: uuid("selected_by").references(() => users.id, { onDelete: "set null" }),
+  selectedAt: timestamp("selected_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_runs_actor_idempotency_unique").on(table.createdBy, table.idempotencyKey),
+  index("event_architect_runs_venue_created_idx").on(table.venueId, table.createdAt),
+  index("event_architect_runs_space_created_idx").on(table.spaceId, table.createdAt),
+]);
+
+export const eventArchitectCandidates = pgTable("event_architect_candidates", {
+  id: uuid("id").primaryKey(),
+  runId: uuid("run_id").notNull().references(() => eventArchitectRuns.id, { onDelete: "cascade" }),
+  rank: integer("rank").notNull(),
+  strategy: varchar("strategy", { length: 40 }).$type<EventArchitectStrategy>().notNull(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  snapshotId: uuid("snapshot_id").notNull().references(() => canonicalLayoutSnapshots.id, { onDelete: "cascade" }),
+  validationRunId: uuid("validation_run_id").notNull().references(() => layoutValidationRuns.id, { onDelete: "cascade" }),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  payload: jsonb("payload").$type<EventArchitectCandidate>().notNull(),
+  selectedBy: uuid("selected_by").references(() => users.id, { onDelete: "set null" }),
+  selectedAt: timestamp("selected_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_candidates_id_run_unique").on(table.id, table.runId),
+  unique("event_architect_candidates_run_rank_unique").on(table.runId, table.rank),
+  unique("event_architect_candidates_configuration_unique").on(table.configurationId),
+  unique("event_architect_candidates_snapshot_unique").on(table.snapshotId),
+  unique("event_architect_candidates_validation_unique").on(table.validationRunId),
+  index("event_architect_candidates_run_strategy_idx").on(table.runId, table.strategy),
+]);
+
+// Append-only venue review evidence that can resolve the Event Architect
+// guest-flow gate at the Ops Compiler boundary. Application code never updates
+// or deletes these rows; migration 0048 enforces the same rule with triggers.
+export const eventArchitectOpsReviews = pgTable("event_architect_ops_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  candidateId: uuid("candidate_id").notNull(),
+  runId: uuid("run_id").notNull(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "restrict" }),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "restrict" }),
+  reviewerUserId: uuid("reviewer_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reviewerAuthority: varchar("reviewer_authority", { length: 40 }).$type<EventArchitectOpsReviewerAuthority>().notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  decision: varchar("decision", { length: 20 }).$type<EventArchitectOpsReviewDecision>().notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  snapshotDigest: varchar("snapshot_digest", { length: 64 }).notNull(),
+  proofDigest: varchar("proof_digest", { length: 64 }).notNull(),
+  guestFlowArtifactHash: varchar("guest_flow_artifact_hash", { length: 64 }).notNull(),
+  artifactDigest: varchar("artifact_digest", { length: 64 }).notNull(),
+  witnesses: jsonb("witnesses").$type<readonly EventArchitectOpsEvidenceWitness[]>().notNull(),
+  note: text("note").notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+  validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("event_architect_ops_reviews_artifact_digest_unique").on(table.artifactDigest),
+  unique("event_architect_ops_reviews_reviewer_idempotency_unique").on(
+    table.candidateId,
+    table.reviewerUserId,
+    table.idempotencyKey,
+  ),
+  index("event_architect_ops_reviews_candidate_reviewed_idx").on(table.candidateId, table.reviewedAt),
+  index("event_architect_ops_reviews_valid_until_idx").on(table.validUntil),
+  foreignKey({
+    columns: [table.candidateId, table.runId],
+    foreignColumns: [eventArchitectCandidates.id, eventArchitectCandidates.runId],
+    name: "event_architect_ops_reviews_candidate_run_fk",
+  }),
+]);
+
+// Evidence-to-Runtime Reconstruction Foundry. All records below except the
+// channel pointer are made append-only by migration 0049.
+export const reconstructionReleases = pgTable("reconstruction_releases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  sourceManifestSha256: varchar("source_manifest_sha256", { length: 64 }).notNull(),
+  releaseManifestSha256: varchar("release_manifest_sha256", { length: 64 }).notNull(),
+  candidateBucket: varchar("candidate_bucket", { length: 255 }).notNull(),
+  candidatePrefix: text("candidate_prefix").notNull(),
+  releaseManifestKey: text("release_manifest_key").notNull(),
+  fileCount: integer("file_count").notNull(),
+  totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+  manifestJson: jsonb("manifest_json").$type<ReconstructionReleaseManifest>().notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_releases_venue_kind_digest_unique").on(table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_releases_manifest_key_unique").on(table.candidateBucket, table.releaseManifestKey),
+  unique("reconstruction_releases_actor_idempotency_unique").on(table.createdBy, table.idempotencyKey),
+  unique("reconstruction_releases_id_venue_kind_unique").on(table.id, table.venueSlug, table.releaseKind),
+  unique("reconstruction_releases_id_scope_digest_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_releases_id_scope_digest_manifest_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest, table.releaseManifestSha256),
+  unique("reconstruction_releases_id_scope_digest_source_unique").on(table.id, table.venueSlug, table.releaseKind, table.releaseDigest, table.sourceManifestSha256),
+  unique("reconstruction_releases_id_digest_manifest_unique").on(table.id, table.releaseDigest, table.releaseManifestSha256),
+  unique("reconstruction_releases_id_digest_source_unique").on(table.id, table.releaseDigest, table.sourceManifestSha256),
+  index("reconstruction_releases_venue_created_idx").on(table.venueSlug, table.createdAt),
+]);
+
+export const reconstructionReleaseQaRuns = pgTable("reconstruction_release_qa_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  qaProfileVersion: varchar("qa_profile_version", { length: 80 }).notNull(),
+  qaProfileDigest: varchar("qa_profile_digest", { length: 64 }).notNull(),
+  outcome: varchar("outcome", { length: 20 }).$type<"passed" | "failed">().notNull(),
+  reportDigest: varchar("report_digest", { length: 64 }).notNull(),
+  reportKey: text("report_key").notNull(),
+  reportJson: jsonb("report_json").$type<ReconstructionQaReport>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind],
+    name: "reconstruction_qa_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_qa_release_report_unique").on(table.releaseId, table.reportDigest),
+  unique("reconstruction_qa_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_qa_id_release_report_unique").on(table.id, table.releaseId, table.reportDigest),
+  unique("reconstruction_qa_release_scope_report_unique").on(table.releaseId, table.venueSlug, table.releaseKind, table.reportDigest),
+  unique("reconstruction_qa_id_release_scope_report_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.reportDigest),
+  index("reconstruction_qa_release_created_idx").on(table.releaseId, table.createdAt),
+]);
+
+export const reconstructionReleaseReviews = pgTable("reconstruction_release_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  qaRunId: uuid("qa_run_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  reviewerUserId: uuid("reviewer_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reviewerAuthority: varchar("reviewer_authority", { length: 40 }).$type<"platform_admin">().notNull(),
+  decision: varchar("decision", { length: 20 }).$type<"approved" | "rejected">().notNull(),
+  targetExposure: varchar("target_exposure", { length: 30 }).$type<"expert_review" | "public">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  releaseManifestSha256: varchar("release_manifest_sha256", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  visualEvidence: jsonb("visual_evidence").$type<readonly ReconstructionVisualEvidence[]>().notNull(),
+  transformArtifactRefs: jsonb("transform_artifact_refs").$type<readonly ReconstructionReleaseArtifactRef[]>().notNull().default([]),
+  sceneAuthorityRefs: jsonb("scene_authority_refs").$type<readonly ReconstructionReleaseArtifactRef[]>().notNull().default([]),
+  note: text("note").notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  reviewSequence: integer("review_sequence").notNull(),
+  supersedesReviewId: uuid("supersedes_review_id"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind],
+    name: "reconstruction_reviews_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.releaseManifestSha256],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest, reconstructionReleases.releaseManifestSha256],
+    name: "reconstruction_reviews_release_digest_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.qaRunId, table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.id, reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_reviews_qa_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.supersedesReviewId, table.releaseId],
+    foreignColumns: [table.id, table.releaseId],
+    name: "reconstruction_reviews_supersedes_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_reviews_reviewer_idempotency_unique").on(table.reviewerUserId, table.idempotencyKey),
+  unique("reconstruction_reviews_release_sequence_unique").on(table.releaseId, table.reviewSequence),
+  unique("reconstruction_reviews_release_supersedes_unique").on(table.releaseId, table.supersedesReviewId),
+  unique("reconstruction_reviews_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_reviews_id_release_digest_unique").on(table.id, table.releaseId, table.requestDigest),
+  unique("reconstruction_reviews_id_exact_evidence_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.requestDigest),
+  index("reconstruction_reviews_release_reviewed_idx").on(table.releaseId, table.reviewedAt),
+]);
+
+export const reconstructionReviewEvidenceArtifacts = pgTable("reconstruction_review_evidence_artifacts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  artifactKind: varchar("artifact_kind", { length: 50 }).$type<"transform_artifact_v0" | "scene_authority_map_v0">().notNull(),
+  artifactId: varchar("artifact_id", { length: 160 }).notNull(),
+  artifactDigest: varchar("artifact_digest", { length: 64 }).notNull(),
+  objectKey: text("object_key").notNull(),
+  objectSha256: varchar("object_sha256", { length: 64 }).notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 80 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  registeredBy: uuid("registered_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_review_evidence_venue_kind_id_digest_unique").on(
+    table.venueSlug,
+    table.artifactKind,
+    table.artifactId,
+    table.artifactDigest,
+  ),
+  unique("reconstruction_review_evidence_actor_idempotency_unique").on(
+    table.registeredBy,
+    table.idempotencyKey,
+  ),
+  index("reconstruction_review_evidence_venue_kind_registered_idx").on(
+    table.venueSlug,
+    table.artifactKind,
+    table.registeredAt,
+  ),
+  index("reconstruction_review_evidence_object_digest_idx").on(table.objectSha256),
+]);
+
+export const reconstructionReleaseAttestations = pgTable("reconstruction_release_attestations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  attestationType: varchar("attestation_type", { length: 50 }).$type<"in_toto_dsse_ed25519">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  reviewId: uuid("review_id").notNull(),
+  reviewDigest: varchar("review_digest", { length: 64 }).notNull(),
+  keyId: varchar("key_id", { length: 160 }).notNull(),
+  publicKeyFingerprint: varchar("public_key_fingerprint", { length: 64 }).notNull(),
+  statementSha256: varchar("statement_sha256", { length: 64 }).notNull(),
+  envelopeSha256: varchar("envelope_sha256", { length: 64 }).notNull(),
+  r2Key: text("r2_key").notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  verifiedBy: uuid("verified_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_attestations_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_attestations_qa_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_attestations_release_envelope_unique").on(table.releaseId, table.envelopeSha256),
+  unique("reconstruction_attestations_release_key_unique").on(table.releaseId, table.r2Key),
+  unique("reconstruction_attestations_actor_idempotency_unique").on(table.verifiedBy, table.idempotencyKey),
+  unique("reconstruction_attestations_id_release_unique").on(table.id, table.releaseId),
+  unique("reconstruction_attestations_id_release_envelope_unique").on(table.id, table.releaseId, table.envelopeSha256),
+  unique("reconstruction_attestations_id_exact_evidence_unique").on(
+    table.id,
+    table.releaseId,
+    table.venueSlug,
+    table.releaseKind,
+    table.releaseDigest,
+    table.qaReportDigest,
+    table.reviewId,
+    table.reviewDigest,
+    table.envelopeSha256,
+  ),
+  foreignKey({
+    columns: [table.reviewId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewDigest],
+    foreignColumns: [reconstructionReleaseReviews.id, reconstructionReleaseReviews.releaseId, reconstructionReleaseReviews.venueSlug, reconstructionReleaseReviews.releaseKind, reconstructionReleaseReviews.releaseDigest, reconstructionReleaseReviews.qaReportDigest, reconstructionReleaseReviews.requestDigest],
+    name: "reconstruction_attestations_review_fk",
+  }).onDelete("restrict"),
+  index("reconstruction_attestations_release_verified_idx").on(table.releaseId, table.verifiedAt),
+]);
+
+export const reconstructionReleasePublications = pgTable("reconstruction_release_publications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  releaseDigest: varchar("release_digest", { length: 64 }).notNull(),
+  qaReportDigest: varchar("qa_report_digest", { length: 64 }).notNull(),
+  reviewId: uuid("review_id").notNull(),
+  reviewDigest: varchar("review_digest", { length: 64 }).notNull(),
+  attestationId: uuid("attestation_id").notNull(),
+  attestationEnvelopeSha256: varchar("attestation_envelope_sha256", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  note: text("note").notNull(),
+  candidatePrefix: text("candidate_prefix").notNull(),
+  releaseBucket: varchar("release_bucket", { length: 255 }).notNull(),
+  releasePrefix: text("release_prefix").notNull(),
+  publicManifestKey: text("public_manifest_key").notNull(),
+  publicBaseUrl: text("public_base_url").notNull(),
+  manifestUrl: text("manifest_url").notNull(),
+  manifestSha256: varchar("manifest_sha256", { length: 64 }).notNull(),
+  verificationDigest: varchar("verification_digest", { length: 64 }).notNull(),
+  objectCount: integer("object_count").notNull(),
+  totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+  publishedBy: uuid("published_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow().notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_publications_release_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_publications_release_review_attestation_unique").on(table.releaseId, table.reviewId, table.attestationId),
+  unique("reconstruction_publications_id_release_scope_digest_unique").on(table.id, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest),
+  unique("reconstruction_publications_actor_idempotency_unique").on(table.publishedBy, table.idempotencyKey),
+  index("reconstruction_publications_release_published_idx").on(table.releaseId, table.publishedAt),
+  index("reconstruction_publications_prefix_idx").on(table.releaseBucket, table.releasePrefix),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.manifestSha256],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest, reconstructionReleases.sourceManifestSha256],
+    name: "reconstruction_publications_release_digest_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.releaseId, table.venueSlug, table.releaseKind, table.qaReportDigest],
+    foreignColumns: [reconstructionReleaseQaRuns.releaseId, reconstructionReleaseQaRuns.venueSlug, reconstructionReleaseQaRuns.releaseKind, reconstructionReleaseQaRuns.reportDigest],
+    name: "reconstruction_publications_qa_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.reviewId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewDigest],
+    foreignColumns: [reconstructionReleaseReviews.id, reconstructionReleaseReviews.releaseId, reconstructionReleaseReviews.venueSlug, reconstructionReleaseReviews.releaseKind, reconstructionReleaseReviews.releaseDigest, reconstructionReleaseReviews.qaReportDigest, reconstructionReleaseReviews.requestDigest],
+    name: "reconstruction_publications_review_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.attestationId, table.releaseId, table.venueSlug, table.releaseKind, table.releaseDigest, table.qaReportDigest, table.reviewId, table.reviewDigest, table.attestationEnvelopeSha256],
+    foreignColumns: [reconstructionReleaseAttestations.id, reconstructionReleaseAttestations.releaseId, reconstructionReleaseAttestations.venueSlug, reconstructionReleaseAttestations.releaseKind, reconstructionReleaseAttestations.releaseDigest, reconstructionReleaseAttestations.qaReportDigest, reconstructionReleaseAttestations.reviewId, reconstructionReleaseAttestations.reviewDigest, reconstructionReleaseAttestations.envelopeSha256],
+    name: "reconstruction_publications_attestation_fk",
+  }).onDelete("restrict"),
+]);
+
+export const reconstructionReleaseChannels = pgTable("reconstruction_release_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  channel: varchar("channel", { length: 30 }).$type<"production">().notNull(),
+  activeReleaseId: uuid("active_release_id").notNull(),
+  activeReleaseDigest: varchar("active_release_digest", { length: 64 }).notNull(),
+  activePublicationId: uuid("active_publication_id").notNull(),
+  revision: integer("revision").notNull(),
+  updatedBy: uuid("updated_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("reconstruction_channels_venue_kind_channel_unique").on(table.venueSlug, table.releaseKind, table.channel),
+  unique("reconstruction_channels_id_scope_unique").on(table.id, table.venueSlug, table.releaseKind, table.channel),
+  foreignKey({
+    columns: [table.activeReleaseId, table.venueSlug, table.releaseKind, table.activeReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channels_active_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.activePublicationId, table.activeReleaseId, table.venueSlug, table.releaseKind, table.activeReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channels_active_publication_fk",
+  }).onDelete("restrict"),
+]);
+
+export const reconstructionReleaseChannelEvents = pgTable("reconstruction_release_channel_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  channelId: uuid("channel_id").notNull(),
+  venueSlug: varchar("venue_slug", { length: 100 }).notNull(),
+  releaseKind: varchar("release_kind", { length: 40 }).$type<"venue_twin_v1">().notNull(),
+  channel: varchar("channel", { length: 30 }).$type<"production">().notNull(),
+  action: varchar("action", { length: 20 }).$type<"promote" | "rollback">().notNull(),
+  fromReleaseId: uuid("from_release_id"),
+  fromReleaseDigest: varchar("from_release_digest", { length: 64 }),
+  fromPublicationId: uuid("from_publication_id"),
+  toReleaseId: uuid("to_release_id").notNull(),
+  toReleaseDigest: varchar("to_release_digest", { length: 64 }).notNull(),
+  toPublicationId: uuid("to_publication_id").notNull(),
+  expectedRevision: integer("expected_revision").notNull(),
+  resultingRevision: integer("resulting_revision").notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 64 }).notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.channelId, table.venueSlug, table.releaseKind, table.channel],
+    foreignColumns: [reconstructionReleaseChannels.id, reconstructionReleaseChannels.venueSlug, reconstructionReleaseChannels.releaseKind, reconstructionReleaseChannels.channel],
+    name: "reconstruction_channel_events_channel_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.fromReleaseId, table.venueSlug, table.releaseKind, table.fromReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channel_events_from_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.toReleaseId, table.venueSlug, table.releaseKind, table.toReleaseDigest],
+    foreignColumns: [reconstructionReleases.id, reconstructionReleases.venueSlug, reconstructionReleases.releaseKind, reconstructionReleases.releaseDigest],
+    name: "reconstruction_channel_events_to_release_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.fromPublicationId, table.fromReleaseId, table.venueSlug, table.releaseKind, table.fromReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channel_events_from_publication_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.toPublicationId, table.toReleaseId, table.venueSlug, table.releaseKind, table.toReleaseDigest],
+    foreignColumns: [reconstructionReleasePublications.id, reconstructionReleasePublications.releaseId, reconstructionReleasePublications.venueSlug, reconstructionReleasePublications.releaseKind, reconstructionReleasePublications.releaseDigest],
+    name: "reconstruction_channel_events_to_publication_fk",
+  }).onDelete("restrict"),
+  unique("reconstruction_channel_events_idempotency_unique").on(table.channelId, table.actorUserId, table.idempotencyKey),
+  unique("reconstruction_channel_events_revision_unique").on(table.channelId, table.resultingRevision),
+  index("reconstruction_channel_events_channel_created_idx").on(table.channelId, table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 30. Diary — bookings (the commitment axis; Canon §1–§3, T-487).
+//
+// A booking is space-time commitment truth. `kind` = what the commitment IS
+// (prospect | hold | ink | internal_block) and mutates only on promotion;
+// `status` = liveness (active | released | expired | cancelled | lost) and
+// mutates only on exit. The Canon's flat lifecycle state is derived
+// (deriveBookingState in @omnitwin/types), so a released hold remains
+// knowably a hold — wash-rate analytics depend on that provenance.
+//
+// The ink hard floor lives in the database: migration 0050 adds a btree_gist
+// partial EXCLUDE constraint (bookings_ink_no_overlap) so two active inks can
+// never overlap in one space. Drizzle cannot express EXCLUDE — the raw
+// migration is authoritative for it, together with the row CHECK constraints.
+// Holds and prospects overlap by design (the option ladder). Composite
+// (id, venue_id) FKs pin bookings to events and spaces of the SAME venue at
+// the DB boundary (the Mission Control tenant-integrity pattern).
+// ---------------------------------------------------------------------------
+
+export const bookings = pgTable("bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  kind: varchar("kind", { length: 20 }).$type<BookingKind>().notNull(),
+  status: varchar("status", { length: 20 }).$type<BookingLiveness>().notNull().default("active"),
+  title: varchar("title", { length: 200 }).notNull(),
+  eventType: varchar("event_type", { length: 80 }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  // Option-ladder position; holds only (bookings_rank_hold_only CHECK).
+  // Cleared on promotion to ink — the ladder is resolved.
+  rank: integer("rank"),
+  jointFlag: boolean("joint_flag").notNull().default(false),
+  decisionAt: timestamp("decision_at", { withTimezone: true }),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  nextAction: varchar("next_action", { length: 500 }),
+  nextActionDueAt: timestamp("next_action_due_at", { withTimezone: true }),
+  // Day-one nullable series group id (Canon §2.1); a series table arrives
+  // with recurrence work, not this slice.
+  seriesId: uuid("series_id"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Conversion provenance (T-496): the enquiry this booking was pencilled
+  // from. Added by migration 0051, so it sits physically after 0050's
+  // columns — the diary-schema contract test encodes exactly that order.
+  enquiryId: uuid("enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
+}, (table) => [
+  unique("bookings_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({
+    columns: [table.eventId, table.venueId],
+    foreignColumns: [events.id, events.venueId],
+    name: "bookings_event_venue_fk",
+  }),
+  foreignKey({
+    columns: [table.spaceId, table.venueId],
+    foreignColumns: [spaces.id, spaces.venueId],
+    name: "bookings_space_venue_fk",
+  }),
+  index("bookings_venue_starts_idx").on(table.venueId, table.startsAt),
+  index("bookings_space_starts_idx").on(table.spaceId, table.startsAt),
+  index("bookings_event_idx").on(table.eventId),
+  index("bookings_venue_kind_status_idx").on(table.venueId, table.kind, table.status),
+  index("bookings_venue_decision_idx").on(table.venueId, table.decisionAt),
+  index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
+  index("bookings_enquiry_idx").on(table.enquiryId),
+]);
+
+// House status-history convention (enquiry_status_history pattern). Rows
+// store DERIVED states (Canon §1 vocabulary), so history reads as the
+// lifecycle: "hold → ink", "hold → released", never a kind/status tuple.
+export const bookingStatusHistory = pgTable("booking_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  fromState: varchar("from_state", { length: 20 }).$type<BookingState>().notNull(),
+  toState: varchar("to_state", { length: 20 }).$type<BookingState>().notNull(),
+  changedBy: uuid("changed_by").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("booking_status_history_booking_idx").on(table.bookingId),
+]);
+
+// Minimal turnaround rules v0 (Canon §2.3 tail) — shaped like pricing_rules.
+// Null spaceId = venue-wide default; null eventType = all event types. The
+// conflict engine resolves the most specific active rule and, on specificity
+// ties, the largest minutes (fail-safe direction). Pairs no rule covers are
+// reported not_checked — never OK (Canon §4 honesty pattern).
+export const turnaroundRules = pgTable("turnaround_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id").references(() => spaces.id),
+  eventType: varchar("event_type", { length: 80 }),
+  name: varchar("name", { length: 200 }).notNull(),
+  minutes: integer("minutes").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("turnaround_rules_venue_space_idx").on(table.venueId, table.spaceId),
+]);
+
+// ---------------------------------------------------------------------------
+// 31. OmniTwin Foundry durable execution control (migration 0053).
+//
+// These declarations intentionally use DB-local structural types. The raw
+// migration is authoritative for state-transition, append-only, partial-index,
+// cost, deadline, kill-scope, and fencing triggers. In particular, admission
+// remains admitted_awaiting_executor and does not create a submit command.
+// ---------------------------------------------------------------------------
+
+type FoundryDbProviderKind =
+  | "local_cpu"
+  | "local_cuda"
+  | "runpod"
+  | "aws"
+  | "azure"
+  | "gcp"
+  | "self_hosted_cluster"
+  | "other";
+
+type FoundryDbProviderCommandKind =
+  | "provider_submit"
+  | "provider_reconcile"
+  | "provider_poll"
+  | "provider_checkpoint"
+  | "provider_stop";
+
+type FoundryDbProviderCommandState =
+  | "pending"
+  | "claimed"
+  | "succeeded"
+  | "failed"
+  | "uncertain"
+  | "cancelled";
+
+type FoundryDbProviderLifecycleState =
+  | "not_observed"
+  | "unknown"
+  | "queued"
+  | "running"
+  | "exited"
+  | "terminated"
+  | "not_found";
+
+type FoundryDbExecutionState =
+  | "admitted_awaiting_executor"
+  | "authorized"
+  | "submit_pending"
+  | "provider_unknown"
+  | "queued"
+  | "running"
+  | "checkpointing"
+  | "stop_pending"
+  | "terminating"
+  | "termination_unconfirmed"
+  | "validating"
+  | "terminal_succeeded"
+  | "terminal_failed"
+  | "terminal_cancelled"
+  | "terminal_killed"
+  | "terminal_budget_exceeded"
+  | "terminal_validation_failed"
+  | "terminal_provider_lost";
+
+export const foundryExecutionPolicies = pgTable("foundry_execution_policies", {
+  executionPolicySha256: varchar("execution_policy_sha256", { length: 71 }).primaryKey(),
+  policyId: varchar("policy_id", { length: 120 }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 80 }).notNull(),
+  maximumAttempts: integer("maximum_attempts").notNull(),
+  deterministicRetryDelaySeconds: jsonb("deterministic_retry_delay_seconds").$type<number[]>().notNull(),
+  maximumWallClockSeconds: integer("maximum_wall_clock_seconds").notNull(),
+  orchestrationOverheadSeconds: integer("orchestration_overhead_seconds").notNull(),
+  workerSelfDeadlineSeconds: integer("worker_self_deadline_seconds").notNull(),
+  providerMaximumExecutionTtlSeconds: integer("provider_maximum_execution_ttl_seconds").notNull(),
+  dispatchWindowTtlSeconds: integer("dispatch_window_ttl_seconds").notNull(),
+  leaseTtlSeconds: integer("lease_ttl_seconds").notNull(),
+  heartbeatIntervalSeconds: integer("heartbeat_interval_seconds").notNull(),
+  observationIntervalSeconds: integer("observation_interval_seconds").notNull(),
+  checkpointIntervalSeconds: integer("checkpoint_interval_seconds"),
+  cancelGracePeriodSeconds: integer("cancel_grace_period_seconds").notNull(),
+  terminationGracePeriodSeconds: integer("termination_grace_period_seconds").notNull(),
+  terminationConfirmationTimeoutSeconds: integer("termination_confirmation_timeout_seconds").notNull(),
+  pricingSnapshotMaximumAgeSeconds: integer("pricing_snapshot_maximum_age_seconds").notNull(),
+  costObservationMaximumAgeSeconds: integer("cost_observation_maximum_age_seconds").notNull(),
+  executionConfirmationTtlSeconds: integer("execution_confirmation_ttl_seconds").notNull(),
+  computeApprovalTtlSeconds: integer("compute_approval_ttl_seconds").notNull(),
+  costWarningMicroUsd: bigint("cost_warning_micro_usd", { mode: "bigint" }).notNull(),
+  costHardStopMicroUsd: bigint("cost_hard_stop_micro_usd", { mode: "bigint" }).notNull(),
+  terminationReserveMicroUsd: bigint("termination_reserve_micro_usd", { mode: "bigint" }).notNull(),
+  absoluteCostCapMicroUsd: bigint("absolute_cost_cap_micro_usd", { mode: "bigint" }).notNull(),
+  policyJson: jsonb("policy_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("foundry_policy_id_digest_unique").on(table.policyId, table.executionPolicySha256),
+  unique("foundry_policy_runtime_exact_unique").on(
+    table.executionPolicySha256, table.maximumWallClockSeconds, table.orchestrationOverheadSeconds,
+    table.workerSelfDeadlineSeconds, table.providerMaximumExecutionTtlSeconds,
+    table.cancelGracePeriodSeconds, table.terminationGracePeriodSeconds,
+    table.terminationConfirmationTimeoutSeconds, table.costWarningMicroUsd,
+    table.costHardStopMicroUsd, table.terminationReserveMicroUsd, table.absoluteCostCapMicroUsd,
+  ),
+  unique("foundry_policy_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryProviderAdapterArtifacts = pgTable("foundry_provider_adapter_artifacts", {
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).primaryKey(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  artifactRef: text("artifact_ref").notNull(),
+  artifactJson: jsonb("artifact_json").$type<Record<string, unknown>>().notNull(),
+  reviewedBy: varchar("reviewed_by", { length: 160 }).notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("foundry_adapter_artifact_exact_unique").on(
+    table.providerAdapterArtifactSha256, table.providerKind,
+    table.providerAdapterId, table.providerAdapterVersion,
+  ),
+  unique("foundry_adapter_artifact_actor_idem_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryProviderDeployments = pgTable("foundry_provider_deployments", {
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).primaryKey(),
+  deploymentId: varchar("deployment_id", { length: 120 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  accountProjectAlias: varchar("account_project_alias", { length: 120 }).notNull(),
+  region: varchar("region", { length: 120 }).notNull(),
+  dataResidency: varchar("data_residency", { length: 120 }).notNull(),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  deploymentJson: jsonb("deployment_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.providerAdapterArtifactSha256, table.providerKind,
+      table.providerAdapterId, table.providerAdapterVersion,
+    ],
+    foreignColumns: [
+      foundryProviderAdapterArtifacts.providerAdapterArtifactSha256,
+      foundryProviderAdapterArtifacts.providerKind,
+      foundryProviderAdapterArtifacts.providerAdapterId,
+      foundryProviderAdapterArtifacts.providerAdapterVersion,
+    ],
+    name: "foundry_deployment_adapter_fk",
+  }).onDelete("restrict"),
+  unique("foundry_deployment_exact_unique").on(
+    table.providerDeploymentSha256, table.providerKind, table.providerAdapterId,
+    table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+  ),
+  unique("foundry_deployment_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryProviderRequestProfiles = pgTable("foundry_provider_request_profiles", {
+  providerRequestProfileSha256: varchar("provider_request_profile_sha256", { length: 71 }).primaryKey(),
+  profileId: varchar("profile_id", { length: 120 }).notNull(),
+  profileVersion: varchar("profile_version", { length: 120 }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 80 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerAdapterConfigurationSha256: varchar("provider_adapter_configuration_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  targetKind: varchar("target_kind", { length: 30 }).$type<"local_worker" | "remote_worker_pool">().notNull(),
+  targetId: varchar("target_id", { length: 120 }).notNull(),
+  maximumApiCallSeconds: integer("maximum_api_call_seconds").notNull(),
+  profileJson: jsonb("profile_json").$type<Record<string, unknown>>().notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.providerDeploymentSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+    ],
+    foreignColumns: [
+      foundryProviderDeployments.providerDeploymentSha256,
+      foundryProviderDeployments.providerKind,
+      foundryProviderDeployments.providerAdapterId,
+      foundryProviderDeployments.providerAdapterVersion,
+      foundryProviderDeployments.providerAdapterArtifactSha256,
+    ],
+    name: "foundry_provider_request_profile_deployment_fk",
+  }).onDelete("restrict"),
+  unique("foundry_provider_request_profile_id_version_unique").on(table.profileId, table.profileVersion),
+  unique("foundry_provider_request_profile_exact_unique").on(
+    table.providerRequestProfileSha256, table.profileId, table.profileVersion,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.providerAdapterArtifactSha256, table.providerAdapterConfigurationSha256,
+    table.providerDeploymentSha256,
+  ),
+  unique("foundry_provider_request_profile_actor_idem_unique").on(
+    table.registeredByUserId, table.idempotencyKey,
+  ),
+]);
+
+export const foundryTrustedWorkerProfiles = pgTable("foundry_trusted_worker_profiles", {
+  workerProfileSha256: varchar("worker_profile_sha256", { length: 71 }).primaryKey(),
+  profileId: varchar("profile_id", { length: 120 }).notNull(),
+  profileVersion: varchar("profile_version", { length: 120 }).notNull(),
+  operationClass: varchar("operation_class", { length: 40 }).$type<
+    | "read_only_inspection"
+    | "deterministic_transformation"
+    | "model_inference"
+    | "model_training"
+    | "redistribution_packaging"
+    | "public_release"
+  >().notNull(),
+  containerImage: text("container_image").notNull(),
+  networkAccess: varchar("network_access", { length: 30 }).$type<"none" | "object_storage_only" | "restricted">().notNull(),
+  localExecutionAllowed: boolean("local_execution_allowed").notNull(),
+  profileJson: jsonb("profile_json").$type<Record<string, unknown>>().notNull(),
+  reviewedBy: varchar("reviewed_by", { length: 160 }).notNull(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("foundry_worker_profile_id_version_unique").on(table.profileId, table.profileVersion),
+  unique("foundry_worker_profile_exact_unique").on(table.workerProfileSha256, table.operationClass),
+  unique("foundry_worker_profile_actor_idem_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryJobs = pgTable("foundry_jobs", {
+  jobId: varchar("job_id", { length: 120 }).primaryKey(),
+  envelopeId: varchar("envelope_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 80 }).notNull(),
+  executionIntent: varchar("execution_intent", { length: 20 }).$type<"execute">().notNull(),
+  authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  providerPlanSha256: varchar("provider_plan_sha256", { length: 71 }).notNull(),
+  reviewedIngestManifestSha256: varchar("reviewed_ingest_manifest_sha256", { length: 71 }).notNull(),
+  intakeAdmissionResultSha256: varchar("intake_admission_result_sha256", { length: 71 }).notNull(),
+  intakeStagingIndexSha256: varchar("intake_staging_index_sha256", { length: 71 }).notNull(),
+  executionPolicySha256: varchar("execution_policy_sha256", { length: 71 }).notNull(),
+  computeApprovalId: varchar("compute_approval_id", { length: 120 }),
+  pricingSnapshotSha256: varchar("pricing_snapshot_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  trustedWorkerProfileSetSha256: varchar("trusted_worker_profile_set_sha256", { length: 71 }).notNull(),
+  trustedWorkerProfileCount: integer("trusted_worker_profile_count").notNull(),
+  pricingCurrency: char("pricing_currency", { length: 3 }).$type<"USD">().notNull(),
+  pricingSnapshotObservedAt: timestamp("pricing_snapshot_observed_at", { withTimezone: true }).notNull(),
+  providerPlanPlannedAt: timestamp("provider_plan_planned_at", { withTimezone: true }).notNull(),
+  pricingSnapshotExpiresAt: timestamp("pricing_snapshot_expires_at", { withTimezone: true }).notNull(),
+  estimatedCostMicroUsd: bigint("estimated_cost_micro_usd", { mode: "bigint" }).notNull(),
+  budgetCapMicroUsd: bigint("budget_cap_micro_usd", { mode: "bigint" }).notNull(),
+  costWarningMicroUsd: bigint("cost_warning_micro_usd", { mode: "bigint" }).notNull(),
+  costHardStopMicroUsd: bigint("cost_hard_stop_micro_usd", { mode: "bigint" }).notNull(),
+  terminationReserveMicroUsd: bigint("termination_reserve_micro_usd", { mode: "bigint" }).notNull(),
+  absoluteCostCapMicroUsd: bigint("absolute_cost_cap_micro_usd", { mode: "bigint" }).notNull(),
+  maxWallClockSeconds: integer("max_wall_clock_seconds").notNull(),
+  orchestrationOverheadSeconds: integer("orchestration_overhead_seconds").notNull(),
+  cancelGraceSeconds: integer("cancel_grace_seconds").notNull(),
+  terminationGraceSeconds: integer("termination_grace_seconds").notNull(),
+  workerSelfDeadlineSeconds: integer("worker_self_deadline_seconds").notNull(),
+  terminationConfirmationTimeoutSeconds: integer("termination_confirmation_timeout_seconds").notNull(),
+  providerMaximumExecutionTtlSeconds: integer("provider_maximum_execution_ttl_seconds").notNull(),
+  killSwitchEnabled: boolean("kill_switch_enabled").notNull(),
+  dispatchDeadline: timestamp("dispatch_deadline", { withTimezone: true }).notNull(),
+  envelopeCreatedAt: timestamp("envelope_created_at", { withTimezone: true }).notNull(),
+  executionEnvelopeJson: jsonb("execution_envelope_json").$type<Record<string, unknown>>().notNull(),
+  jobSpecJson: jsonb("job_spec_json").$type<Record<string, unknown>>().notNull(),
+  reviewedIngestManifestJson: jsonb("reviewed_ingest_manifest_json").$type<Record<string, unknown>>().notNull(),
+  providerPlanJson: jsonb("provider_plan_json").$type<Record<string, unknown>>().notNull(),
+  intakeAdmissionResultJson: jsonb("intake_admission_result_json").$type<Record<string, unknown>>().notNull(),
+  intakeStagingIndexJson: jsonb("intake_staging_index_json").$type<Record<string, unknown>>().notNull(),
+  executionPolicyJson: jsonb("execution_policy_json").$type<Record<string, unknown>>().notNull(),
+  pricingSnapshotJson: jsonb("pricing_snapshot_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("foundry_jobs_envelope_unique").on(table.envelopeId),
+  unique("foundry_jobs_job_project_unique").on(table.jobId, table.projectId),
+  unique("foundry_jobs_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+  unique("foundry_jobs_confirmation_subject_unique").on(
+    table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+  ),
+  unique("foundry_jobs_rights_subject_unique").on(
+    table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+    table.reviewedIngestManifestSha256, table.executionPolicySha256,
+  ),
+  unique("foundry_jobs_compute_subject_unique").on(
+    table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.budgetCapMicroUsd, table.providerAdapterArtifactSha256,
+    table.providerDeploymentSha256, table.computeApprovalId,
+  ),
+  unique("foundry_jobs_worker_set_unique").on(
+    table.jobId, table.projectId, table.executionEnvelopeSha256, table.providerPlanSha256,
+    table.trustedWorkerProfileSetSha256,
+  ),
+  unique("foundry_jobs_exact_envelope_unique").on(
+    table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+    table.providerPlanSha256, table.reviewedIngestManifestSha256, table.executionPolicySha256,
+    table.intakeAdmissionResultSha256, table.intakeStagingIndexSha256, table.pricingSnapshotSha256,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+    table.trustedWorkerProfileSetSha256, table.trustedWorkerProfileCount,
+    table.pricingSnapshotExpiresAt, table.budgetCapMicroUsd,
+    table.costWarningMicroUsd, table.costHardStopMicroUsd, table.terminationReserveMicroUsd,
+    table.absoluteCostCapMicroUsd, table.maxWallClockSeconds, table.orchestrationOverheadSeconds,
+    table.cancelGraceSeconds,
+    table.terminationGraceSeconds, table.workerSelfDeadlineSeconds,
+    table.terminationConfirmationTimeoutSeconds, table.providerMaximumExecutionTtlSeconds,
+    table.dispatchDeadline,
+  ),
+  foreignKey({
+    columns: [
+      table.executionPolicySha256, table.maxWallClockSeconds, table.orchestrationOverheadSeconds,
+      table.workerSelfDeadlineSeconds, table.providerMaximumExecutionTtlSeconds,
+      table.cancelGraceSeconds, table.terminationGraceSeconds,
+      table.terminationConfirmationTimeoutSeconds, table.costWarningMicroUsd,
+      table.costHardStopMicroUsd, table.terminationReserveMicroUsd, table.absoluteCostCapMicroUsd,
+    ],
+    foreignColumns: [
+      foundryExecutionPolicies.executionPolicySha256,
+      foundryExecutionPolicies.maximumWallClockSeconds,
+      foundryExecutionPolicies.orchestrationOverheadSeconds,
+      foundryExecutionPolicies.workerSelfDeadlineSeconds,
+      foundryExecutionPolicies.providerMaximumExecutionTtlSeconds,
+      foundryExecutionPolicies.cancelGracePeriodSeconds,
+      foundryExecutionPolicies.terminationGracePeriodSeconds,
+      foundryExecutionPolicies.terminationConfirmationTimeoutSeconds,
+      foundryExecutionPolicies.costWarningMicroUsd,
+      foundryExecutionPolicies.costHardStopMicroUsd,
+      foundryExecutionPolicies.terminationReserveMicroUsd,
+      foundryExecutionPolicies.absoluteCostCapMicroUsd,
+    ],
+    name: "foundry_jobs_execution_policy_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.providerAdapterArtifactSha256, table.providerKind,
+      table.providerAdapterId, table.providerAdapterVersion,
+    ],
+    foreignColumns: [
+      foundryProviderAdapterArtifacts.providerAdapterArtifactSha256,
+      foundryProviderAdapterArtifacts.providerKind,
+      foundryProviderAdapterArtifacts.providerAdapterId,
+      foundryProviderAdapterArtifacts.providerAdapterVersion,
+    ],
+    name: "foundry_jobs_adapter_artifact_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.providerDeploymentSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+    ],
+    foreignColumns: [
+      foundryProviderDeployments.providerDeploymentSha256,
+      foundryProviderDeployments.providerKind,
+      foundryProviderDeployments.providerAdapterId,
+      foundryProviderDeployments.providerAdapterVersion,
+      foundryProviderDeployments.providerAdapterArtifactSha256,
+    ],
+    name: "foundry_jobs_deployment_fk",
+  }).onDelete("restrict"),
+]);
+
+export const foundryJobWorkerProfiles = pgTable("foundry_job_worker_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  providerPlanSha256: varchar("provider_plan_sha256", { length: 71 }).notNull(),
+  trustedWorkerProfileSetSha256: varchar("trusted_worker_profile_set_sha256", { length: 71 }).notNull(),
+  stageId: varchar("stage_id", { length: 120 }).notNull(),
+  workerProfileSha256: varchar("worker_profile_sha256", { length: 71 }).notNull(),
+  operationClass: varchar("operation_class", { length: 40 }).$type<
+    | "read_only_inspection"
+    | "deterministic_transformation"
+    | "model_inference"
+    | "model_training"
+    | "redistribution_packaging"
+    | "public_release"
+  >().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.jobId, table.projectId, table.executionEnvelopeSha256,
+      table.providerPlanSha256, table.trustedWorkerProfileSetSha256,
+    ],
+    foreignColumns: [
+      foundryJobs.jobId, foundryJobs.projectId, foundryJobs.executionEnvelopeSha256,
+      foundryJobs.providerPlanSha256, foundryJobs.trustedWorkerProfileSetSha256,
+    ],
+    name: "foundry_job_worker_set_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.workerProfileSha256, table.operationClass],
+    foreignColumns: [foundryTrustedWorkerProfiles.workerProfileSha256, foundryTrustedWorkerProfiles.operationClass],
+    name: "foundry_job_worker_profile_fk",
+  }).onDelete("restrict"),
+  unique("foundry_job_worker_stage_unique").on(table.jobId, table.stageId),
+  unique("foundry_job_worker_actor_idem_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryRightsPolicyVersions = pgTable("foundry_rights_policy_versions", {
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  policyEvidenceSha256: varchar("policy_evidence_sha256", { length: 71 }).notNull(),
+  generation: bigint("generation", { mode: "bigint" }).notNull(),
+  maximumApprovalTtlSeconds: integer("maximum_approval_ttl_seconds").notNull(),
+  policyDefinitionJson: jsonb("policy_definition_json").$type<Record<string, unknown>>().notNull(),
+  effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({
+    columns: [table.policyVersion, table.generation],
+    name: "foundry_rights_policy_pk",
+  }),
+  unique("foundry_rights_policy_generation_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.generation,
+  ),
+  unique("foundry_rights_policy_exact_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.policyEvidenceSha256,
+    table.generation, table.maximumApprovalTtlSeconds,
+  ),
+  unique("foundry_rights_policy_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+]);
+
+export const foundryRightsPolicyRevocations = pgTable("foundry_rights_policy_revocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  policyGeneration: bigint("policy_generation", { mode: "bigint" }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }).notNull(),
+  reason: text("reason").notNull(),
+  revokedByUserId: uuid("revoked_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.policyVersion, table.policyDefinitionSha256, table.policyGeneration],
+    foreignColumns: [
+      foundryRightsPolicyVersions.policyVersion,
+      foundryRightsPolicyVersions.policyDefinitionSha256,
+      foundryRightsPolicyVersions.generation,
+    ],
+    name: "foundry_rights_policy_revocation_fk",
+  }).onDelete("restrict"),
+  unique("foundry_rights_policy_one_revocation_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.policyGeneration,
+  ),
+  unique("foundry_rights_policy_revocation_actor_idem_unique").on(table.revokedByUserId, table.idempotencyKey),
+]);
+
+export const foundryRightsApprovals = pgTable("foundry_rights_approvals", {
+  id: varchar("id", { length: 120 }).primaryKey(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  reviewedIngestManifestSha256: varchar("reviewed_ingest_manifest_sha256", { length: 71 }).notNull(),
+  executionPolicySha256: varchar("execution_policy_sha256", { length: 71 }).notNull(),
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  policyEvidenceSha256: varchar("policy_evidence_sha256", { length: 71 }).notNull(),
+  policyGeneration: bigint("policy_generation", { mode: "bigint" }).notNull(),
+  policyMaximumApprovalTtlSeconds: integer("policy_maximum_approval_ttl_seconds").notNull(),
+  decision: varchar("decision", { length: 20 }).$type<"allowed">().notNull(),
+  decidedBy: varchar("decided_by", { length: 160 }).notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  rightsApprovalSha256: varchar("rights_approval_sha256", { length: 71 }).notNull(),
+  rightsApprovalJson: jsonb("rights_approval_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256, table.reviewedIngestManifestSha256, table.executionPolicySha256],
+    foreignColumns: [foundryJobs.jobId, foundryJobs.projectId, foundryJobs.executionEnvelopeSha256, foundryJobs.jobSpecSha256, foundryJobs.reviewedIngestManifestSha256, foundryJobs.executionPolicySha256],
+    name: "foundry_rights_job_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.policyVersion, table.policyDefinitionSha256,
+      table.policyEvidenceSha256, table.policyGeneration,
+      table.policyMaximumApprovalTtlSeconds,
+    ],
+    foreignColumns: [
+      foundryRightsPolicyVersions.policyVersion,
+      foundryRightsPolicyVersions.policyDefinitionSha256,
+      foundryRightsPolicyVersions.policyEvidenceSha256,
+      foundryRightsPolicyVersions.generation,
+      foundryRightsPolicyVersions.maximumApprovalTtlSeconds,
+    ],
+    name: "foundry_rights_policy_fk",
+  }).onDelete("restrict"),
+  unique("foundry_rights_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+  unique("foundry_rights_exact_subject_unique").on(
+    table.id, table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+    table.reviewedIngestManifestSha256, table.executionPolicySha256,
+    table.policyVersion, table.policyDefinitionSha256, table.policyEvidenceSha256,
+    table.policyGeneration, table.policyMaximumApprovalTtlSeconds, table.rightsApprovalSha256,
+  ),
+]);
+
+export const foundryDerivativeRightsPolicyVersions = pgTable("foundry_derivative_rights_policy_versions", {
+  authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  generation: bigint("generation", { mode: "bigint" }).notNull(),
+  maximumApprovalTtlSeconds: integer("maximum_approval_ttl_seconds").notNull(),
+  effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+  policyDefinitionJson: jsonb("policy_definition_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({
+    columns: [table.policyVersion, table.generation],
+    name: "foundry_derivative_policy_pk",
+  }),
+  unique("foundry_derivative_policy_generation_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.generation,
+  ),
+  unique("foundry_derivative_policy_subject_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.generation,
+    table.maximumApprovalTtlSeconds,
+  ),
+  unique("foundry_derivative_policy_actor_idem_unique").on(
+    table.registeredByUserId, table.idempotencyKey,
+  ),
+]);
+
+export const foundryDerivativeRightsPolicyRevocations = pgTable("foundry_derivative_rights_policy_revocations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+  revocationId: varchar("revocation_id", { length: 120 }).notNull(),
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  policyGeneration: bigint("policy_generation", { mode: "bigint" }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }).notNull(),
+  revokedBy: varchar("revoked_by", { length: 160 }).notNull(),
+  reason: text("reason").notNull(),
+  revocationSha256: varchar("revocation_sha256", { length: 71 }).notNull(),
+  revocationJson: jsonb("revocation_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.policyVersion, table.policyDefinitionSha256, table.policyGeneration],
+    foreignColumns: [
+      foundryDerivativeRightsPolicyVersions.policyVersion,
+      foundryDerivativeRightsPolicyVersions.policyDefinitionSha256,
+      foundryDerivativeRightsPolicyVersions.generation,
+    ],
+    name: "foundry_derivative_revocation_policy_fk",
+  }).onDelete("restrict"),
+  unique("foundry_derivative_revocation_exact_unique").on(
+    table.policyVersion, table.policyDefinitionSha256, table.policyGeneration,
+    table.revocationSha256,
+  ),
+  unique("foundry_derivative_revocation_id_unique").on(table.revocationId),
+  unique("foundry_derivative_revocation_actor_idem_unique").on(
+    table.registeredByUserId, table.idempotencyKey,
+  ),
+  index("foundry_derivative_revocation_effective_idx").on(
+    table.policyVersion, table.policyDefinitionSha256, table.policyGeneration,
+    table.revokedAt, table.recordedAt, table.id,
+  ),
+]);
+
+export const foundryDerivativeRightsApprovals = pgTable("foundry_derivative_rights_approvals", {
+  approvalId: varchar("approval_id", { length: 120 }).primaryKey(),
+  authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  jobSubjectSha256: varchar("job_subject_sha256", { length: 71 }).notNull(),
+  ingestManifestSha256: varchar("ingest_manifest_sha256", { length: 71 }).notNull(),
+  jobSpecJson: jsonb("job_spec_json").$type<Record<string, unknown>>().notNull(),
+  ingestManifestJson: jsonb("ingest_manifest_json").$type<Record<string, unknown>>().notNull(),
+  policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+  policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+  policyGeneration: bigint("policy_generation", { mode: "bigint" }).notNull(),
+  policyMaximumApprovalTtlSeconds: integer("policy_maximum_approval_ttl_seconds").notNull(),
+  stageId: varchar("stage_id", { length: 120 }).notNull(),
+  operationId: varchar("operation_id", { length: 96 }).$type<"normalize_mesh_glb/v0">().notNull(),
+  derivativeClass: varchar("derivative_class", { length: 120 })
+    .$type<"lossless_internal_format_normalization">().notNull(),
+  assetId: varchar("asset_id", { length: 120 }).notNull(),
+  rightsBasis: varchar("rights_basis", { length: 40 }).$type<
+    | "customer_owned"
+    | "explicit_licence"
+    | "vendor_export_terms"
+    | "written_permission"
+    | "public_domain"
+  >().notNull(),
+  termsReference: text("terms_reference").notNull(),
+  termsReviewedAt: timestamp("terms_reviewed_at", { withTimezone: true }).notNull(),
+  termsEvidenceArtifactId: varchar("terms_evidence_artifact_id", { length: 120 }).notNull(),
+  termsEvidenceSha256: varchar("terms_evidence_sha256", { length: 71 }).notNull(),
+  termsEvidenceSizeBytes: bigint("terms_evidence_size_bytes", { mode: "bigint" }).notNull(),
+  termsEvidenceMediaType: varchar("terms_evidence_media_type", { length: 160 }).notNull(),
+  termsEvidenceCapturedAt: timestamp("terms_evidence_captured_at", { withTimezone: true }).notNull(),
+  decision: varchar("decision", { length: 20 }).$type<"allowed">().notNull(),
+  decidedBy: varchar("decided_by", { length: 160 }).notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  derivativeRightsApprovalSha256: varchar("derivative_rights_approval_sha256", { length: 71 }).notNull(),
+  derivativeRightsApprovalJson: jsonb("derivative_rights_approval_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.policyVersion, table.policyDefinitionSha256, table.policyGeneration,
+      table.policyMaximumApprovalTtlSeconds,
+    ],
+    foreignColumns: [
+      foundryDerivativeRightsPolicyVersions.policyVersion,
+      foundryDerivativeRightsPolicyVersions.policyDefinitionSha256,
+      foundryDerivativeRightsPolicyVersions.generation,
+      foundryDerivativeRightsPolicyVersions.maximumApprovalTtlSeconds,
+    ],
+    name: "foundry_derivative_approval_policy_fk",
+  }).onDelete("restrict"),
+  unique("foundry_derivative_approval_actor_idem_unique").on(
+    table.registeredByUserId, table.idempotencyKey,
+  ),
+  unique("foundry_derivative_approval_exact_subject_unique").on(
+    table.approvalId, table.jobId, table.projectId, table.jobSubjectSha256,
+    table.ingestManifestSha256, table.policyVersion,
+    table.policyDefinitionSha256, table.policyGeneration, table.stageId,
+    table.operationId, table.assetId, table.derivativeRightsApprovalSha256,
+  ),
+]);
+
+/**
+ * Inline, bounded byte custody for legal/terms evidence. These rows are
+ * authenticated review evidence only: authority and execution eligibility are
+ * frozen to none/false by migration guards.
+ */
+export const foundryDerivativeTermsEvidenceCustodyV1 = pgTable(
+  "foundry_derivative_terms_evidence_custody_v1",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+    executionEligible: boolean("execution_eligible").$type<false>().notNull(),
+    artifactId: varchar("artifact_id", { length: 120 }).notNull(),
+    sha256: varchar("sha256", { length: 71 }).notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    mediaType: varchar("media_type", { length: 160 }).notNull(),
+    evidenceBytes: bytea("evidence_bytes").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    storageMode: varchar("storage_mode", { length: 40 })
+      .$type<"postgres_inline_bytea_v1">()
+      .notNull(),
+    custodyRequestSha256: varchar("custody_request_sha256", { length: 71 }).notNull(),
+    custodyRequestJson: jsonb("custody_request_json").$type<Record<string, unknown>>().notNull(),
+    custodyReceiptSha256: varchar("custody_receipt_sha256", { length: 71 }).notNull(),
+    custodyReceiptJson: jsonb("custody_receipt_json").$type<Record<string, unknown>>().notNull(),
+    registeredByUserId: uuid("registered_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("foundry_derivative_terms_custody_artifact_unique").on(table.artifactId),
+    unique("foundry_derivative_terms_custody_receipt_unique").on(table.custodyReceiptSha256),
+    unique("foundry_derivative_terms_custody_id_receipt_unique").on(
+      table.id,
+      table.custodyReceiptSha256,
+    ),
+    unique("foundry_derivative_terms_custody_exact_unique").on(
+      table.id,
+      table.artifactId,
+      table.sha256,
+      table.sizeBytes,
+      table.mediaType,
+      table.capturedAt,
+      table.custodyReceiptSha256,
+    ),
+    unique("foundry_derivative_terms_custody_actor_idem_unique").on(
+      table.registeredByUserId,
+      table.idempotencyKey,
+    ),
+    index("foundry_derivative_terms_custody_digest_idx").on(
+      table.sha256,
+      table.sizeBytes,
+      table.recordedAt,
+    ),
+  ],
+);
+
+/**
+ * Platform-admin review receipts over exact 0054 approval metadata and exact
+ * custodied bytes. Acceptance is only for a later registry attestation; it is
+ * never an execution approval.
+ */
+export const foundryDerivativeRightsReviewsV1 = pgTable(
+  "foundry_derivative_rights_reviews_v1",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+    executionEligible: boolean("execution_eligible").$type<false>().notNull(),
+    approvalId: varchar("approval_id", { length: 120 })
+      .notNull()
+      .references(() => foundryDerivativeRightsApprovals.approvalId, { onDelete: "restrict" }),
+    derivativeRightsApprovalSha256: varchar("derivative_rights_approval_sha256", { length: 71 })
+      .notNull(),
+    termsCustodyId: uuid("terms_custody_id").notNull(),
+    termsCustodyReceiptSha256: varchar("terms_custody_receipt_sha256", { length: 71 }).notNull(),
+    decision: varchar("decision", { length: 48 })
+      .$type<"accepted_for_registry_attestation" | "rejected">()
+      .notNull(),
+    rationale: text("rationale").notNull(),
+    reviewRequestSha256: varchar("review_request_sha256", { length: 71 }).notNull(),
+    reviewRequestJson: jsonb("review_request_json").$type<Record<string, unknown>>().notNull(),
+    reviewReceiptSha256: varchar("review_receipt_sha256", { length: 71 }).notNull(),
+    reviewReceiptJson: jsonb("review_receipt_json").$type<Record<string, unknown>>().notNull(),
+    reviewedByUserId: uuid("reviewed_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.termsCustodyId, table.termsCustodyReceiptSha256],
+      foreignColumns: [
+        foundryDerivativeTermsEvidenceCustodyV1.id,
+        foundryDerivativeTermsEvidenceCustodyV1.custodyReceiptSha256,
+      ],
+      name: "foundry_derivative_rights_review_custody_fk",
+    }).onDelete("restrict"),
+    unique("foundry_derivative_rights_review_approval_unique").on(table.approvalId),
+    unique("foundry_derivative_rights_review_receipt_unique").on(table.reviewReceiptSha256),
+    unique("foundry_derivative_rights_review_actor_idem_unique").on(
+      table.reviewedByUserId,
+      table.idempotencyKey,
+    ),
+    index("foundry_derivative_rights_review_custody_idx").on(
+      table.termsCustodyId,
+      table.reviewedAt,
+    ),
+  ],
+);
+
+/**
+ * Database-authenticated attestations over the exact accepted derivative-rights
+ * review, approval, and terms-evidence custody graph. Registry authority is
+ * evidence authority only; these rows remain execution-ineligible.
+ */
+export const foundryDerivativeRightsRegistryAttestationsV1 = pgTable(
+  "foundry_derivative_rights_registry_attestations_v1",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    registryAuthority: varchar("registry_authority", { length: 64 })
+      .$type<"authenticated_registry_attestation_v1">()
+      .notNull(),
+    executionEligible: boolean("execution_eligible").$type<false>().notNull(),
+    approvalId: varchar("approval_id", { length: 120 })
+      .notNull()
+      .references(() => foundryDerivativeRightsApprovals.approvalId, { onDelete: "restrict" }),
+    derivativeRightsApprovalSha256: varchar("derivative_rights_approval_sha256", {
+      length: 71,
+    }).notNull(),
+    reviewId: uuid("review_id")
+      .notNull()
+      .references(() => foundryDerivativeRightsReviewsV1.id, { onDelete: "restrict" }),
+    reviewReceiptSha256: varchar("review_receipt_sha256", { length: 71 }).notNull(),
+    termsCustodyId: uuid("terms_custody_id")
+      .notNull()
+      .references(() => foundryDerivativeTermsEvidenceCustodyV1.id, { onDelete: "restrict" }),
+    termsCustodyReceiptSha256: varchar("terms_custody_receipt_sha256", { length: 71 }).notNull(),
+    policyVersion: varchar("policy_version", { length: 120 }).notNull(),
+    policyDefinitionSha256: varchar("policy_definition_sha256", { length: 71 }).notNull(),
+    policyGeneration: bigint("policy_generation", { mode: "bigint" }).notNull(),
+    jobSubjectSha256: varchar("job_subject_sha256", { length: 71 }).notNull(),
+    ingestManifestSha256: varchar("ingest_manifest_sha256", { length: 71 }).notNull(),
+    stageId: varchar("stage_id", { length: 120 }).notNull(),
+    operationId: varchar("operation_id", { length: 96 })
+      .$type<"normalize_mesh_glb/v0">()
+      .notNull(),
+    derivativeClass: varchar("derivative_class", { length: 120 })
+      .$type<"lossless_internal_format_normalization">()
+      .notNull(),
+    assetId: varchar("asset_id", { length: 120 }).notNull(),
+    approvalExpiresAt: timestamp("approval_expires_at", { withTimezone: true }).notNull(),
+    registrationRequestSha256: varchar("registration_request_sha256", { length: 71 }).notNull(),
+    registrationRequestJson: jsonb("registration_request_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    registryAttestationSha256: varchar("registry_attestation_sha256", { length: 71 }).notNull(),
+    registryAttestationJson: jsonb("registry_attestation_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    attestedByUserId: uuid("attested_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
+    attestedAt: timestamp("attested_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("foundry_derivative_registry_attestation_review_unique").on(table.reviewId),
+    unique("foundry_derivative_registry_attestation_approval_unique").on(table.approvalId),
+    unique("foundry_derivative_registry_attestation_digest_unique").on(
+      table.registryAttestationSha256,
+    ),
+    unique("foundry_derivative_registry_attestation_exact_unique").on(
+      table.id,
+      table.registryAttestationSha256,
+      table.approvalId,
+      table.derivativeRightsApprovalSha256,
+      table.reviewId,
+      table.reviewReceiptSha256,
+      table.termsCustodyId,
+      table.termsCustodyReceiptSha256,
+    ),
+    unique("foundry_derivative_registry_attestation_actor_idem_unique").on(
+      table.attestedByUserId,
+      table.idempotencyKey,
+    ),
+    index("foundry_derivative_registry_attestation_policy_idx").on(
+      table.policyVersion,
+      table.policyDefinitionSha256,
+      table.policyGeneration,
+      table.attestedAt,
+    ),
+  ],
+);
+
+/** Append-only, authenticated invalidation of a registry attestation. */
+export const foundryDerivativeRightsRegistryAttestationRevocationsV1 = pgTable(
+  "foundry_derivative_rights_registry_attestation_revocations_v1",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    registryAuthority: varchar("registry_authority", { length: 64 })
+      .$type<"authenticated_registry_attestation_v1">()
+      .notNull(),
+    executionEligible: boolean("execution_eligible").$type<false>().notNull(),
+    attestationId: uuid("attestation_id")
+      .notNull()
+      .references(() => foundryDerivativeRightsRegistryAttestationsV1.id, { onDelete: "restrict" }),
+    registryAttestationSha256: varchar("registry_attestation_sha256", { length: 71 }).notNull(),
+    reason: text("reason").notNull(),
+    revocationRequestSha256: varchar("revocation_request_sha256", { length: 71 }).notNull(),
+    revocationRequestJson: jsonb("revocation_request_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    attestationRevocationSha256: varchar("attestation_revocation_sha256", { length: 71 }).notNull(),
+    attestationRevocationJson: jsonb("attestation_revocation_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    revokedByUserId: uuid("revoked_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("foundry_derivative_registry_revocation_one_unique").on(table.attestationId),
+    unique("foundry_derivative_registry_revocation_digest_unique").on(
+      table.attestationRevocationSha256,
+    ),
+    unique("foundry_derivative_registry_revocation_actor_idem_unique").on(
+      table.revokedByUserId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+/**
+ * Atomic one-time reservation of an authority-none V1 derivative candidate.
+ * This table intentionally has no foreign-key or service path to runtime
+ * execution, provider-command, or release authority.
+ */
+export const foundryDerivativeExecutionAuthorizationCandidatesV1 = pgTable(
+  "foundry_derivative_execution_authorization_candidates_v1",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authority: varchar("authority", { length: 20 }).$type<"none">().notNull(),
+    executionEligible: boolean("execution_eligible").$type<false>().notNull(),
+    dispatchEnabled: boolean("dispatch_enabled").$type<false>().notNull(),
+    outputDisposition: varchar("output_disposition", { length: 40 })
+      .$type<"quarantine_only">()
+      .notNull(),
+    approvalId: varchar("approval_id", { length: 120 })
+      .notNull()
+      .references(() => foundryDerivativeRightsApprovals.approvalId, { onDelete: "restrict" }),
+    derivativeRightsApprovalSha256: varchar("derivative_rights_approval_sha256", {
+      length: 71,
+    }).notNull(),
+    reviewId: uuid("review_id")
+      .notNull()
+      .references(() => foundryDerivativeRightsReviewsV1.id, { onDelete: "restrict" }),
+    reviewReceiptSha256: varchar("review_receipt_sha256", { length: 71 }).notNull(),
+    attestationId: uuid("attestation_id")
+      .notNull()
+      .references(() => foundryDerivativeRightsRegistryAttestationsV1.id, { onDelete: "restrict" }),
+    registryAttestationSha256: varchar("registry_attestation_sha256", { length: 71 }).notNull(),
+    baseExecutionSubjectSha256: varchar("base_execution_subject_sha256", { length: 71 }).notNull(),
+    baseExecutionSubjectJson: jsonb("base_execution_subject_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    projectId: varchar("project_id", { length: 120 }).notNull(),
+    jobId: varchar("job_id", { length: 120 })
+      .notNull()
+      .references(() => foundryJobs.jobId, { onDelete: "restrict" }),
+    jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+    executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+    ingestManifestSha256: varchar("ingest_manifest_sha256", { length: 71 }).notNull(),
+    jobSubjectSha256: varchar("job_subject_sha256", { length: 71 }).notNull(),
+    workerProfileSha256: varchar("worker_profile_sha256", { length: 71 }).notNull(),
+    operationClass: varchar("operation_class", { length: 40 })
+      .$type<"deterministic_transformation">()
+      .notNull(),
+    bindingSetSha256: varchar("binding_set_sha256", { length: 71 }).notNull(),
+    bindingSetJson: jsonb("binding_set_json").$type<Record<string, unknown>>().notNull(),
+    restrictionLineageSetSha256: varchar("restriction_lineage_set_sha256", { length: 71 }).notNull(),
+    restrictionLineageSetJson: jsonb("restriction_lineage_set_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    outputPolicySha256: varchar("output_policy_sha256", { length: 71 }).notNull(),
+    outputPolicyJson: jsonb("output_policy_json").$type<Record<string, unknown>>().notNull(),
+    reservationRequestSha256: varchar("reservation_request_sha256", { length: 71 }).notNull(),
+    reservationRequestJson: jsonb("reservation_request_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    reservationId: uuid("reservation_id").defaultRandom().notNull(),
+    candidateReservationReceiptSha256: varchar("candidate_reservation_receipt_sha256", {
+      length: 71,
+    }).notNull(),
+    candidateReservationReceiptJson: jsonb("candidate_reservation_receipt_json")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    candidateSha256: varchar("candidate_sha256", { length: 71 }).notNull(),
+    candidateJson: jsonb("candidate_json").$type<Record<string, unknown>>().notNull(),
+    reservedByUserId: uuid("reserved_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
+    assembledAt: timestamp("assembled_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("foundry_derivative_candidate_review_unique").on(table.reviewId),
+    unique("foundry_derivative_candidate_approval_unique").on(table.approvalId),
+    unique("foundry_derivative_candidate_attestation_unique").on(table.attestationId),
+    unique("foundry_derivative_candidate_base_subject_unique").on(
+      table.baseExecutionSubjectSha256,
+    ),
+    unique("foundry_derivative_candidate_subject_unique").on(table.candidateSha256),
+    unique("foundry_derivative_candidate_reservation_unique").on(table.reservationId),
+    unique("foundry_derivative_candidate_reservation_receipt_unique").on(
+      table.candidateReservationReceiptSha256,
+    ),
+    unique("foundry_derivative_candidate_actor_idem_unique").on(
+      table.reservedByUserId,
+      table.idempotencyKey,
+    ),
+    index("foundry_derivative_candidate_job_idx").on(
+      table.jobId,
+      table.projectId,
+      table.assembledAt,
+    ),
+  ],
+);
+
+export const foundryComputeApprovals = pgTable("foundry_compute_approvals", {
+  approvalId: varchar("approval_id", { length: 120 }).primaryKey(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  jobBudgetCapMicroUsd: bigint("job_budget_cap_micro_usd", { mode: "bigint" }).notNull(),
+  maximumCostMicroUsd: bigint("maximum_cost_micro_usd", { mode: "bigint" }).notNull(),
+  approvedBy: varchar("approved_by", { length: 160 }).notNull(),
+  approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  computeApprovalSha256: varchar("compute_approval_sha256", { length: 71 }).notNull(),
+  computeApprovalJson: jsonb("compute_approval_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.jobBudgetCapMicroUsd, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.approvalId,
+    ],
+    foreignColumns: [
+      foundryJobs.jobId, foundryJobs.projectId, foundryJobs.executionEnvelopeSha256,
+      foundryJobs.jobSpecSha256, foundryJobs.providerKind, foundryJobs.providerAdapterId,
+      foundryJobs.providerAdapterVersion, foundryJobs.budgetCapMicroUsd,
+      foundryJobs.providerAdapterArtifactSha256, foundryJobs.providerDeploymentSha256,
+      foundryJobs.computeApprovalId,
+    ],
+    name: "foundry_compute_job_fk",
+  }).onDelete("restrict"),
+  unique("foundry_compute_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+  unique("foundry_compute_exact_subject_unique").on(
+    table.approvalId, table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.providerAdapterArtifactSha256, table.providerDeploymentSha256, table.maximumCostMicroUsd,
+    table.computeApprovalSha256,
+  ),
+]);
+
+export const foundryExecutionConfirmations = pgTable("foundry_execution_confirmations", {
+  confirmationId: varchar("confirmation_id", { length: 120 }).primaryKey(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  confirmedBy: varchar("confirmed_by", { length: 160 }).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  confirmationSha256: varchar("confirmation_sha256", { length: 71 }).notNull(),
+  confirmationJson: jsonb("confirmation_json").$type<Record<string, unknown>>().notNull(),
+  registeredByUserId: uuid("registered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256],
+    foreignColumns: [foundryJobs.jobId, foundryJobs.projectId, foundryJobs.executionEnvelopeSha256, foundryJobs.jobSpecSha256],
+    name: "foundry_confirmations_job_fk",
+  }).onDelete("restrict"),
+  unique("foundry_confirmations_actor_idempotency_unique").on(table.registeredByUserId, table.idempotencyKey),
+  unique("foundry_confirmations_exact_subject_unique").on(
+    table.confirmationId, table.jobId, table.projectId, table.executionEnvelopeSha256,
+    table.jobSpecSha256, table.confirmationSha256,
+  ),
+]);
+
+export const foundryExecutions = pgTable("foundry_executions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  executionSubjectJson: jsonb("execution_subject_json").$type<Record<string, unknown>>().notNull(),
+  jobSpecSha256: varchar("job_spec_sha256", { length: 71 }).notNull(),
+  providerPlanSha256: varchar("provider_plan_sha256", { length: 71 }).notNull(),
+  reviewedIngestManifestSha256: varchar("reviewed_ingest_manifest_sha256", { length: 71 }).notNull(),
+  intakeAdmissionResultSha256: varchar("intake_admission_result_sha256", { length: 71 }).notNull(),
+  intakeStagingIndexSha256: varchar("intake_staging_index_sha256", { length: 71 }).notNull(),
+  executionPolicySha256: varchar("execution_policy_sha256", { length: 71 }).notNull(),
+  pricingSnapshotSha256: varchar("pricing_snapshot_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  trustedWorkerProfileSetSha256: varchar("trusted_worker_profile_set_sha256", { length: 71 }).notNull(),
+  trustedWorkerProfileCount: integer("trusted_worker_profile_count").notNull(),
+  pricingCurrency: char("pricing_currency", { length: 3 }).$type<"USD">().notNull(),
+  pricingSnapshotExpiresAt: timestamp("pricing_snapshot_expires_at", { withTimezone: true }).notNull(),
+  budgetCapMicroUsd: bigint("budget_cap_micro_usd", { mode: "bigint" }).notNull(),
+  costWarningMicroUsd: bigint("cost_warning_micro_usd", { mode: "bigint" }).notNull(),
+  costHardStopMicroUsd: bigint("cost_hard_stop_micro_usd", { mode: "bigint" }).notNull(),
+  terminationReserveMicroUsd: bigint("termination_reserve_micro_usd", { mode: "bigint" }).notNull(),
+  absoluteCostCapMicroUsd: bigint("absolute_cost_cap_micro_usd", { mode: "bigint" }).notNull(),
+  maxWallClockSeconds: integer("max_wall_clock_seconds").notNull(),
+  orchestrationOverheadSeconds: integer("orchestration_overhead_seconds").notNull(),
+  cancelGraceSeconds: integer("cancel_grace_seconds").notNull(),
+  terminationGraceSeconds: integer("termination_grace_seconds").notNull(),
+  workerSelfDeadlineSeconds: integer("worker_self_deadline_seconds").notNull(),
+  terminationConfirmationTimeoutSeconds: integer("termination_confirmation_timeout_seconds").notNull(),
+  providerMaximumExecutionTtlSeconds: integer("provider_maximum_execution_ttl_seconds").notNull(),
+  dispatchDeadline: timestamp("dispatch_deadline", { withTimezone: true }).notNull(),
+  rightsApprovalId: varchar("rights_approval_id", { length: 120 }).notNull(),
+  rightsApprovalSha256: varchar("rights_approval_sha256", { length: 71 }).notNull(),
+  rightsPolicyVersion: varchar("rights_policy_version", { length: 120 }).notNull(),
+  rightsPolicyDefinitionSha256: varchar("rights_policy_definition_sha256", { length: 71 }).notNull(),
+  rightsPolicyEvidenceSha256: varchar("rights_policy_evidence_sha256", { length: 71 }).notNull(),
+  rightsPolicyGeneration: bigint("rights_policy_generation", { mode: "bigint" }).notNull(),
+  rightsPolicyMaximumApprovalTtlSeconds: integer("rights_policy_maximum_approval_ttl_seconds").notNull(),
+  computeApprovalId: varchar("compute_approval_id", { length: 120 }),
+  computeApprovalSha256: varchar("compute_approval_sha256", { length: 71 }),
+  computeApprovalMaximumCostMicroUsd: bigint("compute_approval_maximum_cost_micro_usd", { mode: "bigint" }),
+  confirmationId: varchar("confirmation_id", { length: 120 }).notNull(),
+  confirmationSha256: varchar("confirmation_sha256", { length: 71 }).notNull(),
+  state: varchar("state", { length: 40 }).$type<FoundryDbExecutionState>().notNull().default("admitted_awaiting_executor"),
+  lastAttemptOrdinal: integer("last_attempt_ordinal").notNull().default(0),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull().default(0n),
+  totalCostMicroUsd: bigint("total_cost_micro_usd", { mode: "bigint" }).notNull().default(0n),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  revision: bigint("revision", { mode: "bigint" }).notNull().default(0n),
+  admittedByUserId: uuid("admitted_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  admittedAt: timestamp("admitted_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.jobId, table.projectId, table.executionEnvelopeSha256, table.jobSpecSha256,
+      table.providerPlanSha256, table.reviewedIngestManifestSha256, table.executionPolicySha256,
+      table.intakeAdmissionResultSha256, table.intakeStagingIndexSha256, table.pricingSnapshotSha256,
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+      table.trustedWorkerProfileSetSha256, table.trustedWorkerProfileCount,
+      table.pricingSnapshotExpiresAt, table.budgetCapMicroUsd,
+      table.costWarningMicroUsd, table.costHardStopMicroUsd, table.terminationReserveMicroUsd,
+      table.absoluteCostCapMicroUsd, table.maxWallClockSeconds, table.orchestrationOverheadSeconds,
+      table.cancelGraceSeconds,
+      table.terminationGraceSeconds, table.workerSelfDeadlineSeconds,
+      table.terminationConfirmationTimeoutSeconds, table.providerMaximumExecutionTtlSeconds,
+      table.dispatchDeadline,
+    ],
+    foreignColumns: [
+      foundryJobs.jobId, foundryJobs.projectId, foundryJobs.executionEnvelopeSha256,
+      foundryJobs.jobSpecSha256, foundryJobs.providerPlanSha256,
+      foundryJobs.reviewedIngestManifestSha256, foundryJobs.executionPolicySha256,
+      foundryJobs.intakeAdmissionResultSha256, foundryJobs.intakeStagingIndexSha256,
+      foundryJobs.pricingSnapshotSha256, foundryJobs.providerKind, foundryJobs.providerAdapterId,
+      foundryJobs.providerAdapterVersion, foundryJobs.providerAdapterArtifactSha256,
+      foundryJobs.providerDeploymentSha256, foundryJobs.trustedWorkerProfileSetSha256,
+      foundryJobs.trustedWorkerProfileCount, foundryJobs.pricingSnapshotExpiresAt,
+      foundryJobs.budgetCapMicroUsd, foundryJobs.costWarningMicroUsd,
+      foundryJobs.costHardStopMicroUsd, foundryJobs.terminationReserveMicroUsd,
+      foundryJobs.absoluteCostCapMicroUsd, foundryJobs.maxWallClockSeconds,
+      foundryJobs.orchestrationOverheadSeconds, foundryJobs.cancelGraceSeconds,
+      foundryJobs.terminationGraceSeconds,
+      foundryJobs.workerSelfDeadlineSeconds, foundryJobs.terminationConfirmationTimeoutSeconds,
+      foundryJobs.providerMaximumExecutionTtlSeconds, foundryJobs.dispatchDeadline,
+    ],
+    name: "foundry_exec_job_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.rightsApprovalId, table.jobId, table.projectId, table.executionEnvelopeSha256,
+      table.jobSpecSha256, table.reviewedIngestManifestSha256, table.executionPolicySha256,
+      table.rightsPolicyVersion, table.rightsPolicyDefinitionSha256,
+      table.rightsPolicyEvidenceSha256, table.rightsPolicyGeneration,
+      table.rightsPolicyMaximumApprovalTtlSeconds,
+      table.rightsApprovalSha256,
+    ],
+    foreignColumns: [
+      foundryRightsApprovals.id, foundryRightsApprovals.jobId, foundryRightsApprovals.projectId,
+      foundryRightsApprovals.executionEnvelopeSha256, foundryRightsApprovals.jobSpecSha256,
+      foundryRightsApprovals.reviewedIngestManifestSha256,
+      foundryRightsApprovals.executionPolicySha256, foundryRightsApprovals.policyVersion,
+      foundryRightsApprovals.policyDefinitionSha256, foundryRightsApprovals.policyEvidenceSha256,
+      foundryRightsApprovals.policyGeneration,
+      foundryRightsApprovals.policyMaximumApprovalTtlSeconds,
+      foundryRightsApprovals.rightsApprovalSha256,
+    ],
+    name: "foundry_exec_rights_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.computeApprovalId, table.jobId, table.projectId, table.executionEnvelopeSha256,
+      table.jobSpecSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.computeApprovalMaximumCostMicroUsd,
+      table.computeApprovalSha256,
+    ],
+    foreignColumns: [
+      foundryComputeApprovals.approvalId, foundryComputeApprovals.jobId,
+      foundryComputeApprovals.projectId, foundryComputeApprovals.executionEnvelopeSha256,
+      foundryComputeApprovals.jobSpecSha256, foundryComputeApprovals.providerKind,
+      foundryComputeApprovals.providerAdapterId, foundryComputeApprovals.providerAdapterVersion,
+      foundryComputeApprovals.providerAdapterArtifactSha256,
+      foundryComputeApprovals.providerDeploymentSha256,
+      foundryComputeApprovals.maximumCostMicroUsd,
+      foundryComputeApprovals.computeApprovalSha256,
+    ],
+    name: "foundry_exec_compute_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.confirmationId, table.jobId, table.projectId,
+      table.executionEnvelopeSha256, table.jobSpecSha256, table.confirmationSha256,
+    ],
+    foreignColumns: [
+      foundryExecutionConfirmations.confirmationId, foundryExecutionConfirmations.jobId,
+      foundryExecutionConfirmations.projectId,
+      foundryExecutionConfirmations.executionEnvelopeSha256,
+      foundryExecutionConfirmations.jobSpecSha256,
+      foundryExecutionConfirmations.confirmationSha256,
+    ],
+    name: "foundry_exec_confirmation_fk",
+  }).onDelete("restrict"),
+  unique("foundry_exec_job_unique").on(table.jobId, table.projectId),
+  unique("foundry_exec_confirmation_consumption_unique").on(table.confirmationId),
+  unique("foundry_exec_actor_idempotency_unique").on(table.admittedByUserId, table.idempotencyKey),
+  unique("foundry_exec_scope_unique").on(
+    table.id, table.projectId, table.jobId, table.executionEnvelopeSha256,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+  ),
+  unique("foundry_exec_subject_unique").on(table.id, table.executionSubjectSha256),
+  unique("foundry_exec_pricing_unique").on(table.id, table.pricingCurrency, table.pricingSnapshotSha256),
+  index("foundry_exec_project_state_idx").on(table.projectId, table.state, table.updatedAt),
+]);
+
+export const foundryAttempts = pgTable("foundry_attempts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  state: varchar("state", { length: 40 }).$type<Exclude<FoundryDbExecutionState, "admitted_awaiting_executor">>().notNull().default("authorized"),
+  providerExecutionRef: varchar("provider_execution_ref", { length: 240 }),
+  providerAttemptRef: varchar("provider_attempt_ref", { length: 240 }),
+  leaseOwner: varchar("lease_owner", { length: 160 }),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  observedCostMicroUsd: bigint("observed_cost_micro_usd", { mode: "bigint" }).notNull().default(0n),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  revision: bigint("revision", { mode: "bigint" }).notNull().default(0n),
+  createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  wallClockDeadline: timestamp("wall_clock_deadline", { withTimezone: true }),
+  cancelDeadline: timestamp("cancel_deadline", { withTimezone: true }),
+  terminationDeadline: timestamp("termination_deadline", { withTimezone: true }),
+  workerSelfDeadline: timestamp("worker_self_deadline", { withTimezone: true }),
+  terminationConfirmationDeadline: timestamp("termination_confirmation_deadline", { withTimezone: true }),
+  providerTtlDeadline: timestamp("provider_ttl_deadline", { withTimezone: true }),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.executionId, table.projectId, table.jobId, table.executionEnvelopeSha256,
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+    ],
+    foreignColumns: [
+      foundryExecutions.id, foundryExecutions.projectId, foundryExecutions.jobId,
+      foundryExecutions.executionEnvelopeSha256, foundryExecutions.providerKind,
+      foundryExecutions.providerAdapterId, foundryExecutions.providerAdapterVersion,
+      foundryExecutions.providerAdapterArtifactSha256, foundryExecutions.providerDeploymentSha256,
+    ],
+    name: "foundry_attempt_execution_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.executionSubjectSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.executionSubjectSha256],
+    name: "foundry_attempt_execution_subject_fk",
+  }).onDelete("restrict"),
+  unique("foundry_attempt_execution_ordinal_unique").on(table.executionId, table.attemptOrdinal),
+  unique("foundry_attempt_execution_fence_unique").on(table.executionId, table.fencingToken),
+  unique("foundry_attempt_actor_idempotency_unique").on(table.createdByUserId, table.idempotencyKey),
+  unique("foundry_attempt_scope_unique").on(
+    table.id, table.executionId, table.projectId, table.jobId, table.executionEnvelopeSha256,
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+    table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+    table.attemptOrdinal, table.fencingToken,
+  ),
+  unique("foundry_attempt_subject_unique").on(
+    table.id, table.executionId, table.executionSubjectSha256,
+  ),
+  uniqueIndex("foundry_attempt_one_nonterminal_unique")
+    .on(table.executionId)
+    .where(sql`left(${table.state}, 9) <> 'terminal_'`),
+  index("foundry_attempt_execution_state_idx").on(table.executionId, table.state, table.updatedAt),
+]);
+
+export const foundryStopIntents = pgTable("foundry_stop_intents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  reasonCode: varchar("reason_code", { length: 40 }).$type<
+    | "operator_cancel"
+    | "kill_global"
+    | "kill_provider"
+    | "kill_project"
+    | "kill_execution"
+    | "kill_attempt"
+    | "rights_revoked"
+    | "cost_hard_stop"
+    | "wall_clock_deadline"
+    | "cancel_deadline"
+    | "termination_deadline"
+    | "worker_self_deadline"
+    | "provider_ttl_deadline"
+    | "checkpoint_effect_unknown"
+  >().notNull(),
+  priority: integer("priority").notNull(),
+  targetTerminalState: varchar("target_terminal_state", { length: 40 }).$type<
+    | "terminal_cancelled"
+    | "terminal_killed"
+    | "terminal_budget_exceeded"
+    | "terminal_provider_lost"
+  >().notNull(),
+  sourceKind: varchar("source_kind", { length: 40 }).$type<
+    | "operator_request"
+    | "kill_switch_event"
+    | "rights_policy_revocation"
+    | "cost_observation"
+    | "runtime_watchdog"
+    | "provider_command"
+  >().notNull(),
+  sourceId: uuid("source_id").notNull(),
+  sourceDigest: varchar("source_digest", { length: 71 }).notNull(),
+  sourceRecordedAt: timestamp("source_recorded_at", { withTimezone: true }).notNull(),
+  actorKind: varchar("actor_kind", { length: 30 }).$type<"operator" | "service" | "watchdog" | "system">().notNull(),
+  actorKey: varchar("actor_key", { length: 160 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_stop_intent_attempt_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.executionSubjectSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.executionSubjectSha256],
+    name: "foundry_stop_intent_subject_fk",
+  }).onDelete("restrict"),
+  unique("foundry_stop_intent_actor_idempotency_unique").on(table.actorKey, table.idempotencyKey),
+  unique("foundry_stop_intent_source_unique").on(table.attemptId, table.sourceKind, table.sourceId),
+  unique("foundry_stop_intent_exact_unique").on(
+    table.id, table.executionId, table.attemptId, table.executionSubjectSha256, table.fencingToken,
+  ),
+]);
+
+export const foundryPreparedProviderRequests = pgTable("foundry_prepared_provider_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  commandKind: varchar("command_kind", { length: 40 }).$type<FoundryDbProviderCommandKind>().notNull(),
+  providerCommandId: uuid("provider_command_id").notNull(),
+  commandSequence: bigint("command_sequence", { mode: "bigint" }).notNull(),
+  stopIntentId: uuid("stop_intent_id"),
+  providerRequestSha256: varchar("provider_request_sha256", { length: 71 }).notNull(),
+  providerRequestJson: jsonb("provider_request_json").$type<Record<string, unknown>>().notNull(),
+  providerRequestProfileId: varchar("provider_request_profile_id", { length: 120 }).notNull(),
+  providerRequestProfileVersion: varchar("provider_request_profile_version", { length: 120 }).notNull(),
+  providerRequestProfileSha256: varchar("provider_request_profile_sha256", { length: 71 }).notNull(),
+  providerAdapterConfigurationSha256: varchar("provider_adapter_configuration_sha256", { length: 71 }).notNull(),
+  providerIdempotencyKey: varchar("provider_idempotency_key", { length: 120 }).notNull(),
+  providerClientRequestId: varchar("provider_client_request_id", { length: 120 }).notNull(),
+  stageIds: jsonb("stage_ids").$type<string[]>().notNull(),
+  maximumApiCallSeconds: integer("maximum_api_call_seconds").notNull(),
+  preparedByActorKind: varchar("prepared_by_actor_kind", { length: 30 })
+    .$type<"operator" | "service" | "watchdog" | "system">().notNull(),
+  preparedByActorKey: varchar("prepared_by_actor_key", { length: 160 }).notNull(),
+  preparedByUserId: uuid("prepared_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_prepared_request_attempt_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.executionSubjectSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.executionSubjectSha256],
+    name: "foundry_prepared_request_subject_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.stopIntentId, table.executionId, table.attemptId,
+      table.executionSubjectSha256, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryStopIntents.id, foundryStopIntents.executionId, foundryStopIntents.attemptId,
+      foundryStopIntents.executionSubjectSha256, foundryStopIntents.fencingToken,
+    ],
+    name: "foundry_prepared_request_stop_intent_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.providerRequestProfileSha256, table.providerRequestProfileId,
+      table.providerRequestProfileVersion, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerAdapterConfigurationSha256, table.providerDeploymentSha256,
+    ],
+    foreignColumns: [
+      foundryProviderRequestProfiles.providerRequestProfileSha256,
+      foundryProviderRequestProfiles.profileId, foundryProviderRequestProfiles.profileVersion,
+      foundryProviderRequestProfiles.providerKind, foundryProviderRequestProfiles.providerAdapterId,
+      foundryProviderRequestProfiles.providerAdapterVersion,
+      foundryProviderRequestProfiles.providerAdapterArtifactSha256,
+      foundryProviderRequestProfiles.providerAdapterConfigurationSha256,
+      foundryProviderRequestProfiles.providerDeploymentSha256,
+    ],
+    name: "foundry_prepared_request_profile_fk",
+  }).onDelete("restrict"),
+  unique("foundry_prepared_request_actor_idem_unique").on(table.preparedByActorKey, table.idempotencyKey),
+  unique("foundry_prepared_request_exact_unique").on(
+    table.id, table.providerCommandId, table.executionId, table.attemptId,
+    table.executionSubjectSha256, table.commandSequence, table.commandKind,
+    table.providerRequestSha256, table.providerRequestProfileId,
+    table.providerRequestProfileVersion, table.providerRequestProfileSha256,
+    table.providerAdapterConfigurationSha256, table.providerIdempotencyKey,
+    table.providerClientRequestId, table.maximumApiCallSeconds,
+    table.preparedByActorKind, table.preparedByActorKey,
+  ),
+  unique("foundry_prepared_request_command_unique").on(table.providerCommandId),
+  unique("foundry_prepared_request_attempt_sequence_unique").on(table.attemptId, table.commandSequence),
+]);
+
+export const foundryKillSwitches = pgTable("foundry_kill_switches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scope: varchar("scope", { length: 20 }).$type<"global" | "provider" | "project" | "execution" | "attempt">().notNull(),
+  targetKey: varchar("target_key", { length: 320 }).notNull(),
+  projectId: varchar("project_id", { length: 120 }),
+  executionId: uuid("execution_id"),
+  attemptId: uuid("attempt_id"),
+  jobId: varchar("job_id", { length: 120 }),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }),
+  attemptOrdinal: integer("attempt_ordinal"),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }),
+  state: varchar("state", { length: 20 }).$type<"inactive" | "active">().notNull().default("inactive"),
+  reason: text("reason").notNull(),
+  lastChangedActorKind: varchar("last_changed_actor_kind", { length: 30 }).$type<"operator" | "service" | "watchdog" | "system">().notNull(),
+  lastChangedActorKey: varchar("last_changed_actor_key", { length: 160 }).notNull(),
+  lastChangedByUserId: uuid("last_changed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  revision: bigint("revision", { mode: "bigint" }).notNull().default(0n),
+  createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.executionId, table.projectId, table.jobId, table.executionEnvelopeSha256,
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+    ],
+    foreignColumns: [
+      foundryExecutions.id, foundryExecutions.projectId, foundryExecutions.jobId,
+      foundryExecutions.executionEnvelopeSha256, foundryExecutions.providerKind,
+      foundryExecutions.providerAdapterId, foundryExecutions.providerAdapterVersion,
+      foundryExecutions.providerAdapterArtifactSha256, foundryExecutions.providerDeploymentSha256,
+    ],
+    name: "foundry_kill_execution_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_kill_attempt_fk",
+  }).onDelete("restrict"),
+  unique("foundry_kill_actor_idempotency_unique").on(table.createdByUserId, table.idempotencyKey),
+  unique("foundry_kill_exact_scope_unique").on(table.id, table.scope, table.targetKey),
+  uniqueIndex("foundry_kill_one_global_unique")
+    .on(table.scope)
+    .where(sql`${table.scope} = 'global'`),
+  uniqueIndex("foundry_kill_one_provider_unique")
+    .on(table.providerKind, table.providerAdapterId, table.providerAdapterVersion)
+    .where(sql`${table.scope} = 'provider'`),
+  uniqueIndex("foundry_kill_one_project_unique")
+    .on(table.projectId)
+    .where(sql`${table.scope} = 'project'`),
+  uniqueIndex("foundry_kill_one_execution_unique")
+    .on(table.executionId)
+    .where(sql`${table.scope} = 'execution'`),
+  uniqueIndex("foundry_kill_one_attempt_unique")
+    .on(table.attemptId)
+    .where(sql`${table.scope} = 'attempt'`),
+  index("foundry_kill_active_scope_idx").on(table.state, table.scope, table.targetKey),
+]);
+
+export const foundryKillSwitchEvents = pgTable("foundry_kill_switch_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  killSwitchId: uuid("kill_switch_id").notNull(),
+  scope: varchar("scope", { length: 20 }).$type<"global" | "provider" | "project" | "execution" | "attempt">().notNull(),
+  targetKey: varchar("target_key", { length: 320 }).notNull(),
+  sequence: bigint("sequence", { mode: "bigint" }).notNull(),
+  action: varchar("action", { length: 20 }).$type<"activate" | "release">().notNull(),
+  actorKind: varchar("actor_kind", { length: 30 }).$type<"operator" | "service" | "watchdog" | "system">().notNull(),
+  actorKey: varchar("actor_key", { length: 160 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id"),
+  correlationId: uuid("correlation_id").notNull(),
+  expectedRevision: bigint("expected_revision", { mode: "bigint" }).notNull(),
+  resultingRevision: bigint("resulting_revision", { mode: "bigint" }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  reason: text("reason").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.killSwitchId, table.scope, table.targetKey],
+    foreignColumns: [foundryKillSwitches.id, foundryKillSwitches.scope, foundryKillSwitches.targetKey],
+    name: "foundry_kill_event_switch_fk",
+  }).onDelete("restrict"),
+  unique("foundry_kill_event_sequence_unique").on(table.killSwitchId, table.sequence),
+  unique("foundry_kill_event_actor_idempotency_unique").on(table.actorKey, table.idempotencyKey),
+]);
+
+export const foundryExecutionEvents = pgTable("foundry_execution_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id"),
+  attemptOrdinal: integer("attempt_ordinal"),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }),
+  providerCommandId: uuid("provider_command_id"),
+  providerCommandKind: varchar("provider_command_kind", { length: 40 }).$type<FoundryDbProviderCommandKind>(),
+  claimToken: uuid("claim_token"),
+  providerCommandPayloadSha256: varchar("provider_command_payload_sha256", { length: 71 }),
+  providerRequestSha256: varchar("provider_request_sha256", { length: 71 }),
+  providerIdempotencyKey: varchar("provider_idempotency_key", { length: 120 }),
+  maximumApiCallSeconds: integer("maximum_api_call_seconds"),
+  providerCommandState: varchar("provider_command_state", { length: 20 }).$type<FoundryDbProviderCommandState>(),
+  providerCommandOutcomeSha256: varchar("provider_command_outcome_sha256", { length: 71 }),
+  providerLifecycleState: varchar("provider_lifecycle_state", { length: 30 }).$type<FoundryDbProviderLifecycleState>(),
+  providerWasInvoked: boolean("provider_was_invoked"),
+  sequence: bigint("sequence", { mode: "bigint" }).notNull(),
+  eventKind: varchar("event_kind", { length: 60 }).notNull(),
+  advancesProjection: boolean("advances_projection").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  actorKind: varchar("actor_kind", { length: 30 }).$type<"operator" | "service" | "provider" | "watchdog" | "system">().notNull(),
+  actorKey: varchar("actor_key", { length: 160 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id"),
+  correlationId: uuid("correlation_id").notNull(),
+  expectedRevision: bigint("expected_revision", { mode: "bigint" }).notNull(),
+  resultingRevision: bigint("resulting_revision", { mode: "bigint" }).notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.executionId, table.projectId, table.jobId, table.executionEnvelopeSha256,
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.providerAdapterArtifactSha256, table.providerDeploymentSha256,
+    ],
+    foreignColumns: [
+      foundryExecutions.id, foundryExecutions.projectId, foundryExecutions.jobId,
+      foundryExecutions.executionEnvelopeSha256, foundryExecutions.providerKind,
+      foundryExecutions.providerAdapterId, foundryExecutions.providerAdapterVersion,
+      foundryExecutions.providerAdapterArtifactSha256, foundryExecutions.providerDeploymentSha256,
+    ],
+    name: "foundry_event_execution_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.executionSubjectSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.executionSubjectSha256],
+    name: "foundry_event_execution_subject_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_event_attempt_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.providerCommandId],
+    foreignColumns: [foundryProviderCommands.id],
+    name: "foundry_event_provider_command_fk",
+  }).onDelete("restrict"),
+  unique("foundry_event_execution_sequence_unique").on(table.executionId, table.sequence),
+  unique("foundry_event_actor_idempotency_unique").on(table.actorKey, table.idempotencyKey),
+  uniqueIndex("foundry_event_one_invocation_start_unique")
+    .on(table.providerCommandId, table.claimToken)
+    .where(sql`${table.eventKind} = 'provider_invocation_started'`),
+  uniqueIndex("foundry_event_one_command_completion_unique")
+    .on(table.providerCommandId)
+    .where(sql`${table.eventKind} = 'provider_command_completed'`),
+  index("foundry_event_execution_recorded_idx").on(table.executionId, table.recordedAt),
+]);
+
+export const foundryProviderCommands = pgTable("foundry_provider_commands", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  commandSequence: bigint("command_sequence", { mode: "bigint" }).notNull(),
+  commandKind: varchar("command_kind", { length: 40 }).$type<FoundryDbProviderCommandKind>().notNull(),
+  preparedProviderRequestId: uuid("prepared_provider_request_id").notNull(),
+  stopIntentId: uuid("stop_intent_id"),
+  cancelledByStopIntentId: uuid("cancelled_by_stop_intent_id"),
+  cancelledByProviderCommandId: uuid("cancelled_by_provider_command_id"),
+  state: varchar("state", { length: 20 }).$type<FoundryDbProviderCommandState>().notNull().default("pending"),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  payloadSha256: varchar("payload_sha256", { length: 71 }).notNull(),
+  providerRequestSha256: varchar("provider_request_sha256", { length: 71 }).notNull(),
+  providerRequestProfileId: varchar("provider_request_profile_id", { length: 120 }).notNull(),
+  providerRequestProfileVersion: varchar("provider_request_profile_version", { length: 120 }).notNull(),
+  providerRequestProfileSha256: varchar("provider_request_profile_sha256", { length: 71 }).notNull(),
+  providerAdapterConfigurationSha256: varchar("provider_adapter_configuration_sha256", { length: 71 }).notNull(),
+  providerIdempotencyKey: varchar("provider_idempotency_key", { length: 120 }).notNull(),
+  providerClientRequestId: varchar("provider_client_request_id", { length: 120 }).notNull(),
+  stageIds: jsonb("stage_ids").$type<string[]>().notNull(),
+  maximumApiCallSeconds: integer("maximum_api_call_seconds").notNull(),
+  targetProviderRef: varchar("target_provider_ref", { length: 240 }),
+  originatingSubmitCommandId: uuid("originating_submit_command_id"),
+  originatingSubmitProviderRequestSha256: varchar("originating_submit_provider_request_sha256", { length: 71 }),
+  originatingSubmitProviderIdempotencyKey: varchar("originating_submit_provider_idempotency_key", { length: 120 }),
+  providerCommandRef: varchar("provider_command_ref", { length: 240 }),
+  availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+  claimedBy: varchar("claimed_by", { length: 160 }),
+  claimToken: uuid("claim_token"),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
+  outcomeJson: jsonb("outcome_json").$type<Record<string, unknown>>(),
+  outcomeSha256: varchar("outcome_sha256", { length: 71 }),
+  providerLifecycleState: varchar("provider_lifecycle_state", { length: 30 }).$type<FoundryDbProviderLifecycleState>(),
+  completedByActorKind: varchar("completed_by_actor_kind", { length: 30 })
+    .$type<"service" | "watchdog" | "system">(),
+  completedByActorKey: varchar("completed_by_actor_key", { length: 160 }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdByActorKind: varchar("created_by_actor_kind", { length: 30 })
+    .$type<"operator" | "service" | "watchdog" | "system">().notNull(),
+  createdByActorKey: varchar("created_by_actor_key", { length: 160 }).notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id"),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  revision: bigint("revision", { mode: "bigint" }).notNull().default(0n),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_command_attempt_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.executionSubjectSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.executionSubjectSha256],
+    name: "foundry_command_execution_subject_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.stopIntentId, table.executionId, table.attemptId,
+      table.executionSubjectSha256, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryStopIntents.id, foundryStopIntents.executionId, foundryStopIntents.attemptId,
+      foundryStopIntents.executionSubjectSha256, foundryStopIntents.fencingToken,
+    ],
+    name: "foundry_command_stop_intent_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.cancelledByStopIntentId, table.executionId, table.attemptId,
+      table.executionSubjectSha256, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryStopIntents.id, foundryStopIntents.executionId, foundryStopIntents.attemptId,
+      foundryStopIntents.executionSubjectSha256, foundryStopIntents.fencingToken,
+    ],
+    name: "foundry_command_cancelled_stop_intent_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [
+      table.preparedProviderRequestId, table.id, table.executionId, table.attemptId,
+      table.executionSubjectSha256, table.commandSequence, table.commandKind,
+      table.providerRequestSha256, table.providerRequestProfileId,
+      table.providerRequestProfileVersion, table.providerRequestProfileSha256,
+      table.providerAdapterConfigurationSha256, table.providerIdempotencyKey,
+      table.providerClientRequestId, table.maximumApiCallSeconds,
+      table.createdByActorKind, table.createdByActorKey,
+    ],
+    foreignColumns: [
+      foundryPreparedProviderRequests.id, foundryPreparedProviderRequests.providerCommandId,
+      foundryPreparedProviderRequests.executionId, foundryPreparedProviderRequests.attemptId,
+      foundryPreparedProviderRequests.executionSubjectSha256,
+      foundryPreparedProviderRequests.commandSequence, foundryPreparedProviderRequests.commandKind,
+      foundryPreparedProviderRequests.providerRequestSha256,
+      foundryPreparedProviderRequests.providerRequestProfileId,
+      foundryPreparedProviderRequests.providerRequestProfileVersion,
+      foundryPreparedProviderRequests.providerRequestProfileSha256,
+      foundryPreparedProviderRequests.providerAdapterConfigurationSha256,
+      foundryPreparedProviderRequests.providerIdempotencyKey,
+      foundryPreparedProviderRequests.providerClientRequestId,
+      foundryPreparedProviderRequests.maximumApiCallSeconds,
+      foundryPreparedProviderRequests.preparedByActorKind,
+      foundryPreparedProviderRequests.preparedByActorKey,
+    ],
+    name: "foundry_command_prepared_request_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.originatingSubmitCommandId],
+    foreignColumns: [table.id],
+    name: "foundry_command_originating_submit_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.cancelledByProviderCommandId],
+    foreignColumns: [table.id],
+    name: "foundry_command_cancelled_by_command_fk",
+  }).onDelete("restrict"),
+  unique("foundry_command_attempt_sequence_unique").on(table.attemptId, table.commandSequence),
+  unique("foundry_command_actor_idempotency_unique").on(table.createdByActorKey, table.idempotencyKey),
+  uniqueIndex("foundry_command_one_active_kind_unique")
+    .on(table.attemptId, table.commandKind)
+    .where(sql`${table.state} IN ('pending', 'claimed')`),
+  uniqueIndex("foundry_command_one_active_non_stop_unique")
+    .on(table.attemptId)
+    .where(sql`${table.state} IN ('pending', 'claimed') AND ${table.commandKind} <> 'provider_stop'`),
+  uniqueIndex("foundry_command_submit_provider_idempotency_unique")
+    .on(
+      table.providerKind, table.providerAdapterId, table.providerAdapterVersion,
+      table.providerDeploymentSha256, table.providerIdempotencyKey,
+    )
+    .where(sql`${table.commandKind} = 'provider_submit'`),
+  index("foundry_command_claimable_idx").on(table.state, table.availableAt, table.claimExpiresAt),
+]);
+
+/** Raw, append-only evidence for a canonical conclusive adapter response. */
+export const foundryProviderCommandResultObservations = pgTable("foundry_provider_command_result_observations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  providerCommandId: uuid("provider_command_id").notNull().references(
+    () => foundryProviderCommands.id,
+    { onDelete: "restrict" },
+  ),
+  invocationEventId: uuid("invocation_event_id").notNull().references(
+    () => foundryExecutionEvents.id,
+    { onDelete: "restrict" },
+  ),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  executionSubjectSha256: varchar("execution_subject_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerAdapterConfigurationSha256: varchar("provider_adapter_configuration_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  preparedProviderRequestId: uuid("prepared_provider_request_id").notNull().references(
+    () => foundryPreparedProviderRequests.id,
+    { onDelete: "restrict" },
+  ),
+  providerRequestProfileId: varchar("provider_request_profile_id", { length: 120 }).notNull(),
+  providerRequestProfileVersion: varchar("provider_request_profile_version", { length: 120 }).notNull(),
+  providerRequestProfileSha256: varchar("provider_request_profile_sha256", { length: 71 }).notNull(),
+  providerRequestSha256: varchar("provider_request_sha256", { length: 71 }).notNull(),
+  providerIdempotencyKey: varchar("provider_idempotency_key", { length: 120 }).notNull(),
+  providerClientRequestId: varchar("provider_client_request_id", { length: 120 }).notNull(),
+  maximumApiCallSeconds: integer("maximum_api_call_seconds").notNull(),
+  commandPayloadSha256: varchar("command_payload_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  commandSequence: bigint("command_sequence", { mode: "bigint" }).notNull(),
+  commandKind: varchar("command_kind", { length: 40 }).$type<FoundryDbProviderCommandKind>().notNull(),
+  claimToken: uuid("claim_token").notNull(),
+  claimedBy: varchar("claimed_by", { length: 160 }).notNull(),
+  adapterOutcomeJson: jsonb("adapter_outcome_json").$type<Record<string, unknown>>().notNull(),
+  adapterOutcomeSha256: varchar("adapter_outcome_sha256", { length: 71 }).notNull(),
+  workerObservedAt: timestamp("worker_observed_at", { withTimezone: true }).notNull(),
+  actorKind: varchar("actor_kind", { length: 30 }).$type<"service">().notNull(),
+  actorKey: varchar("actor_key", { length: 160 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_result_observation_attempt_fk",
+  }).onDelete("restrict"),
+  unique("foundry_result_observation_command_claim_unique").on(
+    table.providerCommandId,
+    table.claimToken,
+  ),
+  unique("foundry_result_observation_invocation_unique").on(table.invocationEventId),
+  unique("foundry_result_observation_actor_idempotency_unique").on(
+    table.actorKey,
+    table.idempotencyKey,
+  ),
+  index("foundry_result_observation_execution_recorded_idx").on(
+    table.executionId,
+    table.recordedAt.desc(),
+  ),
+]);
+
+/** Immutable interpretation of an observation against one exact terminal event. */
+export const foundryProviderCommandResultClassifications = pgTable("foundry_provider_command_result_classifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  observationId: uuid("observation_id").notNull().references(
+    () => foundryProviderCommandResultObservations.id,
+    { onDelete: "restrict" },
+  ),
+  providerCommandId: uuid("provider_command_id").notNull().references(
+    () => foundryProviderCommands.id,
+    { onDelete: "restrict" },
+  ),
+  completionEventId: uuid("completion_event_id").notNull().references(
+    () => foundryExecutionEvents.id,
+    { onDelete: "restrict" },
+  ),
+  terminalOutcomeSha256: varchar("terminal_outcome_sha256", { length: 71 }).notNull(),
+  disposition: varchar("disposition", { length: 30 }).$type<
+    "late_eligible" | "already_authoritative" | "terminal_conflict" | "not_eligible"
+  >().notNull(),
+  actorKind: varchar("actor_kind", { length: 30 }).$type<"system">().notNull(),
+  actorKey: varchar("actor_key", { length: 160 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  classifiedAt: timestamp("classified_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("foundry_result_classification_observation_unique").on(table.observationId),
+  unique("foundry_result_classification_command_unique").on(table.providerCommandId),
+  unique("foundry_result_classification_completion_unique").on(table.completionEventId),
+  unique("foundry_result_classification_actor_idempotency_unique").on(
+    table.actorKey,
+    table.idempotencyKey,
+  ),
+  index("foundry_result_classification_command_idx").on(
+    table.providerCommandId,
+    table.classifiedAt.desc(),
+  ),
+]);
+
+export const foundryCostObservations = pgTable("foundry_cost_observations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  observationSequence: bigint("observation_sequence", { mode: "bigint" }).notNull(),
+  providerObservationId: varchar("provider_observation_id", { length: 240 }).notNull(),
+  observationKind: varchar("observation_kind", { length: 20 }).$type<"accrued" | "final" | "adjustment">().notNull(),
+  pricingCurrency: char("pricing_currency", { length: 3 }).$type<"USD">().notNull(),
+  pricingSnapshotSha256: varchar("pricing_snapshot_sha256", { length: 71 }).notNull(),
+  incrementalCostMicroUsd: bigint("incremental_cost_micro_usd", { mode: "bigint" }).notNull(),
+  cumulativeCostMicroUsd: bigint("cumulative_cost_micro_usd", { mode: "bigint" }).notNull(),
+  evidenceSha256: varchar("evidence_sha256", { length: 71 }).notNull(),
+  providerObservedAt: timestamp("provider_observed_at", { withTimezone: true }).notNull(),
+  recordedBy: varchar("recorded_by", { length: 160 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id"),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_cost_attempt_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.executionId, table.pricingCurrency, table.pricingSnapshotSha256],
+    foreignColumns: [foundryExecutions.id, foundryExecutions.pricingCurrency, foundryExecutions.pricingSnapshotSha256],
+    name: "foundry_cost_pricing_fk",
+  }).onDelete("restrict"),
+  unique("foundry_cost_attempt_sequence_unique").on(table.attemptId, table.observationSequence),
+  unique("foundry_cost_provider_observation_unique").on(
+    table.providerKind, table.providerAdapterId, table.providerAdapterVersion, table.providerObservationId,
+  ),
+  unique("foundry_cost_actor_idempotency_unique").on(table.recordedBy, table.idempotencyKey),
+  index("foundry_cost_execution_recorded_idx").on(table.executionId, table.recordedAt),
+]);
+
+export const foundryVerifiedCheckpoints = pgTable("foundry_verified_checkpoints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  executionId: uuid("execution_id").notNull(),
+  projectId: varchar("project_id", { length: 120 }).notNull(),
+  jobId: varchar("job_id", { length: 120 }).notNull(),
+  executionEnvelopeSha256: varchar("execution_envelope_sha256", { length: 71 }).notNull(),
+  providerKind: varchar("provider_kind", { length: 40 }).$type<FoundryDbProviderKind>().notNull(),
+  providerAdapterId: varchar("provider_adapter_id", { length: 120 }).notNull(),
+  providerAdapterVersion: varchar("provider_adapter_version", { length: 120 }).notNull(),
+  providerAdapterArtifactSha256: varchar("provider_adapter_artifact_sha256", { length: 71 }).notNull(),
+  providerDeploymentSha256: varchar("provider_deployment_sha256", { length: 71 }).notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  fencingToken: bigint("fencing_token", { mode: "bigint" }).notNull(),
+  providerCommandId: uuid("provider_command_id").notNull().references(
+    () => foundryProviderCommands.id,
+    { onDelete: "restrict" },
+  ),
+  providerCommandOutcomeSha256: varchar("provider_command_outcome_sha256", { length: 71 }).notNull(),
+  checkpointSequence: bigint("checkpoint_sequence", { mode: "bigint" }).notNull(),
+  checkpointKind: varchar("checkpoint_kind", { length: 60 }).notNull(),
+  providerCheckpointId: varchar("provider_checkpoint_id", { length: 240 }).notNull(),
+  checkpointSha256: varchar("checkpoint_sha256", { length: 71 }).notNull(),
+  evidenceRef: text("evidence_ref").notNull(),
+  providerCreatedAt: timestamp("provider_created_at", { withTimezone: true }).notNull(),
+  verifiedBy: varchar("verified_by", { length: 160 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  causationId: uuid("causation_id").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  requestDigest: varchar("request_digest", { length: 71 }).notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [
+      table.attemptId, table.executionId, table.projectId, table.jobId,
+      table.executionEnvelopeSha256, table.providerKind, table.providerAdapterId,
+      table.providerAdapterVersion, table.providerAdapterArtifactSha256,
+      table.providerDeploymentSha256, table.attemptOrdinal, table.fencingToken,
+    ],
+    foreignColumns: [
+      foundryAttempts.id, foundryAttempts.executionId, foundryAttempts.projectId,
+      foundryAttempts.jobId, foundryAttempts.executionEnvelopeSha256,
+      foundryAttempts.providerKind, foundryAttempts.providerAdapterId,
+      foundryAttempts.providerAdapterVersion, foundryAttempts.providerAdapterArtifactSha256,
+      foundryAttempts.providerDeploymentSha256, foundryAttempts.attemptOrdinal,
+      foundryAttempts.fencingToken,
+    ],
+    name: "foundry_checkpoint_attempt_fk",
+  }).onDelete("restrict"),
+  unique("foundry_checkpoint_attempt_sequence_unique").on(table.attemptId, table.checkpointSequence),
+  unique("foundry_checkpoint_command_unique").on(table.providerCommandId),
+  unique("foundry_checkpoint_provider_dedupe_unique").on(table.attemptId, table.providerCheckpointId, table.checkpointSha256),
+  unique("foundry_checkpoint_actor_idempotency_unique").on(table.verifiedBy, table.idempotencyKey),
+  index("foundry_checkpoint_attempt_verified_idx").on(table.attemptId, table.verifiedAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Action log — G4 Slice 3 (03 §2). The append-only audit trail behind the
+// planner's Action envelope (migration 0059). Append-only by code contract:
+// no update/delete surface exists anywhere. `id` is the CLIENT action uuid
+// (no default) so ON CONFLICT (id) DO NOTHING makes batch retries idempotent;
+// `ordinal` is the server-assigned read order (client clocks never order the
+// trail). `recorded_ts` is the operator's clock, `received_at` the server's —
+// kept separate so neither is ever presented as the other (claim safety).
+// ---------------------------------------------------------------------------
+
+/** Diary command ledger (T-537; Canon §9): every completed /ws/diary
+ *  command records its outcome here INSIDE the mutation's transaction —
+ *  the client-minted command_id pk makes resends replay the recorded
+ *  outcome instead of re-executing (the action_log idempotency pattern
+ *  applied to the Diary's server-authoritative command channel). */
+export const diaryCommands = pgTable("diary_commands", {
+  commandId: uuid("command_id").primaryKey(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  kind: varchar("kind", { length: 40 }).notNull(),
+  /** Provenance only — deliberately no FK: the booking may be purged later
+   *  while the command record remains audit history. */
+  bookingId: uuid("booking_id"),
+  outcome: varchar("outcome", { length: 16 }).notNull(),
+  statusCode: integer("status_code").notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("diary_commands_venue_received_idx").on(table.venueId, table.receivedAt),
+]);
+
+export const actionLog = pgTable("action_log", {
+  id: uuid("id").primaryKey(),
+  ordinal: bigserial("ordinal", { mode: "number" }).notNull(),
+  configurationId: uuid("configuration_id").notNull().references(() => configurations.id, { onDelete: "cascade" }),
+  batchId: uuid("batch_id").notNull(),
+  revision: integer("revision").notNull(),
+  /** The AUTHENTICATED principal the server observed on ingestion — the
+   *  anchor to cross-check the self-reported actor blob against. */
+  submittedBy: uuid("submitted_by").notNull(),
+  actor: jsonb("actor").notNull(),
+  intent: varchar("intent", { length: 160 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  inverse: jsonb("inverse"),
+  provenance: jsonb("provenance").notNull(),
+  recordedTs: timestamp("recorded_ts", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("action_log_ordinal_unique").on(table.ordinal),
+  index("action_log_config_ordinal_idx").on(table.configurationId, table.ordinal),
 ]);

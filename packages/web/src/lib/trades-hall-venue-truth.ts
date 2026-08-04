@@ -45,6 +45,27 @@ export const CAPACITY_FORMATS = [
   { key: "reception", label: "Reception" },
 ] as const satisfies readonly { key: keyof RoomCapacity; label: string }[];
 
+export interface RoomDimensions {
+  /** Metres, as published on the venue's own website. */
+  readonly lengthM: number;
+  readonly widthM: number;
+  readonly heightM: number;
+  /** Published qualifier, e.g. the Grand Hall's further height under the dome. */
+  readonly note?: string;
+}
+
+/** Room dimensions as published on the official Trades Hall website —
+ *  the four rooms the site lists. The galleries publish no dimensions,
+ *  so none are stated for them. */
+export const TRADES_HALL_ROOM_DIMENSIONS: Readonly<
+  Partial<Record<PublishedRoomSlug, RoomDimensions>>
+> = {
+  "grand-hall": { lengthM: 21, widthM: 10, heightM: 7, note: "a further 7 m under the dome" },
+  saloon: { lengthM: 12, widthM: 7, heightM: 5.4 },
+  "robert-adam-room": { lengthM: 9.7, widthM: 5.6, heightM: 2.18 },
+  "reception-room": { lengthM: 13.4, widthM: 11.2, heightM: 3.2 },
+} as const;
+
 export interface WeddingRate {
   readonly packageName: string;
   readonly priceGBP: number;

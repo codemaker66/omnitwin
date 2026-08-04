@@ -19,14 +19,30 @@
   --fr-green-soft: rgba(31, 74, 56, 0.14);
   --fr-ochre: #b7862f;
   --fr-rule: #d5cbb6;
-  --fr-arc: #d5cbb6;
+  --fr-arc: #c6b795;
   color-scheme: light;
   --fr-display: "Fraunces", "Georgia", serif;
   --fr-body: "Newsreader", "Georgia", serif;
   --fr-ui: "Geist", system-ui, sans-serif;
   --fr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Top-light: the faint highlight along a panel's upper edge — paper
+     catching the room's light. Dark theme dims it to a breath. */
+  --fr-toplight: rgba(255, 252, 244, 0.55);
+  /* Paper tooth: one tiny turbulence tile, black at 4.5% — material, not
+     decoration. The dark theme swaps in white grain. */
+  --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
 
-  background: var(--fr-paper);
+  background-color: var(--fr-paper);
+  /* Light falls from above: a warmer sheet at the top settling into the
+     paper — depth without a single new element. */
+  background-image:
+    var(--fr-grain),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--fr-paper) 86%, #fff6e4 14%) 0,
+      var(--fr-paper) 460px
+    );
+  background-size: 180px 180px, auto;
   color: var(--fr-ink);
   font-family: var(--fr-body);
   line-height: 1.65;
@@ -45,6 +61,8 @@
     --fr-rule: #3a332a;
     /* Against dark paper the drawn arch needs warmth to read at all. */
     --fr-arc: rgba(216, 166, 76, 0.55);
+    --fr-toplight: rgba(255, 250, 238, 0.06);
+    --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -58,6 +76,8 @@
   --fr-ochre: #d8a64c;
   --fr-rule: #3a332a;
   --fr-arc: rgba(216, 166, 76, 0.55);
+  --fr-toplight: rgba(255, 250, 238, 0.06);
+  --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -170,6 +190,30 @@
   color: var(--fr-paper);
   background: var(--fr-green);
 }
+/* One cycling pill replaces the three-button row on narrow screens. */
+.fr-theme-cycle {
+  display: none;
+  font-family: var(--fr-ui);
+  font-size: 12px;
+  color: var(--fr-ink-2);
+  background: transparent;
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color 180ms var(--fr-ease), transform 140ms var(--fr-ease);
+}
+.fr-theme-cycle:active {
+  transform: scale(0.96);
+}
+@media (max-width: 639px) {
+  .fr-theme {
+    display: none;
+  }
+  .fr-theme-cycle {
+    display: inline-flex;
+  }
+}
 .fr-header-cta {
   font-family: var(--fr-ui);
   font-size: 13.5px;
@@ -210,6 +254,9 @@
      exactly at every size. */
   object-position: 50% 0;
   border-radius: 0 clamp(48px, 12vw, 160px) 0 0 / 0 clamp(36px, 9vw, 120px) 0 0;
+  /* A printer's grade, not a fabrication: gentle warmth and lift so the
+     shadowed rooftops carry the same evening light as the dome. */
+  filter: sepia(0.05) saturate(1.06) brightness(1.015);
 }
 /* The fanlight: the photo's drawn top edge, lifting over the real dome. */
 .fr-hero-fanlight {
@@ -237,6 +284,7 @@
   background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
   border-radius: 3px clamp(28px, 6vw, 72px) 3px 3px / 3px clamp(22px, 4vw, 48px) 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
 }
 .fr-hero h1 {
   margin: 0 0 0.45em;
@@ -320,7 +368,8 @@
 
 .fr-rooms,
 .fr-rates,
-.fr-enquiry {
+.fr-enquiry,
+.fr-walk {
   position: relative;
   max-width: 1080px;
   margin: 0 auto;
@@ -333,15 +382,49 @@
   left: clamp(16px, 4vw, 44px);
   right: clamp(16px, 4vw, 44px);
   height: 44px;
-  border-top: 1px solid var(--fr-rule);
+  border-top: 1px solid var(--fr-arc);
   border-radius: 100% 100% 0 0 / 200% 200% 0 0;
+}
+/* Each arch carries its keystone — the same ochre mark the hero's
+   fanlight wears, rhymed through the page. */
+.fr-arch::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--fr-ochre);
 }
 .fr-arch.is-flipped {
   transform: scaleX(-1);
 }
+/* The running heads: a small letterspaced mark with a short ochre rule —
+   the page keeping its own index. */
+.fr-kicker {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--fr-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+.fr-kicker::before {
+  content: "";
+  width: 22px;
+  height: 1px;
+  background: var(--fr-ochre);
+}
+
 .fr-rooms h2,
 .fr-rates h2,
 .fr-enquiry h2,
+.fr-walk h2,
 .fr-heritage h2,
 .fr-contact h2 {
   margin: 0 0 0.4em;
@@ -381,6 +464,19 @@
   height: clamp(260px, 38vh, 420px);
   object-fit: cover;
   border-radius: 3px;
+  transition: filter 260ms var(--fr-ease);
+}
+/* The card acknowledges the hand: the photograph warms a breath, and the
+   doorway underlines. Specific properties only — nothing moves. */
+@media (hover: hover) and (pointer: fine) {
+  .fr-room:hover img {
+    filter: brightness(1.05) saturate(1.04);
+  }
+  .fr-room:hover .fr-room-open {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: var(--fr-green);
+  }
 }
 .fr-room img.is-portrait {
   height: clamp(380px, 58vh, 620px);
@@ -432,38 +528,59 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: clamp(20px, 4vw, 44px);
 }
+/* The tariff, engraved: a fine double frame, the season set in display,
+   rows ruled like a ledger. Paper, not a slab. */
 .fr-rate-columns dl {
-  margin: 0;
-  padding: clamp(18px, 3vw, 28px);
-  background: var(--fr-paper-2);
+  margin: 4px;
+  padding: clamp(20px, 3.2vw, 30px);
+  background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
+  outline: 1px solid var(--fr-rule);
+  outline-offset: 3px;
   border-radius: 3px 40px 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
 }
 .fr-rate-columns dt {
   font-family: var(--fr-display);
-  font-weight: 550;
-  font-size: 21px;
-  margin-bottom: 14px;
+  font-weight: 500;
+  font-variation-settings: "opsz" 60;
+  font-size: 27px;
+  letter-spacing: -0.01em;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--fr-rule);
 }
 .fr-rate {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
-  padding: 9px 0;
-  border-top: 1px solid var(--fr-rule);
+  padding: 11px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--fr-rule) 55%, transparent);
+}
+.fr-rate:last-of-type {
+  border-bottom: 0;
 }
 .fr-rate dd {
   margin: 0;
+}
+.fr-rate dd:first-child {
+  font-size: 16px;
 }
 .fr-price {
   font-family: var(--fr-ui);
   font-variant-numeric: tabular-nums;
   color: var(--fr-green);
   font-weight: 600;
+  font-size: 16.5px;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 .fr-scope {
-  margin: 1.6em 0 0;
+  max-width: 52ch;
+  margin: 2em 4px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--fr-rule);
   font-family: var(--fr-ui);
   font-size: 12.5px;
   color: var(--fr-ink-2);
@@ -475,16 +592,22 @@
   position: relative;
   margin-top: clamp(72px, 11vh, 128px);
 }
+/* The artwork sits in a mount, like a plate in a monograph — not a
+   sticker floating on the page. */
 .fr-heritage-art {
   display: block;
-  width: min(100%, 900px);
+  width: min(100%, 860px);
   height: auto;
   margin: 0 auto;
-  filter: drop-shadow(0 18px 40px rgba(38, 32, 22, 0.22));
+  padding: clamp(14px, 2vw, 24px);
+  background: var(--fr-paper-2);
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px;
+  box-shadow: 0 8px 26px rgba(38, 32, 22, 0.1), inset 0 1px 0 var(--fr-toplight);
 }
 .fr-heritage-words {
-  max-width: 640px;
-  margin: clamp(-64px, -6vw, -96px) auto 0;
+  max-width: 560px;
+  margin: clamp(-56px, -5vw, -84px) clamp(0px, 8vw, 128px) 0 auto;
   position: relative;
   padding: clamp(22px, 3.6vw, 40px);
   background: var(--fr-paper);
@@ -495,6 +618,16 @@
   margin: 0;
   color: var(--fr-ink-2);
 }
+/* One drop cap on the page — the story earns it. */
+.fr-heritage-words p::first-letter {
+  font-family: var(--fr-display);
+  font-weight: 500;
+  font-size: 3.1em;
+  line-height: 0.82;
+  float: left;
+  padding: 5px 9px 0 0;
+  color: var(--fr-ochre);
+}
 
 /* ————————————————— contact ————————————————— */
 
@@ -503,30 +636,57 @@
   margin: 0 auto;
   padding: clamp(64px, 10vh, 110px) clamp(16px, 4vw, 44px) 48px;
 }
+.fr-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 28px 48px;
+  align-items: end;
+  margin: 24px 0 44px;
+}
+@media (max-width: 720px) {
+  .fr-contact-grid {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
 .fr-contact-ways {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 32px;
-  margin: 18px 0 40px;
+  flex-direction: column;
+  gap: 18px;
 }
-.fr-contact-ways a {
+.fr-contact-way {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fr-contact-way small {
   font-family: var(--fr-ui);
-  font-size: 15px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+.fr-contact-way a {
+  font-family: var(--fr-display);
+  font-weight: 460;
+  font-variation-settings: "opsz" 40;
+  font-size: clamp(19px, 2.6vw, 27px);
   color: var(--fr-ink);
   text-decoration: underline;
+  text-decoration-thickness: 1px;
   text-decoration-color: var(--fr-rule);
-  text-underline-offset: 4px;
-  padding: 6px 0;
+  text-underline-offset: 5px;
   transition: text-decoration-color 180ms var(--fr-ease);
 }
-.fr-contact-ways a:hover {
+.fr-contact-way a:hover {
   text-decoration-color: var(--fr-green);
 }
 .fr-colophon {
   display: flex;
   align-items: center;
   gap: 22px;
-  margin: 0 0 34px;
+  margin: 0;
 }
 .fr-colophon img {
   width: 92px;
@@ -651,18 +811,26 @@
   flex-wrap: wrap;
   gap: 20px 28px;
 }
+/* Fields write on the paper itself: underline, not box. Focus thickens
+   the line green — clearly visible, no outline ring needed. */
 .fr-enq-field input {
   font-family: var(--fr-body);
-  font-size: 16px;
+  font-size: 17px;
   color: var(--fr-ink);
-  background: var(--fr-paper);
-  border: 1px solid var(--fr-rule);
-  border-radius: 4px;
-  padding: 9px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--fr-rule);
+  border-radius: 0;
+  padding: 8px 2px;
   transition: border-color 180ms var(--fr-ease);
 }
 .fr-enq-field input:hover {
   border-color: var(--fr-ink-2);
+}
+.fr-enq-field input:focus-visible {
+  outline: none;
+  border-bottom: 2px solid var(--fr-green);
+  margin-bottom: -1px;
 }
 .fr-enq-field input[type="number"] {
   width: 110px;
@@ -675,13 +843,20 @@
    sentence changing never shoves the page around. */
 .fr-enq-answer {
   min-height: 5.2em;
-  padding-left: 18px;
-  border-left: 2px solid var(--fr-green);
+  padding-left: 20px;
+  border-left: 2px solid var(--fr-ochre);
 }
+/* The page's reply is spoken, not printed: display italic, like a line
+   of correspondence. */
 .fr-enq-fit {
   margin: 0 0 0.5em;
-  font-size: 19px;
-  line-height: 1.5;
+  font-family: var(--fr-display);
+  font-style: italic;
+  font-weight: 460;
+  font-variation-settings: "opsz" 44, "SOFT" 50;
+  font-size: clamp(20px, 2.4vw, 25px);
+  letter-spacing: -0.005em;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
 .fr-enq-also {
@@ -690,24 +865,43 @@
   color: var(--fr-ink-2);
   font-variant-numeric: tabular-nums;
 }
+/* The letter it writes, presented as one: paper sheet, a letterhead rule,
+   the arms ghosted low-right like a blind emboss. */
 .fr-enq-compose {
-  padding: clamp(18px, 3vw, 28px);
-  background: var(--fr-paper-2);
+  position: relative;
+  overflow: hidden;
+  padding: clamp(22px, 3.4vw, 34px);
+  background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
   border-radius: 3px clamp(22px, 4vw, 44px) 3px 3px / 3px clamp(18px, 3vw, 32px) 3px 3px;
+  box-shadow: inset 0 1px 0 var(--fr-toplight);
+}
+.fr-enq-compose::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  width: 84px;
+  height: 105px;
+  background: url("/images/brand/coat-of-arms-240.webp") center / contain no-repeat;
+  opacity: 0.07;
+  pointer-events: none;
 }
 .fr-enq-subject {
-  margin: 0 0 0.7em;
+  margin: 0 0 0.9em;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--fr-rule);
   font-family: var(--fr-ui);
   font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
 }
 .fr-enq-body {
+  position: relative;
   margin: 0 0 1.2em;
   font-family: var(--fr-body);
-  font-size: 15.5px;
-  line-height: 1.6;
+  font-size: 16px;
+  line-height: 1.7;
   color: var(--fr-ink-2);
   white-space: pre-wrap;
 }
@@ -748,6 +942,299 @@
   text-decoration: underline;
   text-decoration-color: var(--fr-rule);
   text-underline-offset: 4px;
+  /* This is the phone-call CTA on the primary enquiry path, and it inherits
+     15px from .fr-enq-call — so it rendered 107x15 CSS px, under any sane
+     touch minimum and under the audit's lenient 18px floor. WCAG 2.5.8's
+     inline-in-a-sentence exception arguably excuses it, but "arguably
+     excused" is not the bar for the one control a nervous client taps to
+     phone a venue. inline-flex so the min-height is honoured on an inline
+     element without disturbing the surrounding sentence. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+/* ————————————————— walk the room ————————————————— */
+
+.fr-walk-stage {
+  position: relative;
+  max-width: 900px;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+  border-radius: 3px clamp(28px, 6vw, 72px) 3px 3px / 3px clamp(22px, 4vw, 48px) 3px 3px;
+  background: var(--fr-paper-2);
+  border: 1px solid var(--fr-rule);
+}
+.fr-walk-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+.fr-walk-canvas:active {
+  cursor: grabbing;
+}
+.fr-walk-canvas:focus-visible {
+  outline: 2px solid var(--fr-green);
+  outline-offset: -2px;
+}
+.fr-walk-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  transition: opacity 700ms var(--fr-ease);
+}
+.fr-walk-stage[data-walk-state="live"] .fr-walk-poster {
+  opacity: 0;
+}
+.fr-walk-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 24px;
+  background: linear-gradient(
+    to top,
+    rgba(24, 20, 14, 0.62),
+    rgba(24, 20, 14, 0.18) 55%,
+    rgba(24, 20, 14, 0.05)
+  );
+}
+.fr-walk-chip {
+  margin: 0;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f2ecdf;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+.fr-walk-size {
+  margin: 0;
+  font-family: var(--fr-ui);
+  font-size: 12.5px;
+  color: rgba(242, 236, 223, 0.85);
+}
+.fr-walk-bar {
+  width: 220px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(242, 236, 223, 0.3);
+  overflow: hidden;
+}
+.fr-walk-bar div {
+  height: 100%;
+  background: var(--fr-ochre);
+  transition: width 300ms var(--fr-ease);
+}
+.fr-walk-hint {
+  max-width: 60ch;
+  margin: 14px 0 0;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+/* The doorway to the whole building: the hall itself, opened as the
+   walkthrough's dollhouse model — the moat shown, not told. */
+.fr-tour-door {
+  position: relative;
+  overflow: hidden;
+  max-width: 900px;
+  min-height: clamp(260px, 34vh, 400px);
+  margin: clamp(28px, 4vh, 44px) 0 0;
+  border: 1px solid var(--fr-rule);
+  border-radius: 3px clamp(28px, 6vw, 72px) 3px 3px / 3px clamp(22px, 4vw, 48px) 3px 3px;
+  background: #10130f;
+}
+.fr-tour-ground {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fr-tour-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 32px;
+  padding: clamp(18px, 3vw, 28px);
+  background: linear-gradient(
+    to top,
+    rgba(14, 12, 9, 0.78),
+    rgba(14, 12, 9, 0.24) 52%,
+    rgba(14, 12, 9, 0.02)
+  );
+}
+.fr-tour-door h3 {
+  margin: 0 0 6px;
+  font-family: var(--fr-display);
+  font-weight: 480;
+  font-variation-settings: "opsz" 60;
+  font-size: clamp(20px, 2.6vw, 27px);
+  color: #f2ecdf;
+}
+.fr-tour-door p {
+  max-width: 52ch;
+  margin: 0;
+  font-size: 15px;
+  color: rgba(242, 236, 223, 0.85);
+}
+.fr-tour-door .fr-cta {
+  flex-shrink: 0;
+}
+
+/* ————————————————— the room dossiers ————————————————— */
+
+.fr-room-open {
+  margin-top: 12px;
+  padding: 0;
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  color: var(--fr-green);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition: text-decoration-color 180ms var(--fr-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-room-open:hover {
+    text-decoration-color: var(--fr-green);
+  }
+}
+.fr-room-open:active {
+  transform: scale(0.97);
+}
+
+.fr-dossier {
+  /* The app shell's global margin reset kills the UA's dialog centring —
+     restate it, or the dossier pins to the top-left corner. */
+  margin: auto;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 0;
+  border: 1px solid var(--fr-rule);
+  border-radius: 4px clamp(24px, 5vw, 56px) 4px 4px / 4px clamp(18px, 4vw, 40px) 4px 4px;
+  background: var(--fr-paper);
+  color: var(--fr-ink);
+}
+.fr-dossier::backdrop {
+  background: rgba(24, 20, 14, 0.55);
+}
+.fr-dossier-panel {
+  padding: clamp(20px, 4vw, 32px);
+}
+.fr-dossier-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.fr-dossier-head h3 {
+  margin: 0 0 0.2em;
+  font-family: var(--fr-display);
+  font-weight: 480;
+  font-variation-settings: "opsz" 72;
+  font-size: 26px;
+}
+.fr-dossier-head p {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 15.5px;
+}
+.fr-dossier-close {
+  flex-shrink: 0;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  color: var(--fr-ink);
+  background: transparent;
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition:
+    border-color 180ms var(--fr-ease),
+    transform 140ms var(--fr-ease);
+}
+.fr-dossier-close:active {
+  transform: scale(0.96);
+}
+@media (hover: hover) and (pointer: fine) {
+  .fr-dossier-close:hover {
+    border-color: var(--fr-green);
+  }
+}
+.fr-dossier-dims {
+  margin: 0 0 14px;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--fr-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.fr-dossier-pills {
+  margin-bottom: 16px;
+}
+.fr-dossier-pills button {
+  font-variant-numeric: tabular-nums;
+}
+.fr-dossier-plan {
+  margin: 0 0 12px;
+}
+.fr-dossier-plan svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--fr-paper-2);
+  border-radius: 8px;
+}
+.fr-plan-room {
+  fill: none;
+  stroke: var(--fr-rule);
+  stroke-width: 1;
+}
+.fr-plan-table {
+  fill: none;
+  stroke: var(--fr-ink-2);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.fr-plan-dot {
+  fill: var(--fr-green);
+}
+.fr-dossier-plan figcaption {
+  margin-top: 10px;
+  font-size: 15px;
+  color: var(--fr-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.fr-dossier-plan figcaption b {
+  color: var(--fr-ink);
+  font-weight: 600;
+}
+.fr-dossier-prov {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  color: var(--fr-ink-2);
+}
+.fr-dossier-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 @media (prefers-reduced-motion: reduce) {

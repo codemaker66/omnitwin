@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,8 @@ export function adaptiveDprForPerformance({
   const safeCurrent = finitePositiveOr(current, FALLBACK_DPR);
   const lowerBound = finitePositiveOr(minDpr, DEFAULT_MIN_DPR);
   const upperBound = Math.max(lowerBound, finitePositiveOr(maxDpr, safeInitialDpr));
-  const targetDpr = safeCurrent * safeInitialDpr;
+  const cameraIsMoving = safeCurrent < 0.98;
+  const targetDpr = cameraIsMoving ? lowerBound : safeInitialDpr;
 
   return roundDpr(Math.min(Math.max(targetDpr, lowerBound), upperBound));
 }
@@ -71,9 +72,12 @@ export function AdaptiveResolution({
   const setDpr = useThree((state) => state.setDpr);
   const invalidate = useThree((state) => state.invalidate);
   const targetDpr = adaptiveDprForPerformance({ current, initialDpr, minDpr, maxDpr });
+  const lastAppliedDpr = useRef<number | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
+    if (lastAppliedDpr.current === targetDpr) return;
+    lastAppliedDpr.current = targetDpr;
     setDpr(targetDpr);
     invalidate();
   }, [enabled, invalidate, setDpr, targetDpr]);

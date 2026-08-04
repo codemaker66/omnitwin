@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Venviewer · The Floor — Concept Wireframes</title>
+<style>
+  :root{
+    --bg:#0B0A09; --panel:#131110; --raise:#1B1917;
+    --hair:rgba(245,240,232,0.10); --hair2:rgba(245,240,232,0.2); /* boosted vs 02-House tokens (0.08/0.12) for board legibility */
+    --t1:#F4EFE6; --t2:rgba(244,239,230,0.62); --t3:rgba(244,239,230,0.38);
+    --brass:#C6A15B; --sage:#8FAE8B; --cyan:#6FB7C9; --violet:#9D8BC9; --amber:#C99A5B; --ox:#B25454;
+    --mono:"SF Mono","Cascadia Code","JetBrains Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.55 -apple-system,"Segoe UI",Inter,system-ui,sans-serif;padding:48px 24px 96px}
+  .wrap{max-width:1280px;margin:0 auto}
+  header h1{font-size:26px;font-weight:500;margin:0 0 6px;letter-spacing:.2px}
+  header p{color:var(--t2);margin:0 0 4px;max-width:70ch}
+  .disclaim{display:inline-block;margin-top:10px;padding:4px 12px;border:1px solid var(--hair2);border-radius:999px;color:var(--t2);font-size:12px}
+  .board{margin-top:56px;background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:22px 22px 18px}
+  .bhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .bhead h2{font-size:17px;font-weight:500;margin:0}
+  .tag{font:11px/1 var(--mono);color:var(--amber);border:1px solid rgba(201,154,91,.4);padding:4px 9px;border-radius:999px;letter-spacing:.4px}
+  .tag.p6{color:var(--sage);border-color:rgba(143,174,139,.4)}
+  .bhead span.sub{color:var(--t3);font-size:13px}
+  svg{width:100%;height:auto;display:block;border-radius:10px}
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 28px;margin-top:14px;padding-top:12px;border-top:1px solid var(--hair)}
+  .legend div{color:var(--t2);font-size:13px;padding:3px 0}
+  .legend b{display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--brass);color:#141210;font:11px/18px var(--mono);justify-content:center;margin-right:9px;font-weight:600}
+  .k{color:var(--t1)}
+  footer{margin-top:64px;color:var(--t3);font-size:13px;border-top:1px solid var(--hair);padding-top:18px}
+  text{font-family:-apple-system,"Segoe UI",Inter,system-ui,sans-serif}
+  .mono{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>The Floor — concept wireframe boards</h1>
+  <p>Venviewer / OmniTwin · July 2026 · companion to 01-Planner-UX-Spec and 02-House. Back-of-House register unless noted.</p>
+  <p class="disclaim">Concept boards — plans, not product. Each board carries its SS++ build phase.</p>
+</header>
+
+<!-- ═══════════════ BOARD A ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>A · The Floor — default state</h2><span class="tag">SS++ PHASE 4 · LIGHTHOUSE L1</span><span class="sub">Room band · chrome floats over a full-bleed captured room</span></div>
+  <svg viewBox="0 0 1200 700" role="img" aria-label="Wireframe of the Floor planner default state">
+    <rect x="0" y="0" width="1200" height="700" rx="10" fill="#0B0A09"/>
+    <!-- room: back wall + floor perspective -->
+    <g stroke="rgba(245,240,232,0.16)" fill="none">
+      <polygon points="330,180 870,180 990,620 210,620" stroke="rgba(245,240,232,0.22)"/>
+      <line x1="330" y1="180" x2="330" y2="60"/><line x1="870" y1="180" x2="870" y2="60"/>
+      <line x1="210" y1="620" x2="210" y2="30"/><line x1="990" y1="620" x2="990" y2="30"/>
+      <line x1="330" y1="60" x2="870" y2="60"/>
+      <!-- windows on back wall -->
+      <path d="M390,170 v-70 a25,25 0 0 1 50,0 v70" opacity=".8"/>
+      <path d="M575,170 v-70 a25,25 0 0 1 50,0 v70" opacity=".8"/>
+      <path d="M760,170 v-70 a25,25 0 0 1 50,0 v70" opacity=".8"/>
+      <!-- floor hint lines -->
+      <line x1="300" y1="330" x2="900" y2="330" opacity=".25"/>
+      <line x1="265" y1="450" x2="935" y2="450" opacity=".25"/>
+    </g>
+    <text x="600" y="45" text-anchor="middle" fill="rgba(244,239,230,0.30)" font-size="11" letter-spacing="3">CAPTURED ROOM · SPLAT LAYER</text>
+    <!-- head table -->
+    <rect x="510" y="205" width="180" height="26" rx="4" fill="none" stroke="rgba(244,239,230,0.55)"/>
+    <text x="600" y="222" text-anchor="middle" fill="rgba(244,239,230,0.5)" font-size="10">HEAD TABLE</text>
+    <!-- rounds row 1 (far, smaller) -->
+    <g fill="none" stroke="rgba(244,239,230,0.55)">
+      <ellipse cx="430" cy="300" rx="30" ry="15"/><ellipse cx="530" cy="305" rx="30" ry="15"/><ellipse cx="670" cy="305" rx="30" ry="15"/><ellipse cx="770" cy="300" rx="30" ry="15"/>
+      <ellipse cx="395" cy="395" rx="38" ry="19"/><ellipse cx="520" cy="400" rx="38" ry="19"/><ellipse cx="680" cy="400" rx="38" ry="19"/><ellipse cx="805" cy="395" rx="38" ry="19"/>
+      <ellipse cx="360" cy="510" rx="47" ry="24"/><ellipse cx="510" cy="515" rx="47" ry="24"/>
+    </g>
+    <!-- selected table -->
+    <ellipse cx="690" cy="515" rx="47" ry="24" fill="rgba(198,161,91,0.10)" stroke="#C6A15B" stroke-width="1.5"/>
+    <ellipse cx="690" cy="515" rx="62" ry="32" fill="none" stroke="rgba(143,174,139,0.5)" stroke-dasharray="3 5"/>
+    <text x="690" y="519" text-anchor="middle" fill="#C6A15B" font-size="10" class="mono">T12</text>
+    <!-- dancefloor -->
+    <polygon points="790,470 930,470 965,585 820,585" fill="none" stroke="rgba(111,183,201,0.45)" stroke-dasharray="6 4"/>
+    <text x="878" y="533" text-anchor="middle" fill="rgba(111,183,201,0.7)" font-size="10" letter-spacing="1">DANCEFLOOR</text>
+    <!-- table numbers -->
+    <g fill="rgba(244,239,230,0.4)" font-size="9" text-anchor="middle" class="mono">
+      <text x="430" y="303">T1</text><text x="530" y="308">T2</text><text x="670" y="308">T3</text><text x="770" y="303">T4</text>
+      <text x="395" y="399">T5</text><text x="520" y="404">T6</text><text x="680" y="404">T7</text><text x="805" y="399">T8</text>
+      <text x="360" y="514">T9</text><text x="510" y="519">T10</text>
+    </g>
+    <!-- collaborator presence light -->
+    <circle cx="285" cy="350" r="5" fill="#9D8BC9"/>
+    <circle cx="285" cy="350" r="10" fill="none" stroke="rgba(157,139,201,0.4)"/>
+    <text x="300" y="345" fill="rgba(157,139,201,0.9)" font-size="10">Ruth</text>
+    <!-- POV marker -->
+    <path d="M905,325 l7,14 h-14 z" fill="none" stroke="#C6A15B" opacity=".8"/>
+    <text x="905" y="315" text-anchor="middle" fill="rgba(198,161,91,0.8)" font-size="9">POV</text>
+
+    <!-- TOP BAR -->
+    <rect x="14" y="14" width="1172" height="44" rx="10" fill="rgba(19,17,16,0.72)" stroke="var(--hair)"/>
+    <text x="34" y="41" fill="rgba(244,239,230,0.62)" font-size="12">Trades Hall <tspan fill="rgba(244,239,230,0.3)">/</tspan> North Gallery <tspan fill="rgba(244,239,230,0.3)">/</tspan> Hamilton Wedding <tspan fill="rgba(244,239,230,0.3)">/</tspan> <tspan fill="#F4EFE6">Layout B ▾</tspan></text>
+    <rect x="470" y="22" width="260" height="28" rx="14" fill="#1B1917" stroke="var(--hair2)"/>
+    <text x="600" y="40" text-anchor="middle" fill="rgba(244,239,230,0.38)" font-size="11.5">Ask or command…&#160;&#160;⌘K</text>
+    <circle cx="905" cy="36" r="11" fill="#1B1917" stroke="#9D8BC9"/><text x="905" y="40" text-anchor="middle" font-size="9" fill="#9D8BC9">R</text>
+    <circle cx="925" cy="36" r="11" fill="#1B1917" stroke="#6FB7C9"/><text x="925" y="40" text-anchor="middle" font-size="9" fill="#6FB7C9">J</text>
+    <rect x="950" y="23" width="128" height="26" rx="13" fill="none" stroke="rgba(143,174,139,0.5)"/>
+    <circle cx="966" cy="36" r="3.5" fill="#8FAE8B"/>
+    <text x="978" y="40" fill="#8FAE8B" font-size="11">Current · 12 checks</text>
+    <rect x="1090" y="23" width="82" height="26" rx="13" fill="#C6A15B"/>
+    <text x="1131" y="40" text-anchor="middle" fill="#141210" font-size="11.5" font-weight="600">Present ▸</text>
+
+    <!-- LEFT RAIL -->
+    <rect x="14" y="70" width="218" height="470" rx="12" fill="rgba(19,17,16,0.72)" stroke="var(--hair)"/>
+    <text x="32" y="98" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="2">SCENE</text>
+    <g font-size="12" fill="rgba(244,239,230,0.62)">
+      <text x="32" y="126" fill="#F4EFE6">▾ Phases <tspan fill="rgba(244,239,230,0.35)" class="mono">&#160;5</tspan></text>
+      <text x="46" y="150">Ceremony</text>
+      <text x="46" y="172" fill="#F4EFE6">Dinner <tspan fill="#C6A15B">●</tspan></text>
+      <text x="32" y="202" fill="#F4EFE6">▾ Zones <tspan fill="rgba(244,239,230,0.35)" class="mono">&#160;4</tspan></text>
+      <text x="46" y="226">Seating — 10 rounds</text>
+      <text x="46" y="248">Dancefloor</text>
+      <text x="46" y="270">Bar &amp; service</text>
+      <text x="32" y="300" fill="#F4EFE6">▾ Objects <tspan fill="rgba(244,239,230,0.35)" class="mono">&#160;138</tspan></text>
+      <text x="46" y="324">Rounds ×10 · 110 seats</text>
+      <text x="46" y="346">Head table ×1</text>
+      <text x="46" y="368">Stage · AV ×6</text>
+      <text x="32" y="398" fill="#F4EFE6">▸ Layers</text>
+    </g>
+    <g font-size="10" fill="rgba(244,239,230,0.35)" class="mono">
+      <text x="196" y="150">◎</text><text x="196" y="172">◎</text>
+    </g>
+
+    <!-- RIGHT RAIL / INSPECTOR -->
+    <rect x="962" y="70" width="224" height="360" rx="12" fill="rgba(19,17,16,0.72)" stroke="var(--hair)"/>
+    <g font-size="11.5">
+      <text x="980" y="97" fill="#F4EFE6">Object</text>
+      <text x="1032" y="97" fill="rgba(244,239,230,0.4)">Checks</text>
+      <text x="1086" y="97" fill="rgba(244,239,230,0.4)">Evidence</text>
+      <text x="1148" y="97" fill="rgba(244,239,230,0.4)">Ops</text>
+    </g>
+    <line x1="980" y1="105" x2="1016" y2="105" stroke="#C6A15B" stroke-width="2"/>
+    <g font-size="12" fill="rgba(244,239,230,0.62)">
+      <text x="980" y="132" fill="#F4EFE6" font-size="13">Round table · T12</text>
+      <text x="980" y="154" class="mono" fill="rgba(244,239,230,0.5)">6 ft · seats 10 · SKU RT-72</text>
+      <text x="980" y="186">Seats <tspan x="1130" class="mono" fill="#F4EFE6">10</tspan></text>
+      <text x="980" y="210">Rotation <tspan x="1130" class="mono" fill="#F4EFE6">15°</tspan></text>
+      <text x="980" y="234">Zone <tspan x="1104" fill="#F4EFE6">Seating</tspan></text>
+      <text x="980" y="266" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">PROVENANCE</text>
+      <text x="980" y="288">Operator-placed · Ruth</text>
+      <text x="980" y="310" fill="#8FAE8B">Spacing check passed ✓</text>
+      <text x="980" y="342" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">OPS</text>
+      <text x="980" y="364">Linked: pick list · setup §4</text>
+    </g>
+
+    <!-- VITALS -->
+    <g class="mono" font-size="12" text-anchor="end">
+      <text x="1178" y="560" fill="#F4EFE6">Guests <tspan fill="#C6A15B">120</tspan><tspan fill="rgba(244,239,230,0.4)">/140</tspan></text>
+      <text x="1178" y="582" fill="#8FAE8B">Clearance ✓</text>
+      <text x="1178" y="604" fill="#C99A5B">Flip 25m ▲</text>
+      <text x="1178" y="626" fill="rgba(244,239,230,0.62)">£14,200</text>
+    </g>
+
+    <!-- TIMELINE collapsed -->
+    <rect x="14" y="648" width="1172" height="38" rx="10" fill="rgba(19,17,16,0.72)" stroke="var(--hair)"/>
+    <g font-size="10.5" text-anchor="middle">
+      <rect x="30" y="656" width="150" height="22" rx="5" fill="#1B1917" stroke="var(--hair2)"/><text x="105" y="671" fill="rgba(244,239,230,0.62)">Arrival</text>
+      <rect x="184" y="656" width="240" height="22" rx="5" fill="#1B1917" stroke="var(--hair2)"/><text x="304" y="671" fill="rgba(244,239,230,0.62)">Ceremony</text>
+      <rect x="428" y="656" width="56" height="22" rx="5" fill="none" stroke="rgba(201,154,91,0.7)" stroke-dasharray="4 3"/><text x="456" y="671" fill="#C99A5B">Flip</text>
+      <rect x="488" y="656" width="330" height="22" rx="5" fill="rgba(198,161,91,0.14)" stroke="#C6A15B"/><text x="653" y="671" fill="#F4EFE6">Dinner ●</text>
+      <rect x="822" y="656" width="170" height="22" rx="5" fill="#1B1917" stroke="var(--hair2)"/><text x="907" y="671" fill="rgba(244,239,230,0.62)">Dancing</text>
+      <rect x="996" y="656" width="140" height="22" rx="5" fill="#1B1917" stroke="var(--hair2)"/><text x="1066" y="671" fill="rgba(244,239,230,0.62)">Breakdown</text>
+    </g>
+
+    <!-- annotation dots -->
+    <g font-size="11" font-weight="600">
+      <circle cx="600" cy="22" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="600" y="26" text-anchor="middle" fill="#141210">1</text>
+      <circle cx="232" cy="80" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="232" y="84" text-anchor="middle" fill="#141210">2</text>
+      <circle cx="962" cy="80" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="962" y="84" text-anchor="middle" fill="#141210">3</text>
+      <circle cx="1014" cy="23" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="1014" y="27" text-anchor="middle" fill="#141210">4</text>
+      <circle cx="1120" cy="614" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="1120" y="618" text-anchor="middle" fill="#141210">5</text>
+      <circle cx="456" cy="648" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="456" y="652" text-anchor="middle" fill="#141210">6</text>
+      <circle cx="741" cy="497" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="741" y="501" text-anchor="middle" fill="#141210">7</text>
+      <circle cx="285" cy="327" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="285" y="331" text-anchor="middle" fill="#141210">8</text>
+    </g>
+  </svg>
+  <div class="legend">
+    <div><b>1</b><span class="k">Command pill</span> — verbs, questions, descriptions; ⌘K; mic for voice</div>
+    <div><b>2</b><span class="k">Scene rail</span> — phases/zones/objects/layers; doubles as the accessible tree</div>
+    <div><b>3</b><span class="k">Inspector</span> — Object · Checks · Evidence · Ops, selection-aware</div>
+    <div><b>4</b><span class="k">Evidence chip</span> — aggregate Proof state; click for the drawer (Board D)</div>
+    <div><b>5</b><span class="k">Vitals</span> — live numbers, all scrubbable (P4); revenue role-gated</div>
+    <div><b>6</b><span class="k">Flip gap</span> — first-class timeline object; amber = window shorter than estimate</div>
+    <div><b>7</b><span class="k">Selected table</span> — brass outline + sage clearance halo; no scale handles (SKU swap only)</div>
+    <div><b>8</b><span class="k">Presence</span> — collaborator as warm-light point + hue; her drags render as her ghost</div>
+  </div>
+</section>
+
+<!-- ═══════════════ BOARD B ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>B · Command — describe it, see it as ghosts</h2><span class="tag">VERBS PHASE 4 · AI SCHEMES PHASE 8</span><span class="sub">P5 + P2 · AI proposes in ghost material; Enter materializes</span></div>
+  <svg viewBox="0 0 1200 700" role="img" aria-label="Wireframe of command bar with ghost layout schemes">
+    <rect x="0" y="0" width="1200" height="700" rx="10" fill="#0B0A09"/>
+    <!-- dimmed room shell -->
+    <g stroke="rgba(245,240,232,0.12)" fill="none">
+      <polygon points="330,180 870,180 990,620 210,620"/>
+      <line x1="330" y1="180" x2="330" y2="60"/><line x1="870" y1="180" x2="870" y2="60"/><line x1="330" y1="60" x2="870" y2="60"/>
+      <line x1="210" y1="620" x2="210" y2="30"/><line x1="990" y1="620" x2="990" y2="30"/>
+    </g>
+    <!-- ghost long tables (violet dashed) -->
+    <g fill="rgba(157,139,201,0.08)" stroke="rgba(157,139,201,0.75)" stroke-dasharray="5 4">
+      <polygon points="400,300 470,300 500,560 410,560"/>
+      <polygon points="560,300 630,300 645,560 555,560"/>
+      <polygon points="720,300 790,300 830,560 740,560"/>
+    </g>
+    <rect x="500" y="205" width="200" height="26" rx="4" fill="rgba(157,139,201,0.08)" stroke="rgba(157,139,201,0.75)" stroke-dasharray="5 4"/>
+    <text x="600" y="222" text-anchor="middle" fill="rgba(157,139,201,0.9)" font-size="10">HEAD TABLE · GHOST</text>
+    <g fill="rgba(157,139,201,0.75)" font-size="10" text-anchor="middle" class="mono">
+      <text x="450" y="435">40</text><text x="598" y="435">40</text><text x="778" y="435">40</text>
+    </g>
+    <!-- AI glyph -->
+    <text x="600" y="600" text-anchor="middle" fill="rgba(157,139,201,0.85)" font-size="11">✦ AI-proposed · ghost preview — nothing committed</text>
+
+    <!-- command pill expanded -->
+    <rect x="330" y="70" width="540" height="46" rx="23" fill="rgba(27,25,23,0.92)" stroke="rgba(157,139,201,0.6)"/>
+    <text x="356" y="98" fill="#F4EFE6" font-size="13">candlelit charity dinner for <tspan fill="#C6A15B">120</tspan> with band</text>
+    <text x="846" y="98" text-anchor="end" fill="rgba(244,239,230,0.35)" font-size="11">↵</text>
+
+    <!-- scheme cards -->
+    <g>
+      <rect x="920" y="140" width="252" height="120" rx="12" fill="rgba(27,25,23,0.92)" stroke="#9D8BC9"/>
+      <rect x="936" y="156" width="70" height="52" rx="6" fill="none" stroke="rgba(157,139,201,0.6)"/>
+      <line x1="946" y1="166" x2="946" y2="198" stroke="rgba(157,139,201,0.6)"/><line x1="962" y1="166" x2="962" y2="198" stroke="rgba(157,139,201,0.6)"/><line x1="978" y1="166" x2="978" y2="198" stroke="rgba(157,139,201,0.6)"/><line x1="994" y1="166" x2="994" y2="198" stroke="rgba(157,139,201,0.6)"/>
+      <text x="1020" y="170" fill="#F4EFE6" font-size="13">Scheme A ✦</text>
+      <text x="1020" y="190" fill="rgba(244,239,230,0.62)" font-size="11">Three long tables</text>
+      <text x="1020" y="208" fill="rgba(244,239,230,0.4)" font-size="10.5" class="mono">120 seats · wide east aisle</text>
+      <rect x="936" y="222" width="118" height="20" rx="10" fill="none" stroke="rgba(143,174,139,0.5)"/><text x="995" y="236" text-anchor="middle" fill="#8FAE8B" font-size="10">clearances pass</text>
+      <text x="1160" y="236" text-anchor="end" fill="#C6A15B" font-size="10.5">↵ materialize</text>
+    </g>
+    <g opacity=".62">
+      <rect x="920" y="272" width="252" height="86" rx="12" fill="rgba(27,25,23,0.92)" stroke="var(--hair2)"/>
+      <text x="936" y="298" fill="#F4EFE6" font-size="13">Scheme B ✦</text>
+      <text x="936" y="318" fill="rgba(244,239,230,0.62)" font-size="11">12 rounds · dancefloor kept clear</text>
+      <text x="936" y="338" fill="rgba(244,239,230,0.4)" font-size="10.5" class="mono">+2 tables · tighter west aisle</text>
+    </g>
+    <g opacity=".62">
+      <rect x="920" y="370" width="252" height="86" rx="12" fill="rgba(27,25,23,0.92)" stroke="var(--hair2)"/>
+      <text x="936" y="396" fill="#F4EFE6" font-size="13">Scheme C ✦</text>
+      <text x="936" y="416" fill="rgba(244,239,230,0.62)" font-size="11">Cabaret · stage focus</text>
+      <text x="936" y="436" fill="rgba(244,239,230,0.4)" font-size="10.5" class="mono">96 seated · 24 standing</text>
+    </g>
+    <text x="1046" y="486" text-anchor="middle" fill="rgba(244,239,230,0.38)" font-size="10.5">↑↓ cycle schemes in the room · esc dismiss</text>
+
+    <!-- answer chip example -->
+    <rect x="330" y="128" width="404" height="30" rx="15" fill="rgba(19,17,16,0.9)" stroke="var(--hair2)"/>
+    <text x="350" y="147" fill="rgba(244,239,230,0.62)" font-size="11">Planning guidance: fits comfortably — <tspan fill="#C99A5B">human review required</tspan></text>
+
+    <g font-size="11" font-weight="600">
+      <circle cx="330" cy="70" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="330" y="74" text-anchor="middle" fill="#141210">1</text>
+      <circle cx="920" cy="140" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="920" y="144" text-anchor="middle" fill="#141210">2</text>
+      <circle cx="500" cy="430" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="500" y="434" text-anchor="middle" fill="#141210">3</text>
+      <circle cx="330" cy="128" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="330" y="132" text-anchor="middle" fill="#141210">4</text>
+    </g>
+  </svg>
+  <div class="legend">
+    <div><b>1</b><span class="k">Natural description</span> — same pill as verbs and questions; first ghost streams &lt; 4 s</div>
+    <div><b>2</b><span class="k">Scheme cards</span> — arrow keys swap the ghosts live in the room; tradeoff chips are honest</div>
+    <div><b>3</b><span class="k">Ghost material</span> — violet provenance stroke + ✦ glyph = AI-proposed; never blocks picking real objects</div>
+    <div><b>4</b><span class="k">Answer chip</span> — questions answered in claim-safe language, with a ghost proof, zero mutation</div>
+  </div>
+</section>
+
+<!-- ═══════════════ BOARD C ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>C · The Timeline — scrubbing through the flip</h2><span class="tag">PHASE 4 · COMPILE = PHASE 5 · REHEARSE = PHASE 7</span><span class="sub">P3 · the event as a 4D object; the flip is the diff between keyframes</span></div>
+  <svg viewBox="0 0 1200 700" role="img" aria-label="Wireframe of expanded phase timeline mid-scrub between ceremony and dinner">
+    <rect x="0" y="0" width="1200" height="700" rx="10" fill="#0B0A09"/>
+    <g stroke="rgba(245,240,232,0.14)" fill="none">
+      <polygon points="330,160 870,160 990,540 210,540"/>
+      <line x1="330" y1="160" x2="330" y2="60"/><line x1="870" y1="160" x2="870" y2="60"/><line x1="330" y1="60" x2="870" y2="60"/>
+    </g>
+    <!-- ceremony rows striking (dashed, fading) -->
+    <g stroke="rgba(244,239,230,0.30)" fill="none" stroke-dasharray="4 4">
+      <line x1="430" y1="260" x2="770" y2="260"/><line x1="415" y1="300" x2="785" y2="300"/><line x1="400" y1="340" x2="800" y2="340"/><line x1="385" y1="380" x2="815" y2="380"/>
+    </g>
+    <text x="600" y="238" text-anchor="middle" fill="rgba(244,239,230,0.35)" font-size="10" letter-spacing="1.5">CEREMONY ROWS · STRIKING ▿</text>
+    <!-- dinner rounds materializing -->
+    <g fill="rgba(198,161,91,0.06)" stroke="rgba(244,239,230,0.6)">
+      <ellipse cx="420" cy="450" rx="40" ry="20"/><ellipse cx="560" cy="460" rx="40" ry="20"/><ellipse cx="710" cy="460" rx="40" ry="20"/><ellipse cx="840" cy="450" rx="40" ry="20"/>
+    </g>
+    <text x="628" y="512" text-anchor="middle" fill="rgba(244,239,230,0.5)" font-size="10" letter-spacing="1.5">DINNER ROUNDS · MATERIALIZING ▵</text>
+    <text x="600" y="580" text-anchor="middle" fill="rgba(111,183,201,0.8)" font-size="11">visualizing change between phases — keyframes are the plan, the motion is not</text>
+
+    <!-- expanded timeline -->
+    <rect x="14" y="500" width="1172" height="186" rx="12" fill="rgba(19,17,16,0.85)" stroke="var(--hair)"/>
+    <g font-size="10.5" class="mono" fill="rgba(244,239,230,0.35)">
+      <text x="40" y="527">15:00</text><text x="260" y="527">16:00</text><text x="470" y="527">17:30</text><text x="700" y="527">19:00</text><text x="940" y="527">21:30</text><text x="1120" y="527">00:00</text>
+    </g>
+    <g font-size="11.5" text-anchor="middle">
+      <rect x="36" y="540" width="130" height="34" rx="6" fill="#1B1917" stroke="var(--hair2)"/><text x="101" y="561" fill="rgba(244,239,230,0.62)">Arrival</text>
+      <rect x="170" y="540" width="240" height="34" rx="6" fill="#1B1917" stroke="var(--hair2)"/><text x="290" y="561" fill="rgba(244,239,230,0.62)">Ceremony · 96 rows</text>
+      <rect x="414" y="540" width="96" height="34" rx="6" fill="rgba(201,154,91,0.12)" stroke="#C99A5B"/><text x="462" y="561" fill="#C99A5B">Flip 25m</text>
+      <rect x="514" y="540" width="340" height="34" rx="6" fill="#1B1917" stroke="var(--hair2)"/><text x="684" y="561" fill="rgba(244,239,230,0.62)">Dinner · 10 rounds</text>
+      <rect x="858" y="540" width="180" height="34" rx="6" fill="#1B1917" stroke="var(--hair2)"/><text x="948" y="561" fill="rgba(244,239,230,0.62)">Dancing</text>
+      <rect x="1042" y="540" width="120" height="34" rx="6" fill="#1B1917" stroke="var(--hair2)"/><text x="1102" y="561" fill="rgba(244,239,230,0.62)">Breakdown</text>
+    </g>
+    <!-- playhead -->
+    <line x1="462" y1="510" x2="462" y2="640" stroke="#C6A15B" stroke-width="1.5"/>
+    <path d="M455,510 h14 l-7,10 z" fill="#C6A15B"/>
+    <!-- flip intelligence card -->
+    <rect x="380" y="592" width="330" height="76" rx="10" fill="#1B1917" stroke="rgba(201,154,91,0.5)"/>
+    <text x="398" y="616" fill="#F4EFE6" font-size="12">Flip: Ceremony → Dinner</text>
+    <text x="398" y="636" fill="#C99A5B" font-size="11.5" class="mono">window 25m · estimate 33m ▲ assumption</text>
+    <text x="398" y="656" fill="rgba(244,239,230,0.5)" font-size="10.5">96 chairs out · 10 rounds in · est. crew 4 — <tspan fill="#C6A15B">Compile flip plan ▸</tspan></text>
+    <!-- play / phase step -->
+    <text x="1120" y="616" fill="rgba(244,239,230,0.5)" font-size="11" class="mono">⏵ play</text>
+    <text x="1120" y="636" fill="rgba(244,239,230,0.35)" font-size="11" class="mono">[ ] step</text>
+
+    <g font-size="11" font-weight="600">
+      <circle cx="462" cy="505" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="462" y="509" text-anchor="middle" fill="#141210">1</text>
+      <circle cx="414" cy="540" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="414" y="544" text-anchor="middle" fill="#141210">2</text>
+      <circle cx="380" cy="592" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="380" y="596" text-anchor="middle" fill="#141210">3</text>
+      <circle cx="600" cy="580" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="600" y="584" text-anchor="middle" fill="#141210">4</text>
+    </g>
+  </svg>
+  <div class="legend">
+    <div><b>1</b><span class="k">Playhead scrub</span> — the room morphs between keyframes; Space plays the whole event in ~20 s</div>
+    <div><b>2</b><span class="k">Flip gap</span> — a first-class object: knows its furniture delta and crew-minutes; amber when the window is short</div>
+    <div><b>3</b><span class="k">Flip card</span> — estimate labeled as assumption until post-event actuals exist; one click compiles pick list + sequence for review</div>
+    <div><b>4</b><span class="k">Honesty caption</span> — morph motion is presentation; only keyframes export (first N scrubs)</div>
+  </div>
+</section>
+
+<!-- ═══════════════ BOARD D ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>D · Proof — the evidence drawer</h2><span class="tag p6">PHASE 6 · EVIDENCE RUNTIME</span><span class="sub">P6 · selection-aware Truth Mode; honesty one gesture away</span></div>
+  <svg viewBox="0 0 1200 700" role="img" aria-label="Wireframe of Truth Mode evidence drawer for a selected table">
+    <rect x="0" y="0" width="1200" height="700" rx="10" fill="#0B0A09"/>
+    <g stroke="rgba(245,240,232,0.12)" fill="none">
+      <polygon points="290,170 790,170 900,600 180,600"/>
+      <line x1="290" y1="170" x2="290" y2="60"/><line x1="790" y1="170" x2="790" y2="60"/><line x1="290" y1="60" x2="790" y2="60"/>
+    </g>
+    <g fill="none" stroke="rgba(244,239,230,0.4)">
+      <ellipse cx="380" cy="320" rx="34" ry="17"/><ellipse cx="520" cy="325" rx="34" ry="17"/><ellipse cx="660" cy="320" rx="34" ry="17"/>
+      <ellipse cx="350" cy="440" rx="43" ry="22"/><ellipse cx="660" cy="445" rx="43" ry="22"/>
+    </g>
+    <!-- selected with route line -->
+    <ellipse cx="505" cy="445" rx="43" ry="22" fill="rgba(198,161,91,0.10)" stroke="#C6A15B" stroke-width="1.5"/>
+    <text x="505" y="449" text-anchor="middle" fill="#C6A15B" font-size="10" class="mono">T7</text>
+    <path d="M505,530 C505,560 620,560 700,575" fill="none" stroke="rgba(111,183,201,0.6)" stroke-dasharray="6 4"/>
+    <text x="600" y="595" fill="rgba(111,183,201,0.8)" font-size="10.5">service route · 1.6 m min ✓</text>
+
+    <!-- chip state reference row -->
+    <text x="40" y="52" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="2">EVIDENCE CHIP STATES</text>
+    <g font-size="11">
+      <rect x="40" y="64" width="118" height="26" rx="13" fill="none" stroke="rgba(143,174,139,0.55)"/><circle cx="56" cy="77" r="3.5" fill="#8FAE8B"/><text x="66" y="81" fill="#8FAE8B">Current · 12</text>
+      <rect x="166" y="64" width="118" height="26" rx="13" fill="none" stroke="rgba(244,239,230,0.3)"/><circle cx="182" cy="77" r="3.5" fill="rgba(244,239,230,0.4)"/><text x="192" y="81" fill="rgba(244,239,230,0.55)">Stale · re-run</text>
+      <rect x="292" y="64" width="146" height="26" rx="13" fill="none" stroke="rgba(201,154,91,0.55)"/><circle cx="308" cy="77" r="3.5" fill="#C99A5B"/><text x="318" y="81" fill="#C99A5B">Review required</text>
+      <rect x="446" y="64" width="100" height="26" rx="13" fill="none" stroke="rgba(244,239,230,0.35)" stroke-dasharray="3 3"/><circle cx="462" cy="77" r="3.5" fill="none" stroke="rgba(244,239,230,0.45)"/><text x="472" y="81" fill="rgba(244,239,230,0.55)">Missing</text>
+    </g>
+
+    <!-- evidence drawer -->
+    <rect x="836" y="40" width="350" height="646" rx="14" fill="rgba(19,17,16,0.92)" stroke="var(--hair)"/>
+    <text x="860" y="74" fill="#F4EFE6" font-size="15">Evidence — Round table T7</text>
+    <text x="860" y="94" fill="rgba(244,239,230,0.4)" font-size="11" class="mono">snapshot 8f3a…c21 · 2 min ago</text>
+    <g font-size="12">
+      <text x="860" y="130" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">SOURCE</text>
+      <text x="860" y="152" fill="rgba(244,239,230,0.72)">Operator-placed · Ruth · today 14:12</text>
+      <text x="860" y="172" fill="rgba(244,239,230,0.72)">Geometry: reviewed floor polygon <tspan fill="#8FAE8B">✓</tspan></text>
+      <text x="860" y="192" fill="rgba(244,239,230,0.72)">Visual layer: captured splat — <tspan fill="#C99A5B">not yet signed</tspan></text>
+
+      <text x="860" y="228" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">CHECKS</text>
+      <text x="860" y="250" fill="rgba(244,239,230,0.72)">Seat spacing 460 mm <tspan fill="#8FAE8B">machine checked ✓</tspan></text>
+      <text x="860" y="270" fill="rgba(244,239,230,0.72)">Service route 1.6 m <tspan fill="#8FAE8B">machine checked ✓</tspan></text>
+      <text x="860" y="290" fill="rgba(244,239,230,0.72)">Exit path clearance <tspan fill="#C99A5B">review gate open</tspan></text>
+
+      <text x="860" y="326" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">ASSUMPTIONS</text>
+      <text x="860" y="348" fill="rgba(244,239,230,0.72)">Chair depth 520 mm <tspan fill="rgba(244,239,230,0.4)">(SKU default)</tspan></text>
+      <text x="860" y="368" fill="rgba(244,239,230,0.72)">Guest count 120 <tspan fill="rgba(244,239,230,0.4)">(client-stated)</tspan></text>
+
+      <text x="860" y="404" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">REVIEW GATES</text>
+      <rect x="860" y="418" width="302" height="54" rx="8" fill="#1B1917" stroke="rgba(201,154,91,0.4)"/>
+      <text x="876" y="440" fill="#C99A5B">Exit-path review — open</text>
+      <text x="876" y="459" fill="rgba(244,239,230,0.5)" font-size="11">assigned: venue manager · scope: Dinner phase</text>
+
+      <text x="860" y="506" fill="rgba(244,239,230,0.38)" font-size="10" letter-spacing="1.5">CHANGE HISTORY</text>
+      <text x="860" y="528" fill="rgba(244,239,230,0.62)" font-size="11.5">14:12 moved 0.4 m east · checks re-ran</text>
+      <text x="860" y="548" fill="rgba(244,239,230,0.62)" font-size="11.5">13:58 seats 8 → 10 · spacing re-checked</text>
+      <text x="860" y="568" fill="rgba(244,239,230,0.62)" font-size="11.5">13:41 placed by seating brush</text>
+
+      <rect x="860" y="596" width="302" height="34" rx="17" fill="none" stroke="#C6A15B"/>
+      <text x="1011" y="618" text-anchor="middle" fill="#C6A15B" font-size="12">Export evidence pack ▸</text>
+      <text x="1011" y="654" text-anchor="middle" fill="rgba(244,239,230,0.35)" font-size="10.5">exports carry evidence status in the footer — honesty travels</text>
+    </g>
+
+    <g font-size="11" font-weight="600">
+      <circle cx="40" cy="64" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="40" y="68" text-anchor="middle" fill="#141210">1</text>
+      <circle cx="836" cy="40" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="836" y="44" text-anchor="middle" fill="#141210">2</text>
+      <circle cx="700" cy="575" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="700" y="579" text-anchor="middle" fill="#141210">3</text>
+      <circle cx="1011" cy="596" r="9" fill="#C6A15B" stroke="#0B0A09"/><text x="1011" y="600" text-anchor="middle" fill="#141210">4</text>
+    </g>
+  </svg>
+  <div class="legend">
+    <div><b>1</b><span class="k">Chip grammar</span> — four states, hue + icon + label (never color alone); edits flip checks to Stale within 1 s</div>
+    <div><b>2</b><span class="k">Selection-aware drawer</span> — source, checks, assumptions, gates, history for whatever is selected (table, route, splat, overlay)</div>
+    <div><b>3</b><span class="k">Route evidence</span> — click any overlay for its authority and assumptions</div>
+    <div><b>4</b><span class="k">Evidence pack</span> — immutable snapshot + hash; claim guard blocks forbidden language at export</div>
+  </div>
+</section>
+
+<!-- ═══════════════ BOARD E ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>E · Altitude — one view, four heights</h2><span class="tag">PHASE 4 · LIGHTHOUSE L1</span><span class="sub">P1 · scroll is the mode switch; the plan is the room seen from above</span></div>
+  <svg viewBox="0 0 1200 340" role="img" aria-label="Diagram of the four altitude bands from guest eye to orthographic plan">
+    <rect x="0" y="0" width="1200" height="340" rx="10" fill="#0B0A09"/>
+    <!-- Eye -->
+    <g>
+      <rect x="30" y="40" width="255" height="190" rx="10" fill="#131110" stroke="var(--hair)"/>
+      <polygon points="55,210 260,210 225,110 90,110" fill="none" stroke="rgba(245,240,232,0.3)"/>
+      <line x1="90" y1="110" x2="90" y2="62" stroke="rgba(245,240,232,0.3)"/><line x1="225" y1="110" x2="225" y2="62" stroke="rgba(245,240,232,0.3)"/><line x1="90" y1="62" x2="225" y2="62" stroke="rgba(245,240,232,0.3)"/>
+      <ellipse cx="130" cy="170" rx="26" ry="12" fill="none" stroke="rgba(244,239,230,0.6)"/>
+      <ellipse cx="205" cy="185" rx="34" ry="16" fill="none" stroke="rgba(244,239,230,0.6)"/>
+      <text x="157" y="66" text-anchor="middle" fill="rgba(244,239,230,0.3)" font-size="9" letter-spacing="2">FULL SPLAT</text>
+      <text x="157" y="256" text-anchor="middle" fill="#F4EFE6" font-size="13">Eye · 1.2–2 m</text>
+      <text x="157" y="276" text-anchor="middle" fill="rgba(244,239,230,0.45)" font-size="11">sightlines · walk · seat view</text>
+    </g>
+    <text x="300" y="140" fill="rgba(198,161,91,0.9)" font-size="16">→</text>
+    <!-- Room -->
+    <g>
+      <rect x="325" y="40" width="255" height="190" rx="10" fill="#131110" stroke="var(--hair)"/>
+      <polygon points="355,205 555,205 525,95 385,95" fill="none" stroke="rgba(245,240,232,0.3)"/>
+      <g fill="none" stroke="rgba(244,239,230,0.55)">
+        <ellipse cx="420" cy="130" rx="14" ry="7"/><ellipse cx="480" cy="130" rx="14" ry="7"/>
+        <ellipse cx="405" cy="165" rx="18" ry="9"/><ellipse cx="470" cy="168" rx="18" ry="9"/><ellipse cx="530" cy="165" rx="18" ry="9"/>
+      </g>
+      <text x="452" y="256" text-anchor="middle" fill="#F4EFE6" font-size="13">Room · 2–6 m</text>
+      <text x="452" y="276" text-anchor="middle" fill="rgba(244,239,230,0.45)" font-size="11">arrange · compose</text>
+    </g>
+    <text x="595" y="140" fill="rgba(198,161,91,0.9)" font-size="16">→</text>
+    <!-- Dollhouse -->
+    <g>
+      <rect x="620" y="40" width="255" height="190" rx="10" fill="#131110" stroke="var(--hair)"/>
+      <polygon points="660,200 840,200 815,110 685,110" fill="none" stroke="rgba(245,240,232,0.35)"/>
+      <polygon points="660,200 685,110 685,80 660,170" fill="none" stroke="rgba(245,240,232,0.2)"/>
+      <g fill="none" stroke="rgba(244,239,230,0.5)">
+        <circle cx="710" cy="150" r="9"/><circle cx="745" cy="152" r="9"/><circle cx="780" cy="150" r="9"/>
+        <circle cx="712" cy="178" r="9"/><circle cx="782" cy="178" r="9"/>
+      </g>
+      <rect x="800" y="165" width="30" height="22" fill="none" stroke="rgba(111,183,201,0.5)" stroke-dasharray="3 3"/>
+      <text x="747" y="66" text-anchor="middle" fill="rgba(244,239,230,0.3)" font-size="9" letter-spacing="2">SPLAT FADES · CLAY CUTAWAY</text>
+      <text x="747" y="256" text-anchor="middle" fill="#F4EFE6" font-size="13">Dollhouse · 6–20 m</text>
+      <text x="747" y="276" text-anchor="middle" fill="rgba(244,239,230,0.45)" font-size="11">zones · flow · whole-room judgment</text>
+    </g>
+    <text x="890" y="140" fill="rgba(198,161,91,0.9)" font-size="16">→</text>
+    <!-- Plan -->
+    <g>
+      <rect x="915" y="40" width="255" height="190" rx="10" fill="#131110" stroke="var(--hair)"/>
+      <rect x="950" y="70" width="185" height="130" fill="none" stroke="rgba(244,239,230,0.6)"/>
+      <g fill="none" stroke="rgba(244,239,230,0.6)">
+        <circle cx="990" cy="105" r="10"/><circle cx="1030" cy="105" r="10"/><circle cx="1070" cy="105" r="10"/>
+        <circle cx="990" cy="140" r="10"/><circle cx="1070" cy="140" r="10"/>
+        <rect x="1100" y="130" width="28" height="20"/>
+      </g>
+      <line x1="950" y1="212" x2="1135" y2="212" stroke="rgba(198,161,91,0.7)"/>
+      <text x="1042" y="224" text-anchor="middle" fill="rgba(198,161,91,0.9)" font-size="9" class="mono">18.4 m</text>
+      <text x="1042" y="66" text-anchor="middle" fill="rgba(244,239,230,0.3)" font-size="9" letter-spacing="2">ORTHOGRAPHIC · INK + DIMENSIONS</text>
+      <text x="1042" y="256" text-anchor="middle" fill="#F4EFE6" font-size="13">Plan · orthographic</text>
+      <text x="1042" y="276" text-anchor="middle" fill="rgba(244,239,230,0.45)" font-size="11">precision · print · dimensions</text>
+    </g>
+    <text x="600" y="318" text-anchor="middle" fill="rgba(244,239,230,0.4)" font-size="11.5">scroll = altitude · keys 1–4 jump bands · between Dollhouse and Plan the photograph becomes the drawing (“blueprint dissolve”)</text>
+  </svg>
+  <div class="legend">
+    <div><b>1</b><span class="k">No mode tabs</span> — one continuous camera dimension keeps spatial orientation intact</div>
+    <div><b>2</b><span class="k">Fallback</span> — if usability tests show disorientation, bands become discrete with animated cuts (04 §3.2)</div>
+  </div>
+</section>
+
+<!-- ═══════════════ BOARD F ═══════════════ -->
+<section class="board">
+  <div class="bhead"><h2>F · The living proposal — Front of House, on a phone</h2><span class="tag">PHASE 4 · LIGHTHOUSE L2</span><span class="sub">FOH register · ivory, serif, concierge voice · the client plans nothing, feels everything</span></div>
+  <svg viewBox="0 0 1200 760" role="img" aria-label="Wireframe of the client proposal portal on a phone, ivory front-of-house register">
+    <rect x="0" y="0" width="1200" height="760" rx="10" fill="#0B0A09"/>
+    <!-- phone -->
+    <rect x="420" y="24" width="360" height="712" rx="34" fill="#FAF7F0" stroke="rgba(245,240,232,0.25)" stroke-width="2"/>
+    <text x="600" y="76" text-anchor="middle" fill="#161310" font-size="20" font-family="Georgia,'Times New Roman',serif">Your evening at Trades Hall</text>
+    <text x="600" y="98" text-anchor="middle" fill="rgba(22,19,16,0.55)" font-size="12">The Hamilton Wedding · 14 September 2026 · 120 guests</text>
+    <!-- hero: room walkthrough -->
+    <rect x="444" y="116" width="312" height="180" rx="14" fill="#161310"/>
+    <g stroke="rgba(244,239,230,0.35)" fill="none">
+      <polygon points="480,272 720,272 685,180 515,180"/>
+      <line x1="515" y1="180" x2="515" y2="146"/><line x1="685" y1="180" x2="685" y2="146"/><line x1="515" y1="146" x2="685" y2="146"/>
+      <ellipse cx="560" cy="230" rx="22" ry="11" stroke="rgba(244,239,230,0.6)"/>
+      <ellipse cx="640" cy="235" rx="22" ry="11" stroke="rgba(244,239,230,0.6)"/>
+    </g>
+    <circle cx="600" cy="212" r="17" fill="rgba(250,247,240,0.16)" stroke="rgba(250,247,240,0.7)"/>
+    <path d="M595,204 l13,8 -13,8 z" fill="#FAF7F0"/>
+    <text x="600" y="286" text-anchor="middle" fill="rgba(244,239,230,0.55)" font-size="9.5">WALK YOUR ROOM · CAPTURED IN NORTH GALLERY</text>
+    <!-- option cards -->
+    <g>
+      <rect x="444" y="316" width="150" height="112" rx="12" fill="#FFFFFF" stroke="#A9853F"/>
+      <g fill="none" stroke="rgba(22,19,16,0.5)"><circle cx="478" cy="352" r="8"/><circle cx="504" cy="352" r="8"/><circle cx="530" cy="352" r="8"/><circle cx="490" cy="376" r="8"/><circle cx="518" cy="376" r="8"/></g>
+      <text x="458" y="410" fill="#161310" font-size="12" font-family="Georgia,serif">Option One</text>
+      <text x="519" y="410" fill="rgba(22,19,16,0.5)" font-size="10">· rounds</text>
+      <circle cx="580" cy="330" r="7" fill="#A9853F"/><path d="M576.5,330 l2.5,2.5 4.5,-5" stroke="#FFF" fill="none" stroke-width="1.4"/>
+    </g>
+    <g opacity=".75">
+      <rect x="606" y="316" width="150" height="112" rx="12" fill="#FFFFFF" stroke="rgba(22,19,16,0.15)"/>
+      <g fill="none" stroke="rgba(22,19,16,0.5)"><line x1="640" y1="344" x2="640" y2="386"/><line x1="668" y1="344" x2="668" y2="386"/><line x1="696" y1="344" x2="696" y2="386"/><line x1="724" y1="344" x2="724" y2="386"/></g>
+      <text x="620" y="410" fill="#161310" font-size="12" font-family="Georgia,serif">Option Two</text>
+      <text x="683" y="410" fill="rgba(22,19,16,0.5)" font-size="10">· long tables</text>
+    </g>
+    <!-- summary -->
+    <rect x="444" y="444" width="312" height="118" rx="12" fill="#FFFFFF" stroke="rgba(22,19,16,0.12)"/>
+    <g font-size="12" fill="rgba(22,19,16,0.75)">
+      <text x="462" y="472">Gold package · dinner &amp; dancing</text>
+      <text x="462" y="494">10 round tables · candlelight · band stage</text>
+      <text x="462" y="516">Arrival 15:00 · carriages 00:00</text>
+      <text x="462" y="543" fill="#161310" font-family="Georgia,serif" font-size="14">£14,200 <tspan font-size="11" fill="rgba(22,19,16,0.5)" font-family="-apple-system,system-ui,sans-serif">incl. VAT · deposit £2,000</tspan></text>
+    </g>
+    <!-- comment anchor -->
+    <circle cx="740" cy="252" r="11" fill="#A9853F"/>
+    <text x="740" y="256" text-anchor="middle" fill="#FFF" font-size="10">2</text>
+    <!-- planning-grade note -->
+    <text x="600" y="586" text-anchor="middle" fill="rgba(22,19,16,0.45)" font-size="10">Seating shown is planning guidance, prepared with your venue team.</text>
+    <!-- action bar -->
+    <rect x="444" y="604" width="312" height="46" rx="23" fill="#A9853F"/>
+    <text x="600" y="632" text-anchor="middle" fill="#FFF" font-size="14" font-weight="600">Approve this evening</text>
+    <text x="600" y="676" text-anchor="middle" fill="rgba(22,19,16,0.55)" font-size="11.5">Request a change · Ask a question</text>
+    <text x="600" y="712" text-anchor="middle" fill="rgba(22,19,16,0.3)" font-size="9.5">Prepared by Trades Hall with Venviewer · views &amp; comments visible to your planner</text>
+
+    <!-- side annotations -->
+    <g font-size="12" fill="rgba(244,239,230,0.6)">
+      <text x="60" y="150">No login wall — a scoped, expiring</text>
+      <text x="60" y="168">share token opens THEIR room.</text>
+      <text x="60" y="330">Same object model as the Floor:</text>
+      <text x="60" y="348">options are curated variants,</text>
+      <text x="60" y="366">never internal ghosts (04 §3.1).</text>
+      <text x="60" y="560">Palette shifts with event time —</text>
+      <text x="60" y="578">a 6 pm September wedding gets dusk.</text>
+      <text x="830" y="150">Comments pin to space and phase;</text>
+      <text x="830" y="168">they land as anchors on the Floor.</text>
+      <text x="830" y="330">Watermarked renders · claim-guarded</text>
+      <text x="830" y="348">copy · evidence status in footer.</text>
+      <text x="830" y="560">Approve → status flows to CRM,</text>
+      <text x="830" y="578">calendar hold, and ops triggers.</text>
+    </g>
+    <g stroke="rgba(198,161,91,0.5)">
+      <line x1="290" y1="145" x2="418" y2="145"/><line x1="290" y1="343" x2="440" y2="343"/><line x1="290" y1="571" x2="440" y2="571"/>
+      <line x1="782" y1="145" x2="826" y2="145"/><line x1="760" y1="252" x2="826" y2="163"/><line x1="782" y1="343" x2="826" y2="343"/><line x1="782" y1="571" x2="826" y2="571"/>
+    </g>
+  </svg>
+  <div class="legend">
+    <div><b>·</b><span class="k">FOH register</span> — ivory paper, serif display, concierge voice; zero operational clutter, zero debug</div>
+    <div><b>·</b><span class="k">The proposal is alive</span> — layout, quote, comments, and approval are one object with the plan; a change on the Floor updates here with history</div>
+  </div>
+</section>
+
+<footer>
+  Boards A–F are design intent for the SS++ phases marked on each board — not screenshots, not commitments of current capability. Runtime truth (a real room package with honest status chips) gates all of it, per doctrine. · Venviewer / OmniTwin · House design language v1.
+</footer>
+</div>
+</body>
+</html>

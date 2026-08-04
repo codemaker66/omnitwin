@@ -1,9 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../lib/placement.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
+import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { GRAND_HALL_RENDER_DIMENSIONS, RENDER_SCALE } from "../../../constants/scale.js";
 import { computeCapacityIntelligence, inferSeatingStyle, comfortBandLabel } from "../../../lib/layout-capacity.js";
 import { computeCirculation, circulationBandLabel, type FurnitureFootprint } from "../../../lib/circulation.js";
@@ -19,13 +20,43 @@ function resetStore(): void {
     snapEnabled: true,
   });
   useRoomDimensionsStore.setState({ dimensions: GRAND_HALL_RENDER_DIMENSIONS });
+  useCockpitStore.getState().reset();
 }
 
 describe("PlannerSpatialHud", () => {
   beforeEach(resetStore);
   afterEach(() => {
     cleanup();
+    window.localStorage.clear();
     resetStore();
+  });
+
+  it("uses the shared movable, minimizable floating widget frame", () => {
+    const { container } = render(<PlannerSpatialHud />);
+
+    const root = container.querySelector<HTMLElement>("[data-floating-widget-id='planner-spatial-hud']");
+    expect(root).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Move Layout intelligence" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Reset Layout intelligence position" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Layout intelligence" }));
+
+    expect(root?.getAttribute("data-minimized")).toBe("true");
+    expect(screen.getByText("Grade D")).toBeDefined();
+  });
+
+  it("auto-compacts layout intelligence while the camera is moving", () => {
+    useCockpitStore.getState().setCameraInteractionActive(true);
+
+    const { container } = render(<PlannerSpatialHud />);
+
+    const root = container.querySelector<HTMLElement>("[data-floating-widget-id='planner-spatial-hud']");
+    const body = container.querySelector<HTMLElement>(".vv-floating-widget__body");
+
+    expect(root?.getAttribute("data-auto-compact")).toBe("true");
+    expect(root?.getAttribute("data-minimized")).toBe("false");
+    expect(body?.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByText("Grade D")).toBeDefined();
   });
 
   it("summarizes the current layout with real counts", () => {

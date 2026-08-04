@@ -62,7 +62,7 @@ describe("T-087 Spark renderer dependency unit", () => {
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/router.tsx"), "utf-8");
 
-    expect(source).toMatch(/lazy\(\(\)\s*=>\s*import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
+    expect(source).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
     expect(source).toContain('path: "/dev/trades-hall-visual"');
     expect(source).not.toMatch(/^import\s+\{\s*TradesHallVisualPage\s*\}\s+from\s+["']\.\/pages\/TradesHallVisualPage/m);
   });

@@ -1,4 +1,5 @@
-import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
@@ -20,6 +21,7 @@ import { useVisibilityStore, WALL_KEYS } from "../../stores/visibility-store.js"
 import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../stores/markup-store.js";
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
@@ -30,6 +32,7 @@ import {
   PLANNER_TOOLBAR_COMMAND_EVENT,
   readPlannerToolbarCommand,
 } from "../../lib/planner-toolbar-events.js";
+import type { CameraBookmark } from "../../lib/camera-animation.js";
 import {
   CATALOGUE_CATEGORIES,
   getCatalogueByCategory,
@@ -38,6 +41,7 @@ import {
   catalogueIcon,
 } from "../../lib/catalogue.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
+import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -56,6 +60,23 @@ const PANEL_W = 336;
 const DESKTOP_HEADER_H = 70;
 const GOLD = "#c9a84c";
 const ICON_SIZE = 22;
+
+const TOOL_WIDGET_AVOID_SELECTORS = [
+  "[data-testid='cockpit-topbar']",
+  "[data-floating-widget-id='planner-layer-controls']",
+  ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
+  "[data-floating-widget-id='planner-spatial-hud']",
+  "[data-floating-widget-id='cockpit-minimap']",
+  "[data-floating-widget-id='save-send-panel']",
+  "[data-floating-widget-id='truth-mode-indicator']",
+  "[data-floating-widget-id='placement-coach']",
+  "[data-testid='cockpit-truth-rail']",
+  "[data-testid='truth-mode-popover']",
+  ".planner-command-deck",
+  "[data-testid='cockpit-bottom']",
+] as const;
 
 const toolbarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: DESKTOP_HEADER_H, bottom: 0, width: TOOLBAR_W,
@@ -238,13 +259,6 @@ const catalogueDragPreviewStyle = (preview: CatalogueDragPreview): React.CSSProp
   WebkitUserSelect: "none",
 });
 
-const cameraDropdownStyle: React.CSSProperties = {
-  position: "fixed", left: TOOLBAR_W + 8, background: "linear-gradient(145deg, #141414, #1c1c1c)",
-  borderRadius: 16, padding: "12px 8px", zIndex: 51,
-  boxShadow: "0 12px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.12)",
-  border: "1px solid rgba(201,168,76,0.15)", minWidth: 200,
-};
-
 const cameraItemStyle: React.CSSProperties = {
   display: "flex", flexDirection: "column", gap: 3, width: "100%", padding: "10px 14px", fontSize: 14,
   background: "none", border: "none", color: "#ccc", cursor: "pointer",
@@ -262,28 +276,45 @@ const MARKUP_COLOR_META: Record<MarkupColor, {
   cyan: { label: "Cyan", swatch: "#7bdcff", halo: "rgba(72,169,207,0.24)" },
 };
 
-function markupPanelShellStyle(open: boolean, mobileChrome: boolean): React.CSSProperties {
+function markupPanelContentStyle(open: boolean, mobileChrome: boolean): React.CSSProperties {
   return {
-    position: "fixed",
-    left: mobileChrome ? 10 : TOOLBAR_W + 10,
-    right: mobileChrome ? 10 : "auto",
-    top: mobileChrome ? "auto" : 216,
-    bottom: mobileChrome ? "calc(var(--toolbox-bottom, 64px) + 10px)" : "auto",
-    width: mobileChrome ? "auto" : 310,
-    zIndex: 51,
-    padding: 14,
-    borderRadius: 18,
-    background: "linear-gradient(145deg, rgba(16,16,16,0.96), rgba(31,29,24,0.97))",
-    border: "1px solid rgba(201,168,76,0.2)",
-    boxShadow: "0 22px 70px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)",
+    width: mobileChrome ? "min(314px, calc(100vw - 40px))" : 192,
+    maxWidth: "100%",
+    padding: mobileChrome ? 6 : 4,
     color: "#f2ead9",
     fontFamily: "'Inter', system-ui, sans-serif",
-    backdropFilter: "blur(20px)",
-    WebkitBackdropFilter: "blur(20px)",
     animation: open
       ? "omni-dropdown-pop 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards"
       : "omni-dropdown-pop-out 0.2s cubic-bezier(0.55, 0, 1, 0.45) forwards",
   };
+}
+
+function toolPanelPlacement(mobileChrome: boolean, desktopOffsetY: number): FloatingWidgetPlacement {
+  if (mobileChrome) {
+    return {
+      type: "anchor",
+      anchor: "bottom-left",
+      offsetX: 12,
+      offsetY: 126,
+    };
+  }
+
+  return {
+    type: "anchor",
+    anchor: "top-right",
+    offsetX: 28,
+    offsetY: desktopOffsetY,
+  };
+}
+
+function ToolWidgetPortal({ children }: { readonly children: ReactNode }): React.ReactElement | null {
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalRoot(document.body);
+  }, []);
+
+  return portalRoot === null ? null : createPortal(children, portalRoot);
 }
 
 const markupPanelEyebrowStyle: React.CSSProperties = {
@@ -296,7 +327,7 @@ const markupPanelEyebrowStyle: React.CSSProperties = {
 
 const markupPanelTitleStyle: React.CSSProperties = {
   marginTop: 4,
-  fontSize: 21,
+  fontSize: 17,
   lineHeight: 1.05,
   fontWeight: 820,
   color: "#fff6df",
@@ -304,15 +335,15 @@ const markupPanelTitleStyle: React.CSSProperties = {
 
 const markupPanelDetailStyle: React.CSSProperties = {
   marginTop: 5,
-  fontSize: 12,
-  lineHeight: 1.45,
+  fontSize: 11,
+  lineHeight: 1.35,
   color: "rgba(246,238,220,0.65)",
 };
 
 function markupActionButtonStyle(primary = false, disabled = false): React.CSSProperties {
   return {
-    minHeight: 42,
-    borderRadius: 12,
+    minHeight: 34,
+    borderRadius: 10,
     border: primary ? "1px solid rgba(201,168,76,0.55)" : "1px solid rgba(255,255,255,0.1)",
     background: primary
       ? "linear-gradient(145deg, #d5b652, #b99a32)"
@@ -322,11 +353,11 @@ function markupActionButtonStyle(primary = false, disabled = false): React.CSSPr
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 760,
     cursor: disabled ? "default" : "pointer",
     opacity: disabled ? 0.42 : 1,
-    padding: "0 12px",
+    padding: "0 9px",
   };
 }
 
@@ -341,20 +372,35 @@ function MarkupToolPanel({
   const selectedWidth = useMarkupStore((state) => state.selectedWidth);
   const strokes = useMarkupStore((state) => state.strokes);
   const draftStroke = useMarkupStore((state) => state.draftStroke);
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const canUndoMarkup = draftStroke !== null || strokes.length > 0;
   const widthLabel = selectedWidth < 0.024 ? "Fine" : selectedWidth > 0.052 ? "Bold" : "Signature";
 
   return (
-    <div data-testid="markup-panel" style={markupPanelShellStyle(open, mobileChrome)}>
+    <ToolWidgetPortal>
+      <FloatingWidgetFrame
+        id="planner-markup-panel"
+        title="Laser diagram"
+        compactLabel={MARKUP_COLOR_META[selectedColor].label}
+        strategy="fixed"
+        testId="markup-panel"
+        defaultPlacement={toolPanelPlacement(mobileChrome, 216)}
+        avoidSelectors={TOOL_WIDGET_AVOID_SELECTORS}
+        avoidPaddingPx={12}
+        storageScope={mobileChrome ? "mobile-v2" : "desktop-v2"}
+        zIndex={53}
+        autoCompact={cameraInteractionActive}
+      >
+        <div data-testid="markup-panel-body" style={markupPanelContentStyle(open, mobileChrome)}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div>
           <div style={markupPanelEyebrowStyle}>Laser diagram</div>
-          <div style={markupPanelTitleStyle}>Draw on the floor</div>
+          <div style={markupPanelTitleStyle}>{mobileChrome ? "Draw on the floor" : "Draw notes"}</div>
         </div>
         <div style={{
-          width: 44,
-          height: 44,
-          borderRadius: 14,
+          width: mobileChrome ? 44 : 36,
+          height: mobileChrome ? 44 : 36,
+          borderRadius: mobileChrome ? 14 : 11,
           display: "grid",
           placeItems: "center",
           background: MARKUP_COLOR_META[selectedColor].halo,
@@ -362,17 +408,17 @@ function MarkupToolPanel({
           color: MARKUP_COLOR_META[selectedColor].swatch,
           boxShadow: `0 0 28px ${MARKUP_COLOR_META[selectedColor].halo}`,
         }}>
-          <PenLine size={22} />
+          <PenLine size={mobileChrome ? 22 : 18} />
         </div>
       </div>
 
       <div style={markupPanelDetailStyle}>
-        Drag across the hall to sketch service routes, staging notes, photo angles, or quick diagrams directly in the scene.
+        {mobileChrome ? "Sketch service routes, staging notes, photo angles, or quick diagrams directly in the scene." : "Routes, staging notes, and camera marks."}
       </div>
 
-      <div style={{ marginTop: 15, display: "grid", gap: 9 }}>
+      <div style={{ marginTop: mobileChrome ? 15 : 10, display: "grid", gap: mobileChrome ? 9 : 6 }}>
         <div style={markupPanelEyebrowStyle}>Colour</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 7 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: mobileChrome ? 7 : 5 }}>
           {MARKUP_COLOR_VALUES.map((color) => {
             const active = color === selectedColor;
             return (
@@ -383,8 +429,8 @@ function MarkupToolPanel({
                 aria-pressed={active}
                 onClick={() => { useMarkupStore.getState().setColor(color); }}
                 style={{
-                  minHeight: 48,
-                  borderRadius: 13,
+                  minHeight: mobileChrome ? 48 : 34,
+                  borderRadius: mobileChrome ? 13 : 9,
                   border: active ? "1px solid rgba(255,255,255,0.34)" : "1px solid rgba(255,255,255,0.08)",
                   background: active ? MARKUP_COLOR_META[color].halo : "rgba(255,255,255,0.035)",
                   color: "#f7ecd4",
@@ -395,8 +441,8 @@ function MarkupToolPanel({
                 }}
               >
                 <span style={{
-                  width: 21,
-                  height: 21,
+                  width: mobileChrome ? 21 : 16,
+                  height: mobileChrome ? 21 : 16,
                   borderRadius: "50%",
                   background: MARKUP_COLOR_META[color].swatch,
                   boxShadow: `0 0 18px ${MARKUP_COLOR_META[color].halo}`,
@@ -407,12 +453,12 @@ function MarkupToolPanel({
         </div>
       </div>
 
-      <div style={{ marginTop: 15, display: "grid", gap: 9 }}>
+      <div style={{ marginTop: mobileChrome ? 15 : 10, display: "grid", gap: mobileChrome ? 9 : 6 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={markupPanelEyebrowStyle}>Stroke</div>
           <div style={{ fontSize: 12, color: "rgba(246,238,220,0.64)", fontWeight: 700 }}>{widthLabel}</div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "42px 1fr 42px", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: mobileChrome ? "42px 1fr 42px" : "34px 1fr 34px", gap: mobileChrome ? 8 : 6, alignItems: "center" }}>
           <button
             type="button"
             aria-label="Make laser stroke thinner"
@@ -422,8 +468,8 @@ function MarkupToolPanel({
             <Minus size={16} />
           </button>
           <div style={{
-            height: 42,
-            borderRadius: 13,
+            height: mobileChrome ? 42 : 34,
+            borderRadius: mobileChrome ? 13 : 10,
             border: "1px solid rgba(255,255,255,0.09)",
             background: "rgba(255,255,255,0.04)",
             display: "grid",
@@ -449,7 +495,7 @@ function MarkupToolPanel({
         </div>
       </div>
 
-      <div style={{ marginTop: 15, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      <div style={{ marginTop: mobileChrome ? 15 : 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <button
           type="button"
           disabled={!canUndoMarkup}
@@ -468,19 +514,89 @@ function MarkupToolPanel({
         </button>
       </div>
 
-      <div style={{
-        marginTop: 12,
-        padding: "10px 11px",
-        borderRadius: 13,
-        border: "1px solid rgba(201,168,76,0.13)",
-        background: "rgba(201,168,76,0.07)",
-        color: "rgba(246,238,220,0.66)",
-        fontSize: 11,
-        lineHeight: 1.4,
-      }}>
-        Markups are local planning notes on this browser. They do not change venue truth, capacity checks, or submitted evidence.
-      </div>
-    </div>
+      {mobileChrome ? (
+        <div style={{
+          marginTop: 12,
+          padding: "10px 11px",
+          borderRadius: 13,
+          border: "1px solid rgba(201,168,76,0.13)",
+          background: "rgba(201,168,76,0.07)",
+          color: "rgba(246,238,220,0.66)",
+          fontSize: 11,
+          lineHeight: 1.35,
+        }}>
+          Local planning markups only. They do not change evidence or submitted checks.
+        </div>
+      ) : null}
+        </div>
+      </FloatingWidgetFrame>
+    </ToolWidgetPortal>
+  );
+}
+
+function CameraViewsPanel({
+  bookmarks,
+  mobileChrome,
+  open,
+  onSelect,
+}: {
+  readonly bookmarks: readonly CameraBookmark[];
+  readonly mobileChrome: boolean;
+  readonly open: boolean;
+  readonly onSelect: (presetIndex: number) => void;
+}): React.ReactElement {
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  return (
+    <ToolWidgetPortal>
+      <FloatingWidgetFrame
+        id="planner-camera-views"
+        title="Camera views"
+        compactLabel={String(bookmarks.length)}
+        strategy="fixed"
+        testId="camera-views-panel"
+        defaultPlacement={toolPanelPlacement(mobileChrome, 280)}
+        avoidSelectors={TOOL_WIDGET_AVOID_SELECTORS}
+        avoidPaddingPx={12}
+        storageScope={mobileChrome ? "mobile-v2" : "desktop-v2"}
+        zIndex={53}
+        autoCompact={cameraInteractionActive}
+      >
+        <div
+          style={{
+            width: mobileChrome ? "min(280px, calc(100vw - 40px))" : 216,
+            maxWidth: "100%",
+            display: "grid",
+            gap: 2,
+            padding: 4,
+            animation: open
+              ? "omni-dropdown-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards"
+              : "omni-dropdown-pop-out 0.2s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+          }}
+        >
+          {bookmarks.map((bm, i) => (
+            <button
+              key={bm.id}
+              type="button"
+              className="omni-cam-item"
+              style={{
+                ...cameraItemStyle,
+                animation: `omni-panel-item 0.25s cubic-bezier(0.16, 1, 0.3, 1) ${String(i * 0.05)}s both`,
+              }}
+              onClick={() => { onSelect(i); }}
+            >
+              <span style={{ color: "#f2f2f2", fontWeight: 750, lineHeight: 1.2 }}>
+                {bm.name}
+              </span>
+              <span style={{ color: "rgba(255,255,255,0.44)", fontSize: 11, lineHeight: 1.2 }}>
+                {bm.kind === "reference" && bm.reference !== undefined
+                  ? `${bm.reference.heightMode === "custom" ? "Custom" : bm.reference.heightMode === "sitting" ? "Sitting" : "Standing"} POV - ${bm.reference.sourceLabel}`
+                  : "Preset view"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </FloatingWidgetFrame>
+    </ToolWidgetPortal>
   );
 }
 
@@ -888,178 +1004,148 @@ function ToolBtn({
 
 interface OnboardingHintProps {
   readonly onDismiss: () => void;
+  readonly onOpenFurniture: () => void;
 }
 
-function OnboardingHint({ onDismiss }: OnboardingHintProps): React.ReactElement | null {
-  // Dynamically measure the chair *icon* (not the button) so the arrow
-  // tip aligns with the visible glyph rather than the button's geometric
-  // centre. With a caption stacked beneath the icon, the button's centre
-  // falls in the gap between icon and label — visually "below" the chair.
-  // Reading the inner <svg>'s rect puts the arrow on the icon itself.
-  const [topPx, setTopPx] = useState<number | null>(null);
+const ONBOARDING_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
+  type: "anchor",
+  anchor: "top-left",
+  offsetX: 160,
+  offsetY: 268,
+};
 
-  useLayoutEffect(() => {
-    let raf = 0;
-    function measure(): void {
-      const btn = document.querySelector('[aria-label="Add Furniture"]');
-      if (!(btn instanceof HTMLElement)) return;
-      // Prefer the chair-icon SVG; fall back to the button if for some
-      // reason no svg child exists (defensive — current Lucide always
-      // renders an svg).
-      const icon = btn.querySelector("svg");
-      const target = icon instanceof SVGElement ? icon : btn;
-      const rect = target.getBoundingClientRect();
-      setTopPx(rect.top + rect.height / 2);
-    }
-    // First read after layout commit; second after a frame so any
-    // late-arriving font metrics (caption load) are already applied.
-    measure();
-    raf = window.requestAnimationFrame(measure);
+const ONBOARDING_AVOID_SELECTORS = [
+  ".planner-status-header",
+  "[data-testid='cockpit-topbar']",
+  "[data-floating-widget-id='planner-layer-controls']",
+  ".cockpit-layer-controls",
+  "[data-testid='planner-toolbar']",
+  "[data-floating-widget-id='planner-view-mode']",
+  "[data-floating-widget-id='cockpit-minimap']",
+  "[data-floating-widget-id='planner-spatial-hud']",
+  "[data-floating-widget-id='placement-coach']",
+  "[data-testid='cockpit-truth-rail']",
+  "[data-testid='truth-mode-popover']",
+  ".planner-command-deck",
+  ".planner-section-slider-dock",
+  "[data-testid='cockpit-bottom']",
+] as const;
 
-    const obs = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    const targetEl = document.querySelector('[aria-label="Add Furniture"]');
-    if (obs !== null && targetEl !== null) obs.observe(targetEl);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.cancelAnimationFrame(raf);
-      window.removeEventListener("resize", measure);
-      if (obs !== null) obs.disconnect();
-    };
-  }, []);
-
-  if (topPx === null) return null;
+function OnboardingHint({ onDismiss, onOpenFurniture }: OnboardingHintProps): React.ReactElement {
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const handleOpenFurniture = (): void => {
+    onOpenFurniture();
+  };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        // sit flush against the toolbar's right edge — the arrow's tip
-        // lands within a few px of the chair icon when the SVG is rendered
-        // with its head at the SVG's left side.
-        left: TOOLBAR_W,
-        top: topPx,
-        // translate up by half so `topPx` is treated as the target button's
-        // vertical centre — keeps the arrow on the chair icon regardless
-        // of card content height.
-        transform: "translateY(-50%)",
-        zIndex: 52,
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        pointerEvents: "auto",
-        animation: "omni-onboard-card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-      }}
+    <FloatingWidgetFrame
+      id="planner-onboarding"
+      title="Planner start"
+      compactLabel="Start"
+      strategy="fixed"
+      testId="planner-onboarding-widget"
+      defaultPlacement={ONBOARDING_DEFAULT_PLACEMENT}
+      avoidSelectors={ONBOARDING_AVOID_SELECTORS}
+      avoidPaddingPx={14}
+      storageScope="desktop-v1"
+      zIndex={52}
+      autoCompact={cameraInteractionActive}
     >
-      {/* Animated arrow — points LEFT toward the Furniture icon, lunges
-          toward the toolbar with a soft scale + rotate kick, glowing pulse
-          radiates from the arrowhead at the tip. */}
       <div
-        aria-hidden
         style={{
-          position: "relative",
-          width: 64,
-          height: 36,
-          display: "flex",
-          alignItems: "center",
-          color: GOLD,
-          filter: "drop-shadow(0 2px 8px rgba(201,168,76,0.55))",
-          animation: "omni-onboard-arrow 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite",
-        }}
-      >
-        {/* Pulse ring — radiates from the arrowhead position (left side of SVG) */}
-        <div
-          style={{
-            position: "absolute",
-            left: 4,
-            top: "50%",
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            background: "radial-gradient(closest-side, rgba(201,168,76,0.7), rgba(201,168,76,0.1) 60%, transparent 80%)",
-            transformOrigin: "center",
-            animation: "omni-onboard-pulse-ring 1.4s ease-out infinite",
-            pointerEvents: "none",
-          }}
-        />
-        {/* Curved arrow — long bowed shaft from card-side to toolbar-side,
-            ending in a chunky chevron pointing left at the chair icon. */}
-        <svg width="64" height="36" viewBox="0 0 64 36" fill="none" style={{ position: "relative", zIndex: 1 }}>
-          <defs>
-            <linearGradient id="omni-onboard-grad" x1="100%" y1="0%" x2="0%" y2="0%">
-              <stop offset="0%" stopColor="#dfc06a" stopOpacity="0.55" />
-              <stop offset="55%" stopColor="#dfc06a" stopOpacity="1" />
-              <stop offset="100%" stopColor="#fff3c4" stopOpacity="1" />
-            </linearGradient>
-          </defs>
-          {/* Curved shaft: starts top-right, dips through the centre,
-              exits left at the icon row. The bow gives the arrow a sense
-              of motion without committing to a full hand-drawn squiggle. */}
-          <path
-            d="M 60 8 Q 40 28, 22 18 Q 18 16, 14 18"
-            stroke="url(#omni-onboard-grad)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-          {/* Chevron head — points left (toolbar side), thicker stroke for emphasis. */}
-          <path
-            d="M 22 10 L 12 18 L 22 26"
-            stroke="#fff3c4"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        </svg>
-      </div>
-
-      {/* Callout card */}
-      <div
-        role="dialog"
-        aria-label="Get started"
-        style={{
-          background: "linear-gradient(145deg, #1a1a1a 0%, #222 100%)",
-          border: "1px solid rgba(201,168,76,0.35)",
-          borderRadius: 14,
-          padding: "14px 18px 12px",
-          minWidth: 240,
-          maxWidth: 300,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,168,76,0.08), 0 0 32px rgba(201,168,76,0.12)",
-          color: "#f1f1f1",
+          display: "grid",
+          gap: 10,
+          width: 226,
+          padding: "7px 9px 10px",
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: GOLD, textTransform: "uppercase" }}>
-          Start here
+        <div style={{ display: "grid", gap: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 820, letterSpacing: "0.14em", color: GOLD, textTransform: "uppercase" }}>
+            Fastest first move
+          </div>
+          <div style={{ color: "#fff7e8", fontSize: 17, fontWeight: 680, lineHeight: 1.04, fontFamily: "'Playfair Display', Georgia, serif" }}>
+            Build floor. Check risk.
+          </div>
+          <div style={{ color: "rgba(246,239,227,0.68)", fontSize: 11.8, fontWeight: 620, lineHeight: 1.36 }}>
+            Open the catalogue, place core furniture, then run Flow and Evidence before handoff.
+          </div>
         </div>
-        <div style={{ fontSize: 17, fontWeight: 700, marginTop: 4, lineHeight: 1.25, fontFamily: "'Playfair Display', serif" }}>
-          Click to add furniture
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+          {[
+            ["1", "Add"],
+            ["2", "Tune"],
+            ["3", "Review"],
+          ].map(([step, label]) => (
+            <div
+              key={step}
+              style={{
+                display: "grid",
+                gap: 4,
+                justifyItems: "center",
+                color: "rgba(246,239,227,0.72)",
+                fontSize: 11,
+                fontWeight: 720,
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 22,
+                  height: 22,
+                  borderRadius: 999,
+                  background: "rgba(201,168,76,0.14)",
+                  color: "#f4d47c",
+                  fontSize: 11,
+                  fontWeight: 840,
+                }}
+              >
+                {step}
+              </span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{label}</span>
+            </div>
+          ))}
         </div>
-        <div style={{ fontSize: 13, color: "#aaa", marginTop: 6, lineHeight: 1.4 }}>
-          Round tables, stage platforms, bars, chairs — drag any piece into the room to begin your layout.
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={handleOpenFurniture}
+            style={{
+              minHeight: 34,
+              border: "1px solid rgba(255,236,180,0.42)",
+              borderRadius: 7,
+              background: `linear-gradient(145deg, #e0c66c 0%, ${GOLD} 52%, #9d7a23 100%)`,
+              color: "#12100c",
+              cursor: "pointer",
+              font: "820 12px/1 'Inter', system-ui, sans-serif",
+              padding: "0 13px",
+            }}
+          >
+            Open furniture
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            style={{
+              minHeight: 34,
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 7,
+              background: "rgba(255,255,255,0.045)",
+              color: "rgba(246,239,227,0.68)",
+              cursor: "pointer",
+              font: "760 12px/1 'Inter', system-ui, sans-serif",
+              padding: "0 12px",
+            }}
+          >
+            Hide tip
+          </button>
         </div>
-        <label
-          style={{
-            marginTop: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12,
-            color: "#888",
-            cursor: "pointer",
-            userSelect: "none",
-          }}
-        >
-          <input
-            type="checkbox"
-            onChange={(e) => { if (e.target.checked) onDismiss(); }}
-            style={{ accentColor: GOLD, cursor: "pointer" }}
-          />
-          Don&rsquo;t show this tip again
-        </label>
       </div>
-    </div>
+    </FloatingWidgetFrame>
   );
 }
 
@@ -1787,8 +1873,8 @@ export function VerticalToolbox(): React.ReactElement {
     };
   }, []);
 
-  // OnboardingHint measures the Furniture button position itself via the
-  // DOM — no static constant to keep in sync when button styling shifts.
+  // First-visit planner coach is a shared floating widget, so it can be
+  // moved/minimized/reset instead of competing with the toolbar chrome.
   const showOnboarding = !onboardingDismissed
     && placedCount === 0
     && activeTool === "select"
@@ -1812,7 +1898,7 @@ export function VerticalToolbox(): React.ReactElement {
   return (
     <>
       {showOnboarding && (
-        <OnboardingHint onDismiss={dismissOnboarding} />
+        <OnboardingHint onDismiss={dismissOnboarding} onOpenFurniture={openFurniturePanel} />
       )}
 
       {mobileChrome ? (
@@ -2222,44 +2308,12 @@ export function VerticalToolbox(): React.ReactElement {
 
       {/* === Camera dropdown === */}
       {cameraMounted && bookmarks.length > 0 && (
-        <div style={{
-          ...cameraDropdownStyle,
-          ...(mobileChrome ? {
-            left: 12,
-            right: 12,
-            bottom: "calc(var(--toolbox-bottom, 64px) + 12px)",
-            top: "auto",
-            minWidth: 0,
-            boxSizing: "border-box" as const,
-          } : {
-            top: 280,
-          }),
-          animation: cameraOpen
-            ? "omni-dropdown-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards"
-            : "omni-dropdown-pop-out 0.25s cubic-bezier(0.55, 0, 1, 0.45) forwards",
-        }}>
-          {bookmarks.map((bm, i) => (
-            <button
-              key={bm.id}
-              type="button"
-              className="omni-cam-item"
-              style={{
-                ...cameraItemStyle,
-                animation: `omni-panel-item 0.25s cubic-bezier(0.16, 1, 0.3, 1) ${String(i * 0.05)}s both`,
-              }}
-              onClick={() => { handleCameraPreset(i); }}
-            >
-              <span style={{ color: "#f2f2f2", fontWeight: 750, lineHeight: 1.2 }}>
-                {bm.name}
-              </span>
-              <span style={{ color: "rgba(255,255,255,0.44)", fontSize: 11, lineHeight: 1.2 }}>
-                {bm.kind === "reference" && bm.reference !== undefined
-                  ? `${bm.reference.heightMode === "custom" ? "Custom" : bm.reference.heightMode === "sitting" ? "Sitting" : "Standing"} POV - ${bm.reference.sourceLabel}`
-                  : "Preset view"}
-              </span>
-            </button>
-          ))}
-        </div>
+        <CameraViewsPanel
+          bookmarks={bookmarks}
+          mobileChrome={mobileChrome}
+          open={cameraOpen}
+          onSelect={handleCameraPreset}
+        />
       )}
       {showAuth ? (
         <Suspense fallback={null}>

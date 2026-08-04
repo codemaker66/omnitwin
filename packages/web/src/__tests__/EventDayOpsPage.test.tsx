@@ -45,6 +45,10 @@ vi.mock("../lib/event-day-offline-queue.js", () => ({
   listPendingEventDayOps: mockListPendingEventDayOps,
 }));
 
+vi.mock("../components/mission-control/EventMissionControl.js", () => ({
+  EventMissionControl: () => <section data-testid="mission-control">Mission Control</section>,
+}));
+
 const NOW = "2026-06-12T09:00:00.000Z";
 const HASH = "b".repeat(64);
 const EVENT_ID = "00000000-0000-4000-8000-000000003001";

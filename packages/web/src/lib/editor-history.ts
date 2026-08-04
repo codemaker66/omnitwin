@@ -46,6 +46,10 @@ export interface HistoryEntry<T extends HistoryObject> extends HistoryDelta<T> {
   readonly label: string;
   /** Interaction epoch — consecutive update-only entries in one epoch coalesce. */
   readonly epoch: number;
+  /** Monotone gesture sequence. Stable across coalescing (the merged entry
+   *  keeps the gesture's seq), id remapping, and undo/redo round-trips —
+   *  the action log (G4) seals gestures by this, never by object identity. */
+  readonly seq: number;
   readonly selectionBefore: readonly string[];
   readonly selectionAfter: readonly string[];
 }
@@ -388,6 +392,7 @@ export function recordChange<T extends HistoryObject>(
     ...delta,
     label: input.label,
     epoch: input.epoch,
+    seq: highestSeq(history) + 1,
     selectionBefore: input.selectionBefore,
     selectionAfter: input.selectionAfter,
   };
@@ -400,6 +405,15 @@ export function recordChange<T extends HistoryObject>(
     return enforceBudgets({ past, future: [] });
   }
   return enforceBudgets({ past: [...history.past, entry], future: [] });
+}
+
+/** Highest gesture seq across both stacks (undo parks entries in `future`,
+ *  so a fresh gesture after undos must still outnumber them). */
+function highestSeq<T extends HistoryObject>(history: EditorHistory<T>): number {
+  let highest = 0;
+  for (const entry of history.past) highest = Math.max(highest, entry.seq);
+  for (const entry of history.future) highest = Math.max(highest, entry.seq);
+  return highest;
 }
 
 function fieldKeys<T extends HistoryObject>(o: T): readonly (keyof T & string)[] {

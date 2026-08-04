@@ -10,6 +10,7 @@ import { venueRoutes } from "./routes/venues.js";
 import { spaceRoutes } from "./routes/spaces.js";
 import { configurationRoutes } from "./routes/configurations.js";
 import { placedObjectRoutes } from "./routes/placed-objects.js";
+import { actionLogRoutes } from "./routes/action-log.js";
 import { enquiryRoutes } from "./routes/enquiries.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
@@ -26,6 +27,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
+import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -37,11 +39,25 @@ import { aiAssistantRoutes } from "./routes/ai-assistant.js";
 import { embedConfigRoutes, integrationRoutes, webhookOutboundRoutes } from "./routes/integrations.js";
 import { crmRoutes } from "./routes/crm.js";
 import { guestFlowReplayRoutes } from "./routes/guest-flow-replay.js";
+import { captureIntakeRoutes } from "./routes/capture-intake.js";
+import { eventArchitectRoutes } from "./routes/event-architect.js";
+import { eventMissionEventRoutes, eventMissionRoutes } from "./routes/event-mission-control.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
+import { bookingRoutes } from "./routes/bookings.js";
+import { calendarRoutes } from "./routes/calendar.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
+import {
+  adminReconstructionFoundryRoutes,
+  publicReconstructionReleaseRoutes,
+} from "./routes/reconstruction-foundry.js";
+import { adminFoundryDerivativeRightsRoutes } from "./routes/foundry-derivative-rights.js";
+import { FoundryDerivativeExecutionCandidatesService } from "./services/foundry-derivative-execution-candidates.js";
+import { FoundryDerivativeRightsCustodyService } from "./services/foundry-derivative-rights-custody.js";
+import { createReconstructionFoundryService } from "./services/reconstruction-foundry-integrations.js";
 import { registerAutoSave } from "./ws/auto-save.js";
+import { registerDiaryLive } from "./ws/diary-live.js";
 import websocket from "@fastify/websocket";
 import { initSentry, buildSentryCapture } from "./observability/sentry.js";
 import { registerDefaultSubscribers } from "./observability/subscribers.js";
@@ -132,6 +148,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(cors, {
     origin: allowedOrigins,
     credentials: true,
+    // idempotency-replay: T-538 — lets browser clients see whether a keyed
+    // diary mutation was deduped (replayed) rather than freshly executed.
+    exposedHeaders: ["x-content-sha256", "idempotency-replay"],
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
@@ -207,15 +226,22 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //
   // `/health/version` returns the package version + git-SHA + build-
   // time so an on-call engineer correlating a Sentry event to a
-  // release doesn't have to guess. Every deploy stamps these via
-  // env (injected at build time in CI). When env is unset (local
-  // dev), sensible fallbacks keep the response shape stable.
+  // release doesn't have to guess.
+  //
+  // These are stamped into the image by the Dockerfile's BUILD_GIT_SHA /
+  // BUILD_TIMESTAMP / BUILD_APP_VERSION args (Railway passes matching
+  // service variables through as build args). NOTHING injects them in CI —
+  // an earlier version of this comment claimed that, which is why all three
+  // fields read "dev"/"0.0.0" in production for months and deploys had to be
+  // verified by endpoint-behaviour flips instead. `npm_package_version` is
+  // unset in production because the start command invokes node directly
+  // rather than through a pnpm script, hence the APP_VERSION source.
   //
   // Unauthenticated + unrate-limited — `/health*` routes are ops
   // surfaces. Contents are public-safe (commit SHA is not a secret).
   server.get("/health/version", async () => {
     return {
-      version: process.env["npm_package_version"] ?? "0.0.0",
+      version: process.env["APP_VERSION"] ?? process.env["npm_package_version"] ?? "0.0.0",
       gitSha: process.env["GIT_SHA"] ?? "dev",
       builtAt: process.env["BUILD_TIMESTAMP"] ?? "dev",
       nodeEnv: env.NODE_ENV,
@@ -255,6 +281,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Database ---
   const db = createDb(env.DATABASE_URL);
+  const reconstructionFoundryService = createReconstructionFoundryService(db, env);
+  const foundryDerivativeRightsCustodyService =
+    new FoundryDerivativeRightsCustodyService(db);
+  const foundryDerivativeExecutionCandidatesService =
+    new FoundryDerivativeExecutionCandidatesService(db);
 
   // --- DB-probe health check ---
   // Separate from /health so process liveness stays DB-independent.
@@ -297,6 +328,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
   await server.register(configurationRoutes, { db, prefix: "/configurations" });
   await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
+  await server.register(actionLogRoutes, { db, prefix: "/configurations/:configId/actions" });
   await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
   await server.register(uploadRoutes, { db, env, prefix: "/uploads" });
   await server.register(pricingRuleRoutes, { db, prefix: "/venues/:venueId/pricing" });
@@ -310,20 +342,43 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(clientRoutes, { db, prefix: "/clients" });
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
+  await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
+  await server.register(adminReconstructionFoundryRoutes, {
+    service: reconstructionFoundryService,
+    prefix: "/admin/reconstruction-foundry",
+  });
+  await server.register(adminFoundryDerivativeRightsRoutes, {
+    service: foundryDerivativeRightsCustodyService,
+    executionCandidatesService: foundryDerivativeExecutionCandidatesService,
+    prefix: "/admin/reconstruction-foundry/derivative-rights",
+  });
   await server.register(webhookRoutes, { db, prefix: "/webhooks" });
   await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
   await server.register(configurationReviewRoutes, { db, env, prefix: "/configurations" });
   await server.register(assetRoutes, { db, env, prefix: "/assets" });
+  await server.register(publicReconstructionReleaseRoutes, {
+    service: reconstructionFoundryService,
+    prefix: "/assets/reconstruction-releases",
+  });
   await server.register(integrationRoutes, { db, prefix: "/integrations" });
   await server.register(embedConfigRoutes, { db, prefix: "/embed-configs" });
   await server.register(crmRoutes, { db, prefix: "/crm" });
   await server.register(guestFlowReplayRoutes, { db, prefix: "/guest-flow" });
+  await server.register(captureIntakeRoutes, {
+    inspectionPath: env.CAPTURE_INTAKE_INSPECTION_PATH,
+    stageManifestPath: env.CAPTURE_INTAKE_STAGE_MANIFEST_PATH,
+  });
   await server.register(onboardingRoutes, { db, prefix: "/onboarding" });
   await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
+  await server.register(bookingRoutes, { db, prefix: "/bookings" });
+  await server.register(calendarRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
+  await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
+  await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });
+  await server.register(eventArchitectRoutes, { db, prefix: "/event-architect" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
   await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });
@@ -344,9 +399,16 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicProposalRoutes, { db, prefix: "/public" });
 
   // --- WebSocket ---
-  await server.register(websocket);
-  server.websocketServer.setMaxListeners(50);
-  await registerAutoSave(server, db);
+  // Keep the websocket plugin and its route in one encapsulated scope. When
+  // registered on the root instance, Fastify inherits the plugin's preClose
+  // hook into every existing plugin context; one shutdown then calls the same
+  // WebSocketServer.close() dozens of times. Scoping retains the plugin-owned
+  // upgrade-listener cleanup and gives the websocket server one close hook.
+  await server.register(async (websocketScope) => {
+    await websocketScope.register(websocket);
+    await registerAutoSave(websocketScope, db);
+    await registerDiaryLive(websocketScope, db);
+  });
 
   // Register default event-bus subscribers (structured-logging /
   // audit observers). Additional subscribers can attach at any time.

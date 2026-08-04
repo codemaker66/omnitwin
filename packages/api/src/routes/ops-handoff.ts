@@ -7,6 +7,9 @@ import { authenticate } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import {
   OpsHandoffApprovedSnapshotRequiredError,
+  OpsHandoffBlockingReviewGateError,
+  OpsHandoffEvidenceIntegrityError,
+  OpsHandoffEventBindingRequiredError,
   OpsHandoffEventNotFoundError,
   OpsHandoffSourceNotFoundError,
   compileOpsHandoffPackFromConfiguration,
@@ -107,6 +110,26 @@ export async function opsHandoffRoutes(server: FastifyInstance, opts: { db: Data
         return reply.status(409).send({
           error: "Ops handoff compilation requires an approved layout snapshot",
           code: "APPROVED_SNAPSHOT_REQUIRED",
+        });
+      }
+      if (err instanceof OpsHandoffBlockingReviewGateError) {
+        return reply.status(409).send({
+          error: "Ops compilation remains blocked until a separate reviewed guest-flow evidence artifact is attached",
+          code: "BLOCKING_REVIEW_GATE",
+          details: err.gate,
+        });
+      }
+      if (err instanceof OpsHandoffEvidenceIntegrityError) {
+        return reply.status(409).send({
+          error: "Event Architect evidence could not be verified for Ops compilation",
+          code: "SOURCE_EVIDENCE_INVALID",
+        });
+      }
+      if (err instanceof OpsHandoffEventBindingRequiredError) {
+        return reply.status(409).send({
+          error: "Bind this approved configuration to the event before compiling its Ops handoff",
+          code: "EVENT_CONFIGURATION_BINDING_REQUIRED",
+          details: { configId: err.configId, eventId: err.eventId },
         });
       }
       throw err;

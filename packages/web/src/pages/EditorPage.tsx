@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
 import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
@@ -20,13 +22,19 @@ import {
 import { getPublicConfig } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
+import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
   type PlannerVenueAccessUser,
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
 
-const DEFAULT_SPACE_SLUG = "grand-hall";
+// CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
+// the one room with a built runtime package (splat), so first-visit planners
+// land in captured reality rather than a procedural-only hall. Venues seeded
+// without it degrade through the legacy default, then the first space.
+const DEFAULT_SPACE_SLUG = "reception-room";
+const LEGACY_DEFAULT_SPACE_SLUG = "grand-hall";
 const TRACKED_CONFIGS_KEY = "omnitwin_my_configs";
 const MAX_REUSABLE_CONFIG_PROBES = 5;
 
@@ -145,12 +153,19 @@ export function EditorPage(): React.ReactElement {
   const authRole = useAuthStore((s) => s.user?.role ?? null);
   const authVenueId = useAuthStore((s) => s.user?.venueId ?? null);
   const [autoCreateBlocker, setAutoCreateBlocker] = useState<PlannerBootstrapBlocker | null>(null);
+  // Name of the space the bootstrap has ACTUALLY resolved (from the venue's
+  // own space list). The loading heading stays generic until this is known —
+  // it must never claim a room the fallback chain might not open.
+  const [openingRoomName, setOpeningRoomName] = useState<string | null>(null);
   const autoCreateAttemptedFor = useRef<string | null>(null);
   const venueAccessUser = useMemo<PlannerVenueAccessUser | null>(() => {
     if (!isAuthenticated || authRole === null) return null;
     return { role: authRole, venueId: authVenueId };
   }, [authRole, authVenueId, isAuthenticated]);
   const wantedSpaceSlug = searchParams.get("space") ?? DEFAULT_SPACE_SLUG;
+  const requestedConfigIsPending = urlConfigId !== undefined
+    && urlConfigId !== storeConfigId
+    && error === null;
 
   // Load config from URL on mount. The first load uses the current
   // isAuthenticated value (false before Clerk resolves). For public configs
@@ -163,6 +178,14 @@ export function EditorPage(): React.ReactElement {
       void useEditorStore.getState().loadConfiguration(urlConfigId, isAuthenticated);
     }
   }, [urlConfigId, storeConfigId, isAuthenticated]);
+
+  // DEV-only session-replay bridge (G4 slice 4, the __venPerf pattern):
+  // window.__venReplay() replays the open config's audit trail and diffs
+  // the reconstruction against the live document. Never in production.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    return registerReplayBridge();
+  }, []);
 
   // Auto-open the requested venue + space on the first render that has no
   // configId anywhere. `/plan` keeps the single-tenant shortcut by choosing the
@@ -179,6 +202,7 @@ export function EditorPage(): React.ReactElement {
     if (autoCreateAttemptedFor.current === bootstrapKey) return;
     autoCreateAttemptedFor.current = bootstrapKey;
     setAutoCreateBlocker(null);
+    setOpeningRoomName(null);
     void (async () => {
       try {
         const venues = await spacesApi.listVenues();
@@ -202,8 +226,10 @@ export function EditorPage(): React.ReactElement {
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
+          ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
+        setOpeningRoomName(space.name);
         const reusableConfigId = await findReusablePublicConfigId(space.id);
         if (reusableConfigId !== null) {
           void navigate(`/plan/${reusableConfigId}`, { replace: true });
@@ -231,8 +257,8 @@ export function EditorPage(): React.ReactElement {
   // Auto-create failed → show a minimal retry screen instead of the
   // legacy SpacePicker splash. The SpacePicker was the old entry flow
   // (pick a venue → pick a space); now /plan always drops users
-  // straight into a Grand Hall config, so the splash has no role on
-  // this route.
+  // straight into a room config (Reception Room by default — CARD A1),
+  // so the splash has no role on this route.
   if (autoCreateBlocker !== null && urlConfigId === undefined && storeConfigId === null) {
     const copy = plannerBootstrapBlockerCopy(autoCreateBlocker);
     return (
@@ -241,7 +267,9 @@ export function EditorPage(): React.ReactElement {
           <p className="vv-state-kicker">Planner start</p>
           <h1>{copy.title}</h1>
           <p>{copy.body}</p>
-          <span className="vv-status-chip" data-tone="review">Planning workspace not opened yet</span>
+          {/* Wave A closure: canonical chip grammar — the workspace is absent,
+              which is exactly what Missing (dashed outline) claims. */}
+          <EvidenceChip state="missing" detail="planning workspace not opened yet" />
           <div className="vv-state-actions">
             <button
               type="button"
@@ -263,13 +291,15 @@ export function EditorPage(): React.ReactElement {
   }
 
   // Auto-create in flight (or about to start) — show a neutral loading
-  // screen, not the SpacePicker splash.
+  // screen, not the SpacePicker splash. The heading upgrades from generic to
+  // named only once the bootstrap has resolved the room from the venue's own
+  // space list, so it can never claim a room the fallback chain didn't open.
   if (urlConfigId === undefined && storeConfigId === null) {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
           <p className="vv-state-kicker">Planner start</p>
-          <h1>Opening the Grand Hall planner</h1>
+          <h1>{openingRoomName !== null ? `Opening the ${openingRoomName} planner` : "Opening the planner"}</h1>
           <p>Preparing a recoverable planning draft with room context and review-state controls.</p>
         </section>
       </div>
@@ -277,7 +307,7 @@ export function EditorPage(): React.ReactElement {
   }
 
   // Loading config
-  if (isLoading) {
+  if (isLoading || requestedConfigIsPending) {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
@@ -357,11 +387,13 @@ function PlannerCommsLayer(): React.ReactElement {
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
   const mobile = isNarrow || isTouch;
+  const showStandaloneTruthIndicator = truthModeEnabled && (mobile || viewMode !== "3d");
   return (
     <>
       <EditorBridge />
       <div
         data-testid="planner-3d-shell"
+        data-planner-config-id={configId ?? undefined}
         style={{
           height: "100dvh",
           minHeight: "100dvh",
@@ -410,7 +442,7 @@ function PlannerCommsLayer(): React.ReactElement {
       <ObjectNotePanel />
       <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} />
       <SubmitForReviewPanel />
-      {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
+      {showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
@@ -514,6 +546,13 @@ function ViewModeToggle({
   onChange: (m: "3d" | "2d") => void;
   isMobile: boolean;
 }): React.ReactElement {
+  const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const avoidSelectors = isMobile
+    ? undefined
+    : [
+        "[data-testid='planner-toolbar']",
+        "[data-testid='truth-mode-indicator']",
+      ] as const;
   const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
     const active = mode === value;
     return (
@@ -546,10 +585,14 @@ function ViewModeToggle({
       defaultPlacement={{
         type: "anchor",
         anchor: "top-left",
-        offsetX: isMobile ? 10 : 112,
+        offsetX: isMobile ? 10 : 176,
         offsetY: isMobile ? 10 : 82,
       }}
+      avoidSelectors={avoidSelectors}
+      avoidPaddingPx={12}
+      storageScope={isMobile ? "mobile" : "desktop-cockpit-v3"}
       zIndex={31}
+      autoCompact={cameraInteractionActive}
     >
       <div
         role="group"

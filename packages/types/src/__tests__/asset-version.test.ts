@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  ApprovedRoomRuntimeProfileSchema,
   AssetVersionSchema,
+  CreateRuntimePackageRevisionInputSchema,
   LatestRuntimePackageQuerySchema,
   PublicRoomRuntimeVisualSchema,
+  ReviewedRuntimeProfileIdSchema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
   RegisterRuntimeTransformArtifactInputSchema,
@@ -13,6 +16,8 @@ import {
   RuntimeTransformArtifactRegistrationReportSchema,
   RuntimeTransformArtifactSchema,
   RuntimePackageManifestJsonSchema,
+  RuntimePackageRevisionReceiptSchema,
+  RuntimePackagePreviewSchema,
   RuntimePackageSchema,
   CAPTURE_CONTROL_FRESHNESS_STATUSES,
   ROOM_RUNTIME_CONTROL_EVIDENCE_CHAIN_STATUSES,
@@ -40,6 +45,8 @@ const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
 const SEMANTIC_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000002";
 const COLLISION_ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
 const RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
+const VISUAL_ASSET_VERSION_ID_2 = "10000000-0000-4000-8000-000000000005";
+const VISUAL_ASSET_VERSION_ID_3 = "10000000-0000-4000-8000-000000000006";
 const SHA = "a".repeat(64);
 const R2_KEY = "venues/trades-hall/rooms/robert-adam-room/xgrids/2026-06-06/scene.ply";
 const TRANSFORM_ARTIFACT_ID = "reception-room-landmark-solve-v0";
@@ -417,6 +424,176 @@ describe("runtime package manifest schemas", () => {
   it("accepts a strict v1 manifest", () => {
     const parsed = RuntimePackageManifestJsonSchema.parse(manifestJson);
     expect(parsed.assets.primaryVisualAssetVersionId).toBe(ASSET_VERSION_ID);
+    expect(parsed.assets.visualAssetVersionIds).toBeUndefined();
+  });
+
+  it("accepts and preserves an exact ordered visual composition", () => {
+    const visualAssetVersionIds = [
+      VISUAL_ASSET_VERSION_ID_3,
+      ASSET_VERSION_ID,
+      VISUAL_ASSET_VERSION_ID_2,
+    ];
+    const parsed = RuntimePackageManifestJsonSchema.parse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds,
+      },
+    });
+
+    expect(parsed.assets.visualAssetVersionIds).toEqual(visualAssetVersionIds);
+  });
+
+  it("binds ordered visual members to immutable byte and storage receipts", () => {
+    const visualAssetVersionIds = [ASSET_VERSION_ID, VISUAL_ASSET_VERSION_ID_2];
+    const visualAssetReceipts = visualAssetVersionIds.map((assetVersionId, index) => ({
+      assetVersionId,
+      fileName: index === 0 ? "a.sog" : "b.spz",
+      fileExt: index === 0 ? ".sog" : ".spz",
+      sha256: String(index + 1).repeat(64),
+      sizeBytes: 100 + index,
+      storageKeySha256: String(index + 3).repeat(64),
+    }));
+    const parsed = RuntimePackageManifestJsonSchema.parse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds,
+        visualAssetReceipts,
+      },
+    });
+    expect(parsed.assets.visualAssetReceipts).toEqual(visualAssetReceipts);
+
+    expect(RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds,
+        visualAssetReceipts: [...visualAssetReceipts].reverse(),
+      },
+    }).success).toBe(false);
+    expect(RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetReceipts,
+      },
+    }).success).toBe(false);
+  });
+
+  it("accepts a machine-checkable fixed-frontier composition basis", () => {
+    const compositionBasis = {
+      decisionId: "reception-room-quality-fixed-fine-frontier-v1",
+      decisionRef: "docs/reports/reception-room-hd-root-investigation.md",
+      hierarchySha256: "f0a4c782cc0f031830404d409f5c0accdc30ed501fa562169206962ceee64f3e",
+      format: "sog" as const,
+      level: "fine" as const,
+      lodSelectionPolicy: "fixed_fine_frontier_v1" as const,
+      expectedGaussianCount: 2_002_009,
+    };
+    const parsed = RuntimePackageManifestJsonSchema.parse({
+      ...manifestJson,
+      compositionBasis,
+    });
+
+    expect(parsed.compositionBasis).toEqual(compositionBasis);
+  });
+
+  it("rejects an untraceable or malformed composition basis", () => {
+    const base = {
+      decisionId: "reception-room-quality-fixed-fine-frontier-v1",
+      decisionRef: "docs/reports/reception-room-hd-root-investigation.md",
+      hierarchySha256: SHA,
+      format: "sog",
+      level: "fine",
+      lodSelectionPolicy: "fixed_fine_frontier_v1",
+      expectedGaussianCount: 2_002_009,
+    };
+
+    expect(RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      compositionBasis: { ...base, hierarchySha256: "not-a-hash" },
+    }).success).toBe(false);
+    expect(RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      compositionBasis: { ...base, format: "ply" },
+    }).success).toBe(false);
+    expect(RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      compositionBasis: { ...base, surprise: true },
+    }).success).toBe(false);
+  });
+
+  it("rejects duplicate visual composition members", () => {
+    const result = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds: [ASSET_VERSION_ID, VISUAL_ASSET_VERSION_ID_2, ASSET_VERSION_ID],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a visual composition that omits its primary asset", () => {
+    const result = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds: [VISUAL_ASSET_VERSION_ID_2, VISUAL_ASSET_VERSION_ID_3],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a visual composition when the primary asset is null", () => {
+    const result = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        primaryVisualAssetVersionId: null,
+        visualAssetVersionIds: [VISUAL_ASSET_VERSION_ID_2],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty or malformed visual composition membership", () => {
+    const empty = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds: [],
+      },
+    });
+    const malformed = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds: [ASSET_VERSION_ID, "not-an-asset-version-id"],
+      },
+    });
+
+    expect(empty.success).toBe(false);
+    expect(malformed.success).toBe(false);
+  });
+
+  it("rejects an unbounded visual composition", () => {
+    const result = RuntimePackageManifestJsonSchema.safeParse({
+      ...manifestJson,
+      assets: {
+        ...manifestJson.assets,
+        visualAssetVersionIds: Array.from(
+          { length: 1_025 },
+          (_, index) => `10000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+        ),
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it("rejects unknown manifest fields", () => {
@@ -455,6 +632,63 @@ describe("runtime package manifest schemas", () => {
       runtimeStatus: "internal_ready",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts create-only revision requests with server-assigned or explicit revisions", () => {
+    const packageInput = {
+      venueSlug: "trades-hall",
+      roomSlug: "robert-adam-room",
+      primaryVisualAssetVersionId: ASSET_VERSION_ID,
+      manifestJson,
+      runtimeStatus: "internal_ready" as const,
+    };
+
+    expect(CreateRuntimePackageRevisionInputSchema.parse({ package: packageInput })).toMatchObject({
+      package: packageInput,
+    });
+    expect(CreateRuntimePackageRevisionInputSchema.parse({
+      requestedRevision: 3,
+      package: packageInput,
+    }).requestedRevision).toBe(3);
+  });
+
+  it("rejects non-positive revision requests and unknown request fields", () => {
+    const packageInput = {
+      venueSlug: "trades-hall",
+      roomSlug: "robert-adam-room",
+      primaryVisualAssetVersionId: ASSET_VERSION_ID,
+      manifestJson,
+      runtimeStatus: "internal_ready" as const,
+    };
+
+    expect(CreateRuntimePackageRevisionInputSchema.safeParse({
+      requestedRevision: 0,
+      package: packageInput,
+    }).success).toBe(false);
+    expect(CreateRuntimePackageRevisionInputSchema.safeParse({
+      package: packageInput,
+      overwrite: true,
+    }).success).toBe(false);
+  });
+
+  it("parses a real immutable-revision creation receipt", () => {
+    expect(RuntimePackageRevisionReceiptSchema.parse({
+      packageId: RUNTIME_PACKAGE_ID,
+      revision: 2,
+      contentDigest: SHA,
+      created: true,
+    })).toEqual({
+      packageId: RUNTIME_PACKAGE_ID,
+      revision: 2,
+      contentDigest: SHA,
+      created: true,
+    });
+    expect(RuntimePackageRevisionReceiptSchema.safeParse({
+      packageId: RUNTIME_PACKAGE_ID,
+      revision: 2,
+      contentDigest: null,
+      created: true,
+    }).success).toBe(false);
   });
 });
 
@@ -714,6 +948,193 @@ describe("runtime transform artifact registration schemas", () => {
         blockers: ["generatedAt: Required"],
       }),
     ).success).toBe(false);
+  });
+});
+
+describe("reviewed runtime profile id schema", () => {
+  it("accepts only the two named, reviewed profile identities", () => {
+    expect(ReviewedRuntimeProfileIdSchema.parse("quality-sog-fine-v1"))
+      .toBe("quality-sog-fine-v1");
+    expect(ReviewedRuntimeProfileIdSchema.parse("mobile-spz-fine-v1"))
+      .toBe("mobile-spz-fine-v1");
+
+    for (const value of [
+      "quality-sog-fine-v2",
+      "Quality-sog-fine-v1",
+      "mobile-spz-fine",
+      "",
+      null,
+    ]) {
+      expect(ReviewedRuntimeProfileIdSchema.safeParse(value).success).toBe(false);
+    }
+  });
+});
+
+describe("approved room runtime profile schema", () => {
+  const profile = {
+    scope: "approved_room_runtime_profile",
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    profileId: "quality-sog-fine-v1",
+    visualAssetUrls: [
+      "https://api.example.test/runtime-assets/first.sog",
+      "https://api.example.test/runtime-assets/second.sog",
+    ],
+  };
+
+  it("accepts an opaque profile attestation and preserves URL order", () => {
+    const parsed = ApprovedRoomRuntimeProfileSchema.parse(profile);
+    expect(parsed.profileId).toBe("quality-sog-fine-v1");
+    expect(parsed.visualAssetUrls).toEqual(profile.visualAssetUrls);
+  });
+
+  it("rejects unknown profiles, invalid URLs, empty sets, and duplicate URLs", () => {
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      profileId: "quality-sog-fine-v2",
+    }).success).toBe(false);
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      visualAssetUrls: ["/runtime-assets/first.sog"],
+    }).success).toBe(false);
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      visualAssetUrls: [],
+    }).success).toBe(false);
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      visualAssetUrls: [profile.visualAssetUrls[0], profile.visualAssetUrls[0]],
+    }).success).toBe(false);
+  });
+
+  it("keeps server-only package and asset receipts out of the public shape", () => {
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      runtimePackageId: RUNTIME_PACKAGE_ID,
+    }).success).toBe(false);
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      assetVersionIds: [ASSET_VERSION_ID],
+    }).success).toBe(false);
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      storageKeySha256: SHA,
+    }).success).toBe(false);
+  });
+});
+
+describe("exact private runtime package preview schema", () => {
+  const ids = [
+    "10000000-0000-4000-8000-000000000001",
+    "10000000-0000-4000-8000-000000000002",
+  ] as const;
+  const preview = {
+    scope: "exact_private_runtime_package_preview",
+    runtimePackageId: "20000000-0000-4000-8000-000000000001",
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    revision: 3,
+    identityKind: "content_sha256",
+    contentDigest: SHA,
+    manifestJson: {
+      schemaVersion: "venviewer.runtime-package.v1",
+      venueSlug: "trades-hall",
+      roomSlug: "reception-room",
+      packageType: "room-runtime",
+      assets: {
+        primaryVisualAssetVersionId: ids[0],
+        visualAssetVersionIds: [...ids],
+        visualAssetReceipts: ids.map((assetVersionId, index) => ({
+          assetVersionId,
+          fileName: index === 0 ? "0_1_0_5.sog" : "0_6_0_0.sog",
+          fileExt: ".sog",
+          sha256: String(index + 1).repeat(64),
+          sizeBytes: 100 + index,
+          storageKeySha256: String(index + 3).repeat(64),
+        })),
+        semanticMeshAssetVersionId: null,
+        collisionAssetVersionId: null,
+        pointCloudAssetVersionId: null,
+      },
+    },
+    evidenceStatus: "machine_checked",
+    runtimeStatus: "internal_ready",
+    reviewedProfileId: "quality-sog-fine-v1",
+    issuedAt: "2026-07-14T12:00:00.000Z",
+    visualAssets: ids.map((assetVersionId, index) => ({
+      assetVersionId,
+      fileName: index === 0 ? "0_1_0_5.sog" : "0_6_0_0.sog",
+      fileExt: ".sog",
+      sha256: String(index + 1).repeat(64),
+      sizeBytes: 100 + index,
+    })),
+  };
+
+  it("accepts ordered immutable metadata without a storage address", () => {
+    const parsed = RuntimePackagePreviewSchema.parse(preview);
+    expect(parsed.reviewedProfileId).toBe("quality-sog-fine-v1");
+    expect(parsed.visualAssets.map((asset) => asset.assetVersionId)).toEqual(ids);
+    expect(JSON.stringify(parsed)).not.toContain("r2:");
+    expect(JSON.stringify(parsed)).not.toMatch(/https?:\/\//u);
+  });
+
+  it("requires either an exact reviewed profile id or an explicit null", () => {
+    expect(RuntimePackagePreviewSchema.parse({
+      ...preview,
+      reviewedProfileId: null,
+    }).reviewedProfileId).toBeNull();
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      reviewedProfileId: "quality-sog-fine-v2",
+    }).success).toBe(false);
+
+    const missingProfileId = { ...preview } as Record<string, unknown>;
+    delete missingProfileId["reviewedProfileId"];
+    expect(RuntimePackagePreviewSchema.safeParse(missingProfileId).success).toBe(false);
+  });
+
+  it("rejects legacy identity, room drift, and reordered members", () => {
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      identityKind: "legacy",
+    }).success).toBe(false);
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      roomSlug: "saloon",
+    }).success).toBe(false);
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      visualAssets: [...preview.visualAssets].reverse(),
+    }).success).toBe(false);
+  });
+
+  it("rejects missing members and any storage key or stream URL field", () => {
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      visualAssets: preview.visualAssets.slice(0, 1),
+    }).success).toBe(false);
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      visualAssets: preview.visualAssets.map((asset, index) => index === 0
+        ? { ...asset, r2Key: "r2:private/key.sog" }
+        : asset),
+    }).success).toBe(false);
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      visualAssets: preview.visualAssets.map((asset, index) => index === 0
+        ? { ...asset, streamUrl: "https://storage.example/signed" }
+        : asset),
+    }).success).toBe(false);
+    expect(RuntimePackagePreviewSchema.safeParse({
+      ...preview,
+      manifestJson: {
+        ...preview.manifestJson,
+        assets: {
+          ...preview.manifestJson.assets,
+          visualAssetReceipts: undefined,
+        },
+      },
+    }).success).toBe(false);
   });
 });
 

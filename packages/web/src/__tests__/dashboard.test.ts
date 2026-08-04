@@ -648,7 +648,9 @@ describe("ClientProfile enquiry navigation (#34)", () => {
     // Otherwise a rejected enquiry pre-selected with the "submitted"
     // filter would silently render nothing.
     expect(codeOnly).toContain("preselectedEnquiry");
-    expect(codeOnly).toMatch(/enquiriesApi\.getEnquiry\(initialSelectedId\)/);
+    expect(codeOnly).toMatch(
+      /enquiriesApi\.getEnquiry\(initialSelectedId,\s*controller\.signal\)/,
+    );
   });
 
   it("EnquiriesView 'Back' button label reflects return destination", async () => {

@@ -23,6 +23,8 @@ const tabStyle = (active: boolean): React.CSSProperties => ({
 const cardStyle: React.CSSProperties = {
   background: "#fff", borderRadius: 8, padding: 16, marginBottom: 8,
   border: "1px solid #e5e7eb", cursor: "pointer", transition: "box-shadow 0.15s",
+  width: "100%", boxSizing: "border-box", textAlign: "left",
+  color: "inherit", fontFamily: "inherit",
 };
 
 // ---------------------------------------------------------------------------
@@ -56,30 +58,45 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   // the effect below; falls back to the list lookup once both are loaded.
   const [preselectedEnquiry, setPreselectedEnquiry] = useState<Enquiry | null>(null);
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [transition, setTransition] = useState<{ id: string; status: string } | null>(null);
   const [creatingOpportunity, setCreatingOpportunity] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
+    const controller = new AbortController();
     void (async () => {
       setLoading(true);
       try {
-        const data = await enquiriesApi.listEnquiries(statusFilter === "all" ? undefined : statusFilter);
-        setEnquiries(data);
-      } catch { addToast("Failed to load enquiries", "error"); }
-      setLoading(false);
+        const data = await enquiriesApi.listEnquiries(
+          statusFilter === "all" ? undefined : statusFilter,
+          controller.signal,
+        );
+        if (!controller.signal.aborted) setEnquiries(data);
+      } catch {
+        if (!controller.signal.aborted) addToast("Failed to load enquiries", "error");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
     })();
+    return () => { controller.abort(); };
   }, [statusFilter, addToast]);
 
   // When pre-selected via initialSelectedId, fetch the enquiry directly so
   // the detail view can render regardless of the active status filter.
   useEffect(() => {
     if (initialSelectedId === null) return;
+    const controller = new AbortController();
     setSelectedId(initialSelectedId);
-    void enquiriesApi.getEnquiry(initialSelectedId)
-      .then(setPreselectedEnquiry)
-      .catch(() => { addToast("Failed to load enquiry", "error"); });
+    void enquiriesApi.getEnquiry(initialSelectedId, controller.signal)
+      .then((enquiry) => {
+        if (!controller.signal.aborted) setPreselectedEnquiry(enquiry);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) addToast("Failed to load enquiry", "error");
+      });
+    return () => { controller.abort(); };
   }, [initialSelectedId, addToast]);
 
   // Prefer the freshly-fetched pre-selected enquiry if it matches the
@@ -95,14 +112,22 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   const handleBack = (): void => {
     setSelectedId(null);
     setPreselectedEnquiry(null);
+    setHistory([]);
     if (onDetailClose !== undefined) onDetailClose();
   };
 
   useEffect(() => {
-    if (selectedId !== null) {
-      void enquiriesApi.getEnquiryHistory(selectedId).then(setHistory).catch(() => { /* ignore */ });
-    }
-  }, [selectedId]);
+    setHistory([]);
+    if (selectedId === null) return;
+
+    const controller = new AbortController();
+    void enquiriesApi.getEnquiryHistory(selectedId, controller.signal)
+      .then((entries) => {
+        if (!controller.signal.aborted) setHistory(entries);
+      })
+      .catch(() => { /* An absent timeline does not block enquiry review. */ });
+    return () => { controller.abort(); };
+  }, [selectedId, historyVersion]);
 
   const handleTransition = async (note?: string): Promise<void> => {
     if (transition === null) return;
@@ -115,8 +140,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
       }
       addToast(`Enquiry ${transition.status.replace(/_/g, " ")}`, "success");
       setTransition(null);
-      // Refresh history
-      void enquiriesApi.getEnquiryHistory(transition.id).then(setHistory).catch(() => { /* ignore */ });
+      setHistoryVersion((version) => version + 1);
     } catch {
       addToast("Failed to update status", "error");
       setTransition(null);
@@ -285,7 +309,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
       )}
 
       {enquiries.map((e) => (
-        <div key={e.id} style={cardStyle} onClick={() => { setSelectedId(e.id); }}>
+        <button key={e.id} type="button" style={cardStyle} onClick={() => { setSelectedId(e.id); }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{e.guestName ?? e.name}</span>
             <StatusBadge status={e.state} />
@@ -300,7 +324,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>
             {new Date(e.createdAt).toLocaleDateString()}
           </div>
-        </div>
+        </button>
       ))}
     </div>
   );

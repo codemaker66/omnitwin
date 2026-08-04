@@ -129,7 +129,9 @@ describe("build-capture-control-source-from-runtime-control script", () => {
     });
 
     expect(report.status).toBe("payload_built");
-    expect(report.payloadFile?.endsWith("reports\\manual-landmarks-source.json")).toBe(true);
+    expect(
+      report.payloadFile?.replaceAll("\\", "/").endsWith("reports/manual-landmarks-source.json"),
+    ).toBe(true);
     expect(reports).toHaveLength(1);
     expect(payloads).toHaveLength(1);
     expect(payloads[0]?.source.sourceId).toBe("reception-room-reviewed-manual-landmarks-v0");

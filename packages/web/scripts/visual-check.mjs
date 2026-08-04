@@ -13,9 +13,185 @@ configure({ useWebWorkers: false });
 
 const OUT = process.env.OUT_DIR ?? join(process.cwd(), "visual-out");
 const PLAN_URL = process.env.PLAN_URL ?? "http://localhost:5173/plan/46a90419-fc36-43b4-862e-8c90967e7515";
+const VIEWPORT_WIDTH = Number(process.env.VISUAL_VIEWPORT_WIDTH ?? "1680");
+const VIEWPORT_HEIGHT = Number(process.env.VISUAL_VIEWPORT_HEIGHT ?? "1050");
+const DEVICE_SCALE_FACTOR = Number(process.env.VISUAL_DEVICE_SCALE_FACTOR ?? "2");
+const VENUE_ID = "00000000-0000-4000-8000-000000004003";
+const SPACE_ID = "e2e-space-grand";
 mkdirSync(OUT, { recursive: true });
 
 const LENSES = ["Lighting", "Power", "Rigging", "AV", "Guests", "Flow", "Evidence", "Ops", "Costs", "Share", "Design"];
+const E2E_VENUE = {
+  id: VENUE_ID,
+  name: "Trades Hall Glasgow",
+  slug: "trades-hall",
+  address: "85 Glassford Street",
+  logoUrl: null,
+  brandColour: null,
+};
+const E2E_SPACE = {
+  id: SPACE_ID,
+  venueId: VENUE_ID,
+  name: "Grand Hall",
+  slug: "grand-hall",
+  widthM: "21",
+  lengthM: "31",
+  heightM: "10",
+  floorPlanOutline: [
+    { x: -10.5, z: -15.5 },
+    { x: 10.5, z: -15.5 },
+    { x: 10.5, z: 15.5 },
+    { x: -10.5, z: 15.5 },
+  ],
+  loadoutCount: 0,
+};
+
+const E2E_CONFIGURATION = {
+  data: {
+    id: "cfg-perf-grand-hall",
+    spaceId: SPACE_ID,
+    venueId: VENUE_ID,
+    userId: null,
+    name: "Visual verification Grand Hall",
+    isPublicPreview: true,
+    revision: 1,
+    objects: [],
+  },
+};
+
+async function installPlannerApiMocks(page) {
+  await page.addInitScript((seed) => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: seed, writable: false });
+    window.localStorage.removeItem("omni-onboarding-dismissed");
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("venviewer:floating-widget:planner-onboarding")) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  }, {
+    id: "visual-staff",
+    email: "visual-staff@e2e.test",
+    role: "staff",
+    venueId: VENUE_ID,
+    name: "Visual Staff",
+  });
+
+  await page.route("**/public/configurations/cfg-perf-grand-hall", (route) => {
+    void route.fulfill({ json: E2E_CONFIGURATION });
+  });
+
+  await page.route("**/configurations/cfg-perf-grand-hall", (route) => {
+    void route.fulfill({ json: E2E_CONFIGURATION });
+  });
+
+  await page.route("**/assets/runtime-packages/latest?*", (route) => {
+    void route.fulfill({ json: { data: null } });
+  });
+
+  await page.route("**/notifications*", (route) => {
+    void route.fulfill({ json: { data: [] } });
+  });
+
+  await page.route("**/truth-mode/summary?*", (route) => {
+    const url = new URL(route.request().url());
+    void route.fulfill({
+      json: {
+        data: {
+          targetType: url.searchParams.get("targetType") ?? "configuration",
+          targetId: url.searchParams.get("targetId") ?? "cfg-perf-grand-hall",
+          source: "Procedural planner preview with mocked visual verification data.",
+          confidence: "unknown",
+          assumption: "Visual verification data is a deterministic test fixture for screenshot review.",
+          evidenceStatus: "not_checked",
+          reviewGate: "Human review is required before operational use.",
+          staleState: "unknown",
+          safeWording: ["Runtime asset loaded, not yet verified or signed."],
+          humanReviewRequired: true,
+          counts: {
+            evidenceItems: 0,
+            checkResults: 0,
+            assumptions: 1,
+            reviewGates: 1,
+            staleEvents: 0,
+          },
+        },
+      },
+    });
+  });
+
+  await page.route("**/public/configurations/cfg-perf-grand-hall/objects/batch", async (route) => {
+    const rawPayload = route.request().postDataJSON();
+    const payload = rawPayload !== null && typeof rawPayload === "object" ? rawPayload : {};
+    const objects = Array.isArray(payload.objects) ? payload.objects : [];
+    const revision = Number.isInteger(payload.expectedRevision) ? Number(payload.expectedRevision) + 1 : 2;
+    void route.fulfill({
+      json: {
+        data: {
+          revision,
+          objects: objects.map((object, index) => ({
+            id: typeof object.id === "string" ? object.id : `visual-object-${String(index + 1).padStart(3, "0")}`,
+            configurationId: "cfg-perf-grand-hall",
+            assetDefinitionId: String(object.assetDefinitionId),
+            positionX: String(object.positionX),
+            positionY: String(object.positionY),
+            positionZ: String(object.positionZ),
+            rotationX: String(object.rotationX),
+            rotationY: String(object.rotationY),
+            rotationZ: String(object.rotationZ),
+            scale: String(object.scale),
+            sortOrder: Number.isInteger(object.sortOrder) ? object.sortOrder : index,
+            metadata: object.metadata ?? null,
+          })),
+        },
+      },
+    });
+  });
+
+  await page.route("**/configurations/cfg-perf-grand-hall/objects/batch", async (route) => {
+    const rawPayload = route.request().postDataJSON();
+    const payload = rawPayload !== null && typeof rawPayload === "object" ? rawPayload : {};
+    const objects = Array.isArray(payload.objects) ? payload.objects : [];
+    const revision = Number.isInteger(payload.expectedRevision) ? Number(payload.expectedRevision) + 1 : 2;
+    void route.fulfill({
+      json: {
+        data: {
+          revision,
+          objects: objects.map((object, index) => ({
+            id: typeof object.id === "string" ? object.id : `visual-object-${String(index + 1).padStart(3, "0")}`,
+            configurationId: "cfg-perf-grand-hall",
+            assetDefinitionId: String(object.assetDefinitionId),
+            positionX: String(object.positionX),
+            positionY: String(object.positionY),
+            positionZ: String(object.positionZ),
+            rotationX: String(object.rotationX),
+            rotationY: String(object.rotationY),
+            rotationZ: String(object.rotationZ),
+            scale: String(object.scale),
+            sortOrder: Number.isInteger(object.sortOrder) ? object.sortOrder : index,
+            metadata: object.metadata ?? null,
+          })),
+        },
+      },
+    });
+  });
+
+  await page.route(`**/venues/${VENUE_ID}/spaces/${SPACE_ID}`, (route) => {
+    void route.fulfill({ json: { data: E2E_SPACE } });
+  });
+
+  await page.route(`**/venues/${VENUE_ID}/spaces`, (route) => {
+    void route.fulfill({ json: { data: [E2E_SPACE] } });
+  });
+
+  await page.route(`**/venues/${VENUE_ID}`, (route) => {
+    void route.fulfill({ json: { data: { ...E2E_VENUE, spaces: [E2E_SPACE] } } });
+  });
+
+  await page.route("**/venues", (route) => {
+    void route.fulfill({ json: { data: [E2E_VENUE] } });
+  });
+}
 
 /** Build a minimal self-contained .gdtf: an 8-channel fixture + an embedded glTF triangle. */
 async function buildGdtf() {
@@ -41,15 +217,24 @@ async function clickLens(page, name) {
   await page.locator("button[aria-pressed]", { hasText: new RegExp(`^${name}$`) }).first().click();
 }
 
+function rectsOverlap(a, b) {
+  if (a === null || b === null) return false;
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
 const browser = await chromium.launch({
   headless: true,
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
 });
 const report = { ok: false, steps: [], errors: [] };
 try {
-  const page = await browser.newPage({ viewport: { width: 1680, height: 1050 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({
+    viewport: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
+    deviceScaleFactor: DEVICE_SCALE_FACTOR,
+  });
   page.on("console", (m) => { if (m.type() === "error") report.errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => report.errors.push(`pageerror: ${String(e).slice(0, 200)}`));
+  await installPlannerApiMocks(page);
 
   await page.goto(PLAN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
   // The cockpit nav rail (lens buttons) appears once a layout loads. If the config
@@ -71,6 +256,145 @@ try {
   await page.waitForTimeout(4000); // let the 3D scene settle
   // The core product: the 3D venue + cockpit chrome.
   await page.screenshot({ path: join(OUT, "planner-3d.png") });
+  report.cockpitChrome = await page.evaluate(() => {
+    const snapshot = (selector) => {
+      const element = document.querySelector(selector);
+      if (element === null) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        left: Math.round(rect.left),
+        top: Math.round(rect.top),
+        right: Math.round(rect.right),
+        bottom: Math.round(rect.bottom),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    };
+    return {
+      viewport: {
+        left: 0,
+        top: 0,
+        right: document.documentElement.clientWidth,
+        bottom: document.documentElement.clientHeight,
+        width: document.documentElement.clientWidth,
+        height: document.documentElement.clientHeight,
+      },
+      onboarding: snapshot("[data-floating-widget-id='planner-onboarding']"),
+      topbar: snapshot("[data-testid='cockpit-topbar']"),
+      layerControls: snapshot("[data-floating-widget-id='planner-layer-controls']"),
+      commandDeck: snapshot("[data-testid='planner-command-deck']"),
+      bottomGraph: snapshot("[data-testid='cockpit-bottom']"),
+      leftToolbar: snapshot("[data-testid='planner-toolbar']"),
+      minimap: snapshot("[data-floating-widget-id='cockpit-minimap']"),
+      layoutIntelligence: snapshot("[data-floating-widget-id='planner-spatial-hud']"),
+      truthRail: snapshot("[data-testid='cockpit-truth-rail']"),
+    };
+  });
+  const onboarding = report.cockpitChrome.onboarding;
+  if (onboarding !== null) {
+    const viewport = report.cockpitChrome.viewport;
+    if (
+      onboarding.left < viewport.left
+      || onboarding.top < viewport.top
+      || onboarding.right > viewport.right
+      || onboarding.bottom > viewport.bottom
+    ) {
+      report.errors.push("planner onboarding is clipped by the viewport");
+    }
+    const blockedSurfaces = [
+      ["top bar", report.cockpitChrome.topbar],
+      ["visual layer controls", report.cockpitChrome.layerControls],
+      ["command deck", report.cockpitChrome.commandDeck],
+      ["event phase graph", report.cockpitChrome.bottomGraph],
+      ["toolbar", report.cockpitChrome.leftToolbar],
+      ["plan view", report.cockpitChrome.minimap],
+      ["layout intelligence", report.cockpitChrome.layoutIntelligence],
+      ["truth rail", report.cockpitChrome.truthRail],
+    ];
+    for (const [name, rect] of blockedSurfaces) {
+      if (rectsOverlap(onboarding, rect)) {
+        report.errors.push(`planner onboarding overlaps ${name}`);
+      }
+    }
+  }
+
+  // --- Floating tool widget: Laser Diagram must be movable/minimizable and never sit on cockpit chrome. ---
+  try {
+    await page.getByRole("button", { name: "Laser Diagram" }).click();
+    await page.getByTestId("markup-panel").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: join(OUT, "planner-laser-widget.png") });
+    report.markupChrome = await page.evaluate(() => {
+      const snapshot = (selector) => {
+        const element = document.querySelector(selector);
+        if (element === null) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+      };
+      return {
+        viewport: {
+          left: 0,
+          top: 0,
+          right: document.documentElement.clientWidth,
+          bottom: document.documentElement.clientHeight,
+          width: document.documentElement.clientWidth,
+          height: document.documentElement.clientHeight,
+        },
+        markup: snapshot("[data-floating-widget-id='planner-markup-panel']"),
+        topbar: snapshot("[data-testid='cockpit-topbar']"),
+        layerControls: snapshot("[data-floating-widget-id='planner-layer-controls']"),
+        commandDeck: snapshot("[data-testid='planner-command-deck']"),
+        toolbar: snapshot("[data-testid='planner-toolbar']"),
+        minimap: snapshot("[data-floating-widget-id='cockpit-minimap']"),
+        layoutIntelligence: snapshot("[data-floating-widget-id='planner-spatial-hud']"),
+        saveSend: snapshot("[data-floating-widget-id='save-send-panel']"),
+        truthRail: snapshot("[data-testid='cockpit-truth-rail']"),
+        truthPopover: snapshot("[data-testid='truth-mode-popover']"),
+        bottomGraph: snapshot("[data-testid='cockpit-bottom']"),
+      };
+    });
+    const markup = report.markupChrome.markup;
+    if (markup === null) {
+      report.errors.push("laser diagram widget did not render as a floating widget");
+    } else {
+      const viewport = report.markupChrome.viewport;
+      if (
+        markup.left < viewport.left
+        || markup.top < viewport.top
+        || markup.right > viewport.right
+        || markup.bottom > viewport.bottom
+      ) {
+        report.errors.push("laser diagram widget is clipped by the viewport");
+      }
+      const blockedSurfaces = [
+        ["top bar", report.markupChrome.topbar],
+        ["visual layer controls", report.markupChrome.layerControls],
+        ["command deck", report.markupChrome.commandDeck],
+        ["toolbar", report.markupChrome.toolbar],
+        ["plan view", report.markupChrome.minimap],
+        ["layout intelligence", report.markupChrome.layoutIntelligence],
+        ["save/send", report.markupChrome.saveSend],
+        ["truth rail", report.markupChrome.truthRail],
+        ["truth popover", report.markupChrome.truthPopover],
+        ["event phase graph", report.markupChrome.bottomGraph],
+      ];
+      for (const [name, rect] of blockedSurfaces) {
+        if (rectsOverlap(markup, rect)) {
+          report.errors.push(`laser diagram widget overlaps ${name}`);
+        }
+      }
+    }
+    report.steps.push("laser widget captured");
+  } catch (e) {
+    report.steps.push(`SKIP laser widget: ${String(e).slice(0, 120)}`);
+  }
 
   // --- Slices 2/3/4/7: import a .gdtf, preview its 3D model, add it to the rig ---
   await clickLens(page, "Lighting");
@@ -152,6 +476,56 @@ try {
     report.steps.push(`SKIP roombystyle: ${String(e).slice(0, 90)}`);
   }
 
+  // --- Feature: one-click Theatre layout (blank floor + count 150 from above) ---
+  try {
+    await page.getByTestId("guests-build-theatre").click();
+    await page.waitForTimeout(800);
+    await clickLens(page, "Design");
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: join(OUT, "planner-theatre-150.png") });
+    report.theatreChrome = await page.evaluate(() => {
+      const snapshot = (selector) => {
+        const element = document.querySelector(selector);
+        if (element === null) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+      };
+      return {
+        saveSend: snapshot("[data-floating-widget-id='save-send-panel']"),
+        layoutIntelligence: snapshot("[data-floating-widget-id='planner-spatial-hud']"),
+        truthMode: snapshot("[data-testid='truth-mode-indicator']"),
+        bottomGraph: snapshot("[data-testid='cockpit-bottom']"),
+      };
+    });
+    const saveSend = report.theatreChrome.saveSend;
+    if (saveSend !== null) {
+      const blockedSurfaces = [
+        ["layout intelligence", report.theatreChrome.layoutIntelligence],
+        ["truth mode", report.theatreChrome.truthMode],
+        ["event phase graph", report.theatreChrome.bottomGraph],
+      ];
+      for (const [name, rect] of blockedSurfaces) {
+        if (rectsOverlap(saveSend, rect)) {
+          report.errors.push(`save/send widget overlaps ${name}`);
+        }
+      }
+    }
+    report.theatrePlaced = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="planner-command-deck"]');
+      return el?.textContent?.match(/(\d[\d,]*)\s+placed/)?.[1] ?? null;
+    });
+    report.steps.push("theatre build captured");
+  } catch (e) {
+    report.steps.push(`SKIP theatre: ${String(e).slice(0, 90)}`);
+  }
+
   // --- Feature: guest-aware Auto-fill (guest count is 150 from the step above) ---
   try {
     await clickLens(page, "Design");
@@ -187,7 +561,7 @@ try {
     }
   }
 
-  report.ok = true;
+  report.ok = report.errors.length === 0;
 } catch (e) {
   report.fatal = String(e).slice(0, 400);
 } finally {

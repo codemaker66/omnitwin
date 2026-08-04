@@ -47,6 +47,11 @@
   border-bottom-color: transparent;
 }
 
+.vv-floating-widget.is-auto-compact .vv-floating-widget__bar {
+  background:
+    linear-gradient(135deg, rgba(19, 32, 34, 0.72), rgba(255, 255, 255, 0.025));
+}
+
 .vv-floating-widget__handle,
 .vv-floating-widget__icon-button {
   min-height: 28px;

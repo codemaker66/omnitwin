@@ -102,28 +102,13 @@
   font-weight: 600;
   line-height: 1.35;
 }
-.cockpit-truth__chip {
+/* CARD A4: the row pill is the canonical EvidenceChip (House status hues);
+   this slot class only places it in the row grid. */
+.cockpit-truth__chip-slot {
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   white-space: nowrap;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-.cockpit-truth__chip--neutral {
-  border: 1px solid rgba(116, 208, 140, 0.4);
-  background: rgba(116, 208, 140, 0.12);
-  color: #a7e3b6;
-}
-.cockpit-truth__chip--warning {
-  border: 1px solid rgba(230, 196, 99, 0.42);
-  background: rgba(230, 196, 99, 0.12);
-  color: #f1ce78;
 }
 
 .cockpit-truth__counts {

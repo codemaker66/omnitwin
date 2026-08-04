@@ -22,13 +22,13 @@ describe("buildTopBarModel", () => {
     expect(buildTopBarModel({
       spaceName: "Grand Hall", venueName: "Trades Hall Glasgow",
       isPublicPreview: false, objectCount: 0, userName: null, save: baseSave,
-      runtimeAssetStatus: "Procedural layer / no signed capture",
+      runtimeAssetStatus: "Captured visual layer not yet available — planning on reviewed geometry",
     }).venueLabel).toBe("Trades Hall Glasgow / Grand Hall");
 
     expect(buildTopBarModel({
       spaceName: "Grand Hall", venueName: null,
       isPublicPreview: false, objectCount: 0, userName: null, save: baseSave,
-      runtimeAssetStatus: "Procedural layer / no signed capture",
+      runtimeAssetStatus: "Captured visual layer not yet available — planning on reviewed geometry",
     }).venueLabel).toBe("Grand Hall");
   });
 
@@ -51,7 +51,7 @@ describe("buildTopBarModel", () => {
   it("pluralises the placed-item summary and falls back when no space is loaded", () => {
     const model = buildTopBarModel({
       spaceName: null, isPublicPreview: false, objectCount: 1200, userName: null,
-      save: baseSave, runtimeAssetStatus: "Procedural layer / no signed capture",
+      save: baseSave, runtimeAssetStatus: "Captured visual layer not yet available — planning on reviewed geometry",
     });
     expect(model.summaryLabel).toBe("1,200 placed items");
     expect(model.venueLabel).toBe("Opening layout");

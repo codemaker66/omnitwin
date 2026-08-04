@@ -221,6 +221,17 @@ function signedRuntimeQaRecord(
           : [],
       };
     }
+    if (publicExposureDecision === "approved_public" && check.status !== "passed") {
+      return {
+        ...check,
+        status: "passed",
+        summary: "Required public QA check passed with reviewed evidence.",
+        evidenceRefs: [{
+          label: "Public approval evidence",
+          ref: `docs/operations/reception-room-public-review.md#${check.checkKey}`,
+        }],
+      };
+    }
     return check;
   });
 

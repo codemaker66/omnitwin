@@ -45,9 +45,11 @@ export interface FloatingWidgetFrameProps {
   readonly bodyClassName?: string;
   readonly compactLabel?: string;
   readonly strategy?: FloatingWidgetStrategy;
+  readonly testId?: string;
   readonly zIndex?: number;
   readonly defaultMinimized?: boolean;
   readonly storageScope?: string;
+  readonly autoCompact?: boolean;
 }
 
 interface FloatingWidgetPosition {
@@ -88,8 +90,8 @@ const EDGE_MARGIN_PX = 8;
 const KEYBOARD_NUDGE_PX = 8;
 const KEYBOARD_LARGE_NUDGE_PX = 24;
 const DEFAULT_AVOID_PADDING_PX = 10;
-const MAX_AVOIDANCE_PASSES = 8;
 const OVERLAP_SCORE_WEIGHT = 1_000_000;
+const POSITION_EPSILON_PX = 1;
 
 function storageKey(id: string): string {
   return `venviewer:floating-widget:${id}:v2`;
@@ -136,16 +138,49 @@ function viewportSurface(): SurfaceFrame {
   if (typeof window === "undefined") {
     return { left: 0, top: 0, width: 1440, height: 900 };
   }
+  const documentElement = window.document.documentElement;
+  const visualViewport = window.visualViewport;
+  const width = Math.min(
+    window.innerWidth,
+    documentElement.clientWidth > 0 ? documentElement.clientWidth : window.innerWidth,
+    visualViewport?.width ?? window.innerWidth,
+  );
+  const height = Math.min(
+    window.innerHeight,
+    documentElement.clientHeight > 0 ? documentElement.clientHeight : window.innerHeight,
+    visualViewport?.height ?? window.innerHeight,
+  );
   return {
-    left: 0,
-    top: 0,
-    width: Math.max(320, window.innerWidth),
-    height: Math.max(240, window.innerHeight),
+    left: visualViewport?.offsetLeft ?? 0,
+    top: visualViewport?.offsetTop ?? 0,
+    width: Math.max(320, width),
+    height: Math.max(240, height),
   };
 }
 
+function transformedFixedContainingBlock(element: HTMLElement): SurfaceFrame | null {
+  const ownerWindow = element.ownerDocument.defaultView;
+  let ancestor = element.parentElement;
+  while (ancestor !== null) {
+    const style = ownerWindow?.getComputedStyle(ancestor);
+    if (style !== undefined && style.transform !== "" && style.transform !== "none") {
+      const rect = ancestor.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return null;
+}
+
 function surfaceFrameForElement(element: HTMLElement, strategy: FloatingWidgetStrategy): SurfaceFrame {
-  if (strategy === "fixed") return viewportSurface();
+  if (strategy === "fixed") return transformedFixedContainingBlock(element) ?? viewportSurface();
   const parent = element.offsetParent instanceof HTMLElement ? element.offsetParent : element.parentElement;
   if (parent === null) return viewportSurface();
   const rect = parent.getBoundingClientRect();
@@ -234,25 +269,41 @@ function avoidOverlaps(
   widget: SurfaceSize,
   avoidRects: readonly AvoidRect[],
 ): FloatingWidgetPosition {
-  let current = clampToSurface(desired, surface, widget);
+  const clampedDesired = clampToSurface(desired, surface, widget);
+  if (totalOverlapArea(clampedDesired, widget, avoidRects) === 0) return clampedDesired;
 
-  for (let pass = 0; pass < MAX_AVOIDANCE_PASSES; pass += 1) {
-    const blockingRect = avoidRects.find((rect) => overlapArea(current, widget, rect) > 0);
-    if (blockingRect === undefined) return current;
+  const maxLeft = Math.max(EDGE_MARGIN_PX, surface.width - widget.width - EDGE_MARGIN_PX);
+  const maxTop = Math.max(EDGE_MARGIN_PX, surface.height - widget.height - EDGE_MARGIN_PX);
+  const xCoordinates = new Set<number>([EDGE_MARGIN_PX, maxLeft, clampedDesired.left]);
+  const yCoordinates = new Set<number>([EDGE_MARGIN_PX, maxTop, clampedDesired.top]);
 
-    const candidates = [
-      { left: blockingRect.left - widget.width - EDGE_MARGIN_PX, top: current.top },
-      { left: blockingRect.right + EDGE_MARGIN_PX, top: current.top },
-      { left: current.left, top: blockingRect.top - widget.height - EDGE_MARGIN_PX },
-      { left: current.left, top: blockingRect.bottom + EDGE_MARGIN_PX },
-    ].map((candidate) => clampToSurface(candidate, surface, widget));
-
-    const next = bestPositionCandidate(desired, candidates, widget, avoidRects);
-    if (next.left === current.left && next.top === current.top) return current;
-    current = next;
+  for (const rect of avoidRects) {
+    [
+      rect.left - widget.width - EDGE_MARGIN_PX,
+      rect.right + EDGE_MARGIN_PX,
+      rect.left,
+      rect.right - widget.width,
+    ].forEach((value) => {
+      xCoordinates.add(clampToSurface({ left: value, top: clampedDesired.top }, surface, widget).left);
+    });
+    [
+      rect.top - widget.height - EDGE_MARGIN_PX,
+      rect.bottom + EDGE_MARGIN_PX,
+      rect.top,
+      rect.bottom - widget.height,
+    ].forEach((value) => {
+      yCoordinates.add(clampToSurface({ left: clampedDesired.left, top: value }, surface, widget).top);
+    });
   }
 
-  return current;
+  const candidates: FloatingWidgetPosition[] = [];
+  xCoordinates.forEach((left) => {
+    yCoordinates.forEach((top) => {
+      candidates.push(clampToSurface({ left, top }, surface, widget));
+    });
+  });
+
+  return bestPositionCandidate(clampedDesired, candidates, widget, avoidRects);
 }
 
 function clampPosition(
@@ -340,6 +391,11 @@ function positionStyle(position: FloatingWidgetPosition, zIndex: number | undefi
   };
 }
 
+function positionsMatch(a: FloatingWidgetPosition, b: FloatingWidgetPosition): boolean {
+  return Math.abs(a.left - b.left) < POSITION_EPSILON_PX
+    && Math.abs(a.top - b.top) < POSITION_EPSILON_PX;
+}
+
 export function FloatingWidgetFrame({
   id,
   title,
@@ -351,9 +407,11 @@ export function FloatingWidgetFrame({
   bodyClassName,
   compactLabel,
   strategy = "absolute",
+  testId,
   zIndex,
   defaultMinimized = false,
   storageScope,
+  autoCompact = false,
 }: FloatingWidgetFrameProps): React.ReactElement {
   const bodyId = useId();
   const rootRef = useRef<HTMLElement | null>(null);
@@ -370,6 +428,7 @@ export function FloatingWidgetFrame({
   const positionRef = useRef<FloatingWidgetPosition>(position);
   const [minimized, setMinimized] = useState(initialStoredState?.minimized ?? defaultMinimized);
   const [dragging, setDragging] = useState(false);
+  const visuallyMinimized = minimized || autoCompact;
   const resolvedPlacementKey = placementKey(defaultPlacement);
   const stableDefaultPlacement = useMemo(() => defaultPlacement, [resolvedPlacementKey]);
 
@@ -395,8 +454,9 @@ export function FloatingWidgetFrame({
   const resetPosition = useCallback((): void => {
     const root = rootRef.current;
     if (root === null) return;
-    setCommittedPosition(resolvePlacement(root, stableDefaultPlacement, strategy));
-  }, [setCommittedPosition, stableDefaultPlacement, strategy]);
+    const avoidRects = avoidRectsForElement(root, strategy, avoidSelectors, avoidPaddingPx);
+    setCommittedPosition(resolvePlacement(root, stableDefaultPlacement, strategy, avoidRects));
+  }, [avoidPaddingPx, avoidSelectors, setCommittedPosition, stableDefaultPlacement, strategy]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -432,6 +492,40 @@ export function FloatingWidgetFrame({
     window.addEventListener("resize", onResize);
     return () => { window.removeEventListener("resize", onResize); };
   }, [setCommittedPosition]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.ResizeObserver === "undefined") return undefined;
+    const root = rootRef.current;
+    if (root === null) return undefined;
+
+    let frameHandle: number | null = null;
+    const reclampForCurrentSize = (): void => {
+      frameHandle = null;
+      const currentRoot = rootRef.current;
+      if (currentRoot === null) return;
+      const next = clampPosition(
+        positionRef.current,
+        surfaceForElement(currentRoot, strategy),
+        widgetSize(currentRoot),
+        avoidRectsForElement(currentRoot, strategy, avoidSelectors, avoidPaddingPx),
+      );
+      if (positionsMatch(next, positionRef.current)) return;
+      positionRef.current = next;
+      setPosition(next);
+      persistState(next, minimized);
+    };
+
+    const observer = new window.ResizeObserver(() => {
+      if (frameHandle !== null) window.cancelAnimationFrame(frameHandle);
+      frameHandle = window.requestAnimationFrame(reclampForCurrentSize);
+    });
+    observer.observe(root);
+
+    return () => {
+      observer.disconnect();
+      if (frameHandle !== null) window.cancelAnimationFrame(frameHandle);
+    };
+  }, [avoidPaddingPx, avoidSelectors, minimized, persistState, strategy]);
 
   const moveBy = useCallback((deltaX: number, deltaY: number): void => {
     setCommittedPosition({
@@ -516,7 +610,8 @@ export function FloatingWidgetFrame({
   const rootClassName = [
     "vv-floating-widget",
     `vv-floating-widget--${strategy}`,
-    minimized ? "is-minimized" : "",
+    visuallyMinimized ? "is-minimized" : "",
+    autoCompact && !minimized ? "is-auto-compact" : "",
     dragging ? "is-dragging" : "",
     className ?? "",
   ].filter(Boolean).join(" ");
@@ -528,7 +623,9 @@ export function FloatingWidgetFrame({
       style={positionStyle(position, zIndex)}
       aria-label={title}
       data-floating-widget-id={id}
+      data-testid={testId}
       data-minimized={minimized ? "true" : "false"}
+      data-auto-compact={autoCompact ? "true" : "false"}
     >
       <div className="vv-floating-widget__bar">
         <button
@@ -545,7 +642,7 @@ export function FloatingWidgetFrame({
           <GripHorizontal size={14} aria-hidden="true" />
           <span>{title}</span>
         </button>
-        {minimized && compactLabel !== undefined ? (
+        {visuallyMinimized && compactLabel !== undefined ? (
           <span className="vv-floating-widget__compact-label">{compactLabel}</span>
         ) : null}
         <button
@@ -562,7 +659,7 @@ export function FloatingWidgetFrame({
           onClick={() => { setMinimized((value) => !value); }}
           aria-label={`${minimized ? "Expand" : "Minimize"} ${title}`}
           aria-controls={bodyId}
-          aria-expanded={!minimized}
+          aria-expanded={!visuallyMinimized}
         >
           {minimized ? <Maximize2 size={13} aria-hidden="true" /> : <Minimize2 size={13} aria-hidden="true" />}
         </button>
@@ -570,7 +667,7 @@ export function FloatingWidgetFrame({
       <div
         id={bodyId}
         className={["vv-floating-widget__body", bodyClassName ?? ""].filter(Boolean).join(" ")}
-        hidden={minimized}
+        hidden={visuallyMinimized}
       >
         {children}
       </div>

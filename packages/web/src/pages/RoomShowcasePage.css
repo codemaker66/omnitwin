@@ -3,7 +3,7 @@
   background:
     linear-gradient(135deg, rgba(9, 12, 16, 0.96), rgba(28, 25, 20, 0.9)),
     #101317;
-  color: #f6f1e8;
+  color: var(--house-text-1, #f6f1e8);
 }
 
 .room-showcase-hero {
@@ -419,7 +419,7 @@
   border-radius: 999px;
   padding: 0 12px;
   background: rgba(255, 255, 255, 0.06);
-  color: #f6f1e8;
+  color: var(--house-text-1, #f6f1e8);
   font: inherit;
   font-size: 0.9rem;
   font-weight: 750;
@@ -470,7 +470,7 @@
   border: 1px solid rgba(246, 241, 232, 0.16);
   border-radius: 999px;
   padding: 8px 12px;
-  color: #f6f1e8;
+  color: var(--house-text-1, #f6f1e8);
   text-decoration: none;
   text-transform: capitalize;
 }

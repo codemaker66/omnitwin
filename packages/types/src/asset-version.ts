@@ -14,13 +14,32 @@ import {
 //
 // These schemas describe storage/provenance records only. They do not make
 // public product claims. A runtime package is loadable only when the package
-// is internally/published loadable and its primary visual AssetVersion is
-// marked `usable`; the browser still validates the resolved URL before Spark.
+// is internally/published loadable and every explicitly declared visual
+// AssetVersion is marked `usable`. Legacy manifests declare only the primary;
+// the browser still validates the complete resolved URL set before Spark.
 // ---------------------------------------------------------------------------
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T/;
+const MAX_RUNTIME_VISUAL_ASSET_COUNT = 1_024;
+
+export const RUNTIME_PACKAGE_REVISION_IDENTITY_KINDS = [
+  "legacy",
+  "content_sha256",
+] as const;
+export const RuntimePackageRevisionIdentityKindSchema = z.enum(
+  RUNTIME_PACKAGE_REVISION_IDENTITY_KINDS,
+);
+export type RuntimePackageRevisionIdentityKind = z.infer<
+  typeof RuntimePackageRevisionIdentityKindSchema
+>;
+
+export const RuntimePackageContentDigestSchema = z.string().regex(
+  SHA256_HEX,
+  "Runtime package content digest must be a lowercase SHA-256 hex string.",
+);
+export type RuntimePackageContentDigest = z.infer<typeof RuntimePackageContentDigestSchema>;
 
 export const RuntimeSlugSchema = z.string().trim().min(1).max(100).regex(
   SLUG_PATTERN,
@@ -448,6 +467,35 @@ const FileNameSchema = z.string().trim().min(1).max(255).superRefine((fileName, 
   }
 });
 
+export const RuntimePackageCompositionBasisSchema = z.object({
+  decisionId: RuntimeManifestKeySchema,
+  decisionRef: z.string().trim().min(1).max(500),
+  hierarchySha256: RuntimePackageContentDigestSchema,
+  format: z.enum(["sog", "spz"]),
+  level: z.enum(["coarse", "medium", "fine", "custom"]),
+  lodSelectionPolicy: RuntimeManifestKeySchema,
+  expectedGaussianCount: z.number().int().positive(),
+}).strict();
+export type RuntimePackageCompositionBasis = z.infer<
+  typeof RuntimePackageCompositionBasisSchema
+>;
+
+/**
+ * Immutable identity for one visual member. The storage key itself remains
+ * server-only; its digest binds the object location into package content.
+ */
+export const RuntimePackageVisualAssetReceiptSchema = z.object({
+  assetVersionId: z.string().uuid(),
+  fileName: FileNameSchema,
+  fileExt: z.enum([".sog", ".spz"]),
+  sha256: RuntimePackageContentDigestSchema,
+  sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  storageKeySha256: RuntimePackageContentDigestSchema,
+}).strict();
+export type RuntimePackageVisualAssetReceipt = z.infer<
+  typeof RuntimePackageVisualAssetReceiptSchema
+>;
+
 export const RuntimePackageManifestJsonSchema = z.object({
   schemaVersion: z.literal("venviewer.runtime-package.v1"),
   venueSlug: RuntimeSlugSchema,
@@ -455,14 +503,79 @@ export const RuntimePackageManifestJsonSchema = z.object({
   packageType: z.literal("room-runtime"),
   assets: z.object({
     primaryVisualAssetVersionId: z.string().uuid().nullable(),
+    visualAssetVersionIds: z.array(z.string().uuid()).min(1).max(MAX_RUNTIME_VISUAL_ASSET_COUNT).optional(),
+    visualAssetReceipts: z.array(RuntimePackageVisualAssetReceiptSchema)
+      .min(1)
+      .max(MAX_RUNTIME_VISUAL_ASSET_COUNT)
+      .optional(),
     semanticMeshAssetVersionId: z.string().uuid().nullable(),
     collisionAssetVersionId: z.string().uuid().nullable(),
     pointCloudAssetVersionId: z.string().uuid().nullable(),
   }).strict(),
+  compositionBasis: RuntimePackageCompositionBasisSchema.optional(),
   generatedAt: z.string().regex(ISO_DATE_TIME, "generatedAt must be an ISO datetime.").optional(),
   notes: z.string().trim().max(2000).optional(),
 }).strict().superRefine((manifest, ctx) => {
   validateSupportedTradesHallRoom(manifest.venueSlug, manifest.roomSlug, ctx, ["roomSlug"]);
+
+  const visualAssetVersionIds = manifest.assets.visualAssetVersionIds;
+  const visualAssetReceipts = manifest.assets.visualAssetReceipts;
+  if (visualAssetVersionIds === undefined) {
+    if (visualAssetReceipts !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assets", "visualAssetReceipts"],
+        message: "Visual asset receipts require explicit ordered visual asset version ids.",
+      });
+    }
+    return;
+  }
+
+  if (new Set(visualAssetVersionIds).size !== visualAssetVersionIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["assets", "visualAssetVersionIds"],
+      message: "Visual asset version ids must not contain duplicates.",
+    });
+  }
+
+  const primaryVisualAssetVersionId = manifest.assets.primaryVisualAssetVersionId;
+  if (primaryVisualAssetVersionId === null || !visualAssetVersionIds.includes(primaryVisualAssetVersionId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["assets", "visualAssetVersionIds"],
+      message: "Visual asset version ids must include the non-null primary visual asset version id.",
+    });
+  }
+
+  if (visualAssetReceipts === undefined) return;
+  if (visualAssetReceipts.length !== visualAssetVersionIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["assets", "visualAssetReceipts"],
+      message: "Visual asset receipts must exactly match the ordered visual asset membership.",
+    });
+    return;
+  }
+  if (
+    new Set(visualAssetReceipts.map((receipt) => receipt.storageKeySha256)).size !==
+    visualAssetReceipts.length
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["assets", "visualAssetReceipts"],
+      message: "Visual asset receipts must not reuse one storage identity.",
+    });
+  }
+  for (let index = 0; index < visualAssetVersionIds.length; index += 1) {
+    if (visualAssetReceipts[index]?.assetVersionId !== visualAssetVersionIds[index]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assets", "visualAssetReceipts", index, "assetVersionId"],
+        message: "Visual asset receipts must preserve exact manifest order and identity.",
+      });
+    }
+  }
 });
 export type RuntimePackageManifestJson = z.infer<typeof RuntimePackageManifestJsonSchema>;
 
@@ -551,6 +664,138 @@ export const RuntimePackageSchema = z.object({
   visualAssetUrls: z.array(z.string().url()),
 });
 export type RuntimePackage = z.infer<typeof RuntimePackageSchema>;
+
+/**
+ * Opaque, review-safe identity for a server-approved Reception runtime
+ * composition. Exact asset IDs, byte hashes, storage identities and hierarchy
+ * receipts stay on the server; public clients receive only this attestation and
+ * the URLs needed to render the already-approved composition.
+ */
+export const ReviewedRuntimeProfileIdSchema = z.enum([
+  "quality-sog-fine-v1",
+  "mobile-spz-fine-v1",
+]);
+export type ReviewedRuntimeProfileId = z.infer<typeof ReviewedRuntimeProfileIdSchema>;
+
+export const ApprovedRoomRuntimeProfileSchema = z.object({
+  scope: z.literal("approved_room_runtime_profile"),
+  venueSlug: RuntimeSlugSchema,
+  roomSlug: RuntimeSlugSchema,
+  profileId: ReviewedRuntimeProfileIdSchema,
+  visualAssetUrls: z.array(z.string().url())
+    .min(1)
+    .max(MAX_RUNTIME_VISUAL_ASSET_COUNT),
+}).strict().superRefine((profile, ctx) => {
+  if (new Set(profile.visualAssetUrls).size !== profile.visualAssetUrls.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["visualAssetUrls"],
+      message: "Approved runtime profile URLs must be unique.",
+    });
+  }
+});
+export type ApprovedRoomRuntimeProfile = z.infer<typeof ApprovedRoomRuntimeProfileSchema>;
+
+export const RuntimePackagePreviewVisualAssetSchema = z.object({
+  assetVersionId: z.string().uuid(),
+  fileName: FileNameSchema,
+  fileExt: z.enum([".sog", ".spz"]),
+  sha256: RuntimePackageContentDigestSchema,
+  sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+export type RuntimePackagePreviewVisualAsset = z.infer<
+  typeof RuntimePackagePreviewVisualAssetSchema
+>;
+
+/**
+ * One administrator-only view of an exact immutable runtime package. Asset
+ * bytes remain behind authenticated API streams; this metadata contains no
+ * object-store key, public fallback, or bearer-capability URL.
+ */
+export const RuntimePackagePreviewSchema = z.object({
+  scope: z.literal("exact_private_runtime_package_preview"),
+  runtimePackageId: z.string().uuid(),
+  venueSlug: RuntimeSlugSchema,
+  roomSlug: RuntimeSlugSchema,
+  revision: z.number().int().positive(),
+  identityKind: z.literal("content_sha256"),
+  contentDigest: RuntimePackageContentDigestSchema,
+  manifestJson: RuntimePackageManifestJsonSchema,
+  evidenceStatus: AssetEvidenceStatusSchema,
+  runtimeStatus: z.enum(["internal_ready", "published"]),
+  reviewedProfileId: ReviewedRuntimeProfileIdSchema.nullable(),
+  issuedAt: z.string().datetime(),
+  visualAssets: z.array(RuntimePackagePreviewVisualAssetSchema).min(1).max(MAX_RUNTIME_VISUAL_ASSET_COUNT),
+}).strict().superRefine((preview, ctx) => {
+  if (preview.evidenceStatus === "rejected") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["evidenceStatus"],
+      message: "Rejected evidence cannot be opened as a private runtime preview.",
+    });
+  }
+  if (
+    preview.manifestJson.venueSlug !== preview.venueSlug ||
+    preview.manifestJson.roomSlug !== preview.roomSlug
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["manifestJson"],
+      message: "Preview package and manifest venue/room identity must match.",
+    });
+  }
+  const declaredIds = preview.manifestJson.assets.visualAssetVersionIds ??
+    (preview.manifestJson.assets.primaryVisualAssetVersionId === null
+      ? []
+      : [preview.manifestJson.assets.primaryVisualAssetVersionId]);
+  if (declaredIds.length !== preview.visualAssets.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["visualAssets"],
+      message: "Preview visual assets must exactly match the package manifest membership.",
+    });
+    return;
+  }
+  const receipts = preview.manifestJson.assets.visualAssetReceipts;
+  if (receipts === undefined || receipts.length !== preview.visualAssets.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["manifestJson", "assets", "visualAssetReceipts"],
+      message: "Exact private previews require immutable receipts for every visual asset.",
+    });
+    return;
+  }
+  for (let index = 0; index < declaredIds.length; index += 1) {
+    const asset = preview.visualAssets[index];
+    const receipt = receipts[index];
+    if (
+      asset === undefined ||
+      asset.assetVersionId !== declaredIds[index]
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["visualAssets", index],
+        message: "Preview visual assets must preserve exact manifest order and identity.",
+      });
+    }
+    if (
+      asset === undefined ||
+      receipt === undefined ||
+      receipt.assetVersionId !== asset.assetVersionId ||
+      receipt.fileName !== asset.fileName ||
+      receipt.fileExt !== asset.fileExt ||
+      receipt.sha256 !== asset.sha256 ||
+      receipt.sizeBytes !== asset.sizeBytes
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["visualAssets", index],
+        message: "Preview visual asset metadata must match its immutable package receipt.",
+      });
+    }
+  }
+});
+export type RuntimePackagePreview = z.infer<typeof RuntimePackagePreviewSchema>;
 
 export const RuntimeTransformArtifactSchema = z.object({
   id: z.string(),
@@ -1035,6 +1280,30 @@ export const RegisterRuntimePackageInputSchema = z.object({
   }
 });
 export type RegisterRuntimePackageInput = z.infer<typeof RegisterRuntimePackageInputSchema>;
+
+export const CreateRuntimePackageRevisionInputSchema = z.object({
+  requestedRevision: z.number().int().positive().optional(),
+  package: RegisterRuntimePackageInputSchema,
+}).strict();
+export type CreateRuntimePackageRevisionInput = z.infer<
+  typeof CreateRuntimePackageRevisionInputSchema
+>;
+
+export const RuntimePackageRevisionReceiptSchema = z.object({
+  packageId: z.string().uuid(),
+  revision: z.number().int().positive(),
+  contentDigest: RuntimePackageContentDigestSchema,
+  created: z.boolean(),
+}).strict();
+export type RuntimePackageRevisionReceipt = z.infer<typeof RuntimePackageRevisionReceiptSchema>;
+
+export const RuntimePackageRevisionCreateResponseSchema = z.object({
+  data: RuntimePackageSchema,
+  receipt: RuntimePackageRevisionReceiptSchema,
+}).strict();
+export type RuntimePackageRevisionCreateResponse = z.infer<
+  typeof RuntimePackageRevisionCreateResponseSchema
+>;
 
 export const LatestRuntimePackageQuerySchema = z.object({
   venue: RuntimeSlugSchema,

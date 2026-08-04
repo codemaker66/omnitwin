@@ -3,6 +3,7 @@ import {
   TURN_FLOOR_BOUNDS,
   YOUR_TABLE_DEFAULT,
   clampToFloorBounds,
+  hasYourTable,
   loadYourTable,
   saveYourTable,
   turnWeight,
@@ -63,6 +64,15 @@ describe("clampToFloorBounds — the table stays on observed floor", () => {
     expect(clampToFloorBounds(YOUR_TABLE_DEFAULT.x, YOUR_TABLE_DEFAULT.z)).toEqual(
       YOUR_TABLE_DEFAULT,
     );
+  });
+});
+
+describe("engagement — the adaptive threshold reads ownership", () => {
+  it("is false for an untouched room and true once a table is saved", () => {
+    expect(hasYourTable()).toBe(false);
+    saveYourTable({ x: -2, z: 8 });
+    expect(hasYourTable()).toBe(true);
+    expect(hasYourTable("grand-hall")).toBe(false);
   });
 });
 

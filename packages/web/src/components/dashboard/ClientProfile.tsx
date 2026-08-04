@@ -17,7 +17,8 @@ interface ClientProfileProps {
 
 const cardStyle: React.CSSProperties = {
   background: "#fff", borderRadius: 8, padding: 12, border: "1px solid #e5e7eb",
-  fontSize: 13,
+  fontSize: 13, width: "100%", boxSizing: "border-box", textAlign: "left", color: "inherit",
+  fontFamily: "inherit",
 };
 
 export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientProfileProps): React.ReactElement {
@@ -124,14 +125,14 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
           <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Enquiries</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {enquiries.map((e) => (
-              <div key={e.id} style={{ ...cardStyle, cursor: "pointer" }} onClick={() => { onViewEnquiry(e.id); }}>
+              <button key={e.id} type="button" style={{ ...cardStyle, cursor: "pointer" }} onClick={() => { onViewEnquiry(e.id); }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <StatusBadge status={e.state} />
                   {e.eventType !== null && <span>{e.eventType}</span>}
                   {e.preferredDate !== null && <span style={{ color: "#999" }}>{e.preferredDate}</span>}
                 </div>
                 <div style={{ color: "#999", marginTop: 4 }}>{e.spaceName}</div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

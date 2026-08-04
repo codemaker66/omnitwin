@@ -206,6 +206,27 @@ describe("error-normalizer — onServerError side channel", () => {
       await server.close();
     }
   });
+
+  it("writes every 5xx to the request log even with no callback (T-518 silent-500 regression)", async () => {
+    const server = await buildMinimal();
+    // With logger:false Fastify installs a shared no-op logger; spying on its
+    // error method observes exactly the request.log.error the fix added.
+    const logSpy = vi.spyOn(server.log, "error");
+    try {
+      await server.inject({ method: "GET", url: "/throw/plain-500" });
+      expect(
+        logSpy.mock.calls.some((call) => call.includes("request errored")),
+      ).toBe(true);
+      logSpy.mockClear();
+      await server.inject({ method: "GET", url: "/throw/envelope-401" });
+      expect(
+        logSpy.mock.calls.some((call) => call.includes("request errored")),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+      await server.close();
+    }
+  });
 });
 
 describe("error-normalizer — top-level key ordering", () => {

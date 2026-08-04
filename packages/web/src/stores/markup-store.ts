@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { z } from "zod";
+import { logPlannerAction } from "./planner-action-log.js";
 
 export const MARKUP_COLOR_VALUES = ["gold", "ivory", "ruby", "cyan"] as const;
 export type MarkupColor = typeof MARKUP_COLOR_VALUES[number];
@@ -163,10 +164,20 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
       set({ draftStroke: null });
       return;
     }
+    const appended = [...state.strokes, draft];
+    // At the cap the oldest stroke silently falls off — the action records
+    // it so the draw's inverse can truthfully restore what the draw cost.
+    const evicted = appended.length > MAX_STROKES ? (appended[0] ?? null) : null;
     set({
-      strokes: [...state.strokes, draft].slice(-MAX_STROKES),
+      strokes: appended.slice(-MAX_STROKES),
       draftStroke: null,
       nextStrokeIndex: state.nextStrokeIndex + 1,
+    });
+    logPlannerAction({
+      intent: "markup.draw",
+      tool: "markup",
+      payload: { stroke: draft, evicted },
+      inverse: { strokeId: draft.id, restore: evicted },
     });
   },
 
@@ -177,14 +188,39 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
   undoStroke: () => {
     const state = get();
     if (state.draftStroke !== null) {
+      // Cancelling an open draft mutates nothing persisted — no action.
       set({ draftStroke: null });
       return;
     }
+    const removed = state.strokes[state.strokes.length - 1];
+    // set() runs unconditionally (the pre-slice-2 behaviour, and the
+    // pattern every other guard in this slice follows) — only the LOG is
+    // gated on there being something to remove.
     set({ strokes: state.strokes.slice(0, -1) });
+    if (removed === undefined) return;
+    // Markup's local undo IS a mutation of the stroke list (T-447 carve-out:
+    // it never joins the global timeline), so it logs as an erase.
+    logPlannerAction({
+      intent: "markup.erase",
+      tool: "markup",
+      payload: { strokeId: removed.id, via: "stroke-undo" },
+      inverse: { stroke: removed },
+    });
   },
 
   clearStrokes: () => {
+    const state = get();
+    if (state.strokes.length === 0) {
+      set({ strokes: [], draftStroke: null });
+      return;
+    }
     set({ strokes: [], draftStroke: null });
+    logPlannerAction({
+      intent: "markup.clear",
+      tool: "markup",
+      payload: { count: state.strokes.length },
+      inverse: { strokes: state.strokes },
+    });
   },
 
   loadStrokes: (strokes) => {

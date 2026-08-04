@@ -11,6 +11,7 @@ import { useGuidelineStore } from "../stores/guideline-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
 import { sampleTransition } from "../lib/camera-animation.js";
 import { sampleCameraTour } from "../lib/camera-tour.js";
 import {
@@ -328,11 +329,36 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   // Damping decay — after an OrbitControls interaction (orbit, pan),
   // keep rendering frames so damping can interpolate smoothly.
   const dampingFrames = useRef(0);
+  const cameraInteractionClearTimer = useRef<number | null>(null);
+
+  const clearCameraInteractionTimer = useCallback((): void => {
+    if (cameraInteractionClearTimer.current === null) return;
+    window.clearTimeout(cameraInteractionClearTimer.current);
+    cameraInteractionClearTimer.current = null;
+  }, []);
+
+  const markCameraInteractionActive = useCallback((): void => {
+    clearCameraInteractionTimer();
+    useCockpitStore.getState().setCameraInteractionActive(true);
+  }, [clearCameraInteractionTimer]);
+
+  const markCameraInteractionSettling = useCallback((): void => {
+    clearCameraInteractionTimer();
+    cameraInteractionClearTimer.current = window.setTimeout(() => {
+      cameraInteractionClearTimer.current = null;
+      useCockpitStore.getState().setCameraInteractionActive(false);
+    }, DAMPING_SETTLE_FRAMES * 16);
+  }, [clearCameraInteractionTimer]);
 
   const onControlsChange = useCallback(() => {
     dampingFrames.current = smoothControls ? DAMPING_SETTLE_FRAMES : 0;
     invalidate();
   }, [invalidate, smoothControls]);
+
+  useEffect(() => () => {
+    clearCameraInteractionTimer();
+    useCockpitStore.getState().setCameraInteractionActive(false);
+  }, [clearCameraInteractionTimer]);
 
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
@@ -621,7 +647,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      regress={smoothControls}
+      regress={false}
       enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
       enableZoom={isTouchDevice}
@@ -637,7 +663,9 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
         MIDDLE: 2, // THREE.MOUSE.PAN
         RIGHT: (smoothControls ? 0 : -1) as number, // THREE.MOUSE.ROTATE (desktop orbit)
       }}
+      onStart={markCameraInteractionActive}
       onChange={onControlsChange}
+      onEnd={markCameraInteractionSettling}
     />
   );
 }

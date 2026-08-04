@@ -34,15 +34,34 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().selectedPhaseId).toBe("dinner");
   });
 
-  it("defaults runtimeAssetStatus to the SAFE procedural label and the layers menu closed", () => {
+  it("defaults runtimeAssetStatus to the SAFE atelier fallback label and the layers menu closed", () => {
     const s = useCockpitStore.getState();
-    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.runtimeAssetStatus).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
     expect(s.layersOpen).toBe(false);
   });
 
   it("setRuntimeAssetStatus updates the runtime label", () => {
     useCockpitStore.getState().setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Captured visual layer loaded / not yet signed");
+  });
+
+  it("defaults roomResolve to the ink phase with no chunks", () => {
+    expect(useCockpitStore.getState().roomResolve).toEqual({
+      phase: "ink",
+      loadedChunks: 0,
+      totalChunks: 0,
+    });
+  });
+
+  it("setRoomResolve records the resolve choreography state", () => {
+    useCockpitStore.getState().setRoomResolve({ phase: "developing", loadedChunks: 3, totalChunks: 7 });
+    expect(useCockpitStore.getState().roomResolve).toEqual({
+      phase: "developing",
+      loadedChunks: 3,
+      totalChunks: 7,
+    });
   });
 
   it("toggleLayers flips the layers menu open state", () => {
@@ -55,6 +74,7 @@ describe("cockpit-store", () => {
     const s = useCockpitStore.getState();
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();
+    expect(s.cameraInteractionActive).toBe(false);
   });
 
   it("setBeam / clearBeam raise and dismiss the world-anchored evidence beam", () => {
@@ -76,6 +96,13 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().focusRequest?.nonce).toBe(2);
   });
 
+  it("tracks whether camera navigation is currently active", () => {
+    useCockpitStore.getState().setCameraInteractionActive(true);
+    expect(useCockpitStore.getState().cameraInteractionActive).toBe(true);
+    useCockpitStore.getState().setCameraInteractionActive(false);
+    expect(useCockpitStore.getState().cameraInteractionActive).toBe(false);
+  });
+
   it("reset restores defaults", () => {
     const api = useCockpitStore.getState();
     api.setMode("ops");
@@ -83,9 +110,11 @@ describe("cockpit-store", () => {
     api.toggleOverlay("guestFlow");
     api.selectPhase("ceremony");
     api.setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
+    api.setRoomResolve({ phase: "resolved", loadedChunks: 7, totalChunks: 7 });
     api.toggleLayers();
     api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
     api.requestFocus(1, 1);
+    api.setCameraInteractionActive(true);
     api.setPlannedGuestCount(200);
     api.setFlowArrivalMinutes(90);
     api.reset();
@@ -94,10 +123,14 @@ describe("cockpit-store", () => {
     expect(s.layerMode).toBe("hybrid");
     expect(s.overlayVisibility.guestFlow).toBe(true);
     expect(s.selectedPhaseId).toBeNull();
-    expect(s.runtimeAssetStatus).toBe("Procedural layer / no signed capture");
+    expect(s.runtimeAssetStatus).toBe(
+      "Captured visual layer not yet available — planning on reviewed geometry",
+    );
+    expect(s.roomResolve).toEqual({ phase: "ink", loadedChunks: 0, totalChunks: 0 });
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
     expect(s.focusRequest).toBeNull();
+    expect(s.cameraInteractionActive).toBe(false);
     expect(s.plannedGuestCount).toBeNull();
     expect(s.flowArrivalMinutes).toBe(30);
   });
