@@ -1,0 +1,301 @@
+/* -----------------------------------------------------------------------------
+ * measure.css — chrome and placement for the /tour two-point measure.
+ *
+ * Component-adjacent, matching quick-actions.css and room-dossier.css, so this
+ * lands without editing twin.css while another lane has that file open. Palette
+ * tokens are declared on `.vv-twin` and inherit, so every var() here is a read,
+ * never a redeclaration; the fallbacks exist for a fixture rendered outside
+ * `.vv-twin`.
+ *
+ * PLACEMENT IS LOAD-BEARING, not decoration. Every HUD element is
+ * position:absolute inside `.vv-twin-viewer`, and the only in-flow sibling is
+ * R3F's canvas wrapper at 100% height — so an unpositioned panel is laid out a
+ * full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }`. Without these rules the tool is not
+ * merely unstyled, it is invisible while remaining in the tab order. That exact
+ * bug has shipped here before.
+ *
+ * THE SLOT. The measured HUD is: node label (top 18 left, z2), dossier (top 62
+ * left, z3), quick rail (bottom 56 left, z3), disclosure (bottom 14 left, z2),
+ * mode (top 18 right, z3), surface (top 62 right, z3), controls rail (top 106
+ * right, z3, 112px wide), minimap (bottom 18 right, z3), coach pill (bottom 64
+ * centred, z4). Top centre is the one free lane, and it is also the right one:
+ * a measurement is the thing being looked at while the tool is open, so it
+ * belongs at the top of the frame rather than tucked into a corner.
+ *
+ * The width RESERVES both flanks rather than guessing a fixed cap — the label
+ * on the left and the mode control on the right both grow with their content,
+ * so the panel shrinks toward them instead of sliding under them.
+ *
+ * The overlay sits at z-index 5: above every HUD chip (max z4, the coach pill)
+ * so the segment is never drawn behind a control it crosses, and below the
+ * enquiry modal (z20), which must still cover everything.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-measure {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic AND the way points get picked, so only the panel itself
+   * may take the pointer. */
+  pointer-events: none;
+}
+
+/* — the drawing — */
+
+.vv-twin-measure-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* A dark casing under the gold line, the same map-label trick
+ * `.vv-twin-viewer-disclosure` uses: a gold hairline alone vanishes over the
+ * bright parquet of the entrance vestibule, where the corrected sRGB panos are
+ * far brighter than the grade this HUD was first tuned against. */
+.vv-twin-measure-casing {
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.vv-twin-measure-line {
+  stroke: var(--gold, #d7a64b);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* The radius is an ATTRIBUTE on the element, not a declaration here: `r` as a
+ * CSS property is an SVG2 geometry property with uneven support, and a browser
+ * that ignores it draws a zero-radius circle — i.e. the picked points vanish
+ * while the line between them stays. Colour is safe to style; geometry is not. */
+.vv-twin-measure-dot {
+  fill: var(--gold-2, #f0c66b);
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 1.5;
+}
+
+/* The figure, riding the midpoint of its own segment. Translated by half its
+ * own size so the anchor is its centre — the host supplies a point, not a
+ * corner, and a top-left anchor would drift the label further off the line the
+ * longer the number got. */
+.vv-twin-measure-tag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.86);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ink, #fbf2df);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* — the panel — */
+
+.vv-twin-measure-panel {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  /* Both flanks reserved, not a blind cap: 280px each side clears the node
+   * label (left, grows with the venue name) and the mode control plus its
+   * inset (right). Below ~840px of stage the panel shrinks toward them rather
+   * than sliding underneath, which is what the phone breakpoint then takes
+   * over from. */
+  width: min(380px, calc(100vw - 560px));
+  padding: 11px 14px 12px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  animation: vv-twin-measure-in 320ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.vv-twin-measure-prompt {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-2, #e7d8bb);
+}
+
+.vv-twin-measure-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 10px;
+  margin: 0;
+}
+
+.vv-twin-measure-stat-label {
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+/* The figure and its "≈" are ONE string in the DOM (measure-math's
+ * formatLength), never a value styled beside a separately-rendered mark: a
+ * stylesheet that failed to load, or a screen reader ignoring the visual
+ * pairing, would otherwise leave a bare number standing on its own. */
+.vv-twin-measure-stat-value {
+  margin: 3px 0 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  color: var(--ink, #fbf2df);
+  white-space: nowrap;
+}
+
+.vv-twin-measure-note {
+  margin: 10px 0 0;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-measure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.vv-twin-measure-button {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 7px 13px;
+  border: 1px solid var(--gold, #d7a64b);
+  border-radius: 999px;
+  background: rgba(215, 166, 75, 0.14);
+  color: var(--gold-2, #f0c66b);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.vv-twin-measure-button:hover {
+  background: rgba(215, 166, 75, 0.24);
+}
+
+/* Clear and Close are exits, not the act — they read as quiet chrome so the one
+ * filled control on the panel is the one that does something. */
+.vv-twin-measure-button--quiet {
+  border-color: var(--rule, rgba(216, 174, 91, 0.28));
+  background: transparent;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-measure-button--quiet:hover {
+  border-color: var(--gold, #d7a64b);
+  background: transparent;
+  color: var(--gold-2, #f0c66b);
+}
+
+/* No :focus-visible rule here on purpose. twin.css gives every control inside
+ * `.vv-twin` the candle-glow halo, and a rule of ours would tie it on
+ * specificity (both (0,2,0)) and be settled by stylesheet load order — a
+ * coin-flip between two accessible outcomes is still a coin flip. The chip rail
+ * (quick-actions.css) makes the same choice; the halo is the house treatment
+ * and restating it locally only creates drift. */
+
+@keyframes vv-twin-measure-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Phone: the top row is already full (label left, mode right), so the panel
+ * drops to a band across the bottom, above the quick-action rail (bottom 56,
+ * chips ~32px tall → clear at 96) and clear of the disclosure below it. The
+ * coach pill shares that airspace, but it is dismissed on first interaction and
+ * arming this tool is an interaction, so the two never coexist in practice. */
+@media (max-width: 700px) {
+  .vv-twin-measure-panel {
+    top: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    width: auto;
+    transform: none;
+    animation-name: vv-twin-measure-in-flat;
+  }
+
+  .vv-twin-measure-stats {
+    /* Three mono figures side by side wrap mid-number below ~360px; stacked,
+     * each keeps its ± on one line, which is the part that must not break. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px 0;
+  }
+}
+
+@keyframes vv-twin-measure-in-flat {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Short viewports (landscape phones). An earlier revision hid the note here to
+ * buy vertical room. That was safe while the note merely EXPLAINED a ± the
+ * figures already carried; it is not safe now. The note is the only thing this
+ * tool says about confidence, so hiding it leaves three bare numbers over a
+ * photograph of a room somebody is about to order a marquee for — precisely the
+ * failure the feature exists to prevent. A layout constraint may not delete a
+ * qualification.
+ *
+ * So the panel is capped and scrolls instead: everything stays reachable, the
+ * figures stay at the top where the eye lands, and the note goes nowhere.
+ * `overscroll-behavior: contain` keeps a flick inside the panel from chaining
+ * to the page behind it, which over a drag-to-look canvas would otherwise read
+ * as the view lurching. */
+@media (max-height: 420px) {
+  .vv-twin-measure-panel {
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .vv-twin-measure-note {
+    margin-top: 8px;
+    padding-top: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-measure-panel {
+    animation: none;
+  }
+
+  .vv-twin-measure-button {
+    transition: none;
+  }
+}

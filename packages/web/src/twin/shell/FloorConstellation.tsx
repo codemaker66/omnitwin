@@ -1,9 +1,29 @@
-import { useEffect, useMemo, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
-import { BufferGeometry, Float32BufferAttribute } from "three";
+import { Suspense, useEffect, useMemo, useRef, type ReactElement } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  DoubleSide,
+  DynamicDrawUsage,
+  MeshBasicMaterial,
+  type Object3D,
+} from "three";
 import type { TwinNavEdge, TwinScanNode } from "@omnitwin/types";
-import { e57PointToThree } from "../twin-basis.js";
+import { E57_TO_THREE_QUAT, e57PointToThree } from "../twin-basis.js";
 import { NAV_MARKER_FLOOR_DROP_M } from "../NavMarkers.js";
+import { buildParallaxBatch, type ParallaxBatch } from "../ParallaxStage.js";
+import {
+  CONSTELLATION_HALO_MATERIAL,
+  CONSTELLATION_OCCLUDER_MATERIAL,
+  CONSTELLATION_OCCLUDER_RENDER_ORDER,
+  CONSTELLATION_RENDER_ORDER,
+  CONSTELLATION_WEIGHTED_MATERIAL,
+  constellationNeedsReweight,
+  constellationOccluderPosition,
+  makeConstellationWeightBuffer,
+  writeConstellationWeights,
+} from "./constellation-depth.js";
 
 // -----------------------------------------------------------------------------
 // FloorConstellation — the nav graph, drawn on the ground the visitor is
@@ -39,21 +59,40 @@ import { NAV_MARKER_FLOOR_DROP_M } from "../NavMarkers.js";
 // 3. Frames. The canvas is frameloop="demand". A continuously animating
 //    overlay would either freeze (no invalidate) or pin the GPU at 60 fps for
 //    the whole visit (unconditional invalidate), and neither is acceptable for
-//    chrome that is on screen the entire walk. So the constellation does not
-//    animate at all: it is a static draw that repaints only when its inputs
-//    change. Because nothing moves, there is deliberately no
-//    prefers-reduced-motion branch — there is no motion to reduce.
+//    chrome that is on screen the entire walk. So the constellation still does
+//    not animate: nothing here moves on its own. The per-vertex weights change
+//    only when the EYE moves, which is the visitor moving, and they are
+//    rewritten inside the frame that movement already caused — no invalidate of
+//    its own, no timer, no spring. That is also why there is still no
+//    prefers-reduced-motion branch: a view-dependent shade is not motion any
+//    more than a specular highlight is, and there is nothing here to reduce.
+//
+// 4. Depth. In walk mode NOTHING writes depth (PanoStage's sphere has
+//    depthWrite off; ParallaxStage's mesh is mounted only mid-hop, which is
+//    exactly when this component is unmounted), so the `depthTest` this
+//    component has always carried had nothing to lose to and every mark in the
+//    building drew through every wall. Measured: from scan_028, 37 of the 83
+//    same-storey marks are behind geometry. Give this component
+//    `occluderMeshUrl` and it mounts a depth-only prepass of the real building
+//    — one extra draw, no colour — and the graph becomes genuinely occluded,
+//    per pixel, including edges clipped exactly where they cross a wall.
+//
+//    THAT PROP IS NOT PASSED BY ANYTHING TODAY. The app's only mount site is
+//    TwinViewer, which renders <FloorConstellation nodes edges currentId /> and
+//    nothing else, so what ships right now is the unoccluded map — the same one
+//    that shipped before any of this existed. The occlusion path is implemented,
+//    tested and inert. What the parent has to do to fire it is one prop, spelled
+//    out on `occluderMeshUrl` in FloorConstellationProps below. The mechanism,
+//    the render-order stack and the falloff curve all live in
+//    constellation-depth.
 //
 // Draw cost is a handful of calls regardless of node count: one lineSegments
-// for every edge, one points for every mark, three rings for the halo.
-// Geometry is built once per input change in useMemo and disposed on unmount —
-// R3F only auto-disposes what it created from a JSX intrinsic, and these
-// buffers are handed in as props.
-//
-// Intended for walk mode, where PanoStage's sphere writes no depth and the
-// overlay is unoccluded. depthTest is left on so that if it is ever mounted
-// over the dollhouse mesh it hides behind walls rather than floating through
-// them; depthWrite is off everywhere so it never occludes the nav rings.
+// for every edge, one points for every mark, three rings for the halo, plus one
+// batched depth pass when an occluder is supplied. Geometry is built once per
+// input change in useMemo and disposed on unmount — R3F only auto-disposes what
+// it created from a JSX intrinsic, and these buffers are handed in as props.
+// renderOrder is set on each drawn object and never on a group: three does not
+// propagate it, so a group carrying one is a comment that looks like code.
 // -----------------------------------------------------------------------------
 
 /**
@@ -110,7 +149,7 @@ export const CONSTELLATION_HALO_RINGS: readonly {
 const HALO_RING_SEGMENTS = 96;
 
 /**
- * Must be ABOVE the panorama's, not below it.
+ * The graph's renderOrder must be ABOVE the panorama's, not below it.
  *
  * The instinct is to sit at -1 so the graph reads as the layer underneath the
  * nav rings. That renders it invisible. PanoStage's sphere is BackSide,
@@ -121,12 +160,17 @@ const HALO_RING_SEGMENTS = 96;
  * depth behind to defend itself. It was being drawn and erased every frame.
  *
  * The nav rings get away with renderOrder 0 only because they share the pano's
- * bucket and win on distance. This sits one above, which guarantees the graph
- * survives the pano. The cost is that a mark coinciding with a nav ring paints
- * over it — acceptable, since a 7.5 cm dim mark inside a 45 cm bright ring is
- * not a legibility problem, whereas an invisible layer is.
+ * bucket and win on distance. The graph sits above the pano AND above the
+ * occluder that now runs between them — the numbers, and the reason the
+ * occluder has to be sandwiched there rather than run as an opaque prepass,
+ * are in constellation-depth.ts. The cost is unchanged: a mark coinciding with
+ * a nav ring paints over it, which is fine, since a 7.5 cm dim mark inside a
+ * 45 cm bright ring is not a legibility problem, whereas an invisible layer is.
+ *
+ * The occluder position is computed once — it is a pure join of twin-basis's
+ * calibrated mesh offset with the drop, and both are module constants.
  */
-const CONSTELLATION_RENDER_ORDER = 1;
+const OCCLUDER_POSITION = constellationOccluderPosition();
 
 /** One scan pose, resolved to its position on the floor in three space. */
 export interface ConstellationPoint {
@@ -255,34 +299,188 @@ export function constellationMarkPositions(
   return positions;
 }
 
+/**
+ * One layer's per-vertex falloff weights.
+ *
+ * The backing array is kept alongside its attribute deliberately. Reaching for
+ * `attribute.array` instead means casting a TypedArray union back to
+ * Float32Array on every frame — a cast that would be correct today and silently
+ * wrong the day anyone switches the buffer's precision.
+ */
+export interface ConstellationWeights {
+  readonly attribute: BufferAttribute;
+  readonly data: Float32Array;
+}
+
 export interface ConstellationGeometries {
   readonly lines: BufferGeometry;
   readonly marks: BufferGeometry;
+  /** Kept so the eye-moved rewrite never has to rebuild the plan to ask where
+   *  a vertex is — the positions it needs are the ones already uploaded. */
+  readonly linePositions: Float32Array;
+  readonly markPositions: Float32Array;
+  readonly lineWeights: ConstellationWeights;
+  readonly markWeights: ConstellationWeights;
+}
+
+/**
+ * A four-component vertex-colour attribute, opaque, ready to be rewritten.
+ *
+ * `new BufferAttribute(data, 4)` and NOT `new Float32BufferAttribute(data, 4)`,
+ * which is not a spelling preference: the typed subclass runs
+ * `new Float32Array(array)` on its argument, so it holds a COPY. Built that way
+ * the weights would be written to an array the GPU never sees — the marks would
+ * sit at their opaque starting values forever, and no error would be raised.
+ * Caught by the test that asserts `attribute.array` IS `data`.
+ */
+function weightAttribute(vertexCount: number): ConstellationWeights {
+  const data = makeConstellationWeightBuffer(vertexCount);
+  const attribute = new BufferAttribute(data, 4);
+  // Rewritten whenever the eye moves — rarely, but never once.
+  attribute.setUsage(DynamicDrawUsage);
+  return { attribute, data };
 }
 
 /**
  * Build both buffers for a plan. Imperatively constructed, therefore
  * imperatively disposed — see disposeConstellationGeometries.
+ *
+ * Each layer gets a position attribute and a four-component colour attribute.
+ * The colours start opaque white and carry only alpha thereafter: the tint
+ * belongs to the material, so a weight can quieten a mark but can never
+ * recolour one into something that looks like a different kind of thing.
  */
 export function buildConstellationGeometries(
   plan: FloorConstellationPlan,
 ): ConstellationGeometries {
+  const linePositions = constellationLinePositions(plan.segments);
+  const lineWeights = weightAttribute(plan.segments.length * 2);
   const lines = new BufferGeometry();
-  lines.setAttribute(
-    "position",
-    new Float32BufferAttribute(constellationLinePositions(plan.segments), 3),
-  );
+  lines.setAttribute("position", new BufferAttribute(linePositions, 3));
+  lines.setAttribute("color", lineWeights.attribute);
+
+  const markPositions = constellationMarkPositions(plan.points);
+  const markWeights = weightAttribute(plan.points.length);
   const marks = new BufferGeometry();
-  marks.setAttribute(
-    "position",
-    new Float32BufferAttribute(constellationMarkPositions(plan.points), 3),
-  );
-  return { lines, marks };
+  marks.setAttribute("position", new BufferAttribute(markPositions, 3));
+  marks.setAttribute("color", markWeights.attribute);
+
+  return { lines, marks, linePositions, markPositions, lineWeights, markWeights };
 }
 
 export function disposeConstellationGeometries(geometries: ConstellationGeometries): void {
   geometries.lines.dispose();
   geometries.marks.dispose();
+}
+
+/** The depth-only building, and the scene it was built from. */
+export interface ConstellationOccluderResource {
+  /** The `gltf.scene` this was batched from — the cache's identity. */
+  readonly scene: Object3D;
+  readonly material: MeshBasicMaterial;
+  /** null when the GLB contained no drawable mesh at all. */
+  readonly batch: ParallaxBatch | null;
+}
+
+/**
+ * The one occluder the page keeps. Module scope, not component state, and that
+ * is the fix for a measured stall rather than a premature optimisation.
+ *
+ * TwinViewer mounts this component as `{!hopping && <FloorConstellation …/>}`,
+ * so it is unmounted and remounted on EVERY hop — that is the parent's mount
+ * policy and this module cannot change it. Rebuilding the batch per mount was
+ * measured on 2026-08-05 against the flagship bundle at 123–161 ms of main
+ * thread (four consecutive runs over the real 144-primitive, 419,218-vertex
+ * GLB), which lands as a visible hitch at the exact moment the visitor arrives
+ * somewhere. Holding one batch across mounts makes the second and every later
+ * arrival free.
+ *
+ * What it costs is one batch's vertex buffer — about 5 MB of VRAM — held for as
+ * long as the page shows one building. That is bounded on purpose: a second
+ * scene evicts and disposes the first, so this can never grow to two. A caller
+ * leaving the twin entirely should call disposeConstellationOccluderCache.
+ */
+let occluderResource: ConstellationOccluderResource | null = null;
+
+/**
+ * Get the depth-only batch for a GLB scene, building it only the first time.
+ *
+ * Exported because it is the whole of the cache's contract and the only way to
+ * pin it: that a repeat acquire does NOT rebuild is the entire point, and it is
+ * invisible from the rendered tree.
+ */
+export function acquireConstellationOccluder(scene: Object3D): ConstellationOccluderResource {
+  const held = occluderResource;
+  if (held !== null && held.scene === scene) {
+    return held;
+  }
+  // A different building arrived: the old one is now unreachable, so free it
+  // before standing up its replacement rather than keeping both alive.
+  disposeConstellationOccluderCache();
+  const material = new MeshBasicMaterial({ ...CONSTELLATION_OCCLUDER_MATERIAL, side: DoubleSide });
+  const resource: ConstellationOccluderResource = {
+    scene,
+    material,
+    batch: buildParallaxBatch(scene, material),
+  };
+  occluderResource = resource;
+  return resource;
+}
+
+/** Release the held occluder. Safe to call when nothing is held. */
+export function disposeConstellationOccluderCache(): void {
+  const held = occluderResource;
+  if (held === null) {
+    return;
+  }
+  occluderResource = null;
+  held.batch?.mesh.dispose();
+  held.material.dispose();
+}
+
+/**
+ * The depth-only prepass: the real building, drawn in no colour at all, purely
+ * so the graph has something to lose a depth test to.
+ *
+ * It reuses ParallaxStage's `buildParallaxBatch` rather than growing a second
+ * way to turn this GLB into drawable geometry — one position-only BatchedMesh,
+ * one draw call for all 144 primitives, materials and UVs stripped. The GLB
+ * itself is free: `useGLTF(meshUrl)` hits the same `[GLTFLoader, url]` suspense
+ * entry that ParallaxStage and preloadDollhouse already populate, so nothing is
+ * fetched or decoded twice. (That shared entry is also a hazard this module
+ * inherits rather than creates: the loader configuration is fixed by whichever
+ * consumer mounts first, and DollhouseStage's is the only one that pins a
+ * version-matched meshopt decoder. This call matches ParallaxStage's exactly, so
+ * it changes nothing about who wins in walk mode.)
+ *
+ * The root carries E57_TO_THREE_QUAT so the mesh lands in the same three-space
+ * as the poses (the contract DollhouseStage pins), and OCCLUDER_POSITION, which
+ * lowers it clear of the graph's own floor datum.
+ */
+function ConstellationOccluder({ meshUrl }: { readonly meshUrl: string }): ReactElement | null {
+  const invalidate = useThree((state) => state.invalidate);
+  const gltf = useGLTF(meshUrl);
+  const resource = useMemo(() => acquireConstellationOccluder(gltf.scene), [gltf.scene]);
+  // The mesh arrives asynchronously, long after the graph first painted; demand
+  // mode needs telling that the frame it already drew is now wrong. Deliberately
+  // NO disposal on unmount — see occluderResource for why the batch outlives
+  // this component, and what bounds it.
+  useEffect(() => {
+    invalidate();
+  }, [invalidate, resource]);
+
+  if (resource.batch === null) {
+    return null;
+  }
+  return (
+    <group
+      name="twin-constellation-occluder"
+      quaternion={E57_TO_THREE_QUAT}
+      position={OCCLUDER_POSITION}
+    >
+      <primitive object={resource.batch.mesh} renderOrder={CONSTELLATION_OCCLUDER_RENDER_ORDER} />
+    </group>
+  );
 }
 
 export interface FloorConstellationProps {
@@ -292,6 +490,37 @@ export interface FloorConstellationProps {
   readonly currentId: string;
   /** Master fade, 0–1. Defaults to fully drawn; 0 renders nothing at all. */
   readonly opacity?: number;
+  /**
+   * The co-registered building mesh, when the viewer can afford it — the same
+   * URL ParallaxStage is given. Supplied, the graph is depth-tested against the
+   * real building and stops showing through walls. Omitted, it draws exactly as
+   * it always has: unoccluded, and honest about it. There is deliberately no
+   * fallback that approximates occlusion from the nav graph or the room map —
+   * a mark hidden by a rule rather than by a wall is a guess about the building,
+   * and this viewer does not guess about the building.
+   *
+   * NOTHING PASSES THIS YET. TwinViewer, the app's only mount site, renders this
+   * component with nodes/edges/currentId alone, so the occlusion path below is
+   * dead in the shipped viewer. Turning it on is exactly one edit, in a file
+   * this module does not own:
+   *
+   *     {!hopping && (
+   *       <FloorConstellation
+   *         nodes={manifest.nodes}
+   *         edges={manifest.edges}
+   *         currentId={walk.currentId}
+   *         occluderMeshUrl={parallaxReady && meshUrl !== null ? meshUrl : undefined}
+   *       />
+   *     )}
+   *
+   * The `parallaxReady && meshUrl !== null` gate is not optional and not a
+   * detail: it is the same device/asset gate TwinViewer already applies to
+   * ParallaxStage, and it is what keeps a ~5 MB batch off machines that were
+   * judged unable to afford the mesh at all. Passing a bare `meshUrl` would put
+   * the building on the weakest devices in the fleet, which is the opposite of
+   * what this prop is for.
+   */
+  readonly occluderMeshUrl?: string;
 }
 
 export function FloorConstellation({
@@ -299,6 +528,7 @@ export function FloorConstellation({
   edges,
   currentId,
   opacity = 1,
+  occluderMeshUrl,
 }: FloorConstellationProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
 
@@ -314,13 +544,42 @@ export function FloorConstellation({
     [geometries],
   );
 
-  const alpha = Math.min(Math.max(opacity, 0), 1);
+  // `Math.min(Math.max(NaN, 0), 1)` is NaN, and `NaN <= 0` is false, so a
+  // clamp alone would let a broken fade through to the materials as a NaN
+  // opacity. A fade that is not a number draws nothing.
+  const alpha = Number.isFinite(opacity) ? Math.min(Math.max(opacity, 0), 1) : 0;
 
-  // Nothing here animates, so the only thing that can make demand mode paint
-  // is an input change — ask for the frame this commit is about to need.
+  // The eye the weights were last written for, and a scratch tuple to test the
+  // current one against. Separate on purpose: the scratch is mutated every
+  // frame and allocates nothing, while the committed eye is only ever a fresh
+  // copy — sharing one array would compare the camera against itself and the
+  // weights would never be rewritten again.
+  const writtenEyeRef = useRef<[number, number, number] | null>(null);
+  const eyeRef = useRef<[number, number, number]>([0, 0, 0]);
   useEffect(() => {
+    // A rebuilt buffer is opaque white; the next frame must rewrite it whether
+    // or not the visitor has moved since.
+    writtenEyeRef.current = null;
     invalidate();
   }, [invalidate, geometries, alpha]);
+
+  useFrame(({ camera }) => {
+    const eye = eyeRef.current;
+    eye[0] = camera.position.x;
+    eye[1] = camera.position.y;
+    eye[2] = camera.position.z;
+    if (!constellationNeedsReweight(writtenEyeRef.current, eye)) {
+      return;
+    }
+    // No invalidate() here, and that is the point: this runs inside a frame the
+    // camera's own movement already asked for, before the draw. Requesting
+    // another would pin demand mode at 60 fps for the whole visit.
+    writtenEyeRef.current = [eye[0], eye[1], eye[2]];
+    writeConstellationWeights(geometries.markPositions, eye, geometries.markWeights.data);
+    geometries.markWeights.attribute.needsUpdate = true;
+    writeConstellationWeights(geometries.linePositions, eye, geometries.lineWeights.data);
+    geometries.lineWeights.attribute.needsUpdate = true;
+  });
 
   const current = plan.current;
   if (current === null || alpha <= 0) {
@@ -328,29 +587,47 @@ export function FloorConstellation({
   }
 
   return (
-    <group renderOrder={CONSTELLATION_RENDER_ORDER}>
+    <>
+      {occluderMeshUrl !== undefined && (
+        // Its own boundary, so a graph already on screen is never suspended
+        // back off it while the building streams in behind.
+        <Suspense fallback={null}>
+          <ConstellationOccluder meshUrl={occluderMeshUrl} />
+        </Suspense>
+      )}
       {plan.segments.length > 0 && (
-        <lineSegments geometry={geometries.lines} renderOrder={CONSTELLATION_RENDER_ORDER}>
+        <lineSegments
+          name="twin-constellation-edges"
+          geometry={geometries.lines}
+          renderOrder={CONSTELLATION_RENDER_ORDER}
+        >
           <lineBasicMaterial
+            {...CONSTELLATION_WEIGHTED_MATERIAL}
             color={CONSTELLATION_COLOR}
-            transparent
             opacity={CONSTELLATION_EDGE_OPACITY * alpha}
-            depthWrite={false}
           />
         </lineSegments>
       )}
-      <points geometry={geometries.marks} renderOrder={CONSTELLATION_RENDER_ORDER}>
+      <points
+        name="twin-constellation-marks"
+        geometry={geometries.marks}
+        renderOrder={CONSTELLATION_RENDER_ORDER}
+      >
         <pointsMaterial
+          {...CONSTELLATION_WEIGHTED_MATERIAL}
           color={CONSTELLATION_COLOR}
           size={CONSTELLATION_MARK_SIZE_M}
           sizeAttenuation
-          transparent
           opacity={CONSTELLATION_MARK_OPACITY * alpha}
-          depthWrite={false}
         />
       </points>
-      {/* "You are here" — concentric ground rings on the standing node. */}
-      <group position={[current.position[0], current.position[1], current.position[2]]}>
+      {/* "You are here" — concentric ground rings on the standing node. They
+          are depth-tested like everything else, so a ring wide enough to reach
+          a wall is cut by it instead of climbing it. */}
+      <group
+        name="twin-constellation-halo"
+        position={[current.position[0], current.position[1], current.position[2]]}
+      >
         {CONSTELLATION_HALO_RINGS.map((ring) => (
           <mesh
             key={ring.innerM}
@@ -359,14 +636,13 @@ export function FloorConstellation({
           >
             <ringGeometry args={[ring.innerM, ring.outerM, HALO_RING_SEGMENTS]} />
             <meshBasicMaterial
+              {...CONSTELLATION_HALO_MATERIAL}
               color={CONSTELLATION_HALO_COLOR}
-              transparent
               opacity={ring.opacity * alpha}
-              depthWrite={false}
             />
           </mesh>
         ))}
       </group>
-    </group>
+    </>
   );
 }
