@@ -99,6 +99,8 @@ def _sample_source(
     max_incidence_deg: float,
     occluder=None,
     z_exempt_m: float = 0.30,
+    floor_ok: np.ndarray | None = None,
+    geom: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Backward-map one panorama onto the grid.
 
@@ -106,12 +108,34 @@ def _sample_source(
     forward-splatting, so the result has no scatter holes. Returns
     (rgb float32 HxWx3, weight float32 HxW); weight 0 means this source
     contributes nothing there.
+
+    floor_ok answers the question this sampler otherwise never asks: IS THIS
+    CELL FLOOR AT ALL. Unmasked, every cell of the grid is assumed to be
+    floor, so the ray to a wall, a plinth or the world outside the building
+    returns a photograph of that obstruction and it is fused into the shared
+    surface as if it were oak. See floor_polygon.floor_mask for how the mask
+    is derived. None restores the historical behaviour exactly, bit for bit.
+
+    It is applied BEFORE the occlusion query, not after, so the occluder is
+    only asked about cells that are actually floor. That is a free speed-up
+    on top of the correctness fix, and it is also the only ordering that is
+    correct: the two gates answer different questions ("is there floor here"
+    vs "can this scanner see it") and a masked cell has no floor to see.
+
+    geom is a write-only out-parameter for callers that need the PANORAMA
+    SIZE. It exists because a source may be a lazy loader, so the caller
+    cannot know eq_h/eq_w without loading the raster a second time. Nothing
+    else is handed out through it: every other geometric quantity a consumer
+    might want is re-derived by atlas_provenance.look_geometry, so that
+    algebra keeps exactly one home and cannot drift between two copies of it.
     """
     # A source may be a raster OR a zero-arg loader. Lazy loading is what
     # makes the 8192 tier usable: 40 sweeps x ~100 MB cannot all be resident,
     # and the two-pass design would otherwise need them twice over.
     img = np.asarray(img() if callable(img) else img)
     eq_h, eq_w = img.shape[:2]
+    if geom is not None:
+        geom["eq_hw"] = (int(eq_h), int(eq_w))
     C = np.asarray(C, dtype=np.float64)
 
     xs, ys = grid.pixel_centres_world()
@@ -131,6 +155,8 @@ def _sample_source(
     # own smear ring to the shared surface, which showed up as a soft
     # disc at every scanner position in the first Grand Hall atlas.
     ok = (dz < -1e-6) & (off > self_blind_m) & (overhead > cos_max)
+    if floor_ok is not None:
+        ok &= floor_ok
     if occluder is not None and np.any(ok):
         P = np.stack([xs[ok], ys[ok], np.full(int(ok.sum()), float(z_floor))], axis=1)
         blocked = occluder.blocked(C, P, z_exempt_below=z_floor + z_exempt_m)
@@ -162,11 +188,13 @@ def project_source_to_atlas(
     self_blind_m: float = 0.80,
     max_incidence_deg: float = 80.0,
     occluder=None,
+    floor_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """A single photograph, orthorectified onto the grid. This is the
     BASELINE the fused atlas must beat."""
     return _sample_source(
-        img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
+        img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder,
+        floor_ok=floor_mask,
     )
 
 
@@ -255,6 +283,7 @@ def _fit_pose_dz(
     occluder,
     span_m: float,
     step_m: float,
+    floor_ok: np.ndarray | None = None,
 ) -> float:
     """Direct search for the height correction that lands this sweep's planks on
     the reference's, scored by normalised correlation of the high-pass — the
@@ -293,6 +322,13 @@ def _fit_pose_dz(
     Returns 0.0 rather than a guess when no candidate ever had enough
     independent overlap, or when the sweep carries no texture to register:
     floor nobody else saw must not be handed a confident correction.
+
+    floor_ok here is the COARSE mask, at cg's resolution, and it gates the
+    candidate rasters as well as the frozen visibility. Registering against a
+    wall would be registering against a surface that is not the floor and is
+    not at z_floor, so its apparent displacement under a height correction
+    obeys a different geometry entirely — it is not evidence about the plane
+    being fitted, it is noise correlated with the wrong model.
     """
     from scipy import ndimage
 
@@ -301,8 +337,11 @@ def _fit_pose_dz(
     if occluder is not None:
         _, w0 = _sample_source(
             raster, C, cg, z_floor, self_blind_m, max_incidence_deg, occluder,
+            floor_ok=floor_ok,
         )
         vis = ref_ok & (w0 > 0)
+    elif floor_ok is not None:
+        vis = ref_ok & floor_ok
 
     xs, ys = cg.pixel_centres_world()
     drop = z_floor - float(np.asarray(C, dtype=np.float64)[2])
@@ -314,7 +353,7 @@ def _fit_pose_dz(
     for k in range(-n, n + 1):
         rgb, w = _sample_source(
             raster, _shifted_centre(C, k * step_m), cg, z_floor,
-            self_blind_m, max_incidence_deg, None,
+            self_blind_m, max_incidence_deg, None, floor_ok=floor_ok,
         )
         m = vis & (w > 0)
         if int(m.sum()) < ALIGN_MIN_OVERLAP_PX:
@@ -359,6 +398,7 @@ def _align_pose_heights(
     occluder,
     span_m: float = 0.030,
     step_m: float = 0.003,
+    floor_ok: np.ndarray | None = None,
 ) -> list[float]:
     """Recover every sweep's height error against a LEAVE-ONE-OUT consensus.
     Returned values are metres to ADD to each source's recorded centre z.
@@ -390,10 +430,21 @@ def _align_pose_heights(
     ref_* lines below with the un-subtracted block_* sums.
 
     That subtraction only cancels if the contribution removed was built the same
-    way as the sum it is removed from — same occluder, same gates. Sample the
-    source unoccluded here and subtract it from an occluded accumulator and the
-    reference goes NEGATIVE exactly where the shadow fell, which is worse than
-    having no leave-one-out at all.
+    way as the sum it is removed from — same occluder, same gates, SAME FLOOR
+    MASK. Sample the source unoccluded here and subtract it from an occluded
+    accumulator and the reference goes NEGATIVE exactly where the shadow fell,
+    which is worse than having no leave-one-out at all. The floor mask joined
+    that list when it was threaded through: mask pass 1 but not this sampling
+    and ref_acc goes negative precisely where the mask bit, which is every wall
+    line in the building. It is the same failure with a different gate, so it is
+    fixed the same way — one mask object, passed everywhere, never re-derived.
+
+    The COARSE mask handed to _fit_pose_dz requires EVERY fine pixel of a block
+    to be floor, not a majority and not the block's centre. A coarse cell is the
+    unit the correlation is scored on, so a cell straddling a wall line carries
+    both floor and wall texture in one number and there is no way to weight that
+    honestly; excluding it costs a one-cell collar (24 mm at the default coarse
+    size) around each obstruction and buys a score computed only from floor.
 
     Memory stays bounded, which is the constraint that lets this run over a whole
     building: per-source rasters are never stacked, only the ONE source being
@@ -428,11 +479,17 @@ def _align_pose_heights(
     block_w = _block_sum(wsum, f, ch, cw)
     block_n = _block_sum(counts.astype(np.int64), f, ch, cw)
 
+    coarse_ok = None
+    if floor_ok is not None:
+        # ALL of the block, not any of it — see the docstring.
+        coarse_ok = _block_sum(floor_ok.astype(np.int64), f, ch, cw) == f * f
+
     dzs: list[float] = []
     for img, C in sources:
         raster = img() if callable(img) else img     # load once, reuse per rung
         rgb, w = _sample_source(
             raster, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder,
+            floor_ok=floor_ok,
         )
         # Counted, not thresholded on weight: a cell only THIS source ever saw
         # cancels to a floating-point residue rather than a clean zero, and
@@ -453,6 +510,7 @@ def _align_pose_heights(
             _fit_pose_dz(
                 raster, C, cg, z_floor, ref_hp, ref_ok,
                 self_blind_m, max_incidence_deg, occluder, span_m, step_m,
+                floor_ok=coarse_ok,
             )
         )
     return dzs
@@ -466,6 +524,7 @@ def _accumulate_pass1(
     self_blind_m: float,
     max_incidence_deg: float,
     occluder,
+    floor_ok: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Weighted colour, luminance and luminance-square sums over every source,
     each sampled from its own corrected height.
@@ -495,7 +554,7 @@ def _accumulate_pass1(
     for (img, C), dz in zip(sources, dzs):
         rgb, w = _sample_source(
             img, _shifted_centre(C, dz), grid, z_floor,
-            self_blind_m, max_incidence_deg, occluder,
+            self_blind_m, max_incidence_deg, occluder, floor_ok=floor_ok,
         )
         seen = w > 0
         counts += seen
@@ -578,6 +637,8 @@ def accumulate_floor_atlas(
     min_robust_sources: int = 3,
     harmonise: bool = True,
     align: bool = True,
+    floor_mask: np.ndarray | None = None,
+    provenance: bool = False,
 ) -> tuple[np.ndarray, dict]:
     """Fuse many panoramas into one super-resolved orthophoto.
 
@@ -608,6 +669,35 @@ def accumulate_floor_atlas(
     sub-pixel phase, so their weighted sum reconstructs detail no single
     source carries.
 
+    floor_mask (bool HxW, from floor_polygon.floor_mask) restricts the whole
+    fusion to cells that are really floor. It is threaded through EVERY
+    sampling site — pass 1, the leave-one-out reference, the alignment search,
+    the second pass 1 and pass 2 — because a mask applied at some of them and
+    not the others is the same class of fault as an occluder applied
+    unevenly, and _align_pose_heights documents where that ends up. Left None
+    the module behaves exactly as it did before the parameter existed; that is
+    pinned bitwise by test_the_floor_mask_parameter_is_inert_when_absent.
+
+    HOW MASKING IS REPORTED, and the judgement call inside it. `covered_frac`
+    stays what it has always been: observed cells over the WHOLE grid.
+    Redefining it as observed-over-the-mask was considered and rejected,
+    because the two changes together would hide the failure each is meant to
+    surface — a z_floor a few centimetres out shrinks the mask, masking real
+    floor away, and a coverage figure scoped to the mask would then report
+    that loss as no change at all. The scope-corrected number is reported
+    ALONGSIDE, never instead: `floor_frac` is how much of the grid the mask
+    calls floor, and `floor_covered_frac` is how much of THAT was observed.
+    A build whose covered_frac falls while floor_covered_frac holds has been
+    trimmed; one where both fall has lost coverage.
+
+    provenance=True additionally returns an atlas_provenance.Provenance under
+    report["provenance"]: per-cell surviving look count, rejected count, best
+    incidence and best ground sampling. Pass 2 is the only place in this
+    module where both the visibility mask and the robust gate's verdict are in
+    scope at once, so it is the only seam where those arrays can be recorded
+    rather than guessed at. Off by default because it is not free — measured
+    cost is in the parameter's own note below.
+
     Returns (atlas float32 HxWx3, report). The report carries `observed`
     (bool), `counts` (int per pixel), `covered_frac` and `rejected_frac` —
     unobserved floor is FLAGGED, never invented — and `align_dz`, the metres to
@@ -617,20 +707,27 @@ def accumulate_floor_atlas(
         raise ValueError("no sources")
 
     shape = (grid.height, grid.width)
+    if floor_mask is not None:
+        floor_mask = np.asarray(floor_mask, dtype=bool)
+        if floor_mask.shape != shape:
+            raise ValueError(
+                f"floor_mask is {floor_mask.shape}, grid is {shape}"
+            )
     dzs = [0.0] * len(sources)
     acc, wsum, lum_acc, lum_sq, counts = _accumulate_pass1(
         sources, grid, z_floor, dzs, self_blind_m, max_incidence_deg, occluder,
+        floor_ok=floor_mask,
     )
 
     if align:
         dzs = _align_pose_heights(
             sources, grid, z_floor, acc, wsum, counts,
-            self_blind_m, max_incidence_deg, occluder,
+            self_blind_m, max_incidence_deg, occluder, floor_ok=floor_mask,
         )
         if any(d != 0.0 for d in dzs):
             acc, wsum, lum_acc, lum_sq, counts = _accumulate_pass1(
                 sources, grid, z_floor, dzs,
-                self_blind_m, max_incidence_deg, occluder,
+                self_blind_m, max_incidence_deg, occluder, floor_ok=floor_mask,
             )
 
     observed = counts > 0
@@ -656,10 +753,19 @@ def accumulate_floor_atlas(
     can_gate = counts >= min_robust_sources
     rejected = 0
     total = 0
+    prov_acc = None
+    if provenance:
+        # Imported here, not at module scope, so floor_atlas keeps working for
+        # anyone who does not ask for provenance and does not have the module.
+        import atlas_provenance as ap
+        prov_acc = ap.ProvenanceAccumulator(grid.height, grid.width)
     for si, (img, C) in enumerate(sources):
+        g: dict = {}
+        Ck = _shifted_centre(C, dzs[si])
         rgb, w = _sample_source(
-            img, _shifted_centre(C, dzs[si]), grid, z_floor,
-            self_blind_m, max_incidence_deg, occluder,
+            img, Ck, grid, z_floor,
+            self_blind_m, max_incidence_deg, occluder, floor_ok=floor_mask,
+            geom=g if provenance else None,
         )
         seen = w > 0
         total += int(seen.sum())
@@ -668,7 +774,7 @@ def accumulate_floor_atlas(
             # incidence angle and incidence is measured from where the scanner
             # actually stood, not from where its pose claimed
             rgb = _harmonise_to_consensus(
-                rgb, seen, mean_rgb, grid, _shifted_centre(C, dzs[si]), z_floor
+                rgb, seen, mean_rgb, grid, Ck, z_floor
             )
         signed = (rgb @ LUM_W) - mean_lum
         drop = seen & can_gate & (
@@ -678,6 +784,14 @@ def accumulate_floor_atlas(
         keep_w = np.where(drop, 0.0, w)
         acc2 += rgb * keep_w[..., None]
         wsum2 += keep_w
+        if prov_acc is not None:
+            # The geometry is re-derived by look_geometry from the CORRECTED
+            # centre rather than lifted out of _sample_source's locals. That
+            # costs an extra pass over the grid and buys the thing worth more:
+            # one authority for the algebra, so provenance cannot quietly
+            # start describing a different capture than the one it measures.
+            inc, gsd = ap.look_geometry(grid, Ck, z_floor, g["eq_hw"])
+            prov_acc.add_look(seen & ~drop, drop, inc, gsd)
 
     # a pixel whose every sample was rejected falls back to the plain mean:
     # better an averaged observation than a hole we would have to invent
@@ -700,5 +814,12 @@ def accumulate_floor_atlas(
         "max_looks": int(counts.max()),
         "fallback_px": int(fallback.sum()),
         "mm_per_px": grid.mm_per_px,
+        "floor_frac": 1.0 if floor_mask is None else float(floor_mask.mean()),
+        "floor_covered_frac": (
+            float(observed.mean()) if floor_mask is None
+            else (float(observed[floor_mask].mean()) if floor_mask.any() else 0.0)
+        ),
     }
+    if prov_acc is not None:
+        report["provenance"] = prov_acc.finish()
     return atlas, report
