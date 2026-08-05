@@ -114,8 +114,10 @@ describe("PlannerSpatialHud", () => {
     expect(chair).toBeDefined();
     if (roundTable === undefined || chair === undefined) return;
 
-    // 30 × 20 render units → 15m × 10m real → 150 m² of floor.
-    useRoomDimensionsStore.setState({ dimensions: { width: 30, length: 20, height: 7 } });
+    // 15m × 10m real → 150 m² of floor. The scene is in true metres now, so
+    // the store holds the real figures directly; this fixture previously
+    // carried the doubled 30 × 20 render units.
+    useRoomDimensionsStore.setState({ dimensions: { width: 15, length: 10, height: 7 } });
     usePlacementStore.setState({
       placedItems: [
         createPlacedItem(roundTable.id, 0, 0, 0),
@@ -127,7 +129,10 @@ describe("PlannerSpatialHud", () => {
     render(<PlannerSpatialHud />);
 
     const style = inferSeatingStyle({ roundTables: 1, banquetTables: 0, chairs: 2 });
-    const cap = computeCapacityIntelligence((30 / RENDER_SCALE) * (20 / RENDER_SCALE), 2, style);
+    // Real floor area, matching the dimensions set above. Deriving it from
+    // the store's own numbers keeps the expectation and the fixture from
+    // drifting apart — they previously did, via stale render-space literals.
+    const cap = computeCapacityIntelligence(15 * 10, 2, style);
 
     // Capacity comes from real floor area (floor(150 / 1.5) = 100), not a hardcoded constant.
     expect(cap.comfortableCapacity).toBe(100);

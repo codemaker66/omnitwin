@@ -4,6 +4,7 @@ import {
   CLOTH_SNAP_DISTANCE_M,
   CLOTH_SNAP_DISTANCE_RENDER,
 } from "../cloth-snap.js";
+import { toRealWorld } from "../../constants/scale.js";
 import { resetPlacedIdCounter, createPlacedItem } from "../placement.js";
 import type { PlacedItem } from "../placement.js";
 
@@ -18,8 +19,13 @@ describe("cloth-snap constants", () => {
     expect(CLOTH_SNAP_DISTANCE_M).toBeGreaterThan(0);
   });
 
-  it("CLOTH_SNAP_DISTANCE_RENDER is scaled", () => {
-    expect(CLOTH_SNAP_DISTANCE_RENDER).toBeGreaterThan(CLOTH_SNAP_DISTANCE_M);
+  // The product decision is "a cloth snaps to a table within 2 real metres".
+  // Asserting the render value is merely LARGER only held while the render
+  // scale exceeded 1; what must hold at any scale is that converting it back
+  // yields the metre distance the rule is written in.
+  it("CLOTH_SNAP_DISTANCE_RENDER is the metre distance in render space", () => {
+    expect(toRealWorld(CLOTH_SNAP_DISTANCE_RENDER)).toBeCloseTo(CLOTH_SNAP_DISTANCE_M, 10);
+    expect(CLOTH_SNAP_DISTANCE_RENDER).toBeGreaterThan(0);
   });
 });
 

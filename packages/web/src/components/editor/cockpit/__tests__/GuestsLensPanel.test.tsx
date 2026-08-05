@@ -29,7 +29,10 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   // Render-space 42 × 20 → real 21 × 10 = 210 m² (comfortable 140 for rounds).
-  useRoomDimensionsStore.getState().setDimensions({ width: 42, length: 20, height: 7 });
+  // 21m × 10m real = 210 m². True metres now; this previously carried the
+  // doubled 42 × 20 render units, which is why capacity read 4× the moment
+  // the render scale went to 1.
+  useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10, height: 7 });
 });
 
 afterEach(() => { cleanup(); });

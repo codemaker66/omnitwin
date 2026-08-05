@@ -94,7 +94,15 @@ export function computePanBounds(
 export const MIN_POLAR_ANGLE = 0.1;
 export const MAX_POLAR_ANGLE = Math.PI * 0.48;
 export const DAMPING_FACTOR = 0.2;
-export const PAN_SPEED = 20;
+/**
+ * Metres per second at the reference zoom distance.
+ *
+ * Halved from 20 when the scene moved to true metres. The distance-based
+ * `speedScale` is a ratio, so it cancels when the whole world shrinks — pan
+ * kept its speed in world units while the room became half as wide, which
+ * would have made it feel twice as fast to cross.
+ */
+export const PAN_SPEED = 10;
 export const EDGE_SCROLL_ZONE = 40;
 export const DAMPING_SETTLE_FRAMES = 24;
 export const ZOOM_IMPULSE = 0.025;

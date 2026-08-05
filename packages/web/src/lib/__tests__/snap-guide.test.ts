@@ -83,11 +83,11 @@ describe("computeSnapGuides center alignment", () => {
 describe("computeSnapGuides edge alignment", () => {
   it("detects right-left edge alignment", () => {
     // Place two items so the right edge of the dragged item aligns with the
-    // left edge of the placed item. Round table is 1.83m = 3.66 render,
-    // half = 1.83. Chair is 0.45m = 0.9 render, half = 0.45.
-    // dragX = 0, drag right edge = 1.83.
-    // Placed chair at x = 1.83 + 0.45 = 2.28 → chair left edge = 2.28 - 0.45 = 1.83.
-    const placed = [createPlacedItem(chairId, 2.28, 0, 0)];
+    // left edge of the placed item. True metres: round table is 1.83m,
+    // half = 0.915. Chair is 0.45m, half = 0.225.
+    // dragX = 0, drag right edge = 0.915.
+    // Placed chair at x = 0.915 + 0.225 = 1.14 → chair left edge = 0.915.
+    const placed = [createPlacedItem(chairId, 1.14, 0, 0)];
     const guides = computeSnapGuides(0, 0, tableId, 0, placed, new Set());
     const edgeGuides = guides.filter((g) => g.kind === "edge" && g.axis === "z");
     expect(edgeGuides.length).toBeGreaterThan(0);
@@ -107,7 +107,9 @@ describe("snapToFurnitureAlignment", () => {
   });
 
   it("snaps edge alignment without moving excluded group members", () => {
-    const placed = [createPlacedItem(chairId, 2.28, 0, 0)];
+    // 1.14 puts the chair's left edge on 0.915, where the dragged table's
+    // right edge lands when its centre is 0 — see the edge-alignment case.
+    const placed = [createPlacedItem(chairId, 1.14, 0, 0)];
     const result = snapToFurnitureAlignment(0.12, 0, tableId, 0, placed, new Set());
     expect(result.x).toBeCloseTo(0, 3);
 

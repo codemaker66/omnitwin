@@ -56,13 +56,16 @@ function makeObj(
 
 describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
   it("converts between editor render-space and blueprint metre-space", () => {
-    expect(editorPositionToBlueprintPoint(2, -4, { widthM: 10, lengthM: 8 })).toEqual({
+    // Editor space is true metres, so (1, -2) in a 10 × 8m room maps to the
+    // blueprint's top-left origin as (5 + 1, 4 - 2) = (6, 2). These inputs
+    // read (2, -4) while the editor carried doubled render units.
+    expect(editorPositionToBlueprintPoint(1, -2, { widthM: 10, lengthM: 8 })).toEqual({
       x: 6,
       y: 2,
     });
     expect(blueprintPointToEditorPosition({ x: 6, y: 2 }, { widthM: 10, lengthM: 8 })).toEqual({
-      positionX: 2,
-      positionZ: -4,
+      positionX: 1,
+      positionZ: -2,
     });
   });
 
@@ -73,9 +76,9 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
 
     const objects: readonly EditorObject[] = [
       makeObj("table-1", ROUND_TABLE.id, 0, 0, "g1"),
-      makeObj("chair-1", CHAIR.id, 2, 0, "g1"),
-      makeObj("chair-2", CHAIR.id, -2, 0, "g1"),
-      makeObj("chair-3", CHAIR.id, 0, 2, "g1"),
+      makeObj("chair-1", CHAIR.id, 1, 0, "g1"),
+      makeObj("chair-2", CHAIR.id, -1, 0, "g1"),
+      makeObj("chair-3", CHAIR.id, 0, 1, "g1"),
     ];
     const scene = adaptEditorStateToBlueprintScene({
       space: SPACE,
@@ -88,8 +91,9 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     if (table === undefined || table.shape !== "round") return;
     expect(table.chairs).toBeDefined();
     expect(table.chairs).toHaveLength(3);
-    // 3D render-space centre-origin → real-world blueprint corner-origin.
-    // Room is 10 × 10m → offset is (+5, +5); render-space is divided by 2.
+    // 3D centre-origin → blueprint corner-origin. Room is 10 × 10m, so the
+    // offset is (+5, +5). The scene is in true metres, so a chair at editor
+    // x = 1 lands at blueprint x = 6.
     expect(table.chairs?.[0]).toEqual({ x: 6, y: 5 });
     expect(table.chairs?.[1]).toEqual({ x: 4, y: 5 });
     expect(table.chairs?.[2]).toEqual({ x: 5, y: 6 });
@@ -126,7 +130,7 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
 
     const objects: readonly EditorObject[] = [
       makeObj("table-1", ROUND_TABLE.id, 0, 0, "g1"),
-      makeObj("chair-1", CHAIR.id, 2, 0, "g1"),
+      makeObj("chair-1", CHAIR.id, 1, 0, "g1"),
       makeObj("chair-foreign", CHAIR.id, 5, 5, "g2"),
       makeObj("chair-loose", CHAIR.id, -2, -2, null),
     ];

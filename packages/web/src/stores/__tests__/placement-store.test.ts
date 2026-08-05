@@ -423,12 +423,20 @@ describe("moveItemsByDelta", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     usePlacementStore.getState().placeItem(chairId, 1, 1);
     const ids = new Set(usePlacementStore.getState().placedItems.map((i) => i.id));
+    // Capture the resting positions rather than assuming them: placeItem
+    // nudges an item clear of anything it would overlap, so the absolute
+    // coordinates depend on furniture footprints. The property under test is
+    // that EVERY selected item moves by the same delta, which holds whatever
+    // those footprints are.
+    const before = usePlacementStore.getState().placedItems.map((i) => ({ x: i.x, z: i.z }));
     usePlacementStore.getState().moveItemsByDelta(ids, 0.5, 0.5);
     const items = usePlacementStore.getState().placedItems;
-    expect(items[0]?.x).toBeCloseTo(0.5);
-    expect(items[0]?.z).toBeCloseTo(0.5);
-    expect(items[1]?.x).toBeCloseTo(1.5);
-    expect(items[1]?.z).toBeCloseTo(1.5);
+
+    expect(items).toHaveLength(before.length);
+    items.forEach((item, index) => {
+      expect(item.x).toBeCloseTo((before[index]?.x ?? 0) + 0.5);
+      expect(item.z).toBeCloseTo((before[index]?.z ?? 0) + 0.5);
+    });
   });
 
   it("does nothing for empty set", () => {

@@ -196,7 +196,10 @@ describe("isWithinRoomBounds", () => {
 
   it("rejects an item whose footprint crosses the room edge even when its center is inside", () => {
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
-    expect(isWithinRoomBounds(4.5, 0, smallItem, 0, smallRoom)).toBe(false);
+    // 1m item -> 0.5m half-width. A centre at 4.75 is inside the wall at 5,
+    // but the footprint reaches 5.25 and crosses it. (This read 4.5 back when
+    // the render scale doubled every footprint.)
+    expect(isWithinRoomBounds(4.75, 0, smallItem, 0, smallRoom)).toBe(false);
   });
 });
 
@@ -209,7 +212,10 @@ describe("getPlacementViolations", () => {
 
   it("returns an outside_room violation when the exact footprint crosses the wall", () => {
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
-    const violations = getPlacementViolations(4.5, 0, smallItem, 0, [], new Set(), 0, smallRoom);
+    // 4.75, not 4.5 — see the isWithinRoomBounds case above: a 1m item now has
+    // a 0.5m half-width, so the centre has to sit closer to the wall for the
+    // footprint to actually cross it.
+    const violations = getPlacementViolations(4.75, 0, smallItem, 0, [], new Set(), 0, smallRoom);
     expect(violations).toContainEqual({
       kind: "outside_room",
       message: "Furniture footprint crosses the room boundary",

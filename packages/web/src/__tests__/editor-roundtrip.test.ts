@@ -113,13 +113,15 @@ describe("render-space store <-> real-metre wire conversion", () => {
 
   it("a render-space edge placement lands inside the real-metre Grand Hall polygon", () => {
     // Grand Hall real polygon is x∈[-10.5,10.5], z∈[-5,5] (metres). A chair
-    // near the render-space far wall (render X ≈ 19.6, well inside the 42-wide
-    // render room) must serialise to a real X inside ±10.5 so the server's
-    // pointInPolygon check accepts it.
+    // close to the far wall (X ≈ 9.8, inside the 21-wide room) must serialise
+    // to a real X inside ±10.5 so the server's pointInPolygon check accepts
+    // it. The scene is in true metres now, so store and wire coincide — the
+    // point of the test is that an edge placement survives the boundary
+    // either way, which is what would break first if conversion went lossy.
     const editor: EditorObject = {
       id: "550e8400-e29b-41d4-a716-4466554400bb",
       assetDefinitionId: CHAIR_ID,
-      positionX: 19.6, positionY: 0, positionZ: 8.7,
+      positionX: 9.8, positionY: 0, positionZ: 4.35,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
       clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",

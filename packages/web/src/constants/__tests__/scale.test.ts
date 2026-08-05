@@ -13,8 +13,18 @@ import { TRADES_HALL_GRAND_HALL_DIMENSIONS } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 describe("RENDER_SCALE", () => {
-  it("is 2.0", () => {
-    expect(RENDER_SCALE).toBe(2.0);
+  it("is 1.0 — the scene is authored and rendered in true metres", () => {
+    expect(RENDER_SCALE).toBe(1.0);
+  });
+
+  // The property that actually matters, and the one that must hold whatever
+  // the factor is: a value converted to render space and back is unchanged.
+  // The DB stores real metres while the store holds render space, so a lossy
+  // round trip would silently drift every saved layout on each open and save.
+  it("round-trips real metres through render space without drift", () => {
+    for (const metres of [0, 0.45, 1.83, 10.5, 21, -3.66, 0.001]) {
+      expect(toRealWorld(toRenderSpace(metres))).toBeCloseTo(metres, 10);
+    }
   });
 });
 
