@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TradesHouseCraftQuizPage } from "../pages/TradesHouseCraftQuizPage.js";
 import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
 
@@ -34,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   setIframeLoadingDisabled(false);
 });
 
@@ -55,7 +56,10 @@ describe("Trades House leaflet experience", () => {
     );
   });
 
-  it("runs all nine supplied questions and produces a deterministic result", () => {
+  it("runs all nine supplied questions and produces a deterministic result", async () => {
+    // The Convener now reacts to every answer before the quiz advances, so
+    // the click-through plays his typewriter out on fake timers.
+    vi.useFakeTimers();
     renderQuiz();
 
     expect(screen.getByRole("heading", { name: "Which Craft is yours?" })).toBeTruthy();
@@ -78,8 +82,13 @@ describe("Trades House leaflet experience", () => {
 
     for (const answer of firstAnswers) {
       fireEvent.click(screen.getByRole("button", { name: answer }));
+      // Let his reaction line finish typing and the quiz advance.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8_000);
+      });
     }
 
+    vi.useRealTimers();
     expect(screen.getByText("THE HAMMERMEN")).toBeTruthy();
     expect(screen.getByText("The Forge-Mind")).toBeTruthy();
     const introduction = screen.getByRole("link", { name: "Request an introduction" });
@@ -98,8 +107,14 @@ describe("Trades House leaflet experience", () => {
     renderQuiz();
     fireEvent.click(screen.getByRole("button", { name: "Begin the Craft quiz" }));
 
-    expect(screen.getByRole("status").textContent).toContain("Question 1 of 9");
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    // Two polite live regions now share the screen: the quiz's progress
+    // announcer and the Convener's speech mirror.
+    const statuses = screen.getAllByRole("status");
+    expect(statuses.some((status) => status.textContent?.includes("Question 1 of 9") ?? false)).toBe(true);
+    // Four answer options — the Convener's pokeable portrait is a fifth
+    // button, so count options by their own class, not by role.
+    expect(document.querySelectorAll(".craft-quiz-option")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "Ye Auld Convener — poke the portrait" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /THE TORN ROBE/u })).toBeInstanceOf(HTMLButtonElement);
   });
 });
