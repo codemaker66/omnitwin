@@ -191,8 +191,12 @@ function createMaterials(): DanceFloorPanelMaterials {
     oakDark: new MeshStandardMaterial({
       color: 0x744a26, metalness: 0, roughness: 0.42, side: FrontSide,
     }),
+    // The deck's only visible face is the ~20mm reveal around the parquet
+    // field, which on a real portable panel is the aluminium edge trim that
+    // takes the knocks. Dark timber here read as a near-black border and made
+    // the panel look like a hole in the floor.
     deckSubstrate: new MeshStandardMaterial({
-      color: 0x4b3524, metalness: 0, roughness: 0.72, side: FrontSide,
+      color: 0x9aa0a8, metalness: 0.68, roughness: 0.42, side: FrontSide,
     }),
     aluminium: new MeshStandardMaterial({
       color: 0xb8bcc2, metalness: 0.82, roughness: 0.34, side: FrontSide,
@@ -332,6 +336,12 @@ function createParquetCell(
   const centreZ = (cellZ - half) * PARQUET_CELL_SIZE;
   // Alternate the weave direction like a chequerboard.
   const runsAlongX = (cellX + cellZ) % 2 === 0;
+  // One tone per CELL, not per finger. Shading a cell's three fingers
+  // light->mid->dark makes every block a directional gradient, and the eye
+  // joins those gradients across cells into chevrons — it stops reading as a
+  // basket weave at all. Real parquet varies tone block to block.
+  const tones = [materials.oakLight, materials.oakMid, materials.oakDark];
+  const tone = tones[(cellX * 2 + cellZ * 5) % tones.length] ?? materials.oakLight;
   const fingers: Group[] = [];
 
   for (let index = 0; index < PARQUET_FINGERS_PER_CELL; index += 1) {
@@ -342,11 +352,6 @@ function createParquetCell(
     const position: Vector3Tuple = runsAlongX
       ? [centreX, deckLocalY(PARQUET_CENTRE_Y), centreZ + offset]
       : [centreX + offset, deckLocalY(PARQUET_CENTRE_Y), centreZ];
-    // Three tones cycling by finger index give the weave depth without a
-    // per-finger texture; the light tone carries the shared grain map.
-    const tone = index === 0
-      ? materials.oakLight
-      : index === 1 ? materials.oakMid : materials.oakDark;
     const id = `deck-parquet-finger-r${String(cellZ + 1)}c${String(cellX + 1)}-${String(index + 1)}-detail`;
     fingers.push(
       createBoxPart(deck, registry, id, size, position, tone, options, true),
