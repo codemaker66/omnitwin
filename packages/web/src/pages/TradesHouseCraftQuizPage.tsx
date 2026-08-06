@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { CraftOptionIcon } from "../features/trades-house/CraftOptionIcon.js";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { OptionSeal } from "../features/trades-house/OptionSeal.js";
+import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
+import { useMediaQuery } from "../hooks/use-media-query.js";
 import {
   CRAFT_ORDER,
   CRAFT_PROFILES,
@@ -47,12 +49,43 @@ interface IntroScreenProps {
   readonly onBegin: () => void;
 }
 
+/** Stage curtain framing the desktop intro — pure decoration, hidden below 1180px. */
+function CurtainDrape({ side }: { readonly side: "left" | "right" }): ReactElement {
+  const flip = side === "right" ? "scale(-1 1) translate(-140 0)" : undefined;
+  return (
+    <svg
+      className={`craft-quiz-curtain is-${side}`}
+      viewBox="0 0 140 900"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g transform={flip}>
+        <path d="M0 0 h118 q-26 120 -14 320 q10 180 -18 380 q-14 110 6 200 h-92 z" fill="#141d33" />
+        <path d="M22 0 q18 190 6 420 q-8 190 10 480" stroke="#0b1122" strokeWidth="26" fill="none" opacity=".8" />
+        <path d="M58 0 q22 210 8 450 q-10 200 14 450" stroke="#1c2a4a" strokeWidth="18" fill="none" opacity=".7" />
+        <path d="M92 0 q14 170 4 400 q-8 210 10 500" stroke="#0e1730" strokeWidth="20" fill="none" opacity=".85" />
+        <path d="M112 0 q-20 130 -10 330 q8 170 -16 370 q-12 105 8 200" stroke="#2a3b63" strokeWidth="4" fill="none" opacity=".5" />
+        <path d="M4 560 q62 44 116 8" stroke="#8a651f" strokeWidth="9" fill="none" />
+        <path d="M4 560 q62 44 116 8" stroke="#cda85f" strokeWidth="4" strokeDasharray="3 6" fill="none" />
+        <path d="M64 594 v34" stroke="#a67e33" strokeWidth="5" />
+        <path d="M52 628 h24 l-4 44 q-8 10 -16 0 z" fill="#b98d3e" />
+        <path d="M52 628 h24" stroke="#e6cf9b" strokeWidth="3" />
+        <path d="M56 636 v30 M64 638 v34 M72 636 v30" stroke="#8a651f" strokeWidth="2.4" opacity=".8" />
+      </g>
+    </svg>
+  );
+}
+
 function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
   return (
     <section className="craft-quiz-intro" aria-labelledby="craft-quiz-title">
       <CraftRail craftIds={CRAFT_ORDER.slice(0, 7)} side="left" />
       <CraftRail craftIds={CRAFT_ORDER.slice(7)} side="right" />
+      <CurtainDrape side="left" />
+      <CurtainDrape side="right" />
       <div className="craft-quiz-intro-core">
+        <div className="craft-quiz-intro-backdrop" aria-hidden="true" />
         <div className="craft-quiz-achievement-wrap">
           <img
             className="craft-quiz-achievement"
@@ -71,6 +104,7 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
         <button type="button" className="craft-quiz-begin" onClick={onBegin} aria-label="Begin the Craft quiz">
           Begin
         </button>
+        <p className="craft-quiz-intro-foot">Your journey into Glasgow’s living heritage</p>
       </div>
     </section>
   );
@@ -103,9 +137,19 @@ interface QuestionScreenProps {
   readonly questionIndex: number;
   readonly scores: Readonly<CraftScores>;
   readonly onAnswer: (optionIndex: number) => void;
+  /** The option just chosen; locks the set while the Convener reacts. */
+  readonly pickedIndex: number | null;
+  /** The Convener glances at whichever option the pointer is weighing. */
+  readonly onOptionHover: (clientX: number, clientY: number) => void;
 }
 
-function QuestionScreen({ questionIndex, scores, onAnswer }: QuestionScreenProps): ReactElement {
+function QuestionScreen({
+  questionIndex,
+  scores,
+  onAnswer,
+  pickedIndex,
+  onOptionHover,
+}: QuestionScreenProps): ReactElement {
   const question = CRAFT_QUESTIONS[questionIndex];
   if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
   const omen = midQuizOmen(scores, questionIndex);
@@ -118,15 +162,32 @@ function QuestionScreen({ questionIndex, scores, onAnswer }: QuestionScreenProps
       {omen === null ? null : <p className="craft-quiz-omen">{omen}</p>}
       <h1 id="craft-question-title">{question.prompt}</h1>
       <div className="craft-quiz-options">
-        {question.options.map((option, optionIndex) => (
-          <button type="button" className="craft-quiz-option" onClick={() => { onAnswer(optionIndex); }} key={option.title}>
-            <CraftOptionIcon icon={option.icon} />
-            <span>
-              <strong>{option.title}</strong>
-              <small>{option.subtitle}</small>
-            </span>
-          </button>
-        ))}
+        {question.options.map((option, optionIndex) => {
+          const picked = pickedIndex === optionIndex;
+          const faded = pickedIndex !== null && !picked;
+          return (
+            /* aria-disabled, NOT disabled: disabling the focused button drops
+               keyboard focus to <body> on every answer. answerQuestion() is
+               the real re-entry guard; this is the accessible signal. */
+            <button
+              type="button"
+              className={`craft-quiz-option${picked ? " is-picked" : ""}${faded ? " is-faded" : ""}`}
+              aria-disabled={pickedIndex !== null}
+              onClick={() => { onAnswer(optionIndex); }}
+              onPointerEnter={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onOptionHover(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              }}
+              key={option.title}
+            >
+              <OptionSeal index={optionIndex} />
+              <span>
+                <strong>{option.title}</strong>
+                <small>{option.subtitle}</small>
+              </span>
+            </button>
+          );
+        })}
       </div>
       <div className="craft-quiz-divider is-muted" aria-hidden="true"><i>❖</i></div>
       <p className="craft-quiz-est">Trades House of Glasgow · Est. 1605</p>
@@ -208,6 +269,9 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [scores, setScores] = useState<CraftScores>({});
   const [lastWeights, setLastWeights] = useState<CraftWeights>({});
+  const [pickedIndex, setPickedIndex] = useState<number | null>(null);
+  const convenerRef = useRef<ConvenerHandle>(null);
+  const wideStage = useMediaQuery("(min-width: 980px)");
   const ranking = useMemo(() => rankCrafts(scores, lastWeights), [lastWeights, scores]);
 
   useEffect(() => {
@@ -218,10 +282,18 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     };
   }, []);
 
+  // He reads each question aloud as it arrives — the host, not a caption.
+  useEffect(() => {
+    if (screen !== "question") return;
+    const prompt = CRAFT_QUESTIONS[questionIndex]?.prompt;
+    if (prompt !== undefined) void convenerRef.current?.say(prompt);
+  }, [screen, questionIndex]);
+
   function beginQuiz(): void {
     setScores({});
     setLastWeights({});
     setQuestionIndex(0);
+    setPickedIndex(null);
     setScreen("question");
   }
 
@@ -229,22 +301,56 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setScores({});
     setLastWeights({});
     setQuestionIndex(0);
+    setPickedIndex(null);
     setScreen("intro");
   }
 
   function answerQuestion(optionIndex: number): void {
+    if (pickedIndex !== null) return;
+    const option = CRAFT_QUESTIONS[questionIndex]?.options[optionIndex];
+    if (option === undefined) return;
+    setPickedIndex(optionIndex);
     const answer = applyCraftQuizAnswer(scores, questionIndex, optionIndex);
     setScores(answer.scores);
     setLastWeights(answer.lastWeights);
-    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
-    else setQuestionIndex((current) => current + 1);
+
+    const advance = (): void => {
+      setPickedIndex(null);
+      if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
+      else setQuestionIndex((current) => current + 1);
+    };
+    const convener = convenerRef.current;
+    if (convener === null) {
+      advance();
+      return;
+    }
+    // He reacts, THEN the quiz moves on — the beat is the personality.
+    convener.express("smile", 900);
+    void convener.say(option.convenerLine, { quip: true }).then(advance);
   }
 
   return (
     <main className="trades-house-craft-quiz-page" data-screen={screen}>
       <div className="trades-house-craft-quiz-shell">
         {screen === "intro" ? <IntroScreen onBegin={beginQuiz} /> : null}
-        {screen === "question" ? <QuestionScreen questionIndex={questionIndex} scores={scores} onAnswer={answerQuestion} /> : null}
+        {screen === "question" ? (
+          <div className="craft-quiz-stage">
+            <div className="craft-quiz-stage-portrait">
+              <ConvenerPortrait
+                ref={convenerRef}
+                compact={!wideStage}
+                restingLine={CRAFT_QUESTIONS[questionIndex]?.prompt ?? null}
+              />
+            </div>
+            <QuestionScreen
+              questionIndex={questionIndex}
+              scores={scores}
+              onAnswer={answerQuestion}
+              pickedIndex={pickedIndex}
+              onOptionHover={(clientX, clientY) => { convenerRef.current?.glanceAt(clientX, clientY); }}
+            />
+          </div>
+        ) : null}
         {screen === "result" ? <ResultScreen ranking={ranking} onRetake={resetQuiz} /> : null}
       </div>
     </main>

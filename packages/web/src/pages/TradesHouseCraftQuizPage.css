@@ -330,12 +330,9 @@
   transform: translateY(-2px);
 }
 
-.craft-option-icon {
-  fill: none;
+.craft-option-seal {
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
   height: 42px;
-  overflow: visible;
-  stroke-linecap: round;
-  stroke-linejoin: round;
   width: 42px;
 }
 
@@ -941,10 +938,10 @@
     position: absolute;
   }
 
-  .craft-option-icon {
+  .craft-option-seal {
     flex: none;
-    height: 45px;
-    width: 45px;
+    height: 44px;
+    width: 44px;
   }
 
   .craft-quiz-option strong {
@@ -955,24 +952,26 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 
+  /* Metrics pinned to the supplied build (Discover Your Craft Quiz v2): Cinzel
+     400 / 10px / 2px, and deliberately no text-transform. Cinzel is an
+     inscriptional face whose lowercase glyphs are small capitals, so the
+     supplied lowercase copy already renders as caps; forcing uppercase
+     substitutes wider full-height capitals and changes where lines wrap. */
   .craft-quiz-option small {
     color: currentcolor;
     font-family: Cinzel, serif;
-    font-size: 9.5px;
+    font-size: 10px;
     font-style: normal;
-    letter-spacing: 1.8px;
+    font-weight: 400;
+    letter-spacing: 2px;
     line-height: normal;
     opacity: 0.75;
-    text-transform: uppercase;
   }
 
-  .craft-quiz-option:nth-child(4) {
-    padding-block: 19px;
-  }
-
-  .craft-quiz-option:nth-child(4) small {
-    max-width: 250px;
-  }
+  /* The fourth option previously carried a 250px subtitle clamp and extra block
+     padding to tame the full-height capitals that text-transform produced. With
+     the supplied Cinzel small-cap metrics restored above, its subtitle fits on
+     one line unaided, and both overrides now cause the very wrap they prevented. */
 
   .craft-quiz-question .craft-quiz-divider {
     margin: 33px 0 0;
@@ -1260,6 +1259,293 @@
   }
 }
 
+/* Keep every result action and line of copy inside a portrait iPhone viewport. */
+@media screen and (max-width: 430px) {
+  .craft-quiz-result {
+    padding: 12px 16px 14px;
+  }
+
+  .craft-result-kicker {
+    font-size: 9.5px;
+    letter-spacing: 2.4px;
+    width: 88%;
+  }
+
+  .craft-result-medallion {
+    height: 190px;
+    margin: 6px auto 0;
+    width: 190px;
+  }
+
+  .craft-result-rays {
+    inset: -22px;
+  }
+
+  .craft-quiz-result h1 {
+    font-size: 16px;
+    letter-spacing: 1.8px;
+    margin-top: 3px;
+    padding: 10px 26px;
+  }
+
+  .craft-quiz-result h1::before,
+  .craft-quiz-result h1::after {
+    height: 30px;
+    top: 5px;
+    width: 32px;
+  }
+
+  .craft-quiz-result h1::before {
+    left: -21px;
+  }
+
+  .craft-quiz-result h1::after {
+    right: -21px;
+  }
+
+  .craft-result-archetype {
+    font-size: 18px;
+    margin-top: 7px;
+  }
+
+  .craft-result-essence {
+    font-size: 14.5px;
+    line-height: 1.25;
+    margin: 7px 6px 0;
+  }
+
+  .craft-result-reveal {
+    font-size: 12.5px;
+    line-height: 1.3;
+    margin: 6px 6px 0;
+  }
+
+  .craft-result-motto {
+    font-size: 8.5px;
+    letter-spacing: 1.4px;
+    line-height: 1.35;
+    margin-top: 6px;
+  }
+
+  .craft-result-affinities {
+    font-size: 12px;
+    line-height: 1.3;
+    margin: 6px 6px 0;
+  }
+
+  .craft-result-introduction {
+    font-size: 11px;
+    letter-spacing: 1.8px;
+    margin-top: 9px;
+    min-height: 44px;
+    padding: 10px 22px 10px 30px;
+  }
+
+  .craft-result-introduction::before {
+    font-size: 10px;
+    height: 30px;
+    left: -11px;
+    width: 30px;
+  }
+
+  .craft-result-retake {
+    font-size: 13px;
+    margin-top: 7px;
+  }
+
+  .craft-result-leaflet {
+    font-size: 11.5px;
+    margin-top: 5px;
+  }
+
+  .craft-result-building {
+    height: 28px;
+    margin-top: 5px;
+  }
+
+  .craft-result-signoff {
+    font-size: 8.5px;
+    letter-spacing: 2.2px;
+    margin-top: 4px;
+  }
+}
+
+/* The SE-height layout keeps 44px actions while tightening decorative space. */
+@media screen and (max-width: 390px) and (max-height: 700px) {
+  .craft-quiz-question {
+    padding: 10px 14px 12px;
+  }
+
+  .craft-quiz-progress {
+    font-size: 9.5px;
+    width: 94%;
+  }
+
+  .craft-quiz-progress span[data-active="true"] {
+    font-size: 17px;
+  }
+
+  .craft-quiz-progress i {
+    margin-inline: 1px;
+  }
+
+  .craft-quiz-question-count {
+    font-size: 8px;
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+
+  .craft-quiz-omen {
+    font-size: 12.5px;
+    line-height: 1.15;
+    margin-top: 5px;
+  }
+
+  .craft-quiz-question h1 {
+    font-size: 25.5px;
+    line-height: 1.05;
+    margin-top: 8px;
+  }
+
+  .craft-quiz-options {
+    gap: 7px;
+    margin-top: 10px;
+  }
+
+  .craft-quiz-option,
+  .craft-quiz-option:nth-child(4) {
+    gap: 10px;
+    min-height: 61px;
+    padding: 8px 10px;
+  }
+
+  .craft-option-seal {
+    height: 32px;
+    width: 32px;
+  }
+
+  .craft-quiz-option strong {
+    font-size: 12px;
+    letter-spacing: 1.6px;
+  }
+
+  .craft-quiz-option small {
+    font-size: 8px;
+    letter-spacing: 1px;
+    line-height: 1.15;
+    margin-top: 2px;
+  }
+
+  .craft-quiz-question .craft-quiz-divider {
+    margin-top: 9px;
+    width: 55%;
+  }
+
+  .craft-quiz-est {
+    font-size: 7.5px;
+    letter-spacing: 1.8px;
+    margin-top: 3px;
+  }
+
+  .craft-quiz-result {
+    padding: 8px 12px 10px;
+  }
+
+  .craft-result-kicker {
+    font-size: 8.5px;
+    letter-spacing: 1.8px;
+  }
+
+  .craft-result-medallion {
+    height: 150px;
+    margin-top: 2px;
+    width: 150px;
+  }
+
+  .craft-result-rays {
+    inset: -17px;
+  }
+
+  .craft-quiz-result h1 {
+    font-size: 14.5px;
+    letter-spacing: 1.4px;
+    margin-top: 2px;
+    padding: 8px 20px;
+  }
+
+  .craft-quiz-result h1::before,
+  .craft-quiz-result h1::after {
+    height: 25px;
+    top: 4px;
+    width: 27px;
+  }
+
+  .craft-quiz-result h1::before {
+    left: -17px;
+  }
+
+  .craft-quiz-result h1::after {
+    right: -17px;
+  }
+
+  .craft-result-archetype {
+    font-size: 16px;
+    margin-top: 3px;
+  }
+
+  .craft-result-essence {
+    font-size: 13px;
+    line-height: 1.2;
+    margin-top: 4px;
+  }
+
+  .craft-result-reveal {
+    font-size: 11.5px;
+    line-height: 1.22;
+    margin-top: 4px;
+  }
+
+  .craft-result-motto {
+    font-size: 8px;
+    letter-spacing: 1.1px;
+    line-height: 1.3;
+    margin-top: 4px;
+  }
+
+  .craft-result-affinities {
+    font-size: 11px;
+    line-height: 1.22;
+    margin-top: 4px;
+  }
+
+  .craft-result-introduction {
+    font-size: 10px;
+    margin-top: 6px;
+    min-height: 44px;
+    padding: 8px 18px 8px 26px;
+  }
+
+  .craft-result-retake {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .craft-result-leaflet {
+    font-size: 10.5px;
+    margin-top: 4px;
+  }
+
+  .craft-result-building {
+    height: 22px;
+    margin-top: 3px;
+  }
+
+  .craft-result-signoff {
+    font-size: 7.5px;
+    margin-top: 3px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .craft-quiz-begin,
   .craft-quiz-option,
@@ -1272,5 +1558,401 @@
   .craft-result-glow,
   .craft-result-ember {
     animation: none;
+  }
+}
+
+/* ---- the Convener's stage ------------------------------------------------
+   Narrow: a compact banner above the question — he introduces, then gets out
+   of the way. Wide (≥880px): a sticky portrait column beside the question,
+   like the painting hung next to the lectern. */
+
+.craft-quiz-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+/* (The former ≥880px flex stage lived here; the ≥980px Hall stage at the end
+   of this file replaces it. 880–979px falls through to the banner layout —
+   a 300px portrait column can NOT share a 520px frame.) */
+
+/* Narrow stage: the Convener SPEAKS each prompt, so the visual h1 would say
+   everything twice and cost the exact height his banner needs. It stays in
+   the accessibility tree (aria-labelledby target) but leaves the layout. */
+@media (max-width: 979px) {
+  .craft-quiz-stage {
+    gap: 8px;
+  }
+
+  .craft-quiz-stage .craft-quiz-question h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* The banner spends ~90px; the question column pays for it here so the
+     no-scroll rule at 375x667 keeps holding. Desktop is untouched. The
+     pre-Convener layout floored the section at the full viewport height —
+     with the banner above it, that floor IS the overflow. */
+  .craft-quiz-stage .craft-quiz-question {
+    min-height: 0;
+  }
+
+  .craft-quiz-stage .craft-quiz-option {
+    min-height: 72px;
+    padding: 12px 16px;
+    gap: 14px;
+  }
+
+  .craft-quiz-stage .craft-quiz-options {
+    gap: 10px;
+  }
+
+  .craft-quiz-stage .craft-quiz-question .craft-quiz-divider {
+    display: none;
+  }
+
+  .craft-quiz-stage .craft-quiz-est {
+    margin-top: 6px;
+  }
+}
+
+/* While he reacts to a choice, the chosen option holds the light and the
+   rest step back — nobody talks over the Convener. */
+
+.craft-quiz-option.is-picked {
+  border-color: #e6cf9b;
+  box-shadow: 0 0 22px rgba(230, 207, 155, 0.28);
+}
+
+.craft-quiz-option.is-faded {
+  opacity: 0.25;
+  pointer-events: none;
+  transition: opacity 400ms ease;
+}
+
+/* ---- the desktop proscenium (intro only, ≥1180px) ------------------------
+   The REAL Trades Hall at night behind the arms, the armorial hung from
+   above, stage curtains at the edges, crest rails as silver plaques, a gilt
+   frame around the whole scene. Below 1180px every element here is
+   display:none — the verified phone and tablet layouts are untouched. */
+
+.craft-quiz-curtain,
+.craft-quiz-intro-backdrop {
+  display: none;
+}
+
+.craft-quiz-intro-foot {
+  /* Desktop flourish only: the phone intro's no-scroll budget is exact. */
+  color: rgba(201, 192, 176, 0.62);
+  display: none;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  margin: 18px 0 0;
+  text-transform: uppercase;
+}
+
+@media (min-width: 1180px) {
+  .craft-quiz-intro {
+    grid-template-columns: minmax(190px, 235px) 1fr minmax(190px, 235px);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* the gilt frame around the whole stage */
+  .craft-quiz-intro::after {
+    border: 1px solid rgba(230, 207, 155, 0.38);
+    box-shadow: inset 0 0 0 3px rgba(10, 16, 30, 0.9), inset 0 0 60px rgba(0, 0, 0, 0.55);
+    content: "";
+    inset: 10px;
+    pointer-events: none;
+    position: absolute;
+    z-index: 4;
+  }
+
+  .craft-quiz-curtain {
+    display: block;
+    filter: drop-shadow(6px 0 18px rgba(0, 0, 0, 0.55));
+    height: 100%;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    width: clamp(80px, 6.5vw, 130px);
+    z-index: 3;
+  }
+
+  .craft-quiz-curtain.is-left {
+    left: 0;
+  }
+
+  .craft-quiz-curtain.is-right {
+    filter: drop-shadow(-6px 0 18px rgba(0, 0, 0, 0.55));
+    right: 0;
+  }
+
+  .craft-quiz-intro-core {
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* the Hall itself: real photography, night-graded */
+  .craft-quiz-intro-backdrop {
+    background:
+      radial-gradient(90% 70% at 50% 46%, rgba(201, 143, 74, 0.14), transparent 62%),
+      linear-gradient(180deg, rgba(4, 9, 20, 0.78) 0%, rgba(5, 11, 22, 0.38) 34%, rgba(5, 11, 22, 0.5) 62%, rgba(3, 7, 15, 0.92) 92%),
+      url("/images/venue/ladder/trades-hall-exterior-1120.webp") center 30% / cover no-repeat;
+    display: block;
+    filter: saturate(0.82) contrast(1.04);
+    inset: 0;
+    position: absolute;
+  }
+
+  .craft-quiz-intro-core > :not(.craft-quiz-intro-backdrop) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* the armorial hangs into the scene from above */
+  .craft-quiz-achievement-wrap {
+    position: relative;
+  }
+
+  .craft-quiz-achievement-wrap::before {
+    background: linear-gradient(180deg, rgba(230, 207, 155, 0), rgba(205, 168, 95, 0.85));
+    content: "";
+    height: 14vh;
+    left: 50%;
+    position: absolute;
+    top: -14vh;
+    transform: translateX(-50%);
+    width: 2px;
+  }
+
+  .craft-quiz-achievement {
+    filter: drop-shadow(0 14px 36px rgba(0, 0, 0, 0.65)) drop-shadow(0 0 46px rgba(205, 168, 95, 0.24));
+    height: clamp(230px, 36vh, 340px);
+    max-width: min(56vw, 560px);
+  }
+
+  .craft-quiz-intro h1 {
+    text-shadow: 0 3px 26px rgba(0, 0, 0, 0.8);
+  }
+
+  .craft-quiz-intro-core > p {
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
+  }
+
+  /* the BEGIN bar: gilt frame on deep navy, wide as a lintel */
+  .craft-quiz-begin {
+    background: linear-gradient(180deg, #182848, #0e1b36);
+    box-shadow: 0 0 0 3px #0e1b36, 0 0 0 4px rgba(205, 168, 95, 0.55), 0 14px 34px rgba(0, 0, 0, 0.55);
+    color: var(--craft-gold);
+    font-size: 16px;
+    letter-spacing: 0.42em;
+    min-width: min(460px, 36vw);
+    padding-left: 44px; /* optically recentres the wide tracking */
+  }
+
+  .craft-quiz-begin:hover {
+    background: var(--craft-gold);
+    border-color: var(--craft-gold);
+    color: #13213a;
+    transform: translateY(-2px);
+  }
+
+  /* crest rails: silver plaques on the tartan, names engraved beneath */
+  .craft-quiz-rail {
+    background: rgba(5, 13, 24, 0.55);
+    gap: clamp(6px, 1.3vh, 14px);
+    padding-inline: clamp(18px, 1.8vw, 34px);
+    z-index: 1;
+  }
+
+  .craft-quiz-rail-item {
+    background: linear-gradient(165deg, rgba(216, 224, 234, 0.12), rgba(10, 16, 28, 0.58) 60%);
+    border: 1px solid rgba(190, 200, 214, 0.32);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(236, 242, 248, 0.22), 0 6px 14px rgba(0, 0, 0, 0.38);
+    gap: 5px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: clamp(6px, 1vh, 11px) 8px;
+    text-align: center;
+  }
+
+  .craft-quiz-rail-item img {
+    grid-row: auto;
+    height: clamp(38px, 6.4vh, 58px);
+  }
+
+  .craft-quiz-rail-item span {
+    color: #cfd6df;
+    font-family: Cinzel, Georgia, serif;
+    font-size: clamp(8px, 0.6vw, 10px);
+    letter-spacing: 0.14em;
+  }
+
+  .craft-quiz-rail-item i {
+    display: none;
+  }
+
+  .craft-quiz-intro-foot {
+    display: block;
+  }
+}
+
+/* ---- the Hall stage (desktop ≥980px, question screen only) ----------------
+   Below 980px the proven phone-frame skin governs everything. At desktop the
+   question screen alone leaves the 520px frame and becomes ONE full-viewport
+   scene: the Convener anchors the left third like a painting beside the
+   lectern; the four options hold the right as a 2×2 card wall. Single page —
+   the stage owns 100dvh and nothing scrolls. Cascade note: this block is
+   appended last on purpose so it outweighs both the phone skin and the
+   earlier ≥880px stage rules. */
+
+@media screen and (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="question"] {
+    align-items: stretch;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .trades-house-craft-quiz-shell {
+    box-shadow: none;
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-stage {
+    align-items: center;
+    display: grid;
+    gap: clamp(28px, 4vw, 72px);
+    grid-template-columns: clamp(320px, 30vw, 430px) minmax(0, 1fr);
+    height: 100dvh;
+    margin: 0 auto;
+    max-width: 1680px;
+    padding: clamp(20px, 4vh, 44px) clamp(32px, 5vw, 96px);
+    width: 100%;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-stage-portrait {
+    position: static;
+    width: auto;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-frame,
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech {
+    max-width: min(26vw, 400px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech {
+    min-height: 116px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech-text {
+    font-size: 16.5px;
+    line-height: 1.5;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-question {
+    height: 100%;
+    justify-content: center;
+    min-height: 0;
+    padding: 0;
+  }
+
+  /* The Convener ASKS the question — the h1 repeating him beside his own
+     bubble is theatre with a teleprompter. Accessibility tree keeps it. */
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-question h1 {
+    border: 0;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-options {
+    display: grid;
+    gap: clamp(14px, 2.2vh, 24px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: clamp(18px, 3.5vh, 34px);
+    max-width: 900px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: 44px 1fr;
+    min-height: clamp(118px, 17vh, 170px);
+    padding: 22px 26px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option strong {
+    font-size: 15.5px;
+    letter-spacing: 0.14em;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option small {
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-option-seal {
+    height: 40px;
+    width: 40px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-est {
+    margin-top: clamp(14px, 2.5vh, 24px);
+  }
+}
+
+/* ---- the proscenium escapes the phone frame (intro, ≥1180px) --------------
+   Companion to the Hall stage block above: the intro too leaves the 520px
+   card and owns the full viewport — three-column grid restored (the phone
+   skin flexes it), rails back in the columns (the phone skin absolutes them
+   into 14px strips). Appended last so it outweighs the phone skin without
+   specificity games. */
+
+@media screen and (min-width: 1180px) {
+  .trades-house-craft-quiz-page[data-screen="intro"] {
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="intro"] .trades-house-craft-quiz-shell {
+    box-shadow: none;
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-intro {
+    display: grid;
+    grid-template-columns: minmax(190px, 235px) 1fr minmax(190px, 235px);
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-rail {
+    display: grid;
+    inset: auto;
+    position: static;
+    width: auto;
+  }
+
+  .craft-quiz-rail-item {
+    display: grid;
   }
 }
