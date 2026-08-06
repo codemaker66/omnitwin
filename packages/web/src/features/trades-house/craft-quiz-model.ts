@@ -27,30 +27,77 @@ export interface CraftProfile {
   readonly reveal: string;
 }
 
-export type CraftScores = Partial<Record<CraftId, number>>;
-export type CraftWeights = Readonly<Partial<Record<CraftId, number>>>;
+// ---------------------------------------------------------------------------
+// The five value axes.
+//
+// Options push a respondent along these axes; each Craft is a fixed direction
+// in the same space; the winner is the nearest direction by cosine similarity.
+// No option maps to a Craft directly — that indirection is the anti-gaming
+// core. You cannot pick "the Masons answer", because no answer is one.
+// Model and tuning: docs/trades-house/craft-research/16-sorting-mechanics.md.
+// ---------------------------------------------------------------------------
+
+export const AXIS_KEYS = ["a1", "a2", "a3", "a4", "a5"] as const;
+export type AxisKey = (typeof AXIS_KEYS)[number];
+
+/** A sparse push along one or more axes — an option's entire scoring payload. */
+export type AxisVector = Readonly<Partial<Record<AxisKey, number>>>;
+/** A dense position in axis space — a running total, or a Craft's direction. */
+export type AxisTotals = Readonly<Record<AxisKey, number>>;
+
+export const ZERO_AXIS_TOTALS: AxisTotals = { a1: 0, a2: 0, a3: 0, a4: 0, a5: 0 };
+
+/**
+ * Where each Incorporation stands.
+ *
+ *   a1  Lasting <-> Living      a2  Perfection <-> Provision
+ *   a3  Bench <-> Hearth        a4  Bold <-> Steady
+ *   a5  Make <-> Keep
+ *
+ * v0.3 — the dossier-16 seed profiles with synthesis Part 2.3 amendments
+ * (Gardeners and Maltmen a5 -> -1: both are keepers, not makers). Every number
+ * here is load-bearing: changing one moves a Craft in the space and can make
+ * it unreachable. craft-quiz-reachability.test.ts is the gate that proves it
+ * did not.
+ */
+export const CRAFT_AXIS_PROFILES = {
+  hammermen: { a1: 2, a2: 3, a3: 2, a4: 2, a5: 1 },
+  wrights: { a1: 2, a2: 1, a3: 1, a4: 0, a5: 3 },
+  masons: { a1: 3, a2: 1, a3: 1, a4: -2, a5: 1 },
+  coopers: { a1: 2, a2: 2, a3: 2, a4: -1, a5: -3 },
+  tailors: { a1: 0, a2: 3, a3: 0, a4: 1, a5: 1 },
+  weavers: { a1: 1, a2: 1, a3: 1, a4: -3, a5: 0 },
+  dyers: { a1: -2, a2: 1, a3: -1, a4: 3, a5: 2 },
+  skinners: { a1: 1, a2: 1, a3: -1, a4: -2, a5: -3 },
+  cordiners: { a1: 1, a2: -2, a3: 1, a4: -1, a5: -1 },
+  bakers: { a1: -1, a2: -3, a3: -1, a4: 0, a5: 1 },
+  fleshers: { a1: 0, a2: -2, a3: 0, a4: 2, a5: 0 },
+  maltmen: { a1: -1, a2: -2, a3: -3, a4: -1, a5: -1 },
+  gardeners: { a1: -3, a2: 0, a3: 1, a4: -2, a5: -1 },
+  barbers: { a1: -2, a2: 1, a3: -2, a4: -1, a5: -1 },
+} as const satisfies Readonly<Record<CraftId, AxisTotals>>;
 
 export interface CraftQuizOption {
-  readonly title: string;
-  readonly subtitle: string;
-  readonly icon: string;
-  readonly weights: CraftWeights;
-  /**
-   * Ye Auld Convener's spoken reaction when this option is chosen. Required:
-   * he leads the quiz, so a voiceless option is a compile error. Voice rules
-   * live in convener/convener-lines.ts.
-   */
-  readonly convenerLine: string;
+  /** The decisive phrase, shown bold — "The tin box." */
+  readonly lead: string;
+  /** The case a serious person would make for it. */
+  readonly body: string;
+  /** What it costs, named plainly. Every option pays something (law L5). */
+  readonly cost: string;
+  readonly axes: AxisVector;
 }
 
 export interface CraftQuizQuestion {
-  readonly prompt: string;
+  /** Authoring name. Never rendered — it would telegraph the scene. */
+  readonly title: string;
+  /** The scene, in the narrator's voice. The Convener speaks this aloud. */
+  readonly scene: string;
   readonly options: readonly CraftQuizOption[];
 }
 
 export interface CraftQuizAnswerResult {
-  readonly scores: CraftScores;
-  readonly lastWeights: CraftWeights;
+  readonly totals: AxisTotals;
+  readonly lastAxes: AxisVector;
 }
 
 export interface CraftRankingEntry {
@@ -218,301 +265,388 @@ export const CRAFT_PROFILES = {
   },
 } as const satisfies Readonly<Record<CraftId, CraftProfile>>;
 
+/**
+ * The twelve scenes.
+ *
+ * Written to the laws in docs/trades-house/craft-research/17-dostoyevsky-dnd-brief.md:
+ * one scene and one threshold each; second person, present tense; four options
+ * differing in KIND of good rather than degree; every option carries a named
+ * cost; no craft nouns anywhere in the copy (an anvil would telegraph the
+ * Hammermen). Ten distinct forms across twelve scenes.
+ *
+ * The axis vectors are the canonical set proven by the geometry gate. Copy may
+ * be edited freely; vectors may not be edited without re-running that gate.
+ */
 export const CRAFT_QUESTIONS = [
   {
-    prompt: "The Hall wakes at midnight and asks what you will mend first.",
+    title: "The Half-Done Thing",
+    scene:
+      "Auld Rab worked beside ye thirty years, and now he's dying, and he grips yer hand like a man gripping a ledge. Two things he leaves ye, and breath for one sentence: the great work o' his life, half-done where he left it — and the apprentice lad, half-taught at the door. “See it finished,” he says. And then he says nothing, ever again. Ye cannae do both well. Choose.",
     options: [
       {
-        title: "THE BROKEN MECHANISM",
-        subtitle: "the one no one else understands",
-        icon: "key",
-        weights: { hammermen: 2, wrights: 1 },
-        convenerLine: "Ye hear the tick naebody else can! The Hammermen keep a bench warm for heids like yours.",
+        lead: "Finish the work itself.",
+        body: "To his ain design, exact, though it takes ye ten years. It will stand when every soul who knew him is gone.",
+        cost: "ten years of yer own life",
+        axes: { a1: 2, a4: -1, a5: 1 },
       },
       {
-        title: "THE TORN ROBE",
-        subtitle: "before anyone must wear it",
-        icon: "needle",
-        weights: { tailors: 2, weavers: 1 },
-        convenerLine: "Mendit afore it shames its wearer — that’s no’ stitching, friend, that’s MERCY wi’ a thimble.",
+        lead: "Finish the lad instead.",
+        body: "Teach him till HIS hands can finish it. Slower. And the work will change in his hands, for nae two hands are the same.",
+        cost: "the work will not be Rab's",
+        axes: { a3: 1, a4: -2 },
       },
       {
-        title: "THE CRACKED BOOTS",
-        subtitle: "of the one with miles still to walk",
-        icon: "boot",
-        weights: { cordiners: 2, skinners: 1 },
-        convenerLine: "Miles still to walk! Ye mend the JOURNEY, no’ the leather. I’ve kent Cordiners greet ower less.",
+        lead: "Sell the half-done thing.",
+        body: "And put the price in his widow's hand before winter. Rab's dead; she isnae.",
+        cost: "the great work dies",
+        axes: { a2: -2, a3: -1 },
       },
       {
-        title: "THE EMPTY TABLE",
-        subtitle: "so strangers may sit together again",
-        icon: "table",
-        weights: { maltmen: 2, bakers: 1 },
-        convenerLine: "Strangers fed become neighbours — the auldest spell this Hall kens. The Maltmen are nodding already.",
+        lead: "Leave it exactly as his hands left it.",
+        body: "Cover it, keep it, let the half-done thing BE his memorial. Finished is not the only kind of true.",
+        cost: "it will never serve a living soul",
+        axes: { a1: 1, a5: -2 },
       },
     ],
   },
   {
-    prompt: "When your hands are idle, what do they itch to do?",
+    title: "The True Thing That Doesnae Suit",
+    scene:
+      "Two of them stand before ye, and ye are the one they've asked to judge. The maker, arms crossed, beside the thing he made — and by every measure ye ken, it is TRUE. Sound, exact, honest work; ye've checked it twice. And beside him the man it was made for, who paid for it, wearing the face of a man at a funeral. It does not suit him. It never will. Both of them are right, and the room is waiting on yer mouth.",
     options: [
       {
-        title: "THE WORKBENCH",
-        subtitle: "shape something solid — wood, stone or metal",
-        icon: "anvil",
-        weights: { wrights: 2, masons: 2, hammermen: 2, coopers: 1 },
-        convenerLine: "SOLID! Ye want the world heavier when ye’re done wi’ it. I respect that in a body.",
+        lead: "Judge the thing.",
+        body: "It is true work and it passes — the measure cannae bend to a man's mood, or it is no measure at all.",
+        cost: "the buyer leaves grieving",
+        axes: { a1: 1, a2: 2, a3: 2 },
       },
       {
-        title: "THE NEEDLE",
-        subtitle: "stitch, cut or mend something fine",
-        icon: "needle",
-        weights: { tailors: 2, weavers: 2, cordiners: 1, skinners: 1 },
-        convenerLine: "Sma’ work, fierce patience — a needle’s just a claymore for folk wi’ better aim.",
+        lead: "Judge the fit.",
+        body: "A thing made FOR a man that doesnae serve him has failed, however true — remake it till it serves the man that paid.",
+        cost: "the maker's true work is called a failure",
+        axes: { a1: -1, a2: 2, a3: -1 },
       },
       {
-        title: "THE OVEN",
-        subtitle: "bake, brew or carve — feed people well",
-        icon: "oven",
-        weights: { bakers: 2, maltmen: 2, fleshers: 2 },
-        convenerLine: "FEED them! Naebody argues wi’ a full mooth. The Bakers ance won a battle wi’ bread — true story.",
+        lead: "Refuse the verdict; force the conversation.",
+        body: "Lock the pair of them in wi' each other till the maker sees the man and the man sees the work.",
+        cost: "neither man brings ye a quarrel again, and the night may end wi' both of them hating the judge",
+        axes: { a3: -2, a4: -2 },
       },
       {
-        title: "THE GARDEN",
-        subtitle: "tend something living and growing",
-        icon: "leaf",
-        weights: { gardeners: 3, barbers: 1 },
-        convenerLine: "Something living! The slow crafts outlast us a’ — ask my roses. Deid three hundred year, still famous.",
+        lead: "Pay the difference yerself and dissolve the bargain.",
+        body: "Some griefs have nae culprit. The maker keeps his truth, the man his money, and ye are poorer and free.",
+        cost: "yer own purse, for other men's peace",
+        axes: { a2: -2, a3: 1, a5: -1 },
       },
     ],
   },
   {
-    prompt: "Which compliment would please you most?",
+    title: "One Armful",
+    scene:
+      "The river's in yer stairwell — came up in the night like a thief, and it's still rising. One armful, nae more, and the rest is the water's. In yer room: the tin box wi' every penny ye have. The papers that prove what ye own and what ye're owed. Yer mother's letters, that exist nowhere else on this earth. And through the wall, the neighbour's bairn, crying in the dark — whether the neighbour's in there wi' her, or away, or has her in her arms already on the far stair, the wall willnae tell ye. One minute. One armful. Choose.",
     options: [
       {
-        title: "BUILT TO LAST",
-        subtitle: "“that will outlast us all”",
-        icon: "rook",
-        weights: { masons: 2, wrights: 2, coopers: 2 },
-        convenerLine: "The Mason’s amen, that ane. Stane doesnae flatter — stane just STAYS.",
+        lead: "The tin box.",
+        body: "Grief doesnae feed anybody. Ye can grieve wi' a roof; ye cannae roof wi' grief.",
+        cost: "everything irreplaceable",
+        axes: { a2: -2, a4: 1 },
       },
       {
-        title: "A PERFECT FIT",
-        subtitle: "“made exactly for me”",
-        icon: "boot",
-        weights: { tailors: 2, cordiners: 2, skinners: 2 },
-        convenerLine: "Made exactly for YOU — och, there’s nae grander luxury in this world than being measured.",
+        lead: "The papers.",
+        body: "Money's lost in a night; RIGHTS are lost for a generation. What's provable is what's real when the water goes down.",
+        cost: "the past, and the present purse",
+        axes: { a2: 1, a5: -2 },
       },
       {
-        title: "THE FINEST TABLE",
-        subtitle: "“the best I’ve ever tasted”",
-        icon: "cloche",
-        weights: { bakers: 2, fleshers: 2, maltmen: 1 },
-        convenerLine: "‘Best I ever tasted’ — fower words worth mair than a knighthood, and I’ve seen knighthoods gang for less.",
+        lead: "The letters.",
+        body: "The law can be argued again and money earned again. Her hand on paper cannot come back into the world.",
+        cost: "yer claim and yer coin",
+        axes: { a1: 2 },
       },
       {
-        title: "A FRESH TRIM",
-        subtitle: "“you look brand new”",
-        icon: "comb",
-        weights: { barbers: 3, dyers: 1 },
-        convenerLine: "Brand NEW! The Barbers’ miracle — walk in a Tuesday, walk oot a wedding.",
+        lead: "The wall.",
+        body: "Ye put yer shoulder through the wet plaster for the bairn that isnae yours, and let the river have the lot.",
+        cost: "everything ye own, on a maybe",
+        axes: { a1: -1, a3: -1, a4: 3, a5: 1 },
       },
     ],
   },
   {
-    prompt: "Choose your favourite corner of the Trades Hall:",
+    title: "The Thing Told at the Fire",
+    scene:
+      "At the end of a long wake, when the room has thinned to embers, a man ye hardly ken sits down beside ye and tells ye a thing that cannae be untold. A wrong he did, years back, to a man ye break bread wi' every week — never found out, and never mended. He asks ye for nothing. That's the trap of it. Tomorrow he'll walk the town as ever, and only ye will ken.",
     options: [
       {
-        title: "THE STAIRCASE",
-        subtitle: "stone steps and the pillared front",
-        icon: "stairs",
-        weights: { masons: 3, wrights: 1 },
-        convenerLine: "The stane steps — worn hollow by fower centuries o’ guid boots! A Mason counts every scuff a signature.",
+        lead: "“Ye tell him yerself — this week — or I will.”",
+        body: "A wrong stays alive as long as it stays hidden.",
+        cost: "ye become the keeper of another man's conscience",
+        axes: { a1: 1, a2: 2, a3: 2, a4: 1 },
       },
       {
-        title: "THE GRAND HALL",
-        subtitle: "laid for a feast of 250",
-        icon: "candelabra",
-        weights: { bakers: 2, maltmen: 2, fleshers: 1 },
-        convenerLine: "Laid for twa hundred and fifty! The candles, the clatter, the GRAND roar o’ it — a feast-hearted ane, you.",
+        lead: "Say nothing — but mend what his wrong left broken.",
+        body: "Quietly, at yer own cost, and never say why.",
+        cost: "ye do the labour of a sin that isnae yours",
+        axes: { a2: -1, a5: 2 },
       },
       {
-        title: "THE BANNERS",
-        subtitle: "silk, thread and old tapestries",
-        icon: "drape",
-        weights: { weavers: 2, tailors: 1, dyers: 2 },
-        convenerLine: "The silk remembers what the minute-books forget. Weavers hung their whole patience on these wa’s.",
+        lead: "Keep it. Watch him.",
+        body: "Some things are safer in a careful pocket than loose in the town.",
+        cost: "a watcher's loneliness, at two tables",
+        axes: { a5: -3 },
       },
       {
-        title: "THE GREEN DOME",
-        subtitle: "and the gardens beyond",
-        icon: "dome",
-        weights: { gardeners: 3 },
-        convenerLine: "And the gairdens BEYOND — ye looked past the building! The Gardeners aye do. Growing doesnae stop at doors.",
+        lead: "Carry it as it was given.",
+        body: "A man emptied his soul at yer fire; that is a kind of holy, and holiness isnae evidence.",
+        cost: "ye must sit whole at two tables, forever",
+        axes: { a3: -2, a4: -1 },
       },
     ],
   },
   {
-    prompt: "A great feast is planned at the Hall. Your role?",
+    title: "The Paid Debt",
+    scene:
+      "A hard winter, and yer debts stand at the door like dogs. Then a letter: paid. All of it. Nae name, nae condition — only a line in a strange hand: “For a kindness ye'll no' remember.” Ye search yer memory and find nothing there. It is more than ye needed and far more than ye earned, and whoever did it doesnae want finding.",
     options: [
       {
-        title: "RAISE THE HALL",
-        subtitle: "build the stage, set the scene",
-        icon: "ladder",
-        weights: { wrights: 2, masons: 1, coopers: 1, hammermen: 1 },
-        convenerLine: "The stage afore the show! Naebody toasts the Wright — but naebody toasts WITHOOT him, either.",
+        lead: "Take it whole, and let yerself be helped.",
+        body: "Grace doesnae keep books.",
+        cost: "living wi' a debt that cannae be paid",
+        axes: { a2: -1, a3: -2 },
       },
       {
-        title: "DRESS THE GUESTS",
-        subtitle: "in their finest attire",
-        icon: "shears",
-        weights: { tailors: 2, dyers: 2, skinners: 1, cordiners: 1 },
-        convenerLine: "Send them in in SILK and they’ll behave like silk — the Tailors ken fine that clothes are half the manners.",
+        lead: "Take it — and work its worth back into the town.",
+        body: "Till the sum squares in yer own ledger, to the penny.",
+        cost: "grace turned back into arithmetic",
+        axes: { a2: 2, a5: -1 },
       },
       {
-        title: "COMMAND THE KITCHEN",
-        subtitle: "from first loaf to final course",
-        icon: "pot",
-        weights: { bakers: 2, fleshers: 2 },
-        convenerLine: "First loaf to final course — a general o’ the gravy! I’d follow ye to war. Or at least to supper.",
+        lead: "Take it, and do the same for some other soul",
+        body: "who will never find you either.",
+        cost: "yer own winter stays lean",
+        axes: { a1: -2, a3: -1 },
       },
       {
-        title: "RAISE THE TOAST",
-        subtitle: "fill every glass in the room",
-        icon: "goblet",
-        weights: { maltmen: 3 },
-        convenerLine: "Fill every GLESS! The Maltmen’s arithmetic: ane toast the piece, and nae guest left dry. Here’s tae us — wha’s like us!",
+        lead: "Live as if the debts still stood.",
+        body: "Bank what they would have taken, week upon week, till the hook shows itself or the sum sits ready to hand back.",
+        cost: "the help ye needed changes nothing about yer winter",
+        axes: { a4: -1, a5: -2 },
       },
     ],
   },
   {
-    prompt: "Which virtue do you prize above the others?",
+    title: "The Far Buyers",
+    scene:
+      "The biggest order o' yer year, bound for buyers across the sea who will never once stand in yer doorway. There is a cheaper way to do it — no' wrong, exactly; thinner. And yer own voice, quite reasonably, says: thinner is all they asked for and all they paid for — nae buyer on that shore could tell the difference, nor want to. Three winters till it shows, and by then there's an ocean between ye. And the wee ones have slept two winters now under the rain-stain. Ye have till the tide.",
     options: [
       {
-        title: "PRECISION",
-        subtitle: "measured twice, struck once",
-        icon: "compass",
-        weights: { hammermen: 2, cordiners: 1, tailors: 1 },
-        convenerLine: "Measured twice, struck ANCE — the Hammermen’s whole religion in fower words. Amen and anvil.",
+        lead: "Do it true, at the dear rate,",
+        body: "and let the roof wait another year.",
+        cost: "the roof, a year",
+        axes: { a2: 3 },
       },
       {
-        title: "PATIENCE",
-        subtitle: "slow work, lasting worth",
-        icon: "hourglass",
-        weights: { weavers: 2, gardeners: 2, masons: 1 },
-        convenerLine: "Slow work, lasting worth. You, the Weavers and the stanes are a’ agreed — time’s just anither tool.",
+        lead: "Do it true — and write the standard into the bargain",
+        body: "so nae man after ye can do it thin either.",
+        cost: "yer trade will curse yer name for the precedent",
+        axes: { a2: 1, a3: 1, a5: -2 },
       },
       {
-        title: "GENEROSITY",
-        subtitle: "no one leaves hungry",
-        icon: "loaf",
-        weights: { bakers: 2, maltmen: 1, fleshers: 1 },
-        convenerLine: "Naebody leaves hungry! Carve that abune the door o’ every guid hoose in Glesga.",
+        lead: "Thin where it doesnae matter, true where it does",
+        body: "— and ken exactly which is which.",
+        cost: "ye now keep two sets of conscience",
+        axes: { a2: -1, a4: 2 },
       },
       {
-        title: "CARE",
-        subtitle: "a steady, gentle hand",
-        icon: "candle",
-        weights: { barbers: 2, skinners: 2 },
-        convenerLine: "A steady, gentle haund — the rarest tool in ony kist. Barbers swear by it. So do the folk they shave.",
+        lead: "Turn it down flat.",
+        body: "Work that big, for strangers that far, is a door better left shut.",
+        cost: "the year's best purse, gone on a principle nobody asked for",
+        axes: { a4: -2, a5: -1 },
       },
     ],
   },
   {
-    prompt: "You must work one material for a whole year. Choose:",
+    title: "The Smooth Road",
+    scene:
+      "He is no' a wicked man — that's the devil of it. The landlord's new factor, the man who collects the rents, offers ye a settled rent, a warm back door, first call on every good thing — and asks only that when the vote comes, yer hand rises where his does. He points out the window at the hungry doorways and the cold stairs. “Order feeds more folk than principle ever did,” he says. And looking where he points, ye cannae call him wrong.",
     options: [
       {
-        title: "IRON & SILVER",
-        subtitle: "the forge and the fine bench",
-        icon: "hammer",
-        weights: { hammermen: 3 },
-        convenerLine: "Thunder in the morning, filigree by candlelicht — a Hammerman’s honeymoon, that.",
+        lead: "Take it, and mean it.",
+        body: "Warm houses now beat fine speeches forever.",
+        cost: "yer hand is his, in public, always",
+        axes: { a2: -2, a3: -1 },
       },
       {
-        title: "OAK & STONE",
-        subtitle: "the saw, the chisel and the square",
-        icon: "portico",
-        weights: { wrights: 2, masons: 2, coopers: 1 },
-        convenerLine: "Oak and stane — the twa materials that ARGUE back. Ye like a conversation ye might lose.",
+        lead: "Refuse him at the market cross, out loud,",
+        body: "so the price of him is published.",
+        cost: "his warmth turns, and yours is the first roof he forgets",
+        axes: { a4: 3, a5: 1 },
       },
       {
-        title: "WOOL, LINEN & LEATHER",
-        subtitle: "the loom, the needle and the last",
-        icon: "spool",
-        weights: { weavers: 2, tailors: 1, skinners: 1, cordiners: 1 },
-        convenerLine: "The loom, the needle and the last — everything a body wears between kirk and bed. The soft trinity!",
+        lead: "Refuse him quietly.",
+        body: "Vote as ye judge, every time, without banners.",
+        cost: "nobody will ever ken what it cost — and he can pick ye off unwatched",
+        axes: { a2: 1, a4: -3 },
       },
       {
-        title: "GRAIN & GREEN THINGS",
-        subtitle: "the field, the orchard and the still",
-        icon: "barley",
-        weights: { gardeners: 2, bakers: 1, maltmen: 1, fleshers: 1 },
-        convenerLine: "Field, orchard and STILL — ye’d eat yer year and drink the remainder. Wise beyond yer years.",
+        lead: "Take his coin wi' yer own purpose folded inside.",
+        body: "Rise wi' his hand till the day yer hand matters more.",
+        cost: "years o' yer hand rising wi' his, and nae promise the day ever comes",
+        axes: { a3: 1, a5: 2 },
       },
     ],
   },
   {
-    prompt: "Tradition, to you, is…",
+    title: "Berries Off the Same Field",
+    scene:
+      "They've caught a man at the thing ye've only ever thought about in the low hours — the shortcut ye never took, the leaving ye never did. And as they bring him past, he stops, and smiles, and says, low: “You and me — berries off the same field.” The worst of it is no' that he's lying. Yer word tomorrow helps sink him or save him.",
     options: [
       {
-        title: "A STANDARD",
-        subtitle: "to uphold, exactly",
-        icon: "banner",
-        weights: { masons: 1, hammermen: 1, coopers: 1 },
-        convenerLine: "Upheld EXACTLY! Och, the Deacons would weep wi’ joy — and they hardly ever weep wi’ joy.",
+        lead: "Condemn the act in full.",
+        body: "And if that condemns a corner of yerself, so be it. That is what judgment is for.",
+        cost: "a corner of ye goes down wi' him",
+        axes: { a1: 2, a2: 1 },
       },
       {
-        title: "A PATTERN",
-        subtitle: "to reweave for today",
-        icon: "shuttle",
-        weights: { weavers: 1, dyers: 2, tailors: 1 },
-        convenerLine: "Rewoven for the day — aye! Tradition’s a loom, no’ a cage. The Dyers change the colour, never the cloth.",
+        lead: "Stand for him.",
+        body: "Ye ken exactly how a man arrives there — and mercy that was never tempted is nae mercy at all.",
+        cost: "the town files ye beside him",
+        axes: { a2: -2, a4: -1, a5: -1 },
       },
       {
-        title: "A TABLE",
-        subtitle: "with room for everyone",
-        icon: "table",
-        weights: { maltmen: 1, bakers: 1, fleshers: 1, barbers: 1 },
-        convenerLine: "Room for EVERYBODY — that’s the Hall itsel’. We’ve been setting extra places since sixteen-oh-five.",
+        lead: "Say nothing either way.",
+        body: "And go home and study the field ye both grew in, till ye ken what seeds it.",
+        cost: "abstention is also a verdict, and he'll meet it alone",
+        axes: { a4: -2, a5: -2 },
       },
       {
-        title: "A SKILL",
-        subtitle: "passed hand to hand",
-        icon: "key",
-        weights: { cordiners: 2, skinners: 1, wrights: 1, gardeners: 1 },
-        convenerLine: "Haund to haund, like a candle lit aff a candle — naething lost, and twice the licht.",
+        lead: "Tell the court the truth — “there but for a thin wall go I” —",
+        body: "then stand over his mending wi' yer own name on it.",
+        cost: "yer respectability, spent on his second chance",
+        axes: { a3: 1, a4: 1, a5: 2 },
       },
     ],
   },
   {
-    prompt: "Your perfect Saturday:",
+    title: "The Room Gone Quiet",
+    scene:
+      "A feast night, the long table full, when a letter that should never have left its drawer is read aloud for sport — and the man it undresses is sitting right there, gone the colour of ash. The room goes quiet the way a room does when it has been given a body to eat. Ye have the space of a breath, and where ye stand in it will be remembered as long as anybody at this table lives.",
     options: [
       {
-        title: "IN THE WORKSHOP",
-        subtitle: "till dusk, lost in the work",
-        icon: "vice",
-        weights: { hammermen: 2, wrights: 2, coopers: 2 },
-        convenerLine: "Till dusk, LOST in it — the finest clock in Glesga is a piece o’ work that willnae let ye go.",
+        lead: "Cross the room and sit down beside him, and eat",
+        body: "— as if beside him is where ye always sat.",
+        cost: "his shame becomes joint property",
+        axes: { a3: -3 },
       },
       {
-        title: "AT THE MARKET",
-        subtitle: "early, before the best is gone",
-        icon: "scales",
-        weights: { fleshers: 2, bakers: 1, gardeners: 1 },
-        convenerLine: "Early, afore the best is gone! Spoken like a Flesher wi’ a rival across the row.",
+        lead: "On yer feet: “This is a feast, no' a court.”",
+        body: "And haul the room back to order by the scruff.",
+        cost: "ye become the man who hushed it up",
+        axes: { a2: 2, a4: 1 },
       },
       {
-        title: "TRIMMED & TAILORED",
-        subtitle: "fresh cut, sharp outfit, out by noon",
-        icon: "hat",
-        weights: { barbers: 2, dyers: 2, tailors: 1, cordiners: 1 },
-        convenerLine: "Fresh cut, sharp fit, oot by NOON — the Lord made Saturdays for swagger, and the Barbers agree.",
+        lead: "Say the exact truth aloud:",
+        body: "the shame in this room belongs to the man reading, no' the man it names.",
+        cost: "the reader has friends, and now ye have theirs",
+        axes: { a3: -1, a4: 3, a5: 1 },
       },
       {
-        title: "HANDS IN THE EARTH",
-        subtitle: "in the garden till the light goes",
-        icon: "spade",
-        weights: { gardeners: 3 },
-        convenerLine: "In the gairden till the licht goes — and the licht aye goes too soon. The Gardeners’ only complaint in fower hundred year.",
+        lead: "Kick over yer own glass — loudly.",
+        body: "Be the fool the room turns to instead.",
+        cost: "yer dignity, spent like small coin, and nobody will ever ken why",
+        axes: { a2: -1, a3: 1, a5: -1 },
+      },
+    ],
+  },
+  {
+    title: "The Twice-Broken Word",
+    scene:
+      "He has broken his word twice — once to the whole street, and once, more privately, to you. Now he stands at yer door asking ye to stand caution for him before the court: yer name under his, yer money behind his promise. The record says no. Something in ye, looking at him, says maybe. Nobody else will do it — and refusing is safe, sensible, and blameless.",
+    options: [
+      {
+        lead: "Sign the whole caution.",
+        body: "If a man is to rise at all, somebody has to bear the weight of believing it first.",
+        cost: "yer money and yer name, on the record's worst bet",
+        axes: { a1: -2, a3: -2 },
+      },
+      {
+        lead: "Sign for half — and tell him to his face:",
+        body: "the other half is yours to earn back.",
+        cost: "half a grace can read as a whole insult",
+        axes: { a2: 2, a5: -1 },
+      },
+      {
+        lead: "Sign nothing — but walk beside him to the court,",
+        body: "and be seen walking.",
+        cost: "presence buys him nae bread, and earns ye his hope's resentment",
+        axes: { a3: -1, a5: -2 },
+      },
+      {
+        lead: "Refuse him plainly:",
+        body: "“Carry yer own weight the whole way once — and then ye'll ken ye can.”",
+        cost: "if he sinks, that sentence is yer epitaph in his story",
+        axes: { a1: 2, a2: 1, a4: -2 },
+      },
+    ],
+  },
+  {
+    title: "The Wee Kindness",
+    scene:
+      "Once, years back, ye did a wee kindness — hardly worth the word. A bowl. A bed for a night. A lie no' told. Now the man ye did it for is rich, and he stands in the middle of the town telling everybody that wee thing SAVED him — and he wants to pay it back a thousandfold, wi' yer name over the door of the paying. A bairn ye're raising is watching how ye answer.",
+    options: [
+      {
+        lead: "Take nothing — and set HIM to pass it on wee:",
+        body: "a bowl here, a bed there, nae name on any of it. Ye'll ken if he keeps it.",
+        cost: "the thousandfold good his gratitude could do, declined",
+        axes: { a1: -2, a3: 1, a4: -1 },
+      },
+      {
+        lead: "Take it — and build the thing that does the wee kindness a thousand times a year,",
+        body: "without needing anybody's warm mood.",
+        cost: "warmth becomes machinery",
+        axes: { a2: 1, a5: 2 },
+      },
+      {
+        lead: "Let him make his show.",
+        body: "Gratitude that big deserves a stage, and the town could use the spectacle of goodness.",
+        cost: "the kindness is now a performance, and ye are in the cast",
+        axes: { a1: -1, a4: 2, a5: 1 },
+      },
+      {
+        lead: "Give him nae answer at all — and tell the bairn, later, the only true part:",
+        body: "it was one bowl, it was yours to give, and it counted because nobody counted it.",
+        cost: "his telling, no' yours, becomes the town's truth of it",
+        axes: { a1: 1, a3: -1, a5: -1 },
+      },
+    ],
+  },
+  {
+    title: "The Good Chair",
+    scene:
+      "The auld man's chair — his grandmother's before him — comes to ye wi' the house, worn to the shape of four generations of sitting. The joints are going. The family looks to ye, as the one they trust wi' such things, to say what's done wi' it. Every one of them wants a different right thing.",
+    options: [
+      {
+        lead: "Mend it for sitting.",
+        body: "A chair kept FROM its work isnae kept at all — put the bairns in it the day the glue is dry.",
+        cost: "every repair replaces a little of the hands that made it",
+        axes: { a1: -3 },
+      },
+      {
+        lead: "Steady it, seal it, set it where it is seen and never sat on again.",
+        body: "Some things' work is finished; their witness isnae.",
+        cost: "a chair becomes a relic, and relics gather distance",
+        axes: { a1: 2, a5: -2 },
+      },
+      {
+        lead: "Sell it to the collector wi' the deep purse,",
+        body: "and put the money under the leaking roof of the living house.",
+        cost: "the family's oldest witness leaves in a stranger's cart",
+        axes: { a2: -2, a4: 1 },
+      },
+      {
+        lead: "Give it to the young one WITH the mending of it",
+        body: "— let her hands learn what holds it, fault and all.",
+        cost: "her first mend will be a poor one, and it will show forever",
+        axes: { a1: -1, a3: 1, a4: -2 },
       },
     ],
   },
@@ -531,8 +665,26 @@ function requireQuestion(questionIndex: number): CraftQuizQuestion {
   return question;
 }
 
+function dot(left: AxisTotals, right: AxisTotals): number {
+  return AXIS_KEYS.reduce((sum, key) => sum + left[key] * right[key], 0);
+}
+
+function magnitude(vector: AxisTotals): number {
+  return Math.sqrt(dot(vector, vector));
+}
+
+/**
+ * How closely a respondent's position points the same way as a Craft — cosine
+ * similarity, so it measures DIRECTION and ignores emphasis. A timid
+ * respondent and a vehement one who share the same values sort alike.
+ */
+export function craftAffinity(totals: AxisTotals, craftId: CraftId): number {
+  const scale = magnitude(totals) * magnitude(CRAFT_AXIS_PROFILES[craftId]);
+  return scale === 0 ? 0 : dot(totals, CRAFT_AXIS_PROFILES[craftId]) / scale;
+}
+
 export function applyCraftQuizAnswer(
-  scores: Readonly<CraftScores>,
+  totals: AxisTotals,
   questionIndex: number,
   optionIndex: number,
 ): CraftQuizAnswerResult {
@@ -546,30 +698,37 @@ export function applyCraftQuizAnswer(
     throw new RangeError(`Option index ${String(optionIndex)} is outside question ${String(questionIndex)}.`);
   }
 
-  const nextScores: CraftScores = { ...scores };
-
-  for (const craftId of CRAFT_ORDER) {
-    const weight = option.weights[craftId];
-    if (weight !== undefined) {
-      nextScores[craftId] = (nextScores[craftId] ?? 0) + weight;
-    }
+  const next: Record<AxisKey, number> = { ...totals };
+  for (const key of AXIS_KEYS) {
+    next[key] += option.axes[key] ?? 0;
   }
 
-  return {
-    scores: nextScores,
-    lastWeights: { ...option.weights },
-  };
+  return { totals: next, lastAxes: { ...option.axes } };
 }
 
+/**
+ * Ranks all fourteen Crafts by affinity. Ties break toward the Craft the FINAL
+ * answer pointed at hardest — the sorting-hat instinct that the last thing you
+ * said carries the most of you — and then by the Incorporations' own order of
+ * precedence, so the outcome is always deterministic.
+ */
 export function rankCrafts(
-  scores: Readonly<CraftScores>,
-  lastWeights: CraftWeights = {},
+  totals: AxisTotals,
+  lastAxes: AxisVector = {},
 ): readonly CraftRankingEntry[] {
+  const lastTotals: AxisTotals = {
+    a1: lastAxes.a1 ?? 0,
+    a2: lastAxes.a2 ?? 0,
+    a3: lastAxes.a3 ?? 0,
+    a4: lastAxes.a4 ?? 0,
+    a5: lastAxes.a5 ?? 0,
+  };
+
   return CRAFT_ORDER
     .map((craftId, stableOrder) => ({
       craftId,
-      score: scores[craftId] ?? 0,
-      lastAnswerWeight: lastWeights[craftId] ?? 0,
+      score: craftAffinity(totals, craftId),
+      lastAnswerWeight: craftAffinity(lastTotals, craftId),
       profile: CRAFT_PROFILES[craftId],
       stableOrder,
     }))
@@ -585,7 +744,6 @@ export function rankCrafts(
       profile,
     }));
 }
-
 export function buildCraftIntroductionMailto(craftId: CraftId): string {
   const craftName = CRAFT_PROFILES[craftId].name;
   const subject = `Craft introduction — ${craftName}`;

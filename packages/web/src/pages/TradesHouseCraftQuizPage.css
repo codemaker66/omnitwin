@@ -1638,6 +1638,129 @@
   transition: opacity 400ms ease;
 }
 
+/* ---- the twelve scenes ---------------------------------------------------
+   A scene is 200-600 characters of narration that the Convener performs. His
+   speech bubble is its ONE visible rendering — printing it again as a page
+   heading would say everything twice and cost the fold. The heading stays in
+   the accessibility tree (it is the section's aria-labelledby target) but
+   leaves the layout at every width.
+
+   Appended last so these win over the phone-skin and stage blocks above
+   without reaching for !important. */
+
+.trades-house-craft-quiz-page .craft-quiz-question h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Options are now a lead, a reason and a price — three tiers, not two. */
+.trades-house-craft-quiz-page .craft-quiz-option {
+  align-items: start;
+  min-height: 0;
+}
+
+/* A grid child defaults to min-width:auto, so a long unbroken phrase pushes
+   the column wider than its track and the page scrolls sideways. */
+.trades-house-craft-quiz-page .craft-quiz-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Twelve pips are a third wider than the nine this row was spaced for, which
+   pushed a phone sideways. Tighten the tracking and let it wrap rather than
+   ever widening the page. */
+.trades-house-craft-quiz-page .craft-quiz-progress {
+  flex-wrap: wrap;
+  max-width: 100%;
+  row-gap: 2px;
+}
+
+@media (max-width: 560px) {
+  .trades-house-craft-quiz-page .craft-quiz-progress {
+    font-size: 14px;
+  }
+
+  .trades-house-craft-quiz-page .craft-quiz-progress i {
+    margin: 0 3px;
+  }
+}
+
+.trades-house-craft-quiz-page .craft-quiz-option strong {
+  font-size: clamp(13px, 1.05vw, 15px);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+
+.trades-house-craft-quiz-page .craft-quiz-option small {
+  font-size: clamp(12px, 0.95vw, 13.5px);
+  line-height: 1.42;
+  margin-top: 4px;
+}
+
+/* Phone accordion: four leads at a glance, one opened at a time. Single
+   column, because a two-up grid of collapsed leads reads as a keypad. */
+.craft-quiz-options.is-accordion {
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.craft-quiz-options.is-accordion .craft-quiz-option {
+  padding: 11px 14px;
+}
+
+.craft-quiz-option-confirm {
+  color: #e6cf9b;
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 9.5px;
+  font-style: normal;
+  letter-spacing: 0.16em;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+.craft-quiz-option-cost {
+  color: rgba(205, 168, 95, 0.72);
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  font-size: clamp(9px, 0.72vw, 10.5px);
+  font-style: normal;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  margin-top: 7px;
+  text-transform: uppercase;
+}
+
+/* On the wide stage his bubble has to hold a whole scene, so the portrait
+   column widens and the portrait itself gives up the space. */
+@media (min-width: 980px) {
+  .craft-quiz-stage-portrait {
+    width: clamp(340px, 30vw, 430px);
+  }
+
+  .craft-quiz-stage-portrait .convener-frame {
+    margin: 0 auto;
+    max-width: 250px;
+  }
+
+  .craft-quiz-stage-portrait .convener-speech {
+    max-width: none;
+  }
+
+  .craft-quiz-stage-portrait .convener-speech-text {
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 0;
+  }
+}
+
 /* ---- the desktop invitation (intro only, ≥1180px) ------------------------
    Engraved state-invitation treatment: the armorial ALONE on near-black
    ground, a double gold hairline frame, the fourteen crests as an engraved

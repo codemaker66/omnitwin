@@ -56,7 +56,7 @@ describe("Trades House leaflet experience", () => {
     );
   });
 
-  it("runs all nine supplied questions and produces a deterministic result", async () => {
+  it("runs all twelve scenes and produces a deterministic result", async () => {
     // The Convener now reacts to every answer before the quiz advances, so
     // the click-through plays his typewriter out on fake timers.
     vi.useFakeTimers();
@@ -66,34 +66,28 @@ describe("Trades House leaflet experience", () => {
     expect(screen.getAllByTestId("craft-rail-crest")).toHaveLength(14);
 
     fireEvent.click(screen.getByRole("button", { name: "Begin the Craft quiz" }));
-    expect(screen.getByText("QUESTION 1 OF 9")).toBeTruthy();
+    expect(screen.getByText("QUESTION 1 OF 12")).toBeTruthy();
 
-    const firstAnswers = [
-      /THE BROKEN MECHANISM/u,
-      /THE WORKBENCH/u,
-      /BUILT TO LAST/u,
-      /THE STAIRCASE/u,
-      /RAISE THE HALL/u,
-      /PRECISION/u,
-      /IRON & SILVER/u,
-      /A STANDARD/u,
-      /IN THE WORKSHOP/u,
-    ] as const;
-
-    for (const answer of firstAnswers) {
-      fireEvent.click(screen.getByRole("button", { name: answer }));
-      // Let his reaction line finish typing and the quiz advance.
+    // Answering the third option of every scene is a fixed path through axis
+    // space; the geometry puts it nearest the Maltmen by a wide margin.
+    for (let scene = 0; scene < 12; scene += 1) {
+      const options = document.querySelectorAll<HTMLButtonElement>(".craft-quiz-option");
+      expect(options, `scene ${String(scene + 1)} should offer four options`).toHaveLength(4);
+      const third = options[2];
+      if (third === undefined) throw new Error("missing option");
+      fireEvent.click(third);
+      // Let his acknowledgement finish typing and the quiz advance.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(8_000);
       });
     }
 
     vi.useRealTimers();
-    expect(screen.getByText("THE HAMMERMEN")).toBeTruthy();
-    expect(screen.getByText("The Forge-Mind")).toBeTruthy();
+    expect(screen.getByText("THE MALTMEN")).toBeTruthy();
+    expect(screen.getByText("The Fermenter")).toBeTruthy();
     const introduction = screen.getByRole("link", { name: "Request an introduction" });
     expect(decodeURIComponent(introduction.getAttribute("href") ?? "")).toContain(
-      "Craft introduction — THE HAMMERMEN",
+      "Craft introduction — THE MALTMEN",
     );
     expect(
       screen.getByRole("link", { name: "View the visitor leaflet" }).getAttribute("href"),
@@ -110,11 +104,14 @@ describe("Trades House leaflet experience", () => {
     // Two polite live regions now share the screen: the quiz's progress
     // announcer and the Convener's speech mirror.
     const statuses = screen.getAllByRole("status");
-    expect(statuses.some((status) => status.textContent?.includes("Question 1 of 9") ?? false)).toBe(true);
+    expect(statuses.some((status) => status.textContent?.includes("Question 1 of 12") ?? false)).toBe(true);
     // Four answer options — the Convener's pokeable portrait is a fifth
     // button, so count options by their own class, not by role.
     expect(document.querySelectorAll(".craft-quiz-option")).toHaveLength(4);
     expect(screen.getByRole("button", { name: "Ye Auld Convener — poke the portrait" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /THE TORN ROBE/u })).toBeInstanceOf(HTMLButtonElement);
+    // Scene one, option one: the lead phrase is the option's accessible name.
+    expect(screen.getByRole("button", { name: /Finish the work itself/u })).toBeInstanceOf(HTMLButtonElement);
+    // Every option states its price — that is what keeps the four equal.
+    expect(screen.getByText(/Costs you: ten years of yer own life/u)).toBeTruthy();
   });
 });

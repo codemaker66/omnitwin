@@ -120,16 +120,27 @@ for (const viewport of IPHONE_VIEWPORTS) {
     await expectNoPageScroll(page);
 
     await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
-    for (let questionIndex = 0; questionIndex < 9; questionIndex += 1) {
+    for (let questionIndex = 0; questionIndex < 12; questionIndex += 1) {
       // Two polite status regions coexist now: the quiz's progress announcer
       // and the Convener's speech mirror. Address the quiz's own.
-      await expect(page.locator(".craft-quiz-sr-only[role='status']")).toHaveText(`Question ${String(questionIndex + 1)} of 9`);
-      if (questionIndex === 4) await expect(page.locator(".craft-quiz-omen")).toBeVisible();
+      await expect(page.locator(".craft-quiz-sr-only[role='status']"))
+        .toHaveText(`Question ${String(questionIndex + 1)} of 12`, { timeout: 20_000 });
+      if (questionIndex === 6) await expect(page.locator(".craft-quiz-omen")).toBeVisible();
+      // The scene and four priced options fit a phone because the options
+      // collapse to their leads — so the no-scroll rule still holds here.
       await expectNoPageScroll(page);
-      await page.locator(".craft-quiz-option").first().click();
+      // The third option every time is a fixed path through axis space that
+      // the geometry puts nearest the Maltmen by a wide margin. On a phone the
+      // first tap opens it and the second commits.
+      const option = page.locator(".craft-quiz-option").nth(2);
+      await option.click();
+      // Expanded, it must STILL fit — that is the harder half of the promise.
+      await expect(page.locator(".craft-quiz-option-confirm")).toBeVisible();
+      await expectNoPageScroll(page);
+      await option.click();
     }
 
-    await expect(page.getByRole("heading", { name: "THE HAMMERMEN" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Retake the questions" })).toBeVisible();
     await expectNoPageScroll(page);

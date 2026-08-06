@@ -1,126 +1,140 @@
+// ---------------------------------------------------------------------------
+// The sorting geometry gate.
+//
+// This is the promise the quiz makes: answer honestly and the Craft you get
+// is the Craft you match. Three properties keep that true, and all three are
+// easy to break with a single edited number — so they are asserted here
+// rather than trusted.
+//
+//   1. Every one of the fourteen Crafts is genuinely reachable.
+//   2. A "pure" respondent — someone who always picks the option nearest
+//      their own values — is sorted to themselves.
+//   3. Within any one scene, no two options push in near-enough the same
+//      direction to make choosing between them meaningless.
+//
+// Previously this file enumerated all 4^9 answer paths against craft-weight
+// scoring. Under the axis model that enumeration is both infeasible
+// (4^12 = 16.7M paths x 14 cosines) and beside the point: what matters is
+// direction, so the simulations below probe direction directly.
+// ---------------------------------------------------------------------------
+
 import { describe, expect, it } from "vitest";
 import {
+  AXIS_KEYS,
+  CRAFT_AXIS_PROFILES,
   CRAFT_ORDER,
   CRAFT_QUESTIONS,
+  ZERO_AXIS_TOTALS,
   applyCraftQuizAnswer,
+  craftAffinity,
   rankCrafts,
+  type AxisTotals,
+  type AxisVector,
   type CraftId,
-  type CraftQuizQuestion,
-  type CraftScores,
-  type CraftWeights,
 } from "../craft-quiz-model.js";
 
-// `CRAFT_QUESTIONS` is declared `as const`, so each option's `weights` narrows to
-// the exact literal keys it happens to carry and cannot be indexed by an arbitrary
-// CraftId. The production helpers read it through the declared interface; this
-// widened view lets the diagnostics below do the same.
-const QUESTIONS: readonly CraftQuizQuestion[] = CRAFT_QUESTIONS;
-
-type WinTally = Readonly<Record<CraftId, number>>;
-
-interface PathCensus {
-  readonly wins: WinTally;
-  readonly paths: number;
+function toTotals(vector: AxisVector): AxisTotals {
+  return {
+    a1: vector.a1 ?? 0,
+    a2: vector.a2 ?? 0,
+    a3: vector.a3 ?? 0,
+    a4: vector.a4 ?? 0,
+    a5: vector.a5 ?? 0,
+  };
 }
 
-/**
- * Walks every distinct answer path through the real quiz functions and tallies
- * which Craft each path awards. Nine questions of four options is 262,144 paths,
- * which is small enough to enumerate exhaustively rather than sample.
- */
-function censusOfEveryAnswerPath(): PathCensus {
-  const wins = new Map<CraftId, number>(CRAFT_ORDER.map((craftId) => [craftId, 0]));
-  let paths = 0;
+function cosineBetween(left: AxisTotals, right: AxisTotals): number {
+  const dot = AXIS_KEYS.reduce((sum, key) => sum + left[key] * right[key], 0);
+  const scale = Math.hypot(...AXIS_KEYS.map((key) => left[key]))
+    * Math.hypot(...AXIS_KEYS.map((key) => right[key]));
+  return scale === 0 ? 0 : dot / scale;
+}
 
-  function walk(questionIndex: number, scores: Readonly<CraftScores>, lastWeights: CraftWeights): void {
-    if (questionIndex === CRAFT_QUESTIONS.length) {
-      const [winner] = rankCrafts(scores, lastWeights);
-      if (winner === undefined) throw new Error("Every completed path must rank a Craft.");
-      wins.set(winner.craftId, (wins.get(winner.craftId) ?? 0) + 1);
-      paths += 1;
-      return;
+/** Ranks the Crafts an option points at, best first. */
+function optionPulls(vector: AxisVector): readonly CraftId[] {
+  const totals = toTotals(vector);
+  return [...CRAFT_ORDER]
+    .map((craftId) => ({ craftId, affinity: craftAffinity(totals, craftId) }))
+    .sort((left, right) => right.affinity - left.affinity)
+    .map(({ craftId }) => craftId);
+}
+
+/** The Craft a respondent lands on if they always answer as themselves. */
+function simulatePureRespondent(craftId: CraftId): readonly [CraftId, number] {
+  const own = CRAFT_AXIS_PROFILES[craftId];
+  let totals: AxisTotals = ZERO_AXIS_TOTALS;
+
+  CRAFT_QUESTIONS.forEach((question, questionIndex) => {
+    let bestIndex = 0;
+    let bestAffinity = -Infinity;
+    question.options.forEach((option, optionIndex) => {
+      const affinity = cosineBetween(toTotals(option.axes), own);
+      if (affinity > bestAffinity) {
+        bestAffinity = affinity;
+        bestIndex = optionIndex;
+      }
+    });
+    totals = applyCraftQuizAnswer(totals, questionIndex, bestIndex).totals;
+  });
+
+  const [winner, runnerUp] = rankCrafts(totals);
+  if (winner === undefined || runnerUp === undefined) throw new Error("ranking is empty");
+  return [winner.craftId, winner.score - runnerUp.score];
+}
+
+describe("sorting geometry", () => {
+  it("gives every Craft at least three options that genuinely point at it", () => {
+    const pulls = new Map<CraftId, number>(CRAFT_ORDER.map((craftId) => [craftId, 0]));
+    for (const question of CRAFT_QUESTIONS) {
+      for (const option of question.options) {
+        for (const craftId of optionPulls(option.axes).slice(0, 2)) {
+          pulls.set(craftId, (pulls.get(craftId) ?? 0) + 1);
+        }
+      }
     }
 
-    const question = CRAFT_QUESTIONS[questionIndex];
-    if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
+    const starved = [...pulls.entries()].filter(([, count]) => count < 3);
+    expect(starved, `these Crafts are unreachable: ${JSON.stringify(starved)}`).toEqual([]);
+  });
 
-    for (let optionIndex = 0; optionIndex < question.options.length; optionIndex += 1) {
-      const answer = applyCraftQuizAnswer(scores, questionIndex, optionIndex);
-      walk(questionIndex + 1, answer.scores, answer.lastWeights);
+  it("sorts every pure respondent to their own Craft", () => {
+    const misSorted = CRAFT_ORDER
+      .map((craftId) => ({ craftId, landed: simulatePureRespondent(craftId)[0] }))
+      .filter(({ craftId, landed }) => craftId !== landed);
+
+    expect(misSorted, `mis-sorted: ${JSON.stringify(misSorted)}`).toEqual([]);
+  });
+
+  it("wins each pure respondent by a real margin, not a rounding error", () => {
+    for (const craftId of CRAFT_ORDER) {
+      const [, margin] = simulatePureRespondent(craftId);
+      expect(margin, `${craftId} wins by only ${margin.toFixed(4)}`).toBeGreaterThan(0.01);
     }
-  }
-
-  walk(0, {}, {});
-
-  return { wins: Object.fromEntries(wins) as WinTally, paths };
-}
-
-let census: PathCensus | null = null;
-
-function pathCensus(): PathCensus {
-  census ??= censusOfEveryAnswerPath();
-  return census;
-}
-
-/**
- * A Craft's "signature" answers are the options that weight it strictly higher
- * than every rival Craft. A Craft with no signature answer can only ever draw
- * level with a rival it shares options with, so it depends entirely on the
- * tie-break to surface — which is what starves it.
- */
-function craftsWithoutASignatureAnswer(): readonly CraftId[] {
-  return CRAFT_ORDER.filter((craftId) =>
-    QUESTIONS.every((question) =>
-      question.options.every((option) => {
-        const weight = option.weights[craftId] ?? 0;
-        if (weight === 0) return true;
-        return CRAFT_ORDER.some((rival) => rival !== craftId && (option.weights[rival] ?? 0) >= weight);
-      }),
-    ),
-  );
-}
-
-describe("craft quiz reachability", () => {
-  it("enumerates every distinct answer path exactly once", () => {
-    const { paths } = pathCensus();
-
-    expect(paths).toBe(4 ** CRAFT_QUESTIONS.length);
   });
 
-  it("can award every one of the fourteen Crafts", () => {
-    const { wins } = pathCensus();
-    const unreachable = CRAFT_ORDER.filter((craftId) => wins[craftId] === 0);
+  it("keeps the four options in every scene pointing different ways", () => {
+    const collinear: string[] = [];
+    CRAFT_QUESTIONS.forEach((question, questionIndex) => {
+      question.options.forEach((left, leftIndex) => {
+        question.options.slice(leftIndex + 1).forEach((right, offset) => {
+          const cosine = cosineBetween(toTotals(left.axes), toTotals(right.axes));
+          if (cosine > 0.7) {
+            collinear.push(`Q${String(questionIndex + 1)} options ${String(leftIndex + 1)}/${String(leftIndex + offset + 2)} = ${cosine.toFixed(2)}`);
+          }
+        });
+      });
+    });
 
-    expect(unreachable).toEqual([]);
+    expect(collinear).toEqual([]);
   });
 
-  // The three tests below characterise a KNOWN IMBALANCE in the supplied
-  // weights rather than blessing it. `docs/operations/trades-house-leaflet-source-2026-07-10.md`
-  // records the weights as client-supplied content, so they are pinned here
-  // instead of silently retuned: any edit to CRAFT_QUESTIONS fails these and
-  // must be re-blessed deliberately.
-
-  it("records the two Crafts that no answer points to most strongly", () => {
-    expect(craftsWithoutASignatureAnswer()).toEqual(["coopers", "skinners"]);
-  });
-
-  it("records that the starved Crafts are the least reachable ones", () => {
-    const { wins, paths } = pathCensus();
-    const share = (craftId: CraftId): number => wins[craftId] / paths;
-    const leastReachable = [...CRAFT_ORDER].sort((left, right) => wins[left] - wins[right]).slice(0, 2);
-
-    expect(leastReachable).toEqual(["coopers", "skinners"]);
-    expect(share("coopers")).toBeLessThan(0.001);
-    expect(share("skinners")).toBeLessThan(0.02);
-  });
-
-  it("records how far the spread runs from an even fourteen-way split", () => {
-    const { wins } = pathCensus();
-    const counts = CRAFT_ORDER.map((craftId) => wins[craftId]);
-    const most = Math.max(...counts);
-    const least = Math.min(...counts);
-
-    expect({ most, least }).toEqual({ most: 55265, least: 168 });
-    expect(Math.round(most / least)).toBe(329);
+  it("gives no option a null vector — every answer has to move the reader", () => {
+    for (const question of CRAFT_QUESTIONS) {
+      for (const option of question.options) {
+        const axes: AxisVector = option.axes;
+        const magnitude = Math.hypot(...AXIS_KEYS.map((key) => axes[key] ?? 0));
+        expect(magnitude, `"${option.lead}" scores nothing`).toBeGreaterThan(0);
+      }
+    }
   });
 });
