@@ -1689,14 +1689,29 @@
     z-index: 4;
   }
 
+  /* Explicit placement: the BASE grid has always placed these three by DOM
+     order (left rail, right rail, core), which centres the RIGHT RAIL — the
+     phone-skin's flex override masked that at every width until now. Never
+     rely on source order for this grid. */
+  .craft-quiz-rail.is-left {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .craft-quiz-rail.is-right {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .craft-quiz-intro-core {
     align-items: center;
     align-self: stretch;
     display: flex;
     flex-direction: column;
+    grid-column: 2;
+    grid-row: 1;
     height: auto;
     justify-content: center;
-    order: 0;
     padding: clamp(24px, 5vh, 56px) clamp(28px, 4vw, 72px);
     text-align: center;
     width: auto;

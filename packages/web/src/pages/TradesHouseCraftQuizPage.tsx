@@ -56,11 +56,17 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
       <CraftRail craftIds={CRAFT_ORDER.slice(7)} side="right" />
       <div className="craft-quiz-intro-core">
         <div className="craft-quiz-achievement-wrap">
-          <img
-            className="craft-quiz-achievement"
-            src="/trades-house-media/assets/achievement.png"
-            alt="Trades House of Glasgow — Union is Strength"
-          />
+          {/* Desktop shows the arms ALONE — achievement.png has the gold
+              building engraving fused above the shield, and arms-over-
+              architecture reads as collage at invitation scale. */}
+          <picture>
+            <source media="(min-width: 1180px)" srcSet="/trades-house-media/assets/crest-sm.png" />
+            <img
+              className="craft-quiz-achievement"
+              src="/trades-house-media/assets/achievement.png"
+              alt="Trades House of Glasgow — Union is Strength"
+            />
+          </picture>
         </div>
         <h1 id="craft-quiz-title" aria-label="Which Craft is yours?">
           <span>Which&nbsp;</span>

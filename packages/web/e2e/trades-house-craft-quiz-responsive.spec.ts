@@ -52,6 +52,7 @@ for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930
     // item of each roll, not just the rail.
     const rails = page.locator(".craft-quiz-rail");
     await expect(rails).toHaveCount(2);
+    const railBoxes: { x: number; width: number }[] = [];
     for (const railIndex of [0, 1]) {
       const rail = rails.nth(railIndex);
       await expect(rail.locator(".craft-quiz-rail-item")).toHaveCount(7);
@@ -63,7 +64,18 @@ for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930
       expect(railBox.x).toBeGreaterThanOrEqual(-1);
       expect(railBox.x + railBox.width).toBeLessThanOrEqual(desktop.width + 1);
       expect(lastItem.y + lastItem.height).toBeLessThanOrEqual(desktop.height + 1);
+      railBoxes.push({ x: railBox.x, width: railBox.width });
     }
+
+    // Containment is not placement: the DOM-order grid bug centred the RIGHT
+    // rail and passed every box check above. Assert the columns' order —
+    // left rail, then the core, then the right rail.
+    const [leftRail, rightRail] = railBoxes;
+    expect(leftRail).toBeDefined();
+    expect(rightRail).toBeDefined();
+    if (leftRail === undefined || rightRail === undefined) throw new Error("Craft rail order is unavailable.");
+    expect(leftRail.x + leftRail.width).toBeLessThanOrEqual(core.x + 2);
+    expect(core.x + core.width).toBeLessThanOrEqual(rightRail.x + 2);
 
     await expect(page.locator(".craft-quiz-achievement")).toBeVisible();
     await expect(page.locator(".craft-quiz-intro-foot")).toBeVisible();
