@@ -1,5 +1,12 @@
 # 06 · Gap Audit — omnitwin2 vs the Plan
 
+> **Partially superseded, 29 July 2026.** This document is a *capability-axis* audit and its
+> statuses are 19 days stale — G4 (action log), the Time Machine, the Diary (slices 1–7), command
+> envelopes and REST idempotency have all shipped since. For the current *persona-axis* view
+> (client / events manager / hallkeeper, journey by journey, with the ranked fix list), read
+> `09-PERSONA-JOURNEY-AUDIT.md`. The G-series below remains the reference for G3 (Altitude),
+> G10 (remaining room runtimes) and G12 (presence, still deferred), which are all still open.
+
 10 July 2026 · Basis: two thorough repo sweeps (frontend + domain/docs) plus direct spot-checks (schema greps, session logs, capture state). Statuses are evidence-linked; *depth* grades on commercial features are estimates pending a runtime smoke pass in Claude Code — flagged where so.
 
 ---

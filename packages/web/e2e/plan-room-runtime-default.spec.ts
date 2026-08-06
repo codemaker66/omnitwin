@@ -24,7 +24,7 @@ import {
 // no live backend; the splat bytes are the real captured SOG chunks.
 // ---------------------------------------------------------------------------
 
-// The loaded case streams + decodes the full 63 MB chunk set; keep this file
+// The loaded case streams + decodes the 35.7 MB reviewed fine frontier; keep this file
 // serial so concurrent WebGL workers don't starve the renderer (same policy
 // as public-config-flow.spec.ts).
 test.describe.configure({ mode: "serial" });
@@ -126,11 +126,15 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     await expect(runtimeChip).toBeVisible();
     await expect(runtimeChip).toContainText(LOADED_EVIDENCE_COPY, { timeout: 10_000 });
 
-    // All seven real room chunks must actually stream (63 MB from the local
-    // static server) — this is the built runtime, not a fixture.
+    // Exactly the four reviewed fine leaves must stream from the local static
+    // server. Coarse parents and env.sog would reintroduce the overlapping-LoD
+    // defect, so an extra request is a test failure rather than harmless work.
     await expect
       .poll(() => sogResponses.size, { timeout: 120_000, message: "waiting for all Reception Room SOG chunks" })
-      .toBeGreaterThanOrEqual(RECEPTION_SOG_CHUNKS.length);
+      .toBe(RECEPTION_SOG_CHUNKS.length);
+    expect([...sogResponses].sort()).toEqual(
+      RECEPTION_SOG_CHUNKS.map((chunk) => `${origin}/splats/reception/${chunk}`).sort(),
+    );
 
     // Give Spark a settle window to decode + paint the streamed gaussians
     // before capturing evidence (frameloop is demand-driven).

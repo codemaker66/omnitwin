@@ -1,0 +1,240 @@
+{
+  "schemaVersion": "omnitwin.local.reception-captured-quality-comparison-evidence.v0",
+  "recordedAt": "2026-07-18",
+  "authority": "none",
+  "workstream": "T-529",
+  "parentWorkstream": "T-508",
+  "goalState": "active",
+  "scope": "Ordinary local reconstruction-product engineering: render and compare two frozen Reception captured-detail profiles, expose the comparison in the loopback Foundry app, and retain regression-triage evidence. Cybersecurity, credential, penetration-testing, cloud-deployment, signing and publication work are excluded.",
+  "resultBoundary": {
+    "resultType": "regression_triage_not_acceptance",
+    "winner": "not_selected",
+    "sourceReceiptSha256": null,
+    "authority": "none",
+    "productAcceptance": false,
+    "physicalAccuracyEstablished": false,
+    "surveyTruthEstablished": false,
+    "rightsEstablished": false,
+    "releaseAuthorityEstablished": false
+  },
+  "frozenComparison": {
+    "rendererProfile": {
+      "id": "reception-viewer-profile-source-v1",
+      "sha256": "2187f4020e46c562e5f8dcb766e8b517b223984da1d9802d9168c5029eef6b21"
+    },
+    "viewport": {
+      "widthPx": 1200,
+      "heightPx": 900,
+      "deviceScaleFactor": 1
+    },
+    "viewIds": [
+      "overview",
+      "timber-left",
+      "timber-right",
+      "floor-surface",
+      "ceiling-moulding",
+      "column-skirting"
+    ],
+    "cameraQualification": "All six cameras share one optical centre and change target/FOV. They do not test view-dependent appearance from different optical centres.",
+    "repeatsPerProfileAndView": 2,
+    "profiles": [
+      {
+        "profileId": "quality-sog-fine-v1",
+        "sourceRoot": "F:/VENVIEWER -- TH PROJECT SPLAT OUTPUTS/lcc2-result/data/3dgs",
+        "expectedGaussianCount": 2002009,
+        "decodedGaussianCount": 2002009,
+        "assets": [
+          { "pathLabel": "0_15_0_0.sog", "sizeBytes": 10279160, "sha256": "111a47f7470fc83d1dc7f0bf2e1d3aa96943dd5a453005b840597e8c491d2368" },
+          { "pathLabel": "0_1_0_5.sog", "sizeBytes": 10047085, "sha256": "559dd375950966f8d1aa088a391b7105e364abc5013e7d29ea573728ab208fe1" },
+          { "pathLabel": "0_6_0_0.sog", "sizeBytes": 10368228, "sha256": "182525354cd14fa6bc8f6a54c0cbe0e39b5d5c216dd27e2cc4d44d1458ba8238" },
+          { "pathLabel": "0_7_0_0.sog", "sizeBytes": 5040628, "sha256": "3b68d24538523a559730e14d5ed1733f67d9894354e26322e20cf5f4458ccebf" }
+        ]
+      },
+      {
+        "profileId": "mobile-spz-fine-v1",
+        "sourceRoot": "C:/Users/blake/Downloads/reception-room_xgrids_lcc2_spz_visual/lcc2-result/data/3dgs",
+        "expectedGaussianCount": 1978258,
+        "decodedGaussianCount": 1978258,
+        "assets": [
+          { "pathLabel": "0_13_0_0.spz", "sizeBytes": 8620036, "sha256": "82bbbd033609f99f05c45c177ada552b87b905255ac515014f75561c292bf55c" },
+          { "pathLabel": "0_3_0_0.spz", "sizeBytes": 9199830, "sha256": "13200d905d50160034538e705b60c549aaf82348679791f801efa3f9e52171b3" },
+          { "pathLabel": "0_7_0_1.spz", "sizeBytes": 8768751, "sha256": "5d4e274df25aae56a8989416e1078fc86912b4c7b053b1c7d3c25a6e484a80df" },
+          { "pathLabel": "0_8_0_0.spz", "sizeBytes": 3422064, "sha256": "925c90a714abf7ed9cacea65a4abf4de1ff225ead2ef503aadcf836068ab62ed" }
+        ]
+      }
+    ]
+  },
+  "successfulRealRun": {
+    "requestId": "20260718abcdef0123456789abcdef02",
+    "outputRoot": "C:/Users/blake/omnitwin2/output/playwright/reception-captured-quality-v0/20260718abcdef0123456789abcdef02",
+    "generatedAt": "2026-07-18T16:09:32.944Z",
+    "runnerSha256Used": "5139c23d1a294673d4e5cbf49bb27bafc9ebdc041e32d182a8a9f31ef6345a01",
+    "currentRunnerSha256": "0e5741b043952fa7791122cde2c4d4312131550eee18135a8f31236e9582f3a6",
+    "currentRunnerDifference": "Cancellation-only hardening was added after the successful full run. The current runner passed 19 unit/injected tests but was not given another expensive 24-capture replay.",
+    "sourceIntegrity": {
+      "preCaptureSnapshotCount": 8,
+      "postCaptureSnapshotCount": 8,
+      "allSourcesUnchanged": true,
+      "currentSourceRehashStillMatches": true
+    },
+    "captureIntegrity": {
+      "pngFileCount": 24,
+      "manifestEntryCount": 24,
+      "missingCount": 0,
+      "extraCount": 0,
+      "sizeMismatchCount": 0,
+      "sha256MismatchCount": 0,
+      "uniquePngSha256Count": 12,
+      "repeatabilityPairCount": 12,
+      "byteIdenticalRepeatabilityPairCount": 12
+    },
+    "executionBoundary": {
+      "declaredAndObservedExternalRequests": 0,
+      "consoleErrorCount": 0,
+      "sourceServerRequestCount": {
+        "quality": 24,
+        "mobile": 24
+      },
+      "qualification": "Zero external requests is the runner's declared and observed application boundary, not independent proof of operating-system or network isolation."
+    },
+    "pairMetrics": {
+      "viewGroupCount": 6,
+      "repeatComparisonCount": 12,
+      "meanAbsoluteErrorRange": [0.028078, 0.044548],
+      "ssimRange": [0.939355, 0.963672],
+      "psnrDbRange": [25.698124, 29.266582],
+      "triageVerdicts": ["review"],
+      "qualification": "Full-frame sRGB similarity, including identical background, is regression-triage evidence only. It is not physical, perceptual or source-quality truth."
+    },
+    "visualReview": {
+      "pairCount": 6,
+      "reviewed": true,
+      "observation": "Every Quality/Mobile view pair was coherent, closely aligned and free of blank or visibly corrupted output. Small appearance differences remained. No winner or equivalence claim was made."
+    },
+    "report": {
+      "schemaVersion": "omnitwin.foundry.captured-quality-comparison-report.v0",
+      "selfDigestVerified": true,
+      "reportSha256": "7f3e11b92ee6a2c60ca13a5391b02a319f25dda80de7db3f8ff61a442ae3fe99",
+      "fileBytes": 27053,
+      "fileSha256": "bf824e25d7c8a7750fa5a5aef5964b96b6559de3ab7dc5e106d9e8a50678b5a7",
+      "canonicalPayloadQualification": "The file is the verified canonical serialization followed by one terminal LF."
+    }
+  },
+  "runHistoryQualification": {
+    "firstAttempt": "All 24 captures, post-source checks and scoring completed, then Windows returned EPERM during the final directory rename because the detached watchdog was still reading its marker. The temporary output was removed and no success/report was retained.",
+    "repair": "The runner now stops and awaits the watchdog before commit, removes the marker, retries transient EPERM/EBUSY rename failures, refuses overwrite, and binds abort cleanup to the exact committed directory identity.",
+    "secondAttempt": "The uninterrupted real run committed atomically and produced the successful evidence directory above."
+  },
+  "artifactFiles": [
+    { "path": "compile-input.json", "bytes": 43325, "sha256": "5a6da4f02aadf25d612345703432dfbea50f3e42910aefaa55e977bc647e34a4", "qualification": "Pretty file-byte hash. The observation's compact-JSON compile-input hash is c35e176cdd3881c8041e87be89a9e73c96d9feb4a4610deccece3ff4725a2cc8." },
+    { "path": "runner-observation.json", "bytes": 4753, "sha256": "2d698c908f94529f43558e576cac4b69c9925c170112850d14b4b53a3b8c7b85" },
+    { "path": "reports/capture-manifest.json", "bytes": 4420, "sha256": "afc53abf6d6b7127b55fd7766e42bb93904cd2998af4dbc6573908ecdd6bfb8a" },
+    { "path": "reports/compare-fixed-views.json", "bytes": 3367, "sha256": "9a93f97e36f9b66a0c7d05aef5d8275472111fde41513aba11d2fd22cfe047b3" },
+    { "path": "reports/triage-fixed-views.json", "bytes": 50357, "sha256": "b3b669da1a22210773b6e95f761bc21356349f54013efa9c472511d8d9d0a5f5" },
+    { "path": "reports/foundry-captured-quality-comparison-report-v0.json", "bytes": 27053, "sha256": "bf824e25d7c8a7750fa5a5aef5964b96b6559de3ab7dc5e106d9e8a50678b5a7" }
+  ],
+  "toolReceipts": {
+    "compareFixedViewsImplementationSha256": "628a96a1f54a6b55515b508edfce632c9be8d462fdd234f937005e8c756c8d90",
+    "triageFixedViewsImplementationSha256": "a407ec3d6d120ebee851764824a6aedb2e14fa141dab9826160411f5feb6c9b1",
+    "rendererProfileSha256": "2187f4020e46c562e5f8dcb766e8b517b223984da1d9802d9168c5029eef6b21"
+  },
+  "localAppEvidence": {
+    "capabilities": [
+      "asynchronous start/status/cancel endpoints",
+      "digest-bound canonical report download",
+      "strict loopback token, origin and body validation",
+      "visible captured-quality panel with progress, cancel and download states"
+    ],
+    "desktop": {
+      "viewportOverride": "1280x720",
+      "domClientViewport": "1265x720",
+      "pageHorizontalOverflow": false,
+      "panelVisible": true
+    },
+    "mobile": {
+      "viewportOverride": "390x844",
+      "domClientViewport": "375x844",
+      "pageHorizontalOverflow": false,
+      "panelVisible": true,
+      "actionWidthPx": 303.33
+    },
+    "browserConsoleWarningOrErrorCount": 0,
+    "persistedBrowserScreenshotArtifact": null,
+    "cancellationSmoke": {
+      "startedThroughUi": true,
+      "cancelledDuringCapture": true,
+      "terminalUiState": "failed",
+      "terminalCopy": "The local captured-quality comparison was cancelled. No report was retained.",
+      "outputRoot": "C:/Users/blake/omnitwin2/output/playwright/reception-captured-quality-ui-run",
+      "remainingOutputItemCount": 0,
+      "listenerPort": 43722,
+      "listenerClosed": true
+    }
+  },
+  "verification": {
+    "tests": {
+      "total": 99,
+      "passed": 99,
+      "groups": [
+        { "name": "local tool contract/controller/adapter/HTTP/UI/CLI", "passed": 69, "total": 69 },
+        { "name": "core captured-quality contract", "passed": 5, "total": 5 },
+        { "name": "web loopback-origin preflight", "passed": 6, "total": 6 },
+        { "name": "Reception runner", "passed": 19, "total": 19 }
+      ]
+    },
+    "targetedTypecheck": {
+      "core": "passed",
+      "tool": "passed",
+      "webSourceAndE2e": "passed"
+    },
+    "targetedLint": {
+      "core": "passed",
+      "tool": "passed",
+      "web": "passed",
+      "runner": "repository ESLint project-service configuration rejects the standalone .mjs files before rule evaluation; both files passed node --check and 19/19 tests"
+    },
+    "build": {
+      "core": "passed",
+      "tool": "18 TS6059/TS6307 diagnostics from the package's existing sibling-source/rootDir build configuration; the new contract import is one of nine affected sibling imports. Typecheck and focused runtime tests pass.",
+      "web": "production build stopped before compilation because the repository requires a live Clerk pk_live_... key; it was not bypassed"
+    },
+    "diffCheck": "Targeted tracked diff check passed; untracked captured-quality files had no trailing whitespace."
+  },
+  "implementationFiles": [
+    { "path": "packages/reconstruction-foundry/src/captured-quality-comparison.ts", "sha256": "82202c9060f208aac7065c9e9a0f9bd5584eed385ca494d01f51ca4c31740e47" },
+    { "path": "packages/reconstruction-foundry/src/__tests__/captured-quality-comparison.test.ts", "sha256": "89bd6c4c4c2f2af2526cb8387da058cbcf26743a93dc6161aa15cba654014c3a" },
+    { "path": "packages/reconstruction-foundry/src/index.ts", "sha256": "ac374db445a39fdf11073d1e8717baaab8d0512dd2d529d1af6d528bc4c42fc8" },
+    { "path": "tools/reconstruction-foundry/src/captured-quality-comparison-process-runner.ts", "sha256": "9ceb6df5bf47f975e0fa780598b2f1c7b25177fc760bee48c4e415aa005ce9ea" },
+    { "path": "tools/reconstruction-foundry/src/__tests__/captured-quality-comparison-process-runner.test.ts", "sha256": "b591e22e8631a27cc389de467ccadc3064440f12a6bda1e219c59dcfcdc3d4f6" },
+    { "path": "tools/reconstruction-foundry/src/local-captured-quality-comparison.ts", "sha256": "fdcb22a935118aba1cfd739423252f2ecd557788e31b7a9310d4ef0c4848af6f" },
+    { "path": "tools/reconstruction-foundry/src/__tests__/local-captured-quality-comparison.test.ts", "sha256": "99b4afefbd4f809dce2e1a3f060948e879335301b6f4832107a7200d9030a379" },
+    { "path": "tools/reconstruction-foundry/src/local-app.ts", "sha256": "9bde597c4e76d0499176a9b5eef8303586585d4412f7679001b1c9ef3c724001" },
+    { "path": "tools/reconstruction-foundry/src/local-app-assets.ts", "sha256": "e7bfe34b49405a3a741fb078b4e0fb3d8a3de16c0083d4fa5b4121e9f4bcc117" },
+    { "path": "tools/reconstruction-foundry/src/cli.ts", "sha256": "6e98502061b5a64b7fb0a8e2b90adadc91ae5048c18e5ed4ab8e6c86d7138df2" },
+    { "path": "tools/reconstruction-foundry/src/index.ts", "sha256": "c44c2c08a9de8e76d2210f318f50060c13dbd3df7d047d0da682d0f8e6fe9733" },
+    { "path": "tools/reconstruction-foundry/src/__tests__/local-app-captured-quality-comparison.test.ts", "sha256": "cecf1cecdd0c0468bf8033b58a2548c783a0ec718e96062e528ea4ab8f06e448" },
+    { "path": "tools/reconstruction-foundry/src/__tests__/local-app-assets.test.ts", "sha256": "aff39f7dab061b7a6f51bb4e3088e94628434995787b4a06e24bf3e1c98a14a3" },
+    { "path": "tools/reconstruction-foundry/src/__tests__/local-app-cli.test.ts", "sha256": "4591c0ab9edda63ca444b3315360333865c339a1440ea88427fb6d2b141ece85" },
+    { "path": "tools/reception-hd/run_captured_quality_comparison.mjs", "sha256": "0e5741b043952fa7791122cde2c4d4312131550eee18135a8f31236e9582f3a6" },
+    { "path": "tools/reception-hd/tests/run_captured_quality_comparison.test.mjs", "sha256": "878a6e13c0888d7694756b92637b81c40e8e6113eda06ac6a299b20e286756f6" },
+    { "path": "packages/web/src/pages/living-hall/reception-local-preflight.ts", "sha256": "aaa6e76fb91fdb0db89254e43a75cad35d952dfe391fe2eecd32f85a1ca6847c" },
+    { "path": "packages/web/src/pages/living-hall/__tests__/reception-local-preflight.test.ts", "sha256": "c321ead33189b357e49b00c4b4d5ea4ad4cf218da25cdc40470ded01cfe76b5b" },
+    { "path": "packages/web/src/vite-env.d.ts", "sha256": "ca4a9b44528c13feb261413641250c79f59bd3bc68f92770a7dfbb86c071572b" }
+  ],
+  "knownQualifications": [
+    "No physical performance claim is made; capture telemetry includes large frame-time outliers during initial asset settling.",
+    "No persisted browser QA screenshot was written; rendered desktop/mobile states were inspected in the in-app browser.",
+    "A stale injected-runner-test temporary directory remains at C:/Users/blake/AppData/Local/Temp/venviewer-captured-quality/.runner-smoke-20260718-4.tmp-35748; it is not part of the successful output or report.",
+    "T-529 completes this bounded slice only. T-508 and the broader /goal remain active.",
+    "T-507 independent survey controls and T-486 rights/identity/release inputs remain prerequisites only for later authority or publication claims."
+  ],
+  "nextBoundedInput": {
+    "profile": "XGRIDS/Potree 2.0 bundle Source Facts V7",
+    "requiredFiles": ["metadata.json", "hierarchy.bin", "octree.bin"],
+    "controls": [
+      "one known-good Reception export bundle",
+      "one or more real bundle count/byte-range mismatch negatives"
+    ],
+    "blockingCurrentLocalWork": false
+  }
+}

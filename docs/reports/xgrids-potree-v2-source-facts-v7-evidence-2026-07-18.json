@@ -1,0 +1,336 @@
+{
+  "schemaVersion": "omnitwin.local.xgrids-potree-v2-source-facts-v7-evidence-manifest.v0",
+  "recordedAt": "2026-07-18",
+  "authority": "none",
+  "workstream": "T-530 under active T-508",
+  "scope": "Read-only, bounded structural evidence for exact three-member XGRIDS/Potree v2 preview bundles. This is ordinary local reconstruction-product engineering. Cybersecurity, credentials, penetration testing, cloud deployment, signing and publication are excluded from this slice.",
+  "primaryImplementationEvidence": [
+    "https://github.com/potree/PotreeConverter/releases/tag/2.1.3",
+    "https://github.com/potree/PotreeConverter/blob/2.1.3/README.md#L2-L13",
+    "https://github.com/potree/PotreeConverter/blob/a70ef212198b0e5ae1d071713a0c8cbda8fcc9a7/Converter/src/indexer.cpp#L417-L518",
+    "https://github.com/potree/PotreeConverter/blob/a70ef212198b0e5ae1d071713a0c8cbda8fcc9a7/Converter/include/HierarchyBuilder.h#L240-L344",
+    "https://github.com/potree/PotreeConverter/blob/a70ef212198b0e5ae1d071713a0c8cbda8fcc9a7/Converter/src/indexer.cpp#L1434-L1516",
+    "https://github.com/potree/potree/blob/5636cd471d9eb464969e758be45c44d7613d3859/src/modules/loader/2.0/OctreeLoader.js#L14-L264",
+    "https://github.com/potree/potree/blob/5636cd471d9eb464969e758be45c44d7613d3859/src/modules/loader/2.0/OctreeLoader.js#L293-L436",
+    "https://github.com/potree/potree/blob/5636cd471d9eb464969e758be45c44d7613d3859/src/modules/loader/2.0/DecoderWorker.js#L21-L150"
+  ],
+  "profile": {
+    "receiptSchemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+    "sourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v7",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V7",
+    "bundleDigestDomain": "VENVIEWER_FOUNDRY_POTREE_V2_BUNDLE_V7",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v7",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V7",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v7",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V7",
+    "inheritedProfile": "omnitwin.foundry.universal-source-facts.v6",
+    "requiredMembers": [
+      "metadata.json",
+      "hierarchy.bin",
+      "octree.bin"
+    ],
+    "ancillaryMembersAllowed": true,
+    "metadataProfile": "version 2.0, encoding DEFAULT, position int32[3], intensity uint8, lcc prediction uint8 in exact metadata order",
+    "pointRecordBytes": 14,
+    "hierarchyRecordBytes": 22,
+    "inspectionCoverage": "complete_metadata_hierarchy_graph_and_exact_octree_layout",
+    "limits": {
+      "metadataMaxBytes": 1048576,
+      "hierarchyMaxBytes": 67108864,
+      "octreeMaxBytes": 4294967296,
+      "pointMaxCount": 100000000,
+      "hierarchyNodeMaxCount": 1000000
+    }
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only; no authentication or independent attestation.",
+    "sourceBinding": "The same member streams are hashed and parsed. Exact receipt path, byte length and SHA-256 are checked before and after inspection.",
+    "memoryBoundary": "Metadata and hierarchy use bounded capture; octree bytes are streamed and hashed without whole-file retention; complete bundles are inspected sequentially.",
+    "proxyBoundary": "A proxy target chunk replaces the logical proxy row under the official viewer behavior. Declaration differences are counted and accepted as viewer overwrite compatibility observations; proxy-to-proxy chunk roots fail closed.",
+    "failureBinding": "Stable failure code, category and coverage registries are schema-bound. Two-of-three partial candidates issue facts_not_established only.",
+    "unknownBinding": "All ten frozen Potree unknowns are mandatory and produce exact digest-bound evidence requests.",
+    "cancellation": "Cancellation issues no V7 artifact, including checks after inherited work and before issuance.",
+    "xbinBehavior": "Atomic unavailable/blocked Source Facts, Readiness and Checklist wrappers with no partial Potree bundle overlay, readiness refinement or Potree evidence request.",
+    "policy": {
+      "sourceAccess": "read_only",
+      "mutation": "none",
+      "pointValueDecode": "none",
+      "reconstruction": "none",
+      "networkAccess": "none during inspection",
+      "authority": "none",
+      "rights": "not_evaluated"
+    }
+  },
+  "realPositiveReplay": {
+    "id": "reception_room_xgrids_potree_v2_bundle",
+    "sourceRoot": "F:/gaussian splat -- xgrids/model/Reception_Room_2026-06-01-150618/project_data/model",
+    "receiptFileCount": 4,
+    "targetedMemberCount": 3,
+    "ancillaryFileCount": 1,
+    "memberIdentities": [
+      {
+        "role": "metadata",
+        "path": "metadata.json",
+        "sizeBytes": 1299,
+        "sha256": "65e314ff0908ba9a87a4e149f82c3bc76fe529fd0aa63b621c7c69b8e94a0d7e"
+      },
+      {
+        "role": "hierarchy",
+        "path": "hierarchy.bin",
+        "sizeBytes": 2046,
+        "sha256": "40d1fe4a74f7cd5f92ec6752bc9f5aebe5ba262795da8748c00363017f76e21b"
+      },
+      {
+        "role": "octree",
+        "path": "octree.bin",
+        "sizeBytes": 2453318,
+        "sha256": "c49eb7a959be867ef27b63ca1e17b36505566a882f359b642b268afb979e98f5"
+      }
+    ],
+    "bundleSha256": "f226739d3f8e94605b8c363a1b135986388b5cf920df0194ff960bfed5940fb2",
+    "result": {
+      "state": "established",
+      "code": "POTREE_V2_SOURCE_FACTS_ESTABLISHED",
+      "declaredAndResolvedPointCount": 175237,
+      "pointRecordBytes": 14,
+      "pointByteEquation": "175237 * 14 = 2453318",
+      "hierarchySourceBytes": 2046,
+      "hierarchyReachableBytes": 2046,
+      "hierarchyUnreferencedBytes": 0,
+      "reachableChunkCount": 1,
+      "reachableRecordCount": 93,
+      "logicalNodeCount": 93,
+      "normalNodeCount": 1,
+      "leafNodeCount": 92,
+      "leafRecordsWithChildren": 13,
+      "declaredHierarchyDepth": 0,
+      "maximumObservedDepth": 3,
+      "proxyReferenceCount": 0,
+      "proxyCompatibility": "no_proxies",
+      "octreeRangeCount": 93,
+      "octreeRangesDisjoint": true,
+      "octreeRangesGapless": true,
+      "octreeCoverageExact": true
+    },
+    "compatibilityNotes": [
+      "Metadata declares hierarchy depth 0 while reachable topology reaches depth 3; the official viewer does not use this declaration to traverse the graph.",
+      "Thirteen records labelled LEAF have nonzero child masks; only proxy type 2 has special loading behavior in the official viewer.",
+      "Metadata omits optional attribute histograms for position, intensity and lcc prediction; the official loader can calculate histograms after loading."
+    ],
+    "artifactChain": {
+      "receiptSha256": "40ea026b5f70798a19b28a0f20089424128343f1713aba09325b5251bb1d4320",
+      "sourceFactsSha256": "8a29ba1a1edb1e03bdf1ba043daf3605b11da98309a13d24a51e82175399be99",
+      "sourceReadinessSha256": "2c65daca8213e7ac471444e4c94b5c4d8f0a9b51f72d9e3d7c3560c267ed1ff6",
+      "operatorEvidenceChecklistSha256": "a834f354b5b26854d0902f7793bf1a927baebb79d33f09f61c87b2a4bc2efeda"
+    },
+    "readiness": {
+      "potreeBundleRefinementCount": 1,
+      "exactPotreeMemberPathCount": 3,
+      "supersededInheritedPathCount": 3,
+      "authority": "none"
+    },
+    "checklist": {
+      "potreeEvidenceRequestCount": 10,
+      "potreeUnknownRequestCount": 10,
+      "potreeInspectionFailureRequestCount": 0,
+      "affectedPotreeMemberSourceCount": 3,
+      "requestStatus": "requested_not_performed"
+    },
+    "determinism": {
+      "receiptRepeatedByteIdentically": true,
+      "sourceFactsRepeatedByteIdentically": true,
+      "memberSizeAndSha256Unchanged": true
+    }
+  },
+  "realNegativeReplays": {
+    "metadataOctreeLengthMismatches": [
+      {
+        "bundle": "default_2026-05-31-092254",
+        "metadataPoints": 153300,
+        "octreeByteDerivedRecordCount": 141285,
+        "expectedOctreeBytes": 2146200,
+        "observedOctreeBytes": 1977990,
+        "code": "POTREE_V2_OCTREE_LENGTH_MISMATCH"
+      },
+      {
+        "bundle": "Grand_Hall_Bright_Walls_2026-05-31-115112",
+        "metadataPoints": 466860,
+        "octreeByteDerivedRecordCount": 434348,
+        "expectedOctreeBytes": 6536040,
+        "observedOctreeBytes": 6080872,
+        "code": "POTREE_V2_OCTREE_LENGTH_MISMATCH"
+      },
+      {
+        "bundle": "Robert_Adam_Room_2026-05-29-102404",
+        "metadataPoints": 352855,
+        "octreeByteDerivedRecordCount": 336947,
+        "expectedOctreeBytes": 4939970,
+        "observedOctreeBytes": 4717258,
+        "code": "POTREE_V2_OCTREE_LENGTH_MISMATCH"
+      },
+      {
+        "bundle": "The_Grand_Hall_2026-05-31-101837",
+        "metadataPoints": 1159861,
+        "octreeByteDerivedRecordCount": 1114751,
+        "expectedOctreeBytes": 16238054,
+        "observedOctreeBytes": 15606514,
+        "code": "POTREE_V2_OCTREE_LENGTH_MISMATCH"
+      }
+    ],
+    "unreachableHierarchyBytes": [
+      {
+        "bundle": "DC_Room_2026-05-31-150245",
+        "unreferencedHierarchyBytes": 572,
+        "code": "POTREE_V2_HIERARCHY_UNREACHABLE_BYTES"
+      },
+      {
+        "bundle": "Lady_Conveynor_2026-05-31-145027",
+        "unreferencedHierarchyBytes": 154,
+        "code": "POTREE_V2_HIERARCHY_UNREACHABLE_BYTES"
+      },
+      {
+        "bundle": "North_Gallery_2026-06-01-160407",
+        "unreferencedHierarchyBytes": 110,
+        "code": "POTREE_V2_HIERARCHY_UNREACHABLE_BYTES"
+      },
+      {
+        "bundle": "South_Gallery_2026-06-01-154429",
+        "unreferencedHierarchyBytes": 88,
+        "code": "POTREE_V2_HIERARCHY_UNREACHABLE_BYTES"
+      },
+      {
+        "bundle": "The_Saloon_2026-05-29-142325",
+        "unreferencedHierarchyBytes": 748,
+        "code": "POTREE_V2_HIERARCHY_UNREACHABLE_BYTES"
+      }
+    ],
+    "qualification": "These are strict classifications under the frozen profile. The four length mismatches stop before hierarchy facts are established; their record counts above are octree byte length divided by the declared 14-byte stride. None of these results proves truncation, corruption, visual failure, or the cause of the contradiction."
+  },
+  "unresolvedFactCodes": [
+    "POTREE_POINT_ATTRIBUTE_VALUES_UNKNOWN",
+    "POTREE_VENDOR_ATTRIBUTE_SEMANTICS_UNKNOWN",
+    "POTREE_PHYSICAL_BOUNDS_UNKNOWN",
+    "POTREE_UNITS_FRAME_CRS_UNKNOWN",
+    "POTREE_GEOMETRY_ROLE_COMPLETENESS_UNKNOWN",
+    "POTREE_PROVENANCE_CAPTURE_CLASS_UNKNOWN",
+    "POTREE_ACCURACY_UNCERTAINTY_UNKNOWN",
+    "POTREE_REGISTRATION_UNKNOWN",
+    "POTREE_VIEWER_FIDELITY_UNKNOWN",
+    "POTREE_RIGHTS_UNKNOWN"
+  ],
+  "truthBoundaries": [
+    "No point coordinate, intensity or lcc prediction value is decoded or validated.",
+    "The lcc prediction name and uint8 layout do not establish vendor semantics.",
+    "Metadata bounds, scale, offset, spacing and projection are retained only as declarations.",
+    "Structural compatibility does not establish units, frame, CRS, physical extent, completeness, accuracy, registration, raw-capture status, provenance, rights or viewer fidelity.",
+    "No source mutation, reconstruction, external service, cloud action, spend, signing, release or publication occurred."
+  ],
+  "uiEvidence": {
+    "source": "exact Reception source root on F:",
+    "desktopViewport": "1280x720 with 1265px DOM client width",
+    "mobileViewportOverride": "390x844 with 375px DOM client width",
+    "pageHorizontalOverflow": false,
+    "consoleWarningsOrErrors": 0,
+    "dialogsOrErrorOverlays": 0,
+    "expandedSourceFactsDetails": {
+      "compatibilityNotes": 3,
+      "unknowns": 10
+    },
+    "renderedReadinessRefinements": 1,
+    "renderedChecklistRequests": 10,
+    "canonicalDownloads": [
+      {
+        "filename": "foundry-universal-source-facts-v7.json",
+        "schemaVersion": "omnitwin.foundry.universal-source-facts.v7",
+        "responseFingerprint": "8a29ba1a1edb1e03bdf1ba043daf3605b11da98309a13d24a51e82175399be99"
+      },
+      {
+        "filename": "foundry-source-readiness-map-v7.json",
+        "schemaVersion": "omnitwin.foundry.source-readiness-map.v7",
+        "responseFingerprint": "2c65daca8213e7ac471444e4c94b5c4d8f0a9b51f72d9e3d7c3560c267ed1ff6"
+      },
+      {
+        "filename": "foundry-operator-evidence-checklist-v7.json",
+        "schemaVersion": "omnitwin.foundry.operator-evidence-checklist.v7",
+        "responseFingerprint": "a834f354b5b26854d0902f7793bf1a927baebb79d33f09f61c87b2a4bc2efeda"
+      }
+    ],
+    "downloadQualification": "Each UI control reported the exact response fingerprint; independent loopback HTTP checks returned status 200, the exact V7 schema and exact filename. The browser download-event waiter itself timed out on the first programmatic download event and is not claimed as proof.",
+    "sessionShutdownVerified": true,
+    "port41773Closed": true
+  },
+  "independentReview": {
+    "verdict": "no_actionable_p0_p1_or_p2_correctness_issue",
+    "resolvedFindings": [
+      "Proxy declarations now follow official viewer target-row overwrite behavior instead of requiring equality.",
+      "Public schemas independently enforce hierarchy, octree, compatibility, attribute, member-path and inherited-path equations.",
+      "Bundles are inspected sequentially with bounded capture blocks and streamed octree hashing.",
+      "Cancellation is rechecked after awaited inherited work and before issuance.",
+      "Checklist IDs are bundle-digest bounded and unknown requests must match the frozen unknown text exactly."
+    ],
+    "optionalFutureCoverage": [
+      "An explicit forward proxy-to-proxy fixture.",
+      "A precisely timed post-V6 cancellation fixture."
+    ]
+  },
+  "verification": {
+    "focusedV7": "3 files, 23 passed",
+    "reconstructionFoundry": "53 files passed; 638 passed, 1 skipped",
+    "reconstructionFoundryTypecheck": "passed",
+    "reconstructionFoundryLint": "passed",
+    "reconstructionFoundryBuild": "passed",
+    "localFoundryFocusedApp": "3 files, 60 passed",
+    "localFoundryTypecheck": "passed",
+    "localFoundryTargetedLint": "passed",
+    "finalExactReceptionReplay": "Receipt and V7 facts repeated byte-identically; exact member size and SHA-256 identities were unchanged.",
+    "browserRuntime": "Desktop and mobile layouts passed with no page overflow and zero warning/error logs; all three exact artifact response statuses were observed.",
+    "listenerShutdown": "Port 41773 confirmed closed."
+  },
+  "implementation": [
+    {
+      "path": "packages/reconstruction-foundry/src/potree-v2-source-facts.ts",
+      "bytes": 53861,
+      "sha256": "0036e07474924bccf8864d73bd681279e5295ff9284e92541303e66e337323fc"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/source-facts-v7.ts",
+      "bytes": 25558,
+      "sha256": "5254c429261104d6b324a1dd8ad9689fc64cb0178a0f003d54108475440608e1"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/source-readiness-v7.ts",
+      "bytes": 20019,
+      "sha256": "4c1a41c84218f89c044096bd7560b725b0d95695e0c16c4f2863dddeb03a0d22"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/operator-evidence-checklist-v7.ts",
+      "bytes": 24602,
+      "sha256": "b280a3ed97cb28ba9e8f2ff11d4408a6715bc2cf5cf897832e5d0ea8b4dc4da3"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/intake-receipt.ts",
+      "bytes": 68286,
+      "sha256": "f5bfee01b58dd05ad4f1cafdea099fa0e1284b3fd6851e86c6a6504deed4abf0"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/index.ts",
+      "bytes": 17905,
+      "sha256": "26d7fe8622123a8733756d1f13b5dea1da46de2003fce177dbf88d517e5f441e"
+    },
+    {
+      "path": "tools/reconstruction-foundry/src/local-app.ts",
+      "bytes": 108618,
+      "sha256": "c9c6042630d66de10aa5c8915a5a8714ba50cb0eea7111794aad4c735938e932"
+    },
+    {
+      "path": "tools/reconstruction-foundry/src/local-app-assets.ts",
+      "bytes": 231111,
+      "sha256": "08b23036bb045d81e79df8836461c290b567e2363dfec9e104446e09d1b01c08"
+    }
+  ],
+  "localQaResidue": {
+    "path": "C:/Users/blake/AppData/Local/Temp/foundry-v7-browser-fixture-20260718",
+    "status": "present_after_automated_cleanup_was_rejected_by_shell_policy",
+    "qualification": "This three-member QA copy is outside the repository and was not the source of the final exact-path replay. The associated temporary URL file also remains; its session token is invalid because the listener is closed."
+  }
+}

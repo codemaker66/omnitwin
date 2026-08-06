@@ -1,0 +1,224 @@
+{
+  "schemaVersion": "omnitwin.local.reception-room-envelope-review-workbench-v0-evidence-manifest.v0",
+  "recordedAt": "2026-07-19",
+  "authority": "none",
+  "workstream": "T-533 under active T-508",
+  "scope": "A digest-bound local operator review of the exact Reception Potree V8 diagnostic planes plus a separate fit-only E57 registration-seed consumer. This is ordinary local reconstruction-product engineering. Cybersecurity, penetration testing, credentials, identity attestation, signing, cloud deployment and publication are excluded.",
+  "artifactContract": {
+    "schemaVersion": "omnitwin.foundry.room-envelope-review.v0",
+    "digestDomain": "OMNITWIN_FOUNDRY_ROOM_ENVELOPE_REVIEW_V0 plus one NUL byte",
+    "intrinsicPixels": {
+      "width": 1024,
+      "height": 1024,
+      "marginPixels": 32,
+      "minimumCoordinate": 0,
+      "maximumCoordinate": 1023
+    },
+    "polygon": {
+      "minimumVertices": 3,
+      "maximumVertices": 64,
+      "minimumAreaPixelsSquared": 64,
+      "requirements": [
+        "unique_integer_vertices",
+        "simple_non_self_intersecting_polygon",
+        "non_degenerate"
+      ]
+    },
+    "requiredPreviewOrder": [
+      "position_0_1",
+      "position_0_2",
+      "position_1_2"
+    ],
+    "reviewDecisions": [
+      "accepted_as_fit_seed",
+      "needs_revision"
+    ],
+    "minimumSelectedRecordsForEligibility": 512,
+    "eligibilityRule": "accepted_as_fit_seed and at least 512 selected records",
+    "mapping": "The exact V8 observed-extrema uniform-fit raster equation, 32-pixel margin and vertically inverted pixel Y rule.",
+    "sourcePolicy": {
+      "sourceAccess": "read_only",
+      "sourceMutation": false,
+      "networkUsed": false,
+      "validationInputsRead": false,
+      "authority": "none"
+    }
+  },
+  "realReadOnlyProposal": {
+    "classification": "automated_full_frame_engineering_probe_not_human_room_review",
+    "sourceRoot": "F:/gaussian splat -- xgrids/model/Reception_Room_2026-06-01-150618/project_data/model",
+    "receiptSha256": "40ea026b5f70798a19b28a0f20089424128343f1713aba09325b5251bb1d4320",
+    "sourceFactsV8Sha256": "29da55f12cbe20d519ce33a1901242ca073f06059cb1b5731eb1216b17e4706d",
+    "bundleSha256": "f226739d3f8e94605b8c363a1b135986388b5cf920df0194ff960bfed5940fb2",
+    "memberIdentities": [
+      {
+        "role": "metadata",
+        "path": "metadata.json",
+        "sizeBytes": 1299,
+        "sha256": "65e314ff0908ba9a87a4e149f82c3bc76fe529fd0aa63b621c7c69b8e94a0d7e"
+      },
+      {
+        "role": "hierarchy",
+        "path": "hierarchy.bin",
+        "sizeBytes": 2046,
+        "sha256": "40d1fe4a74f7cd5f92ec6752bc9f5aebe5ba262795da8748c00363017f76e21b"
+      },
+      {
+        "role": "octree",
+        "path": "octree.bin",
+        "sizeBytes": 2453318,
+        "sha256": "c49eb7a959be867ef27b63ca1e17b36505566a882f359b642b268afb979e98f5"
+      }
+    ],
+    "reviewedPreviews": [
+      {
+        "viewId": "position_0_1",
+        "mode": "record_density",
+        "sha256": "7cc169a071215e15448001e530ebc705f03ecff4b0cb843ab9cc4bb09677586d",
+        "pixelSha256": "9490e837461be4f9e2adc6e933e7ef41af3a99b383034616403b971003f0b343"
+      },
+      {
+        "viewId": "position_0_2",
+        "mode": "record_density",
+        "sha256": "a48887c8e605a97fbb5951d4d73c351420d83e643674ee4f1f840d1dc57870d9",
+        "pixelSha256": "060290ff4bf3afebf34f6ec9b5845b6ed256337be55e4cae3141cb6b5fbaa5aa"
+      },
+      {
+        "viewId": "position_1_2",
+        "mode": "record_density",
+        "sha256": "e07b935f17805838265d9e5e9ddd1c76d4adf15d072712dd0e4ff16d697e2637",
+        "pixelSha256": "6b661fb2c01e54d8ca8d4cbd332156929ca668a36ac5f3e7286ef976aba59c12"
+      }
+    ],
+    "horizontalViewId": "position_0_1",
+    "polygonIntrinsicPixels": [
+      [0, 0],
+      [1023, 0],
+      [1023, 1023],
+      [0, 1023]
+    ],
+    "includedRecordCount": 175237,
+    "excludedRecordCount": 0,
+    "includedDecodedBounds": {
+      "min": [-6.985000133514, -13.258999824524, -1.942000031471],
+      "max": [7.970999488665, 2.792999769968, 1.956999870032]
+    },
+    "decision": "needs_revision",
+    "eligibility": "not_eligible",
+    "reportSha256": "1721c64993fe9a90c9c4ef4e1d5b438d5bb65880235bdd747feea4beedfbc209",
+    "qualification": "The full frame is an implementation probe, not the actual room-only envelope. It cannot authorize fitting."
+  },
+  "browserQa": {
+    "surface": "Codex in-app Browser against the loopback local app and the exact mounted Reception Potree bundle",
+    "reviewedPreviewMode": "record_density",
+    "reviewedAllThreeCanonicalViews": true,
+    "proposedHorizontalViewId": "position_0_1",
+    "probeDecision": "needs_revision",
+    "probeEligibility": "not_eligible",
+    "probeAuthority": "none",
+    "probeIncludedRecordCount": 175237,
+    "probeExcludedRecordCount": 0,
+    "sessionReviewSha256": "031b9b5cbad49b9e8fd1e16d6c3f34fb73486401db2dd4ee74be819220f9eaab",
+    "desktopViewport": "1440x1000",
+    "mobileViewport": "390x844",
+    "mobileClientWidth": 375,
+    "mobileScrollWidth": 375,
+    "horizontalOverflowObserved": false,
+    "consoleWarningsOrErrors": 0,
+    "listenerClosedAfterRun": true,
+    "frontendFidelityComparison": {
+      "referencePath": "docs/reports/evidence/xgrids-potree-v8-diagnostic-desktop-2026-07-18.png",
+      "referenceSizeBytes": 755683,
+      "referenceSha256": "1335b7dcd98ed3aee0230e2d5676f1f01a19dd53d1ab618500354571e5413ad5",
+      "result": "The new workbench retains the accepted Georgia heading, cream and teal palette, card borders, spacing rhythm, epistemic wording and one-column mobile collapse."
+    },
+    "screenshots": [
+      {
+        "path": "docs/reports/evidence/local-foundry-room-envelope-review-v0-desktop-2026-07-19.png",
+        "sizeBytes": 123760,
+        "sha256": "4d9eb2c4aaabb5c899f0ce22dea815a59103daee6a74db2f088ee99854ca8b74"
+      },
+      {
+        "path": "docs/reports/evidence/local-foundry-room-envelope-review-v0-mobile-2026-07-19.png",
+        "sizeBytes": 50658,
+        "sha256": "6308e66ee6a28e0e9261efc50d14881c3b83006272a723c0b900977e67411d1c"
+      }
+    ]
+  },
+  "fitOnlyConsumer": {
+    "path": "tools/reception-hd/register_potree_e57_fit_envelope.py",
+    "exactFitScanIds": [124, 125, 127, 128, 130, 132, 133, 135, 136, 137, 139, 142, 143, 144],
+    "validationScanIdsNotRequested": [131, 134, 138],
+    "frozenTestScanIdsNotRequested": [126, 129, 141],
+    "quarantinedScanIdsNotRequested": [122, 123, 140],
+    "acceptedInputGate": "accepted_as_fit_seed and eligible_for_fit_only_diagnostic",
+    "possibleOutputs": [
+      "authority_none_candidate",
+      "authority_none_refusal"
+    ],
+    "approvedTransformArtifactCreated": false,
+    "realProposalResult": "ROOM_ENVELOPE_REVIEW_NOT_ACCEPTED before E57 access or output",
+    "fullReceptionE57RunPerformed": false
+  },
+  "verification": {
+    "focused": {
+      "coreRoomReview": "5 passed",
+      "localAppRoomReviewAndRegressions": "66 passed across 5 files",
+      "fitOnlyPython": "8 passed",
+      "existingPythonDiagnostic": "12 passed; 1 expected Windows symlink-privilege skip"
+    },
+    "packageGates": {
+      "coreTests": "63 files passed; 754 tests passed; 1 skipped",
+      "coreLint": "passed",
+      "coreTypecheck": "passed",
+      "coreBuild": "passed",
+      "localAppTests": "43 files passed; 680 tests passed",
+      "localAppLint": "passed",
+      "localAppTypecheck": "passed",
+      "localAppBuild": "not green: existing sibling-source rootDir packaging errors plus an unrelated trusted-Windows helper-bridge build error"
+    },
+    "pythonCompilation": "passed",
+    "diffCheck": "passed; only existing LF-to-CRLF working-copy warnings were printed",
+    "adversarialReview": "No remaining P0-P2 finding after bundle-digest recomputation, production pin hardening and strict boolean-policy parsing."
+  },
+  "evidenceFiles": [
+    {
+      "path": "docs/reports/reception-room-envelope-review-proposal-v0-2026-07-19.json",
+      "sizeBytes": 3886,
+      "sha256": "16bc1748fb3af5455059f7c2047a40f3c6fdb4db042364fa22527d8459ca1700"
+    },
+    {
+      "path": "docs/reports/reception-room-envelope-review-workbench-v0-report-2026-07-19.md",
+      "sizeBytes": 7312,
+      "sha256": "816f8e1b2d68a9f86ee678b86190c999248360d3d837732a3c25dc945acbed13"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/room-envelope-review.ts",
+      "sizeBytes": 30599,
+      "sha256": "bcc8d7a56c9801e6de8fd23b5117b26a7384d70a4478bd1a19c3e10898d87397"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/room-envelope-review-worker.ts",
+      "sizeBytes": 12976,
+      "sha256": "b7c386c432e397c1a312ea81f021a7afa70076e082b1c11ab8bf2c140ef63542"
+    },
+    {
+      "path": "tools/reception-hd/register_potree_e57_fit_envelope.py",
+      "sizeBytes": 58348,
+      "sha256": "ed9653c16fdc1c431f4c1600dae2f2281631235ef627efa5d9de5597bdc5f688"
+    },
+    {
+      "path": "tools/reception-hd/tests/test_register_potree_e57_fit_envelope.py",
+      "sizeBytes": 32281,
+      "sha256": "a68b9824d20d13833a80a3eca012395af4a9c21ae909eeb9cf532c51ed014075"
+    }
+  ],
+  "boundaries": [
+    "The polygon is a fit seed only and is not validation, independent control or transform authority.",
+    "Raster inversion adds no source precision and does not establish units, axes, frame, CRS, room identity, orientation or physical accuracy.",
+    "The self-digest proves canonical local consistency only; it is not identity attestation, a signature or a trusted timestamp.",
+    "Purpose-scoped rights and producer lineage remain unreviewed.",
+    "An accepted fit seed may enable only a separate fit-only diagnostic; it cannot approve a transform or publication."
+  ],
+  "nextOperatorInput": "Review all three exact projections, choose the projection you consider horizontal, draw the actual Reception room-only envelope, enter the human reviewer label and accept only if correct. Then run the separate fit-only consumer and review its authority-none candidate or refusal."
+}

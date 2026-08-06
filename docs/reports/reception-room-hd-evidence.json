@@ -2,6 +2,7 @@
   "schemaVersion": "venviewer.reception-room-hd-evidence.v1",
   "createdAt": "2026-07-12T13:00:25+01:00",
   "evidenceCutoff": "2026-07-12",
+  "currentAsOf": "2026-07-22",
   "postCutoffAddenda": {
     "asOf": "2026-07-16",
     "originalEvidenceEntriesChanged": true,
@@ -13,7 +14,9 @@
       "anonymousPresentationAllowlist": [],
       "authenticatedAdministratorPreview": "separate private metadata and protected-stream path",
       "publicClientReceives": "no Reception runtime profile or member URL; both reviewed byte profiles are structurally blocked from anonymous presentation",
-      "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Neither reviewed byte profile has an exact reviewed immutable presentation contract."},
+      "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Both reviewed byte identities have an exact local presentation contract, but their server receipts keep publicPresentationCandidate=false and reviewedTransformArtifactSha256=null."},
+      "presentationContractState": {"schemaVersion":"venviewer.approved-room-runtime-presentation.v1","contractDigest":"97f902723a8e3e9d833dec556eec8fc02a93e4cc58e715903ddad19f5428e239","localSchemaServerGateAndClientExactMatchImplemented":true,"anonymousProfileCandidatesEnabled":false,"reviewedTransformArtifactSha256Bound":false,"deployedQaAndReleaseBindingProven":false},
+      "compositionBinding": {"qaRuntimePackageBindingRequired":true,"runtimePackageContentSha256Required":true,"orderedVisualCompositionSha256Required":true,"visualChunkCountRequired":true,"totalVisualBytesRequired":true,"qaTransformMatrixMustMatchSignedTransform":true,"memberAuthorizationRecheckedBeforeSend":true},
       "futurePresentationContractRequirements": ["exact group transform", "exact camera policy and route", "renderer-profile digest", "browser applies every reviewed value exactly rather than using local presentation defaults"],
       "futureAnonymousMemberUrlShape": "/assets/runtime-profiles/<eligible-reviewed-profile>/members/<ordinal>/content.sog",
       "detailedLatestPackageMetadata": "platform administrator required",
@@ -21,9 +24,9 @@
       "legacyBrowserResolver": "retired to safe fallback because URL-mode Spark cannot attach an administrator bearer token",
       "legacyPublicSingleVisualPolicy": "retired for every room; each room requires a reviewed immutable presentation contract in addition to reviewed bytes",
       "trustedOriginRule": "PUBLIC_API_ORIGIN required and clean HTTPS in production; server ignores request Host for anonymous member URLs and client pins all four URLs to configured API origin",
-      "publicMetadataAndMemberRequestGates": ["room showcase opt-in", "exact reviewed byte identity and immutable presentation contract", "published state", "human-reviewed public QA", "every required QA check is present and passed", "linked signed transform", "QA and transform match exact package/venue/room", "QA binds exact transform-content SHA-256", "same immutable package revision and member immediately before send"],
+      "publicMetadataAndMemberRequestGates": ["room showcase opt-in", "exact reviewed byte identity", "exact approved presentation contract", "published immutable package revision", "human-reviewed public QA with every required check present and passed", "QA binds exact runtime-package content digest, ordered visual composition digest, chunk count and total bytes", "linked signed transform whose matrix matches the QA view transform", "QA and transform match exact package, venue and room", "same package revision, presentation-contract digest and member immediately before send"],
       "runtimeProfileStorage": "dedicated private runtime-profile R2 credentials and bucket; no public URL field, no fallback to legacy upload or Foundry storage, and a distinct bucket name is required",
-      "immutableReviewIds": "transform-artifact and QA-record IDs permit exact idempotent retries only; changed content requires a new ID",
+      "immutableReviewIds": "API idempotency only: transform-artifact and QA-record IDs permit exact idempotent retries in the application routes; changed content requires a new ID. Database append-only triggers for runtime_transform_artifacts and runtime_qa_records are not proven or implemented.",
       "physicalObjectVerification": "cache misses read the complete private object and verify registered byte count and SHA-256; cache hits are keyed by the same SHA-256 and size; every request reruns all release gates and exact member identity immediately before send",
       "verifiedByteCache": {"scope":"per_api_process","maximumBytes":67108864,"maximumEntries":16,"ttlMilliseconds":300000,"singleFlight":"identical SHA-256 and size only; authorization remains per request"},
       "transferAdmission": {"scope":"per_api_process","activeVerifiedResponses":2,"maximumQueuedWaiters":16,"queueDiscipline":"FIFO","queueTimeoutMilliseconds":300000,"maximumMemberBytes":16777216,"upstreamTimeoutMilliseconds":30000,"absoluteResponseTransferDeadlineMilliseconds":180000,"absoluteDeadlineAction":"abort upstream work and destroy the stalled response","slotRelease":"after both handler work and response finish/close or forced-deadline settlement","unfinishedClose":"abort upstream before final release"},
@@ -31,8 +34,12 @@
       "memberRouteRateLimit": "24 requests per minute per client IP; edge/WAF controls remain required for distributed traffic",
       "receptionPublicShowcaseEnabled": false,
       "publicReleaseChanged": false,
+      "deploymentOrRegistrationChanged": false,
       "runtimeProfilePrivateStorageProvisionedOrCopied": false,
-      "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until every activation gate passes"]
+      "directAnonymousPrivateBucketAccessDenialVerified": false,
+      "edgeRateLimitOrWafConfiguredByThisWork": false,
+      "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until every activation gate passes"],
+      "implementationReceiptDigest": "cdd83b5de225b7b3957bd780ecbe6a22752dd00cb2056d3afe0d00fb4d807d66"
     },
     "reports": [
       "docs/reports/reception-room-e57-geometry-edge-visual-diagnosis-2026-07-14.md",
@@ -43,8 +50,166 @@
       "docs/reports/reception-room-e57-xgrids-structural-cv-diagnostic-2026-07-15.md",
       "docs/reports/omnitwin-config-b-trainer-contract-preflight-2026-07-14.md",
       "docs/reports/reception-room-local-real-component-quality-preflight-2026-07-16.md",
-      "docs/reports/reception-room-e57-matched-cv-2026-07-16.md"
+      "docs/reports/reception-room-e57-matched-cv-2026-07-16.md",
+      "docs/reports/reception-room-source-photo-comparison-v0.md"
     ]
+  },
+  "currentQualityReconciliation": {
+    "asOf": "2026-07-22",
+    "authority": "none",
+    "currentDecision": "no_stable_physical_or_commercial_winner",
+    "plainLanguage": "Computer vision has proved repeatable visual differences, but the preferred candidate changes with the camera set and scoring family. The earlier Quality lead is historical evidence, not the current answer. A later locked holdout gave Mobile a small directional lead, while blind quality models strongly disagreed with one another. Neither candidate is approved as physically truer or commercially better.",
+    "historicalReceiptRule": "latestMatchedCameraComputerVision is preserved as the 2026-07-16 receipt and must not be cited alone as the current candidate ranking.",
+    "methodSpecificHoldout": {
+      "report": "docs/reports/reception-room-e57-method-holdout-cv-2026-07-17.md",
+      "reportSizeBytes": 6262,
+      "reportSha256": "efcd497304cfb3b507e31b900b75e155bdb8f6b3ae0b97df5fb2168273195977",
+      "candidate": "mobile",
+      "status": "small_directional_lead_not_a_product_win",
+      "multiscaleEdgeChamferWins": {"mobile":2,"quality":1},
+      "normalizedGradientOrientationWins": {"mobile":2,"quality":1},
+      "relativeEffectRangePercent": [0.07, 1.38],
+      "practicalMateriality": "not_calibrated",
+      "physicalApproval": false,
+      "commercialApproval": false
+    },
+    "noReferenceIqa": {
+      "report": "docs/reports/reception-room-no-reference-iqa-2026-07-22-receipt.md",
+      "reportSizeBytes": 4230,
+      "reportSha256": "f7f5fd754ea446751669cedd706e8b731ad25f62b88f19610d6383462e48b3ce",
+      "conditions": 15,
+      "openCvBrisquePreference": {"mobile":14,"quality":1},
+      "piqBrisquePreference": {"mobile":13,"quality":2},
+      "clipIqaPreference": {"quality":14,"mobile":1},
+      "crossFamilyDisagreementConditions": 13,
+      "decision": "appearance_scoring_families_conflict_and_cannot_select_physical_truth"
+    },
+    "artifactDiagnosis": {
+      "report": "docs/reports/reception-room-cv-artifact-diagnosis-2026-07-18-receipt.md",
+      "reportSizeBytes": 10317,
+      "reportSha256": "7c3f925c67ffecc325d4cc8431a42012e2c6b9f123dfdacc3fa97235cb97bb65",
+      "qualityNearWhiteExcessPercentByScan": {"126":34.3,"129":28.7,"141":42.0},
+      "fineDetailRankIsStableAcrossAllViews": false,
+      "largestMismatchRegionScans126And129": "lower_floor",
+      "candidateSpecificFloaterProved": false
+    },
+    "controllingConclusion": "Do not declare Quality or Mobile the winner. The source-photo scorer and development Spark/Three capture mechanism are proved only with generated inputs. No authorized Reception source-photo run has passed through this completed-frame connection, and the real customer-facing app page has not been tested; held-out execution is deliberately disabled. Prepare an authorized exact-camera source package and independently review the connected adapter before a source diagnostic. LCC work remains paused and requires the exact resume phrase before any LCC access.",
+    "currentAction": {
+      "lccCapturePaused": true,
+      "requiredExactResumePhrase": "Resume LCC capture",
+      "staticTest": "The development real-component route now has renderer-owned asset, build, camera, transform and fresh-frame records proved with generated Spark data. Independently review it, then use an authorized lossless source photograph and calibrated camera for source_view_diagnostic only; it must never select Quality or Mobile.",
+      "motionTest": "Run the 21-frame Quality/Mobile sideways movement test separately; call it physical-reference motion only if a matched real sequence exists.",
+      "heldoutExecutionAvailable": false,
+      "heldoutBlocker": "No independently reviewed and allowlisted renderer-owned capture adapter exists."
+    },
+    "protectedReferencesReadFor2026-07-22NoReferenceAddenda": false
+  },
+  "currentGoalStatus": {
+    "productGoalComplete": false,
+    "criteria": {
+      "A": "partial",
+      "B": "satisfied_to_lawful_inspection_boundary",
+      "C": "satisfied_as_audit_trainer_not_runnable",
+      "D": "satisfied_as_decision_screen",
+      "E": "partial",
+      "F": "partial",
+      "G": "partial",
+      "H": "partial",
+      "I": "satisfied_for_current_boundary"
+    },
+    "blockingCriteria": [
+      "A",
+      "E",
+      "F",
+      "G",
+      "H"
+    ]
+  },
+  "sourcePhotoComparisonV0": {
+    "schemaVersion": "venviewer.reception-source-photo-comparison-evidence.v2",
+    "id": "RR-ORIGINAL-SOURCE-MATCHED-COMPARISON-V0",
+    "asOf": "2026-07-22",
+    "authority": "none",
+    "status": "source_view_diagnostic_implementation_proved_generated_inputs_only",
+    "plainLanguage": "The measuring code and live 3D-frame capture mechanism pass generated tests. No authorized Reception source-photo package has been compared through this new completed-frame connection, the real customer-facing app page was not tested, and the system cannot name a winner.",
+    "scorer": {
+      "path": "tools/reception-hd/compare_source_photo_renders.py",
+      "sizeBytes": 163552,
+      "sha256": "cc88205817318bee27e5a1b0201df16050c71ce92275b11399674bc4c95cc5e9",
+      "testPath": "tools/reception-hd/tests/test_compare_source_photo_renders.py",
+      "testSizeBytes": 77572,
+      "testSha256": "972a52e909e91105af3de6780f4fd368a66507343ef488d6b2da2382ebb20ad2",
+      "passingGeneratedTests": 38,
+      "allFunctionsAtMost50Lines": true
+    },
+    "browserHelper": {
+      "path": "tools/reception-hd/run_source_photo_capture.mjs",
+      "sizeBytes": 74690,
+      "sha256": "37eb2999740e40fe361f826fcf84a0e5862ab564054259c777a5e3007da29b36",
+      "testPath": "tools/reception-hd/tests/run_source_photo_capture.test.mjs",
+      "testSizeBytes": 38313,
+      "testSha256": "4378f5a483e4b15eba59efd13dba18713f50241b59fef2d76f2c3ecb41535bf5",
+      "passingGeneratedFixtureTests": 26,
+      "proofBoundary": "26 generated-input tests prove strict plan checking, three fresh captures, a runner-owned immutable page build, same-version tool-byte identity, fake-page rejection and scorer-verifiable provenance; a separately bound generated-Spark test proves live framebuffer capture, but neither is an authorized Reception source-photo run or a real customer-facing app-page run"
+    },
+    "rendererCapture": {
+      "schemaVersion": "venviewer.reception-renderer-capture-evidence.v2",
+      "authority": "none",
+      "developmentRealComponentRouteWired": true,
+      "runtimeBuildDigest": "531e961884b0383e510ea4a063520bd48adc933edfca528f527256c291ec34eb",
+      "runtimeBuildInputCount": 736,
+      "runtimeEnvironment": {
+        "mobileOrigin": "http://127.0.0.1:4174",
+        "qualityOrigin": ""
+      },
+      "runtimeEnvironmentDigest": "1764fd0510f9f8bd754d8811eb41a5910e2a6ffaa9b4491aae902fdf0c8b68c4",
+      "runtimeEnvironmentBoundToPlanPerRun": true,
+      "runtimeInputBytesRecheckedPerFrame": true,
+      "runtimeInputSetReenumeratedBeforeAndAfterEachFrame": true,
+      "runtimeInputSetChangesRejected": true,
+      "installedRuntimeVersionsRecheckedPerFrame": true,
+      "liveCodeUpdatesBlocked": true,
+      "savedFrameEvidenceRecomputable": true,
+      "captureAdapter": {
+        "path": "packages/web/src/pages/living-hall/ReceptionCaptureAdapter.tsx",
+        "sizeBytes": 21234,
+        "sha256": "cf9a9580bcfba4c2d003dbe7c601f589ef77a8fcbfae99d2cabc276ca50c722c"
+      },
+      "bindingManifest": {
+        "path": "packages/web/src/pages/living-hall/reception-capture-binding-v1.json",
+        "sizeBytes": 2225,
+        "sha256": "11d403311a51513ceda2ece850fc1f6ada83b51074bb69f94bafb0662bfd8570"
+      },
+      "runtimeBuildHelper": {
+        "path": "packages/web/scripts/reception-capture-runtime-build-digest.mjs",
+        "sizeBytes": 8689,
+        "sha256": "8b632312eaac8ba1ace0f3db3903c92ecb92b5e8977b161ab606e404e020301f"
+      },
+      "generatedSparkE2e": {
+        "path": "packages/web/e2e/reception-renderer-capture.spec.ts",
+        "sizeBytes": 6183,
+        "sha256": "7211361f267887b5ee76447a6c9626e4733a635e91cc05c9c71eafdbb9c8ab57",
+        "passingTests": 1
+      },
+      "proofBoundary": "Direct Spark/Three framebuffer capture and independent dead-renderer timeouts are proved only with generated Gaussian data on the development route; no authorized Reception source-photo package has run through this completed-frame connection, and no real customer-facing app page was captured."
+    },
+    "operatorGuide": {
+      "path": "docs/reports/reception-room-source-photo-comparison-v0.md",
+      "sizeBytes": 14737,
+      "sha256": "0024fcab8819229f96947d875a20b4d515dc085bd280921f6aafbf8fe509c69b"
+    },
+    "sourceViewDecisionAuthority": "diagnostic_only_never_selects_quality_or_mobile",
+    "heldoutExecutionAvailable": false,
+    "heldoutBlocker": "no independently reviewed and allowlisted renderer-owned capture adapter",
+    "trustedHeldoutRunnerAllowlistEmpty": true,
+    "realVenviewerTelemetryWired": true,
+    "realReceptionRunCompleted": false,
+    "productWinnerEnabled": false,
+    "receiptsAreIndependentAuthentication": false,
+    "receiptBoundary": "The complete saved frame record can reproduce its renderer-frame digest. Rights, physical room state, lineage, camera validation and timing remain hash-bound operator declarations, not independently authenticated proof.",
+    "lccReadOrResumed": false,
+    "protectedReferencePixelsRead": false,
+    "cloudPaidDeployOrPublicationAction": false
   },
   "latestStructuralComputerVision": {
     "asOf": "2026-07-15",
@@ -65,8 +230,9 @@
   "latestMatchedCameraComputerVision": {
     "asOf": "2026-07-16",
     "authority": "none",
+    "historicalOnly": true,
     "decision": "slight_quality_directional_lead_not_a_physical_winner",
-    "plainLanguage": "Computer vision now aligns the XGRIDS/Potree room to E57 and compares Quality and Mobile from three evidence-backed E57 cameras. The frozen primary rule gives Quality a slight directional lead, but the effect has no calibrated practical threshold and the largest allowed border sensitivity produces no reliable winner. Keep Quality as the review leader; do not promote or physically approve either candidate from this evidence alone.",
+    "plainLanguage": "Historical 16 July result only: the frozen method gave Quality a slight directional lead, but the effect had no calibrated practical threshold and the largest allowed border sensitivity produced no reliable winner. The controlling 22 July decision is no stable physical or commercial winner.",
     "geometry": {
       "fitScanIds": [124,125,127,128,130,132,133,135,136,137,139,142,143,144],
       "validationScanIds": [131,134,138],
@@ -237,7 +403,7 @@
     },
     "limitations": [
       "no registered held-out photograph or independently trusted scan at the same cameras",
-      "all six cameras share one optical centre",
+      "the six views use one camera position with different framings, so they do not test viewer movement",
       "no moving-camera, orbit, FPS, load-time, GPU-memory or named-device evidence",
       "local development route only; protected authenticated route not captured",
       "no human acceptance decision and no product quality improvement proved"
@@ -251,15 +417,17 @@
     "captureArtifactHashesChanged": false,
     "serverReviewedProfiles": ["quality-sog-fine-v1", "mobile-spz-fine-v1"],
     "publicPresentationCandidate": null,
-    "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Reviewed byte identity is not an immutable reviewed presentation contract."},
+    "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Both reviewed byte identities have an exact local presentation contract, but their server receipts keep publicPresentationCandidate=false and reviewedTransformArtifactSha256=null."},
+    "presentationContractState": {"schemaVersion":"venviewer.approved-room-runtime-presentation.v1","contractDigest":"97f902723a8e3e9d833dec556eec8fc02a93e4cc58e715903ddad19f5428e239","localSchemaServerGateAndClientExactMatchImplemented":true,"anonymousProfileCandidatesEnabled":false,"reviewedTransformArtifactSha256Bound":false,"deployedQaAndReleaseBindingProven":false},
+    "compositionBinding": {"qaRuntimePackageBindingRequired":true,"runtimePackageContentSha256Required":true,"orderedVisualCompositionSha256Required":true,"visualChunkCountRequired":true,"totalVisualBytesRequired":true,"qaTransformMatrixMustMatchSignedTransform":true,"memberAuthorizationRecheckedBeforeSend":true},
     "futurePresentationContractRequirements": ["exact group transform", "exact camera policy and route", "renderer-profile digest", "browser applies every reviewed value exactly rather than using local presentation defaults"],
     "currentPublicResponse": null,
     "futureEligiblePublicResponseFields": ["scope", "venueSlug", "roomSlug", "profileId", "visualAssetUrls"],
     "futureEligiblePublicResponseForbiddenFields": ["runtime package ID", "asset version ID", "original filename", "byte hash", "storage key or digest", "hierarchy hash", "composition decision", "private notes"],
     "anonymousMemberUrlShape": "/assets/runtime-profiles/<eligible-reviewed-profile>/members/<ordinal>/content.sog",
     "anonymousMemberUrlShapeStatus": "future_contract_only; no Reception profile currently exposes this shape",
-    "metadataGate": "room showcase opt-in + exact reviewed byte identity and immutable presentation contract + published state + human-reviewed public QA with every required check present and passed + linked signed transform + exact QA/transform package/venue/room scope + QA-bound exact transform-content SHA-256",
-    "immutableReviewIds": "transform-artifact and QA-record IDs permit exact idempotent retries only; changed content requires a new ID",
+    "metadataGate": "room showcase opt-in + exact reviewed byte identity + exact approved presentation contract + published immutable package revision + human-reviewed public QA with every required check present and passed + QA-bound runtime-package content digest, ordered visual composition digest, chunk count and total bytes + linked signed transform whose matrix matches the QA view transform + exact QA/transform package/venue/room scope",
+    "immutableReviewIds": "API idempotency only: transform-artifact and QA-record IDs permit exact idempotent retries in the application routes; changed content requires a new ID. Database append-only triggers for runtime_transform_artifacts and runtime_qa_records are not proven or implemented.",
     "runtimeProfileStorage": "dedicated private runtime-profile R2 credentials and bucket; no public URL field, no fallback to legacy upload or Foundry storage, and bucket must be distinct",
     "memberGate": "authorize before work, obtain full size/SHA-256-verified private bytes or an exact verified-cache hit, then rerun the complete package/QA/transform gate and immutable member identity immediately before send",
     "verifiedByteCache": {"scope":"per_api_process","maximumBytes":67108864,"maximumEntries":16,"ttlMilliseconds":300000,"singleFlight":"identical SHA-256 and size only; authorization remains per request"},
@@ -275,9 +443,51 @@
     "runtimeProfilePrivateStorageProvisionedOrCopied": false,
     "directAnonymousPrivateBucketAccessDenialVerified": false,
     "edgeRateLimitOrWafConfiguredByThisWork": false,
-    "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until all activation gates pass"],
+    "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "keep public showcase disabled until every activation gate passes"],
     "deploymentRegistrationMigrationPublicPointerOrReleaseChanged": false,
-    "qualityConclusionChanged": false
+    "qualityConclusionChanged": false,
+    "implementationReceiptDigest": "cdd83b5de225b7b3957bd780ecbe6a22752dd00cb2056d3afe0d00fb4d807d66"
+  },
+  "runtimeDeliveryHardeningImplementationReceipt": {
+    "schemaVersion": "venviewer.reception-runtime-delivery-hardening-implementation-receipt.v1",
+    "authority": "local_implementation_and_tests_only",
+    "supportArtifacts": {
+      "apiEnvironment": {"path":"packages/api/src/env.ts","role":"dedicated private storage and trusted-origin configuration","sizeBytes":15295,"sha256":"107f5dc17a3ba76e9f5252c6502a816ed08c3c17e49f1d601b1d8bb9393fb057"},
+      "apiReviewedProfileMatcher": {"path":"packages/api/src/lib/reception-reviewed-runtime-profile.ts","role":"server-only reviewed profile, presentation, and immutable-byte matcher","sizeBytes":10130,"sha256":"f43eb2d4564eaab333e4ae753290f581ef42d35b011226d519b4541ada4ac9b0"},
+      "apiVerifiedByteCache": {"path":"packages/api/src/lib/runtime-profile-verified-byte-cache.ts","role":"bounded verified-byte cache and per-request consumer isolation","sizeBytes":6536,"sha256":"9dceacac29a6ed6fb72417497d76c93f5bf3e2f1cc294d08ff06bb7ee566d31c"},
+      "apiPublicAndAdminRoutes": {"path":"packages/api/src/routes/assets.ts","role":"public metadata/member fail-closed gate and administrator registration routes","sizeBytes":119431,"sha256":"25ae348b314cf906d6916d902a49b53e63e8409d8a6b06b78ffa61e1fe6a71d7"},
+      "apiPrivatePreviewRoutes": {"path":"packages/api/src/routes/runtime-package-previews.ts","role":"authenticated exact-package preview routes","sizeBytes":22745,"sha256":"3ddd6ed35e3765ed6843598152343893d15ae9a1125a1045df0886d2c89224e1"},
+      "publicRuntimeSchema": {"path":"packages/types/src/asset-version.ts","role":"strict redacted public profile and presentation contract schema","sizeBytes":59895,"sha256":"6f053c840da917c0580cdb74cf401b47dd3985732831424bfedb0778807a1b14"},
+      "runtimeQaSchema": {"path":"packages/types/src/runtime-qa-record.ts","role":"QA package-composition and transform-matrix binding schema","sizeBytes":35081,"sha256":"d5bbb2e01bc30be3d14ee5870c628c04c70608d7127e633390688aca7f30a053"},
+      "webRuntimeApi": {"path":"packages/web/src/api/runtime-packages.ts","role":"redacted public-profile client and authenticated preview client","sizeBytes":5262,"sha256":"31771bbcea6f0dcf21b1ef5e99499c073c817f71da4a49c3b979fa17d5a57183"},
+      "webRuntimeResolution": {"path":"packages/web/src/lib/runtime-package-resolution.ts","role":"atomic ordered composition and mixed-level fail-closed resolver","sizeBytes":15570,"sha256":"26228b4054a00e9db0d02f7645c79f867c4943fb58c321ee5f0e8afd14edf942"},
+      "webPresentationContract": {"path":"packages/web/src/pages/living-hall/reception-presentation-contract.ts","role":"exact browser presentation contract builder and matcher","sizeBytes":3671,"sha256":"f6f2298a403fc8ed343ebf0105e4faaa4b5fcd64cf5aa19767b77dd8b5d5cb73"},
+      "webLivingHallRuntimeHook": {"path":"packages/web/src/pages/living-hall/useLivingHallRuntimeAsset.ts","role":"public-profile identity, origin, order, and presentation enforcement","sizeBytes":10151,"sha256":"b30b614e5b80cc283d0c4fc377589c60e3c58e67238fb979b6578ee1454517ae"},
+      "webLivingHallPage": {"path":"packages/web/src/pages/living-hall/LivingHallPage.tsx","role":"fail-closed presentation-contract selection","sizeBytes":19018,"sha256":"88665064544c4bfb1da92c0d1f692ffb9222128647a872bd93c9da0fac69ee7f"},
+      "webLivingHallScene": {"path":"packages/web/src/pages/living-hall/LivingHallScene.tsx","role":"exact camera, group-transform, and renderer-profile application","sizeBytes":19307,"sha256":"2cab6a834cf8676b0c2c5087f5bf47f2f08cf8bc884fd40b7358de13b13ba89f"},
+      "webCameraPath": {"path":"packages/web/src/pages/living-hall/reception-dolly-path.ts","role":"presentation camera-path source","sizeBytes":3618,"sha256":"d84c9644b059c824831f387bfe803e965b043ea6a318319cf6a74997feaad2f3"},
+      "webViewerProfile": {"path":"packages/web/src/pages/living-hall/reception-viewer-profile.ts","role":"reviewed renderer-profile source","sizeBytes":1361,"sha256":"c6b51ce451e8d4e9050b4045102735ee654ad643df4e748effdc16d79e918601"},
+      "webCaptureBinding": {"path":"packages/web/src/pages/living-hall/reception-capture-binding-v1.json","role":"renderer digest-domain and installed-version binding","sizeBytes":2225,"sha256":"11d403311a51513ceda2ece850fc1f6ada83b51074bb69f94bafb0662bfd8570"},
+      "databaseSchema": {"path":"packages/api/src/db/schema.ts","role":"runtime package, transform-artifact, and QA record database schema","sizeBytes":322482,"sha256":"8cb6b89c3e6c364de99b9656a08dfb06afdd55257fa82db1a900fe52269fffa0"},
+      "runtimeAssetsMigration": {"path":"packages/api/drizzle/0024_runtime_assets.sql","role":"existing runtime package and asset migration","sizeBytes":19783,"sha256":"23a0c196b0ec16ffdd22b1c7f11284476baf252b27c4459361d07a78dfb3e978"},
+      "runtimeTransformMigration": {"path":"packages/api/drizzle/0039_runtime_transform_artifacts.sql","role":"existing transform-artifact migration without an append-only trigger","sizeBytes":3764,"sha256":"bf7a46eda009064f28daf3b541ada620d7a58b5af5b6093eec147d9d1c2b1782"},
+      "runtimeQaMigration": {"path":"packages/api/drizzle/0040_runtime_qa_records.sql","role":"existing QA-record migration without an append-only trigger","sizeBytes":6591,"sha256":"8346b55791c7584178f983a2d5c7fe69220cddcbbee310e848c553d836297c5d"},
+      "runtimeRevisionMigration": {"path":"packages/api/drizzle/0052_runtime_package_revisions.sql","role":"existing append-only immutable runtime-package revision migration","sizeBytes":3595,"sha256":"f7bc06ec9edc277093af219babec9e5ffa59f14bc791003e36cb317ef128bf27"},
+      "apiProfileMatcherTests": {"path":"packages/api/src/__tests__/reception-reviewed-runtime-profile.test.ts","role":"reviewed-profile identity and disabled-candidate negative tests","sizeBytes":11942,"sha256":"e1de29fc55560c0b6bb6d40c35e173d07f0c361fc7e6f1bfdcf1e24f56b0265f"},
+      "apiVerifiedByteCacheTests": {"path":"packages/api/src/__tests__/runtime-profile-verified-byte-cache.test.ts","role":"verified-byte cache bound and abort negative tests","sizeBytes":4560,"sha256":"fb8dae241d912b1a99c6b49336334eef7eb68578c94b43ad3cce88eeab1ba82b"},
+      "apiPublicGateTests": {"path":"packages/api/src/__tests__/runtime-public-exposure-gate.test.ts","role":"public release, QA, composition, transform, and transfer negative tests","sizeBytes":34024,"sha256":"8cb40b741c81afb33d7a23fef204833af8f12ff44009a3bf7ff61d5ee5a17635"},
+      "apiPublicRouteTests": {"path":"packages/api/src/__tests__/runtime-public-profile-route.test.ts","role":"public metadata/member route revocation, timeout, queue, and rate-limit tests","sizeBytes":18715,"sha256":"51a030cf22b2895ed4cc1d164d0a8c54477a793db0b648b3f5e9f777861aeb84"},
+      "apiPrivatePreviewTests": {"path":"packages/api/src/__tests__/runtime-package-previews-route.test.ts","role":"authenticated preview authorization and disconnect negative tests","sizeBytes":25317,"sha256":"24c19d59d7d4a2f151c97b41f78a644a04a77780ebc268b26215570dd9e50a19"},
+      "publicRuntimeSchemaTests": {"path":"packages/types/src/__tests__/asset-version.test.ts","role":"public schema redaction and presentation digest negative tests","sizeBytes":51185,"sha256":"f323e8efff1a06839c54d2f53917c9483aa2c93240ab07953b1fd7fb9db5282c"},
+      "runtimeQaSchemaTests": {"path":"packages/types/src/__tests__/runtime-qa-record.test.ts","role":"QA fail-closed and package-binding schema tests","sizeBytes":30315,"sha256":"2c424cd816f1647d81b7640bd5f3057738ad684d6f11f87aa18ca9b5e051c514"},
+      "runtimeQaMigrationTests": {"path":"packages/api/src/__tests__/runtime-qa-records-schema.test.ts","role":"existing QA migration schema tests","sizeBytes":3569,"sha256":"0a4562aff24878d0b77f9a818f596feddb96da63124e8e65a303749b9dc7a5a2"},
+      "runtimeRevisionMigrationTests": {"path":"packages/api/src/__tests__/runtime-package-revisions-schema.test.ts","role":"immutable runtime-package revision migration tests","sizeBytes":4363,"sha256":"ad1c30cd64dda4f289e06e12b86c4120a3b145c49690ec3bc2fc1fdeb17cf741"},
+      "webRuntimeApiTests": {"path":"packages/web/src/__tests__/runtime-packages-api.test.ts","role":"public response redaction and authenticated preview client negative tests","sizeBytes":9895,"sha256":"56cc66e0b1adb14e57d2a778db7a7058787186447fc2f0ecedff3c39496edf50"},
+      "webRuntimeResolutionTests": {"path":"packages/web/src/lib/__tests__/runtime-package-resolution.test.ts","role":"atomic composition and mixed-level fallback negative tests","sizeBytes":23576,"sha256":"e5611e00290922ea22281d48e56b6fdb2367fb9d920aacd847a15480dd33b0aa"},
+      "webLivingHallRuntimeTests": {"path":"packages/web/src/pages/living-hall/__tests__/living-hall-runtime.test.tsx","role":"public identity, URL, presentation, and fallback negative tests","sizeBytes":18622,"sha256":"787e0e6161bf3f2821bf8b547c79b462d7ecfed8d6fcf1f905a9c20cfba7704b"},
+      "webLivingHallSceneRenderTests": {"path":"packages/web/src/pages/living-hall/__tests__/living-hall-scene-render.test.tsx","role":"atomic splat-layer failure and empty-composition render tests","sizeBytes":8875,"sha256":"69f1f63c514e49dcec6236da3517d11f10581b7291fc78ef779f6038c6dbb71c"}
+    },
+    "semanticChecks": {"criticalSourceTokensPinned":true,"focusedNegativeTestSourcesPinned":true,"transformAndQaAppendOnlyDatabaseTriggersProvenOrImplemented":false}
   },
   "handling": {
     "classification": "INTERNAL",
@@ -1477,9 +1687,9 @@
       "lidarType": "rs_airy"
     },
     "items": [
-      {"item": "frame availability", "state": "requires_vendor_export", "evidenceStrength": "verified_absent_from_open_files"},
+      {"item": "frame availability", "state": "preview_only_requires_vendor_sensor_frame_export", "evidenceStrength": "verified_one_800x600_preview_no_reconstructable_sequence"},
       {"item": "frame format", "state": "indeterminate_proprietary", "evidenceStrength": "supported_inference"},
-      {"item": "camera count", "state": "verified_four_event_sources", "evidenceStrength": "verified"},
+      {"item": "camera count", "state": "four_labelled_event_sources_optical_count_unverified", "evidenceStrength": "verified_labels_only"},
       {"item": "image dimensions", "state": "indeterminate", "evidenceStrength": "verified_absent_from_open_sidecars"},
       {"item": "timestamps", "state": "verified_event_and_trajectory_timestamps", "evidenceStrength": "verified"},
       {"item": "pose source", "state": "verified_poses_csv", "evidenceStrength": "verified"},
@@ -1970,7 +2180,7 @@
     },
     {
       "id": "C5",
-      "claim": "Subject to existing-base distribution rights, a corrected higher-capacity vendor candidate plus separately captured hero layers is the strongest practical primary plan to test.",
+      "claim": "Subject to existing-base distribution rights, the corrected base selected later by matched-reference, motion, human, performance and rights gates plus separately captured hero layers is the strongest practical primary plan to test. Keep both Quality and Mobile frozen until then.",
       "classification": "supported_inference",
       "evidenceRefs": ["C1", "C1B", "C2", "C3", "C4", "pipelineAudit"],
       "limitation": "No hero micro-splat or vendor HD candidate has yet been produced; vendor-base shipping rights are not established.",

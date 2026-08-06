@@ -1,0 +1,495 @@
+{
+  "schemaVersion": "omnitwin.local.xgrids-potree-v2-point-values-v8-evidence-manifest.v0",
+  "recordedAt": "2026-07-18",
+  "authority": "none",
+  "workstream": "T-531 under active T-508",
+  "scope": "Read-only, bounded point-value decoding and deterministic private local diagnostic previews for the exact V7-established Reception XGRIDS/Potree v2 bundle. This is ordinary local reconstruction-product engineering. Cybersecurity, credentials, penetration testing, cloud deployment, signing and publication are excluded.",
+  "primaryImplementationEvidence": [
+    "https://github.com/potree/potree/blob/5636cd471d9eb464969e758be45c44d7613d3859/src/modules/loader/2.0/DecoderWorker.js#L21-L150",
+    "https://github.com/potree/potree/blob/5636cd471d9eb464969e758be45c44d7613d3859/src/modules/loader/2.0/OctreeLoader.js#L14-L436",
+    "https://github.com/potree/potree/blob/1.8.2/LICENSE"
+  ],
+  "profile": {
+    "receiptSchemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+    "inheritedSourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v7",
+    "pointValueSchemaVersion": "omnitwin.foundry.potree-v2-point-values.v1",
+    "sourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v8",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V8",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v8",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V8",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v8",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V8",
+    "pointRecordLayout": [
+      {
+        "role": "raw_position",
+        "byteOffset": 0,
+        "byteLength": 12,
+        "type": "little_endian_int32_3"
+      },
+      {
+        "role": "intensity",
+        "byteOffset": 12,
+        "byteLength": 1,
+        "type": "uint8"
+      },
+      {
+        "role": "opaque_vendor_attribute",
+        "declaredName": "lcc prediction",
+        "byteOffset": 13,
+        "byteLength": 1,
+        "type": "uint8",
+        "semantics": "unknown"
+      }
+    ],
+    "limits": {
+      "octreeMaxBytes": 67108864,
+      "pointMaxCount": 4000000,
+      "deepProfileMaxPointCount": 500000,
+      "timeMaxMs": 30000,
+      "previewWidth": 1024,
+      "previewHeight": 1024,
+      "previewMarginPixels": 32
+    },
+    "preview": {
+      "profile": "deterministic_cpu_triplanar_rgba_png_fflate_0_8_2_v1",
+      "viewsInCanonicalOrder": [
+        "position_0_1",
+        "position_0_2",
+        "position_1_2"
+      ],
+      "modesInCanonicalOrder": [
+        "omitted_component",
+        "intensity_byte",
+        "opaque_vendor_byte",
+        "record_density"
+      ],
+      "fit": "observed_extrema_uniform_no_crop",
+      "cameraDirection": "positive_omitted_component",
+      "frontmostRule": "maximum_omitted_component",
+      "tieBreakRule": "lowest_record_ordinal",
+      "pngCompression": "fflate_0_8_2"
+    }
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only; no authentication or independent attestation.",
+    "sourceBinding": "V8 embeds the exact V7 artifact and binds bundle root, bundle SHA-256, member path, byte length and SHA-256 before interpreting supplied octree bytes.",
+    "valueBoundary": "Decoded coordinates are unlabelled numeric values. Scale and offset application does not establish units, axes, frame, CRS, physical meaning or survey authority.",
+    "previewBoundary": "The twelve CPU rasters are deterministic private local diagnostics, not official Potree renderer output or evidence of renderer fidelity.",
+    "duplicateBoundary": "Duplicate concentration is an exact observation under a frozen threshold, not a classification of corruption or cause.",
+    "cancellation": "Cancellation is checked before work and at synchronous phase guards. Same-thread mid-decode or mid-compression abort is not promised because the synchronous JavaScript phase cannot process a cancellation callback while executing.",
+    "policy": {
+      "sourceAccess": "read_only",
+      "mutation": "none",
+      "reconstruction": "none",
+      "networkAccess": "none during inspection",
+      "authority": "none",
+      "rights": "not_evaluated",
+      "release": "not_performed"
+    }
+  },
+  "realPositiveReplay": {
+    "id": "reception_room_xgrids_potree_v2_point_values_v8",
+    "sourceRoot": "F:/gaussian splat -- xgrids/model/Reception_Room_2026-06-01-150618/project_data/model",
+    "memberIdentities": [
+      {
+        "role": "metadata",
+        "path": "metadata.json",
+        "sizeBytes": 1299,
+        "sha256": "65e314ff0908ba9a87a4e149f82c3bc76fe529fd0aa63b621c7c69b8e94a0d7e",
+        "lastWriteTimeUtc": "2026-06-01T14:21:50.3000000Z"
+      },
+      {
+        "role": "hierarchy",
+        "path": "hierarchy.bin",
+        "sizeBytes": 2046,
+        "sha256": "40d1fe4a74f7cd5f92ec6752bc9f5aebe5ba262795da8748c00363017f76e21b",
+        "lastWriteTimeUtc": "2026-06-01T14:21:50.3000000Z"
+      },
+      {
+        "role": "octree",
+        "path": "octree.bin",
+        "sizeBytes": 2453318,
+        "sha256": "c49eb7a959be867ef27b63ca1e17b36505566a882f359b642b268afb979e98f5",
+        "lastWriteTimeUtc": "2026-06-01T14:21:50.2900000Z"
+      }
+    ],
+    "bundleSha256": "f226739d3f8e94605b8c363a1b135986388b5cf920df0194ff960bfed5940fb2",
+    "inheritedArtifactChain": {
+      "receiptSha256": "40ea026b5f70798a19b28a0f20089424128343f1713aba09325b5251bb1d4320",
+      "sourceFactsV7Sha256": "8a29ba1a1edb1e03bdf1ba043daf3605b11da98309a13d24a51e82175399be99",
+      "sourceReadinessV7Sha256": "2c65daca8213e7ac471444e4c94b5c4d8f0a9b51f72d9e3d7c3560c267ed1ff6",
+      "operatorEvidenceChecklistV7Sha256": "a834f354b5b26854d0902f7793bf1a927baebb79d33f09f61c87b2a4bc2efeda"
+    },
+    "v8ArtifactChain": {
+      "sourceFactsSha256": "29da55f12cbe20d519ce33a1901242ca073f06059cb1b5731eb1216b17e4706d",
+      "sourceFactsCanonicalBytes": 25369,
+      "sourceReadinessSha256": "0106b768f7cee2e2cf8f251f77460f1a358a05ba188843c98ec0caebab928832",
+      "sourceReadinessCanonicalBytes": 43495,
+      "operatorEvidenceChecklistSha256": "234e6dc256938aa53109d08a2b5ff51a562f311a18aa46dd4e8873e7bad6ab5d",
+      "operatorEvidenceChecklistCanonicalBytes": 120088,
+      "repeatRunElapsedMsObserved": [
+        4186,
+        3926,
+        3220
+      ],
+      "threeRunsByteIdentical": true
+    },
+    "decodedPointValues": {
+      "state": "established",
+      "code": "POTREE_V2_POINT_VALUES_ESTABLISHED",
+      "recordCount": 175237,
+      "finiteComponentCount": 525711,
+      "nonFiniteComponentCount": 0,
+      "nodeBoundsViolationCount": 0,
+      "declaredRangeViolationCount": 0,
+      "rawPositionMinimum": [0, 0, 0],
+      "rawPositionMaximum": [149560, 160520, 38990],
+      "decodedPositionMinimum": [-6.985000133514404, -13.258999824523926, -1.9420000314712524],
+      "decodedPositionMaximum": [7.970999488665257, 2.7929997699684463, 1.9569998700317228],
+      "nodeBoundTolerance": [0.00009999999747378752, 0.00009999999747378752, 0.00009999999747378752],
+      "rawQuantileLabels": ["q01", "q05", "q25", "q50", "q75", "q95", "q99"],
+      "rawQuantilesByComponent": [
+        [4560, 9930, 27090, 53450, 73830, 103850, 111380],
+        [4829, 10439, 37030, 74800, 113270, 137300, 144490],
+        [5050, 5260, 5529, 15520, 29590, 36340, 36570]
+      ],
+      "decodedQuantilesByComponent": [
+        [-6.529000145033933, -5.992000158599694, -4.2760002019495005, -1.6400002685404615, 0.39799967997532804, 3.3999996041384293, 4.152999585116049],
+        [-12.776099836723006, -12.215099850895058, -9.555999918069574, -5.77900001348462, -1.9320001106680138, 0.4709998286271002, 1.1899998104636325],
+        [-1.4370000442286255, -1.41600004475913, -1.3891000454386813, -0.3900000706780702, 1.0169998937781202, 1.691999876726186, 1.714999876145157]
+      ],
+      "intensityByteDistribution": {
+        "byteOffset": 12,
+        "observedMinimum": 1,
+        "observedMaximum": 255,
+        "sum": 6967027,
+        "distinctCount": 186,
+        "declaredRangeSatisfied": true
+      },
+      "opaqueVendorByteDistribution": {
+        "byteOffset": 13,
+        "declaredName": "lcc prediction",
+        "semantics": "unknown",
+        "observedMinimum": 20,
+        "observedMaximum": 100,
+        "sum": 14415430,
+        "distinctCount": 79,
+        "declaredRangeSatisfied": true
+      }
+    },
+    "duplicateProfile": {
+      "state": "performed_exactly",
+      "thresholdPointCount": 500000,
+      "uniquePositionCount": 168929,
+      "duplicatePositionRecordExcessCount": 6308,
+      "positionMultiplicityCount": 12,
+      "maximumPositionMultiplicity": 6298,
+      "mostRepeatedRawPosition": [62270, 125420, 30490],
+      "uniqueFullRecordCount": 168936,
+      "duplicateFullRecordCount": 6301,
+      "warningThreshold": "duplicate_position_record_excess_count > record_count * 0.01",
+      "qualityWarnings": [
+        "exact_position_duplicate_concentration_observed"
+      ],
+      "qualification": "This is an exact concentration observation, not proof of corruption or cause."
+    },
+    "previewManifest": {
+      "profile": "deterministic_cpu_triplanar_rgba_png_fflate_0_8_2_v1",
+      "imageCount": 12,
+      "images": [
+        {
+          "viewId": "position_0_1",
+          "mode": "omitted_component",
+          "fileName": "potree-v2-position_0_1-omitted_component.png",
+          "occupiedPixelCount": 107704,
+          "maxRecordsPerPixel": 6298,
+          "pixelSha256": "353c219536af151dc8de160c93c184a5d18528c38d81f0fd5b8a5a2ef1463192",
+          "byteLength": 271188,
+          "sha256": "b6d27263e2c8b8497e3ca622ee93ec239177fc29da0233bddca6fe05cedf2768"
+        },
+        {
+          "viewId": "position_0_1",
+          "mode": "intensity_byte",
+          "fileName": "potree-v2-position_0_1-intensity_byte.png",
+          "occupiedPixelCount": 107704,
+          "maxRecordsPerPixel": 6298,
+          "pixelSha256": "1a38787d0b867ea30cb2a93061165b8d7168753d9eb201507908861887c7bdc4",
+          "byteLength": 248812,
+          "sha256": "576b431d12ed8272adf1b9f0f771564edf03a77720720321d6065899d887a86c"
+        },
+        {
+          "viewId": "position_0_1",
+          "mode": "opaque_vendor_byte",
+          "fileName": "potree-v2-position_0_1-opaque_vendor_byte.png",
+          "occupiedPixelCount": 107704,
+          "maxRecordsPerPixel": 6298,
+          "pixelSha256": "73306f4024d28a8b53d00c94b772179129b877902bbcf28f6898597ae457bdda",
+          "byteLength": 177798,
+          "sha256": "41fb2aadfc010ab32f63b48e6b8aff3fe999656b7deb1b6c671b9a11f863db6c"
+        },
+        {
+          "viewId": "position_0_1",
+          "mode": "record_density",
+          "fileName": "potree-v2-position_0_1-record_density.png",
+          "occupiedPixelCount": 107704,
+          "maxRecordsPerPixel": 6298,
+          "pixelSha256": "9490e837461be4f9e2adc6e933e7ef41af3a99b383034616403b971003f0b343",
+          "byteLength": 117941,
+          "sha256": "7cc169a071215e15448001e530ebc705f03ecff4b0cb843ab9cc4bb09677586d"
+        },
+        {
+          "viewId": "position_0_2",
+          "mode": "omitted_component",
+          "fileName": "potree-v2-position_0_2-omitted_component.png",
+          "occupiedPixelCount": 68792,
+          "maxRecordsPerPixel": 6300,
+          "pixelSha256": "4f35dc0e15e5c871cc82089df8ea5fbff190b01294bbdca921f45bb12e12dd0d",
+          "byteLength": 156713,
+          "sha256": "d845ca5fbf6f81b70fcacaaefc00c82414090b4ab531d737444437c774e36dd3"
+        },
+        {
+          "viewId": "position_0_2",
+          "mode": "intensity_byte",
+          "fileName": "potree-v2-position_0_2-intensity_byte.png",
+          "occupiedPixelCount": 68792,
+          "maxRecordsPerPixel": 6300,
+          "pixelSha256": "f6c257e3e035932212b447a1584c3c50f00d0b70d164dad74da25be8c820706e",
+          "byteLength": 125803,
+          "sha256": "a36cba22279883e3edfc5d2d9cc286b19410812ea41102c13d3f1c55ceb2a8c6"
+        },
+        {
+          "viewId": "position_0_2",
+          "mode": "opaque_vendor_byte",
+          "fileName": "potree-v2-position_0_2-opaque_vendor_byte.png",
+          "occupiedPixelCount": 68792,
+          "maxRecordsPerPixel": 6300,
+          "pixelSha256": "bb6a91e98b729d99bbea48fb93a0a93849e452d2afbf2ac0bd3f4885efd2ca09",
+          "byteLength": 113083,
+          "sha256": "69fc695a6dcb6e5fc176e165ca39bef3e786859302d7c36305cd80974a17511b"
+        },
+        {
+          "viewId": "position_0_2",
+          "mode": "record_density",
+          "fileName": "potree-v2-position_0_2-record_density.png",
+          "occupiedPixelCount": 68792,
+          "maxRecordsPerPixel": 6300,
+          "pixelSha256": "060290ff4bf3afebf34f6ec9b5845b6ed256337be55e4cae3141cb6b5fbaa5aa",
+          "byteLength": 60642,
+          "sha256": "a48887c8e605a97fbb5951d4d73c351420d83e643674ee4f1f840d1dc57870d9"
+        },
+        {
+          "viewId": "position_1_2",
+          "mode": "omitted_component",
+          "fileName": "potree-v2-position_1_2-omitted_component.png",
+          "occupiedPixelCount": 66340,
+          "maxRecordsPerPixel": 6301,
+          "pixelSha256": "15ad0fe2ed6af36df9e03466b01edcc95280191f5bafca97e7dadf73e4d4c34a",
+          "byteLength": 148610,
+          "sha256": "5b6e6ece11c83849d32bae29026fb3d4bcfb4ccf6f293c65b57af89d19eb5662"
+        },
+        {
+          "viewId": "position_1_2",
+          "mode": "intensity_byte",
+          "fileName": "potree-v2-position_1_2-intensity_byte.png",
+          "occupiedPixelCount": 66340,
+          "maxRecordsPerPixel": 6301,
+          "pixelSha256": "0fb5d68e397b4a0b8472ddffffa653ef90079844a164427b09400f0cc72b3190",
+          "byteLength": 122293,
+          "sha256": "273dc74cf1d8683147e416af4bb11b022b213f7559d38b03b468906abdd1e7d7"
+        },
+        {
+          "viewId": "position_1_2",
+          "mode": "opaque_vendor_byte",
+          "fileName": "potree-v2-position_1_2-opaque_vendor_byte.png",
+          "occupiedPixelCount": 66340,
+          "maxRecordsPerPixel": 6301,
+          "pixelSha256": "8bc55951ae14f2adad52167ee793963999847c2c3aeada0e7cb33b4ce25854c6",
+          "byteLength": 109895,
+          "sha256": "0d38f277c38fc30f7483279a179775242973a691cf2f49372cdffe2b1096574d"
+        },
+        {
+          "viewId": "position_1_2",
+          "mode": "record_density",
+          "fileName": "potree-v2-position_1_2-record_density.png",
+          "occupiedPixelCount": 66340,
+          "maxRecordsPerPixel": 6301,
+          "pixelSha256": "6b661fb2c01e54d8ca8d4cbd332156929ca668a36ac5f3e7286ef976aba59c12",
+          "byteLength": 60249,
+          "sha256": "e07b935f17805838265d9e5e9ddd1c76d4adf15d072712dd0e4ff16d697e2637"
+        }
+      ]
+    },
+    "unknownResolution": {
+      "inheritedUnknownCount": 10,
+      "resolvedUnknownCodes": [
+        "POTREE_POINT_ATTRIBUTE_VALUES_UNKNOWN"
+      ],
+      "remainingUnknownCount": 9,
+      "readinessRefinementCount": 1,
+      "inheritedChecklistRequestCount": 10,
+      "resolvedEffectiveRequestCount": 1,
+      "remainingEffectiveUnknownRequestCount": 9
+    }
+  },
+  "unresolvedFactCodes": [
+    "POTREE_VENDOR_ATTRIBUTE_SEMANTICS_UNKNOWN",
+    "POTREE_PHYSICAL_BOUNDS_UNKNOWN",
+    "POTREE_UNITS_FRAME_CRS_UNKNOWN",
+    "POTREE_GEOMETRY_ROLE_COMPLETENESS_UNKNOWN",
+    "POTREE_PROVENANCE_CAPTURE_CLASS_UNKNOWN",
+    "POTREE_ACCURACY_UNCERTAINTY_UNKNOWN",
+    "POTREE_REGISTRATION_UNKNOWN",
+    "POTREE_VIEWER_FIDELITY_UNKNOWN",
+    "POTREE_RIGHTS_UNKNOWN"
+  ],
+  "truthBoundaries": [
+    "Numeric coordinate decoding does not establish units, axes, frame, CRS, physical meaning, completeness, accuracy or registration.",
+    "The declared name lcc prediction and its valid uint8 values do not establish vendor semantics.",
+    "The deterministic CPU PNGs do not establish official Potree renderer fidelity.",
+    "Duplicate concentration does not by itself establish corruption or cause.",
+    "Only the exact point-attribute-values unknown is resolved; nine V7 unknowns remain.",
+    "No source mutation, reconstruction, external service, paid compute, signing, release or publication occurred."
+  ],
+  "uiEvidence": {
+    "source": "exact Reception source root on F:",
+    "browser": "Codex in-app Browser for all interactions",
+    "desktopViewport": "1440x1000",
+    "mobileViewport": "390x844 with 375px document client width",
+    "pageHorizontalOverflow": false,
+    "consoleWarningsOrErrors": 0,
+    "controlsExercised": {
+      "planeRadios": 3,
+      "modeRadios": 4,
+      "zoom": "1.0x to 2.5x and reset to 1.0x",
+      "selectedImageHashesMatchedManifest": true
+    },
+    "responsiveLayout": {
+      "desktopWorkbenchColumns": 2,
+      "mobileWorkbenchColumns": 1,
+      "mobileImageNaturalPixels": "1024x1024",
+      "mobileImageRenderedWidth": 302
+    },
+    "frontendFidelityLedger": [
+      "Inherited Georgia heading hierarchy",
+      "Teal authority pills and section labels",
+      "Cream paper surfaces and bordered cards",
+      "Inherited V7 section rhythm and control sizing",
+      "Responsive one-column collapse",
+      "Muted epistemic copy"
+    ],
+    "copyDiff": "Only V8 diagnostic copy was added. V7 public state, text, endpoints and download filenames were preserved.",
+    "httpChecks": {
+      "state": 200,
+      "sourceFactsV8": {
+        "status": 200,
+        "fileName": "foundry-universal-source-facts-v8.json",
+        "responseBytesWithTrailingNewline": 25370
+      },
+      "sourceReadinessV8": {
+        "status": 200,
+        "fileName": "foundry-source-readiness-map-v8.json",
+        "responseBytesWithTrailingNewline": 43496
+      },
+      "operatorEvidenceChecklistV8": {
+        "status": 200,
+        "fileName": "foundry-operator-evidence-checklist-v8.json",
+        "responseBytesWithTrailingNewline": 120089
+      },
+      "selectedPng": {
+        "status": 200,
+        "contentType": "image/png",
+        "byteLength": 60249,
+        "sha256": "e07b935f17805838265d9e5e9ddd1c76d4adf15d072712dd0e4ff16d697e2637"
+      }
+    },
+    "screenshots": [
+      {
+        "path": "docs/reports/evidence/xgrids-potree-v7-accepted-reference-desktop-2026-07-18.png",
+        "bytes": 174957,
+        "dimensions": "1232x1288",
+        "sha256": "5d52413002889c4a1031d440c845587360ada6ae8e134edbd49fc73859513928"
+      },
+      {
+        "path": "docs/reports/evidence/xgrids-potree-v8-diagnostic-desktop-2026-07-18.png",
+        "bytes": 755683,
+        "dimensions": "1232x1503",
+        "sha256": "1335b7dcd98ed3aee0230e2d5676f1f01a19dd53d1ab618500354571e5413ad5"
+      },
+      {
+        "path": "docs/reports/evidence/xgrids-potree-v8-diagnostic-mobile-390x844-2026-07-18.png",
+        "bytes": 213228,
+        "dimensions": "318x2919",
+        "sha256": "084f93206cd17e2e7642535ed65a668b94b9c7f8c2648922bd879bf71bd83a0b"
+      }
+    ],
+    "tallScreenshotQualification": "In-app Browser performed all interactions. Installed Edge headless was used only to capture the final tall-page evidence after the in-app element capture tiled the tall surface incorrectly.",
+    "sessionShutdownVerified": true,
+    "port41776Closed": true
+  },
+  "independentReview": {
+    "verdict": "all_actionable_v8_findings_addressed",
+    "resolvedFindings": [
+      "Nested point-value facts are bound to the exact bundle root and bundle digest.",
+      "Raw offsets, extrema, quantiles, multiplicity equations, preview order and preview identities are schema-bound.",
+      "Unique low-duplicate input does not produce the concentration warning; the exact 1 percent boundary is regression-pinned.",
+      "Invalid primitive bundle inputs and pre-conversion size mismatches fail closed.",
+      "Child-node bounds, declared attribute ranges and the exact one-scale-unit boundary have explicit regressions.",
+      "Unpublished PNG buffers are wiped after validation failure or stale publication; published buffers remain state-owned until stop and are then wiped.",
+      "The local UI starts at 1x, exposes keyboard-focusable scroll, reports live zoom state and uses the exact frontmost/tie caption."
+    ]
+  },
+  "verification": {
+    "focusedCoreV8": "4 files, 29 passed",
+    "focusedLocalAppV8": "3 files, 39 passed",
+    "focusedCoreAndToolLint": "passed",
+    "fullCoreLint": "passed",
+    "currentFullToolLint": "one unrelated shared complete-handoff optional-chain error in local-app.ts; the focused V8 tool lint passes",
+    "coreTypecheckBeforeUnrelatedSharedAddition": "passed",
+    "gitDiffCheck": "passed",
+    "fullCoreSuite": "60 files; 59 passed and 1 unrelated shared untracked file failed; 717 tests passed, 1 skipped, 2 failed because parseFoundryLocalInspectionHandoffPackageV0 is not a function",
+    "currentWholeCoreTypecheck": "blocked by unrelated shared untracked local-inspection-handoff-package-v0.ts TS7056 inferred-type errors",
+    "fullToolSuite": "37 files; 36 passed; 623 tests passed and 1 generic guided-workflow HTTP test failed with read ECONNRESET",
+    "isolatedToolFailure": "Three exact reruns reproduced ECONNRESET while polling GET /api/state for the 500-file OBJ fixture, before readiness/admission and before Potree preview assertions. It appears outside the V8 preview behavior, but exact causal independence from global V8 intake integration is not proven.",
+    "toolBuildQualification": "Pre-existing sibling-source rootDir/TS6307 packaging issue; not introduced by V8.",
+    "realReceptionReplay": "Three hardened runs produced identical V8 facts, readiness, checklist, pixel and PNG identities with unchanged source member identities.",
+    "browserRuntime": "Every plane, mode, zoom and reset control passed on desktop and mobile with zero warning/error logs and exact selected-image hashes.",
+    "listenerShutdown": "Port 41776 confirmed closed.",
+    "sharedWorktreeQualification": "The shared local-app files received concurrent non-V8 additions after browser capture and continued changing during evidence finalization, so no unstable whole-file identity is claimed for them. The current focused V8 suite was rerun successfully at 29/29 core and 39/39 tool. Browser screenshots remain evidence of the earlier final V8 QA state."
+  },
+  "stableImplementationSnapshot": [
+    {
+      "path": "packages/reconstruction-foundry/src/potree-v2-point-values.ts",
+      "bytes": 51132,
+      "sha256": "fa6dc9d385671d78a83251a95e95f7b198640859431b51403c609ee90b710f79"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/source-facts-v8.ts",
+      "bytes": 20009,
+      "sha256": "724b2447b485bf7ab609a7af1d41455fe4a7dc6a2a0cc648ba47187772fd56cb"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/source-readiness-v8.ts",
+      "bytes": 20021,
+      "sha256": "32992833e0c16a6624f0a42581f6b0c9a4366e812b70b02262965266fc2d9480"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/operator-evidence-checklist-v8.ts",
+      "bytes": 21355,
+      "sha256": "b896ca9f224dec90c138d429ae46f1dec874a4c05fed45967634e41f7f79a59a"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/intake-receipt.ts",
+      "bytes": 73607,
+      "sha256": "24b1d9bee8deb6e5a58a338537c9dcadb9d8202879a851cee695ffa0065d86d7"
+    },
+    {
+      "path": "packages/reconstruction-foundry/src/index.ts",
+      "bytes": 20022,
+      "sha256": "2787d6e2aa35e160e7ea5602288f2c4a0c9db702ccdd067faa0cb166e35b3966"
+    }
+  ],
+  "sharedIntegrationFiles": [
+    "tools/reconstruction-foundry/src/local-app.ts",
+    "tools/reconstruction-foundry/src/local-app-assets.ts"
+  ]
+}

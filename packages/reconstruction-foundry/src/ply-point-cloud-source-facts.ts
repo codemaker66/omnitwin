@@ -5,6 +5,7 @@ import {
   FOUNDRY_GAUSSIAN_PLY_HEADER_LINE_MAX_BYTES,
   FOUNDRY_GAUSSIAN_PLY_HEADER_MAX_BYTES,
   FOUNDRY_GAUSSIAN_PLY_PROPERTY_MAX_COUNT,
+  FOUNDRY_GAUSSIAN_PLY_REQUIRED_FLOAT32_PROPERTY_NAMES,
   FOUNDRY_GAUSSIAN_PLY_SOURCE_MAX_BYTES,
   FOUNDRY_GAUSSIAN_PLY_VERTEX_MAX_COUNT,
   FOUNDRY_GAUSSIAN_PLY_VERTEX_STRIDE_MAX_BYTES,
@@ -285,14 +286,6 @@ const PLAYCANVAS_PACKED_VERTEX_PROPERTIES = Object.freeze([
   "packed_scale",
   "packed_color",
 ] as const);
-const CLASSIC_GAUSSIAN_PROPERTIES = Object.freeze([
-  "x", "y", "z",
-  "f_dc_0", "f_dc_1", "f_dc_2",
-  "opacity",
-  "scale_0", "scale_1", "scale_2",
-  "rot_0", "rot_1", "rot_2", "rot_3",
-] as const);
-
 class PointPlyInspectionFailure extends Error {
   constructor(
     readonly category: FailureCategory,
@@ -746,7 +739,11 @@ function parsePointHeader(header: CapturedHeader): ParsedPointHeader {
     (property): property is ParsedScalarProperty => property.kind === "scalar",
   );
   const names = new Set(scalarProperties.map((property) => property.name));
-  if (CLASSIC_GAUSSIAN_PROPERTIES.every((name) => names.has(name))) {
+  if (
+    FOUNDRY_GAUSSIAN_PLY_REQUIRED_FLOAT32_PROPERTY_NAMES.every(
+      (name) => names.has(name),
+    )
+  ) {
     fail("unsupported_variant", "POINT_PLY_GAUSSIAN_PROFILE_EXCLUDED");
   }
   if (!["x", "y", "z"].every((name) => names.has(name))) {

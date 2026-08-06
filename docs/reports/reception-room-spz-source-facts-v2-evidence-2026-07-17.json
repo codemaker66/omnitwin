@@ -1,0 +1,214 @@
+{
+  "schemaVersion": "omnitwin.local.spz-source-facts-v2-evidence-manifest.v0",
+  "authority": "none",
+  "scope": "Read-only structural evidence for eight exact local Reception Room SPZ files. This manifest does not establish decoded Gaussian values, physical bounds, units, venue frame, renderer compatibility, visual fidelity, provenance, accuracy, registration quality, processing eligibility, or usage rights.",
+  "recordedAt": "2026-07-17",
+  "sourceSet": {
+    "label": "reception-room_xgrids_lcc2_spz_with_mesh/lcc2-result/data/3dgs",
+    "fileCount": 8,
+    "sourceBytes": 52911630,
+    "declaredGaussianCount": 3459703
+  },
+  "specificationBasis": {
+    "project": "Niantic SPZ",
+    "repository": "https://github.com/nianticlabs/spz",
+    "sourceCommit": "21715c3b7a609ea6fb7c69b8ae42181a12b59f22",
+    "readme": "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/README.md",
+    "loaderSource": "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/src/cc/load-spz.cc",
+    "extensionSpecification": "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/extensions/README.md",
+    "libraryRelease": "v3.0.0",
+    "codeLicense": "MIT",
+    "licenseLimitation": "The upstream code licence does not establish rights in these Reception Room asset bytes."
+  },
+  "artifactChain": {
+    "receipt": {
+      "schemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+      "sha256": "3fa54eba75cbb22d4fcc947027641f156472df546d553012b297e32bde875a58",
+      "fileCount": 8
+    },
+    "sourceFacts": {
+      "schemaVersion": "omnitwin.foundry.universal-source-facts.v2",
+      "sha256": "c665eb1350d0a39197d425167c8e3e3f0557c5186f194132699ed1280b3cb615",
+      "state": "available",
+      "establishedCount": 8,
+      "factsNotEstablishedCount": 0
+    },
+    "sourceReadiness": {
+      "schemaVersion": "omnitwin.foundry.source-readiness-map.v2",
+      "sha256": "07132d0589254211312cd72b2780b11a815c5a0afcfae05dbdc287b29e68976f",
+      "state": "available",
+      "representedLaneCount": 1,
+      "gapCount": 11
+    },
+    "operatorEvidenceChecklist": {
+      "schemaVersion": "omnitwin.foundry.operator-evidence-checklist.v2",
+      "sha256": "94bf31b16fe4c812f07637077d98e85acc5ce85a52fa18e89930ec5e9ef94de4",
+      "state": "available",
+      "evidenceRequestCount": 11,
+      "groupCount": 2
+    }
+  },
+  "commonEstablishedFacts": {
+    "format": "spz_legacy_gzip",
+    "inspectionCode": "SPZ_FORMAT_FACTS_ESTABLISHED",
+    "inspectionCoverage": "single_gzip_member_header_declared_layout_and_complete_stream",
+    "version": 3,
+    "fractionalBitsRaw": 12,
+    "antialiased": false,
+    "sphericalHarmonicsDegree": 0,
+    "sphericalHarmonicsBytesPerGaussian": 0,
+    "positionEncoding": "signed_fixed_point_24_xyz",
+    "rotationEncoding": "smallest_three_quaternion_uint32",
+    "totalBytesPerGaussian": 20,
+    "extensionsDeclared": false,
+    "gzipHeaderBytes": 10,
+    "singleGzipMemberVerified": true,
+    "gzipCrc32Verified": true,
+    "gzipInputSizeVerified": true,
+    "exactDecompressedLengthVerified": true,
+    "aggregateDecompressedBytes": 69194188
+  },
+  "inspectionProfile": {
+    "sourceMaxBytes": 68719476736,
+    "decompressedMaxBytes": 68719476736,
+    "gzipHeaderMaxBytes": 1048576,
+    "extensionMaxBytes": 16777216,
+    "extensionMaxRecords": 256,
+    "v4MaxCompressionRatio": 1024,
+    "legacyDeclaredExtensionsSupported": true,
+    "zstdRuntimeUnavailableCode": "SPZ_V4_ZSTD_RUNTIME_UNAVAILABLE"
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only.",
+    "issuanceSurface": "The package root exposes the inspected-intake entrypoint but not the caller-supplied V2 result collector or artifact issuer.",
+    "independentAttestation": "not_established"
+  },
+  "files": [
+    {
+      "path": "0_0.spz",
+      "sourceBytes": 7652108,
+      "sha256": "d605163555ba8a7a2b27319294ad93c219601399bcb206d634b48c1283235a7e",
+      "declaredGaussianCount": 491784,
+      "corePayloadBytes": 9835680,
+      "decompressedBytes": 9835696
+    },
+    {
+      "path": "0_13_0_0.spz",
+      "sourceBytes": 8620036,
+      "sha256": "82bbbd033609f99f05c45c177ada552b87b905255ac515014f75561c292bf55c",
+      "declaredGaussianCount": 565974,
+      "corePayloadBytes": 11319480,
+      "decompressedBytes": 11319496
+    },
+    {
+      "path": "0_2_0.spz",
+      "sourceBytes": 8397200,
+      "sha256": "d9536be11f0bf94197d2dd7ee2bc70dbf2054ada95addd29a29fe8f69087ea1b",
+      "declaredGaussianCount": 544867,
+      "corePayloadBytes": 10897340,
+      "decompressedBytes": 10897356
+    },
+    {
+      "path": "0_3_0.spz",
+      "sourceBytes": 6778655,
+      "sha256": "58e4bbf0e1a5d27efd3b5b1e83930f7d1b1dc24053e6ba444550a84905412a27",
+      "declaredGaussianCount": 440823,
+      "corePayloadBytes": 8816460,
+      "decompressedBytes": 8816476
+    },
+    {
+      "path": "0_3_0_0.spz",
+      "sourceBytes": 9199830,
+      "sha256": "13200d905d50160034538e705b60c549aaf82348679791f801efa3f9e52171b3",
+      "declaredGaussianCount": 604926,
+      "corePayloadBytes": 12098520,
+      "decompressedBytes": 12098536
+    },
+    {
+      "path": "0_7_0_1.spz",
+      "sourceBytes": 8768751,
+      "sha256": "5d4e274df25aae56a8989416e1078fc86912b4c7b053b1c7d3c25a6e484a80df",
+      "declaredGaussianCount": 582881,
+      "corePayloadBytes": 11657620,
+      "decompressedBytes": 11657636
+    },
+    {
+      "path": "0_8_0_0.spz",
+      "sourceBytes": 3422064,
+      "sha256": "925c90a714abf7ed9cacea65a4abf4de1ff225ead2ef503aadcf836068ab62ed",
+      "declaredGaussianCount": 224477,
+      "corePayloadBytes": 4489540,
+      "decompressedBytes": 4489556
+    },
+    {
+      "path": "env.spz",
+      "sourceBytes": 72986,
+      "sha256": "00ba83257962930fc002c1c9a16b1bf96185dc9f9244c27374facd061775f84b",
+      "declaredGaussianCount": 3971,
+      "corePayloadBytes": 79420,
+      "decompressedBytes": 79436
+    }
+  ],
+  "unresolvedFactCodes": [
+    "SPZ_ATTRIBUTE_VALUES_UNKNOWN",
+    "SPZ_PHYSICAL_BOUNDS_UNKNOWN",
+    "SPZ_UNITS_UNKNOWN",
+    "SPZ_FRAME_UNKNOWN",
+    "SPZ_RENDERER_COMPATIBILITY_UNKNOWN",
+    "SPZ_VISUAL_FIDELITY_UNKNOWN",
+    "SPZ_PROVENANCE_UNKNOWN",
+    "SPZ_ACCURACY_UNKNOWN",
+    "SPZ_REGISTRATION_UNKNOWN",
+    "SPZ_RIGHTS_UNKNOWN"
+  ],
+  "uiEvidence": {
+    "desktop": {
+      "path": "docs/reports/evidence/local-foundry-spz-v2-desktop-2026-07-17.png",
+      "viewport": "1280x720",
+      "sha256": "d6025ef159cfd02dbf7076f5355fa68ad56c16e39e9af5138ecd207ff7fd1b96",
+      "sourceFactCards": 8,
+      "pageHorizontalOverflow": false,
+      "consoleWarningOrErrorCount": 0
+    },
+    "mobile": {
+      "path": "docs/reports/evidence/local-foundry-spz-v2-mobile-2026-07-17.png",
+      "viewport": "320x844",
+      "sha256": "8e2c3de2597b95fe9d6fc20062a714c767b3601bc1d3e9a2dc11b401e94bc015",
+      "sourceFactCards": 8,
+      "pageHorizontalOverflow": false,
+      "consoleWarningOrErrorCount": 0
+    }
+  },
+  "verification": {
+    "focusedSpzContract": {
+      "testFiles": 3,
+      "passed": 52
+    },
+    "reconstructionFoundry": {
+      "testFiles": 34,
+      "passed": 459,
+      "skipped": 1,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "localFoundryApp": {
+      "testFiles": 14,
+      "passed": 172,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "independentFinalAudits": "no_remaining_actionable_p0_p1_p2_or_p3_findings"
+  },
+  "limitations": [
+    "For an established result, the inspector validates each complete compressed range, exact declared byte layout, and any declared bounded extension tail, but it does not decode Gaussian attribute values.",
+    "fractionalBitsRaw records the header byte literally; it is not a separately established quantizer-precision or physical-accuracy claim.",
+    "SPZ has no authoritative unit field for these venue assets, and absence of a coordinate extension does not prove the venue frame.",
+    "These eight real files declare no extension tail and exercise the legacy v3 path; synthetic regressions separately cover legacy extensions and v4 six-stream nested facts.",
+    "The V2 digest proves canonical local self-consistency only; it is not independent attestation that the inspector ran or that the source claims are authoritative.",
+    "The eight files represent only one visual-scene source family; missing-source requests remain conditional on a separately bound desired-output scope.",
+    "Digest binding is not an atomic filesystem snapshot.",
+    "No source file was changed and no reconstruction, upload, external service, training job, release, publication, or authority promotion occurred."
+  ]
+}

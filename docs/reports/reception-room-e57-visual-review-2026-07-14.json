@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "omnitwin.reception.e57-visual-review.v1",
+  "scanIds": [122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144],
+  "sourceE57Sha256": "975039d11fc04ca681f038e499f358124bbcab178ad5ce6324fa912212729cdd",
+  "reviewTargetClass": "loose_derived_panoramas",
+  "reviewMethod": "Two vision-model screening passes over the same sequential preview montage, followed by full-resolution checks of the exact derived panoramas for scans 123 and 140. This is one evidence source, not two independent source captures.",
+  "reviewedPanoramaSha256ByScanId": {
+    "122": "ce2d02bf65559b2ebfe49655596896f70bf7fcbf67521ac07962b2827f4f9f73",
+    "123": "3e5ab455b75900a6292b0b8c3672b046f186db219009a26f83dafc837baece01",
+    "124": "0ec8b1cc0adcb45bbb64b17d2be06bbe29a65c5275b4b138df1e8ff57b5e14b3",
+    "125": "f0b9fed0b35dada1d68fafaabd8240b4965df0fb3a83ae9e575ecf99689d2858",
+    "126": "2c11c03521ca1044c8fdb03187ccb7b9a5333f837194bcb6adbe072f2c9f1fc7",
+    "127": "f9c7fcbb87dcbeffd5740c8f2333a4821ac78acfefbf7347b0516268f6657353",
+    "128": "ca4fc3007c0ff6a70116a52ec378c35f3fe7302f6131122231bbf74d9a81af59",
+    "129": "205589e7199183c774f5cbdde24ea5e3c2b6c23a527ef2d2f358cb495e2de6d8",
+    "130": "138384aec7c04cb89e375cca4bcb064d2908e85c93da78a5cb53cbd62e72008a",
+    "131": "611ef3e32615eca4102fdbfd55f9b31ddbaf5b641dac8bc15476c2bf189b250b",
+    "132": "84cc6d4ad725e26214070b4cab2f3ad7a73582f4ff56a7012b02792352061dbd",
+    "133": "4a24fbda1caad9d0ee6147a68b7dba9473893fa69fa97b4c1ea2433be3de4c68",
+    "134": "d6166ef88e4f29087839aec5df61c52afed4405e32cc3d50b8aba6b7e41328d0",
+    "135": "8befe1ba6ba106549b26896be2077aab3391100989731e98adb4bf77c707425f",
+    "136": "ba71ca5e6d731a47dd7e7ade81be1a3841fa6210359ef09a963784cc92de9e7d",
+    "137": "321f0666c79d3c4a89b54b5806f0f944d01cf9d36a4310a2fe6e6bc433362b57",
+    "138": "b2be97a91bdc112a9a89804b2accf0090bafa5c07016eb1385a82a92b74d9301",
+    "139": "dd3d12a28941bdfd26a8573b198a2e5544b98484ab5472be7db85e5eeea5f914",
+    "140": "e588510c0146f34854ab9cda023e973ef6358750a4fef4a56121bbc541110685",
+    "141": "e6c323ea2624001246682d18458ffd6fef89f33f370c58bd926ffced13c6c4a7",
+    "142": "52997d3d60e868bb033581b07ae8df116935a5159bf4a5f630ef938c3c257631",
+    "143": "5f4f52d1bd5ae4e3a9d54aa23371085dbe5a85d11934fe2dded5bd8e857fa309",
+    "144": "db54427dbb86369e3b68105e3245eb0da25cb6e895ecac415ceba1133f47e58f"
+  },
+  "previewMontage": {
+    "fileName": "reception-e57-scans-122-144-contact-sheet.png",
+    "sha256": "5085dba9ed69cbddad81e581ed2d44211ca5356f42df2bc468935da294ae15fe",
+    "limitation": "The existing montage has no text labels inside its tiles. Its row-major 122-to-144 ordering was supplied externally, so the exact panorama hashes above—not the montage alone—bind the screening input."
+  },
+  "fullResolutionCheckedDerivedPanoramaScanIds": [123, 140],
+  "requiresHumanConfirmation": true,
+  "decisionsAreQuarantineOnly": true,
+  "quarantinedScans": [
+    {
+      "scanId": 123,
+      "reason": "A large blurred person is visibly present in the hash-bound derived panorama. Quarantine the complete station provisionally; confirm against the exact native Image2D JPEGs before any materialization."
+    },
+    {
+      "scanId": 140,
+      "reason": "A partial person is visibly present in the hash-bound full-resolution derived panorama. Quarantine the complete station provisionally; confirm against the exact native Image2D JPEGs before any materialization."
+    }
+  ],
+  "boundaryChallengeScans": [
+    {
+      "scanId": 122,
+      "reason": "The derived panorama straddles the Reception doorway and adjoining corridor. Keep it outside the ordinary room subset and reserve it as a boundary/challenge station."
+    }
+  ],
+  "observations": [
+    "The sequence is visually compatible with one connected room and its entrance transition, but visual compatibility does not prove room identity.",
+    "The preview montage missed the partial person at scan 140; thumbnail screening is therefore insufficient.",
+    "Every derived panorama shows a blurred nadir or tripod-region patch.",
+    "The other 20 provisional core stations are not cleared: every embedded native JPEG still requires full-resolution human review.",
+    "This screening is not a calibration proof, physical image-to-laser registration proof, legal-rights decision, or training approval."
+  ],
+  "derivedCubefaceOrientationReview": {
+    "status": "systematic_inconsistency_observed_unverified",
+    "observation": "The loose 1536-pixel cube-face labels were systematically inconsistent with panorama-derived expectations in a model review.",
+    "decision": "Do not admit the loose face labels or any label-derived pose. The exact remapping remains a hypothesis until a hash-bound LiDAR-to-photo reprojection test recomputes it."
+  },
+  "authority": "none"
+}

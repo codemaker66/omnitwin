@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_FIXED_ENTRYPOINT_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2,
   type LocalOfflinePreviewContainerConfiguration,
 } from "../local-offline-normalization-preview-container-preflight.js";
 import {
@@ -21,7 +25,7 @@ const digest = (character: string): string =>
 
 function validConfiguration(): LocalOfflinePreviewContainerConfiguration {
   return {
-    schemaVersion: LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1,
+    schemaVersion: LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V2,
     authority: "none",
     fallbackPolicy: "block",
     containerPlatform: "linux/amd64",
@@ -42,10 +46,16 @@ function validConfiguration(): LocalOfflinePreviewContainerConfiguration {
     workerKind: "offline_normalization_preview",
     workerProtocolSha256: digest("4"),
     workerArtifactSha256: digest("5"),
-    fixedEntrypoint: [
-      "/opt/omnitwin/bin/node",
-      "/opt/omnitwin/worker/offline-preview.mjs",
-    ],
+    fixedEntrypoint: LOCAL_OFFLINE_PREVIEW_CONTAINER_FIXED_ENTRYPOINT_V2,
+    runtimeWatchdog: {
+      kind: "busybox_timeout_pid1_wall_clock",
+      executablePath: "/bin/busybox",
+      artifactSha256: digest("6"),
+      coverage: "stdin_worker_stdout",
+      terminationSignal: "SIGKILL",
+      independentOfHostProcess: true,
+      maximumRuntimeMilliseconds: 60_000,
+    },
     resourceLimits: {
       cpuCores: 2,
       memoryBytes: 768 * 1024 * 1024,
@@ -75,7 +85,7 @@ function input(
     requestId: "0123456789abcdef0123456789abcdef",
     policyDigest: value.policyDigest,
     engineDigest: digest("6"),
-    containerConfigurationDigest: transform ? digest("7") : digest("8"),
+    containerConfigurationDigest: digest("7"),
     containerIdentityDigest: transform ? digest("9") : digest("a"),
     deadlineAt: "2030-01-02T10:01:00.000Z",
     startedAt: transform
@@ -134,9 +144,18 @@ describe("local offline preview sandbox evidence contract", () => {
       mountCount: 0,
       capDrop: ["ALL"],
       noNewPrivileges: true,
+      imageEnvironment: LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2,
+      imageWorkingDirectory:
+        LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2,
+      imageStopSignal: LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2,
       runtime: "runc",
       logDriver: "none",
       attachStderr: false,
+      watchdogKind: "busybox_timeout_pid1_wall_clock",
+      watchdogCoverage: "stdin_worker_stdout",
+      watchdogTerminationSignal: "SIGKILL",
+      watchdogIndependentOfHostProcess: true,
+      watchdogMaximumRuntimeMilliseconds: 60_000,
     });
     expect(serialized).not.toContain("docker.exe");
     expect(serialized).not.toContain("offline-preview-seccomp.json");
@@ -168,6 +187,49 @@ describe("local offline preview sandbox evidence contract", () => {
     expect(
       parseLocalOfflinePreviewSandboxPolicy({
         ...value,
+        effectiveControls: {
+          ...value.effectiveControls,
+          imageEnvironment: [
+            ...value.effectiveControls.imageEnvironment,
+            "NODE_OPTIONS=--require=/tmp/hostile.cjs",
+          ],
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseLocalOfflinePreviewSandboxPolicy({
+        ...value,
+        effectiveControls: {
+          ...value.effectiveControls,
+          imageEnvironment: [
+            value.effectiveControls.imageEnvironment[1],
+            value.effectiveControls.imageEnvironment[0],
+            ...value.effectiveControls.imageEnvironment.slice(2),
+          ],
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseLocalOfflinePreviewSandboxPolicy({
+        ...value,
+        effectiveControls: {
+          ...value.effectiveControls,
+          imageWorkingDirectory: "/opt/worker",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseLocalOfflinePreviewSandboxPolicy({
+        ...value,
+        effectiveControls: {
+          ...value.effectiveControls,
+          imageStopSignal: "SIGTERM",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseLocalOfflinePreviewSandboxPolicy({
+        ...value,
         policyDigest: digest("a"),
       }),
     ).toBeNull();
@@ -180,7 +242,12 @@ describe("local offline preview sandbox evidence contract", () => {
     const value = policy();
     const transform = receipt(value, "transform");
 
-    expect(transform.sandboxEstablished).toBe(true);
+    expect(transform).toMatchObject({
+      sandboxEstablished: false,
+      claimStatus: "unauthenticated_integrity_claim",
+      attestationAuthority: "none",
+      cryptographicallyAuthenticated: false,
+    });
     expect(transform.terminal).toEqual({
       status: "exited",
       running: false,
@@ -221,6 +288,17 @@ describe("local offline preview sandbox evidence contract", () => {
 
   it("rejects control, deadline, runtime, and byte-limit lies", () => {
     const value = policy();
+    expect(
+      createLocalOfflinePreviewSandboxTerminalReceipt(
+        input(value, "fresh_verifier", {
+          wireInput: {
+            sizeBytes: value.effectiveControls.maximumInputBytes + 1,
+            sha256: digest("b"),
+          },
+        }),
+        value,
+      ),
+    ).not.toBeNull();
     const invalidInputs: readonly Readonly<Record<string, unknown>>[] = [
       {
         effectiveControls: {
@@ -228,6 +306,13 @@ describe("local offline preview sandbox evidence contract", () => {
           networkMode: "bridge",
         },
       },
+      {
+        effectiveControls: {
+          ...value.effectiveControls,
+          watchdogIndependentOfHostProcess: false,
+        },
+      },
+      { finishedAt: "2030-01-02T10:01:00.000Z" },
       { finishedAt: "2030-01-02T10:01:01.000Z" },
       {
         deadlineAt: "2030-01-02T10:02:00.000Z",
@@ -236,14 +321,26 @@ describe("local offline preview sandbox evidence contract", () => {
       },
       {
         wireInput: {
-          sizeBytes: value.effectiveControls.maximumInputBytes + 1,
+          sizeBytes: value.effectiveControls.maximumWireBytes + 1,
           sha256: digest("b"),
         },
       },
       {
         wireOutput: {
-          sizeBytes: value.effectiveControls.maximumOutputBytes + 1,
+          sizeBytes: value.effectiveControls.maximumWireBytes + 1,
           sha256: digest("c"),
+        },
+      },
+      {
+        source: {
+          sizeBytes: value.effectiveControls.maximumInputBytes + 1,
+          sha256: digest("d"),
+        },
+      },
+      {
+        candidate: {
+          sizeBytes: value.effectiveControls.maximumOutputBytes + 1,
+          sha256: digest("e"),
         },
       },
     ];
@@ -257,7 +354,7 @@ describe("local offline preview sandbox evidence contract", () => {
     }
   });
 
-  it("establishes evidence only from two distinct, sequential, matching, removed containers", () => {
+  it("builds only an unauthenticated claim from two distinct, sequential, matching, removed containers", () => {
     const value = policy();
     const transform = receipt(value, "transform");
     const verifier = receipt(value, "fresh_verifier");
@@ -269,7 +366,10 @@ describe("local offline preview sandbox evidence contract", () => {
 
     expect(evidence).not.toBeNull();
     expect(evidence).toMatchObject({
-      sandboxEstablished: true,
+      sandboxEstablished: false,
+      claimStatus: "unauthenticated_integrity_claim",
+      attestationAuthority: "none",
+      cryptographicallyAuthenticated: false,
       productionExecution: "disabled",
       distinctContainers: true,
       freshVerifierStartedAfterTransformFinished: true,
@@ -280,6 +380,7 @@ describe("local offline preview sandbox evidence contract", () => {
       reportSha256: transform.reportSha256,
     });
     expect(evidence?.limitations.join(" ")).toContain("not a dedicated virtual machine");
+    expect(evidence?.limitations.join(" ")).toContain("not signatures");
     expect(parseLocalOfflinePreviewSandboxEvidence(evidence)).toEqual(evidence);
     expect(JSON.stringify(evidence)).not.toContain("C:\\");
   });
@@ -287,6 +388,8 @@ describe("local offline preview sandbox evidence contract", () => {
   it.each([
     ["same container", { containerIdentityDigest: digest("9") }],
     ["different engine", { engineDigest: digest("7") }],
+    ["different deadline", { deadlineAt: "2030-01-02T10:00:59.000Z" }],
+    ["different effective configuration", { containerConfigurationDigest: digest("8") }],
     ["different source", { source: { sizeBytes: 1_000, sha256: digest("7") } }],
     ["different candidate", { candidate: { sizeBytes: 900, sha256: digest("7") } }],
     ["different report", { reportSha256: digest("7") }],
@@ -340,7 +443,7 @@ describe("local offline preview sandbox evidence contract", () => {
     expect(
       parseLocalOfflinePreviewSandboxEvidence({
         ...evidence,
-        sandboxEstablished: false,
+        sandboxEstablished: true,
       }),
     ).toBeNull();
     expect(

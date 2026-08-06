@@ -1,0 +1,1381 @@
+{
+  "backwardCompatibleWith": [
+    "venviewer.reception-room-fixed-view-cv-triage.v1"
+  ],
+  "comparisons": [
+    {
+      "baselineVariant": "mobile-sh0-spz-leaf",
+      "candidateVariant": "mobile-sh0-spz-all-invalid",
+      "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+      "perView": [
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.734507,
+            "baselineEdgeFraction": 0.003281,
+            "baselineEdgePixels": 3544,
+            "reasons": []
+          },
+          "baselineFile": "matrix-overview-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-overview-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.963375,
+              "sigma1.2": 0.949276,
+              "sigma2.4": 0.968073
+            },
+            "maximumTileChangedPixelFraction": 0.42625,
+            "maximumTileRgbMae": 0.046969,
+            "minimumGradientEnergyRatio": 0.949276,
+            "reasons": [
+              "multiscale_detail_loss"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.074371,
+            "baselineToCandidateEdgeDistanceP95Pixels": 22.193454,
+            "candidateCoherentEnergyRatio": 0.723757,
+            "candidateDilatedEdgeCoverage": 0.058762,
+            "candidateEdgeFraction": 0.002582,
+            "candidateEdgePixels": 2789,
+            "candidateToBaselineEdgeDistanceP95Pixels": 10.77033,
+            "changedPixelFraction": 0.126627,
+            "edgeCoverageAbsoluteDelta": 0.015609,
+            "extraEdgeFraction": 0.473288,
+            "maximumTileChangedPixelFraction": 0.42625,
+            "maximumTileRgbMae": 0.046969,
+            "meanRgbChannelMaxDrift": 0.002868,
+            "minimumGradientEnergyRatio": 0.949276,
+            "missingEdgeFraction": 0.584368,
+            "parallelNearbyEdgeFraction": 0.368591,
+            "rgbMae": 0.0192
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "overview"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.737778,
+            "baselineEdgeFraction": 0.001616,
+            "baselineEdgePixels": 1745,
+            "reasons": []
+          },
+          "baselineFile": "matrix-timber-left-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-timber-left-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.981311,
+              "sigma1.2": 0.938126,
+              "sigma2.4": 0.925816
+            },
+            "maximumTileChangedPixelFraction": 0.415,
+            "maximumTileRgbMae": 0.064663,
+            "minimumGradientEnergyRatio": 0.925816,
+            "reasons": [
+              "multiscale_detail_loss"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.038319,
+            "baselineToCandidateEdgeDistanceP95Pixels": 41.622107,
+            "candidateCoherentEnergyRatio": 0.70531,
+            "candidateDilatedEdgeCoverage": 0.03133,
+            "candidateEdgeFraction": 0.001319,
+            "candidateEdgePixels": 1424,
+            "candidateToBaselineEdgeDistanceP95Pixels": 14.142136,
+            "changedPixelFraction": 0.102639,
+            "edgeCoverageAbsoluteDelta": 0.006989,
+            "extraEdgeFraction": 0.553371,
+            "maximumTileChangedPixelFraction": 0.415,
+            "maximumTileRgbMae": 0.064663,
+            "meanRgbChannelMaxDrift": 0.002193,
+            "minimumGradientEnergyRatio": 0.925816,
+            "missingEdgeFraction": 0.638968,
+            "parallelNearbyEdgeFraction": 0.422753,
+            "rgbMae": 0.017664
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "timber-left"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.743349,
+            "baselineEdgeFraction": 0.002426,
+            "baselineEdgePixels": 2620,
+            "reasons": []
+          },
+          "baselineFile": "matrix-timber-right-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-timber-right-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.979,
+              "sigma1.2": 0.943358,
+              "sigma2.4": 0.934803
+            },
+            "maximumTileChangedPixelFraction": 0.417143,
+            "maximumTileRgbMae": 0.067081,
+            "minimumGradientEnergyRatio": 0.934803,
+            "reasons": [
+              "multiscale_detail_loss"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.05354,
+            "baselineToCandidateEdgeDistanceP95Pixels": 27.871951,
+            "candidateCoherentEnergyRatio": 0.716286,
+            "candidateDilatedEdgeCoverage": 0.043378,
+            "candidateEdgeFraction": 0.001906,
+            "candidateEdgePixels": 2058,
+            "candidateToBaselineEdgeDistanceP95Pixels": 9.008308,
+            "changedPixelFraction": 0.117345,
+            "edgeCoverageAbsoluteDelta": 0.010162,
+            "extraEdgeFraction": 0.472789,
+            "maximumTileChangedPixelFraction": 0.417143,
+            "maximumTileRgbMae": 0.067081,
+            "meanRgbChannelMaxDrift": 0.002518,
+            "minimumGradientEnergyRatio": 0.934803,
+            "missingEdgeFraction": 0.582824,
+            "parallelNearbyEdgeFraction": 0.39553,
+            "rgbMae": 0.01876
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "timber-right"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.750812,
+            "baselineEdgeFraction": 0.002339,
+            "baselineEdgePixels": 2526,
+            "reasons": []
+          },
+          "baselineFile": "matrix-floor-surface-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-floor-surface-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.869757,
+              "sigma1.2": 0.820711,
+              "sigma2.4": 0.829132
+            },
+            "maximumTileChangedPixelFraction": 0.403155,
+            "maximumTileRgbMae": 0.081622,
+            "minimumGradientEnergyRatio": 0.820711,
+            "reasons": [
+              "multiscale_detail_loss"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.054618,
+            "baselineToCandidateEdgeDistanceP95Pixels": 47.082369,
+            "candidateCoherentEnergyRatio": 0.708473,
+            "candidateDilatedEdgeCoverage": 0.032342,
+            "candidateEdgeFraction": 0.001377,
+            "candidateEdgePixels": 1487,
+            "candidateToBaselineEdgeDistanceP95Pixels": 11.401754,
+            "changedPixelFraction": 0.123018,
+            "edgeCoverageAbsoluteDelta": 0.022276,
+            "extraEdgeFraction": 0.474109,
+            "maximumTileChangedPixelFraction": 0.403155,
+            "maximumTileRgbMae": 0.081622,
+            "meanRgbChannelMaxDrift": 0.00909,
+            "minimumGradientEnergyRatio": 0.820711,
+            "missingEdgeFraction": 0.687648,
+            "parallelNearbyEdgeFraction": 0.365165,
+            "rgbMae": 0.019178
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "floor-surface"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.732164,
+            "baselineEdgeFraction": 0.001741,
+            "baselineEdgePixels": 1880,
+            "reasons": []
+          },
+          "baselineFile": "matrix-ceiling-moulding-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-ceiling-moulding-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 1.024558,
+              "sigma1.2": 0.999085,
+              "sigma2.4": 0.98213
+            },
+            "maximumTileChangedPixelFraction": 0.602832,
+            "maximumTileRgbMae": 0.071433,
+            "minimumGradientEnergyRatio": 0.98213,
+            "reasons": [
+              "local_pixel_drift"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.040974,
+            "baselineToCandidateEdgeDistanceP95Pixels": 19.244439,
+            "candidateCoherentEnergyRatio": 0.713961,
+            "candidateDilatedEdgeCoverage": 0.037391,
+            "candidateEdgeFraction": 0.001581,
+            "candidateEdgePixels": 1708,
+            "candidateToBaselineEdgeDistanceP95Pixels": 16.401219,
+            "changedPixelFraction": 0.182608,
+            "edgeCoverageAbsoluteDelta": 0.003583,
+            "extraEdgeFraction": 0.588407,
+            "maximumTileChangedPixelFraction": 0.602832,
+            "maximumTileRgbMae": 0.071433,
+            "meanRgbChannelMaxDrift": 0.001603,
+            "minimumGradientEnergyRatio": 0.98213,
+            "missingEdgeFraction": 0.628191,
+            "parallelNearbyEdgeFraction": 0.430913,
+            "rgbMae": 0.024377
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "ceiling-moulding"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.743072,
+            "baselineEdgeFraction": 0.002361,
+            "baselineEdgePixels": 2550,
+            "reasons": []
+          },
+          "baselineFile": "matrix-column-skirting-mobile-sh0-spz-leaf.png",
+          "candidateFile": "matrix-column-skirting-mobile-sh0-spz-all-invalid.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": true,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": true,
+            "meanColorDrift": false,
+            "missingEdges": true,
+            "parallelNearbyEdges": true
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.988869,
+              "sigma1.2": 0.95495,
+              "sigma2.4": 0.945861
+            },
+            "maximumTileChangedPixelFraction": 0.524881,
+            "maximumTileRgbMae": 0.097337,
+            "minimumGradientEnergyRatio": 0.945861,
+            "reasons": [
+              "local_pixel_drift",
+              "multiscale_detail_loss"
+            ],
+            "triggered": true
+          },
+          "meaning": "one or more regression signals fired; human review required",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.051929,
+            "baselineToCandidateEdgeDistanceP95Pixels": 20.604608,
+            "candidateCoherentEnergyRatio": 0.717584,
+            "candidateDilatedEdgeCoverage": 0.043518,
+            "candidateEdgeFraction": 0.001932,
+            "candidateEdgePixels": 2087,
+            "candidateToBaselineEdgeDistanceP95Pixels": 8.062258,
+            "changedPixelFraction": 0.108244,
+            "edgeCoverageAbsoluteDelta": 0.008411,
+            "extraEdgeFraction": 0.456157,
+            "maximumTileChangedPixelFraction": 0.524881,
+            "maximumTileRgbMae": 0.097337,
+            "meanRgbChannelMaxDrift": 0.001875,
+            "minimumGradientEnergyRatio": 0.945861,
+            "missingEdgeFraction": 0.555686,
+            "parallelNearbyEdgeFraction": 0.399138,
+            "rgbMae": 0.017815
+          },
+          "triggeredSignals": [
+            "missingEdges",
+            "extraEdges",
+            "parallelNearbyEdges",
+            "localMultiscaleRegression"
+          ],
+          "verdict": "review",
+          "view": "column-skirting"
+        }
+      ],
+      "summary": {
+        "metricRanges": {
+          "baselineToCandidateEdgeDistanceP95Pixels": [
+            19.244439,
+            47.082369
+          ],
+          "candidateToBaselineEdgeDistanceP95Pixels": [
+            8.062258,
+            16.401219
+          ],
+          "changedPixelFraction": [
+            0.102639,
+            0.182608
+          ],
+          "edgeCoverageAbsoluteDelta": [
+            0.003583,
+            0.022276
+          ],
+          "extraEdgeFraction": [
+            0.456157,
+            0.588407
+          ],
+          "maximumTileChangedPixelFraction": [
+            0.403155,
+            0.602832
+          ],
+          "maximumTileRgbMae": [
+            0.046969,
+            0.097337
+          ],
+          "minimumGradientEnergyRatio": [
+            0.820711,
+            0.98213
+          ],
+          "missingEdgeFraction": [
+            0.555686,
+            0.687648
+          ],
+          "parallelNearbyEdgeFraction": [
+            0.365165,
+            0.430913
+          ],
+          "rgbMae": [
+            0.017664,
+            0.024377
+          ]
+        },
+        "signalCounts": {
+          "edgeCoverageDrift": 0,
+          "extraEdges": 6,
+          "grossPixelDrift": 0,
+          "localMultiscaleRegression": 6,
+          "meanColorDrift": 0,
+          "missingEdges": 6,
+          "parallelNearbyEdges": 6
+        },
+        "verdictCounts": {
+          "not_assessable": 0,
+          "review": 6,
+          "triage_clear": 0
+        }
+      }
+    },
+    {
+      "baselineVariant": "quality-sh3-ply",
+      "candidateVariant": "quality-sh3-sog-leaf",
+      "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+      "perView": [
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.752433,
+            "baselineEdgeFraction": 0.003119,
+            "baselineEdgePixels": 3368,
+            "reasons": []
+          },
+          "baselineFile": "matrix-overview-quality-sh3-ply.png",
+          "candidateFile": "matrix-overview-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.999041,
+              "sigma1.2": 0.99892,
+              "sigma2.4": 0.998216
+            },
+            "maximumTileChangedPixelFraction": 0.002381,
+            "maximumTileRgbMae": 0.007213,
+            "minimumGradientEnergyRatio": 0.998216,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.07068,
+            "baselineToCandidateEdgeDistanceP95Pixels": 6.0,
+            "candidateCoherentEnergyRatio": 0.752342,
+            "candidateDilatedEdgeCoverage": 0.070644,
+            "candidateEdgeFraction": 0.003123,
+            "candidateEdgePixels": 3373,
+            "candidateToBaselineEdgeDistanceP95Pixels": 5.830952,
+            "changedPixelFraction": 0.000153,
+            "edgeCoverageAbsoluteDelta": 3.6e-05,
+            "extraEdgeFraction": 0.184109,
+            "maximumTileChangedPixelFraction": 0.002381,
+            "maximumTileRgbMae": 0.007213,
+            "meanRgbChannelMaxDrift": 0.001355,
+            "minimumGradientEnergyRatio": 0.998216,
+            "missingEdgeFraction": 0.183195,
+            "parallelNearbyEdgeFraction": 0.148532,
+            "rgbMae": 0.005836
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "overview"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.750625,
+            "baselineEdgeFraction": 0.001544,
+            "baselineEdgePixels": 1667,
+            "reasons": []
+          },
+          "baselineFile": "matrix-timber-left-quality-sh3-ply.png",
+          "candidateFile": "matrix-timber-left-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.99931,
+              "sigma1.2": 0.99777,
+              "sigma2.4": 0.996632
+            },
+            "maximumTileChangedPixelFraction": 0.010417,
+            "maximumTileRgbMae": 0.008099,
+            "minimumGradientEnergyRatio": 0.996632,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.036635,
+            "baselineToCandidateEdgeDistanceP95Pixels": 7.0,
+            "candidateCoherentEnergyRatio": 0.749468,
+            "candidateDilatedEdgeCoverage": 0.036545,
+            "candidateEdgeFraction": 0.001541,
+            "candidateEdgePixels": 1664,
+            "candidateToBaselineEdgeDistanceP95Pixels": 7.0,
+            "changedPixelFraction": 0.000337,
+            "edgeCoverageAbsoluteDelta": 9e-05,
+            "extraEdgeFraction": 0.214543,
+            "maximumTileChangedPixelFraction": 0.010417,
+            "maximumTileRgbMae": 0.008099,
+            "meanRgbChannelMaxDrift": 0.001833,
+            "minimumGradientEnergyRatio": 0.996632,
+            "missingEdgeFraction": 0.213557,
+            "parallelNearbyEdgeFraction": 0.176683,
+            "rgbMae": 0.005432
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "timber-left"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.755832,
+            "baselineEdgeFraction": 0.002322,
+            "baselineEdgePixels": 2508,
+            "reasons": []
+          },
+          "baselineFile": "matrix-timber-right-quality-sh3-ply.png",
+          "candidateFile": "matrix-timber-right-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.997734,
+              "sigma1.2": 0.997193,
+              "sigma2.4": 0.996325
+            },
+            "maximumTileChangedPixelFraction": 0.009643,
+            "maximumTileRgbMae": 0.008196,
+            "minimumGradientEnergyRatio": 0.996325,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.051294,
+            "baselineToCandidateEdgeDistanceP95Pixels": 6.082763,
+            "candidateCoherentEnergyRatio": 0.755423,
+            "candidateDilatedEdgeCoverage": 0.051002,
+            "candidateEdgeFraction": 0.002319,
+            "candidateEdgePixels": 2505,
+            "candidateToBaselineEdgeDistanceP95Pixels": 6.06621,
+            "changedPixelFraction": 0.000392,
+            "edgeCoverageAbsoluteDelta": 0.000292,
+            "extraEdgeFraction": 0.201198,
+            "maximumTileChangedPixelFraction": 0.009643,
+            "maximumTileRgbMae": 0.008196,
+            "meanRgbChannelMaxDrift": 0.001643,
+            "minimumGradientEnergyRatio": 0.996325,
+            "missingEdgeFraction": 0.200957,
+            "parallelNearbyEdgeFraction": 0.17525,
+            "rgbMae": 0.005837
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "timber-right"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.753242,
+            "baselineEdgeFraction": 0.002082,
+            "baselineEdgePixels": 2249,
+            "reasons": []
+          },
+          "baselineFile": "matrix-floor-surface-quality-sh3-ply.png",
+          "candidateFile": "matrix-floor-surface-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.998658,
+              "sigma1.2": 0.998279,
+              "sigma2.4": 0.997716
+            },
+            "maximumTileChangedPixelFraction": 0.012619,
+            "maximumTileRgbMae": 0.008277,
+            "minimumGradientEnergyRatio": 0.997716,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.048631,
+            "baselineToCandidateEdgeDistanceP95Pixels": 7.28011,
+            "candidateCoherentEnergyRatio": 0.752956,
+            "candidateDilatedEdgeCoverage": 0.047879,
+            "candidateEdgeFraction": 0.002041,
+            "candidateEdgePixels": 2204,
+            "candidateToBaselineEdgeDistanceP95Pixels": 6.324555,
+            "changedPixelFraction": 0.000246,
+            "edgeCoverageAbsoluteDelta": 0.000752,
+            "extraEdgeFraction": 0.185572,
+            "maximumTileChangedPixelFraction": 0.012619,
+            "maximumTileRgbMae": 0.008277,
+            "meanRgbChannelMaxDrift": 0.001499,
+            "minimumGradientEnergyRatio": 0.997716,
+            "missingEdgeFraction": 0.201867,
+            "parallelNearbyEdgeFraction": 0.141107,
+            "rgbMae": 0.005818
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "floor-surface"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.746909,
+            "baselineEdgeFraction": 0.001962,
+            "baselineEdgePixels": 2119,
+            "reasons": []
+          },
+          "baselineFile": "matrix-ceiling-moulding-quality-sh3-ply.png",
+          "candidateFile": "matrix-ceiling-moulding-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.999964,
+              "sigma1.2": 0.99991,
+              "sigma2.4": 0.997995
+            },
+            "maximumTileChangedPixelFraction": 0.010501,
+            "maximumTileRgbMae": 0.008011,
+            "minimumGradientEnergyRatio": 0.997995,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.046362,
+            "baselineToCandidateEdgeDistanceP95Pixels": 8.0,
+            "candidateCoherentEnergyRatio": 0.746869,
+            "candidateDilatedEdgeCoverage": 0.045946,
+            "candidateEdgeFraction": 0.001946,
+            "candidateEdgePixels": 2102,
+            "candidateToBaselineEdgeDistanceP95Pixels": 7.071068,
+            "changedPixelFraction": 0.000451,
+            "edgeCoverageAbsoluteDelta": 0.000416,
+            "extraEdgeFraction": 0.293054,
+            "maximumTileChangedPixelFraction": 0.010501,
+            "maximumTileRgbMae": 0.008011,
+            "meanRgbChannelMaxDrift": 0.001175,
+            "minimumGradientEnergyRatio": 0.997995,
+            "missingEdgeFraction": 0.297782,
+            "parallelNearbyEdgeFraction": 0.26118,
+            "rgbMae": 0.006021
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "ceiling-moulding"
+        },
+        {
+          "assessability": {
+            "assessable": true,
+            "baselineCoherentEnergyRatio": 0.757294,
+            "baselineEdgeFraction": 0.002262,
+            "baselineEdgePixels": 2443,
+            "reasons": []
+          },
+          "baselineFile": "matrix-column-skirting-quality-sh3-ply.png",
+          "candidateFile": "matrix-column-skirting-quality-sh3-sog-leaf.png",
+          "flags": {
+            "edgeCoverageDrift": false,
+            "extraEdges": false,
+            "grossPixelDrift": false,
+            "localMultiscaleRegression": false,
+            "meanColorDrift": false,
+            "missingEdges": false,
+            "parallelNearbyEdges": false
+          },
+          "localMultiscale": {
+            "gradientEnergyRatios": {
+              "sigma0": 0.998247,
+              "sigma1.2": 0.997437,
+              "sigma2.4": 0.996608
+            },
+            "maximumTileChangedPixelFraction": 0.017262,
+            "maximumTileRgbMae": 0.009225,
+            "minimumGradientEnergyRatio": 0.996608,
+            "reasons": [],
+            "triggered": false
+          },
+          "meaning": "no configured regression signal fired; not acceptance",
+          "metrics": {
+            "baselineDilatedEdgeCoverage": 0.050061,
+            "baselineToCandidateEdgeDistanceP95Pixels": 6.082763,
+            "candidateCoherentEnergyRatio": 0.75668,
+            "candidateDilatedEdgeCoverage": 0.050011,
+            "candidateEdgeFraction": 0.002269,
+            "candidateEdgePixels": 2450,
+            "candidateToBaselineEdgeDistanceP95Pixels": 6.0,
+            "changedPixelFraction": 0.000503,
+            "edgeCoverageAbsoluteDelta": 5e-05,
+            "extraEdgeFraction": 0.198776,
+            "maximumTileChangedPixelFraction": 0.017262,
+            "maximumTileRgbMae": 0.009225,
+            "meanRgbChannelMaxDrift": 0.001989,
+            "minimumGradientEnergyRatio": 0.996608,
+            "missingEdgeFraction": 0.197298,
+            "parallelNearbyEdgeFraction": 0.177551,
+            "rgbMae": 0.005937
+          },
+          "triggeredSignals": [],
+          "verdict": "triage_clear",
+          "view": "column-skirting"
+        }
+      ],
+      "summary": {
+        "metricRanges": {
+          "baselineToCandidateEdgeDistanceP95Pixels": [
+            6.0,
+            8.0
+          ],
+          "candidateToBaselineEdgeDistanceP95Pixels": [
+            5.830952,
+            7.071068
+          ],
+          "changedPixelFraction": [
+            0.000153,
+            0.000503
+          ],
+          "edgeCoverageAbsoluteDelta": [
+            3.6e-05,
+            0.000752
+          ],
+          "extraEdgeFraction": [
+            0.184109,
+            0.293054
+          ],
+          "maximumTileChangedPixelFraction": [
+            0.002381,
+            0.017262
+          ],
+          "maximumTileRgbMae": [
+            0.007213,
+            0.009225
+          ],
+          "minimumGradientEnergyRatio": [
+            0.996325,
+            0.998216
+          ],
+          "missingEdgeFraction": [
+            0.183195,
+            0.297782
+          ],
+          "parallelNearbyEdgeFraction": [
+            0.141107,
+            0.26118
+          ],
+          "rgbMae": [
+            0.005432,
+            0.006021
+          ]
+        },
+        "signalCounts": {
+          "edgeCoverageDrift": 0,
+          "extraEdges": 0,
+          "grossPixelDrift": 0,
+          "localMultiscaleRegression": 0,
+          "meanColorDrift": 0,
+          "missingEdges": 0,
+          "parallelNearbyEdges": 0
+        },
+        "verdictCounts": {
+          "not_assessable": 0,
+          "review": 0,
+          "triage_clear": 6
+        }
+      }
+    }
+  ],
+  "evidenceBinding": {
+    "captureManifest": {
+      "declaredSchemaVersion": "venviewer.reception-room-fixed-view.v1",
+      "inputIntegrityStatus": "verified_for_all_used_inputs",
+      "name": "reception-room-fixed-view-manifest.json",
+      "sha256": "45A9A869407D64025D0C3B182C3675E211A7E6235B22B6EF5EB423855CA82AE3",
+      "sizeBytes": 36648,
+      "supplied": true
+    },
+    "inputImages": [
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-ceiling-moulding-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "1630A5340D09AA44429E843F2D293DE6250759FB1F42403FB5B1FC39263A7595",
+        "sizeBytes": 1352228,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "ceiling-moulding"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-ceiling-moulding-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "6AB655DD1A2124BACDF441FF8BA9B9DA16724B1CC3DF400A1CD41867040B3BDF",
+        "sizeBytes": 1311218,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "ceiling-moulding"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-ceiling-moulding-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "68E9C08657C28F2C8277F4BD9776A0A9F46F120F0DF1F418DF00A0FB073A233C",
+        "sizeBytes": 1273976,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "ceiling-moulding"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-ceiling-moulding-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "6D27CB7A001BCF125B67A910FC9ECCC54564B1168B0576DC1C8C3E2C8AE80697",
+        "sizeBytes": 1271421,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "ceiling-moulding"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-column-skirting-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "EA84AE0B1AE230EAC05E3F5D55C1E9979599EAE2D483E4E5B74CC3C3A807897F",
+        "sizeBytes": 1427324,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "column-skirting"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-column-skirting-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "84DF96D5CEDE0EEC8A02AB7E882ABAB782F6749AC339C779C2A7F1E9134081F0",
+        "sizeBytes": 1373126,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "column-skirting"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-column-skirting-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "492A29A4FC476701EE7E8B14E4317F362C732992C05E9613A02036BAE7603ACB",
+        "sizeBytes": 1341447,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "column-skirting"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-column-skirting-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "98E89957D6543260ADAB7281850BB4056D86CAFD19B2A787BCA42EB752D35E04",
+        "sizeBytes": 1341318,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "column-skirting"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-floor-surface-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "D57A365E9EBDAEB4F9EC17A434B6D39C96B97721A6ED7CC72065888553F238BC",
+        "sizeBytes": 1432941,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "floor-surface"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-floor-surface-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "0ED3EC359D48C7CD0EA1CA51F0D92F9BF9C1CCF4C24A1BC00197187F3EEDC900",
+        "sizeBytes": 1400451,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "floor-surface"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-floor-surface-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "AA20F7D7EF47796E98864CB9C3FD28A59727BB31057C6228E8FE4A2A1CEC99E0",
+        "sizeBytes": 1362200,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "floor-surface"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-floor-surface-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "1D871135E5F6C29B20E0CD431924A40F1F9D79C435C9BAF1C7DB7804CE3DB1E1",
+        "sizeBytes": 1362973,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "floor-surface"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-overview-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "4B1C15AA9EB6EBB552AC60469558F7836D465132CE1ED9968290B294BE5E7408",
+        "sizeBytes": 1484722,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "overview"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-overview-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "BC0EDA76693E12FD9F1DE701D5FBA893CC1F75060DC9AE8007F18735D45BD798",
+        "sizeBytes": 1434425,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "overview"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-overview-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "01D7C95809F692EBB4CE4F5B77378DDCB4DF9E5559DF465107E7058634FF47B3",
+        "sizeBytes": 1381613,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "overview"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-overview-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "CBF92BCD82046870E0256F390F6D06F1715BBA73622C88A8BBC38B806A7BCA5C",
+        "sizeBytes": 1381296,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "overview"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-left-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "25F31EAD84C00FD8F574B2244E9DD11D20B7FC65B2D0A7F6B29425BB118A5D37",
+        "sizeBytes": 1380734,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "timber-left"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-left-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "1F1D484B416F2C02CA1299C3A4F6F30A1B4D58811C65716E34AF70355C89EEC2",
+        "sizeBytes": 1332387,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "timber-left"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-left-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "458D8C13A4A693BD2E54682EDFBE45421579F26C72349002A7997228F0731DC2",
+        "sizeBytes": 1291885,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "timber-left"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-left-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "0C4BE4E05648896E81507C37A94EBB86DC13656B0536A3DD7D6812994D09E536",
+        "sizeBytes": 1292108,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "timber-left"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-right-mobile-sh0-spz-all-invalid.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "C8897C74B652849DFE808DC057EF585EDC77BF18EDE9086D64577FC707A8C995",
+        "sizeBytes": 1432079,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "candidate",
+            "view": "timber-right"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-right-mobile-sh0-spz-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "0F21C6DCE8B407CCC8F911E25D248ED141600D3B8634227256E2DBF873A7F69C",
+        "sizeBytes": 1378641,
+        "usages": [
+          {
+            "pairId": "mobile-sh0-spz-leaf__mobile-sh0-spz-all-invalid",
+            "role": "baseline",
+            "view": "timber-right"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-right-quality-sh3-ply.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "7FC0E1AF002CA03BECAC3BBA06A4A6EB95B2E5875ED43317FD0E2A8EC510AFD0",
+        "sizeBytes": 1343079,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "baseline",
+            "view": "timber-right"
+          }
+        ]
+      },
+      {
+        "decodedMode": "RGB",
+        "fileFormat": "PNG",
+        "name": "matrix-timber-right-quality-sh3-sog-leaf.png",
+        "pixelDimensions": [
+          1200,
+          900
+        ],
+        "sha256": "3D084E09F00FA80B0D9F0412F99E80F0335E40A38B3B1F45CA90B0AB081FE283",
+        "sizeBytes": 1343226,
+        "usages": [
+          {
+            "pairId": "quality-sh3-ply__quality-sh3-sog-leaf",
+            "role": "candidate",
+            "view": "timber-right"
+          }
+        ]
+      }
+    ],
+    "receiptCanonicalization": "UTF-8 JSON with sorted keys, compact separators and no NaN; scope is the complete report before evidenceBinding.reportReceipt is inserted",
+    "reportReceipt": {
+      "algorithm": "SHA-256",
+      "sha256": "AF2979E166B9A3DD3358B93AB29CCCEB44583C04EC8B55F612278EFABD490689"
+    },
+    "runtime": {
+      "packages": {
+        "Pillow": "12.0.0",
+        "numpy": "2.4.2",
+        "scipy": "1.17.0"
+      },
+      "platform": {
+        "machine": "AMD64",
+        "release": "11",
+        "system": "Windows"
+      },
+      "python": {
+        "implementation": "CPython",
+        "version": "3.13.6"
+      }
+    },
+    "schemaVersion": "venviewer.reception-room-fixed-view-cv-evidence-binding.v2",
+    "toolSource": {
+      "name": "triage_fixed_views.py",
+      "sha256": "A407EC3D6D120EBEE851764824A6AEDB2E14FA141DAB9826160411F5FEB6C9B1",
+      "sizeBytes": 33779
+    }
+  },
+  "inputDescription": "same-camera lossless PNG basenames under caller-supplied root; raw input bytes are SHA-256 bound in evidenceBinding",
+  "limitations": [
+    "A triage_clear result is not product acceptance and is not a claim of quality or physical truth.",
+    "The baseline is treated as the structural comparator; defects shared by both images are invisible.",
+    "The nearby parallel-edge signal can also fire on legitimate geometry or small camera changes, so it requires human review.",
+    "All current views share one optical centre and do not test view-dependent appearance or motion stability.",
+    "Full-frame colour and changed-pixel metrics include the background and are only gross drift alarms.",
+    "No source photographs, metric geometry, segmentation masks, or independent renderer are used.",
+    "Thresholds are pinned for regression reproducibility, not calibrated to human just-noticeable differences.",
+    "The thresholds were checked on this diagnostic capture rather than an independent benchmark, so new cameras or renderer settings require a fresh calibration set.",
+    "Local or multiscale warnings can also fire after legitimate contrast, exposure, camera, or geometry changes and always require human review."
+  ],
+  "method": {
+    "edgeDetection": "1.2px Gaussian blur, Sobel gradient, fixed-strength local maxima",
+    "edgeMatching": "bidirectional Euclidean distance transforms with a 2px match tolerance",
+    "ghostSignal": "candidate edge 2-10px from nearest baseline edge with absolute gradient-direction cosine at least 0.8",
+    "localMultiscaleSignal": "reviews a concentrated 2x2/4x4/8x8 tile change or a loss of luminance-gradient energy across 0px, 1.2px, and 2.4px scales; this is a regression warning, not a sharpness or quality score",
+    "pythonPackages": {
+      "Pillow": "12.0.0",
+      "numpy": "2.4.2",
+      "scipy": "1.17.0"
+    },
+    "sampleDomain": "uint8 sRGB samples normalized to [0,1]; Rec.709 weights in stored sample domain; no linear-light or physical luminance claim",
+    "structureGuard": "refuses a clear result for too few, overly dense, or blur-unstable edges",
+    "thresholds": {
+      "absoluteEdgeStrength": 0.025,
+      "blurSigmaPixels": 1.2,
+      "changedPixelDelta": 0.047058823529411764,
+      "changedPixelReviewFraction": 0.2,
+      "edgeCoverageReviewDelta": 0.04,
+      "edgeMatchTolerancePixels": 2.0,
+      "extraEdgeReviewFraction": 0.4,
+      "ghostBandPixels": [
+        2.0,
+        10.0
+      ],
+      "localChangedPixelReviewFraction": 0.5,
+      "localGridSizes": [
+        2,
+        4,
+        8
+      ],
+      "localRgbMaeReview": 0.05,
+      "maximumEdgeFraction": 0.18,
+      "meanRgbDriftReview": 0.04,
+      "minimumCoherentEnergyRatio": 0.4,
+      "minimumEdgeFraction": 0.0005,
+      "minimumEdgePixels": 96,
+      "missingEdgeReviewFraction": 0.4,
+      "multiscaleGradientSigmaPixels": [
+        0.0,
+        1.2,
+        2.4
+      ],
+      "multiscaleMinimumGradientEnergyRatio": 0.96,
+      "parallelGhostReviewFraction": 0.28,
+      "parallelOrientationCosine": 0.8,
+      "rgbMaeReview": 0.025
+    }
+  },
+  "resultType": "regression_triage_not_acceptance",
+  "schemaVersion": "venviewer.reception-room-fixed-view-cv-triage.v2"
+}

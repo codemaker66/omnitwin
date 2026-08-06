@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { neonConfig } from "@neondatabase/serverless";
-import { createDb, isLocalDatabaseUrl } from "../db/client.js";
+import {
+  configureNeonDriverForDatabaseUrl,
+  isLocalDatabaseUrl,
+} from "../db/client.js";
 
 // ---------------------------------------------------------------------------
 // Local dev-database routing (Diary Slice 4, T-518). The serverless driver is
@@ -12,6 +15,10 @@ import { createDb, isLocalDatabaseUrl } from "../db/client.js";
 const NEON_URL =
   "postgresql://user:redacted@ep-example-123456-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require";
 const LOCAL_URL = "postgresql://postgres:postgres@localhost:54329/omnitwin_dev";
+
+afterEach(() => {
+  configureNeonDriverForDatabaseUrl(NEON_URL);
+});
 
 describe("isLocalDatabaseUrl", () => {
   it("recognises localhost and 127.0.0.1", () => {
@@ -27,11 +34,9 @@ describe("isLocalDatabaseUrl", () => {
   });
 });
 
-describe("createDb local proxy branch", () => {
-  // Order matters: neonConfig is a module singleton, so the non-local case
-  // must be asserted first, while the config is still pristine.
-  it("leaves neonConfig untouched for a Neon URL", () => {
-    createDb(NEON_URL);
+describe("Neon driver local proxy branch", () => {
+  it("uses the Neon driver defaults for a Neon URL", () => {
+    configureNeonDriverForDatabaseUrl(NEON_URL);
     expect(neonConfig.useSecureWebSocket).toBe(true);
   });
 
@@ -45,8 +50,9 @@ describe("createDb local proxy branch", () => {
   });
 
   it("routes a localhost URL through the dev proxy on 54331", () => {
-    createDb(LOCAL_URL);
+    configureNeonDriverForDatabaseUrl(LOCAL_URL);
     expect(neonConfig.useSecureWebSocket).toBe(false);
+    expect(neonConfig.pipelineTLS).toBe(false);
     expect(neonConfig.pipelineConnect).toBe(false);
     const proxy = neonConfig.wsProxy;
     expect(typeof proxy).toBe("function");
@@ -56,8 +62,8 @@ describe("createDb local proxy branch", () => {
   });
 
   it("restores driver defaults when a Neon URL follows a local one (review P2)", () => {
-    createDb(LOCAL_URL);
-    createDb(NEON_URL);
+    configureNeonDriverForDatabaseUrl(LOCAL_URL);
+    configureNeonDriverForDatabaseUrl(NEON_URL);
     expect(neonConfig.useSecureWebSocket).toBe(true);
     expect(neonConfig.pipelineTLS).toBe(true);
     expect(neonConfig.pipelineConnect).toBe("password");

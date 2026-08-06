@@ -8,7 +8,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/The_Grand_Hall_2026-05-31-101837",
       "sourceSizeBytes": 41095196672,
-      "runtimeStatus": "raw capture only — Lixel processing pending (compute negotiation)",
+      "runtimeStatus": "raw capture only \u2014 Lixel processing pending (compute negotiation)",
       "notes": "Second bright-walls pass exists (2026-05-31T11:51:12, 5.6GB)."
     },
     {
@@ -18,7 +18,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/The_Saloon_2026-05-29-142325",
       "sourceSizeBytes": 29058994176,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     },
     {
       "room": "Robert Adam Room",
@@ -27,7 +27,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/Robert_Adam_Room_2026-05-29-102404",
       "sourceSizeBytes": 14190903296,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     },
     {
       "room": "Reception Room",
@@ -36,7 +36,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/Reception_Room_2026-06-01-150618",
       "sourceSizeBytes": 8696471552,
-      "runtimeStatus": "LCC2 runtime export built — web ingestion unverified",
+      "runtimeStatus": "LCC2 runtime export built \u2014 web ingestion unverified",
       "build": {
         "builtAt": "2026-06-08T16:04:14",
         "buildDuration": "04:12:57",
@@ -46,6 +46,21 @@
         "runtimePath": "F:/VENVIEWER -- TH PROJECT SPLAT OUTPUTS/lcc2-result",
         "runtimeFormat": "LCC2 tiled SOG (7 tiles + env)",
         "runtimeTotalBytes": 63540226
+      },
+      "deviceSN": "A25AAA663D",
+      "deviceFirmware": "V3.2.1_20250829 (v3.2.2 available since 2025-10-31)",
+      "algorithmVersion": "v2.1.2.20250828.beta",
+      "lidarType": "rs_airy (RoboSense Airy)",
+      "rawProjectAudit": {
+        "date": "2026-07-16",
+        "xbinBytes": 8696471552,
+        "framesAccessible": false,
+        "framesLocation": "inside proprietary .xbin (XBAG) container only",
+        "calibrationFiles": "present in project_data/log/lixel.zip but password-encrypted (camera.yaml, extrinsic_camera_lidar.yaml, extrinsic_imu_lidar.yaml, imu.yaml)",
+        "trajectory": "project_data/poses.csv (10 Hz, ts+T+quat) and lcc2-result/info/poses.json (4529 poses, 5 Hz)",
+        "controlPoints": "control_points.csv empty (none placed)",
+        "gnss": "all-zero (indoor)",
+        "evidence": "docs/operations/portalcam-raw-audit-2026-07-16.md"
       }
     },
     {
@@ -55,7 +70,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/DC_Room_2026-05-31-150245",
       "sourceSizeBytes": 8870318080,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     },
     {
       "room": "Lady Convenor's Room",
@@ -64,7 +79,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/Lady_Conveynor_2026-05-31-145027",
       "sourceSizeBytes": 3260510208,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     },
     {
       "room": "North Gallery",
@@ -73,7 +88,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/North_Gallery_2026-06-01-160407",
       "sourceSizeBytes": 4932739072,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     },
     {
       "room": "South Gallery",
@@ -82,7 +97,7 @@
       "device": "XGRIDS PortalCam",
       "sourceProject": "F:/gaussian splat -- xgrids/model/South_Gallery_2026-06-01-154429",
       "sourceSizeBytes": 5114126336,
-      "runtimeStatus": "raw capture only — processing pending"
+      "runtimeStatus": "raw capture only \u2014 processing pending"
     }
   ]
 }

@@ -1,9 +1,11 @@
 import { createPublicKey, type KeyObject } from "node:crypto";
 import {
+  computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256,
   runFoundryOfflineNormalizeMeshGlbPreview,
   verifyFoundryOfflineNormalizeMeshGlbPreview,
   verifyFoundryOfflineNormalizeMeshGlbPreviewPermit,
 } from "./offline-normalize-mesh-glb-preview.js";
+import { sha256Bytes } from "./hash.js";
 import {
   decodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage,
   encodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage,
@@ -110,6 +112,7 @@ export async function runFoundryOfflineNormalizeMeshGlbPreviewSandboxWorker(
     role = message.metadata.role;
     requestId = message.metadata.requestId;
     request = requestFromMessage(message);
+    const requestWireSha256 = `sha256:${sha256Bytes(wireInput)}`;
     if (!deadlineIsActive(request.metadata.deadlineAt)) {
       failureCode = "DEADLINE_EXCEEDED";
       throw new TypeError("The sandbox worker request deadline has passed.");
@@ -161,6 +164,17 @@ export async function runFoundryOfflineNormalizeMeshGlbPreviewSandboxWorker(
     return encodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage({
       kind: "fresh_verifier_success",
       requestId,
+      requestWireSha256,
+      deadlineAt: request.metadata.deadlineAt,
+      invocationSha256:
+        computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256(
+          request.metadata.invocation,
+        ),
+      permitPayloadSha256:
+        request.metadata.invocation.permit.payloadSha256,
+      source: request.metadata.blobs[0],
+      candidate: request.metadata.blobs[1],
+      reportSha256: request.metadata.report.reportSha256,
     });
   } catch {
     return fixedFailure(role, requestId, failureCode);

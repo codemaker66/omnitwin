@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "omnitwin.foundry.review-gate-intake.v0",
+  "intakeId": "grand-hall-review-gates-2026-07-13",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "createdAt": "2026-07-13T10:30:00.000Z",
+  "state": "awaiting_external_evidence",
+  "authority": "none",
+  "control": {
+    "status": "missing",
+    "fitControls": [],
+    "blindChecks": [],
+    "minimumRequested": {
+      "fitControls": 8,
+      "blindChecks": 6
+    },
+    "requiredMetadata": [
+      "targetId",
+      "coordinateFrame",
+      "xM",
+      "yM",
+      "zM",
+      "uncertaintyMOrCovariance",
+      "observationRole",
+      "instrumentMakeModelSerial",
+      "instrumentCalibrationState",
+      "operatorOrSurveyor",
+      "observedAt",
+      "rawObservationSha256",
+      "targetPhotoSha256"
+    ],
+    "acceptanceRule": "Fit only on predeclared fit controls; apply the frozen candidate without refitting to blind checks; report vector, XY, Z, mean, median, RMSE, p95 and maximum residuals plus scale and leave-one-out sensitivity."
+  },
+  "identityAttestation": {
+    "status": "missing_authenticated_external_attestation",
+    "reviewSubject": {
+      "identityReviewSha256": "sha256:11a58296a03d907578c09c37f15dc97ac529e8c785d88e5dc1409d7bfba47ca2",
+      "identityDecision": "B",
+      "confirmedSweepIndices": [0, 10, 20, 40],
+      "excludedSweepIndices": [49]
+    },
+    "requiredFields": [
+      "authenticatedReviewerSubject",
+      "reviewerRoleAndVenueAuthority",
+      "knowledgeBasis",
+      "exactEvidenceIndexSha256",
+      "exactCubefaceAndReferenceSha256Values",
+      "completeNodeOrSweepScopeDecision",
+      "reviewedAt",
+      "signatureOrAppendOnlyPlatformAuditEvent"
+    ]
+  },
+  "rights": {
+    "matterport": {
+      "status": "requires_external_legal_decision",
+      "requiredFields": [
+        "customerOrAccountOwner",
+        "governingOrderAndAgreement",
+        "assetAndExportIdentity",
+        "permittedInternalProcessingPurposes",
+        "permittedDerivativeAndRedistributionPurposes",
+        "modelTrainingDecision",
+        "publicTwinPublicationDecision",
+        "reviewer",
+        "reviewedAt",
+        "expiryOrReReviewDate",
+        "evidenceSha256"
+      ]
+    },
+    "identityReferences": {
+      "status": "requires_written_permission_or_replacement",
+      "requiredFields": [
+        "assetSha256",
+        "copyrightOwnerOrLicensor",
+        "sourceUrlOrAcquisitionRecord",
+        "internalReviewPermission",
+        "commercialUsePermission",
+        "publicDisplayPermission",
+        "modelInputOrTrainingPermission",
+        "attributionAndContextRequirements",
+        "reviewer",
+        "reviewedAt",
+        "evidenceSha256"
+      ]
+    }
+  },
+  "releaseScopeDecision": {
+    "status": "required",
+    "options": [
+      {
+        "id": "whole_release",
+        "requirement": "Review the actual E57 or ARF to CVF frame chain and classify all 149 nodes."
+      },
+      {
+        "id": "bounded_grand_hall_release",
+        "requirement": "Classify Grand Hall nodes, prepare a new immutable bounded release and prove every selected asset consumes the reviewed frame chain."
+      }
+    ]
+  },
+  "withheldUntilGatesClose": [
+    "TransformArtifactV0",
+    "SceneAuthorityMapV0",
+    "T-486 review input",
+    "signing payload",
+    "signature or attestation envelope",
+    "publication request",
+    "production-channel promotion"
+  ]
+}

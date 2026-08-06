@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "venviewer.reception-renderer-binding.v1",
+  "digestDomains": {
+    "rendererBinding": "venviewer.reception-renderer-binding.v1\u0000",
+    "runtimeEnvironment": "venviewer.reception-capture-runtime-environment.v1\u0000",
+    "profile": "venviewer.reception-viewer-profile.v1\u0000",
+    "toneMap": "venviewer.reception-tone-map.v1\u0000",
+    "exposure": "venviewer.reception-exposure.v1\u0000",
+    "colourSpace": "venviewer.reception-colour-space.v1\u0000",
+    "frame": "venviewer.reception-presented-frame.v1\u0000"
+  },
+  "viewerProfile": {
+    "id": "reception-fixed-fine-review-v1",
+    "canvasDpr": [1, 2],
+    "expectedSplatMeshMatrixWorld": [
+      1, 0, 0, 0,
+      0, 0, -1, 0,
+      0, 1, 0, 0,
+      0, 0, 0, 1
+    ],
+    "canvas": {
+      "antialias": false,
+      "alpha": true,
+      "premultipliedAlpha": true,
+      "powerPreference": "high-performance",
+      "outputColorSpace": "srgb",
+      "toneMapping": "ACESFilmicToneMapping",
+      "toneMappingExposure": 1
+    },
+    "spark": {
+      "id": "reception-fixed-fine-review-v1",
+      "maxSh": 3,
+      "enableLod": false,
+      "renderer": {
+        "encodeLinear": false,
+        "autoUpdate": true,
+        "preUpdate": true,
+        "maxStdDev": 2.8284271247461903,
+        "minPixelRadius": 0,
+        "maxPixelRadius": 512,
+        "minAlpha": 0.00196078431372549,
+        "enable2DGS": false,
+        "preBlurAmount": 0,
+        "blurAmount": 0.3,
+        "focalDistance": 0,
+        "apertureAngle": 0,
+        "falloff": 1,
+        "clipXY": 1.4,
+        "focalAdjustment": 1,
+        "sortRadial": true,
+        "minSortIntervalMs": 0,
+        "enableLod": false,
+        "premultipliedAlpha": true,
+        "transparent": true,
+        "depthTest": true,
+        "depthWrite": false
+      }
+    }
+  },
+  "toneMap": {
+    "name": "ACESFilmicToneMapping",
+    "threeCode": 4
+  },
+  "exposure": {
+    "toneMappingExposure": 1
+  },
+  "colourSpace": {
+    "outputColorSpace": "srgb"
+  },
+  "captureBackgroundRgb": [5, 8, 7],
+  "lockedRuntimeVersions": {
+    "three": "0.180.0",
+    "spark": "2.0.0",
+    "reactThreeFiber": "8.18.0",
+    "vite": "6.4.3",
+    "viteReactPlugin": "4.3.4",
+    "playwrightTest": "1.59.1"
+  }
+}

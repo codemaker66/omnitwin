@@ -116,6 +116,14 @@ An Appearance Capture QA Pack should contain:
 
 The QA Pack is internal/expert evidence. It is not public marketing proof and it is not a claim that the venue has not changed since capture.
 
+Reconstruction Foundry's Photo Capture Quality Workbench V0 may be used before
+assembling this pack to triage possible low resolution, blur, clipping, colour
+outliers, missing RAW counterparts, protocol gaps and possible split leakage.
+Its receipt-bound report and memory-only thumbnails are heuristic local evidence
+only. They do not supply calibration frames, lighting/flicker records,
+ColorChecker evidence, capture-session lineage or reviewer approval, and
+therefore do not by themselves satisfy this Appearance Capture QA Pack.
+
 ## Raw File Hashes
 
 `rawFileHashes` are required for accountability.

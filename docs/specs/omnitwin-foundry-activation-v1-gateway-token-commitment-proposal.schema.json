@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.omnitwin.invalid/foundry/activation-v1-gateway-token-commitment-proposal.schema.json",
+  "title": "OmniTwin Foundry Activation V1 gateway-token commitment payload proposal",
+  "description": "Proposed exact semantic payload shape. This schema is not frozen, is not evidence admission, and confers no token or runtime authority.",
+  "$comment": "contractStatus=proposed_not_frozen; semantic rules outside JSON Schema: no JSON numeric leaves; issuedAt <= observedAt < expiresAt <= expected maximum; expiresAt - observedAt <= proposed 300 seconds; nonce and redemption-token digests differ; the 11 same-named expected-context bindings equal the payload",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 22,
+  "maxProperties": 22,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "authority",
+    "evidenceId",
+    "purpose",
+    "nonceSha256",
+    "environmentId",
+    "tenantId",
+    "projectId",
+    "signerAuthorizationId",
+    "signerAuthorizationSha256",
+    "issuedAt",
+    "observedAt",
+    "expiresAt",
+    "subjectKind",
+    "subjectId",
+    "subjectSha256",
+    "targetPlane",
+    "targetCallerAuthorizationId",
+    "targetCallerAuthorizationSha256",
+    "queueScope",
+    "redemptionTokenSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "omnitwin.foundry.derivative-gateway-token-commitment.v1" },
+    "evidenceKind": { "const": "gateway_token_commitment" },
+    "authority": { "const": "none" },
+    "evidenceId": { "$ref": "#/$defs/uuid" },
+    "purpose": { "const": "provider_command_claim_token" },
+    "nonceSha256": { "$ref": "#/$defs/sha256" },
+    "environmentId": { "$ref": "#/$defs/key120" },
+    "tenantId": { "$ref": "#/$defs/key120" },
+    "projectId": { "$ref": "#/$defs/key120" },
+    "signerAuthorizationId": { "$ref": "#/$defs/uuid" },
+    "signerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+    "issuedAt": { "$ref": "#/$defs/utcMillisecondsOffset" },
+    "observedAt": { "$ref": "#/$defs/utcMillisecondsOffset" },
+    "expiresAt": { "$ref": "#/$defs/utcMillisecondsOffset" },
+    "subjectKind": { "const": "provider_command" },
+    "subjectId": { "$ref": "#/$defs/uuid" },
+    "subjectSha256": { "$ref": "#/$defs/sha256" },
+    "targetPlane": { "enum": ["submit_gateway", "recovery_gateway"] },
+    "targetCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+    "targetCallerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+    "queueScope": { "$ref": "#/$defs/queueScope" },
+    "redemptionTokenSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": { "const": "00000000-0000-0000-0000-000000000000" }
+    },
+    "sha256": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "key120": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,119}$"
+    },
+    "queueScope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,159}$"
+    },
+    "utcMillisecondsOffset": {
+      "type": "string",
+      "minLength": 29,
+      "maxLength": 29,
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}\\+00:00$",
+      "$comment": "Semantic validation also requires a calendar-valid instant and exact millisecond round-trip equality."
+    },
+    "expectedContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 13,
+      "maxProperties": 13,
+      "required": [
+        "schemaVersion",
+        "environmentId",
+        "tenantId",
+        "projectId",
+        "signerAuthorizationId",
+        "signerAuthorizationSha256",
+        "subjectId",
+        "subjectSha256",
+        "targetPlane",
+        "targetCallerAuthorizationId",
+        "targetCallerAuthorizationSha256",
+        "queueScope",
+        "maximumExpiresAt"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.activation-v1-gateway-token-commitment-expected-context.v0" },
+        "environmentId": { "$ref": "#/$defs/key120" },
+        "tenantId": { "$ref": "#/$defs/key120" },
+        "projectId": { "$ref": "#/$defs/key120" },
+        "signerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "signerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "subjectId": { "$ref": "#/$defs/uuid" },
+        "subjectSha256": { "$ref": "#/$defs/sha256" },
+        "targetPlane": { "enum": ["submit_gateway", "recovery_gateway"] },
+        "targetCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "targetCallerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "queueScope": { "$ref": "#/$defs/queueScope" },
+        "maximumExpiresAt": { "$ref": "#/$defs/utcMillisecondsOffset" }
+      }
+    }
+  }
+}

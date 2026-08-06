@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { ActionSchema } from "@omnitwin/types";
-import { logPlannerAction } from "../planner-action-log.js";
+import { logPlannerAction, plannerActionContext } from "../planner-action-log.js";
 import { useActionLogStore } from "../action-log-store.js";
 import { useAuthStore, type AuthUser } from "../auth-store.js";
 
@@ -22,6 +22,44 @@ beforeEach(() => {
   useAuthStore.getState().setUser(null);
   useActionLogStore.getState().reset();
   useActionLogStore.getState().beginLog("cfg-wiring-test");
+});
+
+describe("actor attribution — the 01 §12 law's load-bearing half", () => {
+  // The type system makes "accepted without a recorded operator" impossible.
+  // That guarantee is worthless if, at the moment an accepted proposal is
+  // APPLIED, the resulting Action is stamped with the operator's identity —
+  // the audit trail would then show a human doing work an AI authored, and
+  // nothing downstream could ever tell them apart.
+  it("stamps an explicitly supplied AI actor rather than the signed-in operator", () => {
+    useAuthStore.getState().setUser(USER);
+
+    logPlannerAction(
+      {
+        intent: "object.update",
+        tool: "ai-copilot",
+        payload: { moved: 1 },
+        inverse: { moved: 1 },
+      },
+      { kind: "ai", ref: "advisor-v1" },
+    );
+
+    const action = useActionLogStore.getState().entries[0];
+    if (action === undefined) throw new Error("expected a logged action");
+    expect(action.actor).toEqual({ kind: "ai", ref: "advisor-v1" });
+    expect(ActionSchema.safeParse(action).success).toBe(true);
+  });
+
+  it("still defaults to the signed-in operator when no actor is supplied", () => {
+    useAuthStore.getState().setUser(USER);
+    logPlannerAction({ intent: "markup.draw", tool: "markup", payload: {}, inverse: {} });
+    expect(useActionLogStore.getState().entries[0]?.actor).toEqual({ kind: "operator", ref: "user-7" });
+  });
+
+  it("plannerActionContext takes the same override, so the history emitter can too", () => {
+    useAuthStore.getState().setUser(USER);
+    expect(plannerActionContext().actor).toEqual({ kind: "operator", ref: "user-7" });
+    expect(plannerActionContext({ kind: "system" }).actor).toEqual({ kind: "system" });
+  });
 });
 
 describe("logPlannerAction", () => {

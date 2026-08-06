@@ -18,6 +18,13 @@ export const CRANE_POSE = {
   look: [-2.0, -1.35, 7.2],
 } as const;
 
+export const CRANE_WEIGHT_POLICY = {
+  riseStart: 0.35,
+  riseEnd: 0.7,
+  returnStart: 0.9,
+  returnEnd: 1,
+} as const;
+
 /** Hermite smoothstep on [edge0, edge1]. */
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
@@ -30,5 +37,10 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
  *  Scroll is the only clock — under reduced motion this is identical by
  *  construction. */
 export function craneWeight(actProgress: number): number {
-  return smoothstep(0.35, 0.7, actProgress) * (1 - smoothstep(0.9, 1.0, actProgress));
+  return smoothstep(CRANE_WEIGHT_POLICY.riseStart, CRANE_WEIGHT_POLICY.riseEnd, actProgress) *
+    (1 - smoothstep(
+      CRANE_WEIGHT_POLICY.returnStart,
+      CRANE_WEIGHT_POLICY.returnEnd,
+      actProgress,
+    ));
 }

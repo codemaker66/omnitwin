@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "date": "2026-07-19",
+  "status": "privacy_hardened_core_checkpoint_only",
+  "toolchain": {
+    "requestedByRustToolchainToml": "1.87.0",
+    "executionAlias": "stable-x86_64-pc-windows-msvc",
+    "overrideReason": "The exact cached compiler is installed under this local alias; the build script rejects any release other than 1.87.0.",
+    "rustc": "rustc 1.87.0 (17067e9ac 2025-05-09)",
+    "cargo": "cargo 1.87.0 (99624be96 2025-05-06)",
+    "host": "x86_64-pc-windows-msvc",
+    "llvm": "20.1.1"
+  },
+  "gates": [
+    {
+      "command": "$env:RUSTUP_TOOLCHAIN='<cached-1.87.0-alias>'; cargo fmt --all -- --check",
+      "result": "passed"
+    },
+    {
+      "command": "$env:RUSTUP_TOOLCHAIN='<cached-1.87.0-alias>'; cargo clippy --locked --offline --all-targets -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "$env:RUSTUP_TOOLCHAIN='<cached-1.87.0-alias>'; cargo test --locked --offline --all-targets",
+      "result": "passed",
+      "windowsPathTests": 8,
+      "windowsProtocolTests": 20,
+      "totalTests": 28
+    }
+  ],
+  "releaseInputs": {
+    "copiedSourceRoots": 2,
+    "sourceRootsWereDifferent": true,
+    "sourceRootsWereOutsideTheUserProfile": true,
+    "canonicalReleaseInputTreeSha256": "sha256:64c01c7a372edd896b604214fd23854c4d3fec114f673bf00952823201e56d69",
+    "repositoryAndBothCopiesMatched": true,
+    "includedPaths": [
+      ".cargo/config.toml",
+      "Cargo.lock",
+      "Cargo.toml",
+      "rust-toolchain.toml",
+      "scripts/build-release.ps1",
+      "scripts/verify-release-binary-privacy.ps1",
+      "src/lib.rs",
+      "src/main.rs",
+      "src/path.rs",
+      "src/protocol.rs"
+    ]
+  },
+  "reproducibility": {
+    "buildACommand": "& '<copied-source-a>\\scripts\\build-release.ps1' -TargetDirectory '<empty-target-a>'",
+    "buildBCommand": "& '<copied-source-b>\\scripts\\build-release.ps1' -TargetDirectory '<empty-target-b>'",
+    "sourceRootsDiffered": true,
+    "targetRootsDiffered": true,
+    "bytesEach": 409088,
+    "sha256Each": "2c861e31669a0922216fb69da001a15e74623e013290e71df76e2e06b017ef80",
+    "byteIdentical": true,
+    "nondeterminismObserved": false
+  },
+  "pathRemapping": {
+    "buildEntryPoint": "scripts/build-release.ps1",
+    "canonicalPrefixes": [
+      "/venviewer/source/windows-source-helper",
+      "/venviewer/build/target",
+      "/venviewer/build/cargo",
+      "/venviewer/build/rustup",
+      "/venviewer/build/temp",
+      "/venviewer/build/user"
+    ],
+    "mappedPrivateCategories": [
+      "copied source root",
+      "target root",
+      "Cargo home",
+      "Rustup home",
+      "temporary root",
+      "user profile"
+    ]
+  },
+  "binaryPrivacy": {
+    "scanner": "scripts/verify-release-binary-privacy.ps1",
+    "scannerSelfTests": [
+      "ASCII/UTF-8 in-memory positive detection",
+      "UTF-16LE in-memory positive detection",
+      "legacy unremapped executable rejection"
+    ],
+    "releaseExecutablesScanned": 2,
+    "encodingsChecked": [
+      "ASCII/UTF-8 raw bytes",
+      "UTF-16LE raw bytes"
+    ],
+    "forbiddenMarkerCategories": [
+      "Windows user-root prefix",
+      "current username",
+      "user profile",
+      "Cargo home",
+      "Rustup home",
+      "repository name",
+      "workspace name",
+      "both copied source-root names",
+      "both target-root names"
+    ],
+    "forbiddenMarkersCheckedPerExecutable": 11,
+    "findingsPerExecutable": 0
+  },
+  "staticCrtCheck": {
+    "command": "dumpbin.exe /dependents '<release-a-executable>'",
+    "imports": [
+      "kernel32.dll",
+      "ntdll.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "KERNEL32.dll"
+    ],
+    "vcruntimeDllImported": false,
+    "msvcpDllImported": false,
+    "ucrtDllImported": false
+  },
+  "releaseExeSmoke": {
+    "transport": "Three NDJSON lines through inherited stdin; stdout and stderr captured; no command-line arguments.",
+    "input": [
+      "handshake with the exact release SHA-256 and fixed challenge",
+      "compare_paths for neutral canonical parent and child paths",
+      "close"
+    ],
+    "outputTypesInOrder": [
+      "handshake_ok",
+      "compare_paths_ok",
+      "close_ok"
+    ],
+    "selfObservedImageSha256": "sha256:2c861e31669a0922216fb69da001a15e74623e013290e71df76e2e06b017ef80",
+    "challengeResponseSha256": "sha256:1ea87eafda9342abf3fa14f0487fbe014390dd67929134011ada4f56e7ed57bf",
+    "observedRelation": "ancestor",
+    "observedCapabilities": [
+      "compare_paths",
+      "close"
+    ],
+    "exitCode": 0,
+    "stderrBytes": 0,
+    "remainingProcesses": 0
+  },
+  "productionNodeBridgeSmoke": {
+    "exactReleaseSha256Accepted": true,
+    "observedRelation": "ancestor",
+    "comparisonAuthority": "windows_compare_string_ordinal_ignore_case",
+    "closeSucceeded": true,
+    "processCountBefore": 0,
+    "processCountAfter": 0,
+    "nodeExitCode": 0,
+    "privateExecutablePathRecorded": false
+  },
+  "notImplementedReleaseBlockers": [
+    "IFileOpenDialog file and folder selection",
+    "NtCreateFile OBJ_DONT_REPARSE authoritative and handle-relative opens",
+    "retained root and output handles",
+    "FileIdInfo, attribute-tag, standard-info, file-type and local-volume evidence",
+    "bounded complete directory inventory and revalidation",
+    "dedicated out-of-band cancel reader and COM picker closure",
+    "release-builder publication integration",
+    "packaged dependency-license and exact-source-graph publication"
+  ]
+}

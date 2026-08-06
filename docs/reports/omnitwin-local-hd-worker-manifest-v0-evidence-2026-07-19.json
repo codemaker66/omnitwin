@@ -1,0 +1,176 @@
+{
+  "schemaVersion": "omnitwin.local-hd-worker-manifest-v0-evidence.v0",
+  "reviewId": "T-535",
+  "recordedAt": "2026-07-19",
+  "authority": "none",
+  "scope": "A reproducible, fail-closed dependency-plan manifest and nontechnical loopback readiness surface for the ordinary OmniTwin HD reconstruction product path. This record does not describe an installed or executable worker.",
+  "activity": {
+    "packageInstallationPerformed": false,
+    "workerBuilt": false,
+    "workerRun": false,
+    "venueDataAccessed": false,
+    "cloudWorkloadStarted": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "modelOptimizationStarted": false,
+    "signed": false,
+    "published": false
+  },
+  "manifest": {
+    "path": "configs/reconstruction/local-hd-worker-v0.manifest.json",
+    "schemaPath": "docs/specs/omnitwin-local-hd-worker-manifest-v0.schema.json",
+    "schemaVersion": "omnitwin.foundry.local-hd-worker-manifest.v0",
+    "digestDomain": "VENVIEWER_FOUNDRY_LOCAL_HD_WORKER_MANIFEST_V0 plus one NUL byte",
+    "manifestSha256": "fbfd7c6c51c8be06f9bb411f4833fbf0fd0daba45d09512ed70bf63420b9f436",
+    "fileSha256": "2f449b11891d6c1af3034bccf325d18b055f2f371717e366f68cff8e8d4be68f",
+    "overall": "planned_not_installed_not_execution_ready",
+    "manifestState": "recorded_with_open_closure_items",
+    "installationState": "not_installed",
+    "runtimeVerificationState": "not_performed",
+    "binding": "not_bound_to_current_source_or_plan",
+    "execution": "disabled",
+    "rootComponentCount": 8,
+    "openRootClosureCount": 8,
+    "capabilityLaneCount": 5,
+    "exclusionCount": 6
+  },
+  "rootComponents": [
+    {
+      "id": "pye57",
+      "version": "0.4.19",
+      "revision": "64c9000738ad54242e87e1da6bca6b683b13374b",
+      "artifactSha256": "b0fdc023d88706739ff5bfa22022bd69611b2394298d477a9cc91c669c4cbcf8",
+      "licenseSpdx": "MIT"
+    },
+    {
+      "id": "libe57format",
+      "version": "3.1.1",
+      "revision": "1914b8ea972251d3bb49a33828497dde683205d9",
+      "artifactSha256": "949e73db3cb90ed7d286c49d12c6925813ead8d92ff9b84e0fba17fa015194d0",
+      "licenseSpdx": "BSL-1.0 AND MIT AND BSD-3-Clause"
+    },
+    {
+      "id": "xerces-c",
+      "version": "3.2.3",
+      "tag": "v3.2.3",
+      "revision": "cf1912ac95d4147be08aef4e78f894a3919277d9",
+      "artifactSha256": "fb96fc49b1fb892d1e64e53a6ada8accf6f0e6d30ce0937956ec68d39bd72c7e",
+      "licenseSpdx": "Apache-2.0"
+    },
+    {
+      "id": "open3d",
+      "version": "0.19.0",
+      "revision": "1e7b17438687a0b0c1e5a7187321ac7044afe275",
+      "artifactSha256": "18bb8b86e5fa9e582ed11b9651ff6e4a782e6778c9b8bfc344fc866dc8b5f49c",
+      "licenseSpdx": "MIT"
+    },
+    {
+      "id": "colmap",
+      "version": "4.1.1",
+      "revision": "a0d785fba74b2664f31edc4a29026a8b27c00f67",
+      "artifactSha256": "faf1247d2ec90933aa8bd003709790abf0211cdc132cceec4c831718f2e0895a",
+      "licenseSpdx": "BSD-3-Clause"
+    },
+    {
+      "id": "hloc",
+      "version": "1.4",
+      "revision": "80ccb7ee3bc048cb3a8ef221c5bc4d8ac25d5792",
+      "artifactSha256": "78bc0d0377f5f0bc949ac1811ff6f2c102a25e858d02de6cdcbed808f4c3ce33",
+      "licenseSpdx": "Apache-2.0"
+    },
+    {
+      "id": "gsplat",
+      "version": "1.5.3",
+      "revision": "937e29912570c372bed6747a5c9bf85fed877bae",
+      "artifactSha256": "8a24428b8ea2ce7c3e10fcf5aa20e20fe503b8329c96db797f4eab703729aac3",
+      "licenseSpdx": "Apache-2.0"
+    },
+    {
+      "id": "ppisp",
+      "version": "1.2.1",
+      "revision": "df33809f7b3b20ac06de088dfc871b144b8fb54d",
+      "artifactSha256": "6024ede41eed932ed9caaf48d4dcf2d8b14f0c44f14c1cc47de0d266dea22d6c",
+      "licenseSpdx": "Apache-2.0"
+    }
+  ],
+  "exactLaneContract": [
+    {
+      "id": "e57_read_only_intake",
+      "componentIds": ["pye57", "libe57format", "xerces-c"],
+      "executionLocation": "local_windows_candidate",
+      "state": "planned_closure_incomplete_execution_disabled"
+    },
+    {
+      "id": "geometry_registration_and_qa",
+      "componentIds": ["open3d"],
+      "executionLocation": "local_windows_candidate",
+      "state": "planned_closure_incomplete_execution_disabled"
+    },
+    {
+      "id": "camera_registration",
+      "componentIds": ["colmap", "hloc"],
+      "executionLocation": "local_windows_candidate",
+      "state": "planned_closure_incomplete_execution_disabled"
+    },
+    {
+      "id": "gaussian_training",
+      "componentIds": ["gsplat"],
+      "executionLocation": "reviewed_remote_gpu_worker_only",
+      "state": "execution_disabled_under_current_architecture"
+    },
+    {
+      "id": "photometric_compensation",
+      "componentIds": ["ppisp"],
+      "executionLocation": "reviewed_remote_gpu_worker_only",
+      "state": "planned_closure_incomplete_execution_disabled"
+    }
+  ],
+  "guardrails": {
+    "localWindowsGaussianTraining": "not_enabled",
+    "gpuWorkerImage": "not_defined",
+    "hlocAllowList": "SIFT, nearest-neighbour matching, exhaustive pairs and pycolmap only; learned models, submodules, datasets and downloads are excluded",
+    "legacyWorkerImage": "infra/runpod/Dockerfile is do_not_build_run_or_deploy",
+    "rawXgrids": "XBIN, LCC and LCC2 decoding or SDK bundling is excluded; official rights-cleared exports only",
+    "pdal": "2.10.2 remains explicitly deferred because its Windows artifact, dependency tree, legal notices and runtime profile are not closed",
+    "ai": "Any later enhancement remains a separately labelled derivative and cannot replace captured or metric truth"
+  },
+  "workbench": {
+    "surface": "existing loopback Reconstruction Foundry workbench",
+    "stateRoute": "/api/state",
+    "newExecutionRouteAdded": false,
+    "executionControlsAdded": 0,
+    "heading": "Pinned plan — not installed or ready to run",
+    "browserParser": "Exact top-level and nested keys, exact five-lane and eight-component identity sets, unique safe IDs, fixed counts, disabled activity flags and the remote-only Gaussian contract are required before rendering.",
+    "windowsReleaseGraphRequiresGeneratedManifestSource": true,
+    "renderedLaneCount": 5,
+    "renderedComponentCount": 8,
+    "renderedExclusionCount": 6
+  },
+  "browserLayoutQa": {
+    "desktopViewport": "1440x1000",
+    "mobileViewport": "320x800",
+    "horizontalOverflowObserved": false,
+    "consoleWarningsOrErrors": 0,
+    "qualification": "The later exact-tag, immutable-URL, digest and parser hardening did not change the inspected HTML or CSS layout; the exact final DTO and parser are covered by executable focused tests."
+  },
+  "verification": {
+    "coreManifestTests": "5 passed",
+    "focusedWorkbenchTests": "45 passed",
+    "windowsReleaseGraphTests": "27 passed",
+    "coreFullSerial": "64 files, 768 passed, 1 intentional skip",
+    "toolFullSerial": "45 files, 711 passed",
+    "independentFinalReaudit": "70 focused tests passed; no remaining P0-P3 findings",
+    "coreTypecheck": "passed",
+    "toolTypecheck": "passed",
+    "coreBuild": "passed",
+    "targetedLint": "passed"
+  },
+  "continuation": {
+    "t535": "done_for_this_bounded_manifest_and_readiness_slice",
+    "t533": "active_pending_human_room_envelope_review",
+    "t508": "active",
+    "t486": "active",
+    "broaderGoal": "active",
+    "nextProductStep": "Close the exact local E57/Open3D/COLMAP/weight-free-hloc dependencies and notices, while defining the RunPod-canonical gsplat/PPISP GPU worker separately. Do not install or execute from this planning manifest."
+  }
+}

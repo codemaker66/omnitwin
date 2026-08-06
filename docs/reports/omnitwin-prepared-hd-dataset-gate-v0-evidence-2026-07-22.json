@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "omnitwin.prepared-hd-dataset-gate-v0-evidence.v0",
+  "reviewId": "T-540",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "scope": "Prepared HD Dataset Gate V0: a deterministic, read-only local check that binds one exact dataset/ plus depths/ package to the existing fixed Config-B COLMAP input contract before any reconstruction or HD work. This is ordinary local product and reconstruction engineering. It does not register photos, reconstruct geometry, train a model, enhance content, enable a production worker or establish release authority.",
+  "activity": {
+    "generatedSyntheticPackageRead": true,
+    "userOrVenuePackageRead": false,
+    "sourceFilesWrittenOrChanged": false,
+    "photoRegistrationPerformed": false,
+    "reconstructionPerformed": false,
+    "trainingPerformed": false,
+    "enhancementPerformed": false,
+    "productionWorkerEnabled": false,
+    "cloudRequestPerformed": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false
+  },
+  "fixedContract": {
+    "acceptedTopLevelRoots": [
+      "dataset/",
+      "depths/"
+    ],
+    "otherPackageMembersRejected": true,
+    "config": {
+      "depthRequired": true,
+      "dataFactor": 2,
+      "testEvery": 8,
+      "splitRule": "sorted_filename_index_modulo_test_every",
+      "runtimeImageDirectory": "images_2"
+    },
+    "pythonEnvelopeSchemaVersion": "venviewer.prepared-hd-dataset-gate.v0",
+    "readinessReceiptSchemaVersion": "omnitwin.foundry.prepared-hd-dataset-readiness.v0",
+    "localDtoSchemaVersion": "omnitwin.foundry.local-prepared-hd-dataset-gate.v0",
+    "result": "prepared_dataset_validated_runtime_and_training_disabled",
+    "operation": "prepared_dataset_validation_only"
+  },
+  "implementation": {
+    "pythonCli": "venviewer_training/colmap_contract_cli.py",
+    "pythonCliTests": "venviewer_training/tests/test_colmap_contract_cli.py",
+    "coreReceiptCompiler": "packages/reconstruction-foundry/src/prepared-hd-dataset-readiness.ts",
+    "localController": "tools/reconstruction-foundry/src/local-prepared-hd-dataset.ts",
+    "localApp": "tools/reconstruction-foundry/src/local-app.ts",
+    "workbench": "tools/reconstruction-foundry/src/local-app-assets.ts",
+    "cliWiring": "tools/reconstruction-foundry/src/cli.ts",
+    "httpRoutes": [
+      "POST /api/prepared-hd-dataset/start",
+      "POST /api/prepared-hd-dataset/status",
+      "POST /api/prepared-hd-dataset/cancel",
+      "GET /api/prepared-hd-dataset/report"
+    ],
+    "runtimeSelection": "The CLI resolves one interpreter once to an absolute canonical local path before the app starts. Browser requests cannot select an interpreter, package path, tool path or Config-B option.",
+    "runtimeEnvironment": "The child receives fixed deterministic Python variables plus the minimum host locations required by the selected interpreter. APPDATA on Windows and HOME on POSIX remain available so an already-installed user-site NumPy dependency can be imported; PYTHONNOUSERSITE is not forced.",
+    "sourceBinding": "The intake receipt is re-read before and after validation, every prepared file must match exactly one intake member by path, size and SHA-256, and the fixed parser, CLI, config and source-lock files are checked before and after execution.",
+    "browserDisclosure": "The browser DTO and failure copy contain no absolute source, repository, interpreter or temporary paths."
+  },
+  "independentCorrectnessReview": {
+    "finding": "The first compiler draft did not prove that preparedFiles was the exact same file set recorded by the intake receipt.",
+    "severity": "high",
+    "resolution": "The compiler now requires exact one-to-one equality after sorting by relative path and rejects missing, extra, unrelated, size-mismatched or hash-mismatched prepared files.",
+    "regressionCoverageAdded": true
+  },
+  "syntheticRuntimeObservation": {
+    "fixtureKind": "generated_non_venue_config_b_package",
+    "packageFileCount": 12,
+    "packageTotalBytes": 2514,
+    "datasetFileCount": 10,
+    "depthFileCount": 2,
+    "sourceReceiptSha256": "e8e56e6a2955d73c22812d91d1478d84cfde10e5ae9cadec3e96557b2a0aacdf",
+    "readinessReceiptSha256": "2a8ef68e145b317e86937ead9d2f1da4315ba5b097883ff76be8623c22ec2cc7",
+    "readinessReceiptVerifiedByCoreVerifier": true,
+    "sourceUnchangedBeforeAndAfter": true,
+    "counts": {
+      "cameras": 2,
+      "registeredImages": 3,
+      "runtimeImages": 3,
+      "trainingImages": 2,
+      "heldoutImages": 1,
+      "sparsePoints": 2,
+      "depthPriors": 2
+    },
+    "runtime": {
+      "pythonVersion": "3.13.6",
+      "numpyVersion": "2.4.2"
+    },
+    "deterministicCliOutput": {
+      "runs": 2,
+      "byteIdentical": true,
+      "stderrEmpty": true,
+      "windowsCrlfBytes": 2780,
+      "windowsCrlfSha256": "da50cc64a5bd703f22b5d565981e656c705fdcde9cfb9746734c09850979d9ed",
+      "canonicalLfBytes": 2779,
+      "canonicalLfSha256": "c256e658e4aae4a06dfef441e3162ef77b5a7b766016620a0b494a3d48f86bb2"
+    }
+  },
+  "browserVerification": {
+    "driver": "Playwright CLI",
+    "desktopViewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "mobileViewport": {
+      "width": 390,
+      "height": 844
+    },
+    "realStartStatusAndReportFlowCompleted": true,
+    "downloadedReceiptFilename": "foundry-prepared-hd-dataset-readiness-v0.json",
+    "downloadedReceiptVerifiedByCoreVerifier": true,
+    "expectedCountsRendered": true,
+    "honestNoExecutionCopyRendered": true,
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "listenerClosedAfterQa": true,
+    "screenshots": [
+      {
+        "path": "output/playwright/t540-prepared-hd-desktop.png",
+        "byteSize": 99831,
+        "sha256": "8b2dd5c9ea4929080be1faf9ccb2e50cdfd3fbc9c2971a3b7a9def85b4f5ef49"
+      },
+      {
+        "path": "output/playwright/t540-prepared-hd-mobile.png",
+        "byteSize": 96940,
+        "sha256": "7a5a94be193313a69d3d37dfabde8b0b858daa60e78e3e31ea0679d9f59f231f"
+      },
+      {
+        "path": "output/playwright/t540-prepared-hd-mobile-results.png",
+        "byteSize": 74322,
+        "sha256": "81f4a86aa920c406ab9f9ca603a5874fd7a08ef6248c050aab9b7ff7e44a170f"
+      }
+    ]
+  },
+  "verification": {
+    "corePackage": {
+      "fullTestFilesPassed": 67,
+      "testsPassed": 792,
+      "testsSkipped": 1,
+      "testsFailed": 0,
+      "typecheck": "passed",
+      "build": "passed",
+      "targetedLintErrors": 0,
+      "targetedLintWarnings": 0
+    },
+    "toolsPackage": {
+      "t540FocusedTestFilesPassed": 4,
+      "t540FocusedTestsPassed": 64,
+      "t540FocusedTestsFailed": 0,
+      "targetedLintErrors": 0,
+      "targetedLintWarnings": 0,
+      "typecheck": "passed",
+      "fullSuite": {
+        "testFilesPassed": 50,
+        "testFilesFailed": 1,
+        "testsPassed": 820,
+        "testsFailed": 1,
+        "qualification": "The sole failure is the existing Windows production-release build fixture. It is blocked by an unrelated untracked captured-quality-comparison.d.ts source sibling in the shared dirty worktree, not by a T-540 assertion. Six Node SQLite ExperimentalWarning messages were also emitted."
+      },
+      "build": {
+        "status": "qualified_existing_failure",
+        "diagnostics": 18,
+        "ts6059Diagnostics": 9,
+        "ts6307Diagnostics": 9,
+        "qualification": "All diagnostics are the existing cross-package rootDir/file-list boundary problem across nine older core source files. prepared-hd-dataset-readiness.ts is named by zero diagnostic lines."
+      }
+    },
+    "python": {
+      "combinedTestsPassed": 55,
+      "combinedTestsFailed": 0,
+      "cliFocusedTestsPassed": 8,
+      "cliFocusedTestsFailed": 0
+    },
+    "diffWhitespaceErrors": 0,
+    "lineEndingNotices": "Git reported only the workspace's existing LF-to-CRLF checkout notices on tracked files."
+  },
+  "limitations": [
+    "Only generated synthetic Config-B data was used for runtime and browser proof; no Grand Hall, Reception, Matterport, XGRIDS or other user/venue package was validated.",
+    "Passing this gate establishes the structure and cross-file consistency of one exact prepared package only.",
+    "Photo registration, geometric reconstruction, model training, enhancement and HD output generation remain outside this gate.",
+    "The result grants no authority to dispatch a worker, upload data, spend money, approve rights, sign or publish.",
+    "Real venue quality and physical accuracy remain separate evidence and human-review questions."
+  ],
+  "continuation": {
+    "broaderGoalStatus": "active",
+    "recommendedNextLocalSlice": "Durable Local Intake Workspace V0",
+    "stillOpen": [
+      "T-533 human room-envelope review",
+      "T-486 Grand Hall release gates",
+      "E57 clean-host qualification and production binding",
+      "real prepared venue-package validation when Blake supplies and approves one"
+    ]
+  }
+}

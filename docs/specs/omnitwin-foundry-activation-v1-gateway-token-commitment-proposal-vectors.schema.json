@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.omnitwin.invalid/foundry/activation-v1-gateway-token-commitment-proposal-vectors.schema.json",
+  "title": "OmniTwin Foundry gateway-token commitment proposal semantic vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authority",
+    "contractStatus",
+    "implementationStatus",
+    "semanticValidation",
+    "databaseAdmission",
+    "positiveCases",
+    "negativeCases"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "omnitwin.foundry.activation-v1-gateway-token-commitment-proposal-vectors.v0" },
+    "authority": { "const": "none" },
+    "contractStatus": { "const": "proposed_not_frozen" },
+    "implementationStatus": { "const": "not_implemented" },
+    "semanticValidation": { "const": "vector_expectation_only" },
+    "databaseAdmission": { "const": "not_performed" },
+    "positiveCases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/positiveCase" },
+      "allOf": [
+        { "contains": { "type": "object", "properties": { "caseId": { "const": "submit_gateway_valid" } }, "required": ["caseId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "type": "object", "properties": { "caseId": { "const": "recovery_gateway_valid" } }, "required": ["caseId"] }, "minContains": 1, "maxContains": 1 }
+      ]
+    },
+    "negativeCases": {
+      "type": "array",
+      "$comment": "uniqueItems compares complete cases; companion semantic validation additionally requires unique caseId values.",
+      "minItems": 17,
+      "maxItems": 17,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/negativeCase" }
+    }
+  },
+  "$defs": {
+    "caseId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+    },
+    "positiveCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "payload", "expectedContext", "expectedResult"],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/caseId" },
+        "payload": { "$ref": "https://schemas.omnitwin.invalid/foundry/activation-v1-gateway-token-commitment-proposal.schema.json" },
+        "expectedContext": { "$ref": "https://schemas.omnitwin.invalid/foundry/activation-v1-gateway-token-commitment-proposal.schema.json#/$defs/expectedContext" },
+        "expectedResult": { "$ref": "#/$defs/expectedResult" }
+      }
+    },
+    "negativeCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "baseCaseId", "mutation", "expectedErrorCode"],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/caseId" },
+        "baseCaseId": { "enum": ["submit_gateway_valid", "recovery_gateway_valid"] },
+        "mutation": { "$ref": "#/$defs/mutation" },
+        "expectedErrorCode": {
+          "enum": [
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_INPUT_SHAPE_INVALID",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_PAYLOAD_SCHEMA_INVALID",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_EXPECTED_CONTEXT_SCHEMA_INVALID",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_EXPECTED_CONTEXT_MISMATCH",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_TIME_ORDER_INVALID",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_MAXIMUM_EXPIRY_EXCEEDED",
+            "FOUNDRY_ACTIVATION_V1_GATEWAY_TOKEN_COMMITMENT_DIGEST_ROLE_COLLISION"
+          ]
+        }
+      }
+    },
+    "mutation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "operation", "member", "value"],
+          "properties": {
+            "target": { "enum": ["payload", "expectedContext"] },
+            "operation": { "enum": ["add", "replace"] },
+            "member": { "$ref": "#/$defs/memberName" },
+            "value": true
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "operation", "member"],
+          "properties": {
+            "target": { "enum": ["payload", "expectedContext"] },
+            "operation": { "const": "remove" },
+            "member": { "$ref": "#/$defs/memberName" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "operation", "value"],
+          "properties": {
+            "target": { "enum": ["payload", "expectedContext"] },
+            "operation": { "const": "replace_target" },
+            "value": { "not": { "type": "object" } }
+          }
+        }
+      ]
+    },
+    "memberName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z][A-Za-z0-9]{0,79}$"
+    },
+    "expectedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "authority",
+        "validationScope",
+        "evidenceId",
+        "targetPlane",
+        "semanticValidation",
+        "canonicalByteVerification",
+        "signatureVerification",
+        "signerAuthorizationCurrentness",
+        "targetCallerCurrentness",
+        "signerTargetPairing",
+        "nonceUniqueness",
+        "redemptionTokenGeneration",
+        "queueDelivery",
+        "tokenPossession",
+        "tokenRedemption",
+        "databaseAdmission",
+        "runtimeAuthority"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.activation-v1-gateway-token-commitment-semantic-validation.v0" },
+        "authority": { "const": "none" },
+        "validationScope": { "const": "payload_and_expected_context_only" },
+        "evidenceId": { "$ref": "https://schemas.omnitwin.invalid/foundry/activation-v1-gateway-token-commitment-proposal.schema.json#/$defs/uuid" },
+        "targetPlane": { "enum": ["submit_gateway", "recovery_gateway"] },
+        "semanticValidation": { "const": "passed" },
+        "canonicalByteVerification": { "const": "not_performed" },
+        "signatureVerification": { "const": "not_performed" },
+        "signerAuthorizationCurrentness": { "const": "not_performed" },
+        "targetCallerCurrentness": { "const": "not_performed" },
+        "signerTargetPairing": { "const": "not_performed" },
+        "nonceUniqueness": { "const": "not_performed" },
+        "redemptionTokenGeneration": { "const": "not_performed" },
+        "queueDelivery": { "const": "not_performed" },
+        "tokenPossession": { "const": "not_performed" },
+        "tokenRedemption": { "const": "not_performed" },
+        "databaseAdmission": { "const": "not_performed" },
+        "runtimeAuthority": { "const": "none" }
+      }
+    }
+  }
+}

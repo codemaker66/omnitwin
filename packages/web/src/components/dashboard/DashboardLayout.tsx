@@ -12,7 +12,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "foundry" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   readonly activeView: DashboardView;
@@ -21,6 +21,11 @@ interface DashboardLayoutProps {
 }
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean }[] = [
+  // Keep the release-control surface inside the first mobile viewport for
+  // platform admins. The dashboard nav becomes a horizontal rail below
+  // 900px, so burying this after every venue view made it discoverable only
+  // to operators who already knew to scroll more than a full screen.
+  { view: "foundry", label: "Runtime Foundry", adminOnly: true },
   { view: "enquiries", label: "Enquiries" },
   { view: "pipeline", label: "Pipeline", staffOnly: true },
   { view: "reviews", label: "Pending Reviews" },

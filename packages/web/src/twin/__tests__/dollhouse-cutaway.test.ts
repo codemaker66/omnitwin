@@ -13,8 +13,34 @@ import {
   cloneSceneWithCutawayPlanes,
   disposeCutawayScene,
   setInertCutawayPlane,
+  updateStoreyFloorPlane,
   updateVerticalCutawayPlane,
 } from "../dollhouse-cutaway.js";
+
+describe("storey floor section", () => {
+  it("clips below the storey only while the vertical section is engaged", () => {
+    const plane = new Plane();
+    expect(updateStoreyFloorPlane(plane, true, -0.39)).toBe(true);
+    expect(plane.normal.toArray()).toEqual([0, 1, 0]);
+    // Keeps y > minimumY: a ground-storey point is on the clipped side.
+    expect(plane.distanceToPoint(new Vector3(0, -3, 0))).toBeLessThan(0);
+    expect(plane.distanceToPoint(new Vector3(0, 1.5, 0))).toBeGreaterThan(0);
+  });
+
+  it("stays inert from elevated orbits (vertical plane disengaged) — the black-void regression", () => {
+    const plane = new Plane();
+    expect(updateStoreyFloorPlane(plane, false, -0.39)).toBe(false);
+    // Inert plane: nothing in the venue is anywhere near the clipped side.
+    expect(plane.distanceToPoint(new Vector3(0, -1000, 0))).toBeGreaterThan(0);
+  });
+
+  it("stays inert without a finite storey boundary", () => {
+    const plane = new Plane();
+    expect(updateStoreyFloorPlane(plane, true, undefined)).toBe(false);
+    expect(updateStoreyFloorPlane(plane, true, Number.NaN)).toBe(false);
+    expect(plane.distanceToPoint(new Vector3(0, -1000, 0))).toBeGreaterThan(0);
+  });
+});
 
 describe("vertical dollhouse cutaway", () => {
   it("clips the camera-side shell while retaining the interior side", () => {

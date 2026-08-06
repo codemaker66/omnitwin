@@ -51,6 +51,15 @@ export const RuntimeQaPublicExposureDecisionSchema = z.enum(RUNTIME_QA_PUBLIC_EX
 
 const RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
+const RuntimeQaRuntimePackageBindingSchema = z
+  .object({
+    runtimePackageContentSha256: z.string().regex(RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN),
+    orderedVisualCompositionSha256: z.string().regex(RUNTIME_QA_TRANSFORM_ARTIFACT_SHA256_PATTERN),
+    visualChunkCount: z.number().int().positive(),
+    totalVisualBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
 const RuntimeQaRecordIdSchema = z.string().trim().min(1).max(120).regex(
   /^[a-z0-9]+(?:-[a-z0-9]+)*$/u,
   "Runtime QA record id must be lowercase kebab-case.",
@@ -131,6 +140,68 @@ export const RuntimeQaViewTransformSchema = z
       });
     }
   });
+
+export interface RuntimeGroupTransformComponents {
+  readonly position: readonly [number, number, number];
+  readonly rotationEulerRadians: readonly [number, number, number];
+  readonly uniformScale: number;
+}
+
+export type RuntimeGroupTransformMatrix = readonly [
+  number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
+  number, number, number, number,
+];
+
+/** Compose the exact column-major matrix used by a Three.js Object3D whose
+ * Euler order is the default XYZ. Keeping this tiny implementation in the
+ * shared contract avoids adding a renderer dependency to the API gate. */
+export function runtimeGroupTransformMatrix(
+  transform: RuntimeGroupTransformComponents,
+): RuntimeGroupTransformMatrix {
+  const [x, y, z] = transform.rotationEulerRadians;
+  const [tx, ty, tz] = transform.position;
+  const a = Math.cos(x);
+  const b = Math.sin(x);
+  const c = Math.cos(y);
+  const d = Math.sin(y);
+  const e = Math.cos(z);
+  const f = Math.sin(z);
+  const s = transform.uniformScale;
+  return [
+    c * e * s, (a * f + b * e * d) * s, (b * f - a * e * d) * s, 0,
+    -c * f * s, (a * e - b * f * d) * s, (b * e + a * f * d) * s, 0,
+    d * s, -b * c * s, a * c * s, 0,
+    tx, ty, tz, 1,
+  ];
+}
+
+export function runtimeGroupTransformMatchesMatrix(
+  transform: RuntimeGroupTransformComponents,
+  matrix: readonly number[],
+  tolerance = 1e-9,
+): boolean {
+  if (matrix.length !== 16 || !Number.isFinite(tolerance) || tolerance < 0) return false;
+  const composed = runtimeGroupTransformMatrix(transform);
+  return composed.every((value, index) => {
+    const expected = matrix[index];
+    return expected !== undefined && Number.isFinite(expected) &&
+      Math.abs(value - expected) <= tolerance;
+  });
+}
+
+export function runtimeQaViewTransformMatchesMatrix(
+  transform: RuntimeQaViewTransform,
+  matrix: readonly number[],
+  tolerance = 1e-9,
+): boolean {
+  return runtimeGroupTransformMatchesMatrix({
+    position: transform.position,
+    rotationEulerRadians: transform.rotation,
+    uniformScale: transform.scale,
+  }, matrix, tolerance);
+}
 
 export const RuntimeQaCameraBoundsSchema = z
   .object({
@@ -224,6 +295,7 @@ export const RuntimeQaRecordV0Schema = z
     recordedBy: z.string().trim().min(1).max(160),
     assetEvidenceStatus: AssetEvidenceStatusSchema,
     runtimeStatus: RuntimePackageStatusSchema,
+    runtimePackageBinding: RuntimeQaRuntimePackageBindingSchema.optional(),
     sourceBundle: RuntimeQaSourceBundleSchema,
     sparkLoad: RuntimeQaSparkLoadSchema,
     viewTransform: RuntimeQaViewTransformSchema,

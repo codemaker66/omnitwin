@@ -11,9 +11,16 @@ import {
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
   runtimeRoomTargetFromSearchParams,
+  selectNonOverlappingLcc2UrlFrontier,
 } from "../runtime-package-resolution.js";
 
 const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000001";
+const VISUAL_ASSET_VERSION_IDS = [
+  ASSET_VERSION_ID,
+  "10000000-0000-4000-8000-000000000002",
+  "10000000-0000-4000-8000-000000000003",
+  "10000000-0000-4000-8000-000000000004",
+] as const;
 
 function makePackage(overrides: {
   assetUrl?: string | null;
@@ -92,6 +99,75 @@ const FORBIDDEN_PHRASES = [
   "guaranteed accessible",
   "black label",
 ];
+
+describe("selectNonOverlappingLcc2UrlFrontier", () => {
+  const directory = "https://assets.example/reception-room/data/3dgs";
+
+  it("rejects mixed replacement levels instead of guessing that the deepest filenames are complete", () => {
+    expect(selectNonOverlappingLcc2UrlFrontier([
+      `${directory}/0_0.sog`,
+      `${directory}/0_1_0.sog`,
+      `${directory}/0_20_0.sog`,
+      `${directory}/0_15_0_0.sog`,
+      `${directory}/0_1_0_5.sog`,
+      `${directory}/0_6_0_0.sog`,
+      `${directory}/0_7_0_0.sog`,
+    ])).toEqual([]);
+  });
+
+  it("preserves declared sibling order across the real API's per-asset UUID directories", () => {
+    const fine = [
+      "https://api.example/assets/runtime-assets/24637593-577e-4507-b73c-8cd3c8e30039/0_7_0_0.spz",
+      "https://api.example/assets/runtime-assets/47d8e638-4ce1-415e-9c3c-941c91b1ac30/0_1_0_5.spz",
+      "https://api.example/assets/runtime-assets/411cee79-f698-4945-ab0f-1267e6e74c2f/0_15_0_0.spz",
+    ];
+    expect(selectNonOverlappingLcc2UrlFrontier(fine)).toEqual(fine);
+  });
+
+  it("fails closed for a malformed numeric chunk mixed into an LCC2 family", () => {
+    expect(selectNonOverlappingLcc2UrlFrontier([
+      `${directory}/0_1_0.sog`,
+      `${directory}/0_01_0_5.sog`,
+    ])).toEqual([]);
+  });
+
+  it("rejects one logical chunk repeated behind different asset routes and signatures", () => {
+    expect(selectNonOverlappingLcc2UrlFrontier([
+      "https://api.example/assets/runtime-assets/10000000-0000-4000-8000-000000000001/0_1_0_5.sog?signature=first",
+      "https://cdn.example/signed/10000000-0000-4000-8000-000000000002/0_1_0_5.sog?signature=second",
+    ])).toEqual([]);
+  });
+
+  it("rejects mixed splat formats instead of guessing a frontier", () => {
+    expect(selectNonOverlappingLcc2UrlFrontier([
+      `${directory}/0_1_0_5.sog`,
+      `${directory}/0_6_0_0.spz`,
+    ])).toEqual([]);
+  });
+
+  it("rejects an environment asset mixed into a room hierarchy frontier", () => {
+    expect(selectNonOverlappingLcc2UrlFrontier([
+      `${directory}/0_1_0_5.sog`,
+      `${directory}/env.sog`,
+    ])).toEqual([]);
+  });
+
+  it("does not reinterpret ordinary multi-file splat scenes as LCC2 hierarchies", () => {
+    const ordinaryScene = [
+      "https://assets.example/room/hero.sog",
+      "https://assets.example/room/background.sog",
+    ];
+    expect(selectNonOverlappingLcc2UrlFrontier(ordinaryScene)).toEqual(ordinaryScene);
+  });
+
+  it("does not reinterpret ordinary numeric tile names without the LCC2 root prefix", () => {
+    const ordinaryNumericScene = [
+      "https://assets.example/room/12_34.sog",
+      "https://assets.example/room/56_78.sog",
+    ];
+    expect(selectNonOverlappingLcc2UrlFrontier(ordinaryNumericScene)).toEqual(ordinaryNumericScene);
+  });
+});
 
 describe("runtimeRoomTargetFromSearchParams", () => {
   it("defaults to Trades Hall Grand Hall", () => {
@@ -176,49 +252,118 @@ describe("decideRuntimeAsset", () => {
     expect(decision.evidenceLabel).toMatch(/runtime asset loaded/i);
   });
 
-  it("prefers a validated SOG chunk set over the primary visual URL", () => {
+  it("rejects the whole declared composition when one URL is invalid or duplicated", () => {
+    const basePackage = makePackage({
+      assetUrl: "https://assets.example/reception-room/data/3dgs/0_15_0_0.sog",
+      assetFileExt: ".sog",
+      assetFileName: "0_15_0_0.sog",
+    });
     const decision = decideRuntimeAsset(null, {
-      ...makePackage({
-        assetUrl: "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
-      }),
+      ...basePackage,
+      manifestJson: {
+        ...basePackage.manifestJson,
+        assets: {
+          ...basePackage.manifestJson.assets,
+          visualAssetVersionIds: [...VISUAL_ASSET_VERSION_IDS],
+        },
+      },
       visualAssetUrls: [
-        "https://assets.example/reception-room/data/3dgs/0_0.sog",
-        "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
-        "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
+        "https://assets.example/reception-room/data/3dgs/0_15_0_0.sog",
+        "https://assets.example/reception-room/data/3dgs/0_1_0_5.sog",
+        "https://assets.example/reception-room/data/3dgs/0_1_0_5.sog",
         "https://assets.example/dev/text-splats/0_2.sog",
       ],
     });
 
-    expect(decision.splatUrls).toEqual([
-      "https://assets.example/reception-room/data/3dgs/0_0.sog",
-      "https://assets.example/reception-room/data/3dgs/0_1_0.sog",
-    ]);
+    expect(decision.source).toBe("none");
+    expect(decision.splatUrl).toBeNull();
+    expect(decision.splatUrls).toEqual([]);
+    expect(decision.isProceduralFallback).toBe(true);
   });
 
-  it("uses the registered Reception Room SPZ visual chunks with unverified copy", () => {
+  it("mounts exactly the four declared Reception Room fine leaves in order", () => {
+    const fineLeafUrls = [
+      `https://api.example/assets/runtime-assets/${VISUAL_ASSET_VERSION_IDS[0]}/0_15_0_0.sog`,
+      `https://api.example/assets/runtime-assets/${VISUAL_ASSET_VERSION_IDS[1]}/0_1_0_5.sog`,
+      `https://api.example/assets/runtime-assets/${VISUAL_ASSET_VERSION_IDS[2]}/0_6_0_0.sog`,
+      `https://api.example/assets/runtime-assets/${VISUAL_ASSET_VERSION_IDS[3]}/0_7_0_0.sog`,
+    ];
+    const basePackage = makePackage({
+      assetUrl: fineLeafUrls[0],
+      assetFileExt: ".sog",
+      assetFileName: "0_15_0_0.sog",
+    });
     const decision = decideRuntimeAsset(null, {
-      ...makePackage({
+      ...basePackage,
+      manifestJson: {
+        ...basePackage.manifestJson,
+        assets: {
+          ...basePackage.manifestJson.assets,
+          visualAssetVersionIds: [...VISUAL_ASSET_VERSION_IDS],
+        },
+      },
+      visualAssetUrls: fineLeafUrls,
+    });
+
+    expect(decision.source).toBe("package");
+    expect(decision.splatUrls).toEqual(fineLeafUrls);
+  });
+
+  it("rejects a partial three-of-four Reception Room composition", () => {
+    const basePackage = makePackage({
+      assetUrl: "https://assets.example/reception-room/data/3dgs/0_15_0_0.sog",
+      assetFileExt: ".sog",
+      assetFileName: "0_15_0_0.sog",
+    });
+    const decision = decideRuntimeAsset(null, {
+      ...basePackage,
+      manifestJson: {
+        ...basePackage.manifestJson,
+        assets: {
+          ...basePackage.manifestJson.assets,
+          visualAssetVersionIds: [...VISUAL_ASSET_VERSION_IDS],
+        },
+      },
+      visualAssetUrls: [
+        "https://assets.example/reception-room/data/3dgs/0_15_0_0.sog",
+        "https://assets.example/reception-room/data/3dgs/0_1_0_5.sog",
+        "https://assets.example/reception-room/data/3dgs/0_6_0_0.sog",
+      ],
+    });
+
+    expect(decision.source).toBe("none");
+    expect(decision.splatUrls).toEqual([]);
+  });
+
+  it("rejects a coarse Reception SPZ chunk mixed with a declared fine descendant", () => {
+    const basePackage = makePackage({
         assetUrl: "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
         evidenceStatus: "unverified",
         assetFileExt: ".spz",
         assetFileName: "0_0.spz",
-      }),
+    });
+    const decision = decideRuntimeAsset(null, {
+      ...basePackage,
       roomSlug: "reception-room",
+      manifestJson: {
+        ...basePackage.manifestJson,
+        roomSlug: "reception-room",
+        assets: {
+          ...basePackage.manifestJson.assets,
+          visualAssetVersionIds: [ASSET_VERSION_ID, VISUAL_ASSET_VERSION_IDS[1]],
+        },
+      },
       visualAssetUrls: [
         "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
         "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_13_0_0.spz",
       ],
     });
 
-    expect(decision.source).toBe("package");
-    expect(decision.splatUrl).toBe("https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz");
-    expect(decision.splatUrls).toEqual([
-      "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_0.spz",
-      "https://assets.example/reception-room/lcc2-result-spz/data/3dgs/0_13_0_0.spz",
-    ]);
-    expect(decision.splatUrls.every((url) => url.endsWith(".spz"))).toBe(true);
-    expect(decision.evidenceStatus).toBe("unverified");
-    expect(decision.evidenceLabel).toBe("Runtime asset loaded, not yet verified/signed.");
+    expect(decision.source).toBe("none");
+    expect(decision.splatUrl).toBeNull();
+    expect(decision.splatUrls).toEqual([]);
+    expect(decision.evidenceStatus).toBeNull();
+    expect(decision.isProceduralFallback).toBe(true);
   });
 
   it("falls back when no runtime package exists", () => {

@@ -2,7 +2,7 @@
 
 **Status:** decision-ready investigation; T-507 bounded evidence, T-509 recommendation-only proof, and T-514 local non-training proof complete; T-508 in progress with activation still NO-GO
 
-**Evidence cutoff:** 2026-07-14
+**Evidence cutoff:** 2026-07-14 · **External evidence refresh:** 2026-07-28 — see `omnitwin-foundry-evidence-refresh-2026-07-28.md` (verdicts unchanged; build-side evidence strengthened)
 
 **Current-source reconciliation:** 2026-07-14. Repository-local evidence and
 the named primary technology/licence sources were refreshed to this date.

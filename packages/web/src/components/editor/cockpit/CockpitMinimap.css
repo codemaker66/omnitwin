@@ -87,3 +87,9 @@
 @media (prefers-reduced-motion: reduce) {
   .cockpit-minimap__conflict { animation: none; }
 }
+
+.cockpit-minimap__preview-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}

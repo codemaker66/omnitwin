@@ -28,6 +28,29 @@ export function resolveWebClerkPublishableKey(
   return candidates.find((value) => value.startsWith("pk_live_")) ?? candidates[0];
 }
 
+export function resolveWebApiOrigin(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  const value = trimmedEnv(env["VITE_API_URL"]);
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.pathname !== "/" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
 export function getSentrySourceMapUploadConfig(
   env: Record<string, string | undefined>,
 ): SentrySourceMapUploadConfig | null {
@@ -71,6 +94,13 @@ export function assertRequiredProductionEnv(
     throw new Error(
       "Production web builds require a live Clerk publishable key (pk_live_...). " +
         "Do not ship Clerk development mode to venviewer.com.",
+    );
+  }
+
+  if (resolveWebApiOrigin(env) === undefined) {
+    throw new Error(
+      "Production web builds require VITE_API_URL as a clean HTTPS API origin " +
+        "without credentials, path, query, or fragment.",
     );
   }
 

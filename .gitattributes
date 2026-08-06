@@ -6,6 +6,26 @@ docs/specs/omnitwin-foundry-*.jsonl text eol=lf
 # EOL conversion may ever rewrite them on add or checkout.
 packages/api/drizzle/*.sql -text
 venviewer_training/gsplat-v1.5.3.source-lock.json text eol=lf
+configs/reconstruction/local-hd-worker-v0.manifest.json text eol=lf
+docs/specs/omnitwin-local-hd-worker-manifest-v0.schema.json text eol=lf
 # Byte-pinned evidence vector document (activation-v1 test suite) — exact
 # bytes, overriding the eol=lf rule above.
 docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text
+
+# Reception Room decision snapshot files are verified by exact SHA-256. Keep
+# their repository and checkout bytes LF-only on every supported platform.
+docs/reports/reception-room-hd-root-investigation.md text eol=lf
+docs/reports/reception-room-hd-evidence.json text eol=lf
+docs/reports/reception-room-fixed-view-manifest.json text eol=lf
+docs/reports/reception-room-quality-decision-matrix.md text eol=lf
+docs/reports/reception-room-splat-quality-strategy-patch-list.md text eol=lf
+docs/reports/reception-room-e57-method-holdout-cv-2026-07-17.md text eol=lf
+docs/reports/reception-room-no-reference-iqa-2026-07-22-receipt.md text eol=lf
+docs/reports/reception-room-cv-artifact-diagnosis-2026-07-18-receipt.md text eol=lf
+docs/reports/reception-room-captured-quality-comparison-v0-evidence-2026-07-18.json text eol=lf
+docs/reports/reception-room-captured-quality-comparison-v0-report-2026-07-18.md text eol=lf
+docs/reports/reception-room-source-photo-comparison-v0.md text eol=lf
+tools/reception-hd/compare_source_photo_renders.py text eol=lf
+tools/reception-hd/tests/test_compare_source_photo_renders.py text eol=lf
+tools/reception-hd/run_source_photo_capture.mjs text eol=lf
+tools/reception-hd/tests/run_source_photo_capture.test.mjs text eol=lf

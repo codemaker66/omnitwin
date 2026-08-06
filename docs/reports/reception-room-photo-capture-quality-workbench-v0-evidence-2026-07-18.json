@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "omnitwin.local.photo-capture-quality-workbench-v0-evidence-manifest.v0",
+  "recordedAt": "2026-07-18",
+  "authority": "none",
+  "workstream": "T-532 under active T-508",
+  "scope": "A receipt-bound local JPEG/PNG capture-quality workbench for the frozen Reception 18-build/12-held-out naming protocol. This slice is local reconstruction-product engineering. Cybersecurity, credentials, identity attestation, signing, cloud deployment and publication are excluded.",
+  "contract": {
+    "reportSchemaVersion": "omnitwin.foundry.photo-capture-quality-report.v0",
+    "eligibleMediaTypes": [
+      "image/jpeg",
+      "image/png"
+    ],
+    "buildSlotCount": 18,
+    "heldoutSlotCount": 12,
+    "heldoutUse": "Capture-integrity and possible split-leakage checks only; held-out pixels are not build, tuning or selection inputs.",
+    "metrics": [
+      "source megapixels",
+      "luminance distribution",
+      "shadow and highlight clipping fractions",
+      "Tenengrad edge energy",
+      "mean RGB colour",
+      "64-bit difference hash"
+    ],
+    "thumbnail": {
+      "mediaType": "image/webp",
+      "maximumCanvas": "360x240",
+      "retention": "memory_only",
+      "authority": "non_authoritative_preview"
+    },
+    "limits": {
+      "maximumCandidates": 500,
+      "processing": "sequential",
+      "sourceMutation": "none",
+      "externalRequests": 0
+    }
+  },
+  "fixtureRun": {
+    "classification": "controlled_four-photo_implementation_fixture_only",
+    "qualification": "These are exact copies of existing repository web photographs renamed into four protocol slots. They are not the real Reception 30-photo capture and make no finding about that capture.",
+    "generatedAt": "2026-07-18T23:30:57.289Z",
+    "receiptSha256": "c2fa8ff29d8f1c85cad50c1152ffc7aedcfca8113aba1b20b8d3bcc671c7ca5f",
+    "reportSha256": "fd961c22a975326f792656682c166c0f0819f67d09e57aefdb391b9bc089c4ac",
+    "runRevision": 1,
+    "sourceCopies": [
+      {
+        "role": "build",
+        "protocolSlot": "RR-PILOT-MAP-A-01",
+        "originalPath": "packages/web/public/trades-house-media/assets/reception-room.jpeg",
+        "fixtureName": "RR-PILOT-MAP-A-01.jpeg",
+        "sizeBytes": 862199,
+        "sha256": "2169c4fb5b511fb04cadc133d98d775bc037880f2b5313997aa2e8f0ef868801",
+        "exactCopy": true
+      },
+      {
+        "role": "build",
+        "protocolSlot": "RR-PILOT-MAP-A-02",
+        "originalPath": "packages/web/public/trades-house-media/assets/saloon.jpg",
+        "fixtureName": "RR-PILOT-MAP-A-02.jpg",
+        "sizeBytes": 303389,
+        "sha256": "fcf4580a7f24c2349e60593766db4aa4e43edecb9dd544a7ce7677cc175af3fe",
+        "exactCopy": true
+      },
+      {
+        "role": "heldout",
+        "protocolSlot": "RR-PILOT-S01-A",
+        "originalPath": "packages/web/public/trades-house-media/assets/grand-hall.jpeg",
+        "fixtureName": "RR-PILOT-S01-A.jpeg",
+        "sizeBytes": 913540,
+        "sha256": "31d6062aff0c962dab8e0bc57efa0e12616c06f166fa9fff7a4273a4c45fcf9b",
+        "exactCopy": true
+      },
+      {
+        "role": "heldout",
+        "protocolSlot": "RR-PILOT-S01-B",
+        "originalPath": "packages/web/public/trades-house-media/assets/staircase.jpg",
+        "fixtureName": "RR-PILOT-S01-B.jpg",
+        "sizeBytes": 325712,
+        "sha256": "5215888372d624ec5751b18b947046f41bbfc1f934b2efdda6dbaef9c7d15fbb",
+        "exactCopy": true
+      }
+    ],
+    "summary": {
+      "readiness": "retake_required",
+      "protocolStatus": "incomplete",
+      "buildCount": 2,
+      "heldoutCount": 2,
+      "ignoredCount": 0,
+      "passCount": 0,
+      "reviewCount": 0,
+      "retakeCount": 4,
+      "missingBuildSlotCount": 16,
+      "missingHeldoutSlotCount": 10,
+      "unmatchedAssignedPathCount": 0,
+      "similarityFindingCount": 0,
+      "reasons": "All four fixture images are below the frozen 8 MP pilot minimum and lack matching RAW counterparts; two also exceed the frozen shadow-clipping heuristic. This is expected fixture evidence, not a Reception capture assessment."
+    },
+    "reportFields": {
+      "authority": "none",
+      "externalRequests": 0,
+      "originalsModified": false
+    }
+  },
+  "verification": {
+    "focused": {
+      "corePhotoContractAndWorker": "8 passed",
+      "browserAssetsControllerHttpAndExistingLifecycle": "51 passed across 5 files"
+    },
+    "packageGates": {
+      "coreTests": "62 files passed; 741 tests passed; 1 skipped",
+      "coreLint": "passed",
+      "coreTypecheck": "passed",
+      "coreBuild": "passed",
+      "localAppTests": "39 files passed; 1 file skipped; 635 tests passed; 1 todo",
+      "localAppLint": "passed",
+      "localAppTypecheck": "passed"
+    },
+    "browser": {
+      "surface": "Codex in-app Browser against the loopback local app",
+      "desktop": "Four digest-bound WebP thumbnails, protocol gaps, metrics and retake guidance rendered in the three-column contact sheet.",
+      "mobile": "390x844 override; one-column cards; document clientWidth and scrollWidth both 375; no horizontal overflow.",
+      "crossTab": "Completed state reloaded with all four assignment controls locked and values build, build, heldout, heldout.",
+      "consoleWarningsOrErrors": 0,
+      "screenshots": [
+        {
+          "path": "docs/reports/evidence/local-foundry-photo-capture-quality-v0-desktop-2026-07-18.png",
+          "sizeBytes": 158290,
+          "sha256": "865acb51513284e9128f1ceb63f54bbbb1eeb46675efb0b46b4f4b6863cefeec"
+        },
+        {
+          "path": "docs/reports/evidence/local-foundry-photo-capture-quality-v0-mobile-2026-07-18.png",
+          "sizeBytes": 62980,
+          "sha256": "7bd3fce1f7cfc06aa53030ebbea9b5eb49aba032a0c82d8cabf7d907c7393beb"
+        }
+      ]
+    },
+    "adversarialReview": "No remaining actionable P0-P2 UI defect after fresh request IDs, monotonic runRevision, submitted-role persistence, actionable similarity/unmatched-path rendering, accessible labels and bounded live progress announcements."
+  },
+  "boundaries": [
+    "A pass means only that no frozen capture-quality heuristic fired.",
+    "capture_quality_ready means ready for a later registration test, not registered, reconstructed, approved or releasable.",
+    "Low edge energy can be caused by a textureless scene and always needs human review of the untouched original.",
+    "The report does not establish camera or lens calibration, physical accuracy, recovered detail, completeness, provenance, rights, privacy clearance, training permission or publication authority.",
+    "The self-digest is local consistency evidence, not a signature, trusted timestamp or identity attestation."
+  ],
+  "nextRealInput": "An owned local folder containing the actual 18 build and 12 held-out JPEG/PNG captures named by docs/reports/reception-room-30-photo-capture-checklist.md, plus matching untouched RAW files or an explicit session note for each missing RAW counterpart."
+}

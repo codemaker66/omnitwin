@@ -12,6 +12,7 @@ import {
   Scene,
   Color,
 } from "three";
+import { prepareFurnitureForOrthographicCapture } from "./layout-timeline-capture.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -47,13 +48,16 @@ export function captureOrthographic(
     background = "#f5f5f0",
   } = options;
 
-  // Show diagram labels (T1, S1, etc.) imperatively on the scene graph.
-  // The DiagramLabels React component keeps labels hidden by default
-  // (visible=false). Since renderer.render() traverses the THREE scene
-  // graph directly (not React), we toggle the group's .visible flag.
+  // The DiagramLabels React component keeps labels hidden by default. Saved
+  // plan captures show them; a timeline keyframe capture must suppress them
+  // because those labels still come from the editable placement store.
   const labelsGroup = scene.getObjectByName("diagram-labels");
   const labelsWereVisible = labelsGroup?.visible ?? false;
-  if (labelsGroup !== undefined) labelsGroup.visible = true;
+  // A scrubbed in-between layout is presentational, never export evidence.
+  // Substitute the nearest immutable phase keyframe for this render, or the
+  // editor's saved layout when no timeline keyframe is mounted.
+  const furnitureCapture = prepareFurnitureForOrthographicCapture(scene);
+  if (labelsGroup !== undefined) labelsGroup.visible = furnitureCapture.diagramLabelsVisible;
 
   try {
     // Offscreen renderer — separate from the main canvas
@@ -104,10 +108,12 @@ export function captureOrthographic(
     // Cleanup
     renderer.dispose();
     if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
+    furnitureCapture.restore();
 
     return dataUrl;
   } catch {
     if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
+    furnitureCapture.restore();
     return null;
   }
 }

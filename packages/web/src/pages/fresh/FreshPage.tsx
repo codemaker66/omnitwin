@@ -62,8 +62,19 @@ import {
   FRESH_ENQUIRY_GUESTS_PROMPT,
   FRESH_ENQUIRY_LEDE,
   FRESH_ENQUIRY_OR_CALL,
-  FRESH_ENQUIRY_SEND,
   FRESH_ENQUIRY_TITLE,
+  FRESH_ENQUIRY_NAME_LABEL,
+  FRESH_ENQUIRY_EMAIL_LABEL,
+  FRESH_ENQUIRY_PHONE_LABEL,
+  FRESH_ENQUIRY_SUBMIT,
+  FRESH_ENQUIRY_SENDING,
+  FRESH_ENQUIRY_EMAIL_REQUIRED,
+  FRESH_ENQUIRY_PRIVACY_NOTE,
+  FRESH_ENQUIRY_SUCCESS_TITLE,
+  FRESH_ENQUIRY_SUCCESS_BODY,
+  FRESH_ENQUIRY_REFERENCE_LABEL,
+  FRESH_ENQUIRY_ERROR,
+  FRESH_ENQUIRY_MAIL_APP_ACTION,
   FRESH_HERO_LADDER,
   FRESH_HERO_PORTRAIT_MEDIA,
   FRESH_HERO_PORTRAIT_SRCSET,
@@ -89,6 +100,8 @@ import {
   type FreshRoom,
 } from "./fresh-copy.js";
 import { RoomDossier } from "./RoomDossier.js";
+import { submitGuestEnquiry } from "../../api/configurations.js";
+import { enquiryReference } from "@omnitwin/types";
 
 /** The captured room costs nothing until invited: three + Spark live in
  *  this chunk, which only downloads when the visitor steps in. */
@@ -285,11 +298,37 @@ function useDomeAperture(): DomeApertureRefs {
  *  the answer), an optional date. Everything said below it is computed by
  *  enquiry-fit from published figures, and the finished email is visible,
  *  copyable, and openable — no dead-end links. */
+type EnquirySendState = "idle" | "sending" | "sent" | "failed";
+
+/** The venue this single-tenant homepage speaks for. The API resolves the
+ *  anchor from this slug and independently gates it against its published-twin
+ *  allowlist — the client never supplies a venue id.
+ *
+ *  This must match the `venues.slug` ROW, which is a different namespace from
+ *  the asset/twin slug: manifests and R2 paths use "trades-hall", while the
+ *  venue row is "trades-hall-glasgow". Sending the asset spelling here made
+ *  every homepage enquiry 404 against a live database on 2026-08-04, invisibly
+ *  to the unit tests — they mock the network, so no test ever resolved a slug
+ *  against a real venues row.
+ *
+ *  Env-overridable so a differing production row is a config change rather
+ *  than a redeploy. TwinPage needs no equivalent: it takes its slug from the
+ *  /venues/:venueSlug/twin route param. */
+const FRESH_VENUE_SLUG =
+  (import.meta.env["VITE_PUBLIC_VENUE_SLUG"] as string | undefined) ??
+  "trades-hall-glasgow";
+
 function FreshEnquiry(): ReactElement {
   const [eventKey, setEventKey] = useState<EnquiryEventKey>("wedding");
   const [guestsText, setGuestsText] = useState("100");
   const [dateISO, setDateISO] = useState("");
   const [copied, setCopied] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [sendState, setSendState] = useState<EnquirySendState>("idle");
+  const [reference, setReference] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
 
   const guestsParsed = Number.parseInt(guestsText, 10);
   const guests =
@@ -336,6 +375,50 @@ function FreshEnquiry(): ReactElement {
       window.clearTimeout(timer);
     };
   }, [copied]);
+
+  // The send. This is what the mailto: link used to be: the composed text now
+  // becomes a real enquiry record the events team can see, rather than
+  // something the visitor had to post themselves.
+  //
+  // A failure is never a dead end — sendState "failed" keeps the composed
+  // message on screen with the mail app, the clipboard, and the telephone all
+  // still one tap away, so a lead is never lost to an API outage.
+  const submitEnquiry = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (composed === null || guests === null || sendState === "sending") return;
+      const trimmedEmail = email.trim();
+      if (trimmedEmail === "") {
+        setFieldError(FRESH_ENQUIRY_EMAIL_REQUIRED);
+        return;
+      }
+      setFieldError(null);
+      setSendState("sending");
+      const trimmedName = name.trim();
+      const trimmedPhone = phone.trim();
+      submitGuestEnquiry({
+        venueSlug: FRESH_VENUE_SLUG,
+        source: "homepage",
+        email: trimmedEmail,
+        eventType: ENQUIRY_EVENT_TYPES.find((t) => t.key === eventKey)?.label ?? eventKey,
+        guestCount: guests,
+        message: composed.body,
+        ...(trimmedName === "" ? {} : { name: trimmedName }),
+        ...(trimmedPhone === "" ? {} : { phone: trimmedPhone }),
+        ...(dateISO === "" ? {} : { eventDate: dateISO }),
+      })
+        .then((result) => {
+          // Prefer the server's reference; fall back to the shared helper so
+          // an older API still shows the guest the same string staff can find.
+          setReference(result.reference ?? enquiryReference(result.enquiryId));
+          setSendState("sent");
+        })
+        .catch(() => {
+          setSendState("failed");
+        });
+    },
+    [composed, guests, sendState, email, name, phone, dateISO, eventKey],
+  );
 
   return (
     <div className="fr-enq">
@@ -398,14 +481,91 @@ function FreshEnquiry(): ReactElement {
         )}
       </div>
 
-      {composed !== null && (
-        <div className="fr-enq-compose">
+      {composed !== null && sendState === "sent" && (
+        <div className="fr-enq-sent" role="status">
+          <p className="fr-enq-sent-title">{FRESH_ENQUIRY_SUCCESS_TITLE}</p>
+          {reference !== null && (
+            <p className="fr-enq-ref">
+              {FRESH_ENQUIRY_REFERENCE_LABEL} <strong>{reference}</strong>
+            </p>
+          )}
+          <p className="fr-enq-sent-body">{FRESH_ENQUIRY_SUCCESS_BODY}</p>
+          <span className="fr-enq-call">
+            {FRESH_ENQUIRY_OR_CALL}{" "}
+            <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+          </span>
+        </div>
+      )}
+
+      {composed !== null && sendState !== "sent" && (
+        <form className="fr-enq-compose" onSubmit={submitEnquiry} noValidate>
+          <div className="fr-enq-fields">
+            <label className="fr-enq-field">
+              <span>{FRESH_ENQUIRY_NAME_LABEL}</span>
+              <input
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+            </label>
+            <label className="fr-enq-field">
+              <span>{FRESH_ENQUIRY_EMAIL_LABEL}</span>
+              <input
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                aria-invalid={fieldError !== null}
+                aria-describedby={fieldError === null ? undefined : "fr-enq-field-error"}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setFieldError(null);
+                }}
+              />
+            </label>
+            <label className="fr-enq-field">
+              <span>{FRESH_ENQUIRY_PHONE_LABEL}</span>
+              <input
+                type="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(event) => {
+                  setPhone(event.target.value);
+                }}
+              />
+            </label>
+          </div>
+
+          {fieldError !== null && (
+            <p className="fr-enq-error" id="fr-enq-field-error" role="alert">
+              {fieldError}
+            </p>
+          )}
+
           <p className="fr-enq-subject">{composed.subject}</p>
           <pre className="fr-enq-body">{composed.body}</pre>
+          <p className="fr-enq-privacy">{FRESH_ENQUIRY_PRIVACY_NOTE}</p>
+
+          {sendState === "failed" && (
+            <p className="fr-enq-error" role="alert">
+              {FRESH_ENQUIRY_ERROR}
+            </p>
+          )}
+
           <div className="fr-enq-actions">
-            <a className="fr-cta" href={composed.mailtoHref}>
-              {FRESH_ENQUIRY_SEND}
-            </a>
+            <button type="submit" className="fr-cta" disabled={sendState === "sending"}>
+              {sendState === "sending" ? FRESH_ENQUIRY_SENDING : FRESH_ENQUIRY_SUBMIT}
+            </button>
+            {/* The old mailto: survives as the failure path only — never the
+                primary action, and never absent when the send breaks. */}
+            {sendState === "failed" && (
+              <a className="fr-enq-copy" href={composed.mailtoHref}>
+                {FRESH_ENQUIRY_MAIL_APP_ACTION}
+              </a>
+            )}
             <button type="button" className="fr-enq-copy" onClick={copyEnquiry}>
               {copied ? FRESH_ENQUIRY_COPIED : FRESH_ENQUIRY_COPY_ACTION}
             </button>
@@ -414,7 +574,7 @@ function FreshEnquiry(): ReactElement {
               <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
             </span>
           </div>
-        </div>
+        </form>
       )}
     </div>
   );

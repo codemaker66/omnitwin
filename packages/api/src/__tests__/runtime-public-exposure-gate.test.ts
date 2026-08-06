@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
+import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
 import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 
 vi.mock("@omnitwin/reconstruction-foundry", async () =>
   import("./support/reconstruction-foundry-canonical-mock.js")
@@ -15,8 +17,10 @@ import {
   runtimeQaRecordRegistrationIsExactRetry,
   runtimeQaRecordAllowsPublicRuntimePackage,
   runtimeQaRecordAllowsPublicRoomVisual,
+  runtimeQaPublicPackageBinding,
   runtimeTransformArtifactRegistrationIsExactRetry,
   tryAcquirePublicRuntimeProfileTransfer,
+  type AssetVersionRow,
   type RuntimePackageRow,
   type RuntimeQaRecordRow,
   type RuntimeTransformArtifactRow,
@@ -375,10 +379,57 @@ describe("resolveVerifiedRuntimeProfileResponseRange", () => {
 const NOW = new Date("2026-06-16T00:00:00.000Z");
 const RUNTIME_PACKAGE_ID = "10000000-0000-4000-8000-000000000004";
 const SIGNED_TRANSFORM_ID = "reception-room-landmark-solve-v0";
+const VISUAL_ASSET_IDS = [
+  "10000000-0000-4000-8000-000000000001",
+  "10000000-0000-4000-8000-000000000002",
+] as const;
 const evidenceRef = {
   label: "Exposure review",
   ref: "docs/operations/reception-room-exposure-review.md",
 };
+
+function visualAssetRows(): readonly AssetVersionRow[] {
+  return VISUAL_ASSET_IDS.map((id, index) => ({
+    id,
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    captureSessionId: null,
+    assetKind: "splat",
+    sourceType: "xgrids",
+    fileName: `member-${String(index)}.sog`,
+    fileExt: ".sog",
+    r2Key: `venues/trades-hall/rooms/reception-room/member-${String(index)}.sog`,
+    externalUrl: null,
+    mimeType: "application/octet-stream",
+    sha256: String(index + 1).repeat(64),
+    sizeBytes: (index + 1) * 1_000,
+    evidenceStatus: "human_reviewed",
+    runtimeStatus: "usable",
+    notes: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  }));
+}
+
+function requiredQaPackageBinding() {
+  const binding = runtimeQaPublicPackageBinding(runtimePackageRow(), visualAssetRows());
+  if (binding === null) throw new Error("Test runtime package binding must resolve.");
+  return binding;
+}
+
+type QaPackageBinding = NonNullable<RuntimeQaRecordRow["recordJson"]["runtimePackageBinding"]>;
+
+function qaRecordWithBindingChange(overrides: Partial<QaPackageBinding>): RuntimeQaRecordRow {
+  const base = qaRecordRow();
+  const binding = base.recordJson.runtimePackageBinding;
+  if (binding === undefined) throw new Error("Test QA binding must exist.");
+  return qaRecordRow({
+    recordJson: {
+      ...base.recordJson,
+      runtimePackageBinding: { ...binding, ...overrides },
+    },
+  });
+}
 
 function qaRecordRow(overrides: Partial<RuntimeQaRecordRow> = {}): RuntimeQaRecordRow {
   const record: RuntimeQaRecordRow["recordJson"] = {
@@ -391,6 +442,7 @@ function qaRecordRow(overrides: Partial<RuntimeQaRecordRow> = {}): RuntimeQaReco
     recordedBy: "runtime-qa-operator",
     assetEvidenceStatus: "human_reviewed",
     runtimeStatus: "published",
+    runtimePackageBinding: requiredQaPackageBinding(),
     sourceBundle: {
       sourceLabel: "Reception Room reviewed runtime bundle",
       sourceBundleHash: "a".repeat(64),
@@ -400,18 +452,18 @@ function qaRecordRow(overrides: Partial<RuntimeQaRecordRow> = {}): RuntimeQaReco
     },
     sparkLoad: {
       renderer: "@sparkjsdev/spark",
-      route: "/dev/trades-hall-visual?venue=trades-hall&room=reception-room",
+      route: "/living-hall",
       loadStatus: "loaded",
-      visualChunkCount: 7,
+      visualChunkCount: 2,
       excludedChunkCount: 1,
       loadedSplats: 3_491_322,
       evidenceRefs: [evidenceRef],
     },
     viewTransform: {
       posture: "signed_room_local_transform",
-      position: [1.11, 2.57, 2.77],
+      position: [0, 0, 0],
       rotation: [-Math.PI / 2, 0, 0],
-      scale: 0.63,
+      scale: 1,
       signedTransformArtifactId: SIGNED_TRANSFORM_ID,
       signedTransformArtifactSha256: runtimeTransformArtifactSha256(
         transformArtifactRow().transformArtifact,
@@ -419,21 +471,15 @@ function qaRecordRow(overrides: Partial<RuntimeQaRecordRow> = {}): RuntimeQaReco
       note: "Signed room-local transform for reviewed runtime alignment.",
     },
     cameraProfile: {
-      position: [0.2, 6.2, 13.4],
-      target: [0, 0.9, -4.15],
-      arrivalPosition: [0.25, 7.15, 14.1],
-      arrivalTarget: [0, 1.2, -4],
-      arrivalDurationMs: 1400,
-      fov: 48,
-      targetBounds: {
-        min: [-5.8, 0.7, -9.2],
-        max: [5.8, 2.35, 4.8],
-      },
-      cameraBounds: {
-        min: [-6.8, 1.4, -11.8],
-        max: [6.8, 7.4, 14.2],
-      },
-      note: "Bounded interior inspection camera for runtime QA only.",
+      position: [-2.372, 0.035, 1.046],
+      target: [-0.996, -0.071, 7.102],
+      arrivalPosition: null,
+      arrivalTarget: null,
+      arrivalDurationMs: 0,
+      fov: 62,
+      targetBounds: null,
+      cameraBounds: null,
+      note: "Reviewed Living Hall authored-dolly presentation camera.",
     },
     checks: [
       {
@@ -539,8 +585,8 @@ function transformArtifactRow(overrides: Partial<RuntimeTransformArtifactRow> = 
     units: "meters",
     matrix: [
       1, 0, 0, 0,
+      0, 0, -1, 0,
       0, 1, 0, 0,
-      0, 0, 1, 0,
       0, 0, 0, 1,
     ],
     alignmentMethod: "landmark_solve",
@@ -602,31 +648,45 @@ function transformArtifactRow(overrides: Partial<RuntimeTransformArtifactRow> = 
 }
 
 function runtimePackageRow(overrides: Partial<RuntimePackageRow> = {}): RuntimePackageRow {
-  return {
-    id: RUNTIME_PACKAGE_ID,
+  const assets = visualAssetRows();
+  const manifestJson: RuntimePackageRow["manifestJson"] = {
+    schemaVersion: "venviewer.runtime-package.v1",
     venueSlug: "trades-hall",
     roomSlug: "reception-room",
-    revision: 1,
-    identityKind: "content_sha256",
-    contentDigest: "a".repeat(64),
-    primaryVisualAssetVersionId: "10000000-0000-4000-8000-000000000001",
+    packageType: "room-runtime",
+    assets: {
+      primaryVisualAssetVersionId: VISUAL_ASSET_IDS[0],
+      visualAssetVersionIds: [...VISUAL_ASSET_IDS],
+      visualAssetReceipts: assets.map((asset) => ({
+        assetVersionId: asset.id,
+        fileName: asset.fileName,
+        fileExt: ".sog" as const,
+        sha256: asset.sha256 ?? "",
+        sizeBytes: asset.sizeBytes ?? 0,
+        storageKeySha256: runtimeAssetStorageKeySha256(asset.r2Key ?? ""),
+      })),
+      semanticMeshAssetVersionId: null,
+      collisionAssetVersionId: null,
+      pointCloudAssetVersionId: null,
+    },
+  };
+  const packageInput = {
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
+    primaryVisualAssetVersionId: VISUAL_ASSET_IDS[0],
     semanticMeshAssetVersionId: null,
     collisionAssetVersionId: null,
     pointCloudAssetVersionId: null,
-    manifestJson: {
-      schemaVersion: "venviewer.runtime-package.v1",
-      venueSlug: "trades-hall",
-      roomSlug: "reception-room",
-      packageType: "room-runtime",
-      assets: {
-        primaryVisualAssetVersionId: "10000000-0000-4000-8000-000000000001",
-        semanticMeshAssetVersionId: null,
-        collisionAssetVersionId: null,
-        pointCloudAssetVersionId: null,
-      },
-    },
+    manifestJson,
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
+  } as const;
+  return {
+    id: RUNTIME_PACKAGE_ID,
+    revision: 1,
+    identityKind: "content_sha256",
+    contentDigest: computeRuntimePackageRevisionDigest(packageInput),
+    ...packageInput,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,
@@ -639,27 +699,32 @@ describe("runtimeQaRecordAllowsPublicRuntimePackage", () => {
       runtimePackageRow(),
       qaRecordRow(),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(true);
 
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow({ roomSlug: "grand-hall" }),
       qaRecordRow(),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow({ evidenceStatus: "unverified" }),
       qaRecordRow(),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow({ runtimeStatus: "internal_ready" }),
       qaRecordRow(),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow(),
       qaRecordRow({ roomSlug: "grand-hall" }),
       transformArtifactRow({ roomSlug: "grand-hall" }),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow(),
@@ -670,6 +735,7 @@ describe("runtimeQaRecordAllowsPublicRuntimePackage", () => {
         },
       }),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow(),
@@ -680,12 +746,44 @@ describe("runtimeQaRecordAllowsPublicRuntimePackage", () => {
           id: "different-transform-content-id",
         },
       }),
+      visualAssetRows(),
     )).toBe(false);
     expect(runtimeQaRecordAllowsPublicRuntimePackage(
       runtimePackageRow({ id: "10000000-0000-4000-8000-000000000099" }),
       qaRecordRow(),
       transformArtifactRow(),
+      visualAssetRows(),
     )).toBe(false);
+  });
+
+  it("fails closed when QA package identity, composition, chunk count, or bytes drift", () => {
+    const assets = visualAssetRows();
+    const base = qaRecordRow();
+    const { runtimePackageBinding: _omitted, ...recordWithoutBinding } = base.recordJson;
+    const missingBinding = qaRecordRow({ recordJson: recordWithoutBinding });
+    const changedMemberBytes = assets.map((asset, index) =>
+      index === 0 ? { ...asset, sizeBytes: (asset.sizeBytes ?? 0) + 1 } : asset
+    );
+    const packageArgs = [runtimePackageRow(), transformArtifactRow()] as const;
+    const allows = (qa: RuntimeQaRecordRow, members = assets) =>
+      runtimeQaRecordAllowsPublicRuntimePackage(packageArgs[0], qa, packageArgs[1], members);
+
+    expect(allows(missingBinding)).toBe(false);
+    expect(allows(qaRecordWithBindingChange({
+      runtimePackageContentSha256: "f".repeat(64),
+    }))).toBe(false);
+    expect(allows(qaRecordWithBindingChange({
+      orderedVisualCompositionSha256: "e".repeat(64),
+    }))).toBe(false);
+    expect(allows(qaRecordWithBindingChange({ visualChunkCount: 1 }))).toBe(false);
+    expect(allows(qaRecordWithBindingChange({ totalVisualBytes: 1 }))).toBe(false);
+    expect(allows(qaRecordRow({
+      recordJson: {
+        ...base.recordJson,
+        sparkLoad: { ...base.recordJson.sparkLoad, visualChunkCount: 1 },
+      },
+    }))).toBe(false);
+    expect(allows(base, changedMemberBytes)).toBe(false);
   });
 });
 
@@ -712,6 +810,37 @@ describe("runtimeQaRecordAllowsPublicRoomVisual", () => {
       },
       publicExposureDecision: "approved_internal_preview",
     }), transformArtifactRow())).toBe(false);
+  });
+
+  it("rejects non-identity QA presentation values bound to identity transform bytes", () => {
+    const identityTransform = transformArtifactRow({
+      transformArtifact: {
+        ...transformArtifactRow().transformArtifact,
+        matrix: [
+          1, 0, 0, 0,
+          0, 1, 0, 0,
+          0, 0, 1, 0,
+          0, 0, 0, 1,
+        ],
+      },
+    });
+    const qa = qaRecordRow();
+    const boundToIdentity = qaRecordRow({
+      recordJson: {
+        ...qa.recordJson,
+        viewTransform: {
+          ...qa.recordJson.viewTransform,
+          signedTransformArtifactSha256: runtimeTransformArtifactSha256(
+            identityTransform.transformArtifact,
+          ),
+        },
+      },
+    });
+
+    expect(runtimeQaRecordAllowsPublicRoomVisual(
+      boundToIdentity,
+      identityTransform,
+    )).toBe(false);
   });
 
   it("blocks public visuals when persisted QA row readiness columns drift from the signed record", () => {

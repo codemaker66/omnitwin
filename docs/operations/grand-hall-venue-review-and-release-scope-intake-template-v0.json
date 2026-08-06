@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "omnitwin.foundry.venue-review-and-release-scope-intake-template.v0",
+  "templateId": "grand-hall-venue-review-and-release-scope-intake-template-v0",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "recordState": "blank_user_completion_required",
+  "authority": "none",
+  "unsigned": true,
+  "purpose": "Collect a venue reviewer's identity, basis of authority, knowledge basis, exact review subject and one chosen release scope. A completed copy is a review intake record, not release approval.",
+  "previousReviewContext": {
+    "status": "context_only_not_release_approval",
+    "originalIdentityReviewSha256": "sha256:11a58296a03d907578c09c37f15dc97ac529e8c785d88e5dc1409d7bfba47ca2",
+    "decade30ReviewPackRef": "docs/operations/grand-hall-identity-review-decade-30-pack-2026-07-18.md",
+    "decade30ReviewPackSha256": "sha256:12a54cfbe587270105f44cfbdc0582d855b8d9b270e231e3ebf1f5d860798e7e",
+    "limitation": "The existing operator records support the phase-1 sampling history. They do not choose a release scope, classify every node in that scope or confer release authority."
+  },
+  "reviewer": {
+    "name": null,
+    "organisation": null,
+    "role": null,
+    "relationshipToVenue": null,
+    "basisOfVenueAuthority": null,
+    "authorityRecordRef": null,
+    "authorityRecordSha256": null,
+    "knowledgeBasis": null
+  },
+  "reviewedAssetRecordShape": {
+    "assetId": null,
+    "assetRole": null,
+    "recordRef": null,
+    "byteLength": null,
+    "sha256": null
+  },
+  "nodeOrSweepDecisionShape": {
+    "subjectId": null,
+    "subjectKind": null,
+    "decision": null,
+    "evidenceRefs": [],
+    "note": null
+  },
+  "referenceRecordShape": {
+    "recordId": null,
+    "recordRef": null,
+    "sha256": null,
+    "useBasis": null
+  },
+  "canonicalFrozenReleaseNodeInventory": {
+    "requiredNodeCount": 149,
+    "inventoryRef": null,
+    "inventorySha256": null,
+    "observedNodeCount": null,
+    "nodeIds": []
+  },
+  "reviewSubject": {
+    "evidenceIndexRef": null,
+    "evidenceIndexSha256": null,
+    "reviewedAssetRecords": [],
+    "referenceRecords": [],
+    "lineageLimitationsAccepted": []
+  },
+  "releaseScopeDecision": {
+    "choice": null,
+    "allowedChoices": [
+      "whole_release",
+      "bounded_grand_hall_release"
+    ],
+    "wholeRelease": {
+      "expectedNodeCount": 149,
+      "allNodesClassified": false
+    },
+    "boundedGrandHallRelease": {
+      "includedNodeIds": [],
+      "excludedNodeIds": [],
+      "includedNodeCount": null,
+      "excludedNodeCount": null,
+      "allIncludedNodesClassified": false,
+      "scopeBoundaryDescription": null,
+      "partitionValidation": {
+        "requiredInventoryNodeCount": 149,
+        "uniqueIncludedNodeCount": null,
+        "uniqueExcludedNodeCount": null,
+        "intersectionCount": null,
+        "unionCount": null,
+        "missingNodeIds": [],
+        "unexpectedNodeIds": [],
+        "allReleaseNodesPartitioned": false
+      }
+    },
+    "decisionRationale": null,
+    "partitionRules": [
+      "includedNodeIds and excludedNodeIds must each contain unique node ids.",
+      "includedNodeIds and excludedNodeIds must be disjoint.",
+      "Their union must equal canonicalFrozenReleaseNodeInventory.nodeIds exactly and contain 149 nodes.",
+      "missingNodeIds and unexpectedNodeIds must both be empty before allReleaseNodesPartitioned can be true.",
+      "Engineering must recompute the counts, intersection and union from the cited frozen inventory."
+    ]
+  },
+  "roomIdentityReview": {
+    "overallDecision": null,
+    "allowedDecisions": [
+      "confirmed_for_chosen_scope",
+      "rejected_for_chosen_scope",
+      "needs_more_review"
+    ],
+    "nodeOrSweepDecisions": [],
+    "excludedAdjacentAreas": [],
+    "limitations": []
+  },
+  "reviewRecord": {
+    "reviewedAt": null,
+    "completionRecordMethod": null,
+    "completionRecordRef": null,
+    "completionRecordSha256": null,
+    "reviewerStatement": null
+  },
+  "completionRules": [
+    "Make a dated copy of this template; do not edit the template file.",
+    "Complete every reviewer field and bind the exact record that establishes the reviewer's venue authority by record ref and sha256.",
+    "Choose exactly one release scope.",
+    "Bind the review and chosen scope to the one canonicalFrozenReleaseNodeInventory object by record reference, sha256, observed count and exact node-id list; no second inventory identity is permitted.",
+    "For a bounded release, make includedNodeIds and excludedNodeIds a disjoint and exhaustive partition of that exact frozen inventory and set allReleaseNodesPartitioned only after engineering recomputes the partition evidence.",
+    "Classify every node in the chosen scope and list every excluded adjacent area.",
+    "Record limitations and any lineage caveat the reviewer accepted.",
+    "Bind the exact review completion record by completionRecordRef and completionRecordSha256.",
+    "Keep authority none until a separate T-486 review accepts complete evidence."
+  ],
+  "mutableCompletionBooleans": [
+    "releaseScopeDecision.wholeRelease.allNodesClassified",
+    "releaseScopeDecision.boundedGrandHallRelease.allIncludedNodesClassified",
+    "releaseScopeDecision.boundedGrandHallRelease.partitionValidation.allReleaseNodesPartitioned"
+  ],
+  "guardrails": {
+    "venueIdentityAcceptedForRelease": false,
+    "releaseScopeAccepted": false,
+    "transformReviewed": false,
+    "sceneAuthorityMapCompleted": false,
+    "t486ReviewInputCreated": false,
+    "publicationRequested": false,
+    "releaseAuthorityConferred": false
+  }
+}

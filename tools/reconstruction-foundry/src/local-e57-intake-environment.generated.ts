@@ -1,0 +1,735 @@
+/**
+ * Generated from configs/reconstruction/local-e57-intake-environment-v0.manifest.json.
+ * Do not edit by hand; regenerate after the checked-in manifest is reviewed.
+ */
+export const LOCAL_E57_INTAKE_ENVIRONMENT_GENERATED_DOCUMENT: unknown = {
+  "schemaVersion": "omnitwin.foundry.local-e57-intake-environment.v0",
+  "manifestId": "omnitwin-local-e57-intake-cp313-candidate-2026-07-19",
+  "reviewedOn": "2026-07-19",
+  "parentHdWorkerManifestSha256": "fbfd7c6c51c8be06f9bb411f4833fbf0fd0daba45d09512ed70bf63420b9f436",
+  "reviewClass": "engineering_dependency_closure",
+  "overall": "exact_artifacts_recorded_bundle_not_materialized_not_execution_ready",
+  "environmentState": "recorded_with_materialization_and_runtime_closure_open",
+  "installationState": "not_installed",
+  "bundleVerificationState": "not_performed",
+  "binding": "not_bound_to_current_source_or_plan",
+  "execution": "disabled",
+  "authority": "none",
+  "target": {
+    "operatingSystem": "windows",
+    "architecture": "x64",
+    "pythonImplementation": "CPython",
+    "pythonVersion": "3.13.14",
+    "pythonAbi": "cp313",
+    "distribution": "application_local_embeddable",
+    "laneScope": "e57_read_only_intake_only",
+    "parentE57CandidateDisposition": "superseded_by_this_environment",
+    "unifiedWithOpen3d": false
+  },
+  "runtimeDecision": {
+    "selectedArtifactId": "cpython-runtime",
+    "rationale": "Use the current publisher-issued CPython 3.13 Windows x64 embeddable runtime with the matching pye57 cp313 wheel. This E57-only lane has a longer maintenance horizon and matches the observed local probe ABI; Open3D remains a separate runtime because its current Windows wheel does not support cp313.",
+    "alternatives": [
+      {
+        "id": "cpython-3.10.11-embed",
+        "version": "3.10.11",
+        "disposition": "not_selected_legacy_binary",
+        "reason": "This is the final official Windows binary in the 3.10 line, dated 2023, while later 3.10 releases are source-only and the line approaches end of support. It remains a compatibility observation, not the canonical new worker target."
+      },
+      {
+        "id": "cpython-3.10.20-source",
+        "version": "3.10.20",
+        "disposition": "not_selected_source_build",
+        "reason": "The current 3.10 release is source-only. Building it would add a compiler, build-input, generated-binary, and notice closure that is unnecessary when an official matching 3.13 binary and pye57 wheel exist."
+      },
+      {
+        "id": "system-python-3.13.6",
+        "version": "3.13.6",
+        "disposition": "not_selected_machine_local_evidence_only",
+        "reason": "The previously observed machine-local interpreter is useful historical compatibility evidence but is not an immutable application-local runtime artifact and cannot define the shipped worker."
+      }
+    ]
+  },
+  "activity": {
+    "packageInstallerUsed": false,
+    "systemInstallationPerformed": false,
+    "isolatedArchiveExtractionPerformed": true,
+    "isolatedSyntheticCompatibilitySmokePerformed": true,
+    "venueDataAccessed": false,
+    "userProvidedSourceFileRead": false,
+    "syntheticFixtureFileRead": true,
+    "cloudWorkloadStarted": false
+  },
+  "artifacts": [
+    {
+      "id": "cpython-runtime",
+      "role": "Application-local interpreter for the independent read-only E57 intake lane",
+      "packageName": "CPython",
+      "version": "3.13.14",
+      "kind": "python_embeddable_zip",
+      "filename": "python-3.13.14-embed-amd64.zip",
+      "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-embed-amd64.zip",
+      "byteSize": 10964839,
+      "sha256": "90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907",
+      "digestEvidence": "publisher_attested_and_observed",
+      "pythonTag": "not_applicable",
+      "abiTag": "not_applicable",
+      "platformTag": "win_amd64",
+      "requiresPython": null,
+      "licenseExpression": "PSF-2.0",
+      "archiveMemberCount": 34,
+      "metadataMemberPath": null,
+      "metadataMemberByteSize": null,
+      "metadataMemberSha256": null,
+      "installationState": "not_installed",
+      "runtimeVerificationState": "isolated_synthetic_compatibility_observed"
+    },
+    {
+      "id": "pye57-wheel",
+      "role": "Read-only E57 wrapper and native libE57 bridge",
+      "packageName": "pye57",
+      "version": "0.4.19",
+      "kind": "pypi_wheel",
+      "filename": "pye57-0.4.19-cp313-cp313-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/d6/fe/613fcde256d10c0d1a8f7288d3ca871a9fa6996f0602da71f4940e93bbc4/pye57-0.4.19-cp313-cp313-win_amd64.whl",
+      "byteSize": 1130809,
+      "sha256": "d27332054bf18689acb45470a3bc16d4c21ed7b0b0848c56ef9e42cc8980a3c4",
+      "digestEvidence": "publisher_attested_and_observed",
+      "pythonTag": "cp313",
+      "abiTag": "cp313",
+      "platformTag": "win_amd64",
+      "requiresPython": ">=3.10",
+      "licenseExpression": "MIT",
+      "archiveMemberCount": 13,
+      "metadataMemberPath": "pye57-0.4.19.dist-info/METADATA",
+      "metadataMemberByteSize": 4949,
+      "metadataMemberSha256": "ee0862fb1bc01a38863826e4171c4480fc3379617abd6025ea426c888cc3c8f7",
+      "installationState": "not_installed",
+      "runtimeVerificationState": "isolated_synthetic_compatibility_observed"
+    },
+    {
+      "id": "numpy-wheel",
+      "role": "Array runtime required by pye57 and pyquaternion",
+      "packageName": "NumPy",
+      "version": "2.5.1",
+      "kind": "pypi_wheel",
+      "filename": "numpy-2.5.1-cp313-cp313-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/10/70/800b3fca480af32df9e8ea9f3d4a0c8feb4b32d7f195d174eabbda4829ad/numpy-2.5.1-cp313-cp313-win_amd64.whl",
+      "byteSize": 12425674,
+      "sha256": "6c3fe51bc6a16453d452997053454f309e8e0ed7b42d6b361ce4ac8c32913d74",
+      "digestEvidence": "publisher_attested_and_observed",
+      "pythonTag": "cp313",
+      "abiTag": "cp313",
+      "platformTag": "win_amd64",
+      "requiresPython": ">=3.12",
+      "licenseExpression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "archiveMemberCount": 1064,
+      "metadataMemberPath": "numpy-2.5.1.dist-info/METADATA",
+      "metadataMemberByteSize": 6584,
+      "metadataMemberSha256": "6ae45122ee97050e48849438320430d05f01814f72e66e69cbeed027d2c6a1e8",
+      "installationState": "not_installed",
+      "runtimeVerificationState": "isolated_synthetic_compatibility_observed"
+    },
+    {
+      "id": "pyquaternion-wheel",
+      "role": "Quaternion helper required by pye57",
+      "packageName": "pyquaternion",
+      "version": "0.9.9",
+      "kind": "pypi_wheel",
+      "filename": "pyquaternion-0.9.9-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/49/b3/d8482e8cacc8ea15a356efea13d22ce1c5914a9ee36622ba250523240bf2/pyquaternion-0.9.9-py3-none-any.whl",
+      "byteSize": 14361,
+      "sha256": "e65f6e3f7b1fdf1a9e23f82434334a1ae84f14223eee835190cd2e841f8172ec",
+      "digestEvidence": "publisher_attested_and_observed",
+      "pythonTag": "py3",
+      "abiTag": "none",
+      "platformTag": "any",
+      "requiresPython": null,
+      "licenseExpression": "MIT",
+      "archiveMemberCount": 7,
+      "metadataMemberPath": "pyquaternion-0.9.9.dist-info/METADATA",
+      "metadataMemberByteSize": 1404,
+      "metadataMemberSha256": "b2e3cbcf664c8af0e96d24cfafdf6d342f7b14bf8cf60c8e69e7e29fcfdebe09",
+      "installationState": "not_installed",
+      "runtimeVerificationState": "isolated_synthetic_compatibility_observed"
+    }
+  ],
+  "dependencyEdges": [
+    {
+      "fromArtifactId": "pye57-wheel",
+      "toArtifactId": "numpy-wheel",
+      "requirement": "numpy",
+      "scope": "runtime"
+    },
+    {
+      "fromArtifactId": "pye57-wheel",
+      "toArtifactId": "pyquaternion-wheel",
+      "requirement": "pyquaternion",
+      "scope": "runtime"
+    },
+    {
+      "fromArtifactId": "pyquaternion-wheel",
+      "toArtifactId": "numpy-wheel",
+      "requirement": "numpy",
+      "scope": "runtime"
+    }
+  ],
+  "pye57Wheel": {
+    "artifactId": "pye57-wheel",
+    "memberInventoryState": "exact_13_members_recorded",
+    "recordVerificationState": "all_hashed_entries_verified",
+    "members": [
+      {
+        "path": "pye57-0.4.19.dist-info/licenses/LICENSE",
+        "byteSize": 1056,
+        "sha256": "4342b58827d59ba5269d1e00032a8c139abb7e59d4e9a1a1e4e6ab1086b62ba6"
+      },
+      {
+        "path": "pye57-0.4.19.dist-info/METADATA",
+        "byteSize": 4949,
+        "sha256": "ee0862fb1bc01a38863826e4171c4480fc3379617abd6025ea426c888cc3c8f7"
+      },
+      {
+        "path": "pye57-0.4.19.dist-info/RECORD",
+        "byteSize": 1001,
+        "sha256": "04e2e341b95d4236951bef47569d2153274c4ed22bb7e41efb6931afd07f191b"
+      },
+      {
+        "path": "pye57-0.4.19.dist-info/top_level.txt",
+        "byteSize": 6,
+        "sha256": "c43f470f343705f18cbb3d64236b8d294474297711f91b4d10a8a0ae4878f0d9"
+      },
+      {
+        "path": "pye57-0.4.19.dist-info/WHEEL",
+        "byteSize": 101,
+        "sha256": "a95d0420f9638f55c2fefb926ad4568e7d369d9233dcdd6df23b19cfb1c1af65"
+      },
+      {
+        "path": "pye57/__init__.py",
+        "byteSize": 95,
+        "sha256": "91e5951765bb25abb9be86346ae7ebe9b6b2be37c325259ffdb99ac08bef8fcf"
+      },
+      {
+        "path": "pye57/__version__.py",
+        "byteSize": 24,
+        "sha256": "d5fcf45d89b0a7f2940986b6f43a38d2e8b8b2f4d4d80baace123dddc8fe365b"
+      },
+      {
+        "path": "pye57/e57.py",
+        "byteSize": 20112,
+        "sha256": "150a777826b4fb89804486d579b86cb16e9b356e55625ec5fc8cf110cff273a4"
+      },
+      {
+        "path": "pye57/exception.py",
+        "byteSize": 50,
+        "sha256": "f5082b8a2af422c4a91e14ad379baf2399a56caadcfcfe59511b22fcf216feaf"
+      },
+      {
+        "path": "pye57/libe57.cp313-win_amd64.pyd",
+        "byteSize": 781824,
+        "sha256": "71b6e35db443902b55a9260813a09d57e8481956aa6bb443fb8b52ae94dce958"
+      },
+      {
+        "path": "pye57/scan_header.py",
+        "byteSize": 6576,
+        "sha256": "30d544ed1a84bbfcb064c0498ba861da6896a0a16d536c90e2305f77f080cc46"
+      },
+      {
+        "path": "pye57/utils.py",
+        "byteSize": 4297,
+        "sha256": "e2366b434b1baec69a163564826fd37fc70b53d7c115bf21bd8503183d992627"
+      },
+      {
+        "path": "pye57/xerces-c_3_2.dll",
+        "byteSize": 2793984,
+        "sha256": "7af1375b748ed58b8d5ff316a11fac6f4ec2742e572a099bf891523ceb5d5134"
+      }
+    ],
+    "aggregateOnlyReadContract": true,
+    "pointRecordReadsAllowed": false,
+    "embeddedImageReadsAllowed": false,
+    "writeModeAllowedForProductIntake": false
+  },
+  "nativeInclusions": [
+    {
+      "id": "libe57format",
+      "label": "libE57Format",
+      "version": "3.1.1",
+      "revision": "1914b8ea972251d3bb49a33828497dde683205d9",
+      "disposition": "compiled_into_pye57_extension",
+      "binaryMemberPath": "pye57/libe57.cp313-win_amd64.pyd",
+      "binaryMemberByteSize": 781824,
+      "binaryMemberSha256": "71b6e35db443902b55a9260813a09d57e8481956aa6bb443fb8b52ae94dce958",
+      "evidenceState": "source_lineage_recorded_binary_reproducibility_not_proven",
+      "boundary": "The pye57 source tag points to this libE57Format revision and compiles its sources into the extension, but the publisher wheel does not provide a reproducible source-to-binary attestation."
+    },
+    {
+      "id": "crcpp",
+      "label": "CRC++",
+      "version": "1.2.0.0",
+      "revision": "85034fb49ad3e5490533313dd280441a3915a275",
+      "disposition": "compiled_into_pye57_extension",
+      "binaryMemberPath": "pye57/libe57.cp313-win_amd64.pyd",
+      "binaryMemberByteSize": 781824,
+      "binaryMemberSha256": "71b6e35db443902b55a9260813a09d57e8481956aa6bb443fb8b52ae94dce958",
+      "evidenceState": "source_lineage_recorded_binary_reproducibility_not_proven",
+      "boundary": "libE57Format vendors the exact CRC++ 1.2.0.0 header lineage and compiles it into the extension; the final binary remains consumed by exact publisher-wheel hash rather than a reproducible local rebuild."
+    },
+    {
+      "id": "xerces-c",
+      "label": "Apache Xerces-C++",
+      "version": "3.2.3",
+      "revision": "cf1912ac95d4147be08aef4e78f894a3919277d9",
+      "disposition": "bundled_dynamic_library",
+      "binaryMemberPath": "pye57/xerces-c_3_2.dll",
+      "binaryMemberByteSize": 2793984,
+      "binaryMemberSha256": "7af1375b748ed58b8d5ff316a11fac6f4ec2742e572a099bf891523ceb5d5134",
+      "evidenceState": "exact_bundled_binary_recorded",
+      "boundary": "The selected wheel contains this exact DLL and its version resource identifies Xerces-C++ 3.2.3; the Apache licence and NOTICE still have to be assembled beside the future bundle."
+    },
+    {
+      "id": "pybind11",
+      "label": "pybind11 build dependency",
+      "version": "unresolved",
+      "revision": "unresolved",
+      "disposition": "build_dependency_version_unresolved",
+      "binaryMemberPath": null,
+      "binaryMemberByteSize": null,
+      "binaryMemberSha256": null,
+      "evidenceState": "unresolved",
+      "boundary": "The pye57 build declares an open pybind11 version range, so the exact version and BSD notice incorporated into the publisher extension cannot yet be stated."
+    }
+  ],
+  "legal": {
+    "archiveLicenseInventoryState": "recorded",
+    "nativeLegalSourceState": "recorded_except_exact_pybind11_notice",
+    "redistributionPackState": "not_assembled",
+    "redistributionReviewState": "not_final",
+    "materials": [
+      {
+        "id": "cpython-archive-license",
+        "componentId": "cpython-runtime",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "cpython-runtime",
+        "memberPath": "LICENSE.txt",
+        "url": null,
+        "byteSize": 33861,
+        "sha256": "62bec384df47b0328307db41455ff6ea2559e5546b394ac69148561b21703120",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "cpython-publisher-sbom",
+        "componentId": "cpython-runtime",
+        "kind": "publisher_sbom",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-embed-amd64.zip.spdx.json",
+        "byteSize": 15341,
+        "sha256": "ff85d80144dffbd3a3498a4bce568f6ab3fec614842eafda2b562f4c4e9bd247",
+        "redistributionAction": "preserve_as_publisher_inventory_evidence"
+      },
+      {
+        "id": "pye57-archive-license",
+        "componentId": "pye57-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "pye57-wheel",
+        "memberPath": "pye57-0.4.19.dist-info/licenses/LICENSE",
+        "url": null,
+        "byteSize": 1056,
+        "sha256": "4342b58827d59ba5269d1e00032a8c139abb7e59d4e9a1a1e4e6ab1086b62ba6",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-dist-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/LICENSE.txt",
+        "url": null,
+        "byteSize": 45831,
+        "sha256": "a804dff0ead9fadc5293456410bcbfc32bf024be9c4513459663fb7b442d2341",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-libdivide-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+        "url": null,
+        "byteSize": 1039,
+        "sha256": "d544761558b510866c21f7e8a2d5716fca76e0b98117e3b6b86314db7244d150",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-pythoncapi-copying",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING",
+        "url": null,
+        "byteSize": 704,
+        "sha256": "aea41976c720f91bd19725c16916a1ace40eb1ea42620d340e587a5de4bbcea0",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-highway-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/src/highway/LICENSE",
+        "url": null,
+        "byteSize": 21155,
+        "sha256": "d208152e2777ffd0126eacc1bd21c0320d69e4e6b622d21a2a12a47e8ef73763",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-dragon4-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt",
+        "url": null,
+        "byteSize": 1441,
+        "sha256": "b0fd592d4ead563148e3977e7b589169d46a5ef2ff133c755a81af880a3fc919",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-x86-sort-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+        "url": null,
+        "byteSize": 1542,
+        "sha256": "a732977853530066790c42817087f4829b518dd98d340c916acbfd227e39d3cb",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-svml-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE",
+        "url": null,
+        "byteSize": 1573,
+        "sha256": "585483905b13d4b42f800c55ba99e89d6e2e33ccd5f503e201c07531d148ff41",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-pocketfft-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md",
+        "url": null,
+        "byteSize": 1523,
+        "sha256": "8db000e158c162e7249787852d8c69764706502ccee725c06641b31c1e95c8af",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-lapack-lite-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt",
+        "url": null,
+        "byteSize": 2314,
+        "sha256": "19060ef465e1797d682ee0fc3081bd25ab1395e995e43d25c9d13c95d9a3cd6b",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-ma-dist-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/ma/LICENSE",
+        "url": null,
+        "byteSize": 1616,
+        "sha256": "d78dbb208b80d92b4d333e41a4baae50d12444f46e53199fa7726a91de6e2da7",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-random-dist-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/LICENSE.md",
+        "url": null,
+        "byteSize": 3582,
+        "sha256": "b4bc2f4fa1c95778f1ed3dd8f14706bece399475b978f9f34b5d3cd72521b48a",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-random-distributions-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/distributions/LICENSE.md",
+        "url": null,
+        "byteSize": 2805,
+        "sha256": "cf5619f25b112d5ce7c896efffc8e610bcb345dfadcc19f2c1460aa48fff2c9e",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-mt19937-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md",
+        "url": null,
+        "byteSize": 2986,
+        "sha256": "92c10699884321f1c2947fe2a70ab23b0fbf1507f756d89dd08f38c61fc3d4fa",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-pcg64-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md",
+        "url": null,
+        "byteSize": 1176,
+        "sha256": "41190663b77bee5302386495a07b7eabfbfa571aa0ae2f11da6764162062fc4f",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-philox-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/philox/LICENSE.md",
+        "url": null,
+        "byteSize": 1540,
+        "sha256": "322ac46d870c8aeead6c53adcccc839296fb3c8e456eae155081297daf7f8013",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-sfc64-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md",
+        "url": null,
+        "byteSize": 1253,
+        "sha256": "28cad82ce1379dc529df30da78ec012d7d0d1d576b03ddcb93388aee53659f59",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-splitmix64-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy-2.5.1.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md",
+        "url": null,
+        "byteSize": 340,
+        "sha256": "454ec7350e478e037061850b67395753b425b1cb0a34bbc26290b020bf89d763",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-random-include-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy/_core/include/numpy/random/LICENSE.txt",
+        "url": null,
+        "byteSize": 1039,
+        "sha256": "d544761558b510866c21f7e8a2d5716fca76e0b98117e3b6b86314db7244d150",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-ma-package-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy/ma/LICENSE",
+        "url": null,
+        "byteSize": 1616,
+        "sha256": "d78dbb208b80d92b4d333e41a4baae50d12444f46e53199fa7726a91de6e2da7",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "numpy-random-package-license",
+        "componentId": "numpy-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "numpy-wheel",
+        "memberPath": "numpy/random/LICENSE.md",
+        "url": null,
+        "byteSize": 3582,
+        "sha256": "b4bc2f4fa1c95778f1ed3dd8f14706bece399475b978f9f34b5d3cd72521b48a",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "pyquaternion-archive-license",
+        "componentId": "pyquaternion-wheel",
+        "kind": "license",
+        "source": "archive_member",
+        "artifactId": "pyquaternion-wheel",
+        "memberPath": "pyquaternion-0.9.9.dist-info/LICENSE.txt",
+        "url": null,
+        "byteSize": 1079,
+        "sha256": "0de20579e62ec5885fa9685c10de92493d5e53c7681217a82e3fa05645a43c5e",
+        "redistributionAction": "preserve_from_selected_archive"
+      },
+      {
+        "id": "libe57format-boost-license",
+        "componentId": "libe57format",
+        "kind": "license",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://raw.githubusercontent.com/asmaloney/libE57Format/1914b8ea972251d3bb49a33828497dde683205d9/LICENSE.md",
+        "byteSize": 1338,
+        "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+        "redistributionAction": "copy_into_future_redistribution_pack"
+      },
+      {
+        "id": "libe57format-mit-license",
+        "componentId": "libe57format",
+        "kind": "license",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://raw.githubusercontent.com/asmaloney/libE57Format/1914b8ea972251d3bb49a33828497dde683205d9/LICENSE-MIT.md",
+        "byteSize": 1101,
+        "sha256": "8ce9ce1a2d14d0a5ddccb915017e9e0e2a4d5c12b5559d227ecdd3342ab94fa9",
+        "redistributionAction": "copy_into_future_redistribution_pack"
+      },
+      {
+        "id": "crcpp-bsd-license",
+        "componentId": "crcpp",
+        "kind": "license",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://raw.githubusercontent.com/asmaloney/libE57Format/1914b8ea972251d3bb49a33828497dde683205d9/extern/CRCpp/LICENSE",
+        "byteSize": 1480,
+        "sha256": "954e7c6730168114b296fbcc60532fa7ce64236e1adf17c147878bb7949be09e",
+        "redistributionAction": "copy_into_future_redistribution_pack"
+      },
+      {
+        "id": "xerces-apache-license",
+        "componentId": "xerces-c",
+        "kind": "license",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://raw.githubusercontent.com/apache/xerces-c/cf1912ac95d4147be08aef4e78f894a3919277d9/LICENSE",
+        "byteSize": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "redistributionAction": "copy_into_future_redistribution_pack"
+      },
+      {
+        "id": "xerces-apache-notice",
+        "componentId": "xerces-c",
+        "kind": "notice",
+        "source": "immutable_url",
+        "artifactId": null,
+        "memberPath": null,
+        "url": "https://raw.githubusercontent.com/apache/xerces-c/cf1912ac95d4147be08aef4e78f894a3919277d9/NOTICE",
+        "byteSize": 560,
+        "sha256": "95e5cca2ff3d0801841d9d17f0eec16bfb02dd6893ff7e55da4ec5a5dd30aa52",
+        "redistributionAction": "copy_into_future_redistribution_pack"
+      }
+    ]
+  },
+  "compatibilityEvidence": {
+    "state": "isolated_unbundled_synthetic_smoke_passed",
+    "pythonVersion": "3.13.14",
+    "numpyVersion": "2.5.1",
+    "pye57Version": "0.4.19",
+    "pyquaternionVersion": "0.9.9",
+    "fixture": "synthetic_three_cartesian_point_e57",
+    "checks": [
+      "package_imports",
+      "quaternion_rotation",
+      "synthetic_e57_write_read_roundtrip"
+    ],
+    "installed": false,
+    "bundleUnderTest": false,
+    "venueDataAccessed": false,
+    "observationReceipt": {
+      "observationId": "t536-cp313-isolated-synthetic-smoke-2026-07-19",
+      "observedAtUtc": "2026-07-19T03:10:04.1608743Z",
+      "fixtureByteSize": 4096,
+      "fixtureSha256": "91f2b9a039358efb2b724d9fb254e0f827ff34a88e03a9d8df7d123f09b1db31",
+      "pythonCommandBodyByteSize": 402,
+      "pythonCommandBodySha256": "f4f6f9f4b1f005dbf548e36f9d1c93af3bf7c94df0257d41790731a7cf748f14",
+      "observedRecordCount": 3,
+      "logState": "tool_transcript_only_no_repository_log"
+    },
+    "limitation": "The isolated archive extraction passed only a tiny synthetic compatibility check. pye57 resolved MSVCP140.dll from the host Windows installation, so this does not prove a self-contained application bundle, clean-host operation, production E57 behavior, or adapter readiness."
+  },
+  "bundle": {
+    "state": "not_materialized",
+    "bundleSha256": null,
+    "exactExtractedMemberManifestState": "not_created",
+    "legalPackState": "not_assembled",
+    "microsoftCppRuntimeState": "host_dependency_observed_not_closed",
+    "cleanHostVerificationState": "not_performed",
+    "adapterBindingState": "not_wired"
+  },
+  "openItems": [
+    {
+      "id": "microsoft-cpp-runtime",
+      "label": "Microsoft C++ runtime disposition",
+      "reason": "The pye57 extension and bundled Xerces DLL import unrenamed MSVCP140.dll. The isolated check resolved it from the host, while the selected CPython archive does not include it.",
+      "decisiveNextTest": "Select and review one exact Microsoft-publisher runtime prerequisite or application-local redistribution artifact, record its terms and hash, then prove the bundle does not silently fall back to an undeclared host copy."
+    },
+    {
+      "id": "pybind11-build-version",
+      "label": "Exact pybind11 build version and notice",
+      "reason": "The publisher build accepts an open pybind11 version range, so the exact incorporated header version and BSD notice are not resolved by the wheel metadata.",
+      "decisiveNextTest": "Obtain publisher build provenance that fixes the pybind11 version and notice, or retain the exact wheel as a binary dependency while marking source-to-binary provenance unresolved."
+    },
+    {
+      "id": "redistribution-pack",
+      "label": "Redistribution legal pack",
+      "reason": "All selected archive licence members and the known libE57Format, CRC++, and Xerces sidecars are recorded, but they have not been assembled and reviewed as the exact files shipped beside a worker.",
+      "decisiveNextTest": "Create a deterministic legal directory from these exact byte receipts, add the resolved pybind11 and Microsoft materials, and verify no required or extra files remain."
+    },
+    {
+      "id": "exact-extracted-member-manifest",
+      "label": "Exact extracted bundle member manifest",
+      "reason": "The root archives and the complete pye57 wheel are recorded, but there is no one allow-listed manifest for every extracted runtime, package, native, metadata, and legal file in a deployable directory.",
+      "decisiveNextTest": "Materialize one application-local candidate directory and issue a canonical receipt for every regular file, rejecting missing files, extra files, links, and byte drift."
+    },
+    {
+      "id": "clean-host-bundle-smoke",
+      "label": "Clean-host bundle compatibility",
+      "reason": "The isolated synthetic smoke passed on this workstation but depended on a host MSVCP140.dll and therefore was not a test of the future bundle itself.",
+      "decisiveNextTest": "Run the exact materialized bundle with the same synthetic three-point fixture on a clean supported Windows environment and prove all native loads resolve only through declared bundle or prerequisite identities."
+    },
+    {
+      "id": "adapter-runtime-bundle-binding",
+      "label": "Adapter binding to a verified runtime receipt",
+      "reason": "The current E57 adapter pins the interpreter and probe script but checks dependency marker files rather than a complete runtime bundle receipt.",
+      "decisiveNextTest": "Require an exact verified runtime-bundle manifest before spawn and recheck its full allow-listed tree before and after the aggregate-only read operation."
+    }
+  ],
+  "nextAction": "Close the exact Microsoft C++ runtime and pybind11 notice decisions, assemble one deterministic application-local CPython 3.13 E57 bundle plus legal pack, verify every extracted member on a clean synthetic-only Windows run, and only then bind that immutable bundle receipt into the existing read-only aggregate metadata adapter.",
+  "environmentSha256": "34ad3f54ea5a5afcca908c66f48ab039381d6910b2372afbafee0c1f8545ea1e"
+};

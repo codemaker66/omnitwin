@@ -1,0 +1,60 @@
+{
+  "diagnostics": [
+    {
+      "fileName": "grand-hall-room-shape-proposal-v1-2026-08-04-top-view.svg",
+      "schemaVersion": "omnitwin.foundry.room-shape-diagnostic.v0",
+      "sha256": "1b7edf3ba02441fafe3e478ffabfcf1d0b0646e04dc72dfeb2c110302f2ae7c9",
+      "sizeBytes": 463261
+    }
+  ],
+  "generatedAt": "2026-08-04T09:39:50Z",
+  "inputs": {
+    "cloudBytes": 313285263,
+    "cloudFileName": "grand-hall-pilot-cloud.ply",
+    "cloudSha256": "b7af01da3a57f9d3b334d5da3be84d9e8c5fecc1ef5011e553ab62f69a7cae87",
+    "originCount": 49,
+    "originsBytes": 1439,
+    "originsFileName": "grand-hall-pilot-centres.txt",
+    "originsSha256": "16c8cf9f21427eaa2e841d1f85e03a8a20830e4abcb8349efa20f34f609f2608",
+    "pointCount": 6526772
+  },
+  "parameters": {
+    "axisNormalMinCos": 0.9063077870366499,
+    "cellM": 0.1,
+    "completenessAccept": 0.6,
+    "coverageHeightAccept": 0.6,
+    "coverageWalkedAccept": 0.75,
+    "disputeCompletenessMargin": 0.25,
+    "disputeSeparationM": 0.5,
+    "horizontalNormalMinCos": 0.85,
+    "maxCandidatesPerSide": 10,
+    "measurementFloorM": 0.01,
+    "minNormalCoverage": 0.99,
+    "minPlaneToleranceM": 0.03,
+    "outboardMassMarginM": 0.25,
+    "outboardReviewMinPoints": 1000,
+    "outboardReviewMinRatio": 0.1,
+    "peakBinM": 0.05,
+    "peakMergeM": 0.15,
+    "peakMinShare": 0.01,
+    "spanEstimatorMaxPoints": 200000,
+    "verticalNormalMaxCos": 0.2
+  },
+  "policy": {
+    "comparedAgainstExternalFigures": false,
+    "networkUsed": false,
+    "selfApproved": false,
+    "sourceBytesMutated": false
+  },
+  "proposalFileBytes": 26877,
+  "proposalFileName": "grand-hall-room-shape-proposal-v1-2026-08-04.json",
+  "proposalFileSha256": "55baf588528473ab3baef67a56ba1ce33d2d4ec0b0949f1ae55662d640fd11bc",
+  "proposalSha256": "7b850efa32104b8df6c35c40c29e0ec7af30acd861ee49e5ea5b83541644b1dd",
+  "receiptSha256": "0da7325bd480a7bf23901f8690c9de0d3e9cfc1227c622582ecf9ec403fdbab7",
+  "schemaVersion": "omnitwin.foundry.room-shape-run-receipt.v0",
+  "toolchain": {
+    "numpy": "2.5.1",
+    "platform": "Windows",
+    "python": "3.12.4"
+  }
+}

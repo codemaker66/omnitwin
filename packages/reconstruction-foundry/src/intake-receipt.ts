@@ -49,6 +49,21 @@ import type {
   UniversalSourceFactsV5FileResult,
 } from "./source-facts-v5.js";
 import type {
+  FoundryUniversalSourceFactsV6,
+  UniversalSourceFactsV6FileResult,
+} from "./source-facts-v6.js";
+import type {
+  FoundryPotreeV2BundleAssetV7,
+  FoundryUniversalSourceFactsV7,
+} from "./source-facts-v7.js";
+import type {
+  FoundryPotreeV2PointPreviewFile,
+  FoundryPotreeV2PointValuesOutcome,
+} from "./potree-v2-point-values.js";
+import type {
+  FoundryUniversalSourceFactsV8,
+} from "./source-facts-v8.js";
+import type {
   FoundryGaussianPlySourceFactsOutcome,
 } from "./gaussian-ply-source-facts.js";
 import type {
@@ -57,6 +72,9 @@ import type {
 import type {
   FoundryCalibrationTrajectorySourceFactsOutcome,
 } from "./calibration-trajectory-source-facts.js";
+import type {
+  FoundryPlyPointCloudSourceFactsOutcome,
+} from "./ply-point-cloud-source-facts.js";
 import type {
   FoundrySpzSourceFactsOutcome,
 } from "./spz-source-facts.js";
@@ -668,6 +686,22 @@ export interface InspectUniversalIntakeWithSourceFactsV4Result {
 export interface InspectUniversalIntakeWithSourceFactsV5Result {
   readonly receipt: FoundryUniversalIntakeReceipt;
   readonly sourceFacts: FoundryUniversalSourceFactsV5;
+}
+
+export interface InspectUniversalIntakeWithSourceFactsV6Result {
+  readonly receipt: FoundryUniversalIntakeReceipt;
+  readonly sourceFacts: FoundryUniversalSourceFactsV6;
+}
+
+export interface InspectUniversalIntakeWithSourceFactsV7Result {
+  readonly receipt: FoundryUniversalIntakeReceipt;
+  readonly sourceFacts: FoundryUniversalSourceFactsV7;
+}
+
+export interface InspectUniversalIntakeWithSourceFactsV8Result {
+  readonly receipt: FoundryUniversalIntakeReceipt;
+  readonly sourceFacts: FoundryUniversalSourceFactsV8;
+  readonly pointPreviewFiles: readonly FoundryPotreeV2PointPreviewFile[];
 }
 
 export async function inspectUniversalIntake(
@@ -1440,5 +1474,493 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
       identities,
       results,
     ),
+  };
+}
+
+/**
+ * Builds the unchanged Receipt V0, then issues immutable Source Facts V6.
+ * V6 adds same-open-handle ordinary point PLY header and exact fixed-width
+ * payload-layout inspection. The inherited Gaussian PLY profile always runs
+ * first; only a receipt-bound ordinary PLY candidate whose Gaussian profile
+ * did not establish can become a V6 point asset. Values are never decoded and
+ * no semantics, frame, units, accuracy, registration, rights, or authority are
+ * inferred.
+ */
+export async function inspectUniversalIntakeWithSourceFactsV6(
+  sourceInput: string,
+  options: InspectUniversalIntakeOptions = {},
+): Promise<InspectUniversalIntakeWithSourceFactsV6Result> {
+  const {
+    createUniversalSourceFactsV6ArtifactFromReceipt,
+    createUniversalSourceFactsV6StreamCollector,
+  } = await import("./source-facts-v6.js");
+  const receipt = await inspectUniversalIntake(sourceInput, options);
+  const identities = receipt.files.map(sourceFactsV4Identity);
+  if (identities.some((identity) =>
+    identity.detection.candidates.some(
+      (candidate) => candidate.inputType === "xgrids_xbin",
+    )
+  )) {
+    return {
+      receipt,
+      sourceFacts: createUniversalSourceFactsV6ArtifactFromReceipt(
+        receipt.receiptSha256,
+        identities,
+      ),
+    };
+  }
+
+  assertIntakeNotCancelled(options.signal);
+  const source = await locateIntakeSource(sourceInput, options.signal);
+  assertLocatedSourceMatchesReceipt(source, receipt);
+  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const results: UniversalSourceFactsV6FileResult[] = [];
+  for (const located of source.files) {
+    assertIntakeNotCancelled(options.signal);
+    const receiptFile = receiptByPath.get(located.relativePath);
+    if (receiptFile === undefined) {
+      throw new FoundryIntegrityError(
+        "SOURCE_FACTS_V6_RECEIPT_FILE_MISSING",
+        "The Source Facts V6 pass found a file that is absent from the intake receipt.",
+      );
+    }
+    const identity = sourceFactsV4Identity(receiptFile);
+    const collector = createUniversalSourceFactsV6StreamCollector(located.relativePath);
+    const magicHex = receiptFile.inspection.magicHex;
+    const e57Magic = magicHex.startsWith("4153544d2d453537");
+    const glbMagic = magicHex.startsWith("676c5446");
+    const inheritedTarget = claimedBySourceFactsV1ThroughV3(
+      identity,
+      e57Magic,
+      glbMagic,
+    );
+    const hasGaussianCandidate = identity.detection.candidates.some(
+      (candidate) => candidate.inputType === "gaussian_ply",
+    );
+    const hasPointCandidate = identity.detection.candidates.some(
+      (candidate) => candidate.inputType === "ply_point_cloud",
+    );
+    const inspectAsGaussianPly = !e57Magic && !glbMagic &&
+      (hasGaussianCandidate || hasPointCandidate);
+    const inspectAsPointPly = inspectAsGaussianPly && hasPointCandidate &&
+      !hasGaussianCandidate;
+    const suffix = receiptPathExtension(identity.path);
+    const inspectAsSpz = !inspectAsGaussianPly && !e57Magic && !glbMagic &&
+      (identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "spz",
+      ) || suffix === ".spz");
+    const inspectAsSog = !inspectAsGaussianPly && !inspectAsSpz &&
+      !e57Magic && !glbMagic &&
+      (identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "sog",
+      ) || suffix === ".sog");
+    const inspectAsMediaContainer = !inheritedTarget &&
+      hasMediaContainerReceiptCandidate(identity);
+    const registrationTarget = !inheritedTarget && !inspectAsMediaContainer
+      ? registrationDocumentReceiptTarget(identity)
+      : null;
+    const registrationFormat = registrationTarget !== null
+      ? suffix === ".csv"
+        ? "csv" as const
+        : suffix === ".json"
+          ? "json" as const
+          : null
+      : null;
+
+    let sogInspection: FoundrySogSourceFactsOutcome | undefined;
+    let spzInspection: FoundrySpzSourceFactsOutcome | undefined;
+    let gaussianPlyInspection: FoundryGaussianPlySourceFactsOutcome | undefined;
+    let plyPointCloudInspection:
+      FoundryPlyPointCloudSourceFactsOutcome | undefined;
+    let mediaContainerInspection: FoundryMediaContainerSourceFactsOutcome | undefined;
+    let calibrationTrajectoryInspection:
+      FoundryCalibrationTrajectorySourceFactsOutcome | undefined;
+    const digest = await sha256RegularFileWithHead(
+      located.absolutePath,
+      0,
+      located.expectedIdentity,
+      options.signal,
+      (chunk, absoluteOffset) => {
+        collector.observe(chunk, absoluteOffset);
+      },
+      inspectAsSog || inspectAsSpz || inspectAsGaussianPly ||
+        inspectAsMediaContainer || registrationFormat !== null
+        ? async (handle, sizeBytes, sourceSha256) => {
+            if (inspectAsGaussianPly) {
+              const { inspectGaussianPlySourceFacts } = await import(
+                "./gaussian-ply-source-facts.js"
+              );
+              gaussianPlyInspection = await inspectGaussianPlySourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                options.signal,
+              );
+              if (
+                !inspectAsPointPly ||
+                gaussianPlyInspection.state === "established" ||
+                gaussianPlyInspection.category === "cancelled"
+              ) return;
+              const { inspectPlyPointCloudSourceFacts } = await import(
+                "./ply-point-cloud-source-facts.js"
+              );
+              plyPointCloudInspection = await inspectPlyPointCloudSourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                options.signal,
+              );
+              return;
+            }
+            if (inspectAsSog) {
+              sogInspection = await inspectStoredZipSogV2SourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                options.signal,
+              );
+              return;
+            }
+            if (inspectAsSpz) {
+              const { inspectSpzSourceFacts } = await import(
+                "./spz-source-facts.js"
+              );
+              spzInspection = await inspectSpzSourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                options.signal,
+              );
+              return;
+            }
+            if (inspectAsMediaContainer) {
+              const { inspectMediaContainerSourceFacts } = await import(
+                "./media-container-source-facts.js"
+              );
+              mediaContainerInspection = await inspectMediaContainerSourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                options.signal,
+              );
+              return;
+            }
+            if (registrationFormat === null) return;
+            const { inspectCalibrationTrajectorySourceFacts } = await import(
+              "./calibration-trajectory-source-facts.js"
+            );
+            calibrationTrajectoryInspection =
+              await inspectCalibrationTrajectorySourceFacts(
+                handle,
+                sizeBytes,
+                sourceSha256,
+                registrationFormat,
+                options.signal,
+              );
+          }
+        : undefined,
+    );
+    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+      throw new FoundryIntegrityError(
+        "SOURCE_FACTS_V6_BYTE_BINDING_MISMATCH",
+        "The Source Facts V6 byte stream did not match the intake receipt; no artifact was issued.",
+      );
+    }
+    results.push(collector.finalize(identity, {
+      ...(sogInspection === undefined ? {} : { sogInspection }),
+      ...(spzInspection === undefined ? {} : { spzInspection }),
+      ...(gaussianPlyInspection === undefined ? {} : { gaussianPlyInspection }),
+      ...(plyPointCloudInspection === undefined
+        ? {}
+        : { plyPointCloudInspection }),
+      ...(mediaContainerInspection === undefined
+        ? {}
+        : { mediaContainerInspection }),
+      ...(calibrationTrajectoryInspection === undefined
+        ? {}
+        : { calibrationTrajectoryInspection }),
+    }));
+  }
+  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  assertIntakeSourceUnchanged(source, sourceAfterFacts);
+  return {
+    receipt,
+    sourceFacts: createUniversalSourceFactsV6ArtifactFromReceipt(
+      receipt.receiptSha256,
+      identities,
+      results,
+    ),
+  };
+}
+
+/**
+ * Builds immutable Source Facts V7 by retaining the exact V6 artifact and
+ * adding only receipt-level XGRIDS/Potree three-member bundle facts. Complete
+ * bundle members are re-read through the same bounded streams that establish
+ * their V7 hashes and structural observations. Incomplete two-member
+ * candidates are represented as facts-not-established without reading or
+ * inventing a missing file. XBIN keeps the inherited all-or-nothing stop.
+ */
+export async function inspectUniversalIntakeWithSourceFactsV7(
+  sourceInput: string,
+  options: InspectUniversalIntakeOptions = {},
+): Promise<InspectUniversalIntakeWithSourceFactsV7Result> {
+  const inheritedResult = await inspectUniversalIntakeWithSourceFactsV6(
+    sourceInput,
+    options,
+  );
+  const { receipt, sourceFacts: inherited } = inheritedResult;
+  assertIntakeNotCancelled(options.signal);
+  const {
+    createFoundryPotreeV2BundleAssetV7,
+    createUniversalSourceFactsV7ArtifactFromReceipt,
+  } = await import("./source-facts-v7.js");
+  assertIntakeNotCancelled(options.signal);
+
+  if (inherited.state === "unavailable") {
+    return {
+      receipt,
+      sourceFacts: createUniversalSourceFactsV7ArtifactFromReceipt(
+        receipt,
+        inherited,
+      ),
+    };
+  }
+
+  const {
+    createPotreeV2SourceFactsCollector,
+    discoverPotreeV2BundleCandidates,
+  } = await import("./potree-v2-source-facts.js");
+  assertIntakeNotCancelled(options.signal);
+  const candidates = discoverPotreeV2BundleCandidates(
+    receipt.files.map((file) => ({
+      path: file.path,
+      sizeBytes: file.sizeBytes,
+      sha256: file.sha256,
+    })),
+  );
+  const completeCandidates = candidates.filter(
+    (candidate) =>
+      candidate.members.length === 3 &&
+      candidate.missingRoles.length === 0 &&
+      candidate.duplicateRoles.length === 0,
+  );
+  if (completeCandidates.length === 0) {
+    assertIntakeNotCancelled(options.signal);
+    return {
+      receipt,
+      sourceFacts: createUniversalSourceFactsV7ArtifactFromReceipt(
+        receipt,
+        inherited,
+      ),
+    };
+  }
+
+  assertIntakeNotCancelled(options.signal);
+  const source = await locateIntakeSource(sourceInput, options.signal);
+  assertLocatedSourceMatchesReceipt(source, receipt);
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
+  const locatedByPath = new Map(
+    source.files.map((file) => [file.relativePath, file] as const),
+  );
+  const assets: FoundryPotreeV2BundleAssetV7[] = [];
+  for (const candidate of completeCandidates) {
+    assertIntakeNotCancelled(options.signal);
+    const collector = createPotreeV2SourceFactsCollector(
+      candidate.bundleRoot,
+      options.signal,
+    );
+    for (const member of candidate.members) {
+      assertIntakeNotCancelled(options.signal);
+      const located = locatedByPath.get(member.path);
+      if (located === undefined) {
+        throw new FoundryIntegrityError(
+          "SOURCE_FACTS_V7_SOURCE_MEMBER_MISSING",
+          "A complete Potree V7 candidate is missing from the unchanged located source.",
+        );
+      }
+      const receiptFile = receiptByPath.get(member.path);
+      if (receiptFile === undefined) {
+        throw new FoundryIntegrityError(
+          "SOURCE_FACTS_V7_RECEIPT_FILE_MISSING",
+          "The Potree V7 pass found a member absent from the intake receipt.",
+        );
+      }
+      const digest = await sha256RegularFileWithHead(
+        located.absolutePath,
+        0,
+        located.expectedIdentity,
+        options.signal,
+        (chunk, absoluteOffset) => {
+          collector.observeMember(member.role, chunk, absoluteOffset);
+        },
+      );
+      if (
+        digest.sizeBytes !== receiptFile.sizeBytes ||
+        digest.sha256 !== receiptFile.sha256
+      ) {
+        throw new FoundryIntegrityError(
+          "SOURCE_FACTS_V7_BYTE_BINDING_MISMATCH",
+          "The Potree V7 byte stream did not match the intake receipt; no artifact was issued.",
+        );
+      }
+    }
+    assets.push(createFoundryPotreeV2BundleAssetV7(
+      collector.finalize(candidate.members),
+    ));
+  }
+  assertIntakeNotCancelled(options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
+  assertIntakeSourceUnchanged(source, sourceAfterFacts);
+  return {
+    receipt,
+    sourceFacts: createUniversalSourceFactsV7ArtifactFromReceipt(
+      receipt,
+      inherited,
+      assets,
+    ),
+  };
+}
+
+/**
+ * Retains the exact Source Facts V7 result and adds a read-only, bounded full
+ * record decode for each V7-established Potree bundle. Deterministic PNG bytes
+ * are returned as private sidecars; the immutable V8 artifact contains only
+ * their exact manifests and never source mutations or execution authority.
+ */
+export async function inspectUniversalIntakeWithSourceFactsV8(
+  sourceInput: string,
+  options: InspectUniversalIntakeOptions = {},
+): Promise<InspectUniversalIntakeWithSourceFactsV8Result> {
+  const inheritedResult = await inspectUniversalIntakeWithSourceFactsV7(
+    sourceInput,
+    options,
+  );
+  const { receipt, sourceFacts: inherited } = inheritedResult;
+  assertIntakeNotCancelled(options.signal);
+  const {
+    createUniversalSourceFactsV8ArtifactFromV7,
+  } = await import("./source-facts-v8.js");
+  const {
+    inspectPotreeV2PointValuesFromBuffers,
+    preflightPotreeV2PointValues,
+  } = await import("./potree-v2-point-values.js");
+  assertIntakeNotCancelled(options.signal);
+
+  if (inherited.state === "unavailable") {
+    return {
+      receipt,
+      sourceFacts: createUniversalSourceFactsV8ArtifactFromV7(inherited),
+      pointPreviewFiles: [],
+    };
+  }
+
+  const establishedBundles = inherited.potreeBundles.filter(
+    (bundle) => bundle.inspection.state === "established",
+  );
+  if (establishedBundles.length === 0) {
+    return {
+      receipt,
+      sourceFacts: createUniversalSourceFactsV8ArtifactFromV7(inherited),
+      pointPreviewFiles: [],
+    };
+  }
+
+  const source = await locateIntakeSource(sourceInput, options.signal);
+  assertLocatedSourceMatchesReceipt(source, receipt);
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
+  const locatedByPath = new Map(
+    source.files.map((file) => [file.relativePath, file] as const),
+  );
+  const outcomes: FoundryPotreeV2PointValuesOutcome[] = [];
+  const pointPreviewFiles: FoundryPotreeV2PointPreviewFile[] = [];
+
+  for (const bundle of establishedBundles) {
+    assertIntakeNotCancelled(options.signal);
+    const preflightOutcome = preflightPotreeV2PointValues(bundle);
+    if (preflightOutcome !== null) {
+      outcomes.push(preflightOutcome);
+      continue;
+    }
+
+    const capturedByRole = new Map<"hierarchy" | "octree", Buffer[]>();
+    for (const member of bundle.members) {
+      assertIntakeNotCancelled(options.signal);
+      const located = locatedByPath.get(member.path);
+      const receiptFile = receiptByPath.get(member.path);
+      if (located === undefined || receiptFile === undefined) {
+        throw new FoundryIntegrityError(
+          "SOURCE_FACTS_V8_SOURCE_MEMBER_MISSING",
+          "A V8 point-value member is absent from the unchanged located source or receipt.",
+        );
+      }
+      const capture = member.role === "hierarchy" || member.role === "octree"
+        ? [] as Buffer[]
+        : undefined;
+      const digest = await sha256RegularFileWithHead(
+        located.absolutePath,
+        0,
+        located.expectedIdentity,
+        options.signal,
+        capture === undefined
+          ? undefined
+          : (chunk) => {
+            capture.push(Buffer.from(chunk));
+          },
+      );
+      if (
+        digest.sizeBytes !== receiptFile.sizeBytes ||
+        digest.sha256 !== receiptFile.sha256 ||
+        digest.sizeBytes !== member.sizeBytes ||
+        digest.sha256 !== member.sha256
+      ) {
+        throw new FoundryIntegrityError(
+          "SOURCE_FACTS_V8_BYTE_BINDING_MISMATCH",
+          "The V8 point-value byte stream did not match the exact V7 and intake identities; no artifact was issued.",
+        );
+      }
+      if (
+        capture !== undefined &&
+        (member.role === "hierarchy" || member.role === "octree")
+      ) {
+        capturedByRole.set(member.role, capture);
+      }
+    }
+
+    const hierarchyChunks = capturedByRole.get("hierarchy");
+    const octreeChunks = capturedByRole.get("octree");
+    if (hierarchyChunks === undefined || octreeChunks === undefined) {
+      throw new FoundryIntegrityError(
+        "SOURCE_FACTS_V8_CAPTURE_INCOMPLETE",
+        "The exact V8 hierarchy or octree stream was not captured for bounded decoding.",
+      );
+    }
+    const decoded = inspectPotreeV2PointValuesFromBuffers({
+      bundle,
+      hierarchyBytes: Buffer.concat(hierarchyChunks),
+      octreeBytes: Buffer.concat(octreeChunks),
+      signal: options.signal ?? new AbortController().signal,
+    });
+    outcomes.push(decoded.outcome);
+    pointPreviewFiles.push(...decoded.previewFiles);
+  }
+
+  assertIntakeNotCancelled(options.signal);
+  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  assertIntakeSourceUnchanged(source, sourceAfterFacts);
+  return {
+    receipt,
+    sourceFacts: createUniversalSourceFactsV8ArtifactFromV7(
+      inherited,
+      outcomes,
+    ),
+    pointPreviewFiles,
   };
 }

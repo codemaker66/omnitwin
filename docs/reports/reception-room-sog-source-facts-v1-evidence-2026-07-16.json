@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "omnitwin.local.sog-source-facts-v1-evidence-manifest.v0",
+  "authority": "none",
+  "scope": "Read-only structural evidence for one exact local XGRIDS SOG export. This manifest does not establish decoded Gaussian values, physical bounds, units, venue frame, renderer compatibility, visual fidelity, provenance, accuracy, registration quality, or usage rights.",
+  "source": {
+    "fileName": "0_15_0_0.sog",
+    "sizeBytes": 10279160,
+    "modifiedAt": "2026-06-12T13:42:44.977Z",
+    "sha256": "111a47f7470fc83d1dc7f0bf2e1d3aa96943dd5a453005b840597e8c491d2368",
+    "receiptStatus": "quarantined",
+    "manifestEligible": false
+  },
+  "artifactChain": {
+    "receipt": {
+      "schemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+      "sha256": "caf51aaf59b0170b6e3ae59c8bf2e9d1423b04f8b89123bdc4cfe9754473bb14"
+    },
+    "sourceFacts": {
+      "schemaVersion": "omnitwin.foundry.universal-source-facts.v1",
+      "sha256": "5c0118f0ff4908353bcfd3087e55b73739a70544887c201ef97a215a61c1bf69",
+      "state": "available",
+      "establishedCount": 1
+    },
+    "sourceReadiness": {
+      "schemaVersion": "omnitwin.foundry.source-readiness-map.v1",
+      "sha256": "8f9b5fb38f36ba13942e32dae57099c0421871f90e599fe29780e05d8eaa85a6",
+      "state": "available",
+      "representedLaneCount": 1,
+      "gapCount": 11
+    },
+    "operatorEvidenceChecklist": {
+      "schemaVersion": "omnitwin.foundry.operator-evidence-checklist.v1",
+      "sha256": "a2c160af90d12b2c9c46cd33464e1827709b486922c98b7484fbebc8496d5bf9",
+      "state": "available",
+      "evidenceRequestCount": 11,
+      "groupCount": 2
+    }
+  },
+  "establishedFacts": {
+    "format": "sog_v2_stored_zip",
+    "inspectionCode": "SOG_V2_STORED_ZIP_FACTS_ESTABLISHED",
+    "declaredGaussianCount": 602409,
+    "antialias": {
+      "declared": true,
+      "declaredValue": false,
+      "formatDefault": false
+    },
+    "encodedMeansRange": {
+      "mins": [
+        -2.669924020767212,
+        -2.917405605316162,
+        -1.9631692171096802
+      ],
+      "maxs": [
+        1.691578984260559,
+        3.5038604736328125,
+        1.479123592376709
+      ]
+    },
+    "sphericalHarmonics": {
+      "higherOrderPresent": true,
+      "bands": 3,
+      "paletteCount": 65536
+    },
+    "container": {
+      "entryCount": 8,
+      "centralDirectoryBytes": 463,
+      "metaJsonBytes": 16986,
+      "totalMemberUncompressedBytes": 10278212,
+      "riffMemberBytes": 10261226,
+      "signedDataDescriptorCount": 8,
+      "allMembersStored": true,
+      "allMemberCrc32Verified": true,
+      "allDataDescriptorsVerified": true,
+      "localHeaderFieldsConsistentWithCentralDirectory": true,
+      "archiveHasNoPrefixOrGaps": true,
+      "entryRangesNonOverlapping": true
+    },
+    "sharedPerGaussianImage": {
+      "width": 780,
+      "height": 776,
+      "capacityPixels": 605280,
+      "countFitsCapacity": true
+    },
+    "riffMembersWithVp8lHeaders": [
+      {
+        "role": "means_l",
+        "kind": "per_gaussian",
+        "sizeBytes": 1724482,
+        "crc32Hex": "e9bfa9ee",
+        "width": 780,
+        "height": 776
+      },
+      {
+        "role": "means_u",
+        "kind": "per_gaussian",
+        "sizeBytes": 305100,
+        "crc32Hex": "63e2f1b1",
+        "width": 780,
+        "height": 776
+      },
+      {
+        "role": "scales",
+        "kind": "per_gaussian",
+        "sizeBytes": 1601410,
+        "crc32Hex": "fbb7488c",
+        "width": 780,
+        "height": 776
+      },
+      {
+        "role": "quats",
+        "kind": "per_gaussian",
+        "sizeBytes": 1641168,
+        "crc32Hex": "bd974f9f",
+        "width": 780,
+        "height": 776
+      },
+      {
+        "role": "sh0",
+        "kind": "per_gaussian",
+        "sizeBytes": 1804872,
+        "crc32Hex": "e8316e2a",
+        "width": 780,
+        "height": 776
+      },
+      {
+        "role": "shN_centroids",
+        "kind": "sh_palette",
+        "sizeBytes": 1987856,
+        "crc32Hex": "61199273",
+        "width": 960,
+        "height": 1024
+      },
+      {
+        "role": "shN_labels",
+        "kind": "per_gaussian",
+        "sizeBytes": 1196338,
+        "crc32Hex": "5f0c67ca",
+        "width": 780,
+        "height": 776
+      }
+    ]
+  },
+  "unresolvedFactCodes": [
+    "SOG_ATTRIBUTE_VALUES_UNKNOWN",
+    "SOG_PHYSICAL_BOUNDS_UNKNOWN",
+    "SOG_UNITS_UNKNOWN",
+    "SOG_FRAME_UNKNOWN",
+    "SOG_RENDERER_COMPATIBILITY_UNKNOWN",
+    "SOG_VISUAL_FIDELITY_UNKNOWN",
+    "SOG_PROVENANCE_UNKNOWN",
+    "SOG_ACCURACY_UNKNOWN",
+    "SOG_REGISTRATION_UNKNOWN",
+    "SOG_RIGHTS_UNKNOWN"
+  ],
+  "limitations": [
+    "The seven WebP members are established only as CRC-verified complete RIFF members carrying VP8L headers; pixels and Gaussian attributes were not decoded.",
+    "Encoded means ranges are format parameters, not asserted venue-space physical bounds.",
+    "The receipt remains quarantined while provenance and rights are unreviewed.",
+    "Digest binding is not an atomic filesystem snapshot.",
+    "No source file was changed and no external process, remote service, training job, release, publication, or authority promotion occurred."
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "date": "2026-07-19",
+  "status": "privacy_hardened_core_checkpoint_only",
+  "helper": {
+    "path": "<privacy-hardened-release-executable>",
+    "bytes": 409088,
+    "sha256": "2c861e31669a0922216fb69da001a15e74623e013290e71df76e2e06b017ef80",
+    "asciiAndUtf16PrivatePathScan": "passed"
+  },
+  "nodeSources": [
+    {
+      "path": "tools/reconstruction-foundry/src/trusted-windows-native-source-helper-protocol.ts",
+      "bytes": 18305,
+      "sha256": "e2e231b220455f9c7e452d2adc615120156a6c125d9a6c20210bb640a41dbbff"
+    },
+    {
+      "path": "tools/reconstruction-foundry/src/trusted-windows-native-source-helper-process-bridge.ts",
+      "bytes": 37039,
+      "sha256": "c21536f01af1f7f80b748a9cabf800f034fe1b2d0872efc48e2a33ec809c9e51"
+    }
+  ],
+  "focusedChecks": {
+    "protocolAndBridgeTests": {
+      "result": "passed",
+      "totalTests": 27,
+      "boundedSingleResponseAccumulator": true,
+      "usedResponseBytesAreZeroed": true,
+      "constructorFailureWaitsForConfirmedClose": true,
+      "constructorUnconfirmedTeardownIsFatalAndObservable": true,
+      "unconfirmedTeardownIsFatalAndObservable": true
+    },
+    "focusedEslint": {
+      "result": "passed"
+    },
+    "realReleaseProcessSmoke": {
+      "result": "passed",
+      "prelaunchExactHashCheck": true,
+      "zeroArgumentDirectChild": true,
+      "handshake": "passed",
+      "inputA": "C:\\Room",
+      "inputB": "C:\\Room\\Child",
+      "relation": "ancestor",
+      "comparisonAuthority": "windows_compare_string_ordinal_ignore_case",
+      "closeAcknowledged": true,
+      "waitForConfirmedExit": true,
+      "childExitClean": true,
+      "helperProcessRemainingAfterClose": false
+    }
+  },
+  "notImplementedReleaseBlockers": [
+    "native multi-image file picker",
+    "authoritative retained source and output handles",
+    "reparse-safe complete inventory and fresh start-time revalidation",
+    "dedicated out-of-band cancellation and picker closure",
+    "local-app intake wiring",
+    "release packaging and exact-byte end-to-end acceptance"
+  ]
+}

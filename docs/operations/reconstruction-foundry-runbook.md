@@ -62,7 +62,7 @@ That record is structural evidence only. Its unresolved-fact list is part of
 the result, not a defect to hide.
 
 SPZ was introduced in Source Facts V2 and remains covered unchanged in the
-active V5 chain. For legacy v1-v3 files,
+active V6 chain. For legacy v1-v3 files,
 the inspector checks one complete gzip member, CRC, input-size trailer, exact
 decompressed header/payload equation, version, Gaussian count, raw fractional
 bits byte, antialias flag, spherical-harmonics degree and packed attribute
@@ -92,7 +92,7 @@ rights remain unresolved. Treat those unknowns as real next tests, not as
 reasons to discard otherwise useful local structural evidence.
 
 Classic Gaussian PLY was introduced in Source Facts V3 and remains covered in
-the active V5 chain. The first
+the active V6 chain. The first
 profile is intentionally narrower than general PLY: version 1.0,
 `binary_little_endian`, exactly one fixed-width vertex element, the required
 classic 3DGS float32 property families, optional all-or-none normal
@@ -137,16 +137,82 @@ codes cannot cross formats. The exact V5 evidence is in:
 
 `docs/reports/calibration-trajectory-source-facts-v5-evidence-2026-07-17.json`
 
-This local workflow is sufficient for the next super-app source profile. It
-does not require cybersecurity, credentials, cloud setup, deployment or the
-optional reviewed-release workflow later in this document.
+Source Facts V6 adds ordinary fixed-width point PLY. Gaussian inspection keeps
+precedence: an established or explicit Gaussian result never falls through to
+the ordinary point profile. The ordinary target is case-sensitive PLY 1.0
+`binary_little_endian`, exactly one positive vertex element, unique fixed-width
+scalar properties, required `x`/`y`/`z` declarations and exact
+`header bytes + vertex count × stride = source bytes` arithmetic.
 
-### 5. Stop the local app
+Published limits are 128 GiB source bytes, 1 MiB header bytes, 64 KiB per
+header line, 64 elements, 4,096 properties, 256 combined comments/`obj_info`,
+100 million vertices and a 32 KiB vertex stride. No property value is decoded.
+Names, scalar declarations and offsets do not prove units, scale, frame, CRS,
+axes, geometry role, physical bounds, completeness, accuracy, provenance,
+rights or registration. The app's bounded table reports only declaration
+order, property name, declared/canonical scalar type, byte offset and width.
+
+The real mesh negative (`POINT_PLY_EXTRA_ELEMENT_UNSUPPORTED`) and inherited
+Gaussian-precedence replay are deliberate classification results, not claims
+that either source is corrupt. Exact evidence is in:
+
+`docs/reports/ordinary-point-ply-source-facts-v6-evidence-2026-07-18.json`
+
+Headerless XYZ and LAS/LAZ remain separate deferred profiles. XYZ needs a
+complete bounded streaming row pass against an exact receipt; LAS/LAZ waits
+for a real local input and its own bounded contract. V6 is the current local
+source profile. This workflow does not require cybersecurity, credentials,
+cloud setup, deployment or the optional reviewed-release workflow later in
+this document.
+
+### 5. Review a Potree room envelope for a fit-only diagnostic
+
+When Source Facts V8 establishes a Potree bundle, open **Decoded point values
+and private diagnostic previews** and use the Reception envelope panel:
+
+1. Select each of the three component planes and choose a useful display mode.
+2. Select **Mark this exact preview reviewed** once for every plane. The marker
+   records that exact PNG and pixel digest, not merely the plane name.
+3. Choose the plane you consider horizontal. This is an operator proposal; the
+   app does not infer or prove axis meaning.
+4. Draw the room-only boundary by clicking the preview, or enter integer X/Y
+   vertices from 0 through 1023. Use **Undo**, **Remove** or **Clear outline**
+   to keep one simple non-crossing polygon.
+5. Enter the room and reviewer labels. Leave **Needs revision** selected until
+   the outline genuinely represents the intended room-only envelope.
+6. Select **Count records and store review**. Confirm the included/excluded
+   counts, decision, eligibility and `authority: none`, then download the
+   canonical review JSON.
+
+The default and any automated proposal are ineligible. **Accept as fit seed**
+only permits a later separate fit-only diagnostic; it does not validate a
+transform or establish units, room identity, physical accuracy, independent
+control or rights. Frozen validation/test E57 scans must remain outside that
+fit process.
+
+Only after the downloaded artifact is human-accepted and reports eligible,
+run the separate fit-only consumer with an explicitly reviewed decoder-
+coordinate crop margin and a new output path:
+
+```powershell
+python tools/reception-hd/register_potree_e57_fit_envelope.py `
+  --potree-model <exact-potree-model-folder> `
+  --e57 <exact-reception-e57> `
+  --room-envelope-review <accepted-review-json> `
+  --output <new-candidate-or-refusal-json> `
+  --crop-margin-decoder <reviewed-margin>
+```
+
+The command fails before E57 access when the review is not accepted and
+eligible. Its output is create-only and `authority:none`; review it as a
+candidate or refusal, never as an approved transform.
+
+### 6. Stop the local app
 
 Press `Ctrl+C` in the terminal. The app does not leave a worker, upload, remote
 job or source mutation behind.
 
-### 6. Developer verification
+### 7. Developer verification
 
 Run the two local packages before handing off a profile change:
 

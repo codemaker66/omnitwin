@@ -2,7 +2,7 @@
 
 **Status:** decision-ready zero-cost diagnosis; bounded execution continues; no enhanced candidate, paid compute, production asset switch, or product-quality win is claimed
 
-**Original evidence cutoff:** 2026-07-12. Dated addenda below reconcile read-only evidence and local implementation through 2026-07-16 without rewriting the original 2026-07-12 capture receipts. The 2026-07-16 local real-component capture is a separate, hash-bound run.
+**Original evidence cutoff:** 2026-07-12. Dated addenda below reconcile read-only evidence and local implementation through 2026-07-22 without rewriting the original 2026-07-12 capture receipts. The 2026-07-16 local real-component capture and later checks remain separate dated runs.
 
 **Handling:** INTERNAL / public-redaction-required. Exact local paths, project identifiers, hashes, provisional E57 station bounds, and venue imagery must be removed or approved before external sharing.
 
@@ -11,6 +11,8 @@
 **Evidence classes:** **Verified** = directly inspected, measured, or stated by a primary source. **Supported inference** = multiple verified facts support the conclusion, but a decisive comparison remains. **Hypothesis** = a candidate mechanism awaiting a discriminating test. **Blocked** = a named input, right, operator action, or implementation is missing.
 
 This is a technical and commercial-risk investigation, not legal advice. It does not certify source ownership, spatial accuracy, or product release readiness. Machine-readable evidence is in `docs/reports/reception-room-hd-evidence.json`; replay-oriented camera definitions and their provenance limits are in `docs/reports/reception-room-fixed-view-manifest.json`; the option comparison is in `docs/reports/reception-room-quality-decision-matrix.md`.
+
+`Quality` and `Mobile` are vendor candidate/file labels, not quality judgments. The application code's older `Living Hall` room name points to this Reception Room asset; it is not a second room.
 
 ## Dated addendum — direct computer-vision source-viewer check (2026-07-14)
 
@@ -88,9 +90,9 @@ blindly.
 
 ## 1. DIRECT ANSWER
 
-### Dominant current bottleneck
+### Strongest proved historical/development presentation fault
 
-The strongest proved presentational loss is **not SPZ/SOG codec loss**. It is **an invalid interpretation of the LCC2 hierarchy**: internal Reception views mount all seven coarse, medium, and fine chunks simultaneously. LCC2 defines a replacement level-of-detail tree; parents and children are alternatives, not additive layers. The invalid set renders 3,455,732 Gaussians / 52,838,644 bytes where the valid leaf frontier contains 1,978,258 / 30,010,681 bytes, producing visibly doubled/smeared edges. The conditional public one-URL path has the opposite failure mode: if this package is published through that schema, it resolves only the 491,784-Gaussian coarse root.
+The strongest proved presentational loss is **not SPZ/SOG codec loss**. It is **an invalid interpretation of the LCC2 hierarchy** in the historical/development Reception path: those views mount all seven coarse, medium, and fine chunks simultaneously. LCC2 defines a replacement level-of-detail tree; parents and children are alternatives, not additive layers. The invalid set renders 3,455,732 Gaussians / 52,838,644 bytes where the valid leaf frontier contains 1,978,258 / 30,010,681 bytes, producing visibly doubled/smeared edges. The conditional public one-URL schema has the opposite failure mode: if this package were published through it, it would resolve only the 491,784-Gaussian coarse root. The current protected delivery gate rejects the faulty hierarchy and presently serves neither candidate, so this is the strongest proved historical/development fault—not proof that it is the only remaining product bottleneck.
 
 A separate verified fact is an **unvalidated source substitution**: the runtime pointer changed from the earlier approximately 2.0M-Gaussian Quality/degree-3-SH SOG reconstruction to a later approximately 1.98M-Gaussian Portable/DC-only-SH0 SPZ reconstruction. The sources render materially differently, and Quality has greater recorded appearance capacity, but no LCC-aligned physical reference, independent-viewer hero set, or actual-route A/B proves that Quality is directionally better. Treat Quality SH3 as the highest-capacity recovered candidate, not a proved winner.
 
@@ -117,7 +119,7 @@ not proof that either file contains enough original detail.
 - valid Mobile SPZ fine frontier versus invalid all-level mounting: PSNR 27.74–30.21 dB, SSIM 0.911731–0.930638, with plainly visible edge doubling.
 - valid Mobile SPZ fine frontier versus coarse-only root: PSNR 34.03–36.32 dB, SSIM 0.914215–0.935022.
 
-Those metrics prove **pixel agreement at six tested Spark framings**, not original encoder provenance or that either reconstruction meets Venviewer’s product bar. A PLY and its export package can both be under-detailed. All six automated framings share one optical centre, so they do not test SH view dependence; spatially distinct near/mid/far and orbit cameras remain mandatory. The Quality-versus-Mobile difference is also confounded by separate four-hour reconstructions and settings; it cannot be attributed to SH order alone.
+Those metrics prove **pixel agreement at six tested Spark framings**, not original encoder provenance or that either reconstruction meets Venviewer’s product bar. A PLY and its export package can both be under-detailed. The six views were taken from one camera position with different framings, so they do not test what happens when the viewer moves or how SH appearance changes with direction; spatially distinct near/mid/far and orbit cameras remain mandatory. The Quality-versus-Mobile difference is also confounded by separate four-hour reconstructions and settings; it cannot be attributed to SH order alone.
 
 The 2026-07-16 database-free real-component run closes one narrower gap. The
 actual Living Hall scene component loaded four named Quality SOG sources and
@@ -206,6 +208,8 @@ Use a staged mixed strategy:
 - **Generated enhancement:** optional visual-only derivative, labelled and segregated. The released ArtiFixer checkpoint is non-commercial and is rejected for production.
 
 ## 2. SUCCESS-CRITERIA AUDIT
+
+**Historical assessment — use Section 23 for the current A–I status.** Later evidence and implementation checks changed several statuses without deleting this dated record.
 
 | Criterion | State | Evidence / named blocker |
 |---|---|---|
@@ -310,7 +314,7 @@ Mutable-terms caveat: the Matterport PSA and Terms pages displayed “Last Updat
 | Quality source PLY → Mobile source PLY | substantial difference (PSNR 25.42–29.16, SSIM 0.906682–0.932757) | The runtime pointer selected a materially different reconstruction. Cause is confounded across reconstruction mode/settings/SH; do not assign it to compression or SH alone. |
 | DPR 0.75 inspection | deterministic under-resolution in planner | Canvas undersampling is a real secondary loss, especially on high-DPR screens. |
 
-The proved softness/ghosting is therefore **global where the runtime uses an invalid LoD/coarse fallback/DPR**, while the directional effect of substituting Mobile SH0 for Quality SH3 remains unmeasured and local source undercapture may still dominate hero features. Ghosting from pose/alignment remains plausible at source level, especially where edges split in both the PLY and valid package, but has not been isolated from exact LCC/reference imagery. Because all six automated views share one optical centre, they cannot measure degree-3 SH/view-dependent behaviour; add spatially distinct camera centres and an orbit before ranking Quality SH3 against Mobile SH0.
+The proved softness/ghosting is therefore **global where the runtime uses an invalid LoD/coarse fallback/DPR**, while the directional effect of substituting Mobile SH0 for Quality SH3 remains unmeasured and local source undercapture may still dominate hero features. Ghosting from pose/alignment remains plausible at source level, especially where edges split in both the PLY and valid package, but has not been isolated from exact LCC/reference imagery. Because all six automated views came from one camera position with different framings, they cannot measure degree-3 SH/view-dependent behaviour; add spatially distinct camera positions and an orbit before ranking Quality SH3 against Mobile SH0.
 
 ### Named missing artifact and exact LCC screenshot checklist
 
@@ -347,9 +351,9 @@ Save both sets under `output/playwright/reception-hd-investigation/manual-cross-
 
 | Item | State | Evidence | Specific next test |
 |---|---|---|---|
-| Frame availability | **Requires vendor export** | No open images found; event records refer to RGB/camera streams but do not expose payloads | Ask XGRIDS for original per-camera frames with hashes and mapping to timestamps |
+| Frame availability | **Requires vendor export** | One open 800×600 `preview_photo.jpg` exists, but no reconstructable sensor-frame sequence was found; event records refer to RGB/camera streams without exposing their payloads | Ask XGRIDS for original per-camera frames with hashes and mapping to timestamps |
 | Frame format | **Indeterminate/proprietary** | `.xbin` begins `XBAG`; RGB events have record sizes but no documented extraction route | Official export/SDK documentation only |
-| Camera count | **Verified present: four event sources** | ULog IDs label left/right main/secondary cameras; metadata identifies `rs_airy` | Vendor must map IDs to optical centres and images |
+| Camera count | **Four labelled event sources; optical camera count unverified** | ULog IDs label left/right main/secondary sources and metadata identifies `rs_airy`; this does not independently prove four calibrated optical cameras | Vendor must map IDs to optical centres, calibrations and images |
 | Image dimensions | **Indeterminate** | Not present in open sidecars | Exported image headers or official calibration |
 | Timestamps | **Verified present for events/trajectory** | ULog and 9,080-pose CSV; camera and RGB streams have different rates | Export a 30-second sample and prove timestamp join/residual |
 | Pose source | **Verified present but semantically incomplete** | raw `poses.csv`; Mobile LCC2 also exposes 4,529 timestamped `T`/`R` poses with every `RGB` field null | Vendor document body/sensor/camera frame, pose direction, interpolation and mapping between the two trajectories |
@@ -418,9 +422,9 @@ explicitly approved.
 ### 7.3 Stage 1: current vendor reprocess and benchmark
 
 1. Duplicate the project at the filesystem level using vendor-supported workflow; keep the v2.0 outputs immutable.
-2. Upgrade LCC Studio to v2.1 only after the active-editor warning is resolved and backups/hashes are verified.
+2. Use the currently licensed LCC Studio version. Install a newer version only after the active-editor warning is resolved, the licence is confirmed, and backups/hashes are verified; the older v2.1 instruction is historical, not current authorization.
 3. Run one Quality/alignment-optimised reconstruction from the same PortalCam project. Record every visible setting, version, duration and hardware statistic.
-4. Use the exact fixed-view manifest and post-freeze localized or independently posed reference photos. If it does not beat the Quality SH3 candidate at local edge stability and blinded preference, stop vendor reprocessing.
+4. Use the exact fixed-view manifest and post-freeze localized or independently posed reference photos. If it does not beat both frozen Quality SH3 and Mobile SH0 candidates at the predeclared local-edge, reference-image and blinded-preference gates, stop vendor reprocessing.
 5. Obtain a written HD entitlement/output-rights response, then use the same 30 rectilinear photos for the vendor/independent bake-off. Before any venue photo enters LCC/vendor processing, record whether processing is fully local or uses network/cloud egress and obtain terms for input-photo licence, confidentiality, processing location/subprocessors, retention/deletion, telemetry, secondary use/model training, incident handling and export.
 
 ### 7.4 Stage 2: owned-photo lane with an optional licensed external E57 scaffold
@@ -492,97 +496,72 @@ Pilot source set:
 - exclude all 12 repeat images from both subset mapping, triangulation and BA. Freeze the A and B models built from their respective nine mapping images plus the same independent controls, then localize each station’s A image pose-only against frozen model A and B image pose-only against frozen model B. Compare the two room-frame poses; do not let either validation image update either model;
 - 36 held-out views for the full capture phase. They never enter mapping, triangulation, BA, training or appearance fitting. After the training model and candidate are frozen, they may be localized pose-only against the frozen training-only sparse model with PnP/RANSAC and no model/intrinsic refinement. Any photo lacking a defensible post-freeze pose is human-review-only, not a PSNR/SSIM/LPIPS sample.
 
-### 8.2 Commands and scripts
+### 8.2 What can run now, and what cannot
 
-Only the capture and pixel-comparison diagnostics below exist today. The capture is replay-oriented, not bit-reproducible: the two scripts actually evaluated are retained under `tools/reception-hd/`, the canonical seven-variant replay expression and server mappings are explicit, and renderer/lock files are hashed in the manifest at report finalization. The worktree was dirty and no exact capture-time lock/diff/browser-binary snapshot was retained, so a future replay must be treated as a new run and compared by hashes.
+The current local preparation and computer-vision tools can inspect, copy and verify approved local inputs, check an already prepared COLMAP/depth package, compare fixed-view screenshots, freeze a source-photo diagnostic, score a complete prepared run package and cross-check this investigation. The development Reception real-component route now exposes exact asset, build, camera, scene and fresh-frame records, and the runner saves pixels returned by the live Spark/Three framebuffer. This mechanism passes generated Gaussian browser proof, but no real Reception candidate files or source photograph have run through it and the protected product route remains untested. Held-out physical execution is deliberately disabled because its trusted-adapter list is empty. The tools also cannot yet register the Reception photographs, train a new Gaussian model, localize held-out photographs or package a finished candidate. No real Reception photo package or physical reference has passed this source-photo scorer.
 
-Run the first three commands in separate PowerShell terminals, then run the browser commands from the repository root:
+| Step | State today | What it actually proves |
+|---|---|---|
+| Inspect a selected local source | **Works** with the Foundry intake command | Produces a read-only, not-approved-yet receipt. It does not approve or copy the source. |
+| Keep a verified local copy | **Works** in the Foundry local app | After the operator clicks **Keep verified copy**, the selected bytes are copied and rechecked locally. It does not reconstruct, train, enhance or upload anything. |
+| Develop RAW photographs and assemble `dataset/` + `depths/` | **Missing** | No deterministic Reception RAW-development, calibration/derivative, or prepared-package assembly command exists. The current checker can only validate a package made elsewhere. |
+| Check a prepared COLMAP/depth package | **Works** with `venviewer_training.colmap_contract_cli` | A supplied package can be checked for the required files and shapes. It does not prove registration quality or run training. The complete receipt-bound browser gate is tested internally but is not connected to an operator command. |
+| Check the frozen Config-B contract | **Works** with `simple_trainer_depth preflight` | Confirms configuration and input-contract wiring only. Its result explicitly says that training and model optimization did not start. |
+| Compare the existing fixed screenshots | **Works** with `compare_fixed_views.py` | Pixel differences, repeatability and same-camera regressions. It does not reveal physical truth or create missing detail. |
+| Compare a lossless source photograph with same-camera Quality and Mobile renders | **Scorer and development capture mechanism work on generated inputs; no authorized Reception source-photo run through this connection** | The scorer freezes declared lineage, rights, camera, masks, renderer, thresholds and review rules; reports six repeat-aware masked metrics; requires all five hero features to agree; applies a context-regression veto; and creates a random blinded native-pixel board with a separate answer key. Source mode can diagnose faults but can never select a candidate. The browser helper has 19 passing generated-fixture tests, while a separate generated-Gaussian browser test proves direct pixels and fresh frame identities from the actual Spark/Three path. Neither proves an authorized Reception source-photo comparison or the protected route. The scorer's 34 tests are generated and non-venue. Held-out execution is disabled until a renderer-owned adapter is independently reviewed and allowlisted. The declarations and hashes detect later changes; they do not independently prove rights, room state, lineage, camera validity or pre-registration timing. |
+| Cross-check the five investigation artifacts | **Works** with `verify_goal_artifacts.py` | Required sections, receipts, current no-winner decision and permission boundaries agree. It deliberately reports that the product goal remains open. |
+| Register owned photographs and measured controls | **Missing** | No Reception-specific registration program or fixture exists. |
+| Build an E57 camera scaffold | **Missing and rights-gated** | The E57 image poses also fail the current strict shape gate, so they are not training-approved. |
+| Optimize/train the splat | **Not runnable** | `config_b.yaml` is a contract fixture, not a runnable Reception training recipe. The legacy RunPod launcher is disabled. |
+| Localize held-outs and calculate their metrics | **Missing** | The current evaluator does not render held-out views or calculate PSNR, SSIM and LPIPS. |
+| Convert and package a runtime candidate | **Missing** | No deterministic direct-from-master Reception packaging command exists. |
 
-```powershell
-# Terminal 1: Venviewer fixture.
-pnpm --filter @omnitwin/web dev --host 127.0.0.1 --port 5182
-
-# Terminal 2: read-only Quality project assets.
-Set-Location 'C:\Users\blake\AppData\Local\LccStudio\DATA\1900549066649638\output'
-python -m http.server 5190 --bind 127.0.0.1
-
-# Terminal 3: read-only Mobile project assets.
-Set-Location 'C:\Users\blake\AppData\Local\LccStudio\DATA\19005490661556650\output'
-python -m http.server 5191 --bind 127.0.0.1
-
-# Repository-root terminal: one canonical 7 x 6 replay.
-npx --yes --package @playwright/cli playwright-cli -s=reception-hd open http://127.0.0.1:5182/dev/splat-fixture
-$CaptureCode = Get-Content -Raw -LiteralPath 'tools/reception-hd/capture-fixed-views.playwright.js'
-npx --yes --package @playwright/cli playwright-cli -s=reception-hd run-code $CaptureCode
-npx --yes --package @playwright/cli playwright-cli -s=reception-hd close
-```
-
-The historical 36+6 split is preserved exactly in `capture-variant-matrix.actual.js` and `capture-mobile-sog.actual.js`; the canonical script combines them without claiming it was the script originally evaluated.
-
-The later command block is an **interface contract/pseudocode**, not an executable runbook: every named pipeline module/config except the diagnostic scripts is missing. `RR-PILOT-CLI-BUNDLE` is complete only when each future command has a smoke-tested `--help`, a fixture, exact dependency lock and saved output schema.
+The real commands below were checked on 22 July 2026. Angle-bracket values are paths the operator must replace; they are not literal commands for the current Reception assets. The local-copy workspace must be a new folder that does not overlap the source.
 
 ```powershell
-# Existing read-only metric command.
+# Inspect one already selected source without approving, copying or uploading it.
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- inspect-intake `
+  --source "<approved-file-or-folder>"
+
+# Open the local Foundry app. Copying starts only after the operator clicks Keep verified copy.
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- local-app `
+  --source "<approved-file-or-folder>" `
+  --workspace "F:\venviewer-hd\reception-room-pilot-v1\intake-workspace-v0" `
+  --open
+
+# Check an already prepared, admitted package containing dataset/ and depths/.
+python -m venviewer_training.colmap_contract_cli `
+  --package-root "<approved-prepared-package-root>"
+
+# Check the frozen Config-B contract with generated data. This does not train a model.
+python -B -m venviewer_training.simple_trainer_depth preflight `
+  --config configs/training/config_b.yaml `
+  --synthetic-fixture
+
+# Once a real approved dataset/ and depths/ package exists, preflight that contract too.
+python -B -m venviewer_training.simple_trainer_depth preflight `
+  --config configs/training/config_b.yaml `
+  --dataset "<approved-prepared-package-root>\dataset" `
+  --depth-dir "<approved-prepared-package-root>\depths"
+
+# Recheck the five decision artifacts without opening LCC, raw venue data, or protected references.
+python tools/reception-hd/verify_goal_artifacts.py
+
+# Recalculate metrics for an existing fixed-view screenshot bundle.
 python tools/reception-hd/compare_fixed_views.py `
   --root output/playwright/reception-hd-investigation `
   --output output/playwright/reception-hd-investigation/fixed-view-metrics.json
 ```
 
-Proposed CLI contract for implementation; **do not run this block yet**:
+The ordinary-language source-photo procedure, specialist package commands, stop conditions
+and explanation of source-view versus held-out evidence are in
+`docs/reports/reception-room-source-photo-comparison-v0.md`. Do not invent
+camera values or classify a source image as held out when its history is
+unknown.
 
-```powershell
-$Pilot = 'F:\venviewer-hd\reception-room-pilot-v1'
-$RunId = 'rr-owned-photo-baseline-001'
-$CandidateId = 'rr-candidate-001'
+The historical screenshot capture used a development Spark route and local read-only web servers. It is preserved in `capture-variant-matrix.actual.js`, `capture-mobile-sog.actual.js` and `capture-fixed-views.playwright.js`, but it is not a protected-product-route test and it must not be described as one. Its exact browser binary and clean source snapshot were not retained, so any replay is a new run that must receive new hashes. **Do not replay those capture scripts while LCC capture is paused; only the exact phrase `Resume LCC capture` authorizes that work.**
 
-# Every --help must return 0 before real data is accepted.
-pnpm exec tsx tools/reception-hd/inventory.ts --help
-python -m venviewer_training.build_reception_scaffold --help
-python -m venviewer_training.register_reception --help
-python -m venviewer_training.localize_holdout --help
-python -m venviewer_training.train --help
-pnpm exec tsx tools/reception-hd/package.ts --help
-pnpm exec tsx tools/reception-hd/evaluate.ts --help
-
-# Owned-photo model: calibration/groups and controls are mandatory inputs.
-python -m venviewer_training.register_reception `
-  --images "$Pilot\04-photos\train-png8" `
-  --camera-groups "$Pilot\00-manifests\camera-groups.json" `
-  --controls "$Pilot\00-manifests\controls.json" `
-  --output "$Pilot\05-colmap\owned-photo-model"
-
-# Optional E57 scaffold only after identity, metric-control and rights gates.
-python -m venviewer_training.build_reception_scaffold `
-  --e57 F:\E57\cloud_0.e57 --scans 122:144 `
-  --rights "$Pilot\00-manifests\rights.json" `
-  --fit-controls "$Pilot\00-manifests\e57-fit-controls.json" `
-  --blind-controls "$Pilot\00-manifests\e57-blind-controls.json" `
-  --output "$Pilot\05-colmap\optional-e57-scaffold"
-
-# Only after RR-TRAINER-RUNNABLE-BUNDLE passes a synthetic smoke.
-python -B -m venviewer_training.train `
-  --config configs/training/reception_config_b.yaml `
-  --dataset "$Pilot\05-colmap\owned-photo-model" `
-  --run-dir "$Pilot\07-runs\$RunId"
-
-# Held-outs are localized after the model/candidate freeze; never triangulated or BA-refined.
-python -m venviewer_training.localize_holdout `
-  --frozen-model "$Pilot\05-colmap\owned-photo-model" `
-  --images "$Pilot\04-photos\heldout" `
-  --camera-groups "$Pilot\00-manifests\camera-groups.json" `
-  --mode absolute-pose-only --no-triangulation --no-ba --no-intrinsic-refine `
-  --output "$Pilot\05-colmap\heldout-localization"
-
-pnpm exec tsx tools/reception-hd/package.ts `
-  --run "$Pilot\07-runs\$RunId" --out "$Pilot\08-packages\$CandidateId"
-pnpm exec tsx tools/reception-hd/evaluate.ts `
-  --candidate "$Pilot\08-packages\$CandidateId" `
-  --heldout "$Pilot\05-colmap\heldout-localization" `
-  --views docs/reports/reception-room-fixed-view-manifest.json `
-  --out "$Pilot\09-evidence\$CandidateId"
-```
-
-Until those interfaces exist and pass fixtures, do not substitute `infra/runpod/run_training.sh`; it now fails closed with exit 78 before its dormant obsolete launch block.
+`RR-PILOT-CLI-BUNDLE` remains open. The same-camera source-photo scoring and fresh browser-capture interfaces now exist with generated fixtures, but it closes only after real, separately tested interfaces also exist for RAW development/prepared-package assembly, registration, optional E57 scaffolding, held-out localization, optimization and packaging. Each remaining interface needs a successful `--help` check, a small fixture, a locked environment and a documented output format. Until then, do not invent substitute commands and do not use `infra/runpod/run_training.sh`; that obsolete path fails closed with exit 78.
 
 ### 8.3 Hardware, storage, cost and operator actions
 
@@ -606,9 +585,10 @@ Registration gate for 30-photo pilot:
 Candidate quality gate:
 
 - freeze the mapping/model/candidate before held-out pose-only localization. Held-outs may use PnP/RANSAC against the frozen training-only sparse model, but never triangulation, mapping, BA, intrinsic refinement, training or appearance fitting; save localization residuals and reject ambiguous poses;
-- report feature-masked PSNR, SSIM and LPIPS together, by all five hero and at least five non-hero zones. Relative to the Quality SH3 candidate, no non-hero zone may lose >0.5 dB PSNR, >0.01 SSIM, or increase LPIPS by >0.02 without an explicit reject/waiver decision;
+- freeze both existing baselines: Quality SH3 and Mobile SH0. First score the new candidate and both baselines against the **same held-out physical reference**. Then publish candidate-minus-Quality and candidate-minus-Mobile deltas separately for feature-masked PSNR, SSIM and LPIPS across all five hero and at least five non-hero zones; beating only one baseline is not promotion evidence. For each zone and metric, use the better baseline as the protection threshold. A non-hero zone may not lose >0.5 dB PSNR, >0.01 SSIM, or increase LPIPS by >0.02 without an explicit reject/waiver decision;
 - if E57 is used, require the control distribution above, fit RMSE ≤20 mm and fit p95 ≤40 mm, plus blind-control median ≤20 mm, p95 ≤50 mm and max ≤75 mm; report rigid/similarity choice, scale, uncertainty and local floor/wall residuals;
 - use at least three reviewers, randomised/blinded A/B order and 100%-pixel plus three novel-view paths. A candidate passes preference only when at least two of three reviewers prefer it in at least four of five hero features, with no unanimous critical doubled-edge/floater/seam rejection;
+- do not declare a winner when its advantage is within repeat-capture noise or below the agreed human-visible threshold. In that case retain the current decision `no_stable_physical_or_commercial_winner` and keep both frozen baselines available;
 - runtime desktop target ≥45 FPS at 1440p on the local RTX 4090 in pure-splat mode, GPU memory ≤8 GB for the room, first meaningful render ≤3 s on the agreed test network/cache, and asset-size budget recorded rather than silently enforced;
 - the 4090 result is a development gate, not product compatibility. Public release remains blocked by `RR-RUNTIME-DEVICE-MATRIX`, which must name supported desktop/laptop/mobile hardware, browsers, DPR, network/cache state and per-device ≥45/≥30 FPS targets before execution;
 - direct single-generation encoding from the approved master; counts and SH degree match the package manifest;
@@ -622,7 +602,7 @@ Stop immediately when:
 - loss/NaN/VRAM behaviour fails the bounded smoke;
 - a candidate improves screenshots but degrades held-out/novel views or introduces hero seams;
 - projected spend exceeds the approved cap;
-- the valid-frontier Stage-0 evidence winner already passes the product bar, in which case only targeted evidence-gaining work continues.
+- either frozen valid-frontier baseline later passes every product gate, in which case only targeted evidence-gaining work continues. Do not call either baseline a winner before that evidence exists.
 
 ## 9. HIGH-RES PHOTO CAPTURE PLAN
 
@@ -661,7 +641,7 @@ Phone fallback: only a device with RAW/manual exposure/fixed lens selection, dis
 
 | Lane | Public reference amount / cash guardrail | Staff/elapsed time | Decision |
 |---|---:|---|---|
-| Correct Quality SH3 runtime candidate | £0 external | 0.5–1 engineering day + review | Do first |
+| Preserve and test both corrected Quality SH3 and Mobile SH0 baselines | £0 external | 0.5–1 engineering day + review | Do first; keep both frozen until the gates select one |
 | LCC v2.1 same-source reprocess | £0 if current entitlement covers it | 0.5 day setup + vendor processing time | Do once |
 | XGRIDS Premium public licence | official feed variant `43558032998493` displayed USD $2,500/year and `available:true` at 2026-07-12T13:35:25+01:00; human page availability conflicted | vendor confirmation + benchmark day | Reference amount only; quote/rights/UK checkout first |
 | PortalCam Basic→Premium current-period upgrade | official feed variant `44177759502429` displayed USD $1,000 and `available:true` at the same timestamp; entitlement/remaining period ambiguous | vendor confirmation | Reference amount only; do not purchase yet |
@@ -730,7 +710,7 @@ The legal pages above are mutable. `LEGAL-SOURCE-SNAPSHOT-SET` remains a release
 21. One-room success does not prove rollout repeatability; the next two rooms should intentionally test different lighting/detail/capture failure modes.
 22. The new computer-vision warnings occur in both comparison directions. “Missing” or “extra” edges therefore describe difference from the chosen baseline, not proof that either candidate is defective or better.
 23. Twelve byte-identical static repeats establish a zero observed pixel-drift floor at those loaded cameras and 500 ms intervals. They do not test view-dependent appearance, camera motion, traversal popping or longer-term stability.
-24. The six new feature views still share one optical centre. Exact matrices remove camera mismatch within each pair but do not replace spatially distinct near/mid/far/orbit evidence.
+24. The six new feature views still use one camera position with different framings. Exact matrices remove camera mismatch within each pair but do not replace spatially distinct near/mid/far/orbit evidence.
 25. The explicit blur 0.3/preblur 0 setting is controlled rather than optimised. A reproducible setting is not automatically the best-looking or fastest supported-device setting.
 26. The capture proves the four named sources reached the scene and their decoded totals matched the declared profiles. Because the capture receipt did not re-hash the served asset bodies, it is not fresh byte-identity proof for the underlying SOG/SPZ files.
 
@@ -739,6 +719,7 @@ The legal pages above are mutable. `LEGAL-SOURCE-SNAPSHOT-SET` remains a release
 | Gap / named artifact | Cheapest decisive test | Owner | Time / cash |
 |---|---|---|---|
 | `RR-LCC-HERO-CAPTURE-SET` | safely close active editor; capture five exact LCC hero views plus settings/cameras where exposed | Blake | 30–60 min / £0 |
+| `RR-ORIGINAL-SOURCE-MATCHED-COMPARISON` | after all engineering/package prerequisites are complete—and after the exact LCC resume phrase if LCC is needed—export one authorized lossless source photograph plus exact calibrated camera for the source-view diagnostic; for any directional physical claim, supply at least six separately frozen held-out physical stations with clean candidate inventories and repeats | Blake + capture lead + Codex | source diagnostic capture itself 30–60 min after prerequisites; preparation and held-out set are additional and site-dependent / £0 before capture cost |
 | `RR-INDEPENDENT-VIEWER-CAPTURE-SET` | pin a non-Venviewer viewer; capture Quality PLY plus Quality/Mobile valid packages at the five named hero views with sidecars | Blake + Codex | 0.5 day / £0 |
 | Local real-component moving/performance evidence | extend the completed six-view fixed run with spatially distinct near/mid/far/orbit cameras and a moving trace; record load time, FPS/long frames, GPU memory, holes, seams and device/DPR profile | Codex/QA | 0.5 day / £0 |
 | `RR-ACTUAL-ROUTE-CAPTURE-SET` | after separate deployment/registration/auth authorization, capture valid Mobile and Quality candidates in the protected private route with matrices/performance; keep invalid all-level/coarse controls in the historical diagnostic fixture only | Codex/QA | 0.5–1 day / £0 |
@@ -755,14 +736,16 @@ The legal pages above are mutable. `LEGAL-SOURCE-SNAPSHOT-SET` remains a release
 | v2.1 alignment gain | one cloned same-source Quality reprocess and frozen comparison | Blake | operator + processing time |
 | HD vendor value | same 30 registered photos through vendor and independent lane | Blake/vendor/engineer | quote + 1–2 days |
 | Registration feasibility | 30-photo gate against `RR-PHOTO-METRIC-CONTROL`; E57 is an optional separately gated scaffold | photographer/engineer | ~1 site + 1 processing day |
-| Runtime acceptance | trace the private Quality SH3 fine candidate at agreed desktop/mobile/network profiles | Codex/QA | 0.5–1 day |
+| Runtime acceptance | trace both private Quality SH3 and Mobile SH0 fine baselines at agreed desktop/mobile/network profiles until evidence selects one | Codex/QA | 0.5–1 day |
 | `RR-RUNTIME-DEVICE-MATRIX` | name supported devices/browsers/DPR/network states and execute FPS/memory/load gates | Blake + QA | device availability-dependent |
 | Hero residual value | timber-door/glazing and column-moulding micro-splat prototype, near/mid/far A/B | photographer/engineer | 1–2 days after base |
 | `RR-ROLLOUT-REPLICATION-GATE` | repeat the winning invariant in Grand Hall plus one contrasting smaller/darker room; package resolver/frontier rule, renderer profile, evidence schema, metric rubric, rights checklist and device gates must transfer unchanged; only asset IDs, reviewed transforms, cameras and documented room thresholds may vary | Codex/QA + Blake | 1–2 engineering/QA days per room plus operator capture; £0 external before new capture/survey costs |
 
 ## 14. RECOMMENDED NEXT ACTION
 
-### One exact action for Blake
+**Historical handoff — superseded by Section 23.** This section preserves an earlier implementation-stage action record. Do not use it as the current instruction; the exact current action and LCC permission boundary are in Section 23.
+
+### Earlier action record
 
 Do not run either candidate command with `--apply`, and do not apply a database
 migration yet. The local Mobile dry run is green, but the configured database
@@ -792,7 +775,7 @@ Then locate/retain, without copying into git:
 - `F:\E57\cloud_0.e57`;
 - any original reference photos or true full-quality mesh/attached-mesh export not in those roots.
 
-Additional photography **is required** for owned real detail unless the valid-frontier Stage-0 evidence winner plus the one v2.1 reprocess passes every hero view. Shoot only the 30-photo registration pilot first; do not shoot all 460 releases before that gate.
+Additional photography **is required** for owned real detail unless either frozen valid-frontier baseline or the one v2.1 reprocess later passes every hero and product gate. Shoot only the 30-photo registration pilot first; do not shoot all 460 releases before that gate.
 
 No cloud setup is needed now. Complete local non-training proofs first. Create a RunPod Secure Cloud volume only after the worker bundle, signed job, data-rights checklist, explicit D-016 activation and Blake-approved per-run/total cap all pass.
 
@@ -824,6 +807,7 @@ What should **not** be done yet: decode `.xbin`, decrypt `lixel.zip`, run the cu
 - inventoried the Reception raw project, two LCC reconstructions, PLY/SOG/SPZ hierarchies and E57 source;
 - produced 42 same-framing pure-Spark-fixture captures, including same-Mobile-source SOG/SPZ, and replayable per-view pixel/LoD comparisons with explicit capture-snapshot limits;
 - implemented one explicit Reception review profile and produced a separate 24-PNG, 12-sidecar, six-view local real-component Quality-versus-Mobile capture with byte-identical static repeats and hash-bound CV evidence;
+- implemented the authority-none `RR-ORIGINAL-SOURCE-MATCHED-COMPARISON-V0` scorer and diagnostic browser companion: hash-bound source/candidate declarations, full camera semantics, immutable masks, repeat-aware six-metric scoring, five separate hero-feature gates, a non-hero regression veto, normalization-reversal stop, random blinded native-pixel region board, separate answer key and fail-closed human review receipt. The scorer passes 34 generated tests and the browser helper passes 19 generated-fixture tests. The development Reception capture route is now bound to exact assets, build, camera, transforms and fresh Spark/Three framebuffer records; one generated-Gaussian browser proof passes. No authorized Reception source-photo run has passed through this completed-frame connection, no protected-route run exists, and held-out execution remains disabled;
 - proved the historical diagnostic-fixture invalid-hierarchy and conditional coarse-root deltas, documented DPR risk, bounded PLY-to-export-package deltas, and measured a confounded source difference at tested views;
 - defined a non-circumvention raw-project no-go, twelve-route decision matrix, primary/fallback stack, pilot, capture protocol, gates, costs, licence screen and strategy corrections.
 
@@ -833,7 +817,7 @@ What should **not** be done yet: decode `.xbin`, decrypt `lixel.zip`, run the cu
 - the legacy/pre-addendum internal route mounted all seven replacement levels; the old one-URL public schema would have resolved only the coarse root if that package were published, so both old contract shapes were unsuitable for a reviewed fine frontier. The new exact private page instead admits only the two audited four-leaf profiles;
 - Quality-PLY→SOG, Mobile-PLY→SOG and Mobile-PLY→SPZ pixel deltas are small at six same-centre framings relative to the LoD faults; original encoder provenance and SH view dependence remain unproved;
 - the local Living Hall component loaded four named Quality sources to the declared 2,002,009 total and four named Mobile sources to 1,978,258 under one explicit profile; fixed captures were deterministic, and bidirectional CV found reviewable differences without selecting a physical winner;
-- raw open images/intrinsics/depth/calibration are unavailable; trajectory/event metadata exists; calibration archive is encrypted;
+- one open 800×600 preview image exists, but no reconstructable PortalCam sensor-image sequence, intrinsics, depth or calibration is available; trajectory/event metadata exists and the calibration archive is encrypted;
 - Config B is not runnable and has never produced a recorded run;
 - local LCC v2.0 reports HD not activated; local RTX 4090 has 24 GB.
 
@@ -850,6 +834,7 @@ What should **not** be done yet: decode `.xbin`, decrypt `lixel.zip`, run the cu
 ### BLOCKED
 
 - `RR-LCC-HERO-CAPTURE-SET` by safe operator action;
+- `RR-ORIGINAL-SOURCE-MATCHED-COMPARISON` by an authorized lossless source/camera export, complete specialist package and one complete source-diagnostic run through the connected development capture route; any later directional physical claim additionally needs an independently reviewed and allowlisted capture adapter plus a separate six-station clean held-out set;
 - `RR-INDEPENDENT-VIEWER-CAPTURE-SET` by pinned independent-viewer capture;
 - local moving/performance evidence by spatially distinct cameras, traversal and performance telemetry;
 - `RR-ACTUAL-ROUTE-CAPTURE-SET` by approved migration/deployment, two
@@ -876,16 +861,17 @@ What should **not** be done yet: decode `.xbin`, decrypt `lixel.zip`, run the cu
    spatially distinct/moving/performance/device evidence, then—only after
    authorization—safely deploy the immutable-revision schema/API, register the
    candidates and repeat the benchmark through the protected route.
-3. Ask XGRIDS for export/rights/entitlement and run one v2.1 reprocess.
+3. Ask XGRIDS for export/rights/entitlement and run one same-observation reprocess with the currently licensed version.
 4. Repair the trainer and pass a synthetic smoke before any real data or cloud run.
 5. Shoot/register 30 photos; then authorize the same-photo vendor/independent/hero bake-off.
 6. Replicate the selected invariant in Grand Hall and one contrasting smaller/darker room before rollout claims.
 
 ### NEXT PROMPT
 
-Use the current migration/deployment and exact-A/B prompt in Section 14. The
-older broad Stage-0 fixed-view implementation request has been completed
-locally. Moving/performance/device measurement, live deployment, registration,
+**Historical handoff — superseded by Section 23.** The older broad Stage-0
+fixed-view implementation request has been completed locally. Use Section 23
+for the current no-winner decision, exact next action and LCC permission
+boundary. Moving/performance/device measurement, live deployment, registration,
 authenticated capture and physical-reference ranking remain.
 
 ## 16. 2026-07-14 NATIVE E57 COMPUTER-VISION ADDENDUM
@@ -1344,3 +1330,151 @@ The result has `authority: none`. It grants no transform, physical, runtime,
 publication, training or release authority. The full safeguards, per-view
 numbers, limitations and private evidence paths are recorded in
 [`reception-room-e57-method-holdout-cv-2026-07-17.md`](reception-room-e57-method-holdout-cv-2026-07-17.md).
+
+## 23. 2026-07-22 CURRENT DECISION RECONCILIATION
+
+This section is the controlling current interpretation of candidate quality.
+It does not alter the historical receipts above. Where an older section calls
+Quality or Mobile the review leader, treat that statement as a dated result of
+one method and camera set, not as the current product decision.
+
+### Direct answer in plain language
+
+Computer vision has proved that Quality and Mobile look materially different,
+but it has **not** found a reliable physical or commercial winner. The preferred
+candidate changes when the camera set or scoring method changes. The missing
+ingredient is not a more forceful blind score; it is a lossless photograph of
+the real room from the same locked camera, followed by different camera
+positions, a short moving view, a human visibility check and runtime/device
+measurements.
+
+The strongest present strategy remains:
+
+1. preserve the corrected base that displays only the intended high-detail
+   sections under one locked viewer profile;
+2. compare one current-version XGRIDS reprocess that uses only the existing
+   PortalCam observations;
+3. separately compare one photo-fed XGRIDS HD Enhancement result and one owned
+   captured hero-detail layer using the same rights-cleared photographs;
+4. add measured local mesh only where a stable outline, collision surface or
+   planning role is needed;
+5. keep any generated enhancement visibly separate from captured and measured
+   truth.
+
+### Computer-vision result ledger
+
+| Date / check | Result | What it proves | What it cannot prove |
+|---|---|---|---|
+| 2026-07-16 matched E57 cameras | Quality had a slight directional lead; the widest allowed border sensitivity produced no reliable winner | The frozen method can detect small candidate differences at three aligned cameras | Physical truth, commercial materiality or a stable candidate ranking |
+| 2026-07-17 locked method holdout | Mobile won 2/3 cameras on edge placement and 2/3 on line direction; the reported relative effects were only 0.07%–1.38% | The earlier Quality ranking reverses on a reserved camera set | A visible or product-quality win; no human-noticeability threshold was calibrated |
+| 2026-07-18 artifact diagnosis | Quality had 34.3%, 28.7% and 42.0% more near-white pixels in scans 126, 129 and 141; fine-detail energy favoured Mobile in two views and Quality in one; the lower floor was the largest mismatch in scans 126/129 | Brightness, local disagreement and fine-detail trade-offs are repeatable | Whether brighter, darker or higher-frequency output matches the real room |
+| 2026-07-22 blind image-quality replay | OpenCV BRISQUE preferred Mobile in 14/15 conditions, PIQ BRISQUE in 13/15, while CLIP-IQA preferred Quality in 14/15; the families disagreed in 13/15 conditions | Blind appearance models strongly disagree on these inputs | Physical correctness or a safe promotion decision |
+
+The July 18 and July 22 analyses independently passed their frozen-input
+verification routines. Their reports are:
+
+- `docs/reports/reception-room-cv-artifact-diagnosis-2026-07-18-receipt.md`
+- `docs/reports/reception-room-no-reference-iqa-2026-07-22-receipt.md`
+
+The machine-readable evidence now records
+`currentQualityReconciliation.currentDecision =
+no_stable_physical_or_commercial_winner`. The preserved
+`latestMatchedCameraComputerVision` object is a historical 16 July receipt and
+must not be cited alone as the current ranking.
+
+### Raw-project wording that must remain precise
+
+- The PortalCam `.xbin` project has no established authorized/open route to
+  RGB frames, raw LiDAR/depth, intrinsics, distortion or camera-to-body
+  calibration. Open trajectory/event sidecars do not fill those gaps. Do not
+  reverse-engineer or decrypt the proprietary project.
+- The separate Matterport E57 does contain 894 readable native 4096×4096 JPEGs;
+  138 are associated with the Reception candidate scans. This is not a
+  PortalCam raw export. The strict colour-blind shape gate passed only 82/96
+  held-back E57 images, so the stored E57 camera poses are not approved as a
+  training camera model. Source and derivative rights remain a separate gate.
+
+### Current commercial screen
+
+- `gsplat` is still an Apache-2.0 code candidate, but a production decision
+  requires exact dependency, checkpoint, dataset, captured-asset and patent
+  closure. The repository's current `main` branch describes newer fisheye,
+  F-Theta, LiDAR and 3DGUT capabilities; those release notes do not prove that
+  this repository's blocked Config B worker implements them.
+- NVIDIA ArtiFixer remains research-and-development only under its governing
+  model terms and is not a production dependency.
+- NVIDIA Fixer v2 is a distinct model. Its official model card says it is ready
+  for commercial and non-commercial use under the NVIDIA Open Model License.
+  That makes it eligible for a separately reviewed generated experiment, not
+  captured, metric, collision, route, planning or legal truth. Exact code,
+  model-version, dependency and use-case review still apply.
+- XGRIDS' current official LCC Studio v2.0 manual documents PortalCam HD
+  Enhancement and up to 1,000 photos with control points. This is capability
+  evidence only; entitlement, price, photo-processing terms, output ownership,
+  distribution and refinement rights still require project-specific written
+  confirmation.
+
+Primary sources rechecked 2026-07-22:
+
+- <https://www.xgrids.com/support/download?page=LCCStudio>
+- <https://docs.xgrids.com/en-us/06-lixel-cybercolor/01-lcc-studio/v2.0.0/02-version-and-updates.html>
+- <https://github.com/nerfstudio-project/gsplat>
+- <https://huggingface.co/nvidia/ArtiFixer>
+- <https://huggingface.co/nvidia/Fixer>
+
+### Current A-I completion status
+
+| Criterion | Current status | Decisive remaining evidence |
+|---|---|---|
+| A. Dominant-loss diagnosis | **Partial.** The invalid overlapping-detail-level route and sub-full-resolution rendering are proved presentation losses; the remaining source/reconstruction ceiling is not isolated. | Same-camera LCC source, independent master/package, corrected runtime and real-room reference; spatially different and moving cameras |
+| B. Raw-project go/no-go | **Satisfied to the lawful inspection boundary.** | Official PortalCam sample export/SDK plus written processing and refinement rights if this branch is reopened |
+| C. Existing pipeline audit | **Satisfied as an audit, not as a working trainer.** Config B names desired features but the optimization worker, real mixed-camera/depth path, held-out output and runtime packaging remain unproved or disconnected. | `RR-TRAINER-RUNNABLE-BUNDLE` synthetic smoke before any real data or cloud run |
+| D. Approach comparison | **Satisfied as a decision screen.** | Empirical same-input bake-off for the leading routes |
+| E. Recommended stack | **Partial.** The staged mixed stack and fallbacks are specified but no enhanced candidate has passed. | Same-photo vendor/owned hero comparison after registration and rights gates |
+| F. Bounded Reception pilot | **Partial.** Inputs, interfaces, gates, costs and stops are specified; the photo set, controls, rights and runnable worker do not exist. | 30-photo proof, independent controls, rights pack and runnable bundle |
+| G. Measurable quality gate | **Partial.** Static diagnostics and a fail-closed source-photo scorer/blinded-review path exist. The development real-component route now has renderer-owned capture records and direct framebuffer proof on generated Gaussian data; no authorized Reception source-photo run has passed through this completed-frame connection, and no protected-route, physical-reference, moving, performance, GPU-memory or device result exists. Held-out execution is disabled. | Run an authorized lossless source/camera diagnostic through the connected development route and independently review the adapter. A later held-out claim separately needs an allowlisted adapter, six-station held-out set, 21-frame sideways movement test and device matrix. |
+| H. Commercial cleanliness | **Partial.** This is an engineering screen, not legal clearance. | `LEGAL-RIGHTS-MEMO`, immutable terms snapshots, exact dependency/model closure and capture-rights pack |
+| I. Exact next actions | **Satisfied for the current boundary.** | Execute only after the applicable authorization gate below |
+
+### Exact next action and permission boundary
+
+The scorer is locally implemented and generated-fixture tested. The development
+Reception real-component route now exposes the required asset, build, camera,
+transform and fresh-frame identities, and a generated Gaussian test proves that
+the actual Spark/Three framebuffer is read. That is mechanism proof only: the
+real Reception candidates, a real source photograph and the protected product
+route have not been captured. Held-out execution is deliberately disabled.
+
+The exact next actions are:
+
+1. fill in the plain-language handoff form in
+   `docs/reports/reception-room-source-photo-comparison-v0.md`; do not guess a
+   right, camera value, room state or image history;
+2. prepare and independently check the exact source/candidate package, masks and
+   calibrated camera needed for one source diagnostic;
+3. independently review the connected capture adapter. Keep held-out execution
+   disabled until the reviewed adapter's exact hash is explicitly trusted;
+4. if an authorized lossless source photograph and calibrated camera are
+   available without LCC or the protected folder, prepare one
+   `source_view_diagnostic`; it may identify visible faults but must never select
+   Quality or Mobile;
+5. only after the complete source package passes admission, make three
+   renderer-proved repeats for each candidate under identical settings, score the frozen masks and complete
+   the random blinded native-pixel review while keeping the answer key hidden;
+6. separately perform the 21-frame Quality/Mobile movement test; describe it as
+   physical-reference evidence only if a matched real sequence also exists; and
+7. consider `heldout_physical_comparison` only after the adapter is allowlisted
+   and a separate six-station reference set is proved absent from complete
+   candidate histories. Even then, the result is only a reviewable directional
+   clue, not a product or physical approval.
+
+The protocol receipts bind operator declarations to hashes, but they do not
+independently authenticate rights, room state, lineage completeness, camera
+validation or when those declarations were made.
+
+Blake must type exactly `Resume LCC capture` before any step touches LCC again.
+
+Until that phrase is supplied, keep LCC closed. Do not touch the protected
+reference folder, change the public pointer, deploy, upload, purchase, start
+cloud compute or run the blocked trainer. Work that does not need those inputs
+may continue, but it cannot honestly close criteria A, E, F, G or H.

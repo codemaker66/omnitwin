@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -10,27 +10,50 @@ import type { AddressInfo } from "node:net";
 import { basename, resolve } from "node:path";
 import {
   FOUNDRY_GUIDED_ADMISSION_DRAFT_V0,
-  FoundryOperatorEvidenceChecklistV5Schema,
+  FoundryOperatorEvidenceChecklistV8Schema,
+  FoundryRoomEnvelopeReviewRequestV0Schema,
+  FoundryOperatorEvidenceChecklistV7Schema,
   FoundryIntegrityError,
-  FoundrySourceReadinessMapV5Schema,
-  FoundryUniversalSourceFactsV5Schema,
+  FoundrySourceReadinessMapV8Schema,
+  FoundrySourceReadinessMapV7Schema,
+  FoundryUniversalSourceFactsV8Schema,
+  FoundryUniversalSourceFactsV7Schema,
   FoundryUniversalIntakeReceiptSchema,
-  compileFoundryOperatorEvidenceChecklistV5,
-  compileFoundrySourceReadinessMapV5,
+  FOUNDRY_LOCAL_INSPECTION_HANDOFF_PACKAGE_MAX_SERIALIZED_BYTES_V0,
+  compileFoundryOperatorEvidenceChecklistV8,
+  compileFoundryOperatorEvidenceChecklistV7,
+  compileFoundryLocalInspectionHandoffPackageV0,
+  compileFoundrySourceReadinessMapV8,
+  compileFoundrySourceReadinessMapV7,
   compileGuidedAdmissionDraft,
   compileFoundryPlanPreview,
   compileFoundryStageAssetRoutingV0,
-  inspectUniversalIntakeWithSourceFactsV5,
-  serializeFoundryOperatorEvidenceChecklistV5,
-  serializeFoundrySourceReadinessMapV5,
-  serializeUniversalSourceFactsV5Artifact,
+  inspectUniversalIntake,
+  inspectUniversalIntakeWithSourceFactsV8,
+  runFoundryRoomEnvelopeReviewWorkerV0,
+  serializeFoundryCapturedQualityComparisonReportV0,
+  serializeFoundryPreparedHdDatasetReadinessReceiptV0,
+  serializeFoundryPhotoCaptureQualityReportV0,
+  serializeFoundryLocalInspectionHandoffPackageV0,
+  serializeFoundryOperatorEvidenceChecklistV8,
+  serializeFoundryRoomEnvelopeReviewV0,
+  serializeFoundryOperatorEvidenceChecklistV7,
+  serializeFoundrySourceReadinessMapV8,
+  serializeFoundrySourceReadinessMapV7,
+  serializeUniversalSourceFactsV8Artifact,
+  serializeUniversalSourceFactsV7Artifact,
   type FoundryGuidedAdmissionDraft,
-  type FoundryOperatorEvidenceChecklistV5,
+  type FoundryOperatorEvidenceChecklistV8,
+  type FoundryOperatorEvidenceChecklistV7,
   type FoundryPipelineWorkerRole,
   type FoundryPlanPreviewV0,
-  type FoundrySourceReadinessMapV5,
+  type FoundryRoomEnvelopeReviewV0,
+  type FoundrySourceReadinessMapV8,
+  type FoundrySourceReadinessMapV7,
   type FoundryUniversalIntakeReceipt,
-  type FoundryUniversalSourceFactsV5,
+  type FoundryUniversalSourceFactsV8,
+  type FoundryUniversalSourceFactsV7,
+  type InspectUniversalIntakeWithSourceFactsV8Result,
 } from "@omnitwin/reconstruction-foundry";
 import {
   FoundryIngestManifestV0Schema,
@@ -60,6 +83,40 @@ import {
   type LocalOfflineNormalizationPreviewDto,
   type LocalOfflineNormalizationPreviewStartRequest,
 } from "./local-offline-normalization-preview.js";
+import {
+  createLocalOfflineNormalizationPreviewDockerExecutionBridge,
+} from "./local-offline-normalization-preview-execution-bridge.js";
+import {
+  LOCAL_CAPTURED_QUALITY_COMPARISON_UNAVAILABLE_DTO,
+  createLocalCapturedQualityComparisonController,
+  type CreateLocalCapturedQualityComparisonControllerOptions,
+  type LocalCapturedQualityComparisonDto,
+} from "./local-captured-quality-comparison.js";
+import {
+  LOCAL_PHOTO_CAPTURE_QUALITY_NOT_BOUND_DTO_V0,
+  createLocalPhotoCaptureQualityControllerV0,
+  parseLocalPhotoCaptureQualityStartRequestV0,
+  type CreateLocalPhotoCaptureQualityControllerV0Options,
+  type LocalPhotoCaptureQualityDtoV0,
+} from "./local-photo-capture-quality.js";
+import {
+  LOCAL_HD_WORKER_READINESS_DTO_V0,
+  type LocalHdWorkerReadinessDtoV0,
+} from "./local-hd-worker-readiness.js";
+import {
+  createLocalPreparedHdDatasetControllerV0,
+  type CreateLocalPreparedHdDatasetControllerV0Options,
+  type LocalPreparedHdDatasetDtoV0,
+} from "./local-prepared-hd-dataset.js";
+import {
+  LocalIntakeWorkspaceError,
+  createLocalIntakeWorkspaceControllerV0,
+  parseLocalIntakeWorkspaceDeleteRequestV0,
+  parseLocalIntakeWorkspaceStartRequestV0,
+  parseLocalIntakeWorkspaceStatusRequestV0,
+  type CreateLocalIntakeWorkspaceControllerV0Options,
+  type LocalIntakeWorkspaceDtoV0,
+} from "./local-intake-workspace.js";
 
 export const LOCAL_FOUNDRY_HOST = "127.0.0.1";
 // A guided review may contain hundreds of files. Four hours gives a human time
@@ -67,7 +124,11 @@ export const LOCAL_FOUNDRY_HOST = "127.0.0.1";
 export const LOCAL_FOUNDRY_DEFAULT_SESSION_TTL_MS = 4 * 60 * 60 * 1_000;
 export const LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES = 1_024;
 export const LOCAL_FOUNDRY_MAX_DRAFT_BODY_BYTES = 2 * 1_024 * 1_024;
+export const LOCAL_FOUNDRY_MAX_ROOM_ENVELOPE_REVIEW_BODY_BYTES = 16 * 1_024;
 export const LOCAL_FOUNDRY_MAX_GUIDED_FILES = 500;
+export const LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES = 500;
+export const LOCAL_FOUNDRY_HANDOFF_REVISION_DIGEST_DOMAIN =
+  "VENVIEWER_LOCAL_FOUNDRY_HANDOFF_REVISION_V0";
 export const LOCAL_FOUNDRY_PROCESSING_OUTLINE_V0 =
   "omnitwin.local-foundry.processing-outline.v0";
 export const LOCAL_FOUNDRY_PROCESSING_OUTLINE_DISCLAIMER =
@@ -84,6 +145,14 @@ const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,128}$/u;
 const VERIFICATION_REQUEST_ID_PATTERN = /^[a-f0-9]{32}$/u;
 const INTAKE_RECEIPT_SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const OFFLINE_PREVIEW_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const CAPTURED_QUALITY_REPORT_DIGEST_PATTERN = /^[a-f0-9]{64}$/u;
+const POTREE_POINT_PREVIEW_ID_PATTERN = /^[a-z][a-z0-9_-]{0,95}$/u;
+const POTREE_POINT_PREVIEW_FILE_NAME_PATTERN =
+  /^[a-z0-9][a-z0-9_.-]{0,159}\.png$/u;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+type LocalFoundryPointPreviewFile =
+  InspectUniversalIntakeWithSourceFactsV8Result["pointPreviewFiles"][number];
 
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "Cache-Control": "no-store, max-age=0",
@@ -303,6 +372,33 @@ const PROCESSING_OUTLINE_LANE_SPECS: readonly {
   },
 ];
 
+export interface LocalFoundryPointValueDiagnostic {
+  readonly sourceFacts: FoundryUniversalSourceFactsV8;
+  readonly sourceReadiness: FoundrySourceReadinessMapV8;
+  readonly operatorEvidenceChecklist: FoundryOperatorEvidenceChecklistV8;
+}
+
+export type LocalFoundryRoomEnvelopeReviewDtoV0 = {
+  readonly state: "unavailable" | "ready" | "completed";
+  readonly message: string;
+  readonly receiptSha256: string | null;
+  readonly sourceFactsSha256: string | null;
+  readonly establishedBundleCount: number;
+  readonly report: null | {
+    readonly reportSha256: string;
+    readonly bundleSha256: string;
+    readonly horizontalViewId: string;
+    readonly decision: "accepted_as_fit_seed" | "needs_revision";
+    readonly reviewedAt: string;
+    readonly includedRecordCount: number;
+    readonly excludedRecordCount: number;
+    readonly eligibility:
+      | "eligible_for_fit_only_diagnostic"
+      | "not_eligible";
+    readonly authority: "none";
+  };
+};
+
 export interface LocalFoundryPublicState {
   readonly phase: Exclude<LocalFoundryAppPhase, "stopped">;
   readonly sourceLabel: string;
@@ -325,18 +421,36 @@ export interface LocalFoundryPublicState {
   };
   readonly guidedWorkflow: {
     readonly maximumFiles: typeof LOCAL_FOUNDRY_MAX_GUIDED_FILES;
+    readonly completeHandoffMaximumFiles:
+      typeof LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES;
+    readonly completeHandoffMaximumSerializedBytes:
+      typeof FOUNDRY_LOCAL_INSPECTION_HANDOFF_PACKAGE_MAX_SERIALIZED_BYTES_V0;
+    readonly completeHandoff:
+      | "not_ready"
+      | "preparing"
+      | "ready"
+      | "source_too_large"
+      | "unavailable";
+    readonly completeHandoffRevisionSha256: string | null;
     readonly admissionDraft: "not_built" | "ready";
     readonly admissionReviewSha256: string | null;
     readonly admissionResultSha256: string | null;
     readonly planPreview: "not_built" | "ready";
     readonly planPreviewSha256: string | null;
   };
+  readonly localHdWorker: LocalHdWorkerReadinessDtoV0;
+  readonly localIntakeWorkspace: LocalIntakeWorkspaceDtoV0;
+  readonly preparedHdDataset: LocalPreparedHdDatasetDtoV0;
   readonly offlineNormalizationPreview: LocalOfflineNormalizationPreviewDto;
+  readonly capturedQualityComparison: LocalCapturedQualityComparisonDto;
+  readonly photoCaptureQuality: LocalPhotoCaptureQualityDtoV0;
+  readonly roomEnvelopeReview: LocalFoundryRoomEnvelopeReviewDtoV0;
   readonly safeFailure?: string;
   readonly receipt?: FoundryUniversalIntakeReceipt;
-  readonly sourceFacts?: FoundryUniversalSourceFactsV5;
-  readonly sourceReadiness?: FoundrySourceReadinessMapV5;
-  readonly operatorEvidenceChecklist?: FoundryOperatorEvidenceChecklistV5;
+  readonly sourceFacts?: FoundryUniversalSourceFactsV7;
+  readonly sourceReadiness?: FoundrySourceReadinessMapV7;
+  readonly operatorEvidenceChecklist?: FoundryOperatorEvidenceChecklistV7;
+  readonly pointValueDiagnostic?: LocalFoundryPointValueDiagnostic;
 }
 
 export interface LocalFoundryAppOptions {
@@ -346,17 +460,40 @@ export interface LocalFoundryAppOptions {
   readonly sessionTtlMs?: number;
   /** Trusted process configuration only; never accepted from the browser. */
   readonly privateStateRoot?: string;
+  /** Trusted fixed local destination; browser requests can never provide a path. */
+  readonly localIntakeWorkspace?: CreateLocalIntakeWorkspaceControllerV0Options;
+  /** Trusted fixed process configuration; no browser request may replace it. */
+  readonly preparedHdDataset?: CreateLocalPreparedHdDatasetControllerV0Options;
   /**
    * Trusted process configuration only. The browser can never provide or
-   * replace source paths, signed permits, or the pinned public-key ring.
+   * replace source paths, signed permits, the pinned public-key ring, or the
+   * process-only execution bridge.
    */
   readonly offlineNormalizationPreview?: CreateLocalOfflineNormalizationPreviewControllerOptions;
+  /** Trusted process configuration for one fixed local Reception comparison. */
+  readonly capturedQualityComparison?: CreateLocalCapturedQualityComparisonControllerOptions;
+  /** @internal Bounded photo-workbench runner/settlement overrides for focused tests. */
+  readonly photoCaptureQualityTestHooks?: Omit<
+    CreateLocalPhotoCaptureQualityControllerV0Options,
+    "sourceRoot"
+  >;
   /** @internal Deterministic HTTP backpressure hook; production callers omit this. */
   readonly offlineNormalizationPreviewTestHooks?: {
     readonly responseChunkDelayMs?: number;
   };
   /** @internal Deterministic focused-test hooks; production callers omit this. */
   readonly referenceVerificationTestHooks?: CreateLocalReferenceVerificationControllerOptionsV0["testHooks"];
+  /** @internal Deterministic source-inspection gate; production callers omit this. */
+  readonly sourceInspectionTestHooks?: {
+    readonly beforeSourceFactsInspection?: () => Promise<void>;
+    readonly beforeSourceFactsPublication?: (
+      candidate: InspectUniversalIntakeWithSourceFactsV8Result,
+    ) => Promise<void> | void;
+  };
+  /** @internal Deterministic room-envelope lifecycle gate; production callers omit this. */
+  readonly roomEnvelopeReviewTestHooks?: {
+    readonly beforeWorker?: () => Promise<void>;
+  };
 }
 
 export interface LocalFoundryAppClosed {
@@ -457,6 +594,31 @@ function requireArtifactTokenAndDigest(url: URL, expectedToken: string): string 
   return digest.data;
 }
 
+function requireHandoffTokenAndRevisionDigest(
+  url: URL,
+  expectedToken: string,
+): string {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 2 ||
+    tokenValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+  }
+  const digest = digestValues[0] ?? "";
+  if (!INTAKE_RECEIPT_SHA256_PATTERN.test(digest)) {
+    throw new SafeHttpError(
+      409,
+      "That complete-handoff revision is invalid or no longer current.",
+    );
+  }
+  return digest;
+}
+
 function requireOfflinePreviewArtifactToken(
   url: URL,
   expectedToken: string,
@@ -485,6 +647,147 @@ function requireOfflinePreviewArtifactToken(
   return { requestId, digest };
 }
 
+function requireCapturedQualityReportToken(
+  url: URL,
+  expectedToken: string,
+): { readonly requestId: string; readonly digest: string } {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const requestIdValues = url.searchParams.getAll("requestId");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 3 ||
+    tokenValues.length !== 1 ||
+    requestIdValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+  }
+  const requestId = requestIdValues[0] ?? "";
+  const digest = digestValues[0] ?? "";
+  if (!VERIFICATION_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new SafeHttpError(409, "That captured-quality request is invalid or no longer current.");
+  }
+  if (!CAPTURED_QUALITY_REPORT_DIGEST_PATTERN.test(digest)) {
+    throw new SafeHttpError(409, "That captured-quality report fingerprint is invalid or no longer current.");
+  }
+  return { requestId, digest };
+}
+
+function localIntakeWorkspaceHttpError(
+  error: unknown,
+  statusCode: 400 | 409,
+  fallback: string,
+): SafeHttpError {
+  return new SafeHttpError(
+    statusCode,
+    error instanceof LocalIntakeWorkspaceError || error instanceof FoundryIntegrityError
+      ? error.message
+      : fallback,
+  );
+}
+
+function requirePreparedHdDatasetReportToken(
+  url: URL,
+  expectedToken: string,
+): { readonly requestId: string; readonly digest: string } {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const requestIdValues = url.searchParams.getAll("requestId");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 3 ||
+    tokenValues.length !== 1 ||
+    requestIdValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+  }
+  const requestId = requestIdValues[0] ?? "";
+  const digest = digestValues[0] ?? "";
+  if (!VERIFICATION_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new SafeHttpError(
+      409,
+      "That prepared-dataset request is invalid or no longer current.",
+    );
+  }
+  if (!CAPTURED_QUALITY_REPORT_DIGEST_PATTERN.test(digest)) {
+    throw new SafeHttpError(
+      409,
+      "That prepared-dataset receipt fingerprint is invalid or no longer current.",
+    );
+  }
+  return { requestId, digest };
+}
+
+function requirePhotoCaptureQualityReportToken(
+  url: URL,
+  expectedToken: string,
+): { readonly requestId: string; readonly digest: string } {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const requestIdValues = url.searchParams.getAll("requestId");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 3 ||
+    tokenValues.length !== 1 ||
+    requestIdValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+  }
+  const requestId = requestIdValues[0] ?? "";
+  const digest = digestValues[0] ?? "";
+  if (!VERIFICATION_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new SafeHttpError(409, "That photo-workbench request is invalid or no longer current.");
+  }
+  if (!CAPTURED_QUALITY_REPORT_DIGEST_PATTERN.test(digest)) {
+    throw new SafeHttpError(409, "That photo-workbench report fingerprint is invalid or no longer current.");
+  }
+  return { requestId, digest };
+}
+
+function requirePhotoCaptureQualityThumbnailToken(
+  url: URL,
+  expectedToken: string,
+): {
+  readonly requestId: string;
+  readonly imageId: string;
+  readonly digest: string;
+} {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const requestIdValues = url.searchParams.getAll("requestId");
+  const imageIdValues = url.searchParams.getAll("imageId");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 4 ||
+    tokenValues.length !== 1 ||
+    requestIdValues.length !== 1 ||
+    imageIdValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+  }
+  const requestId = requestIdValues[0] ?? "";
+  const imageId = imageIdValues[0] ?? "";
+  const digest = digestValues[0] ?? "";
+  if (!VERIFICATION_REQUEST_ID_PATTERN.test(requestId)) {
+    throw new SafeHttpError(409, "That photo-workbench request is invalid or no longer current.");
+  }
+  if (!/^photo-[a-f0-9]{24}$/u.test(imageId)) {
+    throw new SafeHttpError(409, "That photo-workbench preview is invalid or no longer current.");
+  }
+  if (!CAPTURED_QUALITY_REPORT_DIGEST_PATTERN.test(digest)) {
+    throw new SafeHttpError(409, "That photo-workbench preview fingerprint is invalid or no longer current.");
+  }
+  return { requestId, imageId, digest };
+}
+
 function requireSourceFactsTokenAndDigest(url: URL, expectedToken: string): string {
   const entries = [...url.searchParams.entries()];
   const tokenValues = url.searchParams.getAll("token");
@@ -500,6 +803,34 @@ function requireSourceFactsTokenAndDigest(url: URL, expectedToken: string): stri
   const digest = digestValues[0] ?? "";
   if (!/^[a-f0-9]{64}$/u.test(digest)) {
     throw new SafeHttpError(409, "That Source Facts fingerprint is invalid or no longer current.");
+  }
+  return digest;
+}
+
+function requireRoomEnvelopeReviewTokenAndDigest(
+  url: URL,
+  expectedToken: string,
+): string {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const digestValues = url.searchParams.getAll("digest");
+  if (
+    entries.length !== 2 ||
+    tokenValues.length !== 1 ||
+    digestValues.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
+  }
+  const digest = digestValues[0] ?? "";
+  if (!INTAKE_RECEIPT_SHA256_PATTERN.test(digest)) {
+    throw new SafeHttpError(
+      409,
+      "That room-envelope review fingerprint is invalid or no longer current.",
+    );
   }
   return digest;
 }
@@ -548,10 +879,168 @@ function requireOperatorEvidenceChecklistTokenAndDigest(
   return digest;
 }
 
+interface PotreePointPreviewRequest {
+  readonly bundleSha256: string;
+  readonly viewId: string;
+  readonly mode: string;
+  readonly sha256: string;
+}
+
+function requirePotreePointPreviewToken(
+  url: URL,
+  expectedToken: string,
+): PotreePointPreviewRequest {
+  const entries = [...url.searchParams.entries()];
+  const tokenValues = url.searchParams.getAll("token");
+  const bundleSha256Values = url.searchParams.getAll("bundleSha256");
+  const viewIdValues = url.searchParams.getAll("viewId");
+  const modeValues = url.searchParams.getAll("mode");
+  const sha256Values = url.searchParams.getAll("sha256");
+  if (
+    entries.length !== 5 ||
+    tokenValues.length !== 1 ||
+    bundleSha256Values.length !== 1 ||
+    viewIdValues.length !== 1 ||
+    modeValues.length !== 1 ||
+    sha256Values.length !== 1 ||
+    !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
+  ) {
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
+  }
+  const bundleSha256 = bundleSha256Values[0] ?? "";
+  const viewId = viewIdValues[0] ?? "";
+  const mode = modeValues[0] ?? "";
+  const sha256 = sha256Values[0] ?? "";
+  if (
+    !INTAKE_RECEIPT_SHA256_PATTERN.test(bundleSha256) ||
+    !INTAKE_RECEIPT_SHA256_PATTERN.test(sha256) ||
+    !POTREE_POINT_PREVIEW_ID_PATTERN.test(viewId) ||
+    !POTREE_POINT_PREVIEW_ID_PATTERN.test(mode)
+  ) {
+    throw new SafeHttpError(
+      409,
+      "That private point preview is invalid or no longer current.",
+    );
+  }
+  return { bundleSha256, viewId, mode, sha256 };
+}
+
+function runtimeProperty(value: object, key: string): unknown {
+  return Reflect.get(value, key) as unknown;
+}
+
+function validatePointPreviewFiles(
+  sourceFacts: FoundryUniversalSourceFactsV8,
+  candidates: readonly LocalFoundryPointPreviewFile[],
+): LocalFoundryPointPreviewFile[] {
+  const expectedImageCount = sourceFacts.pointValueBundles.reduce(
+    (count, bundle) =>
+      count + (
+        bundle.pointValues.state === "established"
+          ? bundle.pointValues.facts.previews.images.length
+          : 0
+      ),
+    0,
+  );
+  if (candidates.length !== expectedImageCount) {
+    throw new FoundryIntegrityError(
+      "LOCAL_POINT_PREVIEW_SET_MISMATCH",
+      "The private point-preview byte set does not match the immutable V8 manifest.",
+    );
+  }
+
+  const consumed = new Set<number>();
+  const routeIdentities = new Set<string>();
+  for (const bundle of sourceFacts.pointValueBundles) {
+    if (bundle.pointValues.state !== "established") continue;
+    for (const manifest of bundle.pointValues.facts.previews.images) {
+      const routeIdentity = JSON.stringify([
+        manifest.bundleSha256,
+        manifest.viewId,
+        manifest.mode,
+        manifest.sha256,
+      ]);
+      if (routeIdentities.has(routeIdentity)) {
+        throw new FoundryIntegrityError(
+          "LOCAL_POINT_PREVIEW_ROUTE_IDENTITY_DUPLICATE",
+          "The immutable V8 manifest contains a duplicate private point-preview route identity.",
+        );
+      }
+      routeIdentities.add(routeIdentity);
+      const matches: number[] = [];
+      for (const [index, candidate] of candidates.entries()) {
+        if (
+          candidate.bundleRoot === bundle.bundleRoot &&
+          manifest.bundleSha256 === bundle.bundleSha256 &&
+          candidate.bundleSha256 === manifest.bundleSha256 &&
+          candidate.viewId === manifest.viewId &&
+          candidate.mode === manifest.mode &&
+          candidate.fileName === manifest.fileName &&
+          runtimeProperty(candidate, "mediaType") === manifest.mediaType &&
+          candidate.byteLength === manifest.byteLength &&
+          candidate.sha256 === manifest.sha256
+        ) {
+          matches.push(index);
+        }
+      }
+      const match = matches[0];
+      if (matches.length !== 1 || match === undefined || consumed.has(match)) {
+        throw new FoundryIntegrityError(
+          "LOCAL_POINT_PREVIEW_MANIFEST_MISMATCH",
+          "A private point-preview image does not have one exact immutable manifest match.",
+        );
+      }
+      consumed.add(match);
+    }
+  }
+
+  if (consumed.size !== candidates.length) {
+    throw new FoundryIntegrityError(
+      "LOCAL_POINT_PREVIEW_EXTRA_BYTES",
+      "The private point-preview byte set contains an image outside the immutable V8 manifest.",
+    );
+  }
+  return candidates.map((candidate) => {
+    if (
+      runtimeProperty(candidate, "mediaType") !== "image/png" ||
+      !POTREE_POINT_PREVIEW_FILE_NAME_PATTERN.test(candidate.fileName) ||
+      basename(candidate.fileName) !== candidate.fileName ||
+      !Buffer.isBuffer(candidate.bytes) ||
+      candidate.bytes.byteLength !== candidate.byteLength ||
+      candidate.bytes.byteLength < PNG_SIGNATURE.byteLength ||
+      !candidate.bytes.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE) ||
+      createHash("sha256").update(candidate.bytes).digest("hex") !==
+        candidate.sha256
+    ) {
+      throw new FoundryIntegrityError(
+        "LOCAL_POINT_PREVIEW_BYTES_INVALID",
+        "Private point-preview bytes do not match their exact PNG identity and digest.",
+      );
+    }
+    return candidate;
+  });
+}
+
+function clearPointPreviewFiles(
+  candidates: readonly LocalFoundryPointPreviewFile[],
+): void {
+  for (const candidate of candidates) {
+    const bytes = runtimeProperty(candidate, "bytes");
+    if (Buffer.isBuffer(bytes)) bytes.fill(0);
+  }
+}
+
 function setSecurityHeaders(response: ServerResponse): void {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     response.setHeader(name, value);
   }
+  // Every browser poll gets a fresh loopback connection. This prevents an
+  // idle keep-alive socket from expiring while a large local source is doing
+  // CPU-heavy, read-only analysis on the single JavaScript thread.
+  response.setHeader("Connection", "close");
 }
 
 function send(
@@ -561,12 +1050,13 @@ function send(
   body: string,
   extraHeaders: Readonly<Record<string, string>> = {},
 ): void {
-  setSecurityHeaders(response);
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", contentType);
-  response.setHeader("Content-Length", Buffer.byteLength(body));
-  for (const [name, value] of Object.entries(extraHeaders)) response.setHeader(name, value);
-  response.end(body);
+  sendBytes(
+    response,
+    statusCode,
+    contentType,
+    Buffer.from(body, "utf8"),
+    extraHeaders,
+  );
 }
 
 function sendBytes(
@@ -774,6 +1264,63 @@ function parseOfflinePreviewRequestId(value: unknown): string {
     throw new SafeHttpError(400, "The private offline preview request is invalid.");
   }
   return value;
+}
+
+function parseCapturedQualityRequestId(value: unknown): string {
+  if (typeof value !== "string" || !VERIFICATION_REQUEST_ID_PATTERN.test(value)) {
+    throw new SafeHttpError(400, "The captured-quality comparison request is invalid.");
+  }
+  return value;
+}
+
+function parsePreparedHdDatasetRequestId(value: unknown): string {
+  if (typeof value !== "string" || !VERIFICATION_REQUEST_ID_PATTERN.test(value)) {
+    throw new SafeHttpError(400, "The prepared-dataset request is invalid.");
+  }
+  return value;
+}
+
+function parsePreparedHdDatasetStartRequest(
+  body: Record<string, unknown>,
+): { readonly requestId: string; readonly receiptSha256: string } {
+  assertRequiredExactKeys(
+    body,
+    ["receiptSha256", "requestId"],
+    "The prepared-dataset request",
+  );
+  if (
+    typeof body.receiptSha256 !== "string" ||
+    !INTAKE_RECEIPT_SHA256_PATTERN.test(body.receiptSha256)
+  ) {
+    throw new SafeHttpError(
+      409,
+      "The intake receipt changed. Refresh this local page before validating the prepared package.",
+    );
+  }
+  return {
+    requestId: parsePreparedHdDatasetRequestId(body.requestId),
+    receiptSha256: body.receiptSha256,
+  };
+}
+
+function parsePhotoCaptureQualityRequestId(value: unknown): string {
+  if (typeof value !== "string" || !VERIFICATION_REQUEST_ID_PATTERN.test(value)) {
+    throw new SafeHttpError(400, "The photo-workbench request is invalid.");
+  }
+  return value;
+}
+
+function parsePhotoCaptureQualityStartRequest(
+  body: Record<string, unknown>,
+) {
+  try {
+    return parseLocalPhotoCaptureQualityStartRequestV0(body);
+  } catch {
+    throw new SafeHttpError(
+      400,
+      "The photo-workbench request must contain only the current receipt, request ID, and one explicit role for every eligible JPEG/PNG.",
+    );
+  }
 }
 
 function parseOfflinePreviewStartRequest(
@@ -1483,9 +2030,12 @@ export async function startLocalFoundryApp(
   let sourceLabel = safeSourceLabel(source);
   let phase: LocalFoundryAppPhase = "inspecting";
   let receipt: FoundryUniversalIntakeReceipt | undefined;
-  let sourceFacts: FoundryUniversalSourceFactsV5 | undefined;
-  let sourceReadiness: FoundrySourceReadinessMapV5 | undefined;
-  let operatorEvidenceChecklist: FoundryOperatorEvidenceChecklistV5 | undefined;
+  let sourceFacts: FoundryUniversalSourceFactsV7 | undefined;
+  let sourceReadiness: FoundrySourceReadinessMapV7 | undefined;
+  let operatorEvidenceChecklist: FoundryOperatorEvidenceChecklistV7 | undefined;
+  let pointValueDiagnostic: LocalFoundryPointValueDiagnostic | undefined;
+  let pointPreviewFiles: LocalFoundryPointPreviewFile[] = [];
+  let roomEnvelopeReviewReport: FoundryRoomEnvelopeReviewV0 | undefined;
   let admissionDraft: FoundryGuidedAdmissionDraft | undefined;
   let planPreview: FoundryPlanPreviewV0 | undefined;
   let trustedStartupSourceIdentity: ReferenceVerificationSourceIdentityV0 | undefined;
@@ -1494,9 +2044,45 @@ export async function startLocalFoundryApp(
     options.offlineNormalizationPreview === undefined
       ? undefined
       : createLocalOfflineNormalizationPreviewController(
-          options.offlineNormalizationPreview,
+          options.offlineNormalizationPreview.executionBridge !== undefined ||
+            options.offlineNormalizationPreview.helperFactory !== undefined
+            ? options.offlineNormalizationPreview
+            : {
+                ...options.offlineNormalizationPreview,
+                executionBridge:
+                  createLocalOfflineNormalizationPreviewDockerExecutionBridge(),
+              },
         );
+  const capturedQualityComparison =
+    options.capturedQualityComparison === undefined
+      ? undefined
+      : createLocalCapturedQualityComparisonController(
+          options.capturedQualityComparison,
+        );
+  const localIntakeWorkspace = createLocalIntakeWorkspaceControllerV0(
+    options.localIntakeWorkspace ?? { trustedContext: null },
+  );
+  await localIntakeWorkspace.initialize();
+  const preparedHdDataset = createLocalPreparedHdDatasetControllerV0(
+    options.preparedHdDataset ?? { trustedContext: null },
+  );
+  const photoCaptureQuality = createLocalPhotoCaptureQualityControllerV0({
+    sourceRoot: source,
+    ...options.photoCaptureQualityTestHooks,
+  });
   let offlineNormalizationPreviewRequestId: string | undefined;
+  let capturedQualityComparisonRequestId: string | undefined;
+  let preparedHdDatasetRequestId: string | undefined;
+  let photoCaptureQualityRequestId: string | undefined;
+  let completeHandoffCache: {
+    readonly revisionSha256: string;
+    readonly serialized: string;
+  } | undefined;
+  let completeHandoffFreshnessCheck: {
+    readonly revisionSha256: string;
+    readonly promise: Promise<string>;
+  } | undefined;
+  let completeHandoffCacheFailed = false;
   let safeFailure: string | undefined;
   let boundPort = 0;
   let expectedHost = "";
@@ -1506,11 +2092,192 @@ export async function startLocalFoundryApp(
   let pendingStopReason: LocalFoundryStopReason | undefined;
   let operatorStopPreparing = false;
   const inspectionAbort = new AbortController();
+  const sourceInspectionIsCurrent = (): boolean =>
+    phase === "inspecting" && !inspectionAbort.signal.aborted;
+  const roomEnvelopeSourceIsCurrent = (
+    expectedReceiptSha256: string,
+    expectedSourceFactsSha256: string,
+  ): boolean =>
+    phase === "ready" &&
+    receipt?.receiptSha256 === expectedReceiptSha256 &&
+    pointValueDiagnostic?.sourceFacts.factsSha256 ===
+      expectedSourceFactsSha256;
   let resolveClosed: ((value: LocalFoundryAppClosed) => void) | undefined;
   const closed = new Promise<LocalFoundryAppClosed>((resolvePromise) => {
     resolveClosed = resolvePromise;
   });
   let verificationTransition: Promise<void> = Promise.resolve();
+  let roomEnvelopeReviewTransition: Promise<void> = Promise.resolve();
+
+  const completeHandoffRevisionSha256 = (): string | null => {
+    if (receipt === undefined || pointValueDiagnostic === undefined) return null;
+    const comparisonReportSha256 =
+      capturedQualityComparison !== undefined &&
+        capturedQualityComparisonRequestId !== undefined
+        ? capturedQualityComparison.snapshot(capturedQualityComparisonRequestId)
+          .report?.reportSha256 ?? null
+        : null;
+    return createHash("sha256")
+      .update(LOCAL_FOUNDRY_HANDOFF_REVISION_DIGEST_DOMAIN, "ascii")
+      .update(Buffer.from([0]))
+      .update(JSON.stringify([
+        receipt.receiptSha256,
+        pointValueDiagnostic.sourceFacts.factsSha256,
+        pointValueDiagnostic.sourceReadiness.readinessSha256,
+        pointValueDiagnostic.operatorEvidenceChecklist.checklistSha256,
+        admissionDraft?.review.reviewSha256 ?? null,
+        admissionDraft?.result.resultSha256 ?? null,
+        planPreview?.previewSha256 ?? null,
+        comparisonReportSha256,
+      ]), "utf8")
+      .digest("hex");
+  };
+
+  const completedComparisonReport = () =>
+    capturedQualityComparison !== undefined &&
+      capturedQualityComparisonRequestId !== undefined
+      ? capturedQualityComparison.readCompletedReport(
+          capturedQualityComparisonRequestId,
+        )
+      : null;
+
+  const invalidateCompleteHandoffCache = (): void => {
+    completeHandoffCache = undefined;
+    completeHandoffCacheFailed = false;
+  };
+
+  const buildCompleteHandoffCache = (): void => {
+    if (
+      receipt === undefined ||
+      pointValueDiagnostic === undefined ||
+      receipt.files.length > LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES
+    ) {
+      return;
+    }
+    const revisionSha256 = completeHandoffRevisionSha256();
+    if (revisionSha256 === null) return;
+    const comparisonReport = completedComparisonReport();
+    if (
+      comparisonReport !== null &&
+      comparisonReport.sourceReceiptSha256 !== null &&
+      comparisonReport.sourceReceiptSha256 !== receipt.receiptSha256
+    ) {
+      completeHandoffCacheFailed = true;
+      return;
+    }
+    try {
+      const handoffPackage = compileFoundryLocalInspectionHandoffPackageV0({
+        dossierId: `local-inspection-${receipt.receiptSha256.slice(0, 24)}`,
+        createdAt: startedAt.toISOString(),
+        evidence: {
+          receipt,
+          sourceFacts: pointValueDiagnostic.sourceFacts,
+          sourceReadiness: pointValueDiagnostic.sourceReadiness,
+          operatorEvidenceChecklist:
+            pointValueDiagnostic.operatorEvidenceChecklist,
+          admission: admissionDraft === undefined
+            ? null
+            : {
+                review: admissionDraft.review,
+                result: admissionDraft.result,
+              },
+          planPreview: planPreview ?? null,
+          capturedQualityComparison: comparisonReport,
+        },
+      });
+      completeHandoffCache = {
+        revisionSha256,
+        serialized:
+          serializeFoundryLocalInspectionHandoffPackageV0(handoffPackage),
+      };
+    } catch {
+      completeHandoffCacheFailed = true;
+    }
+  };
+
+  const completeHandoffStatus = (): LocalFoundryPublicState[
+    "guidedWorkflow"
+  ]["completeHandoff"] => {
+    if (
+      phase !== "ready" ||
+      receipt === undefined ||
+      pointValueDiagnostic === undefined
+    ) {
+      return "not_ready";
+    }
+    if (receipt.files.length > LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES) {
+      return "source_too_large";
+    }
+    if (completeHandoffCacheFailed) return "unavailable";
+    const revisionSha256 = completeHandoffRevisionSha256();
+    return revisionSha256 === null ? "preparing" : "ready";
+  };
+
+  const freshSerializedCompleteHandoff = async (
+    expectedRevisionSha256: string,
+  ): Promise<string> => {
+    if (
+      completeHandoffFreshnessCheck?.revisionSha256 ===
+        expectedRevisionSha256
+    ) {
+      return await completeHandoffFreshnessCheck.promise;
+    }
+    if (completeHandoffFreshnessCheck !== undefined) {
+      throw new SafeHttpError(
+        409,
+        "Another complete-handoff freshness check is still running.",
+      );
+    }
+    const promise = (async (): Promise<string> => {
+      let currentReceipt: FoundryUniversalIntakeReceipt;
+      try {
+        currentReceipt = await inspectUniversalIntake(source, {
+          signal: inspectionAbort.signal,
+        });
+      } catch {
+        completeHandoffCache = undefined;
+        completeHandoffCacheFailed = true;
+        throw new SafeHttpError(
+          409,
+          "The source could not be rechecked. No complete handoff was downloaded.",
+        );
+      }
+      if (
+        phase !== "ready" ||
+        receipt === undefined ||
+        currentReceipt.receiptSha256 !== receipt.receiptSha256
+      ) {
+        completeHandoffCache = undefined;
+        completeHandoffCacheFailed = true;
+        throw new SafeHttpError(
+          409,
+          "The source changed after inspection. Start a new local session before downloading a complete handoff.",
+        );
+      }
+      const currentRevisionSha256 = completeHandoffRevisionSha256();
+      if (
+        currentRevisionSha256 !== expectedRevisionSha256 ||
+        completeHandoffCache?.revisionSha256 !== expectedRevisionSha256
+      ) {
+        throw new SafeHttpError(
+          409,
+          "That complete handoff changed while the source was being rechecked. Refresh the page and try again.",
+        );
+      }
+      return completeHandoffCache.serialized;
+    })();
+    completeHandoffFreshnessCheck = {
+      revisionSha256: expectedRevisionSha256,
+      promise,
+    };
+    try {
+      return await promise;
+    } finally {
+      if (completeHandoffFreshnessCheck.promise === promise) {
+        completeHandoffFreshnessCheck = undefined;
+      }
+    }
+  };
 
   const serializeVerificationTransition = async <T>(
     operation: () => Promise<T>,
@@ -1526,6 +2293,92 @@ export async function startLocalFoundryApp(
     } finally {
       release?.();
     }
+  };
+
+  const serializeRoomEnvelopeReviewTransition = async <T>(
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    const previous = roomEnvelopeReviewTransition;
+    let release: (() => void) | undefined;
+    roomEnvelopeReviewTransition = new Promise<void>((resolveTransition) => {
+      release = resolveTransition;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release?.();
+    }
+  };
+
+  const awaitRoomEnvelopeReviewSettlement = async (): Promise<void> => {
+    for (;;) {
+      const observed = roomEnvelopeReviewTransition;
+      await observed;
+      if (roomEnvelopeReviewTransition === observed) return;
+    }
+  };
+
+  const roomEnvelopeReviewDto = (): LocalFoundryRoomEnvelopeReviewDtoV0 => {
+    const currentFacts = pointValueDiagnostic?.sourceFacts;
+    const establishedBundleCount = currentFacts?.state === "available"
+      ? currentFacts.pointValueBundles.filter(
+          (bundle) => bundle.pointValues.state === "established",
+        ).length
+      : 0;
+    const base = {
+      receiptSha256: receipt?.receiptSha256 ?? null,
+      sourceFactsSha256: currentFacts?.factsSha256 ?? null,
+      establishedBundleCount,
+    };
+    if (
+      phase !== "ready" ||
+      receipt === undefined ||
+      currentFacts === undefined ||
+      establishedBundleCount === 0
+    ) {
+      return {
+        state: "unavailable",
+        message:
+          "A room-envelope fit-seed review becomes available only after one exact V8 Potree bundle is established.",
+        ...base,
+        report: null,
+      };
+    }
+    if (
+      roomEnvelopeReviewReport !== undefined &&
+      roomEnvelopeReviewReport.source.receiptSha256 === receipt.receiptSha256 &&
+      roomEnvelopeReviewReport.source.sourceFactsSha256 ===
+        currentFacts.factsSha256
+    ) {
+      return {
+        state: "completed",
+        message:
+          "The exact intrinsic-pixel polygon was counted and bound into an authority-none fit-seed review.",
+        ...base,
+        report: {
+          reportSha256: roomEnvelopeReviewReport.reportSha256,
+          bundleSha256: roomEnvelopeReviewReport.source.bundleSha256,
+          horizontalViewId:
+            roomEnvelopeReviewReport.selection.horizontalViewId,
+          decision: roomEnvelopeReviewReport.review.decision,
+          reviewedAt: roomEnvelopeReviewReport.review.reviewedAt,
+          includedRecordCount:
+            roomEnvelopeReviewReport.selection.includedRecordCount,
+          excludedRecordCount:
+            roomEnvelopeReviewReport.selection.excludedRecordCount,
+          eligibility: roomEnvelopeReviewReport.eligibility,
+          authority: "none",
+        },
+      };
+    }
+    return {
+      state: "ready",
+      message:
+        "Review all three projections, choose a proposed horizontal view, and draw one intrinsic-pixel fit-seed polygon.",
+      ...base,
+      report: null,
+    };
   };
 
   const publicState = (): LocalFoundryPublicState => {
@@ -1555,12 +2408,25 @@ export async function startLocalFoundryApp(
       },
       guidedWorkflow: {
         maximumFiles: LOCAL_FOUNDRY_MAX_GUIDED_FILES,
+        completeHandoffMaximumFiles:
+          LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES,
+        completeHandoffMaximumSerializedBytes:
+          FOUNDRY_LOCAL_INSPECTION_HANDOFF_PACKAGE_MAX_SERIALIZED_BYTES_V0,
+        completeHandoff: completeHandoffStatus(),
+        completeHandoffRevisionSha256:
+          completeHandoffRevisionSha256(),
         admissionDraft: admissionDraft === undefined ? "not_built" : "ready",
         admissionReviewSha256: admissionDraft?.review.reviewSha256 ?? null,
         admissionResultSha256: admissionDraft?.result.resultSha256 ?? null,
         planPreview: planPreview === undefined ? "not_built" : "ready",
         planPreviewSha256: planPreview?.previewSha256 ?? null,
       },
+      localHdWorker: LOCAL_HD_WORKER_READINESS_DTO_V0,
+      localIntakeWorkspace: localIntakeWorkspace.snapshot(),
+      preparedHdDataset:
+        preparedHdDatasetRequestId === undefined
+          ? preparedHdDataset.snapshot()
+          : preparedHdDataset.snapshot(preparedHdDatasetRequestId),
       offlineNormalizationPreview:
         offlineNormalizationPreview === undefined
           ? structuredClone(LOCAL_OFFLINE_NORMALIZATION_PREVIEW_INITIAL_DTO)
@@ -1575,14 +2441,111 @@ export async function startLocalFoundryApp(
               : structuredClone(
                   LOCAL_OFFLINE_NORMALIZATION_PREVIEW_INITIAL_DTO,
                 ),
+      capturedQualityComparison:
+        capturedQualityComparison === undefined
+          ? structuredClone(
+              LOCAL_CAPTURED_QUALITY_COMPARISON_UNAVAILABLE_DTO,
+            )
+          : capturedQualityComparisonRequestId !== undefined
+            ? capturedQualityComparison.snapshot(
+                capturedQualityComparisonRequestId,
+              )
+            : phase === "ready"
+              ? capturedQualityComparison.availability()
+              : structuredClone(
+                  LOCAL_CAPTURED_QUALITY_COMPARISON_UNAVAILABLE_DTO,
+                ),
+      photoCaptureQuality:
+        phase === "ready"
+          ? photoCaptureQualityRequestId === undefined
+            ? photoCaptureQuality.snapshot()
+            : photoCaptureQuality.snapshot(photoCaptureQualityRequestId)
+          : structuredClone(LOCAL_PHOTO_CAPTURE_QUALITY_NOT_BOUND_DTO_V0),
+      roomEnvelopeReview: roomEnvelopeReviewDto(),
       ...(safeFailure === undefined ? {} : { safeFailure }),
       ...(receipt === undefined ? {} : { receipt }),
-      ...(sourceFacts === undefined ? {} : { sourceFacts }),
-      ...(sourceReadiness === undefined ? {} : { sourceReadiness }),
-      ...(operatorEvidenceChecklist === undefined
+      ...(sourceFacts === undefined ||
+          (receipt?.files.length ?? 0) > LOCAL_FOUNDRY_MAX_GUIDED_FILES
+        ? {}
+        : { sourceFacts }),
+      ...(sourceReadiness === undefined ||
+          (receipt?.files.length ?? 0) > LOCAL_FOUNDRY_MAX_GUIDED_FILES
+        ? {}
+        : { sourceReadiness }),
+      ...(operatorEvidenceChecklist === undefined ||
+          (receipt?.files.length ?? 0) > LOCAL_FOUNDRY_MAX_GUIDED_FILES
         ? {}
         : { operatorEvidenceChecklist }),
+      ...(pointValueDiagnostic === undefined ||
+          (receipt?.files.length ?? 0) > LOCAL_FOUNDRY_MAX_GUIDED_FILES
+        ? {}
+        : { pointValueDiagnostic }),
     };
+  };
+
+  const exactPointPreview = (
+    requested: PotreePointPreviewRequest,
+  ): LocalFoundryPointPreviewFile => {
+    if (phase !== "ready" || pointValueDiagnostic === undefined) {
+      throw new SafeHttpError(
+        409,
+        "The private point preview is not ready yet.",
+      );
+    }
+    const evidence = pointValueDiagnostic.sourceFacts.pointValueBundles.find(
+      (bundle) => bundle.bundleSha256 === requested.bundleSha256,
+    );
+    if (evidence?.pointValues.state !== "established") {
+      throw new SafeHttpError(
+        409,
+        "That private point preview is invalid or no longer current.",
+      );
+    }
+    const manifestMatches = evidence.pointValues.facts.previews.images.filter(
+      (image) =>
+        image.bundleSha256 === requested.bundleSha256 &&
+        image.viewId === requested.viewId &&
+        image.mode === requested.mode &&
+        image.sha256 === requested.sha256,
+    );
+    const sidecarMatches = pointPreviewFiles.filter(
+      (file) =>
+        file.bundleSha256 === requested.bundleSha256 &&
+        file.viewId === requested.viewId &&
+        file.mode === requested.mode &&
+        file.sha256 === requested.sha256,
+    );
+    if (manifestMatches.length !== 1 || sidecarMatches.length !== 1) {
+      throw new SafeHttpError(
+        409,
+        "That private point preview is invalid or no longer current.",
+      );
+    }
+    const manifest = manifestMatches[0];
+    const sidecar = sidecarMatches[0];
+    if (
+      manifest === undefined ||
+      sidecar === undefined ||
+      sidecar.bundleRoot !== evidence.bundleRoot ||
+      manifest.fileName !== sidecar.fileName ||
+      manifest.mediaType !== runtimeProperty(sidecar, "mediaType") ||
+      manifest.byteLength !== sidecar.byteLength ||
+      manifest.sha256 !== sidecar.sha256 ||
+      runtimeProperty(sidecar, "mediaType") !== "image/png" ||
+      !POTREE_POINT_PREVIEW_FILE_NAME_PATTERN.test(sidecar.fileName) ||
+      basename(sidecar.fileName) !== sidecar.fileName ||
+      sidecar.byteLength !== sidecar.bytes.byteLength ||
+      sidecar.bytes.byteLength < PNG_SIGNATURE.byteLength ||
+      !sidecar.bytes.subarray(0, PNG_SIGNATURE.byteLength).equals(PNG_SIGNATURE) ||
+      createHash("sha256").update(sidecar.bytes).digest("hex") !==
+        sidecar.sha256
+    ) {
+      throw new SafeHttpError(
+        409,
+        "That private point preview is invalid or no longer current.",
+      );
+    }
+    return sidecar;
   };
 
   const server = createServer((request, response) => {
@@ -1659,8 +2622,8 @@ export async function startLocalFoundryApp(
           response,
           200,
           "application/json; charset=utf-8",
-          `${serializeUniversalSourceFactsV5Artifact(sourceFacts)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-universal-source-facts-v5.json\"" },
+          `${serializeUniversalSourceFactsV7Artifact(sourceFacts)}\n`,
+          { "Content-Disposition": "attachment; filename=\"foundry-universal-source-facts-v7.json\"" },
         );
         return;
       }
@@ -1679,8 +2642,8 @@ export async function startLocalFoundryApp(
           response,
           200,
           "application/json; charset=utf-8",
-          `${serializeFoundrySourceReadinessMapV5(sourceReadiness)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-source-readiness-map-v5.json\"" },
+          `${serializeFoundrySourceReadinessMapV7(sourceReadiness)}\n`,
+          { "Content-Disposition": "attachment; filename=\"foundry-source-readiness-map-v7.json\"" },
         );
         return;
       }
@@ -1708,10 +2671,257 @@ export async function startLocalFoundryApp(
           response,
           200,
           "application/json; charset=utf-8",
-          `${serializeFoundryOperatorEvidenceChecklistV5(operatorEvidenceChecklist)}\n`,
+          `${serializeFoundryOperatorEvidenceChecklistV7(operatorEvidenceChecklist)}\n`,
           {
             "Content-Disposition":
-              "attachment; filename=\"foundry-operator-evidence-checklist-v5.json\"",
+              "attachment; filename=\"foundry-operator-evidence-checklist-v7.json\"",
+          },
+        );
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/source-facts-v8") {
+        const requestedDigest = requireSourceFactsTokenAndDigest(
+          url,
+          sessionToken,
+        );
+        const artifact = pointValueDiagnostic?.sourceFacts;
+        if (artifact === undefined || phase !== "ready") {
+          throw new SafeHttpError(
+            409,
+            "The Source Facts V8 artifact is not ready yet.",
+          );
+        }
+        if (requestedDigest !== artifact.factsSha256) {
+          throw new SafeHttpError(
+            409,
+            "That Source Facts V8 artifact is no longer current. Refresh the local page before downloading.",
+          );
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeUniversalSourceFactsV8Artifact(artifact)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-universal-source-facts-v8.json\"",
+          },
+        );
+        return;
+      }
+      if (method === "GET" && url.pathname === "/api/source-readiness-v8") {
+        const requestedDigest = requireSourceReadinessTokenAndDigest(
+          url,
+          sessionToken,
+        );
+        const artifact = pointValueDiagnostic?.sourceReadiness;
+        if (artifact === undefined || phase !== "ready") {
+          throw new SafeHttpError(
+            409,
+            "The Source Readiness V8 artifact is not ready yet.",
+          );
+        }
+        if (requestedDigest !== artifact.readinessSha256) {
+          throw new SafeHttpError(
+            409,
+            "That Source Readiness V8 artifact is no longer current. Refresh the local page before downloading.",
+          );
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeFoundrySourceReadinessMapV8(artifact)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-source-readiness-map-v8.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/operator-evidence-checklist-v8"
+      ) {
+        const requestedDigest = requireOperatorEvidenceChecklistTokenAndDigest(
+          url,
+          sessionToken,
+        );
+        const artifact = pointValueDiagnostic?.operatorEvidenceChecklist;
+        if (artifact === undefined || phase !== "ready") {
+          throw new SafeHttpError(
+            409,
+            "The Operator Evidence Checklist V8 is not ready yet.",
+          );
+        }
+        if (requestedDigest !== artifact.checklistSha256) {
+          throw new SafeHttpError(
+            409,
+            "That Operator Evidence Checklist V8 is no longer current. Refresh the local page before downloading.",
+          );
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeFoundryOperatorEvidenceChecklistV8(artifact)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-operator-evidence-checklist-v8.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        (
+          url.pathname === "/api/potree-point-preview" ||
+          url.pathname === "/api/potree-point-preview-download"
+        )
+      ) {
+        const requested = requirePotreePointPreviewToken(url, sessionToken);
+        const preview = exactPointPreview(requested);
+        const disposition =
+          url.pathname === "/api/potree-point-preview-download"
+            ? "attachment"
+            : "inline";
+        sendBytes(
+          response,
+          200,
+          "image/png",
+          preview.bytes,
+          {
+            "Cache-Control": "private, no-store, max-age=0, immutable",
+            "Content-Disposition":
+              `${disposition}; filename="${preview.fileName}"`,
+          },
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/room-envelope-review"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_ROOM_ENVELOPE_REVIEW_BODY_BYTES,
+          "The room-envelope review request",
+        );
+        assertRequiredExactKeys(
+          body,
+          [
+            "receiptSha256",
+            "sourceFactsSha256",
+            "bundleSha256",
+            "horizontalViewId",
+            "reviewedPreviews",
+            "polygonIntrinsicPixels",
+            "roomLabel",
+            "reviewerLabel",
+            "decision",
+            "note",
+          ],
+          "The room-envelope review request",
+        );
+        const completed = await serializeRoomEnvelopeReviewTransition(
+          async (): Promise<LocalFoundryRoomEnvelopeReviewDtoV0> => {
+            if (
+              phase !== "ready" ||
+              receipt === undefined ||
+              pointValueDiagnostic === undefined
+            ) {
+              throw new SafeHttpError(
+                409,
+                "The exact V8 source evidence is not ready for a room-envelope review.",
+              );
+            }
+            const currentReceipt = receipt;
+            const currentFacts = pointValueDiagnostic.sourceFacts;
+            const parsed = FoundryRoomEnvelopeReviewRequestV0Schema.safeParse({
+              ...body,
+              reviewedAt: new Date().toISOString(),
+            });
+            if (!parsed.success) {
+              throw new SafeHttpError(
+                400,
+                "The room-envelope review fields or polygon are invalid. No review was stored.",
+              );
+            }
+            let result: Awaited<
+              ReturnType<typeof runFoundryRoomEnvelopeReviewWorkerV0>
+            >;
+            try {
+              await options.roomEnvelopeReviewTestHooks?.beforeWorker?.();
+              result = await runFoundryRoomEnvelopeReviewWorkerV0({
+                sourceRoot: source,
+                receipt: currentReceipt,
+                sourceFacts: currentFacts,
+                request: parsed.data,
+                signal: inspectionAbort.signal,
+              });
+            } catch (error: unknown) {
+              if (error instanceof FoundryIntegrityError) {
+                throw new SafeHttpError(409, error.message);
+              }
+              if (
+                error instanceof Error &&
+                (error.name === "AbortError" ||
+                  Reflect.get(error, "code") ===
+                    "ROOM_ENVELOPE_REVIEW_CANCELLED")
+              ) {
+                throw new SafeHttpError(
+                  409,
+                  "The room-envelope review stopped before a report was stored.",
+                );
+              }
+              throw error;
+            }
+            if (!roomEnvelopeSourceIsCurrent(
+              currentReceipt.receiptSha256,
+              currentFacts.factsSha256,
+            )) {
+              throw new SafeHttpError(
+                409,
+                "The inspected source changed while the room-envelope review was running. No report was stored.",
+              );
+            }
+            roomEnvelopeReviewReport = result.report;
+            return roomEnvelopeReviewDto();
+          },
+        );
+        sendJson(response, 201, completed);
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/room-envelope-review-report"
+      ) {
+        const requestedDigest = requireRoomEnvelopeReviewTokenAndDigest(
+          url,
+          sessionToken,
+        );
+        if (roomEnvelopeReviewReport === undefined || phase !== "ready") {
+          throw new SafeHttpError(
+            409,
+            "A completed room-envelope review is not available.",
+          );
+        }
+        if (requestedDigest !== roomEnvelopeReviewReport.reportSha256) {
+          throw new SafeHttpError(
+            409,
+            "That room-envelope review is no longer current. Refresh the page before downloading.",
+          );
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          serializeFoundryRoomEnvelopeReviewV0(roomEnvelopeReviewReport),
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-room-envelope-review-v0.json\"",
           },
         );
         return;
@@ -1784,8 +2994,12 @@ export async function startLocalFoundryApp(
             await referenceVerification.shutdown();
             referenceVerification = undefined;
           }
+          if (localIntakeWorkspace.snapshot().state === "ready") {
+            localIntakeWorkspace.bindAdmissionDraft(compiled);
+          }
           admissionDraft = compiled;
           planPreview = undefined;
+          invalidateCompleteHandoffCache();
         });
         sendJson(response, 201, {
           receiptSha256: compiled.result.receiptSha256,
@@ -2232,6 +3446,791 @@ export async function startLocalFoundryApp(
         );
         return;
       }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/local-intake-workspace/start"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        if (receipt === undefined || phase !== "ready") {
+          throw new SafeHttpError(409, "The checked receipt is not ready for a local copy.");
+        }
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The local-workspace copy request",
+        );
+        let startRequest: ReturnType<typeof parseLocalIntakeWorkspaceStartRequestV0>;
+        try {
+          startRequest = parseLocalIntakeWorkspaceStartRequestV0(body);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            400,
+            "The local-workspace copy request was not accepted.",
+          );
+        }
+        if (startRequest.receiptSha256 !== receipt.receiptSha256) {
+          throw new SafeHttpError(409, "That checked receipt is no longer current.");
+        }
+        if (localIntakeWorkspace.snapshot().state !== "ready") {
+          throw new SafeHttpError(409, "The local workspace is not ready for a new copy.");
+        }
+        let completion: Promise<LocalIntakeWorkspaceDtoV0>;
+        try {
+          completion = localIntakeWorkspace.start(startRequest);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            409,
+            "The verified local copy could not start.",
+          );
+        }
+        void completion.catch(() => {
+          // The controller publishes one bounded failure DTO for status polling.
+        });
+        sendJson(response, 202, localIntakeWorkspace.snapshot(startRequest.requestId));
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/local-intake-workspace/status"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The local-workspace status request",
+        );
+        let statusRequest: ReturnType<typeof parseLocalIntakeWorkspaceStatusRequestV0>;
+        try {
+          statusRequest = parseLocalIntakeWorkspaceStatusRequestV0(body);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            400,
+            "The local-workspace status request was not accepted.",
+          );
+        }
+        const current = localIntakeWorkspace.snapshot(statusRequest.requestId);
+        if (
+          current.requestId !== statusRequest.requestId ||
+          current.failureCode === "LOCAL_INTAKE_WORKSPACE_STALE_REQUEST"
+        ) {
+          throw new SafeHttpError(409, "That local-workspace request is no longer current.");
+        }
+        sendJson(response, 200, current);
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/local-intake-workspace/cancel"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The local-workspace cancellation request",
+        );
+        let statusRequest: ReturnType<typeof parseLocalIntakeWorkspaceStatusRequestV0>;
+        try {
+          statusRequest = parseLocalIntakeWorkspaceStatusRequestV0(body);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            400,
+            "The local-workspace cancellation request was not accepted.",
+          );
+        }
+        let current: LocalIntakeWorkspaceDtoV0 | null;
+        try {
+          current = await localIntakeWorkspace.cancel(statusRequest.requestId);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            409,
+            "The local copy could not confirm cancellation.",
+          );
+        }
+        if (current === null) {
+          throw new SafeHttpError(409, "That local-workspace request is no longer active.");
+        }
+        sendJson(response, 200, current);
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/local-intake-workspace/report"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The local-workspace record request",
+        );
+        let statusRequest: ReturnType<typeof parseLocalIntakeWorkspaceStatusRequestV0>;
+        try {
+          statusRequest = parseLocalIntakeWorkspaceStatusRequestV0(body);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            400,
+            "The local-workspace record request was not accepted.",
+          );
+        }
+        const report = localIntakeWorkspace.readCompletedReport(statusRequest.requestId);
+        if (report === null) {
+          throw new SafeHttpError(409, "That verified local-workspace record is no longer current.");
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${JSON.stringify(report, null, 2)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-local-intake-workspace-record-v0.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/local-intake-workspace/delete-and-stop"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The local-workspace deletion request",
+        );
+        let deleteRequest: ReturnType<typeof parseLocalIntakeWorkspaceDeleteRequestV0>;
+        try {
+          deleteRequest = parseLocalIntakeWorkspaceDeleteRequestV0(body);
+        } catch (error: unknown) {
+          throw localIntakeWorkspaceHttpError(
+            error,
+            400,
+            "The local-workspace deletion request was not accepted.",
+          );
+        }
+        if (receipt === undefined || deleteRequest.receiptSha256 !== receipt.receiptSha256) {
+          throw new SafeHttpError(409, "That checked receipt is no longer current.");
+        }
+        const workspaceBeforeDelete = localIntakeWorkspace.snapshot();
+        const deletionRetry =
+          workspaceBeforeDelete.state === "failed" &&
+          workspaceBeforeDelete.operation === "delete_local_workspace_copy";
+        if (
+          !(workspaceBeforeDelete.state === "stored" || deletionRetry) ||
+          workspaceBeforeDelete.receiptSha256 !== deleteRequest.receiptSha256 ||
+          workspaceBeforeDelete.workspace?.workspaceSha256 !==
+            deleteRequest.workspaceSha256
+        ) {
+          throw new SafeHttpError(
+            409,
+            "Refresh before deleting: that verified local copy is no longer current.",
+          );
+        }
+        if (operatorStopPreparing) {
+          throw new SafeHttpError(409, "The local session is already preparing to stop safely.");
+        }
+        operatorStopPreparing = true;
+        const phaseBeforeDelete = phase;
+        phase = "stopping";
+        try {
+          await awaitRoomEnvelopeReviewSettlement();
+          await serializeVerificationTransition(async () => {
+            if (referenceVerification !== undefined) {
+              await referenceVerification.shutdown();
+              referenceVerification = undefined;
+            }
+          });
+          if (offlineNormalizationPreview !== undefined) {
+            await offlineNormalizationPreview.stop();
+          }
+          if (capturedQualityComparison !== undefined) {
+            await capturedQualityComparison.stop();
+          }
+          await preparedHdDataset.close();
+          await photoCaptureQuality.stop();
+          roomEnvelopeReviewReport = undefined;
+          const deleted = await localIntakeWorkspace.delete(deleteRequest);
+          if (deleted.state !== "deleted") {
+            throw new LocalIntakeWorkspaceError(
+              deleted.failureCode ?? "LOCAL_INTAKE_WORKSPACE_DELETE_FAILED",
+              deleted.message,
+            );
+          }
+          clearTimeout(expiryTimer);
+          sendJson(response, 202, deleted);
+          setImmediate(() => {
+            void stopServer("operator");
+          });
+        } catch (error: unknown) {
+          operatorStopPreparing = false;
+          phase = phaseBeforeDelete;
+          throw localIntakeWorkspaceHttpError(
+            error,
+            409,
+            "The local copy was kept because deletion could not be fully verified.",
+          );
+        }
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/prepared-hd-dataset/start"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The prepared-dataset request",
+        );
+        const startRequest = parsePreparedHdDatasetStartRequest(body);
+        if (
+          phase !== "ready" ||
+          receipt === undefined ||
+          preparedHdDataset.snapshot().state !== "ready"
+        ) {
+          throw new SafeHttpError(
+            409,
+            "No exact dataset/ and depths/ package is ready for this local session.",
+          );
+        }
+        if (startRequest.receiptSha256 !== receipt.receiptSha256) {
+          throw new SafeHttpError(
+            409,
+            "The intake receipt changed. Refresh before validating the prepared package.",
+          );
+        }
+        if (
+          preparedHdDatasetRequestId !== undefined &&
+          preparedHdDatasetRequestId !== startRequest.requestId
+        ) {
+          throw new SafeHttpError(
+            409,
+            "A different prepared-dataset request already owns this local session.",
+          );
+        }
+        let completion: Promise<LocalPreparedHdDatasetDtoV0>;
+        try {
+          completion = preparedHdDataset.start(startRequest);
+        } catch {
+          throw new SafeHttpError(
+            409,
+            "The prepared package check could not start because its receipt or local runtime changed.",
+          );
+        }
+        preparedHdDatasetRequestId = startRequest.requestId;
+        void completion.catch(() => undefined);
+        sendJson(
+          response,
+          202,
+          preparedHdDataset.snapshot(startRequest.requestId),
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/prepared-hd-dataset/status"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The prepared-dataset status request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The prepared-dataset status request",
+        );
+        const requestId = parsePreparedHdDatasetRequestId(body.requestId);
+        if (preparedHdDatasetRequestId !== requestId) {
+          throw new SafeHttpError(
+            409,
+            "That prepared-dataset request is no longer current.",
+          );
+        }
+        sendJson(response, 200, preparedHdDataset.snapshot(requestId));
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/prepared-hd-dataset/cancel"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The stop-prepared-dataset request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The stop-prepared-dataset request",
+        );
+        const requestId = parsePreparedHdDatasetRequestId(body.requestId);
+        if (preparedHdDatasetRequestId !== requestId) {
+          throw new SafeHttpError(
+            409,
+            "That prepared-dataset request is no longer current.",
+          );
+        }
+        const current = await preparedHdDataset.cancel(requestId);
+        if (current === null) {
+          throw new SafeHttpError(
+            409,
+            "That prepared-dataset request is no longer current.",
+          );
+        }
+        sendJson(response, 200, current);
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/prepared-hd-dataset/report"
+      ) {
+        const artifactRequest = requirePreparedHdDatasetReportToken(
+          url,
+          sessionToken,
+        );
+        if (preparedHdDatasetRequestId !== artifactRequest.requestId) {
+          throw new SafeHttpError(
+            409,
+            "That prepared-dataset receipt is no longer current.",
+          );
+        }
+        const report = preparedHdDataset.readCompletedReport(
+          artifactRequest.requestId,
+        );
+        if (
+          report === null ||
+          report.receiptSha256 !== artifactRequest.digest
+        ) {
+          throw new SafeHttpError(
+            409,
+            "That prepared-dataset receipt fingerprint is no longer current.",
+          );
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeFoundryPreparedHdDatasetReadinessReceiptV0(report)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-prepared-hd-dataset-readiness-v0.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/photo-capture-quality/start"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_DRAFT_BODY_BYTES,
+          "The photo-workbench request",
+        );
+        const startRequest = parsePhotoCaptureQualityStartRequest(body);
+        if (
+          phase !== "ready" ||
+          receipt === undefined ||
+          photoCaptureQuality.snapshot().state === "unavailable"
+        ) {
+          throw new SafeHttpError(
+            409,
+            "No receipt-bound JPEG/PNG photo workbench is ready for this local session.",
+          );
+        }
+        if (startRequest.receiptSha256 !== receipt.receiptSha256) {
+          throw new SafeHttpError(
+            409,
+            "The intake receipt changed. Refresh before starting the photo analysis.",
+          );
+        }
+        if (photoCaptureQualityRequestId !== undefined) {
+          const currentState = photoCaptureQuality.snapshot().state;
+          if (
+            currentState === "cancelled" &&
+            photoCaptureQualityRequestId === startRequest.requestId
+          ) {
+            throw new SafeHttpError(
+              409,
+              "A repeated photo check needs a fresh request reference.",
+            );
+          }
+          if (
+            currentState !== "cancelled" &&
+            photoCaptureQualityRequestId !== startRequest.requestId
+          ) {
+            throw new SafeHttpError(
+              409,
+              "A different photo-workbench request already owns this local session.",
+            );
+          }
+        }
+        let completion: Promise<void>;
+        try {
+          completion = photoCaptureQuality.start(startRequest);
+        } catch {
+          throw new SafeHttpError(
+            409,
+            "The photo analysis could not start because the receipt, assignments, or current run changed.",
+          );
+        }
+        photoCaptureQualityRequestId = startRequest.requestId;
+        void completion.catch(() => undefined);
+        sendJson(
+          response,
+          202,
+          photoCaptureQuality.snapshot(startRequest.requestId),
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/photo-capture-quality/status"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The photo-workbench status request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The photo-workbench status request",
+        );
+        const requestId = parsePhotoCaptureQualityRequestId(body.requestId);
+        if (photoCaptureQualityRequestId !== requestId) {
+          throw new SafeHttpError(409, "That photo-workbench request is no longer current.");
+        }
+        sendJson(response, 200, photoCaptureQuality.snapshot(requestId));
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/photo-capture-quality/cancel"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The stop-photo-workbench request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The stop-photo-workbench request",
+        );
+        const requestId = parsePhotoCaptureQualityRequestId(body.requestId);
+        if (photoCaptureQualityRequestId !== requestId) {
+          throw new SafeHttpError(409, "That photo-workbench request is no longer current.");
+        }
+        sendJson(
+          response,
+          200,
+          await photoCaptureQuality.cancel(requestId),
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/photo-capture-quality/report"
+      ) {
+        const artifactRequest = requirePhotoCaptureQualityReportToken(
+          url,
+          sessionToken,
+        );
+        if (photoCaptureQualityRequestId !== artifactRequest.requestId) {
+          throw new SafeHttpError(409, "That photo-workbench report is no longer current.");
+        }
+        const report = photoCaptureQuality.readCompletedReport(
+          artifactRequest.requestId,
+        );
+        if (report === null || report.reportSha256 !== artifactRequest.digest) {
+          throw new SafeHttpError(409, "That photo-workbench report fingerprint is no longer current.");
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeFoundryPhotoCaptureQualityReportV0(report)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-photo-capture-quality-report-v0.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/photo-capture-quality/thumbnail"
+      ) {
+        const artifactRequest = requirePhotoCaptureQualityThumbnailToken(
+          url,
+          sessionToken,
+        );
+        if (photoCaptureQualityRequestId !== artifactRequest.requestId) {
+          throw new SafeHttpError(409, "That photo-workbench preview is no longer current.");
+        }
+        const thumbnail = photoCaptureQuality.readThumbnail(
+          artifactRequest.requestId,
+          artifactRequest.imageId,
+          artifactRequest.digest,
+        );
+        if (thumbnail === null) {
+          throw new SafeHttpError(409, "That photo-workbench preview fingerprint is no longer current.");
+        }
+        sendBytes(
+          response,
+          200,
+          "image/webp",
+          thumbnail.bytes,
+          {
+            "Content-Disposition": "inline",
+            ETag: `"${thumbnail.sha256}"`,
+          },
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/captured-quality-comparison/start"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The captured-quality comparison request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The captured-quality comparison request",
+        );
+        const requestId = parseCapturedQualityRequestId(body.requestId);
+        if (
+          phase !== "ready" ||
+          capturedQualityComparison === undefined ||
+          (
+            capturedQualityComparisonRequestId === undefined &&
+            capturedQualityComparison.availability().state !== "ready"
+          )
+        ) {
+          throw new SafeHttpError(
+            409,
+            "No exact captured-quality comparison is ready for this local session.",
+          );
+        }
+        if (
+          capturedQualityComparisonRequestId !== undefined &&
+          capturedQualityComparisonRequestId !== requestId
+        ) {
+          throw new SafeHttpError(
+            409,
+            "A different captured-quality request already owns this local session.",
+          );
+        }
+        capturedQualityComparisonRequestId = requestId;
+        const completion = capturedQualityComparison.start({ requestId });
+        void completion
+          .then(() => {
+            invalidateCompleteHandoffCache();
+          })
+          .catch(() => undefined);
+        sendJson(
+          response,
+          202,
+          capturedQualityComparison.snapshot(requestId),
+        );
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/captured-quality-comparison/status"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The captured-quality status request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The captured-quality status request",
+        );
+        const requestId = parseCapturedQualityRequestId(body.requestId);
+        if (
+          capturedQualityComparison === undefined ||
+          capturedQualityComparisonRequestId !== requestId
+        ) {
+          throw new SafeHttpError(409, "That captured-quality request is no longer current.");
+        }
+        const current = capturedQualityComparison.status(requestId);
+        if (current === null) {
+          throw new SafeHttpError(409, "That captured-quality request is no longer current.");
+        }
+        sendJson(response, 200, current);
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/captured-quality-comparison/cancel"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
+          "The stop-captured-quality request",
+        );
+        assertRequiredExactKeys(
+          body,
+          ["requestId"],
+          "The stop-captured-quality request",
+        );
+        const requestId = parseCapturedQualityRequestId(body.requestId);
+        if (
+          capturedQualityComparison === undefined ||
+          capturedQualityComparisonRequestId !== requestId
+        ) {
+          throw new SafeHttpError(409, "That captured-quality request is no longer current.");
+        }
+        const current = await capturedQualityComparison.cancel(requestId);
+        if (current === null) {
+          throw new SafeHttpError(409, "That captured-quality request is no longer current.");
+        }
+        sendJson(response, 200, current);
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/captured-quality-comparison/report"
+      ) {
+        const artifactRequest = requireCapturedQualityReportToken(
+          url,
+          sessionToken,
+        );
+        if (
+          capturedQualityComparison === undefined ||
+          capturedQualityComparisonRequestId !== artifactRequest.requestId
+        ) {
+          throw new SafeHttpError(409, "That captured-quality report is no longer current.");
+        }
+        const report = capturedQualityComparison.readCompletedReport(
+          artifactRequest.requestId,
+        );
+        if (report === null) {
+          throw new SafeHttpError(409, "The completed captured-quality report is not available.");
+        }
+        if (artifactRequest.digest !== report.reportSha256) {
+          throw new SafeHttpError(409, "That captured-quality report fingerprint is no longer current.");
+        }
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializeFoundryCapturedQualityComparisonReportV0(report)}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-captured-quality-comparison-report-v0.json\"",
+          },
+        );
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/local-inspection-handoff-package"
+      ) {
+        const requestedRevisionSha256 = requireHandoffTokenAndRevisionDigest(
+          url,
+          sessionToken,
+        );
+        if (
+          receipt === undefined ||
+          pointValueDiagnostic === undefined ||
+          phase !== "ready"
+        ) {
+          throw new SafeHttpError(
+            409,
+            "The complete local handoff is not ready yet.",
+          );
+        }
+        if (
+          receipt.files.length > LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES
+        ) {
+          throw new SafeHttpError(
+            409,
+            `One complete file is limited to ${String(LOCAL_FOUNDRY_MAX_COMPLETE_HANDOFF_FILES)} inspected files. Use the separate evidence downloads for this larger source set.`,
+          );
+        }
+        const currentRevisionSha256 = completeHandoffRevisionSha256();
+        if (
+          currentRevisionSha256 === null ||
+          requestedRevisionSha256 !== currentRevisionSha256
+        ) {
+          throw new SafeHttpError(
+            409,
+            "That complete handoff revision is no longer current. Refresh the local page before downloading.",
+          );
+        }
+        if (
+          completeHandoffCache !== undefined &&
+          completeHandoffCache.revisionSha256 !== currentRevisionSha256
+        ) {
+          throw new SafeHttpError(
+            409,
+            "The current complete handoff changed. Refresh the local page before downloading.",
+          );
+        }
+        if (completeHandoffCache === undefined && !completeHandoffCacheFailed) {
+          buildCompleteHandoffCache();
+        }
+        if (
+          completeHandoffCacheFailed ||
+          completeHandoffCache?.revisionSha256 !== currentRevisionSha256
+        ) {
+          throw new SafeHttpError(
+            409,
+            "The current complete handoff could not be built. The separate evidence downloads remain available.",
+          );
+        }
+        const serializedHandoff = await freshSerializedCompleteHandoff(
+          requestedRevisionSha256,
+        );
+        send(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          `${serializedHandoff}\n`,
+          {
+            "Content-Disposition":
+              "attachment; filename=\"foundry-local-inspection-handoff-package-v0.json\"",
+          },
+        );
+        return;
+      }
       if (method === "POST" && url.pathname === "/api/plan-preview") {
         requireSessionToken(url, sessionToken);
         if (request.headers.origin !== origin) {
@@ -2325,6 +4324,7 @@ export async function startLocalFoundryApp(
           );
         }
         planPreview = responsePayload.preview;
+        invalidateCompleteHandoffCache();
         sendJson(response, 201, responsePayload);
         return;
       }
@@ -2368,6 +4368,13 @@ export async function startLocalFoundryApp(
           if (offlineNormalizationPreview !== undefined) {
             await offlineNormalizationPreview.stop();
           }
+          if (capturedQualityComparison !== undefined) {
+            await capturedQualityComparison.stop();
+          }
+          await preparedHdDataset.close();
+          await localIntakeWorkspace.close();
+          await photoCaptureQuality.stop();
+          roomEnvelopeReviewReport = undefined;
         } catch {
           operatorStopPreparing = false;
           phase = phaseBeforeStop;
@@ -2381,6 +4388,10 @@ export async function startLocalFoundryApp(
           stopping: true,
           verificationStopped: true,
           offlinePreviewStopped: true,
+          capturedQualityComparisonStopped: true,
+          preparedHdDatasetStopped: true,
+          localIntakeWorkspaceStopped: true,
+          photoCaptureQualityStopped: true,
         });
         setImmediate(() => {
           void stopServer("operator");
@@ -2395,6 +4406,13 @@ export async function startLocalFoundryApp(
           "/api/source-facts",
           "/api/source-readiness",
           "/api/operator-evidence-checklist",
+          "/api/source-facts-v8",
+          "/api/source-readiness-v8",
+          "/api/operator-evidence-checklist-v8",
+          "/api/potree-point-preview",
+          "/api/potree-point-preview-download",
+          "/api/room-envelope-review",
+          "/api/room-envelope-review-report",
           "/api/admission-draft",
           "/api/admission-review",
           "/api/admission-result",
@@ -2409,6 +4427,25 @@ export async function startLocalFoundryApp(
           "/api/offline-normalization-preview/cancel",
           "/api/offline-normalization-preview/output",
           "/api/offline-normalization-preview/report",
+          "/api/local-intake-workspace/start",
+          "/api/local-intake-workspace/status",
+          "/api/local-intake-workspace/cancel",
+          "/api/local-intake-workspace/report",
+          "/api/local-intake-workspace/delete-and-stop",
+          "/api/prepared-hd-dataset/start",
+          "/api/prepared-hd-dataset/status",
+          "/api/prepared-hd-dataset/cancel",
+          "/api/prepared-hd-dataset/report",
+          "/api/photo-capture-quality/start",
+          "/api/photo-capture-quality/status",
+          "/api/photo-capture-quality/cancel",
+          "/api/photo-capture-quality/report",
+          "/api/photo-capture-quality/thumbnail",
+          "/api/captured-quality-comparison/start",
+          "/api/captured-quality-comparison/status",
+          "/api/captured-quality-comparison/cancel",
+          "/api/captured-quality-comparison/report",
+          "/api/local-inspection-handoff-package",
           "/api/plan-preview",
           "/api/plan-dossier",
           "/api/stop",
@@ -2443,6 +4480,7 @@ export async function startLocalFoundryApp(
     inspectionAbort.abort();
     clearTimeout(expiryTimer);
     const attempt = (async () => {
+      await awaitRoomEnvelopeReviewSettlement();
       await serializeVerificationTransition(async () => {
         if (referenceVerification !== undefined) {
           await referenceVerification.shutdown();
@@ -2452,6 +4490,12 @@ export async function startLocalFoundryApp(
       if (offlineNormalizationPreview !== undefined) {
         await offlineNormalizationPreview.stop();
       }
+      if (capturedQualityComparison !== undefined) {
+        await capturedQualityComparison.stop();
+      }
+      await preparedHdDataset.close();
+      await localIntakeWorkspace.close();
+      await photoCaptureQuality.stop();
       await new Promise<void>((resolveClose) => {
         server.close(() => {
           resolveClose();
@@ -2463,10 +4507,19 @@ export async function startLocalFoundryApp(
       sourceFacts = undefined;
       sourceReadiness = undefined;
       operatorEvidenceChecklist = undefined;
+      pointValueDiagnostic = undefined;
+      roomEnvelopeReviewReport = undefined;
+      clearPointPreviewFiles(pointPreviewFiles);
+      pointPreviewFiles = [];
       admissionDraft = undefined;
       planPreview = undefined;
       trustedStartupSourceIdentity = undefined;
       offlineNormalizationPreviewRequestId = undefined;
+      capturedQualityComparisonRequestId = undefined;
+      preparedHdDatasetRequestId = undefined;
+      photoCaptureQualityRequestId = undefined;
+      completeHandoffCache = undefined;
+      completeHandoffCacheFailed = false;
       safeFailure = undefined;
       phase = "stopped";
       resolveClosed?.({ reason: confirmedStopReason });
@@ -2507,31 +4560,80 @@ export async function startLocalFoundryApp(
     .then(async (identity) => {
       if (phase !== "inspecting") return undefined;
       trustedStartupSourceIdentity = identity;
-      return inspectUniversalIntakeWithSourceFactsV5(source, { signal: inspectionAbort.signal });
+      await options.sourceInspectionTestHooks?.beforeSourceFactsInspection?.();
+      if (inspectionAbort.signal.aborted) return undefined;
+      return inspectUniversalIntakeWithSourceFactsV8(source, {
+        signal: inspectionAbort.signal,
+      });
     })
-    .then((candidate) => {
+    .then(async (candidate) => {
       if (candidate === undefined) return;
-      if (phase !== "inspecting") return;
-      const parsedReceipt = FoundryUniversalIntakeReceiptSchema.parse(candidate.receipt);
-      const parsedSourceFacts = FoundryUniversalSourceFactsV5Schema.parse(candidate.sourceFacts);
-      const parsedSourceReadiness = FoundrySourceReadinessMapV5Schema.parse(
-        compileFoundrySourceReadinessMapV5({
-          receipt: parsedReceipt,
-          sourceFacts: parsedSourceFacts,
-        }),
-      );
-      const parsedOperatorEvidenceChecklist =
-        FoundryOperatorEvidenceChecklistV5Schema.parse(
-          compileFoundryOperatorEvidenceChecklistV5({
-            readiness: parsedSourceReadiness,
+      let previewOwnershipTransferred = false;
+      try {
+        if (!sourceInspectionIsCurrent()) return;
+        await options.sourceInspectionTestHooks?.beforeSourceFactsPublication?.(
+          candidate,
+        );
+        if (!sourceInspectionIsCurrent()) return;
+        const parsedReceipt = FoundryUniversalIntakeReceiptSchema.parse(candidate.receipt);
+        const parsedSourceFactsV8 = FoundryUniversalSourceFactsV8Schema.parse(
+          candidate.sourceFacts,
+        );
+        const parsedSourceFacts = FoundryUniversalSourceFactsV7Schema.parse(
+          parsedSourceFactsV8.inherited,
+        );
+        const parsedSourceReadiness = FoundrySourceReadinessMapV7Schema.parse(
+          compileFoundrySourceReadinessMapV7({
+            receipt: parsedReceipt,
+            sourceFacts: parsedSourceFacts,
           }),
         );
-      receipt = parsedReceipt;
-      sourceFacts = parsedSourceFacts;
-      sourceReadiness = parsedSourceReadiness;
-      operatorEvidenceChecklist = parsedOperatorEvidenceChecklist;
-      sourceLabel = parsedReceipt.source.label;
-      phase = "ready";
+        const parsedOperatorEvidenceChecklist =
+          FoundryOperatorEvidenceChecklistV7Schema.parse(
+            compileFoundryOperatorEvidenceChecklistV7({
+              readiness: parsedSourceReadiness,
+            }),
+          );
+        const parsedSourceReadinessV8 = FoundrySourceReadinessMapV8Schema.parse(
+          compileFoundrySourceReadinessMapV8({
+            receipt: parsedReceipt,
+            sourceFacts: parsedSourceFactsV8,
+          }),
+        );
+        const parsedOperatorEvidenceChecklistV8 =
+          FoundryOperatorEvidenceChecklistV8Schema.parse(
+            compileFoundryOperatorEvidenceChecklistV8({
+              readiness: parsedSourceReadinessV8,
+            }),
+          );
+        const validatedPointPreviewFiles = validatePointPreviewFiles(
+          parsedSourceFactsV8,
+          candidate.pointPreviewFiles,
+        );
+        preparedHdDataset.bindReceipt(parsedReceipt);
+        photoCaptureQuality.bindReceipt(parsedReceipt);
+        localIntakeWorkspace.bindReceipt(parsedReceipt);
+        receipt = parsedReceipt;
+        sourceFacts = parsedSourceFacts;
+        sourceReadiness = parsedSourceReadiness;
+        operatorEvidenceChecklist = parsedOperatorEvidenceChecklist;
+        pointValueDiagnostic = {
+          sourceFacts: parsedSourceFactsV8,
+          sourceReadiness: parsedSourceReadinessV8,
+          operatorEvidenceChecklist: parsedOperatorEvidenceChecklistV8,
+        };
+        pointPreviewFiles = validatedPointPreviewFiles;
+        sourceLabel = parsedReceipt.source.label;
+        invalidateCompleteHandoffCache();
+        phase = "ready";
+        // From this point the live state owns the exact buffers, and
+        // stopServer is responsible for wiping and releasing them.
+        previewOwnershipTransferred = true;
+      } finally {
+        if (!previewOwnershipTransferred) {
+          clearPointPreviewFiles(candidate.pointPreviewFiles);
+        }
+      }
     })
     .catch(() => {
       if (phase !== "inspecting") return;

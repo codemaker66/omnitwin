@@ -447,6 +447,10 @@ describe("local reference verification HTTP boundary", () => {
       stopping: true,
       verificationStopped: true,
       offlinePreviewStopped: true,
+      capturedQualityComparisonStopped: true,
+      preparedHdDatasetStopped: true,
+      localIntakeWorkspaceStopped: true,
+      photoCaptureQualityStopped: true,
     });
   }, 20_000);
 
@@ -529,6 +533,10 @@ describe("local reference verification HTTP boundary", () => {
       stopping: true,
       verificationStopped: true,
       offlinePreviewStopped: true,
+      capturedQualityComparisonStopped: true,
+      preparedHdDatasetStopped: true,
+      localIntakeWorkspaceStopped: true,
+      photoCaptureQualityStopped: true,
     });
 
     const privateText = `${startedResponse.body}\n${queuedStart.body}\n${stopped.body}`;

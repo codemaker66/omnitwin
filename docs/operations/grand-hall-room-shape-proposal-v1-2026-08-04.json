@@ -1,0 +1,1026 @@
+{
+  "acceptedWalls": [
+    "x_min",
+    "x_max",
+    "y_min"
+  ],
+  "authority": "none",
+  "candidates": [
+    {
+      "accepted": true,
+      "axis": 0,
+      "completenessClosed": 0.974724265,
+      "completenessRaw": 0.961090686,
+      "coverageHeight": 0.954978065,
+      "coverageWalked": 0.89507753,
+      "name": "x_min",
+      "offsetM": -9.898322043,
+      "outboardPointCount": 0,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.0,
+      "plane": {
+        "inlierCount": 295275,
+        "normal": [
+          0.999990345,
+          0.00193453,
+          0.003945582
+        ],
+        "offsetM": -9.884615958,
+        "rmsM": 0.017223498,
+        "sigmaM": 0.015105856
+      },
+      "rejection": null,
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -5.006131264,
+          5.147308132
+        ],
+        "v": [
+          0.196331783,
+          6.633566124
+        ]
+      },
+      "supportCells": 6528,
+      "supportUM": 10.153439396,
+      "supportVM": 6.437234341,
+      "toleranceM": 0.045317567
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.076269185,
+      "completenessRaw": 0.076269185,
+      "coverageHeight": 0.51460861,
+      "coverageWalked": 1.06940229,
+      "name": "x_min",
+      "offsetM": -8.67829816,
+      "outboardPointCount": 275349,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 16.158030632,
+      "plane": {
+        "inlierCount": 17041,
+        "normal": [
+          0.999990858,
+          0.00041331,
+          0.004255901
+        ],
+        "offsetM": -8.670426425,
+        "rmsM": 0.022553622,
+        "sigmaM": 0.024073761
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -5.581101313,
+          6.549815822
+        ],
+        "v": [
+          0.049510595,
+          3.518340233
+        ]
+      },
+      "supportCells": 4235,
+      "supportUM": 12.130917135,
+      "supportVM": 3.468829638,
+      "toleranceM": 0.072221282
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.156472262,
+      "completenessRaw": 0.156472262,
+      "coverageHeight": 0.286075825,
+      "coverageWalked": 0.978670168,
+      "name": "x_min",
+      "offsetM": -9.110309169,
+      "outboardPointCount": 91311,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 5.936224158,
+      "plane": {
+        "inlierCount": 15382,
+        "normal": [
+          0.999998347,
+          4.3324e-05,
+          0.001817811
+        ],
+        "offsetM": -9.108459795,
+        "rmsM": 0.014908068,
+        "sigmaM": 0.01309818
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -3.975078275,
+          7.126606115
+        ],
+        "v": [
+          0.007344993,
+          1.935700413
+        ]
+      },
+      "supportCells": 2109,
+      "supportUM": 11.10168439,
+      "supportVM": 1.92835542,
+      "toleranceM": 0.039294539
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.258081897,
+      "completenessRaw": 0.168911638,
+      "coverageHeight": 0.469688649,
+      "coverageWalked": 1.020617579,
+      "name": "x_min",
+      "offsetM": -9.703330392,
+      "outboardPointCount": 105,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.009047045,
+      "plane": {
+        "inlierCount": 11606,
+        "normal": [
+          0.9999985,
+          0.001666696,
+          0.000471058
+        ],
+        "offsetM": -9.703109237,
+        "rmsM": 0.019517776,
+        "sigmaM": 0.013942578
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -6.393380168,
+          5.184140652
+        ],
+        "v": [
+          0.994834455,
+          4.160871471
+        ]
+      },
+      "supportCells": 3712,
+      "supportUM": 11.57752082,
+      "supportVM": 3.166037016,
+      "toleranceM": 0.041827734
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.692432432,
+      "completenessRaw": 0.652972973,
+      "coverageHeight": 0.745023422,
+      "coverageWalked": 0.323721269,
+      "name": "x_min",
+      "offsetM": -13.90502994,
+      "outboardPointCount": 0,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.0,
+      "plane": {
+        "inlierCount": 4940,
+        "normal": [
+          0.999920303,
+          0.001438329,
+          0.012542698
+        ],
+        "offsetM": -13.847613906,
+        "rmsM": 0.012715936,
+        "sigmaM": 0.008910839
+      },
+      "rejection": "DOES_NOT_SPAN_WALKED_FOOTPRINT",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          12.663340576,
+          16.335518878
+        ],
+        "v": [
+          0.315581447,
+          5.337571518
+        ]
+      },
+      "supportCells": 1850,
+      "supportUM": 3.672178303,
+      "supportVM": 5.021990071,
+      "toleranceM": 0.03
+    },
+    {
+      "accepted": true,
+      "axis": 0,
+      "completenessClosed": 0.971534653,
+      "completenessRaw": 0.951268564,
+      "coverageHeight": 0.944306272,
+      "coverageWalked": 0.888319295,
+      "name": "x_max",
+      "offsetM": 11.254338267,
+      "outboardPointCount": 2363,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.007454658,
+      "plane": {
+        "inlierCount": 316983,
+        "normal": [
+          -0.999988333,
+          -0.002291421,
+          0.004252519
+        ],
+        "offsetM": -11.239920674,
+        "rmsM": 0.018846131,
+        "sigmaM": 0.017524937
+      },
+      "rejection": null,
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -4.97125717,
+          5.105519224
+        ],
+        "v": [
+          0.213011207,
+          6.578310045
+        ]
+      },
+      "supportCells": 6464,
+      "supportUM": 10.076776395,
+      "supportVM": 6.365298838,
+      "toleranceM": 0.052574811
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.273856209,
+      "completenessRaw": 0.273856209,
+      "coverageHeight": 0.219948778,
+      "coverageWalked": 0.901096104,
+      "name": "x_max",
+      "offsetM": 10.493103584,
+      "outboardPointCount": 102007,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 5.333699346,
+      "plane": {
+        "inlierCount": 19125,
+        "normal": [
+          -0.999988901,
+          0.003381477,
+          0.003280878
+        ],
+        "offsetM": -10.490189557,
+        "rmsM": 0.014546471,
+        "sigmaM": 0.011750802
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -4.987909541,
+          5.233802414
+        ],
+        "v": [
+          -0.015335668,
+          1.467276216
+        ]
+      },
+      "supportCells": 1530,
+      "supportUM": 10.221711955,
+      "supportVM": 1.482611884,
+      "toleranceM": 0.035252407
+    },
+    {
+      "accepted": false,
+      "axis": 0,
+      "completenessClosed": 0.368206522,
+      "completenessRaw": 0.230163043,
+      "coverageHeight": 0.475205032,
+      "coverageWalked": 1.011227172,
+      "name": "x_max",
+      "offsetM": 11.095677875,
+      "outboardPointCount": 12,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.000734214,
+      "plane": {
+        "inlierCount": 16344,
+        "normal": [
+          -0.999994692,
+          0.000849378,
+          -0.003145421
+        ],
+        "offsetM": -11.104140188,
+        "rmsM": 0.022003642,
+        "sigmaM": 0.018409045
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -6.405235843,
+          5.065763563
+        ],
+        "v": [
+          0.926618493,
+          4.12983987
+        ]
+      },
+      "supportCells": 3680,
+      "supportUM": 11.470999406,
+      "supportVM": 3.203221377,
+      "toleranceM": 0.055227134
+    },
+    {
+      "accepted": true,
+      "axis": 1,
+      "completenessClosed": 0.862315462,
+      "completenessRaw": 0.77016317,
+      "coverageHeight": 0.958384389,
+      "coverageWalked": 1.100101605,
+      "name": "y_min",
+      "offsetM": -5.243385308,
+      "outboardPointCount": 401966,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 0.830727961,
+      "plane": {
+        "inlierCount": 483872,
+        "normal": [
+          0.001242128,
+          0.999983182,
+          0.005665135
+        ],
+        "offsetM": -5.223245772,
+        "rmsM": 0.023319379,
+        "sigmaM": 0.022121731
+      },
+      "rejection": null,
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -9.239087079,
+          10.526947287
+        ],
+        "v": [
+          0.168145506,
+          6.628340909
+        ]
+      },
+      "supportCells": 12870,
+      "supportUM": 19.766034366,
+      "supportVM": 6.460195403,
+      "toleranceM": 0.066365193
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.953530167,
+      "completenessRaw": 0.214249037,
+      "coverageHeight": 0.563587525,
+      "coverageWalked": 1.141328784,
+      "name": "y_min",
+      "offsetM": -5.607155008,
+      "outboardPointCount": 167071,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 2.603974439,
+      "plane": {
+        "inlierCount": 64160,
+        "normal": [
+          0.000880741,
+          0.999968213,
+          0.007924513
+        ],
+        "offsetM": -5.581784349,
+        "rmsM": 0.032185715,
+        "sigmaM": 0.030462388
+      },
+      "rejection": "DOES_NOT_SPAN_MEASURED_HEIGHT",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -9.566595351,
+          10.940186815
+        ],
+        "v": [
+          1.203227156,
+          5.002209674
+        ]
+      },
+      "supportCells": 7790,
+      "supportUM": 20.506782166,
+      "supportVM": 3.798982517,
+      "toleranceM": 0.091387165
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.951857585,
+      "completenessRaw": 0.174148607,
+      "coverageHeight": 0.503875351,
+      "coverageWalked": 1.059741061,
+      "name": "y_min",
+      "offsetM": -6.132525613,
+      "outboardPointCount": 8348,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 0.182733561,
+      "plane": {
+        "inlierCount": 45684,
+        "normal": [
+          0.000908504,
+          0.999674655,
+          0.025490363
+        ],
+        "offsetM": -6.060475775,
+        "rmsM": 0.031333686,
+        "sigmaM": 0.030607143
+      },
+      "rejection": "DOES_NOT_SPAN_MEASURED_HEIGHT",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -8.822177515,
+          10.218680287
+        ],
+        "v": [
+          1.025153626,
+          4.421633436
+        ]
+      },
+      "supportCells": 6460,
+      "supportUM": 19.040857802,
+      "supportVM": 3.39647981,
+      "toleranceM": 0.091821428
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.182745826,
+      "completenessRaw": 0.177798392,
+      "coverageHeight": 0.495716975,
+      "coverageWalked": 1.088913246,
+      "name": "y_min",
+      "offsetM": -5.912815343,
+      "outboardPointCount": 41177,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 1.251999149,
+      "plane": {
+        "inlierCount": 32889,
+        "normal": [
+          0.000476554,
+          0.999999817,
+          0.000371679
+        ],
+        "offsetM": -5.911473898,
+        "rmsM": 0.043827499,
+        "sigmaM": 0.043728907
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": -1,
+      "supportBoundsM": {
+        "u": [
+          -9.082751075,
+          10.482256881
+        ],
+        "v": [
+          1.038302222,
+          4.379788744
+        ]
+      },
+      "supportCells": 6468,
+      "supportUM": 19.565007956,
+      "supportVM": 3.341486522,
+      "toleranceM": 0.131186722
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.989090909,
+      "completenessRaw": 0.931515152,
+      "coverageHeight": 0.884768836,
+      "coverageWalked": 0.305218096,
+      "name": "y_max",
+      "offsetM": 11.739248913,
+      "outboardPointCount": 8,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.000118375,
+      "plane": {
+        "inlierCount": 67582,
+        "normal": [
+          -0.003210398,
+          -0.999989978,
+          0.003120547
+        ],
+        "offsetM": -11.733277876,
+        "rmsM": 0.031332914,
+        "sigmaM": 0.036349384
+      },
+      "rejection": "DOES_NOT_SPAN_WALKED_FOOTPRINT",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -2.088303063,
+          3.395691634
+        ],
+        "v": [
+          -0.433715053,
+          5.530258935
+        ]
+      },
+      "supportCells": 3300,
+      "supportUM": 5.483994697,
+      "supportVM": 5.963973988,
+      "toleranceM": 0.109048151
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.965538462,
+      "completenessRaw": 0.922769231,
+      "coverageHeight": 0.740044784,
+      "coverageWalked": 0.359083683,
+      "name": "y_max",
+      "offsetM": 18.700883563,
+      "outboardPointCount": 0,
+      "outboardReviewRequired": false,
+      "outboardToInlierRatio": 0.0,
+      "plane": {
+        "inlierCount": 26346,
+        "normal": [
+          -0.008487027,
+          -0.999932166,
+          0.007977052
+        ],
+        "offsetM": -18.591973285,
+        "rmsM": 0.014729057,
+        "sigmaM": 0.016106353
+      },
+      "rejection": "DOES_NOT_SPAN_WALKED_FOOTPRINT",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -13.250764456,
+          -6.798941834
+        ],
+        "v": [
+          0.333963007,
+          5.322393497
+        ]
+      },
+      "supportCells": 3250,
+      "supportUM": 6.451822622,
+      "supportVM": 4.98843049,
+      "toleranceM": 0.04831906
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.993311037,
+      "completenessRaw": 0.976588629,
+      "coverageHeight": 0.340455598,
+      "coverageWalked": 0.073917235,
+      "name": "y_max",
+      "offsetM": 7.969164999,
+      "outboardPointCount": 12078,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 1.796252231,
+      "plane": {
+        "inlierCount": 6724,
+        "normal": [
+          0.007048639,
+          -0.999974763,
+          -0.00088889
+        ],
+        "offsetM": -8.011914541,
+        "rmsM": 0.016801768,
+        "sigmaM": 0.010918623
+      },
+      "rejection": "DOES_NOT_SPAN_MEASURED_HEIGHT",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -6.602450356,
+          -5.274345204
+        ],
+        "v": [
+          0.082209924,
+          2.377123855
+        ]
+      },
+      "supportCells": 299,
+      "supportUM": 1.328105151,
+      "supportVM": 2.294913932,
+      "toleranceM": 0.03275587
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.063697318,
+      "completenessRaw": 0.063697318,
+      "coverageHeight": 0.854667963,
+      "coverageWalked": 0.401973531,
+      "name": "y_max",
+      "offsetM": 11.100975694,
+      "outboardPointCount": 71249,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 22.887568262,
+      "plane": {
+        "inlierCount": 3113,
+        "normal": [
+          -0.004680085,
+          -0.999978033,
+          0.004693546
+        ],
+        "offsetM": -11.083900875,
+        "rmsM": 0.016028021,
+        "sigmaM": 0.012995603
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -2.834379609,
+          4.388064756
+        ],
+        "v": [
+          1.480060084,
+          7.24113268
+        ]
+      },
+      "supportCells": 4176,
+      "supportUM": 7.222444365,
+      "supportVM": 5.761072597,
+      "toleranceM": 0.038986808
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.928746929,
+      "completenessRaw": 0.211302211,
+      "coverageHeight": 0.328434229,
+      "coverageWalked": 0.413951824,
+      "name": "y_max",
+      "offsetM": 7.747265023,
+      "outboardPointCount": 84163,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 23.033114395,
+      "plane": {
+        "inlierCount": 3654,
+        "normal": [
+          -0.003621847,
+          -0.99999072,
+          -0.00233268
+        ],
+        "offsetM": -7.752202026,
+        "rmsM": 0.007720372,
+        "sigmaM": 0.005248436
+      },
+      "rejection": "DOES_NOT_SPAN_MEASURED_HEIGHT",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -3.09313009,
+          4.344533805
+        ],
+        "v": [
+          0.068830745,
+          2.282712064
+        ]
+      },
+      "supportCells": 1628,
+      "supportUM": 7.437663895,
+      "supportVM": 2.21388132,
+      "toleranceM": 0.03
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.061192701,
+      "completenessRaw": 0.060970182,
+      "coverageHeight": 0.620712691,
+      "coverageWalked": 0.59339969,
+      "name": "y_max",
+      "offsetM": 10.944007703,
+      "outboardPointCount": 81365,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 18.687413872,
+      "plane": {
+        "inlierCount": 4354,
+        "normal": [
+          0.009970825,
+          -0.999885572,
+          -0.011376518
+        ],
+        "offsetM": -10.984395859,
+        "rmsM": 0.044585765,
+        "sigmaM": 0.04477784
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -6.482151496,
+          4.179735202
+        ],
+        "v": [
+          0.55922376,
+          4.743270703
+        ]
+      },
+      "supportCells": 4494,
+      "supportUM": 10.661886699,
+      "supportVM": 4.184046942,
+      "toleranceM": 0.134333519
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.106969697,
+      "completenessRaw": 0.106969697,
+      "coverageHeight": 0.893237345,
+      "coverageWalked": 0.306950706,
+      "name": "y_max",
+      "offsetM": 11.534623109,
+      "outboardPointCount": 1482,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 0.459250077,
+      "plane": {
+        "inlierCount": 3227,
+        "normal": [
+          -0.001183756,
+          -0.999995052,
+          0.002914417
+        ],
+        "offsetM": -11.524128623,
+        "rmsM": 0.02901383,
+        "sigmaM": 0.033419465
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -2.109619052,
+          3.405506257
+        ],
+        "v": [
+          0.833954028,
+          6.855011815
+        ]
+      },
+      "supportCells": 3300,
+      "supportUM": 5.515125309,
+      "supportVM": 6.021057787,
+      "toleranceM": 0.100258394
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.047164812,
+      "completenessRaw": 0.047164812,
+      "coverageHeight": 0.763140858,
+      "coverageWalked": 0.411121816,
+      "name": "y_max",
+      "offsetM": 16.457432071,
+      "outboardPointCount": 43227,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 29.587268994,
+      "plane": {
+        "inlierCount": 1461,
+        "normal": [
+          -0.004112277,
+          -0.9999795,
+          0.00490806
+        ],
+        "offsetM": -16.402094428,
+        "rmsM": 0.013046951,
+        "sigmaM": 0.013510227
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -13.783535927,
+          -6.396720098
+        ],
+        "v": [
+          0.179918232,
+          5.324032762
+        ]
+      },
+      "supportCells": 3774,
+      "supportUM": 7.386815829,
+      "supportVM": 5.14411453,
+      "toleranceM": 0.040530682
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.273504274,
+      "completenessRaw": 0.273504274,
+      "coverageHeight": 0.575085655,
+      "coverageWalked": 0.114237915,
+      "name": "y_max",
+      "offsetM": 13.460120663,
+      "outboardPointCount": 14224,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 4.968215159,
+      "plane": {
+        "inlierCount": 2863,
+        "normal": [
+          -0.007188386,
+          -0.999967888,
+          0.003542541
+        ],
+        "offsetM": -13.399733506,
+        "rmsM": 0.041780792,
+        "sigmaM": 0.045429181
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -7.989716495,
+          -5.937151033
+        ],
+        "v": [
+          0.856099937,
+          4.732588065
+        ]
+      },
+      "supportCells": 819,
+      "supportUM": 2.052565462,
+      "supportVM": 3.876488128,
+      "toleranceM": 0.136287544
+    },
+    {
+      "accepted": false,
+      "axis": 1,
+      "completenessClosed": 0.052215733,
+      "completenessRaw": 0.052215733,
+      "coverageHeight": 0.605931498,
+      "coverageWalked": 0.396916802,
+      "name": "y_max",
+      "offsetM": 16.059735588,
+      "outboardPointCount": 34963,
+      "outboardReviewRequired": true,
+      "outboardToInlierRatio": 21.087454765,
+      "plane": {
+        "inlierCount": 1658,
+        "normal": [
+          -0.001418475,
+          -0.999996606,
+          0.00218521
+        ],
+        "offsetM": -16.040223688,
+        "rmsM": 0.032969252,
+        "sigmaM": 0.033505096
+      },
+      "rejection": "INCOMPLETE_SURFACE",
+      "side": 1,
+      "supportBoundsM": {
+        "u": [
+          -13.159540324,
+          -6.027952552
+        ],
+        "v": [
+          0.634382881,
+          4.718794021
+        ]
+      },
+      "supportCells": 2911,
+      "supportUM": 7.131587772,
+      "supportVM": 4.08441114,
+      "toleranceM": 0.100515288
+    }
+  ],
+  "frame": {
+    "ceilingHeightM": 6.740714347,
+    "ceilingPlane": {
+      "inlierCount": 1054268,
+      "normal": [
+        -0.002953879,
+        0.000702976,
+        -0.99999539
+      ],
+      "offsetM": -6.801411799,
+      "rmsM": 0.02388105,
+      "sigmaM": 0.01826289
+    },
+    "floorPlane": {
+      "inlierCount": 1171976,
+      "normal": [
+        0.000683478,
+        0.001400913,
+        0.999998785
+      ],
+      "offsetM": 0.029341908,
+      "rmsM": 0.026542038,
+      "sigmaM": 0.025893415
+    },
+    "floorPointM": [
+      8.11420671,
+      -5.033036177,
+      0.03084691
+    ],
+    "rotationRows": [
+      [
+        0.999998492,
+        0.001595542,
+        -0.000685713
+      ],
+      [
+        -0.001596501,
+        0.999997746,
+        -0.001399821
+      ],
+      [
+        0.000683478,
+        0.001400913,
+        0.999998785
+      ]
+    ],
+    "scannerToCeilingM": 5.259120008,
+    "tripodHeightM": 1.481594338,
+    "tripodHeightSpreadM": 0.08196017,
+    "up": [
+      0.000683478,
+      0.001400913,
+      0.999998785
+    ]
+  },
+  "inputQuality": {
+    "pointCount": 6526772,
+    "unusableNormalCount": 4,
+    "usableNormalCount": 6526768,
+    "usableNormalFraction": 0.999999387
+  },
+  "interiority": {
+    "minimumClearanceM": 0.647684735,
+    "originCount": 49,
+    "satisfied": true,
+    "violatingOriginCount": 0
+  },
+  "limitations": [
+    "PER_POINT_SWEEP_IDENTITY_IS_ABSENT_FROM_THE_CACHED_CLOUD_SO_SWEEP_MULTIPLICITY_IS_NOT_A_DISCRIMINATOR_IN_THIS_REVISION",
+    "MIRRORS_ARE_NOT_ADJUDICATED_IN_THIS_REVISION_AND_A_LARGE_MIRROR_CAN_MANUFACTURE_A_DENSE_CORRECTLY_ORIENTED_VIRTUAL_ROOM",
+    "NO_VISIBILITY_CARVE_IS_PERFORMED_SO_AN_OPENING_THAT_LIGHTS_A_FULL_HEIGHT_FULL_LENGTH_SURFACE_BEYOND_IT_IS_NOT_SEPARATELY_REFUTED",
+    "THE_PROPOSED_FOOTPRINT_IS_A_FOUR_PLANE_CONVEX_PRISM_AND_DOES_NOT_REPRESENT_ALCOVES_APSES_OR_ANY_NON_CONVEX_ARCHITECTURE",
+    "THIS_ARTIFACT_IS_A_MACHINE_PROPOSAL_WITH_NO_AUTHORITY_AND_ESTABLISHES_NO_ROOM_IDENTITY_RIGHTS_REGISTRATION_OR_VALIDATION_INDEPENDENCE"
+  ],
+  "measurement": {
+    "axisSeparations": {
+      "x": {
+        "centreM": 21.152330724,
+        "maximumM": 21.180220557,
+        "minimumM": 21.124440891,
+        "outOfParallelDeg": 0.470162787,
+        "uncertaintyM": 0.037591928
+      },
+      "y": null,
+      "z": {
+        "centreM": 6.743909849,
+        "maximumM": 6.776229748,
+        "minimumM": 6.711589951,
+        "outOfParallelDeg": 0.177349572,
+        "uncertaintyM": 0.046352755
+      }
+    },
+    "heightM": {
+      "centreM": 6.743909849,
+      "maximumM": 6.776229748,
+      "minimumM": 6.711589951,
+      "outOfParallelDeg": 0.177349572,
+      "uncertaintyM": 0.046352755
+    },
+    "longAxisM": null,
+    "shortAxisM": null,
+    "state": "unmeasurable"
+  },
+  "proposalSha256": "7b850efa32104b8df6c35c40c29e0ec7af30acd861ee49e5ea5b83541644b1dd",
+  "refusals": [
+    "WALL_NOT_FOUND:y_max",
+    "OUTBOARD_MASS_UNADJUDICATED:y_min"
+  ],
+  "reviewSeam": {
+    "compatibility": "proposal_overlay_only_not_a_review_artifact",
+    "coordinateFrame": "room_local_xy_metres",
+    "directImportCompatible": false,
+    "proposedFootprintPolygonM": null,
+    "requiredAdapter": "room_shape_proposal_human_review_adapter_not_implemented",
+    "role": "proposer_only",
+    "selfApproved": false,
+    "targetSchemaVersion": "omnitwin.foundry.room-envelope-review.v0"
+  },
+  "reviewStatus": "unreviewed",
+  "schemaVersion": "omnitwin.foundry.room-shape-proposal.v0",
+  "source": {
+    "label": "grand-hall-pilot-sweeps-0-48",
+    "manifestSha256": "a92471791884f0e62696de286777db77830bf4c821c7b224f8781e25095b050e",
+    "originCount": 49,
+    "originsBytes": 1439,
+    "originsSha256": "16c8cf9f21427eaa2e841d1f85e03a8a20830e4abcb8349efa20f34f609f2608",
+    "pointCloudBytes": 313285263,
+    "pointCloudSha256": "b7af01da3a57f9d3b334d5da3be84d9e8c5fecc1ef5011e553ab62f69a7cae87",
+    "pointCount": 6526772
+  },
+  "yaw": {
+    "disagreementDeg": 3.841472809,
+    "normalHistogramDeg": 0.091472809,
+    "rectangularity": 0.65840709,
+    "spanMinimisationDeg": -3.75
+  }
+}

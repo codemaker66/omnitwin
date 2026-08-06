@@ -5,16 +5,16 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import {
-  FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V5_DIGEST_DOMAIN,
-  FOUNDRY_SOURCE_READINESS_MAP_V5_DIGEST_DOMAIN,
-  FOUNDRY_UNIVERSAL_SOURCE_FACTS_V5_DIGEST_DOMAIN,
-  serializeFoundryOperatorEvidenceChecklistV5,
-  serializeFoundrySourceReadinessMapV5,
-  serializeUniversalSourceFactsV5Artifact,
-  type FoundryOperatorEvidenceChecklistV5,
-  type FoundrySourceReadinessMapV5,
+  FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V7_DIGEST_DOMAIN,
+  FOUNDRY_SOURCE_READINESS_MAP_V7_DIGEST_DOMAIN,
+  FOUNDRY_UNIVERSAL_SOURCE_FACTS_V7_DIGEST_DOMAIN,
+  serializeFoundryOperatorEvidenceChecklistV7,
+  serializeFoundrySourceReadinessMapV7,
+  serializeUniversalSourceFactsV7Artifact,
+  type FoundryOperatorEvidenceChecklistV7,
+  type FoundrySourceReadinessMapV7,
   type FoundryUniversalIntakeReceipt,
-  type FoundryUniversalSourceFactsV5,
+  type FoundryUniversalSourceFactsV7,
 } from "@omnitwin/reconstruction-foundry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -124,6 +124,37 @@ async function makeSmallGaussianPlyFixture(): Promise<string> {
   return root;
 }
 
+async function makeSmallPointPlyFixture(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "foundry-local-app-point-ply-"));
+  temporaryDirectories.push(root);
+  const properties = [
+    ["float", "x", 4],
+    ["float", "y", 4],
+    ["float", "z", 4],
+    ["float", "nx", 4],
+    ["float", "ny", 4],
+    ["float", "nz", 4],
+    ["uchar", "red", 1],
+    ["uchar", "green", 1],
+    ["uchar", "blue", 1],
+  ] as const;
+  const header = Buffer.from([
+    "ply",
+    "format binary_little_endian 1.0",
+    "comment derived fixture declaration is non-authoritative",
+    "element vertex 2",
+    ...properties.map(([type, name]) => `property ${type} ${name}`),
+    "end_header",
+    "",
+  ].join("\n"), "ascii");
+  const stride = properties.reduce((total, property) => total + property[2], 0);
+  await writeFile(
+    join(root, "points.ply"),
+    Buffer.concat([header, Buffer.alloc(2 * stride, 0x5a)]),
+  );
+  return root;
+}
+
 async function makeSmallPngFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "foundry-local-app-media-v4-"));
   temporaryDirectories.push(root);
@@ -137,8 +168,63 @@ async function makeSmallPngFixture(): Promise<string> {
   return root;
 }
 
+function potreeAttribute(
+  name: "position" | "intensity" | "lcc prediction",
+): Record<string, unknown> {
+  const position = name === "position";
+  return {
+    name,
+    description: "fixture declaration is not semantic authority",
+    size: position ? 12 : 1,
+    numElements: position ? 3 : 1,
+    elementSize: position ? 4 : 1,
+    type: position ? "int32" : "uint8",
+    min: position ? [0, 0, 0] : [0],
+    max: position ? [10, 20, 30] : [255],
+    scale: position ? [1, 1, 1] : [1],
+    offset: position ? [0, 0, 0] : [0],
+  };
+}
+
+async function makeSmallPotreeV2Fixture(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "foundry-local-app-potree-v7-"));
+  temporaryDirectories.push(root);
+  const model = join(root, "model");
+  await mkdir(model);
+  const metadata = Buffer.from(JSON.stringify({
+    version: "2.0",
+    name: "potree",
+    description: "deterministic local-app Potree v2 fixture",
+    points: 2,
+    projection: "",
+    hierarchy: { firstChunkSize: 22, stepSize: 4, depth: 0 },
+    offset: [0, 0, 0],
+    scale: [0.001, 0.001, 0.001],
+    spacing: 0.1,
+    boundingBox: { min: [0, 0, 0], max: [10, 20, 30] },
+    encoding: "DEFAULT",
+    attributes: [
+      potreeAttribute("position"),
+      potreeAttribute("intensity"),
+      potreeAttribute("lcc prediction"),
+    ],
+  }), "utf8");
+  const hierarchy = Buffer.alloc(22);
+  hierarchy.writeUInt8(1, 0);
+  hierarchy.writeUInt8(0, 1);
+  hierarchy.writeUInt32LE(2, 2);
+  hierarchy.writeBigUInt64LE(0n, 6);
+  hierarchy.writeBigUInt64LE(28n, 14);
+  await Promise.all([
+    writeFile(join(model, "metadata.json"), metadata),
+    writeFile(join(model, "hierarchy.bin"), hierarchy),
+    writeFile(join(model, "octree.bin"), Buffer.alloc(28, 0x7f)),
+  ]);
+  return root;
+}
+
 async function makeRegistrationDocumentFixture(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "foundry-local-app-registration-v5-"));
+  const root = await mkdtemp(join(tmpdir(), "foundry-local-app-registration-v6-"));
   temporaryDirectories.push(root);
   await Promise.all([
     writeFile(
@@ -264,24 +350,125 @@ async function waitForPhase(
   throw new Error(`local app did not reach ${phase}`);
 }
 
+function requireInheritedSourceFacts(
+  state: LocalFoundryPublicState,
+): Extract<FoundryUniversalSourceFactsV7["inherited"], { readonly state: "available" }> {
+  const inherited = state.sourceFacts?.inherited;
+  if (inherited?.state !== "available") {
+    throw new Error("ready state has no available inherited Source Facts V6 artifact");
+  }
+  return inherited;
+}
+
+function requireInheritedReadiness(
+  state: LocalFoundryPublicState,
+): Extract<FoundrySourceReadinessMapV7["inherited"], { readonly state: "available" }> {
+  const inherited = state.sourceReadiness?.inherited;
+  if (inherited?.state !== "available") {
+    throw new Error("ready state has no available inherited Source Readiness V6 map");
+  }
+  return inherited;
+}
+
+function requireInheritedChecklist(
+  state: LocalFoundryPublicState,
+): Extract<FoundryOperatorEvidenceChecklistV7["inherited"], { readonly state: "available" }> {
+  const inherited = state.operatorEvidenceChecklist?.inherited;
+  if (inherited?.state !== "available") {
+    throw new Error("ready state has no available inherited Operator Evidence Checklist V6");
+  }
+  return inherited;
+}
+
 describe("Foundry local companion app", () => {
   it("gives a large guided review four hours while retaining bounded expiry", () => {
     expect(LOCAL_FOUNDRY_DEFAULT_SESSION_TTL_MS).toBe(4 * 60 * 60 * 1_000);
   });
 
-  it("pins the active Source Facts V5 evidence-chain digest domains", () => {
-    expect(FOUNDRY_UNIVERSAL_SOURCE_FACTS_V5_DIGEST_DOMAIN).toBe(
-      "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V5",
+  it("pins the active Source Facts V7 evidence-chain digest domains", () => {
+    expect(FOUNDRY_UNIVERSAL_SOURCE_FACTS_V7_DIGEST_DOMAIN).toBe(
+      "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V7",
     );
-    expect(FOUNDRY_SOURCE_READINESS_MAP_V5_DIGEST_DOMAIN).toBe(
-      "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V5",
+    expect(FOUNDRY_SOURCE_READINESS_MAP_V7_DIGEST_DOMAIN).toBe(
+      "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V7",
     );
-    expect(FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V5_DIGEST_DOMAIN).toBe(
-      "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V5",
+    expect(FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V7_DIGEST_DOMAIN).toBe(
+      "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V7",
     );
   });
 
-  it("keeps PNG container facts separate from capture role and downloads the exact V5 chain", async () => {
+  it("serves the exact Potree three-member V7 overlay without flattening inherited V6 evidence", async () => {
+    const source = await makeSmallPotreeV2Fixture();
+    const app = await startLocalFoundryApp({ source });
+    openApps.push(app);
+
+    const ready = await waitForPhase(app, "ready");
+    expect(ready.sourceFacts).toMatchObject({
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
+      state: "available",
+      summary: {
+        potreeBundleCount: 1,
+        establishedPotreeBundleCount: 1,
+        targetedMemberFileCount: 3,
+      },
+      inherited: {
+        schemaVersion: "omnitwin.foundry.universal-source-facts.v6",
+      },
+      potreeBundles: [{
+        bundleRoot: "model",
+        members: [
+          { role: "metadata", path: "model/metadata.json" },
+          { role: "hierarchy", path: "model/hierarchy.bin" },
+          { role: "octree", path: "model/octree.bin" },
+        ],
+        inspection: {
+          state: "established",
+          coverage: "complete_metadata_hierarchy_and_exact_octree_layout",
+        },
+        facts: {
+          metadata: { pointCount: 2, recordStrideBytes: 14 },
+          hierarchy: { logicalNodeCount: 1, pointCountSum: 2 },
+          octree: { sourceSizeBytes: 28, payloadRangesDisjointAndGapless: true },
+        },
+      }],
+    });
+    expect(ready.sourceReadiness).toMatchObject({
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
+      inherited: { schemaVersion: "omnitwin.foundry.source-readiness-map.v6" },
+      summary: {
+        potreeBundleCount: 1,
+        potreeBundleEstablishedCount: 1,
+        potreeMemberSourceCount: 3,
+      },
+      potreeBundleRefinements: [{
+        laneIds: ["point_geometry"],
+        status: "facts_established",
+        sourceFactsBundle: { bundleRoot: "model" },
+      }],
+    });
+    expect(ready.operatorEvidenceChecklist).toMatchObject({
+      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v7",
+      inherited: { schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v6" },
+      summary: {
+        potreeEvidenceRequestCount: 10,
+        potreeInspectionFailureRequestCount: 0,
+        potreeUnknownRequestCount: 10,
+        affectedPotreeMemberSourceCount: 3,
+      },
+    });
+    if (ready.operatorEvidenceChecklist?.state !== "available") {
+      throw new Error("Potree fixture did not issue an available V7 checklist");
+    }
+    expect(ready.operatorEvidenceChecklist.potreeEvidenceRequests).toHaveLength(10);
+    expect(ready.operatorEvidenceChecklist.potreeEvidenceRequests.every((request) =>
+      request.sourceFactsBundle.bundleRoot === "model" &&
+      request.affectedSources.length === 3 &&
+      request.requestStatus === "requested_not_performed"
+    )).toBe(true);
+    expect(JSON.stringify(ready)).not.toContain(source);
+  });
+
+  it("keeps PNG container facts separate from capture role inside the exact V7 chain", async () => {
     const source = await makeSmallPngFixture();
     const app = await startLocalFoundryApp({ source });
     openApps.push(app);
@@ -295,40 +482,45 @@ describe("Foundry local companion app", () => {
       "phone_image",
     ]);
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
       summary: {
         receiptFileCount: 1,
-        assetCount: 1,
-        establishedCount: 1,
-        factsNotEstablishedCount: 0,
+        inheritedAssetCount: 1,
+        potreeBundleCount: 0,
         untargetedFileCount: 0,
       },
-      assets: [{
-        source: {
-          path: "reference.png",
-          inputType: "generic_image",
-          receiptCandidateInputTypes: [
-            "matterport_panorama",
-            "dslr_image",
-            "generic_image",
-            "panorama_360",
-            "phone_image",
-          ],
-        },
-        format: "png",
-        inspection: {
-          state: "established",
-          code: "MEDIA_CONTAINER_FORMAT_FACTS_ESTABLISHED",
-          coverage: "complete_container_structure",
-        },
-        facts: { format: "png" },
-      }],
+      potreeBundles: [],
+      inherited: {
+        summary: { assetCount: 1, establishedCount: 1 },
+        assets: [{
+          source: {
+            path: "reference.png",
+            inputType: "generic_image",
+            receiptCandidateInputTypes: [
+              "matterport_panorama",
+              "dslr_image",
+              "generic_image",
+              "panorama_360",
+              "phone_image",
+            ],
+          },
+          format: "png",
+          inspection: {
+            state: "established",
+            code: "MEDIA_CONTAINER_FORMAT_FACTS_ESTABLISHED",
+            coverage: "complete_container_structure",
+          },
+          facts: { format: "png" },
+        }],
+      },
     });
     if (ready.sourceFacts?.state !== "available") {
-      throw new Error("PNG ready state has no available Source Facts V5 artifact");
+      throw new Error("PNG ready state has no available Source Facts V6 artifact");
     }
-    const mediaUnknownCodes = ready.sourceFacts.assets[0]?.unknowns.map((unknown) => unknown.code);
+    const mediaUnknownCodes = requireInheritedSourceFacts(ready).assets[0]?.unknowns.map(
+      (unknown) => unknown.code,
+    );
     expect(mediaUnknownCodes).toEqual(expect.arrayContaining([
       "MEDIA_CAPTURE_ROLE_UNKNOWN",
       "MEDIA_PROVENANCE_CLASS_UNKNOWN",
@@ -338,22 +530,25 @@ describe("Foundry local companion app", () => {
     expect(mediaUnknownCodes).toHaveLength(10);
 
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "available",
-      summary: { factsEstablishedCount: 1, outsideSourceFactsV5Count: 0 },
-      files: [{
-        path: "reference.png",
-        status: "facts_established",
-        inputType: "generic_image",
-        format: "png",
-        laneIds: ["image_video"],
-      }],
+      summary: { potreeBundleCount: 0, potreeMemberSourceCount: 0 },
+      inherited: {
+        summary: { factsEstablishedCount: 1, outsideSourceFactsV6Count: 0 },
+        files: [{
+          path: "reference.png",
+          status: "facts_established",
+          inputType: "generic_image",
+          format: "png",
+          laneIds: ["image_video"],
+        }],
+      },
     });
     if (ready.operatorEvidenceChecklist?.state !== "available") {
-      throw new Error("PNG ready state has no available Operator Evidence Checklist V5");
+      throw new Error("PNG ready state has no available Operator Evidence Checklist V6");
     }
     expect(
-      ready.operatorEvidenceChecklist.items
+      requireInheritedChecklist(ready).items
         .filter((item) => item.evidenceCode.startsWith("MEDIA_"))
         .map((item) => item.evidenceCode),
     ).toEqual(expect.arrayContaining(mediaUnknownCodes ?? []));
@@ -373,10 +568,10 @@ describe("Foundry local companion app", () => {
     });
     expect(factsResponse.status).toBe(200);
     expect(factsResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-universal-source-facts-v5.json\"",
+      "attachment; filename=\"foundry-universal-source-facts-v7.json\"",
     );
     expect(factsResponse.body).toBe(
-      `${serializeUniversalSourceFactsV5Artifact(ready.sourceFacts)}\n`,
+      `${serializeUniversalSourceFactsV7Artifact(ready.sourceFacts)}\n`,
     );
 
     const readiness = ready.sourceReadiness;
@@ -386,9 +581,9 @@ describe("Foundry local companion app", () => {
     });
     expect(readinessResponse.status).toBe(200);
     expect(readinessResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-source-readiness-map-v5.json\"",
+      "attachment; filename=\"foundry-source-readiness-map-v7.json\"",
     );
-    expect(readinessResponse.body).toBe(`${serializeFoundrySourceReadinessMapV5(readiness)}\n`);
+    expect(readinessResponse.body).toBe(`${serializeFoundrySourceReadinessMapV7(readiness)}\n`);
 
     const checklist = ready.operatorEvidenceChecklist;
     const checklistResponse = await sendRequest(app, {
@@ -396,14 +591,14 @@ describe("Foundry local companion app", () => {
     });
     expect(checklistResponse.status).toBe(200);
     expect(checklistResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-operator-evidence-checklist-v5.json\"",
+      "attachment; filename=\"foundry-operator-evidence-checklist-v7.json\"",
     );
     expect(checklistResponse.body).toBe(
-      `${serializeFoundryOperatorEvidenceChecklistV5(checklist)}\n`,
+      `${serializeFoundryOperatorEvidenceChecklistV7(checklist)}\n`,
     );
   });
 
-  it("renders and downloads bounded calibration and trajectory document evidence in V5", async () => {
+  it("renders and downloads inherited bounded calibration and trajectory evidence in V7", async () => {
     const app = await startLocalFoundryApp({
       source: await makeRegistrationDocumentFixture(),
     });
@@ -411,49 +606,55 @@ describe("Foundry local companion app", () => {
 
     const ready = await waitForPhase(app, "ready");
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
-      summary: { assetCount: 2, establishedCount: 2 },
-      assets: [
-        {
-          source: {
-            path: "camera-calibration.json",
-            inputType: "calibration_bundle",
+      summary: { inheritedAssetCount: 2, potreeBundleCount: 0 },
+      inherited: {
+        summary: { assetCount: 2, establishedCount: 2 },
+        assets: [
+          {
+            source: {
+              path: "camera-calibration.json",
+              inputType: "calibration_bundle",
+            },
+            format: "json",
+            inspection: { coverage: "complete_json_syntax_and_shape" },
           },
-          format: "json",
-          inspection: { coverage: "complete_json_syntax_and_shape" },
-        },
-        {
-          source: { path: "poses.csv", inputType: "trajectory" },
-          format: "csv",
-          inspection: { coverage: "complete_record_structure" },
-          facts: {
-            records: {
-              count: 2,
-              uniformFieldCount: true,
-              minimumFieldCount: 8,
-              maximumFieldCount: 8,
+          {
+            source: { path: "poses.csv", inputType: "trajectory" },
+            format: "csv",
+            inspection: { coverage: "complete_record_structure" },
+            facts: {
+              records: {
+                count: 2,
+                uniformFieldCount: true,
+                minimumFieldCount: 8,
+                maximumFieldCount: 8,
+              },
             },
           },
-        },
-      ],
+        ],
+      },
     });
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "available",
-      summary: { factsEstablishedCount: 2, outsideSourceFactsV5Count: 0 },
-      files: [
-        {
-          path: "camera-calibration.json",
-          laneIds: ["registration_and_control"],
-        },
-        { path: "poses.csv", laneIds: ["registration_and_control"] },
-      ],
+      summary: { potreeBundleCount: 0 },
+      inherited: {
+        summary: { factsEstablishedCount: 2, outsideSourceFactsV6Count: 0 },
+        files: [
+          {
+            path: "camera-calibration.json",
+            laneIds: ["registration_and_control"],
+          },
+          { path: "poses.csv", laneIds: ["registration_and_control"] },
+        ],
+      },
     });
     if (ready.operatorEvidenceChecklist?.state !== "available") {
-      throw new Error("registration-document V5 checklist is unavailable");
+      throw new Error("registration-document V6 checklist is unavailable");
     }
-    const evidenceCodes = ready.operatorEvidenceChecklist.items.map(
+    const evidenceCodes = requireInheritedChecklist(ready).items.map(
       (item) => item.evidenceCode,
     );
     expect(evidenceCodes).toEqual(expect.arrayContaining([
@@ -469,28 +670,28 @@ describe("Foundry local companion app", () => {
       registration: "not_evaluated",
     });
 
-    if (ready.sourceFacts === undefined) throw new Error("missing Source Facts V5");
+    if (ready.sourceFacts === undefined) throw new Error("missing Source Facts V6");
     const response = await sendRequest(app, {
       path: `/api/source-facts?token=${encodeURIComponent(tokenFor(app))}&digest=${ready.sourceFacts.factsSha256}`,
     });
     expect(response.status).toBe(200);
     expect(response.headers["content-disposition"]).toBe(
-      'attachment; filename="foundry-universal-source-facts-v5.json"',
+      'attachment; filename="foundry-universal-source-facts-v7.json"',
     );
     expect(response.body).toBe(
-      `${serializeUniversalSourceFactsV5Artifact(ready.sourceFacts)}\n`,
+      `${serializeUniversalSourceFactsV7Artifact(ready.sourceFacts)}\n`,
     );
 
-    if (ready.sourceReadiness === undefined) throw new Error("missing Source Readiness Map V5");
+    if (ready.sourceReadiness === undefined) throw new Error("missing Source Readiness Map V6");
     const readinessResponse = await sendRequest(app, {
       path: `/api/source-readiness?token=${encodeURIComponent(tokenFor(app))}&digest=${ready.sourceReadiness.readinessSha256}`,
     });
     expect(readinessResponse.status).toBe(200);
     expect(readinessResponse.headers["content-disposition"]).toBe(
-      'attachment; filename="foundry-source-readiness-map-v5.json"',
+      'attachment; filename="foundry-source-readiness-map-v7.json"',
     );
     expect(readinessResponse.body).toBe(
-      `${serializeFoundrySourceReadinessMapV5(ready.sourceReadiness)}\n`,
+      `${serializeFoundrySourceReadinessMapV7(ready.sourceReadiness)}\n`,
     );
 
     const checklistResponse = await sendRequest(app, {
@@ -498,10 +699,10 @@ describe("Foundry local companion app", () => {
     });
     expect(checklistResponse.status).toBe(200);
     expect(checklistResponse.headers["content-disposition"]).toBe(
-      'attachment; filename="foundry-operator-evidence-checklist-v5.json"',
+      'attachment; filename="foundry-operator-evidence-checklist-v7.json"',
     );
     expect(checklistResponse.body).toBe(
-      `${serializeFoundryOperatorEvidenceChecklistV5(ready.operatorEvidenceChecklist)}\n`,
+      `${serializeFoundryOperatorEvidenceChecklistV7(ready.operatorEvidenceChecklist)}\n`,
     );
   });
 
@@ -556,15 +757,21 @@ describe("Foundry local companion app", () => {
     expect(ready.receipt?.summary).toMatchObject({ fileCount: 3, duplicateGroupCount: 1 });
     expect(ready.receipt?.files.every((file) => file.status === "quarantined")).toBe(true);
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
       summary: {
         receiptFileCount: 3,
-        assetCount: 2,
-        establishedCount: 2,
-        factsNotEstablishedCount: 0,
+        inheritedAssetCount: 2,
+        potreeBundleCount: 0,
         untargetedFileCount: 1,
         blockedSourceCount: 0,
+      },
+      inherited: {
+        summary: {
+          assetCount: 2,
+          establishedCount: 2,
+          factsNotEstablishedCount: 0,
+        },
       },
       policy: {
         mutation: "none",
@@ -574,12 +781,12 @@ describe("Foundry local companion app", () => {
         rights: "not_evaluated",
       },
     });
-    expect(ready.sourceFacts?.state === "available" && ready.sourceFacts.assets.map((asset) => asset.source.path)).toEqual([
+    expect(requireInheritedSourceFacts(ready).assets.map((asset) => asset.source.path)).toEqual([
       "copies/triangle-copy.obj",
       "triangle.obj",
     ]);
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "available",
       receiptSha256: ready.receipt?.receiptSha256,
       sourceFactsSha256: ready.sourceFacts?.factsSha256,
@@ -587,30 +794,27 @@ describe("Foundry local companion app", () => {
         sourceAccess: "read_only",
         mutation: "none",
         reconstruction: "none",
-        networkAccess: "none",
         routeCompilation: "none",
-        recipeCompilation: "none",
-        workerSelection: "none",
-        providerSelection: "none",
         execution: "not_authorized",
         authority: "none",
       },
-      summary: { receiptFileCount: 3, representedFileCount: 3 },
+      summary: { receiptFileCount: 3, potreeBundleCount: 0 },
+      inherited: { summary: { receiptFileCount: 3, representedFileCount: 3 } },
     });
     if (ready.sourceReadiness?.state !== "available") {
       throw new Error("ready state has no available Source Readiness map");
     }
-    expect(ready.sourceReadiness.files.map((file) => [file.path, file.status])).toEqual([
+    expect(requireInheritedReadiness(ready).files.map((file) => [file.path, file.status])).toEqual([
       ["copies/triangle-copy.obj", "facts_established"],
       ["notes.txt", "unclassified_format"],
       ["triangle.obj", "facts_established"],
     ]);
-    expect(ready.sourceReadiness.lanes.find((lane) => lane.id === "mesh_geometry")).toMatchObject({
+    expect(requireInheritedReadiness(ready).lanes.find((lane) => lane.id === "mesh_geometry")).toMatchObject({
       status: "all_observed_facts_established",
       counts: { observedFileCount: 2, distinctContentCount: 1, factsEstablishedCount: 2 },
     });
     expect(ready.operatorEvidenceChecklist).toMatchObject({
-      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v5",
+      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v7",
       state: "available",
       receiptSha256: ready.receipt?.receiptSha256,
       sourceFactsSha256: ready.sourceFacts?.factsSha256,
@@ -618,26 +822,29 @@ describe("Foundry local companion app", () => {
       policy: {
         requestPerformance: "none",
         completionTracking: "none",
-        desiredOutputProfile: "not_bound",
-        prioritization: "evidence_dependency_only",
-        necessity: "not_evaluated",
         execution: "not_authorized",
         authority: "none",
       },
       summary: {
-        receiptFileCount: 3,
-        evidenceRequestCount: 10,
-        highCount: 1,
-        normalCount: 8,
-        conditionalCount: 1,
-        affectedSourceCount: 3,
-        distinctContentCount: 2,
+        inheritedEvidenceRequestCount: 10,
+        potreeEvidenceRequestCount: 0,
+      },
+      inherited: {
+        summary: {
+          receiptFileCount: 3,
+          evidenceRequestCount: 10,
+          highCount: 1,
+          normalCount: 8,
+          conditionalCount: 1,
+          affectedSourceCount: 3,
+          distinctContentCount: 2,
+        },
       },
     });
     if (ready.operatorEvidenceChecklist?.state !== "available") {
       throw new Error("ready state has no available Operator Evidence Checklist");
     }
-    expect(ready.operatorEvidenceChecklist.items.map((item) => item.evidenceCode)).toEqual(
+    expect(requireInheritedChecklist(ready).items.map((item) => item.evidenceCode)).toEqual(
       expect.arrayContaining([
         "UNCLASSIFIED_FORMAT",
         "OBJ_ACCURACY_UNKNOWN",
@@ -647,69 +854,178 @@ describe("Foundry local companion app", () => {
     );
   });
 
-  it("establishes SPZ facts in the active V5 chain and downloads the exact artifact", async () => {
+  it("preserves established SPZ facts in the inherited V6 layer of the exact V7 artifact", async () => {
     const source = await makeSmallSpzFixture();
     const app = await startLocalFoundryApp({ source });
     openApps.push(app);
 
     const ready = await waitForPhase(app, "ready");
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
       summary: {
         receiptFileCount: 2,
-        assetCount: 1,
-        establishedCount: 1,
-        factsNotEstablishedCount: 0,
-        untargetedFileCount: 1,
+        inheritedAssetCount: 2,
+        potreeBundleCount: 0,
+        untargetedFileCount: 0,
       },
-      assets: [{
-        source: { path: "scene.spz", inputType: "spz" },
-        format: "spz",
-        inspection: { state: "established", code: "SPZ_FORMAT_FACTS_ESTABLISHED" },
-        facts: {
-          format: "spz_legacy_gzip",
-          version: 3,
-          count: 4,
-          sphericalHarmonics: { degree: 0 },
-        },
-      }],
+      inherited: {
+        summary: { assetCount: 2, establishedCount: 1, factsNotEstablishedCount: 1 },
+        assets: [
+          {
+            source: { path: "cloud.ply", inputType: "ply_point_cloud" },
+            format: "ply",
+            inspection: {
+              state: "facts_not_established",
+              code: "POINT_PLY_ASCII_ENCODING_UNSUPPORTED",
+            },
+            facts: null,
+          },
+          {
+            source: { path: "scene.spz", inputType: "spz" },
+            format: "spz",
+            inspection: { state: "established", code: "SPZ_FORMAT_FACTS_ESTABLISHED" },
+            facts: {
+              format: "spz_legacy_gzip",
+              version: 3,
+              count: 4,
+              sphericalHarmonics: { degree: 0 },
+            },
+          },
+        ],
+      },
     });
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "available",
-      summary: { factsEstablishedCount: 1, outsideSourceFactsV5Count: 1 },
-      files: [
-        { path: "cloud.ply", status: "outside_source_facts_v5" },
-        { path: "scene.spz", status: "facts_established", laneIds: ["visual_scene_representation"] },
-      ],
+      summary: { potreeBundleCount: 0 },
+      inherited: {
+        summary: {
+          factsEstablishedCount: 1,
+          factsNotEstablishedCount: 1,
+          outsideSourceFactsV6Count: 0,
+        },
+        files: [
+          {
+            path: "cloud.ply",
+            status: "facts_not_established",
+            inputType: "ply_point_cloud",
+            format: "ply",
+            laneIds: ["point_geometry"],
+          },
+          { path: "scene.spz", status: "facts_established", laneIds: ["visual_scene_representation"] },
+        ],
+      },
     });
     expect(ready.operatorEvidenceChecklist).toMatchObject({
-      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v5",
+      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v7",
       state: "available",
     });
     if (ready.operatorEvidenceChecklist?.state !== "available") {
-      throw new Error("SPZ ready state has no available V5 Operator Evidence Checklist");
+      throw new Error("SPZ ready state has no available V6 Operator Evidence Checklist");
     }
-    expect(ready.operatorEvidenceChecklist.items.map((item) => item.evidenceCode)).toEqual(
+    expect(requireInheritedChecklist(ready).items.map((item) => item.evidenceCode)).toEqual(
       expect.arrayContaining([
-        "OUTSIDE_SOURCE_FACTS_V5",
+        "SOURCE_FACTS_NOT_ESTABLISHED",
+        "POINT_PLY_ATTRIBUTE_VALUES_UNKNOWN",
         "SPZ_ATTRIBUTE_VALUES_UNKNOWN",
         "SPZ_RIGHTS_UNKNOWN",
       ]),
     );
 
     const facts = ready.sourceFacts;
-    if (facts === undefined) throw new Error("SPZ ready state has no Source Facts V5 artifact");
+    if (facts === undefined) throw new Error("SPZ ready state has no Source Facts V6 artifact");
     const response = await sendRequest(app, {
       path: `/api/source-facts?token=${encodeURIComponent(tokenFor(app))}&digest=${facts.factsSha256}`,
     });
     expect(response.status).toBe(200);
     expect(response.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-universal-source-facts-v5.json\"",
+      "attachment; filename=\"foundry-universal-source-facts-v7.json\"",
     );
-    expect(response.body).toBe(`${serializeUniversalSourceFactsV5Artifact(facts)}\n`);
+    expect(response.body).toBe(`${serializeUniversalSourceFactsV7Artifact(facts)}\n`);
     expect(JSON.stringify(JSON.parse(response.body))).not.toContain(source);
+  });
+
+  it("preserves ordinary point PLY layout in the inherited V6 layer", async () => {
+    const source = await makeSmallPointPlyFixture();
+    const app = await startLocalFoundryApp({ source });
+    openApps.push(app);
+
+    const ready = await waitForPhase(app, "ready");
+    expect(ready.sourceFacts).toMatchObject({
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
+      state: "available",
+      summary: {
+        receiptFileCount: 1,
+        inheritedAssetCount: 1,
+        potreeBundleCount: 0,
+        untargetedFileCount: 0,
+      },
+      inherited: {
+        summary: { assetCount: 1, establishedCount: 1, factsNotEstablishedCount: 0 },
+        assets: [{
+          source: { path: "points.ply", inputType: "ply_point_cloud" },
+          format: "ply",
+          inspection: {
+            state: "established",
+            code: "POINT_PLY_SOURCE_FACTS_ESTABLISHED",
+            coverage: "complete_header_and_exact_fixed_width_payload_layout",
+          },
+          facts: {
+            format: "ply_binary_little_endian",
+            profile: "ordinary_point_geometry_fixed_width_scalar",
+            vertices: {
+              count: 2,
+              recordStrideBytes: 27,
+              payloadBytes: 54,
+              requiredCoordinateProperties: {
+                names: ["x", "y", "z"],
+                byteOffsets: [0, 4, 8],
+              },
+              additionalProperties: {
+                count: 6,
+                names: ["nx", "ny", "nz", "red", "green", "blue"],
+              },
+            },
+            container: { exactFileLengthVerified: true, trailingBytes: 0 },
+          },
+        }],
+      },
+    });
+    expect(ready.sourceReadiness).toMatchObject({
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
+      state: "available",
+      inherited: {
+        files: [{
+          path: "points.ply",
+          status: "facts_established",
+          inputType: "ply_point_cloud",
+          format: "ply",
+          laneIds: ["point_geometry"],
+        }],
+      },
+    });
+    if (ready.operatorEvidenceChecklist?.state !== "available") {
+      throw new Error("point PLY ready state has no available Operator Evidence Checklist V6");
+    }
+    expect(requireInheritedChecklist(ready).items.map((item) => item.evidenceCode)).toEqual(
+      expect.arrayContaining([
+        "POINT_PLY_ATTRIBUTE_VALUES_UNKNOWN",
+        "POINT_PLY_FRAME_CRS_AND_AXIS_UNKNOWN",
+        "POINT_PLY_RIGHTS_UNKNOWN",
+      ]),
+    );
+
+    const facts = ready.sourceFacts;
+    if (facts === undefined) throw new Error("point PLY ready state has no Source Facts V6");
+    const response = await sendRequest(app, {
+      path: `/api/source-facts?token=${encodeURIComponent(tokenFor(app))}&digest=${facts.factsSha256}`,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers["content-disposition"]).toBe(
+      "attachment; filename=\"foundry-universal-source-facts-v7.json\"",
+    );
+    expect(response.body).toBe(`${serializeUniversalSourceFactsV7Artifact(facts)}\n`);
   });
 
   it("establishes order-independent classic Gaussian PLY facts and exposes its evidence requests", async () => {
@@ -719,45 +1035,47 @@ describe("Foundry local companion app", () => {
 
     const ready = await waitForPhase(app, "ready");
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
       summary: {
         receiptFileCount: 1,
-        assetCount: 1,
-        establishedCount: 1,
-        factsNotEstablishedCount: 0,
+        inheritedAssetCount: 1,
+        potreeBundleCount: 0,
         untargetedFileCount: 0,
       },
-      assets: [{
-        source: { path: "scene.ply", inputType: "gaussian_ply" },
-        format: "gaussian_ply",
-        inspection: {
-          state: "established",
-          code: "GAUSSIAN_PLY_FORMAT_FACTS_ESTABLISHED",
-          coverage: "complete_container_structure",
-        },
-        facts: {
-          format: "gaussian_ply_binary_little_endian",
-          plyVersion: "1.0",
-          gaussians: {
-            count: 2,
-            vertexStrideBytes: 152,
-            payloadBytes: 304,
-            sphericalHarmonics: {
-              degree: 2,
-              nonDcPropertyCount: 24,
-              indicesContiguous: true,
-            },
-            normals: { state: "absent", offsets: [] },
+      inherited: {
+        summary: { assetCount: 1, establishedCount: 1, factsNotEstablishedCount: 0 },
+        assets: [{
+          source: { path: "scene.ply", inputType: "gaussian_ply" },
+          format: "gaussian_ply",
+          inspection: {
+            state: "established",
+            code: "GAUSSIAN_PLY_FORMAT_FACTS_ESTABLISHED",
+            coverage: "complete_container_structure",
           },
-          container: { exactFileLengthVerified: true },
-        },
-      }],
+          facts: {
+            format: "gaussian_ply_binary_little_endian",
+            plyVersion: "1.0",
+            gaussians: {
+              count: 2,
+              vertexStrideBytes: 152,
+              payloadBytes: 304,
+              sphericalHarmonics: {
+                degree: 2,
+                nonDcPropertyCount: 24,
+                indicesContiguous: true,
+              },
+              normals: { state: "absent", offsets: [] },
+            },
+            container: { exactFileLengthVerified: true },
+          },
+        }],
+      },
     });
     if (ready.sourceFacts?.state !== "available") {
-      throw new Error("Gaussian PLY ready state has no available Source Facts V5 artifact");
+      throw new Error("Gaussian PLY ready state has no available Source Facts V6 artifact");
     }
-    const plyFacts = ready.sourceFacts.assets[0]?.facts;
+    const plyFacts = requireInheritedSourceFacts(ready).assets[0]?.facts;
     expect(plyFacts).toMatchObject({
       gaussians: {
         properties: expect.arrayContaining([
@@ -771,19 +1089,21 @@ describe("Foundry local companion app", () => {
       },
     });
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "available",
-      summary: { factsEstablishedCount: 1, outsideSourceFactsV5Count: 0 },
-      files: [{
-        path: "scene.ply",
-        status: "facts_established",
-        laneIds: ["visual_scene_representation"],
-      }],
+      inherited: {
+        summary: { factsEstablishedCount: 1, outsideSourceFactsV6Count: 0 },
+        files: [{
+          path: "scene.ply",
+          status: "facts_established",
+          laneIds: ["visual_scene_representation"],
+        }],
+      },
     });
     if (ready.operatorEvidenceChecklist?.state !== "available") {
-      throw new Error("Gaussian PLY ready state has no available Operator Evidence Checklist V5");
+      throw new Error("Gaussian PLY ready state has no available Operator Evidence Checklist V6");
     }
-    expect(ready.operatorEvidenceChecklist.items.map((item) => item.evidenceCode)).toEqual(
+    expect(requireInheritedChecklist(ready).items.map((item) => item.evidenceCode)).toEqual(
       expect.arrayContaining([
         "GAUSSIAN_PLY_ATTRIBUTE_VALUES_UNKNOWN",
         "GAUSSIAN_PLY_ENCODING_SEMANTICS_UNKNOWN",
@@ -799,76 +1119,80 @@ describe("Foundry local companion app", () => {
 
     const ready = await waitForPhase(app, "ready");
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "available",
       summary: {
         receiptFileCount: 1,
-        assetCount: 1,
-        establishedCount: 1,
-        factsNotEstablishedCount: 0,
+        inheritedAssetCount: 1,
+        potreeBundleCount: 0,
       },
-      assets: [{
-        source: { path: "scene-v4.spz", inputType: "spz" },
-        format: "spz",
-        inspection: { state: "established", code: "SPZ_FORMAT_FACTS_ESTABLISHED" },
-        facts: {
-          format: "spz_v4_zstd",
-          version: 4,
-          count: 3,
-          antialiased: true,
-          sphericalHarmonics: {
-            degree: 2,
-            nonDcCoefficientCount: 8,
-            bytesPerGaussian: 24,
+      inherited: {
+        summary: { assetCount: 1, establishedCount: 1, factsNotEstablishedCount: 0 },
+        assets: [{
+          source: { path: "scene-v4.spz", inputType: "spz" },
+          format: "spz",
+          inspection: { state: "established", code: "SPZ_FORMAT_FACTS_ESTABLISHED" },
+          facts: {
+            format: "spz_v4_zstd",
+            version: 4,
+            count: 3,
+            antialiased: true,
+            sphericalHarmonics: {
+              degree: 2,
+              nonDcCoefficientCount: 8,
+              bytesPerGaussian: 24,
+            },
+            extensions: {
+              declared: true,
+              totalBytes: 23,
+              records: [
+                {
+                  typeCodeHex: "adbe0003",
+                  payloadBytes: 4,
+                  recognizedType: "adobe_coordinate_system",
+                },
+                {
+                  typeCodeHex: "12345678",
+                  payloadBytes: 3,
+                  recognizedType: "unknown",
+                },
+              ],
+            },
+            container: {
+              kind: "v4_zstd_multistream",
+              tocByteOffset: 55,
+              tocBytes: 96,
+              streamCount: 6,
+              totalUncompressedStreamBytes: 132,
+              compressedStreamsEndAtFileEnd: true,
+              streams: [
+                { role: "positions", uncompressedSizeBytes: 27 },
+                { role: "alphas", uncompressedSizeBytes: 3 },
+                { role: "colors_dc", uncompressedSizeBytes: 9 },
+                { role: "scales", uncompressedSizeBytes: 9 },
+                { role: "rotations", uncompressedSizeBytes: 12 },
+                { role: "spherical_harmonics_non_dc", uncompressedSizeBytes: 72 },
+              ],
+            },
           },
-          extensions: {
-            declared: true,
-            totalBytes: 23,
-            records: [
-              {
-                typeCodeHex: "adbe0003",
-                payloadBytes: 4,
-                recognizedType: "adobe_coordinate_system",
-              },
-              {
-                typeCodeHex: "12345678",
-                payloadBytes: 3,
-                recognizedType: "unknown",
-              },
-            ],
-          },
-          container: {
-            kind: "v4_zstd_multistream",
-            tocByteOffset: 55,
-            tocBytes: 96,
-            streamCount: 6,
-            totalUncompressedStreamBytes: 132,
-            compressedStreamsEndAtFileEnd: true,
-            streams: [
-              { role: "positions", uncompressedSizeBytes: 27 },
-              { role: "alphas", uncompressedSizeBytes: 3 },
-              { role: "colors_dc", uncompressedSizeBytes: 9 },
-              { role: "scales", uncompressedSizeBytes: 9 },
-              { role: "rotations", uncompressedSizeBytes: 12 },
-              { role: "spherical_harmonics_non_dc", uncompressedSizeBytes: 72 },
-            ],
-          },
-        },
-      }],
+        }],
+      },
     });
 
     const facts = ready.sourceFacts;
     if (facts === undefined || facts.state !== "available") {
-      throw new Error("SPZ v4 ready state has no available Source Facts V5 artifact");
+      throw new Error("SPZ v4 ready state has no available Source Facts V6 artifact");
     }
     const response = await sendRequest(app, {
       path: `/api/source-facts?token=${encodeURIComponent(tokenFor(app))}&digest=${facts.factsSha256}`,
     });
     expect(response.status).toBe(200);
-    expect(response.body).toBe(`${serializeUniversalSourceFactsV5Artifact(facts)}\n`);
-    const downloaded = JSON.parse(response.body) as FoundryUniversalSourceFactsV5;
-    expect(downloaded.assets[0]?.facts).toEqual(facts.assets[0]?.facts);
-    expect(downloaded.assets[0]?.facts).toMatchObject({
+    expect(response.body).toBe(`${serializeUniversalSourceFactsV7Artifact(facts)}\n`);
+    const downloaded = JSON.parse(response.body) as FoundryUniversalSourceFactsV7;
+    expect(requireInheritedSourceFacts({ ...ready, sourceFacts: downloaded }).assets[0]?.facts).toEqual(
+      requireInheritedSourceFacts(ready).assets[0]?.facts,
+    );
+    expect(requireInheritedSourceFacts({ ...ready, sourceFacts: downloaded }).assets[0]?.facts).toMatchObject({
       extensions: {
         records: expect.arrayContaining([
           expect.objectContaining({ typeCodeHex: "adbe0003" }),
@@ -902,38 +1226,48 @@ describe("Foundry local companion app", () => {
 
     const ready = await waitForPhase(app, "ready");
     expect(ready.sourceFacts).toMatchObject({
-      schemaVersion: "omnitwin.foundry.universal-source-facts.v5",
+      schemaVersion: "omnitwin.foundry.universal-source-facts.v7",
       state: "unavailable",
-      assets: [],
-      summary: { receiptFileCount: 2, assetCount: 0, blockedSourceCount: 1 },
-      reason: { code: "XGRIDS_XBIN_UNSUPPORTED" },
-      affectedSources: [{ path: "vendor.xbin", inputType: "xgrids_xbin" }],
+      potreeBundles: [],
+      summary: { receiptFileCount: 2, inheritedAssetCount: 0, blockedSourceCount: 1 },
+      inherited: {
+        state: "unavailable",
+        reason: { code: "XGRIDS_XBIN_UNSUPPORTED" },
+        affectedSources: [{ path: "vendor.xbin", inputType: "xgrids_xbin" }],
+      },
     });
     expect(ready.sourceReadiness).toMatchObject({
-      schemaVersion: "omnitwin.foundry.source-readiness-map.v5",
+      schemaVersion: "omnitwin.foundry.source-readiness-map.v7",
       state: "blocked",
-      files: [],
-      blockedReason: {
-        affectedSources: [{ path: "vendor.xbin", inputType: "xgrids_xbin" }],
+      potreeBundleRefinements: [],
+      inherited: {
+        files: [],
+        blockedReason: {
+          affectedSources: [{ path: "vendor.xbin", inputType: "xgrids_xbin" }],
+        },
       },
     });
     if (ready.sourceReadiness?.state !== "blocked") {
       throw new Error("XBIN ready state has no blocked Source Readiness map");
     }
-    expect(ready.sourceReadiness.lanes).toHaveLength(8);
-    expect(ready.sourceReadiness.lanes.every((lane) =>
+    expect(ready.sourceReadiness.inherited.lanes).toHaveLength(8);
+    expect(ready.sourceReadiness.inherited.lanes.every((lane) =>
       lane.status === "blocked" && lane.representedSources.length === 0
     )).toBe(true);
     expect(ready.operatorEvidenceChecklist).toMatchObject({
-      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v5",
+      schemaVersion: "omnitwin.foundry.operator-evidence-checklist.v7",
       state: "blocked",
-      groups: [],
-      items: [],
-      summary: { evidenceRequestCount: 1, blockingCount: 1 },
-      blockedReason: {
-        category: "official_export",
-        evidencePriority: "blocking",
-        affectedSources: [{ path: "vendor.xbin" }],
+      potreeEvidenceRequests: [],
+      summary: { inheritedEvidenceRequestCount: 1, potreeEvidenceRequestCount: 0 },
+      inherited: {
+        groups: [],
+        items: [],
+        summary: { evidenceRequestCount: 1, blockingCount: 1 },
+        blockedReason: {
+          category: "official_export",
+          evidencePriority: "blocking",
+          affectedSources: [{ path: "vendor.xbin" }],
+        },
       },
     });
     if (ready.operatorEvidenceChecklist?.state !== "blocked") {
@@ -949,12 +1283,15 @@ describe("Foundry local companion app", () => {
       path: `/api/source-readiness?token=${encodeURIComponent(token)}&digest=${ready.sourceReadiness.readinessSha256}`,
     });
     expect(downloaded.status).toBe(200);
-    expect(downloaded.body).toBe(`${serializeFoundrySourceReadinessMapV5(ready.sourceReadiness)}\n`);
+    expect(downloaded.body).toBe(`${serializeFoundrySourceReadinessMapV7(ready.sourceReadiness)}\n`);
     expect(JSON.parse(downloaded.body)).toMatchObject({
       state: "blocked",
-      files: [],
-      gaps: [],
-      blockedReason: { affectedSources: [{ path: "vendor.xbin" }] },
+      potreeBundleRefinements: [],
+      inherited: {
+        files: [],
+        gaps: [],
+        blockedReason: { affectedSources: [{ path: "vendor.xbin" }] },
+      },
     });
     expect(downloaded.body).not.toContain(root);
     expect(downloaded.body).not.toContain("open.obj");
@@ -968,10 +1305,10 @@ describe("Foundry local companion app", () => {
     });
     expect(downloadedChecklist.status).toBe(200);
     expect(downloadedChecklist.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-operator-evidence-checklist-v5.json\"",
+      "attachment; filename=\"foundry-operator-evidence-checklist-v7.json\"",
     );
     expect(downloadedChecklist.body).toBe(
-      `${serializeFoundryOperatorEvidenceChecklistV5(ready.operatorEvidenceChecklist)}\n`,
+      `${serializeFoundryOperatorEvidenceChecklistV7(ready.operatorEvidenceChecklist)}\n`,
     );
     expect(downloadedChecklist.body).not.toContain(root);
     expect(downloadedChecklist.body).not.toContain("open.obj");
@@ -1062,6 +1399,12 @@ describe("Foundry local companion app", () => {
   });
 
   it("keeps absolute paths and private errors out of every browser response", async () => {
+    // Build the absolute path from the PLATFORM's own grammar. A hardcoded
+    // "C:\\sensitive\\client-a\\secret-capture.e57" is absolute only on win32;
+    // on POSIX the whole string is ONE filename, so basename() returns it
+    // intact, the relative-path schema rightly rejects it (colon, backslashes)
+    // and safeSourceLabel falls back to the generic label — the guard behaving
+    // MORE conservatively, not less, but the assertion reads as a failure.
     const sensitiveDirectory = "client-a";
     const source = resolve(sep, "sensitive", sensitiveDirectory, "secret-capture.e57");
     const app = await startLocalFoundryApp({
@@ -1116,10 +1459,10 @@ describe("Foundry local companion app", () => {
     });
     expect(factsResponse.status).toBe(200);
     expect(factsResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-universal-source-facts-v5.json\"",
+      "attachment; filename=\"foundry-universal-source-facts-v7.json\"",
     );
-    expect(factsResponse.body).toBe(`${serializeUniversalSourceFactsV5Artifact(facts)}\n`);
-    const downloadedFacts = JSON.parse(factsResponse.body) as FoundryUniversalSourceFactsV5;
+    expect(factsResponse.body).toBe(`${serializeUniversalSourceFactsV7Artifact(facts)}\n`);
+    const downloadedFacts = JSON.parse(factsResponse.body) as FoundryUniversalSourceFactsV7;
     expect(downloadedFacts.factsSha256).toBe(facts.factsSha256);
     expect(downloadedFacts.receiptSha256).toBe(downloaded.receiptSha256);
     expect(JSON.stringify(downloadedFacts)).not.toContain(source);
@@ -1135,10 +1478,10 @@ describe("Foundry local companion app", () => {
     });
     expect(readinessResponse.status).toBe(200);
     expect(readinessResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-source-readiness-map-v5.json\"",
+      "attachment; filename=\"foundry-source-readiness-map-v7.json\"",
     );
-    expect(readinessResponse.body).toBe(`${serializeFoundrySourceReadinessMapV5(readiness)}\n`);
-    const downloadedReadiness = JSON.parse(readinessResponse.body) as FoundrySourceReadinessMapV5;
+    expect(readinessResponse.body).toBe(`${serializeFoundrySourceReadinessMapV7(readiness)}\n`);
+    const downloadedReadiness = JSON.parse(readinessResponse.body) as FoundrySourceReadinessMapV7;
     expect(downloadedReadiness.readinessSha256).toBe(readiness.readinessSha256);
     expect(downloadedReadiness.receiptSha256).toBe(downloaded.receiptSha256);
     expect(downloadedReadiness.sourceFactsSha256).toBe(downloadedFacts.factsSha256);
@@ -1155,14 +1498,14 @@ describe("Foundry local companion app", () => {
     });
     expect(checklistResponse.status).toBe(200);
     expect(checklistResponse.headers["content-disposition"]).toBe(
-      "attachment; filename=\"foundry-operator-evidence-checklist-v5.json\"",
+      "attachment; filename=\"foundry-operator-evidence-checklist-v7.json\"",
     );
     expect(checklistResponse.body).toBe(
-      `${serializeFoundryOperatorEvidenceChecklistV5(checklist)}\n`,
+      `${serializeFoundryOperatorEvidenceChecklistV7(checklist)}\n`,
     );
     const downloadedChecklist = JSON.parse(
       checklistResponse.body,
-    ) as FoundryOperatorEvidenceChecklistV5;
+    ) as FoundryOperatorEvidenceChecklistV7;
     expect(downloadedChecklist).toMatchObject({
       checklistSha256: checklist.checklistSha256,
       receiptSha256: downloaded.receiptSha256,

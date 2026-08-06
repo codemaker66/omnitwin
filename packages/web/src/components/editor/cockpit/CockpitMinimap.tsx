@@ -1,9 +1,11 @@
-import { useMemo, type MouseEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent, type ReactElement } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
+import type { PlacedItem } from "../../../lib/placement.js";
 import {
   minimapLayout,
   minimapProject,
@@ -77,6 +79,49 @@ interface MinimapConflictMarker {
   readonly message: string;
 }
 
+function TimelinePreviewMinimapDots({
+  layout,
+}: {
+  readonly layout: ReturnType<typeof minimapLayout>;
+}): ReactElement {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const draw = (items: readonly PlacedItem[]): void => {
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      canvas.dataset.previewObjectCount = String(items.length);
+      const context = canvas.getContext("2d");
+      if (context === null) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      for (const item of items) {
+        const { left, top } = minimapProject(item.x, item.z, layout);
+        const category = getCatalogueItem(item.catalogueItemId)?.category;
+        context.beginPath();
+        context.arc(left, top, 3.5, 0, Math.PI * 2);
+        context.fillStyle = dotColor(category);
+        context.fill();
+      }
+    };
+
+    draw(useLayoutTimelinePreviewStore.getState().currentItems);
+    return useLayoutTimelinePreviewStore.subscribe((state, previous) => {
+      if (state.currentItems === previous.currentItems) return;
+      draw(state.currentItems);
+    });
+  }, [layout]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="cockpit-minimap__preview-canvas"
+      width={Math.ceil(layout.width)}
+      height={Math.ceil(layout.height)}
+      aria-label="Phase preview furniture positions"
+    />
+  );
+}
+
 export function CockpitMinimap(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
@@ -84,6 +129,7 @@ export function CockpitMinimap(): ReactElement {
   const activeMode = useCockpitStore((state) => state.activeMode);
   const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.activeFrame !== null);
 
   const layout = useMemo(() => minimapLayout(dimensions, MINIMAP_MAX_PX), [dimensions]);
   const layers = useMemo(
@@ -91,13 +137,13 @@ export function CockpitMinimap(): ReactElement {
     [overlayVisibility, activeMode],
   );
   const replayNeeded = useMemo(
-    () => shouldLoadReplay(overlayVisibility, activeMode),
-    [overlayVisibility, activeMode],
+    () => !timelinePreviewActive && shouldLoadReplay(overlayVisibility, activeMode),
+    [overlayVisibility, activeMode, timelinePreviewActive],
   );
   const { artifact, bounds } = useCockpitReplay(replayNeeded);
 
   const conflictMarkers = useMemo<readonly MinimapConflictMarker[]>(() => {
-    if (!layers.routeConflicts || artifact === null || bounds === null) return [];
+    if (timelinePreviewActive || !layers.routeConflicts || artifact === null || bounds === null) return [];
     return selectRouteConflicts(artifact.routeConflicts, MAX_MINIMAP_CONFLICTS).map((conflict) => {
       const [x, , z] = projectReplayPointToFloor(conflict.point, bounds, dimensions, 0);
       const pixel = minimapProject(x, z, layout);
@@ -109,7 +155,7 @@ export function CockpitMinimap(): ReactElement {
         message: conflict.message,
       };
     });
-  }, [layers.routeConflicts, artifact, bounds, dimensions, layout]);
+  }, [timelinePreviewActive, layers.routeConflicts, artifact, bounds, dimensions, layout]);
 
   const heritageInset = Math.min(
     HERITAGE_INSET_M * layout.scale,
@@ -123,7 +169,9 @@ export function CockpitMinimap(): ReactElement {
     requestFocus(x, z);
   };
 
-  const note = conflictMarkers.length > 0
+  const note = timelinePreviewActive
+    ? "Phase preview · saved plan unchanged · click to recentre"
+    : conflictMarkers.length > 0
     ? `${String(conflictMarkers.length)} simulated review marker${conflictMarkers.length === 1 ? "" : "s"} · click to recentre`
     : "Planning overview · click to recentre";
 
@@ -155,7 +203,7 @@ export function CockpitMinimap(): ReactElement {
               aria-hidden="true"
             />
           )}
-          {placedItems.map((item) => {
+          {timelinePreviewActive ? <TimelinePreviewMinimapDots layout={layout} /> : placedItems.map((item) => {
             const { left, top } = minimapProject(item.x, item.z, layout);
             const category = getCatalogueItem(item.catalogueItemId)?.category;
             return (

@@ -8,7 +8,12 @@ import {
   parseColmapImagesBin,
   readE57LogicalBytes,
 } from "./grand-hall-pilot-inspection.js";
-import { buildPilotFitReport, type PilotCorrespondence } from "./grand-hall-pilot-fit.js";
+import {
+  buildPilotFitReport,
+  deriveExcludedPilotSweepIndices,
+  PILOT_TRANSFORM_ID,
+  type PilotCorrespondence,
+} from "./grand-hall-pilot-fit.js";
 
 const CREATED_AT = "2026-07-19T10:21:36.000Z";
 const E57_PATH = "F:/E57/cloud_0.e57";
@@ -66,6 +71,14 @@ for (const [sweep, centres] of [...centresBySweep.entries()].sort((a, b) => a[0]
 }
 
 const report = buildPilotFitReport(correspondences);
+const boundedSweepIndices = [
+  ...report.fitSet.sweepIndices,
+  ...report.heldOutSet.sweepIndices,
+];
+const excludedSweepIndices = deriveExcludedPilotSweepIndices(
+  correspondences.map(({ sweepIndex }) => sweepIndex),
+  boundedSweepIndices,
+);
 const evidence = {
   schemaVersion: "omnitwin.foundry.pilot-fit-residual-report.v0",
   createdAt: CREATED_AT,
@@ -76,10 +89,12 @@ const evidence = {
     colmapImagesBin: "colmap-sparse-images-bin",
     registeredImages: images.length,
     e57ScanTranslations: translations.length,
-    sweepCorrespondences: correspondences.length,
+    discoveredSweepCorrespondences: correspondences.length,
+    sweepCorrespondences: boundedSweepIndices.length,
+    excludedSweepIndices,
   },
   disposition:
-    "PROPOSED DIAGNOSTIC ONLY - diagnostic of the derived COLMAP image set against E57 pose translations; not a reviewed TransformArtifact, no runtime or public authority, and per the T-507 audit NOT the governing transform of the E57-native 149-node release.",
+    "PROPOSED DIAGNOSTIC ONLY - diagnostic of the derived COLMAP image set against the E57 global scan-pose frame; the target label does not mean independent survey control. This is not a reviewed TransformArtifact, has no runtime or public authority, and per the T-507 audit is NOT the governing transform of the E57-native 149-node release.",
   ...report,
 };
 writeFileSync(OUT_REPORT, `${JSON.stringify(evidence, null, 2)}\n`);
@@ -93,9 +108,9 @@ const matrix = [
   report.translation[0], report.translation[1], report.translation[2], 1,
 ];
 const transformEdge = FoundryTransformEdgeSchema.parse({
-  id: "colmap-sfm-to-venue-control-proposed",
-  sourceFrameId: "colmap-sfm",
-  targetFrameId: "venue-control",
+  id: PILOT_TRANSFORM_ID,
+  sourceFrameId: report.sourceFrameId,
+  targetFrameId: report.targetFrameId,
   operationKind: "affine_similarity",
   matrix,
   state: "proposed",
@@ -109,7 +124,7 @@ writeFileSync(OUT_TRANSFORM, `${JSON.stringify(transformEdge, null, 2)}\n`);
 
 process.stdout.write(
   [
-    `correspondences=${String(correspondences.length)} scale=${report.scale.toFixed(10)}`,
+    `discovered_correspondences=${String(correspondences.length)} bounded_correspondences=${String(boundedSweepIndices.length)} scale=${report.scale.toFixed(10)}`,
     `fit: median=${(report.fitSet.residuals.medianMeters * 1000).toFixed(2)}mm rmse=${(report.fitSet.residuals.rmseMeters * 1000).toFixed(2)}mm p95=${(report.fitSet.residuals.p95Meters * 1000).toFixed(2)}mm max=${(report.fitSet.residuals.maxMeters * 1000).toFixed(2)}mm`,
     `heldout: median=${(report.heldOutSet.residuals.medianMeters * 1000).toFixed(2)}mm rmse=${(report.heldOutSet.residuals.rmseMeters * 1000).toFixed(2)}mm p95=${(report.heldOutSet.residuals.p95Meters * 1000).toFixed(2)}mm max=${(report.heldOutSet.residuals.maxMeters * 1000).toFixed(2)}mm`,
     `overlap=${report.overlapFraction.toFixed(2)}`,

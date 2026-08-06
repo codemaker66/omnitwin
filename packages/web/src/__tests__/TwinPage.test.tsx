@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { findUnsupportedProposalClaim, type TwinManifest } from "@omnitwin/types";
@@ -100,6 +101,22 @@ function jsonResponse(data: unknown, status = 200): Response {
   } as Response;
 }
 
+function mockLegacyManifest(data: unknown): void {
+  fetchMock
+    .mockResolvedValueOnce(jsonResponse({ error: "No active release" }, 404))
+    .mockResolvedValueOnce(jsonResponse(data));
+}
+
+function binaryJsonResponse(json: string): Response {
+  const bytes = new TextEncoder().encode(json);
+  return {
+    ok: true,
+    status: 200,
+    arrayBuffer: () => Promise.resolve(bytes.buffer),
+    headers: new Headers(),
+  } as Response;
+}
+
 function mount(): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={["/venues/trades-hall/twin"]}>
@@ -127,12 +144,24 @@ describe("TwinPage — loading state", () => {
     expect(screen.getByText(TWIN_LOADING_LINE)).toBeTruthy();
   });
 
-  it("requests the manifest from the venue's slug under the default asset base", () => {
+  it("resolves the production channel before requesting any bundle bytes", () => {
     fetchMock.mockReturnValue(new Promise<Response>(() => undefined));
     mount();
-    // The request is abortable (reviewer P1): the hook passes its
-    // AbortController's signal so superseded fetches are truly cancelled.
     expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:3001/assets/reconstruction-releases/active?venueSlug=trades-hall&releaseKind=venue_twin_v1",
+      expect.objectContaining({
+        cache: "no-store",
+        signal: expect.any(AbortSignal) as AbortSignal,
+      }),
+    );
+  });
+
+  it("uses the legacy local bundle only when no active Foundry release exists", async () => {
+    mockLegacyManifest(validManifest);
+    mount();
+    await screen.findByTestId("twin-stage");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
       "/twin/trades-hall/manifest.json",
       expect.objectContaining({ signal: expect.any(AbortSignal) as AbortSignal }),
     );
@@ -145,26 +174,99 @@ describe("TwinPage — error state", () => {
     mount();
 
     expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Each attempt is descriptor + legacy-fallback: both rejected here.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByRole("button", { name: TWIN_RETRY_LABEL }));
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
     expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
   });
 
+  it("falls back to the local bundle when the API is unreachable (not just 404)", async () => {
+    // The twin's assets are fully local — a dead API must not kill the page.
+    fetchMock
+      .mockRejectedValueOnce(new Error("connection refused"))
+      .mockResolvedValueOnce(jsonResponse(validManifest));
+    mount();
+
+    expect(await screen.findByTestId("twin-stage")).toBeTruthy();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/twin/trades-hall/manifest.json",
+      expect.objectContaining({ signal: expect.any(AbortSignal) as AbortSignal }),
+    );
+  });
+
   it("treats a schema-invalid manifest as an error state, never a crash", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ schema: "twin/1" }));
+    mockLegacyManifest({ schema: "twin/1" });
     mount();
     expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
     expect(screen.queryByTestId("twin-stage")).toBeNull();
   });
+
+  it("fails closed on a Foundry manifest digest mismatch without legacy fallback", async () => {
+    const releaseDigest = "b".repeat(64);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          schemaVersion: "venviewer.reconstruction-active-release.v1",
+          venueSlug: "trades-hall",
+          releaseKind: "venue_twin_v1",
+          channel: "production",
+          releaseId: "10000000-0000-4000-8000-000000000010",
+          releaseDigest,
+          publicationId: "10000000-0000-4000-8000-000000000011",
+          manifestSha256: "f".repeat(64),
+          manifestUrl: `https://releases.example.com/releases/sha256/bb/${releaseDigest}/manifest.json`,
+          assetBaseUrl: `https://releases.example.com/releases/sha256/bb/${releaseDigest}`,
+          channelRevision: 3,
+        },
+      }))
+      .mockResolvedValueOnce(binaryJsonResponse(JSON.stringify(validManifest)));
+
+    mount();
+    expect(await screen.findByText(TWIN_ERROR_LINE)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("TwinPage — ready state", () => {
+  it("loads the exact immutable Foundry manifest after verifying its bytes", async () => {
+    const releaseDigest = "c".repeat(64);
+    const manifestJson = JSON.stringify(validManifest);
+    const manifestSha256 = createHash("sha256").update(manifestJson).digest("hex");
+    const assetBaseUrl = `https://releases.example.com/releases/sha256/cc/${releaseDigest}`;
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          schemaVersion: "venviewer.reconstruction-active-release.v1",
+          venueSlug: "trades-hall",
+          releaseKind: "venue_twin_v1",
+          channel: "production",
+          releaseId: "10000000-0000-4000-8000-000000000010",
+          releaseDigest,
+          publicationId: "10000000-0000-4000-8000-000000000011",
+          manifestSha256,
+          manifestUrl: `${assetBaseUrl}/manifest.json`,
+          assetBaseUrl,
+          channelRevision: 3,
+        },
+      }))
+      .mockResolvedValueOnce(binaryJsonResponse(manifestJson));
+
+    mount();
+    expect(await screen.findByTestId("twin-stage")).toBeTruthy();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${assetBaseUrl}/manifest.json`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
   it("mounts the viewer with its canvas host, node label, and the disclosure", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(validManifest));
+    mockLegacyManifest(validManifest);
     mount();
 
     const stage = await screen.findByTestId("twin-stage");
@@ -176,7 +278,7 @@ describe("TwinPage — ready state", () => {
   });
 
   it("renders the disclosure exactly once on the page", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(validManifest));
+    mockLegacyManifest(validManifest);
     mount();
 
     await screen.findByTestId("twin-stage");
@@ -187,7 +289,7 @@ describe("TwinPage — ready state", () => {
 describe("TwinPage — document chrome and landmarks", () => {
   it("sets the twin title on mount and restores the previous title on unmount", async () => {
     document.title = "Previous title";
-    fetchMock.mockResolvedValue(jsonResponse(validManifest));
+    mockLegacyManifest(validManifest);
     const view = mount();
 
     expect(document.title).toBe(TWIN_TITLE);
@@ -205,7 +307,7 @@ describe("TwinPage — document chrome and landmarks", () => {
 
 describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
   it("shows the segmented control when the manifest carries a mesh", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST));
+    mockLegacyManifest(TWIN_FIXTURE_MANIFEST);
     mount();
 
     await screen.findByTestId("twin-stage");
@@ -218,7 +320,7 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
   });
 
   it("hides the control entirely when the bundle has no mesh", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST_NO_MESH));
+    mockLegacyManifest(TWIN_FIXTURE_MANIFEST_NO_MESH);
     mount();
 
     await screen.findByTestId("twin-stage");
@@ -226,7 +328,7 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
   });
 
   it("switching to Dollhouse checks the segment and hides the walk minimap", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST));
+    mockLegacyManifest(TWIN_FIXTURE_MANIFEST);
     mount();
 
     await screen.findByTestId("twin-stage");

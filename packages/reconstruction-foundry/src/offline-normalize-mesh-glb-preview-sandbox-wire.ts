@@ -200,6 +200,13 @@ export const FoundryOfflineNormalizeMeshGlbPreviewSandboxFreshVerifierSuccessMet
       messageType: z.literal("success"),
       role: z.literal("fresh_verifier"),
       requestId: RequestIdSchema,
+      requestWireSha256: z.string().regex(SHA256),
+      deadlineAt: DeadlineSchema,
+      invocationSha256: z.string().regex(SHA256),
+      permitPayloadSha256: z.string().regex(SHA256),
+      source: SourceBlobBindingSchema,
+      candidate: CandidateBlobBindingSchema,
+      reportSha256: z.string().regex(SHA256),
       blobs: z.tuple([]),
     })
     .strict();
@@ -286,6 +293,21 @@ export interface FoundryOfflineNormalizeMeshGlbPreviewSandboxTransformSuccessInp
 export interface FoundryOfflineNormalizeMeshGlbPreviewSandboxFreshVerifierSuccessInput {
   readonly kind: "fresh_verifier_success";
   readonly requestId: string;
+  readonly requestWireSha256: string;
+  readonly deadlineAt: string;
+  readonly invocationSha256: string;
+  readonly permitPayloadSha256: string;
+  readonly source: {
+    readonly kind: "source";
+    readonly sizeBytes: number;
+    readonly sha256: string;
+  };
+  readonly candidate: {
+    readonly kind: "candidate";
+    readonly sizeBytes: number;
+    readonly sha256: string;
+  };
+  readonly reportSha256: string;
 }
 
 export interface FoundryOfflineNormalizeMeshGlbPreviewSandboxFailureInput {
@@ -636,7 +658,11 @@ function expectedBinding(metadata: WireMetadata, index: number) {
   return metadata.blobs[index];
 }
 
-function snapshotBoundedBytes(bytes: Uint8Array, label: string): Buffer {
+function snapshotBoundedBytes(
+  bytes: Uint8Array,
+  label: string,
+  sensitive: Buffer[],
+): Buffer {
   if (!(bytes instanceof Uint8Array)) {
     fail(
       "OFFLINE_PREVIEW_SANDBOX_WIRE_BLOB_BYTES_INVALID",
@@ -654,7 +680,9 @@ function snapshotBoundedBytes(bytes: Uint8Array, label: string): Buffer {
     );
   }
   try {
-    return Buffer.from(bytes);
+    const snapshot = Buffer.from(bytes);
+    sensitive.push(snapshot);
+    return snapshot;
   } catch (error: unknown) {
     fail(
       "OFFLINE_PREVIEW_SANDBOX_WIRE_BLOB_SNAPSHOT_FAILED",
@@ -662,23 +690,6 @@ function snapshotBoundedBytes(bytes: Uint8Array, label: string): Buffer {
       error,
     );
   }
-}
-
-function encodeFrame(frame: BlobFrame): Buffer {
-  const header = Buffer.alloc(
-    FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_FRAME_HEADER_BYTES,
-  );
-  header.writeUInt8(BLOB_KIND[frame.kind], 0);
-  header.writeUInt8(HEADER_FLAGS, 1);
-  header.writeUInt16BE(0, 2);
-  header.writeUInt32BE(frame.bytes.length, 4);
-  domainDigest(
-    FRAME_DIGEST_DOMAIN,
-    BLOB_KIND[frame.kind],
-    frame.bytes.length,
-    frame.bytes,
-  ).copy(header, 8);
-  return Buffer.concat([header, frame.bytes]);
 }
 
 function encodeMessage(
@@ -691,42 +702,82 @@ function encodeMessage(
   const header = Buffer.alloc(
     FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_HEADER_BYTES,
   );
-  MAGIC.copy(header, 0);
-  header.writeUInt8(WIRE_VERSION, 8);
-  header.writeUInt8(MESSAGE_KIND[kind], 9);
-  header.writeUInt8(frames.length, 10);
-  header.writeUInt8(HEADER_FLAGS, 11);
-  header.writeUInt32BE(metadataBytes.length, 12);
-  domainDigest(
-    METADATA_DIGEST_DOMAIN,
-    MESSAGE_KIND[kind],
-    metadataBytes.length,
-    metadataBytes,
-  ).copy(header, METADATA_DIGEST_OFFSET);
-  const output = Buffer.concat([
-    header,
-    metadataBytes,
-    ...frames.map(encodeFrame),
-  ]);
-  if (
-    output.length >
-    FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES
-  ) {
-    output.fill(0);
-    fail(
-      "OFFLINE_PREVIEW_SANDBOX_WIRE_MESSAGE_OVERSIZED",
-      "Sandbox wire message exceeds its immutable total byte budget.",
+  let output: Buffer | undefined;
+  try {
+    MAGIC.copy(header, 0);
+    header.writeUInt8(WIRE_VERSION, 8);
+    header.writeUInt8(MESSAGE_KIND[kind], 9);
+    header.writeUInt8(frames.length, 10);
+    header.writeUInt8(HEADER_FLAGS, 11);
+    header.writeUInt32BE(metadataBytes.length, 12);
+    domainDigest(
+      METADATA_DIGEST_DOMAIN,
+      MESSAGE_KIND[kind],
+      metadataBytes.length,
+      metadataBytes,
+    ).copy(header, METADATA_DIGEST_OFFSET);
+    const outputLength = frames.reduce(
+      (total, frame) =>
+        total +
+        FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_FRAME_HEADER_BYTES +
+        frame.bytes.length,
+      header.length + metadataBytes.length,
     );
+    if (
+      outputLength >
+      FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES
+    ) {
+      fail(
+        "OFFLINE_PREVIEW_SANDBOX_WIRE_MESSAGE_OVERSIZED",
+        "Sandbox wire message exceeds its immutable total byte budget.",
+      );
+    }
+    output = Buffer.allocUnsafe(outputLength);
+    let cursor = 0;
+    cursor += header.copy(output, cursor);
+    cursor += metadataBytes.copy(output, cursor);
+    for (const frame of frames) {
+      const frameHeader = Buffer.alloc(
+        FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_FRAME_HEADER_BYTES,
+      );
+      try {
+        frameHeader.writeUInt8(BLOB_KIND[frame.kind], 0);
+        frameHeader.writeUInt8(HEADER_FLAGS, 1);
+        frameHeader.writeUInt16BE(0, 2);
+        frameHeader.writeUInt32BE(frame.bytes.length, 4);
+        domainDigest(
+          FRAME_DIGEST_DOMAIN,
+          BLOB_KIND[frame.kind],
+          frame.bytes.length,
+          frame.bytes,
+        ).copy(frameHeader, 8);
+        cursor += frameHeader.copy(output, cursor);
+        cursor += frame.bytes.copy(output, cursor);
+      } finally {
+        frameHeader.fill(0);
+      }
+    }
+    return output;
+  } catch (error: unknown) {
+    output?.fill(0);
+    throw error;
+  } finally {
+    header.fill(0);
+    metadataBytes.fill(0);
   }
-  return output;
 }
 
 function buildMetadataAndFrames(
   input: FoundryOfflineNormalizeMeshGlbPreviewSandboxWireInput,
+  sensitive: Buffer[],
 ): { readonly metadata: WireMetadata; readonly frames: readonly BlobFrame[] } {
   switch (input.kind) {
     case "transform_request": {
-      const source = snapshotBoundedBytes(input.sourceBytes, "sourceBytes");
+      const source = snapshotBoundedBytes(
+        input.sourceBytes,
+        "sourceBytes",
+        sensitive,
+      );
       const metadata = FoundryOfflineNormalizeMeshGlbPreviewSandboxTransformRequestMetadataV0Schema.parse({
         schemaVersion: FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_V0,
         messageType: "request",
@@ -741,8 +792,16 @@ function buildMetadataAndFrames(
       return { metadata, frames: [{ kind: "source", bytes: source }] };
     }
     case "fresh_verifier_request": {
-      const source = snapshotBoundedBytes(input.sourceBytes, "sourceBytes");
-      const candidate = snapshotBoundedBytes(input.candidateBytes, "candidateBytes");
+      const source = snapshotBoundedBytes(
+        input.sourceBytes,
+        "sourceBytes",
+        sensitive,
+      );
+      const candidate = snapshotBoundedBytes(
+        input.candidateBytes,
+        "candidateBytes",
+        sensitive,
+      );
       const metadata = FoundryOfflineNormalizeMeshGlbPreviewSandboxFreshVerifierRequestMetadataV0Schema.parse({
         schemaVersion: FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_V0,
         messageType: "request",
@@ -767,7 +826,11 @@ function buildMetadataAndFrames(
       };
     }
     case "transform_success": {
-      const output = snapshotBoundedBytes(input.outputBytes, "outputBytes");
+      const output = snapshotBoundedBytes(
+        input.outputBytes,
+        "outputBytes",
+        sensitive,
+      );
       const metadata = FoundryOfflineNormalizeMeshGlbPreviewSandboxTransformSuccessMetadataV0Schema.parse({
         schemaVersion: FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_V0,
         messageType: "success",
@@ -787,6 +850,13 @@ function buildMetadataAndFrames(
           messageType: "success",
           role: "fresh_verifier",
           requestId: input.requestId,
+          requestWireSha256: input.requestWireSha256,
+          deadlineAt: input.deadlineAt,
+          invocationSha256: input.invocationSha256,
+          permitPayloadSha256: input.permitPayloadSha256,
+          source: input.source,
+          candidate: input.candidate,
+          reportSha256: input.reportSha256,
           blobs: [],
         }),
         frames: [],
@@ -813,8 +883,13 @@ function buildMetadataAndFrames(
 export function encodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage(
   input: FoundryOfflineNormalizeMeshGlbPreviewSandboxWireInput,
 ): Buffer {
-  const built = buildMetadataAndFrames(input);
-  return encodeMessage(input.kind, built.metadata, built.frames);
+  const sensitive: Buffer[] = [];
+  try {
+    const built = buildMetadataAndFrames(input, sensitive);
+    return encodeMessage(input.kind, built.metadata, built.frames);
+  } finally {
+    for (const bytes of sensitive) bytes.fill(0);
+  }
 }
 
 function assertHeader(bytes: Buffer): {
@@ -948,7 +1023,7 @@ function parseFrame(
     );
   }
   const bytes = Buffer.from(wire.subarray(headerEnd, payloadEnd));
-  if (kind === "candidate" || kind === "output") sensitive.push(bytes);
+  sensitive.push(bytes);
   const expected = domainDigest(
     FRAME_DIGEST_DOMAIN,
     BLOB_KIND[kind],

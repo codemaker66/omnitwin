@@ -24,6 +24,7 @@ import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
@@ -35,6 +36,8 @@ import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
+import { TimelinePreviewFurniture } from "./TimelinePreviewFurniture.js";
+import { SAVED_LAYOUT_FURNITURE_GROUP } from "../../lib/layout-timeline-capture.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -111,8 +114,10 @@ function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean
 
 function PlannerMotionOverlayLayers({
   renderSceneOverlays,
+  timelinePreviewActive,
 }: {
   readonly renderSceneOverlays: boolean;
+  readonly timelinePreviewActive: boolean;
 }): ReactElement | null {
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   if (!shouldRenderPlannerMotionOverlays(cameraInteractionActive)) return null;
@@ -121,10 +126,14 @@ function PlannerMotionOverlayLayers({
     <>
       {renderSceneOverlays && <CockpitSceneOverlays />}
       <CockpitEvidenceBeam />
-      <SnapGuides />
-      <CirculationOverlay />
-      <MarqueeSelect />
-      <MarkupLayer />
+      {!timelinePreviewActive && (
+        <>
+          <SnapGuides />
+          <CirculationOverlay />
+          <MarqueeSelect />
+          <MarkupLayer />
+        </>
+      )}
       <DiagramLabels />
     </>
   );
@@ -132,8 +141,10 @@ function PlannerMotionOverlayLayers({
 
 function PlannerScenePrecompiler({
   signature,
+  asynchronous,
 }: {
   readonly signature: string;
+  readonly asynchronous: boolean;
 }): null {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
@@ -145,6 +156,17 @@ function PlannerScenePrecompiler({
 
     const warmScenePrograms = async (): Promise<void> => {
       invalidate();
+      // Timeline preview materials are harvested after mount and may be
+      // replaced while a transition settles. Three's asynchronous compiler
+      // polls those material programs after the render tree has changed,
+      // which can dereference a disposed currentProgram. Compile the dynamic
+      // presentation lens synchronously; keep the non-blocking warm-up for
+      // the stable editable scene.
+      if (!asynchronous) {
+        gl.compile(scene, camera);
+        if (!cancelled) invalidate();
+        return;
+      }
       try {
         await gl.compileAsync(scene, camera);
       } catch {
@@ -158,7 +180,7 @@ function PlannerScenePrecompiler({
     return () => {
       cancelled = true;
     };
-  }, [camera, gl, invalidate, scene, signature]);
+  }, [asynchronous, camera, gl, invalidate, scene, signature]);
 
   return null;
 }
@@ -202,6 +224,7 @@ export function PlannerScene(): ReactElement {
     [space],
   );
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.activeFrame !== null);
 
   // Mesh ↔ Splat ↔ Hybrid: the procedural room stays visible unless a measured
   // splat is mounted AND the user has switched to pure Splat. The splat fades
@@ -227,7 +250,7 @@ export function PlannerScene(): ReactElement {
   // persists over any region whose chunk failed.
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   const cameraInteractionClearTimer = useRef<number | null>(null);
-  const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
+  const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}:${String(timelinePreviewActive)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -274,7 +297,10 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           <fog attach="fog" args={["#efe9dc", 54, 138]} />
           <SceneProvider />
-          <PlannerScenePrecompiler signature={sceneWarmupSignature} />
+          <PlannerScenePrecompiler
+            signature={sceneWarmupSignature}
+            asynchronous={!timelinePreviewActive}
+          />
           <SectionPlane />
           <InvalidateOnToggle />
           {meshVisible && (roomGeometry !== null ? (
@@ -304,12 +330,18 @@ export function PlannerScene(): ReactElement {
           <CockpitCameraFocus />
           <CockpitPlanningCamera />
           <XrayToggle />
-          <MeasurementTool />
-          <TapeMeasure />
-          <PlacedFurniture />
-          <PlacementGhost />
-          <SelectionSystem />
-          <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
+          {!timelinePreviewActive && <MeasurementTool />}
+          {!timelinePreviewActive && <TapeMeasure />}
+          <group name={SAVED_LAYOUT_FURNITURE_GROUP} visible={!timelinePreviewActive}>
+            <PlacedFurniture />
+          </group>
+          <TimelinePreviewFurniture />
+          {!timelinePreviewActive && <PlacementGhost />}
+          {!timelinePreviewActive && <SelectionSystem />}
+          <PlannerMotionOverlayLayers
+            renderSceneOverlays={renderSceneOverlays}
+            timelinePreviewActive={timelinePreviewActive}
+          />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
           {import.meta.env.DEV && <PerfMonitor />}
         </Canvas>

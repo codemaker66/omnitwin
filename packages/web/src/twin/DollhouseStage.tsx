@@ -29,8 +29,15 @@ import {
   cloneSceneWithCutawayPlanes,
   disposeCutawayScene,
   setInertCutawayPlane,
-  updateVerticalCutawayPlane,
 } from "./dollhouse-cutaway.js";
+import {
+  applyOcclusionPeel,
+  computeRoomFocus,
+  createPeelUniforms,
+  updatePeelUniforms,
+  type PeelUniforms,
+  type RoomFocus,
+} from "./dollhouse-occlusion.js";
 
 // -----------------------------------------------------------------------------
 // DollhouseStage — the orbitable mesh of the hall with posed node dots
@@ -112,6 +119,9 @@ export function preloadDollhouse(meshUrl: string): void {
 interface DollhouseMeshProps {
   readonly meshUrl: string;
   readonly cutawayPlanes: readonly Plane[] | null;
+  /** Shared Baldur's-Gate peel uniforms — applied to the cutaway material
+   *  clones only (never drei's cached originals). Null disables the patch. */
+  readonly peelUniforms: PeelUniforms | null;
 }
 
 /**
@@ -121,15 +131,20 @@ interface DollhouseMeshProps {
  * stays on as well so the loader is covered even if drei reorders its
  * extension hooks. WebP textures decode natively; no KTX2/basis transcoder.
  */
-function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
+function DollhouseMesh({ meshUrl, cutawayPlanes, peelUniforms }: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
-  const preparedScene = useMemo(
-    () =>
-      cutawayPlanes === null
-        ? { scene: gltf.scene, materials: [] }
-        : cloneSceneWithCutawayPlanes(gltf.scene, cutawayPlanes),
-    [gltf.scene, cutawayPlanes],
-  );
+  const preparedScene = useMemo(() => {
+    if (cutawayPlanes === null) {
+      return { scene: gltf.scene, materials: [] };
+    }
+    const prepared = cloneSceneWithCutawayPlanes(gltf.scene, cutawayPlanes);
+    if (peelUniforms !== null) {
+      for (const material of prepared.materials) {
+        applyOcclusionPeel(material, peelUniforms);
+      }
+    }
+    return prepared;
+  }, [gltf.scene, cutawayPlanes, peelUniforms]);
   useEffect(
     () => () => {
       disposeCutawayScene(preparedScene);
@@ -145,31 +160,43 @@ function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactEle
   );
 }
 
+/** Peel engage/disengage spring — calm, no bounce (a fade, not a jump). */
+const PEEL_STRENGTH_SPRING: SpringConfig = { stiffness: 120, damping: 22 };
+
 interface DollhouseCutawayControllerProps {
   readonly plane: Plane;
   readonly floorPlane: Plane;
   readonly enabled: boolean;
-  readonly target: readonly [number, number, number];
-  readonly witnesses: readonly Vector3[];
-  readonly insetM: number;
-  readonly minimumY?: number;
+  readonly peelUniforms: PeelUniforms;
+  readonly peelFocus: RoomFocus | null;
 }
 
+/**
+ * The dither peel is the ONLY view-dependent hider. The two clipping planes
+ * are RETIRED (held permanently inert): the vertical section sliced a whole
+ * vertical slab — floor included — which read as a wedge bitten out of the
+ * Grand Hall at low angles (Blake, 2026-07-17), and the storey floor section
+ * black-voided the ground storey from elevated orbits. The peel covers both
+ * jobs with floor-keep and soft edges. The planes and the material clones
+ * stay: the peel's shader patch rides those clones, and
+ * `updateVerticalCutawayPlane`/`updateStoreyFloorPlane` remain exported (and
+ * tested) should a crisp section view ever return as a deliberate mode.
+ */
 function DollhouseCutawayController({
   plane,
   floorPlane,
   enabled,
-  target,
-  witnesses,
-  insetM,
-  minimumY,
+  peelUniforms,
+  peelFocus,
 }: DollhouseCutawayControllerProps): null {
   const gl = useThree((state) => state.gl);
-  const wasEnabled = useRef(false);
-  const targetPoint = useMemo(
-    () => new Vector3(target[0], target[1], target[2]),
-    [target[0], target[1], target[2]],
-  );
+  const invalidate = useThree((state) => state.invalidate);
+  const peelSpring = useRef<SpringState>({ value: 0, velocity: 0 });
+
+  useEffect(() => {
+    setInertCutawayPlane(plane);
+    setInertCutawayPlane(floorPlane);
+  }, [plane, floorPlane]);
 
   useLayoutEffect(() => {
     const previous = gl.localClippingEnabled;
@@ -179,27 +206,17 @@ function DollhouseCutawayController({
     };
   }, [gl]);
 
-  useFrame(({ camera }) => {
-    if (!enabled) {
-      if (wasEnabled.current) {
-        setInertCutawayPlane(plane);
-        setInertCutawayPlane(floorPlane);
-        wasEnabled.current = false;
-      }
-      return;
+  useFrame(({ camera }, delta) => {
+    // The peel strength springs toward its gate so mode changes dissolve the
+    // dither instead of popping it; the spring keeps the demand loop painting
+    // until it settles.
+    const spring = peelSpring.current;
+    const springTarget = enabled && peelFocus !== null ? 1 : 0;
+    if (!isSpringSettled(spring, springTarget)) {
+      stepSpring(spring, springTarget, delta, PEEL_STRENGTH_SPRING);
+      invalidate();
     }
-    wasEnabled.current = true;
-    if (minimumY === undefined || !Number.isFinite(minimumY)) {
-      setInertCutawayPlane(floorPlane);
-    } else {
-      floorPlane.setComponents(0, 1, 0, -minimumY);
-    }
-    updateVerticalCutawayPlane(plane, {
-      cameraPosition: camera.position,
-      target: targetPoint,
-      witnesses,
-      insetM,
-    });
+    updatePeelUniforms(peelUniforms, camera.position, peelFocus, spring.value);
   }, -0.5);
 
   return null;
@@ -375,13 +392,16 @@ export function DollhouseStage({
     () => (cutawayConfigured ? [cutawayPlane, floorPlane] : null),
     [cutawayConfigured, cutawayPlane, floorPlane],
   );
-  const cutawayWitnesses = useMemo(
-    () =>
-      nodes.map((node) => {
-        const position = e57PointToThree(node.pose.t);
-        return new Vector3(position[0], position[1], position[2]);
-      }),
-    [nodes],
+  // Baldur's-Gate peel: the "character" is the node the walk stands on; the
+  // room-aware focus sizes the dither window. Shared uniforms mean the
+  // per-frame update in the controller reaches every atlas-chunk program.
+  const peelUniforms = useMemo(
+    () => (cutawayConfigured ? createPeelUniforms() : null),
+    [cutawayConfigured],
+  );
+  const peelFocus = useMemo(
+    () => computeRoomFocus(nodes, currentId),
+    [nodes, currentId],
   );
 
   return (
@@ -390,16 +410,14 @@ export function DollhouseStage({
           simply exposes them, the low directional adds facade legibility. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} />
-      {cutaway !== undefined && (
+      <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} peelUniforms={peelUniforms} />
+      {cutaway !== undefined && peelUniforms !== null && (
         <DollhouseCutawayController
           plane={cutawayPlane}
           floorPlane={floorPlane}
           enabled={cutaway.enabled}
-          target={cutaway.target}
-          witnesses={cutawayWitnesses}
-          insetM={cutaway.insetM}
-          {...(cutaway.minimumY === undefined ? {} : { minimumY: cutaway.minimumY })}
+          peelUniforms={peelUniforms}
+          peelFocus={peelFocus}
         />
       )}
       <group>

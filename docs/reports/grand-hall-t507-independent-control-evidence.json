@@ -1,0 +1,234 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-control-audit.v0",
+  "auditId": "grand-hall-t507-independent-control-audit-2026-07-13",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "createdAt": "2026-07-13T10:30:00.000Z",
+  "auditReportFileSha256": "sha256:c8c1ae2fb5c8eb82db4850246d167495beaaeb61bcd665b3fca64f7976f99b67",
+  "reviewGateIntakeFileSha256": "sha256:4d41b10250dafdbb83c6749b7d83357f3af0a919beaa20a91da9993118c35ca8",
+  "classification": "draft_private_not_registrable_not_review_approvable",
+  "permissions": {
+    "sourceMutation": false,
+    "evidenceRegistration": false,
+    "reviewMutation": false,
+    "modelTraining": false,
+    "paidCompute": false,
+    "signing": false,
+    "publication": false,
+    "promotion": false
+  },
+  "phase1Evidence": {
+    "packageId": "grand-hall-phase1",
+    "outputIndexFileSha256": "sha256:5ce95707ed8111df82e32fd7997cbcf862bec2974cf544734f5098cfe0540773",
+    "identityGateOverviewFileSha256": "sha256:5e1b10ebba435201f91f540c4f0b67f5e1cc70bcb7e88e744ea4c52961b83222",
+    "ingestManifestSha256": "sha256:583b4fd025bb00e28a14683c8fcbeee2cb1e0091bdbd968acd1176b9090187c0",
+    "identityReviewSha256": "sha256:11a58296a03d907578c09c37f15dc97ac529e8c785d88e5dc1409d7bfba47ca2",
+    "residualReportSha256": "sha256:2434f48460351c50923b26675bbf0edb04b7c90c71154e68ac2ec132c7240e4d",
+    "transformProposalSha256": "sha256:16f7af7c68c2bcbca620be7f4ed4fe055de0714f3615c68cb65ba7e1bcf694e3",
+    "identityDecision": {
+      "code": "B",
+      "confirmedSweepIndices": [0, 10, 20, 40],
+      "excludedSweepIndices": [49],
+      "scopeLimitation": "The four confirmed anchor sweeps do not classify every candidate sweep 0 through 48."
+    },
+    "proposal": {
+      "state": "proposed",
+      "sourceFrame": "COLMAP_WORLD",
+      "targetFrame": "E57_GLOBAL",
+      "scale": 1.7362021512269856,
+      "authority": {
+        "runtime": "none",
+        "public": "none"
+      },
+      "candidateMetricsM": {
+        "count": 49,
+        "mean": 0.00805089532061875,
+        "median": 0.0061821017848973404,
+        "rmse": 0.010604176377772601,
+        "p95": 0.016655757737973453,
+        "maximum": 0.04590480229065411
+      },
+      "frozenHoldoutMetricsM": {
+        "sweepIndices": [5, 15, 25, 35, 44],
+        "count": 5,
+        "mean": 0.005044529658437305,
+        "median": 0.0038307999288853256,
+        "rmse": 0.005756579517772495,
+        "p95": 0.009052836269163894,
+        "maximum": 0.009679399912201583
+      },
+      "classification": "shared_lineage_internal_self_consistency_only",
+      "independentAccuracyClaim": false
+    }
+  },
+  "cameraRigDiagnostic": {
+    "method": "candidate scale multiplied by the Euclidean distance of each registered COLMAP cubeface camera centre from that sweep's unweighted mean centre",
+    "candidateSweepIndices": {
+      "minimum": 0,
+      "maximum": 48,
+      "count": 49
+    },
+    "registeredFaceCount": 230,
+    "expectedFaceCount": 294,
+    "missingFaceCount": 64,
+    "everySweepMissingAtLeastOneFace": true,
+    "distanceFromSweepMeanM": {
+      "mean": 0.011059817271397772,
+      "median": 0.009523698062953676,
+      "p95": 0.021193426388236774,
+      "maximum": 0.095682187148889,
+      "countOver10Mm": 105,
+      "countOver20Mm": 15
+    },
+    "largestSweepMaximaM": [
+      { "sweepIndex": 0, "registeredFaceCount": 3, "face": "up", "maximum": 0.095682187148889 },
+      { "sweepIndex": 40, "registeredFaceCount": 4, "face": "right", "maximum": 0.04048161955469589 },
+      { "sweepIndex": 2, "registeredFaceCount": 5, "face": "left", "maximum": 0.027728249661093322 },
+      { "sweepIndex": 5, "registeredFaceCount": 5, "face": "right", "maximum": 0.026559788228496906 },
+      { "sweepIndex": 27, "registeredFaceCount": 5, "face": "right", "maximum": 0.025912326240021297 }
+    ],
+    "finding": "fails_rigid_physical_camera_centre_assumption",
+    "effect": "Sweep-centre averaging hides material face-pose dispersion; the five-sweep holdout cannot be reported as survey accuracy.",
+    "limitation": "This diagnostic still uses the shared-lineage E57-derived image set and candidate scale."
+  },
+  "leaveOneSweepOutDiagnostic": {
+    "candidateSweepCount": 49,
+    "baseScale": 1.7361861589164147,
+    "residualM": {
+      "mean": 0.008446904433039306,
+      "median": 0.0061769501989040135,
+      "rmse": 0.011294170061056652,
+      "p95": 0.018067601651395128,
+      "maximum": 0.04981166987516565,
+      "maximumSweepIndex": 0
+    },
+    "scaleMinimum": 1.7358994458137937,
+    "scaleMaximum": 1.736237783170451,
+    "scaleSpanPpm": 194.8738935163428,
+    "maximumRotationDeltaDegrees": 0.016180383703285874,
+    "classification": "same_lineage_sensitivity_diagnostic_not_independent_validation"
+  },
+  "independentControl": {
+    "status": "absent",
+    "searchedCandidates": [
+      {
+        "candidate": "Matterport E57, MatterPak panoramas, OBJ, GLB, COLMAP and derivatives",
+        "decision": "rejected_same_lineage"
+      },
+      {
+        "candidate": "F:/E57/th.nwc",
+        "decision": "rejected_unknown_provenance"
+      },
+      {
+        "candidate": "XGRIDS control_points.csv and gnss.csv",
+        "decision": "rejected_empty_or_zero_and_wrong_room"
+      },
+      {
+        "candidate": "official venue floor-plan image",
+        "decision": "sanity_check_only_no_survey_provenance",
+        "conflict": "hosted image says 21 m by 10.5 m while the current rooms page says 21 m by 10 m"
+      }
+    ],
+    "requiredAcquisition": {
+      "minimumFitControls": 8,
+      "minimumBlindChecks": 6,
+      "distribution": "cover all three axes, the room perimeter, both long and short spans, multiple heights, and non-coplanar architectural targets",
+      "requiredProvenance": [
+        "surveyor or competent operator",
+        "instrument make, model, serial and calibration state",
+        "date and coordinate datum",
+        "units and uncertainty or covariance",
+        "raw observation and field-book hashes",
+        "target identifiers and photographs",
+        "separate frozen fit and blind-check roles"
+      ],
+      "requiredReporting": [
+        "per-control residual vectors",
+        "horizontal and vertical components",
+        "mean, median, RMSE, p95 and maximum",
+        "scale and rotation sensitivity",
+        "leave-one-out sensitivity",
+        "spatial strata",
+        "surface overlap or distance where applicable"
+      ]
+    }
+  },
+  "preparedReleaseAuditTarget": {
+    "rootHint": "output/foundry/trades-hall-prepared",
+    "foundryPreparationFileSha256": "sha256:6fef3e2693f9a39191841424b4d7e49ef9ed1c8b321e5e7c3ac8fae54d4600ce",
+    "releaseManifestFileSha256": "sha256:436de26fc2b08c4d8e689b75723a2499cdc5ce4abdfda2882f5ffc69e13d304a",
+    "qaReportFileSha256": "sha256:c13af38dbde0b1ecc95a4669899bdf49514d4073595968ff93fd8c59a4249e10",
+    "releaseDigest": "e3525acfd76bdd89d621c6eefaae8494f9c459e52702d351545f685655a917d8",
+    "qaReportDigest": "9eb006631370ba228f230018f4b05c9ad95204f681f8faf78e38b54029a8e586",
+    "sourceManifestSha256": "fa00cecb7e4d0ee2088893a923f77c6db7a6082f23a6f59cd0c143976ac30e7d",
+    "sourceManifestFileSha256": "sha256:fa00cecb7e4d0ee2088893a923f77c6db7a6082f23a6f59cd0c143976ac30e7d",
+    "fileCount": 449,
+    "totalBytes": 498035687,
+    "nodeCount": 149,
+    "scopeFinding": "All node roomSlug values are null; the release is not a proven bounded Grand Hall release.",
+    "evidenceRoleFileCount": 0,
+    "currentSourceManifestFileSha256": "sha256:5a503e45525433407ca8cbade1fa84fbb83ba7349100fac11743d8f9faae1175",
+    "epochRule": "Do not mix the current source manifest bytes with the frozen prepared release epoch."
+  },
+  "releaseRelevanceFinding": {
+    "status": "failed",
+    "reason": "The 149-node release is already E57-native and does not demonstrate consumption of the T-507 COLMAP-to-E57 diagnostic transform.",
+    "acceptableRoutes": [
+      "Review the actual release-load-bearing E57 or ARF to CVF transform and create an all-node Scene Authority Map.",
+      "Prepare a new immutable Grand-Hall-only release after exact node classification and mapping."
+    ]
+  },
+  "confidenceTierFinding": {
+    "currentSourceManifestFileSha256": "sha256:5a503e45525433407ca8cbade1fa84fbb83ba7349100fac11743d8f9faae1175",
+    "currentSourceManifestClaim": "ops-grade-2cm",
+    "preparedEpochSourceManifestAvailableInDossier": true,
+    "preparedEpochSourceManifestFileSha256": "sha256:fa00cecb7e4d0ee2088893a923f77c6db7a6082f23a6f59cd0c143976ac30e7d",
+    "preparedEpochTier": "ops-grade-2cm",
+    "independentControl": "absent",
+    "disposition": "unsupported_for_public_or_operational_reliance_pending_downgrade_or_reissue"
+  },
+  "identityAndRights": {
+    "identityReview": "internal_human_decision_b_only",
+    "externalAuthenticatedAttestation": "missing",
+    "referenceAssets": [
+      {
+        "relativePath": "packages/web/public/images/venue/Grand-Hall-scaled-opt.jpg",
+        "sha256": "sha256:1a12a119faf4621d48efeec7c51ff061e9c06c33ef2d8f9007341952e72351bb",
+        "status": "exact_official_site_match_restricted_pending_written_permission"
+      },
+      {
+        "relativePath": "packages/web/public/images/venue/grand-hall-floorplan.png",
+        "sha256": "sha256:532c8bc1f3a18a81aac246234ae401facd3e4d33645393d5d58dfba9bd752aad",
+        "status": "exact_official_site_match_sanity_check_only_restricted_pending_written_permission"
+      },
+      {
+        "relativePath": "packages/web/public/images/venue/grand-hall-room.jpg",
+        "sha256": "sha256:d57068f806f1d0d826a55b9cc2c19a63523fc47d71d326375d23427352e7905a",
+        "status": "origin_and_rights_unknown"
+      },
+      {
+        "relativePath": "packages/web/public/images/venue/grand-hall-dark.jpg",
+        "sha256": "sha256:d1973ea03f25251106780b1e8cf0825a457fb6355cc77b764132ed57c26af45f",
+        "status": "documented_conversion_from_user_supplied_png_rights_not_evidenced"
+      }
+    ],
+    "matterportProcessingRights": "requires_contract_specific_legal_decision",
+    "matterportModelTrainingRights": "blocked_under_current_published_terms_absent_separate_written_permission"
+  },
+  "readiness": {
+    "offlineEvidenceReview": "blocked_missing_complete_identity_pixels_and_rights_clearance",
+    "publicApproval": "blocked",
+    "signing": "blocked",
+    "publication": "blocked",
+    "modelTraining": "blocked"
+  },
+  "withheldT486Artifacts": [
+    "registered TransformArtifactV0",
+    "registered SceneAuthorityMapV0",
+    "registered release UUID",
+    "public approval review input",
+    "server-issued signing payload",
+    "signature or attestation",
+    "publication or promotion request"
+  ]
+}

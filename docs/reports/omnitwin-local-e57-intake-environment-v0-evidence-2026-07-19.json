@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "omnitwin.local-e57-intake-environment-v0-evidence.v0",
+  "reviewId": "T-536",
+  "recordedAt": "2026-07-19",
+  "authority": "none",
+  "scope": "Exact artifact, native-lineage, legal-source and readiness closure for the independent Windows x64 read-only E57 intake lane. This is ordinary local reconstruction engineering, not cybersecurity work, and it does not describe an installed, materialized, adapter-bound or production-ready worker.",
+  "activity": {
+    "packageInstallerUsed": false,
+    "systemInstallationPerformed": false,
+    "isolatedArchiveExtractionPerformed": true,
+    "isolatedSyntheticCompatibilitySmokePerformed": true,
+    "userProvidedSourceFileRead": false,
+    "syntheticFixtureFileRead": true,
+    "venueDataAccessed": false,
+    "workerBundleMaterialized": false,
+    "adapterBoundToNewEnvironment": false,
+    "cloudWorkloadStarted": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false
+  },
+  "manifest": {
+    "path": "configs/reconstruction/local-e57-intake-environment-v0.manifest.json",
+    "schemaVersion": "omnitwin.foundry.local-e57-intake-environment.v0",
+    "digestDomain": "VENVIEWER_FOUNDRY_LOCAL_E57_INTAKE_ENVIRONMENT_V0 plus one NUL byte",
+    "environmentSha256": "34ad3f54ea5a5afcca908c66f48ab039381d6910b2372afbafee0c1f8545ea1e",
+    "fileByteSize": 32405,
+    "fileSha256": "7bfe5df6b2ac1d951a9c8b901797b442d33c637d570f2fb55086a38cf17149a0",
+    "parentHdWorkerManifestSha256": "fbfd7c6c51c8be06f9bb411f4833fbf0fd0daba45d09512ed70bf63420b9f436",
+    "parentBindingCheckedBeforeDtoConstruction": true,
+    "overall": "exact_artifacts_recorded_bundle_not_materialized_not_execution_ready",
+    "installationState": "not_installed",
+    "bundleVerificationState": "not_performed",
+    "binding": "not_bound_to_current_source_or_plan",
+    "execution": "disabled"
+  },
+  "runtimeDecision": {
+    "selected": "CPython 3.13.14 application-local embeddable runtime for E57 only",
+    "pythonAbi": "cp313",
+    "parentE57CandidateDisposition": "superseded_by_this_environment",
+    "open3dDisposition": "separate lane; Open3D 0.19 Windows wheels are not unified into this cp313 E57 environment",
+    "cpython310Disposition": "historical parent and compatibility evidence only; not the new E57 target"
+  },
+  "exactArtifacts": [
+    {
+      "id": "cpython-runtime",
+      "version": "3.13.14",
+      "filename": "python-3.13.14-embed-amd64.zip",
+      "byteSize": 10964839,
+      "sha256": "90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907",
+      "archiveMemberCount": 34
+    },
+    {
+      "id": "pye57-wheel",
+      "version": "0.4.19",
+      "filename": "pye57-0.4.19-cp313-cp313-win_amd64.whl",
+      "byteSize": 1130809,
+      "sha256": "d27332054bf18689acb45470a3bc16d4c21ed7b0b0848c56ef9e42cc8980a3c4",
+      "archiveMemberCount": 13
+    },
+    {
+      "id": "numpy-wheel",
+      "version": "2.5.1",
+      "filename": "numpy-2.5.1-cp313-cp313-win_amd64.whl",
+      "byteSize": 12425674,
+      "sha256": "6c3fe51bc6a16453d452997053454f309e8e0ed7b42d6b361ce4ac8c32913d74",
+      "archiveMemberCount": 1064
+    },
+    {
+      "id": "pyquaternion-wheel",
+      "version": "0.9.9",
+      "filename": "pyquaternion-0.9.9-py3-none-any.whl",
+      "byteSize": 14361,
+      "sha256": "e65f6e3f7b1fdf1a9e23f82434334a1ae84f14223eee835190cd2e841f8172ec",
+      "archiveMemberCount": 7
+    }
+  ],
+  "inventoryClosure": {
+    "pye57MemberCount": 13,
+    "pye57MemberInventoryDigestDomain": "VENVIEWER_FOUNDRY_LOCAL_E57_PYE57_MEMBER_INVENTORY_V0 plus one NUL byte",
+    "pye57MemberInventorySha256": "7bd03f77a183a4390517b7ca3cf31488deab48b1a6f3ec43ececcde0da9a1cbc",
+    "nativeInclusionCount": 4,
+    "nativeInclusionInventorySha256": "796d2aa8b19da1c7f69096358075a5396b114afb115c0bf4bcc3e42f376c0929",
+    "legalMaterialCount": 29,
+    "legalMaterialInventorySha256": "7f3a44eff7ea4936140a8bc050c51db4e0d39467dedafa001d53c07c69958b46",
+    "crossChecks": [
+      "The pye57 archive count and METADATA path, size and hash must match the exact wheel inventory.",
+      "Every recorded native binary path, size and hash must match an exact pye57 wheel member.",
+      "The pye57 archive licence must match its exact wheel member; all 29 legal identities and receipts are frozen as one ordered inventory."
+    ]
+  },
+  "nativeBoundary": {
+    "pye57ExtensionPath": "pye57/libe57.cp313-win_amd64.pyd",
+    "pye57ExtensionByteSize": 781824,
+    "pye57ExtensionSha256": "71b6e35db443902b55a9260813a09d57e8481956aa6bb443fb8b52ae94dce958",
+    "xercesDllPath": "pye57/xerces-c_3_2.dll",
+    "xercesDllByteSize": 2793984,
+    "xercesDllSha256": "7af1375b748ed58b8d5ff316a11fac6f4ec2742e572a099bf891523ceb5d5134",
+    "microsoftRuntime": "MSVCP140.dll was resolved from the host Windows installation during the isolated smoke; the selected CPython archive does not include it.",
+    "pybind11": "Exact publisher build version and incorporated notice remain unresolved.",
+    "bundleQualification": "open"
+  },
+  "syntheticCompatibilityObservation": {
+    "state": "isolated_unbundled_synthetic_smoke_passed",
+    "observationId": "t536-cp313-isolated-synthetic-smoke-2026-07-19",
+    "observedAtUtc": "2026-07-19T03:10:04.1608743Z",
+    "fixture": "synthetic_three_cartesian_point_e57",
+    "fixtureByteSize": 4096,
+    "fixtureSha256": "91f2b9a039358efb2b724d9fb254e0f827ff34a88e03a9d8df7d123f09b1db31",
+    "pythonCommandBodyByteSize": 402,
+    "pythonCommandBodySha256": "f4f6f9f4b1f005dbf548e36f9d1c93af3bf7c94df0257d41790731a7cf748f14",
+    "observedRecordCount": 3,
+    "checks": [
+      "package_imports",
+      "quaternion_rotation",
+      "synthetic_e57_write_read_roundtrip"
+    ],
+    "logState": "tool_transcript_only_no_repository_log",
+    "bundleUnderTest": false,
+    "qualification": "Observed compatibility only. It does not establish a self-contained bundle, clean-host behavior, production E57 behavior or adapter readiness."
+  },
+  "generatedAndReleaseGraph": {
+    "generatedPath": "tools/reconstruction-foundry/src/local-e57-intake-environment.generated.ts",
+    "generatedByteSize": 32652,
+    "generatedFileSha256": "ea73bcd68c62f8088e831c8d136003e477361ed01d741c168a3b87c95e0b49c0",
+    "generatedDocumentCarriesReviewedDigest": true,
+    "generatorRecomputesAndRejectsDigestMismatch": true,
+    "readinessUsesFullDocumentVerification": true,
+    "releaseRequiresGeneratedSourceInput": true,
+    "releaseRequiresPositiveBytesInFoundryBundle": true,
+    "treeShakenZeroContributionRejected": true
+  },
+  "adapter": {
+    "state": "not_wired_to_new_environment",
+    "currentProbeMarkerContractReplaced": false,
+    "fixedLimitation": "THE_RECORDED_E57_ENVIRONMENT_IS_NOT_A_MATERIALIZED_OR_ADAPTER_BOUND_RUNTIME_BUNDLE",
+    "nextRequirement": "Require an exact verified runtime-bundle receipt before spawn and recheck the complete allow-listed tree before and after aggregate-only read activity."
+  },
+  "openGates": [
+    "microsoft-cpp-runtime",
+    "pybind11-build-version",
+    "redistribution-pack",
+    "exact-extracted-member-manifest",
+    "clean-host-bundle-smoke",
+    "adapter-runtime-bundle-binding"
+  ],
+  "workbench": {
+    "surface": "existing loopback Reconstruction Foundry workbench",
+    "stateRoute": "/api/state",
+    "heading": "Exact artifacts recorded — application bundle still open",
+    "executionControlsAdded": 0,
+    "renderedArtifactCount": 4,
+    "renderedOpenGateCount": 6,
+    "historicalParentLabel": "Historical parent candidate — superseded for E57",
+    "browserParser": "Exact keys, reviewed child digest, exact parent digest binding, cp313 target, counts, receipts, activity truth, bundle state and six gate identities are required before rendering."
+  },
+  "browserLayoutQa": {
+    "desktopViewport": "1440x1000",
+    "mobileViewport": "320x800",
+    "horizontalOverflowObserved": false,
+    "overflowingPanelCards": 0,
+    "consoleWarningsOrErrors": 0,
+    "desktopScreenshot": {
+      "path": "output/playwright/t536-e57-final-desktop.png",
+      "byteSize": 303533,
+      "sha256": "316a1bbe762059c99618f212b6f9273751fc5e55af2c024073abbb5ce9b1fc16"
+    },
+    "mobileScreenshot": {
+      "path": "output/playwright/t536-e57-final-mobile.png",
+      "byteSize": 81437,
+      "sha256": "961cdbc8ed01f0e8ff8f865d8e2ad1d13b6390c87b81d51f77b8de41058e24bd"
+    },
+    "listenerShutdownConfirmed": true
+  },
+  "verification": {
+    "focusedCore": "6 passed",
+    "focusedTool": "95 passed",
+    "coreFullSerial": "65 files, 774 passed, 1 intentional skip",
+    "toolFullSerial": "46 files, 753 passed",
+    "coreTypecheck": "passed",
+    "toolTypecheck": "passed",
+    "coreBuild": "passed",
+    "coreLint": "passed",
+    "toolLint": "passed",
+    "toolBuild": "retains the existing cross-package rootDir/TS6307 packaging failure; no T-536-specific diagnostic was observed",
+    "independentAudit": "All P1/P2 findings were closed before evidence freeze; the historical parent card was also relabelled."
+  },
+  "primarySources": [
+    "https://www.python.org/downloads/release/python-31314/",
+    "https://pypi.org/project/pye57/0.4.19/",
+    "https://pypi.org/project/numpy/2.5.1/",
+    "https://pypi.org/project/pyquaternion/0.9.9/"
+  ],
+  "continuation": {
+    "t536": "done_for_this_bounded_exact_environment_and_readiness_slice",
+    "t533": "active_pending_human_room_envelope_review",
+    "t508": "active",
+    "t486": "active",
+    "broaderGoal": "active",
+    "nextProductStep": "Select and review the exact Microsoft C++ runtime disposition and pybind11 notice, materialize one deterministic application-local E57 bundle plus legal pack, run a clean-host synthetic verification, then bind the resulting immutable bundle receipt into the aggregate-only adapter. Do not use venue data for that closure."
+  }
+}

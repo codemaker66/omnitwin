@@ -41,22 +41,29 @@ export const RECEPTION_DOLLY_STATIONS: readonly DollyStation[] = [
  *  scene extends short gazes along their own direction to at least this. */
 export const MIN_GAZE_DISTANCE_M = 2.5;
 
-/** The Reception Room runtime tiles as staged under /splats/reception/
- *  (dev-local; production serves the same names from R2 — P4). Sizes are
- *  bytes-on-disk from the LCC export, for load-progress display. */
+/** The reviewed fixed fine-detail frontier for the Quality Reception Room
+ *  export. These four leaves replace the coarser parent tiles; mounting both
+ *  levels at once draws the room twice and creates doubled/smeared edges.
+ *  `env.sog` is intentionally excluded until its visual contribution passes
+ *  a separate fixed-view review. Sizes are bytes on disk. */
 export const RECEPTION_TILE_MANIFEST = [
-  { file: "0_0.sog", bytes: 9017864 },
-  { file: "0_1_0.sog", bytes: 9845814 },
+  { file: "0_15_0_0.sog", bytes: 10279160 },
   { file: "0_1_0_5.sog", bytes: 10047085 },
   { file: "0_6_0_0.sog", bytes: 10368228 },
   { file: "0_7_0_0.sog", bytes: 5040628 },
-  { file: "0_15_0_0.sog", bytes: 10279160 },
-  { file: "0_20_0.sog", bytes: 8106037 },
-  { file: "env.sog", bytes: 129565 },
 ] as const;
 
 export const RECEPTION_SPLAT_BASE = "/splats/reception";
 
 export function receptionTileUrls(): readonly string[] {
   return RECEPTION_TILE_MANIFEST.map((t) => `${RECEPTION_SPLAT_BASE}/${t.file}`);
+}
+
+/** The direct local SOG files are an evidence preview, not a published room
+ *  package. Production must use the reviewed runtime-package path instead. */
+export function canLoadDirectReceptionPreview(
+  isDevelopment: boolean,
+  sceneParameter: string | null,
+): boolean {
+  return isDevelopment && sceneParameter !== "0";
 }

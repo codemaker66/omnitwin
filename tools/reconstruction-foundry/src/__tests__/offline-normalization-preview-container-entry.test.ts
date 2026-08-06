@@ -391,11 +391,11 @@ describe.sequential("offline normalization preview container entry", () => {
     expect(verifierMessage.metadata.blobs).toEqual([]);
   });
 
-  it("reassembles a request split across many chunks and writes no extra bytes", async () => {
+  it("reassembles a request split into one-byte chunks without retaining one buffer per chunk", async () => {
     const request = transformRequest(fixture());
     const chunks: Buffer[] = [];
-    for (let offset = 0; offset < request.byteLength; offset += 37) {
-      chunks.push(request.subarray(offset, Math.min(offset + 37, request.byteLength)));
+    for (let offset = 0; offset < request.byteLength; offset += 1) {
+      chunks.push(request.subarray(offset, offset + 1));
     }
 
     const result = await run(chunks);
@@ -410,6 +410,46 @@ describe.sequential("offline normalization preview container entry", () => {
         onlyResponse(result.output),
       ).kind,
     ).toBe("transform_success");
+  });
+
+  it("uses fixed-size blocks for 200,000 one-byte chunks instead of retaining 200,000 buffers", async () => {
+    const chunkCount = 200_000;
+    const blockBytes = 64 * 1024;
+    const inputByte = Buffer.from([0x7f]);
+    function* oneByteChunks(): Generator<Buffer> {
+      for (let index = 0; index < chunkCount; index += 1) {
+        yield inputByte;
+      }
+    }
+    const allocationSpy = vi.spyOn(Buffer, "allocUnsafe");
+    const output = new RecordingWritable();
+
+    const exitStatus = await runOfflineNormalizationPreviewContainerEntry(
+      Readable.from(oneByteChunks()),
+      output,
+    );
+    const allocatedBlocks = allocationSpy.mock.calls.flatMap((call, index) => {
+      const result = allocationSpy.mock.results[index];
+      return call[0] === blockBytes &&
+        result?.type === "return" &&
+        Buffer.isBuffer(result.value)
+        ? [result.value]
+        : [];
+    });
+
+    expect(exitStatus).toBe(
+      OFFLINE_NORMALIZATION_PREVIEW_CONTAINER_EXIT_FAILURE,
+    );
+    expect(output.writeCount).toBe(1);
+    expect(allocatedBlocks).toHaveLength(Math.ceil(chunkCount / blockBytes));
+    expect(
+      allocatedBlocks.every(
+        (block) =>
+          block.byteLength === blockBytes &&
+          block.every((value) => value === 0),
+      ),
+    ).toBe(true);
+    expect(inputByte).toEqual(Buffer.from([0x7f]));
   });
 
   it("honors output backpressure before closing the one response", async () => {
@@ -549,6 +589,8 @@ describe.sequential("offline normalization preview container entry", () => {
     expect(source).not.toContain("process.stderr");
     expect(source).not.toContain("console.");
     expect(source).not.toContain("sandboxEstablished: true");
+    expect(source).toContain("INPUT_BLOCK_BYTES");
+    expect(source).not.toContain("chunks.push");
     expect(source).toContain("process.stdin");
     expect(source).toContain("process.stdout");
     expect(source).toContain("does not establish an operating-system sandbox");

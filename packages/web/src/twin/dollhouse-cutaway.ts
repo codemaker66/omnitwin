@@ -95,6 +95,27 @@ export function updateVerticalCutawayPlane(
   return true;
 }
 
+/**
+ * The per-storey section (clip everything below the current storey) exists to
+ * keep the SIDE-ON section view clean — it was designed alongside the
+ * vertical camera-facing plane. From elevated orbits it must stay inert:
+ * clipping the ground storey there leaves black voids where whole rooms
+ * should render (the 2026-07-17 "in what world is this correct" report).
+ * Couple it to the vertical plane's engagement result.
+ */
+export function updateStoreyFloorPlane(
+  plane: Plane,
+  verticalEngaged: boolean,
+  minimumY: number | undefined,
+): boolean {
+  if (!verticalEngaged || minimumY === undefined || !Number.isFinite(minimumY)) {
+    setInertCutawayPlane(plane);
+    return false;
+  }
+  plane.setComponents(0, 1, 0, -minimumY);
+  return true;
+}
+
 export interface CutawaySceneClone {
   readonly scene: Object3D;
   readonly materials: readonly Material[];

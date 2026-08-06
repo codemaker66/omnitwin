@@ -22,7 +22,7 @@ You are working on **Venviewer Twin** — a browser-based photorealistic walkthr
 ## Deployment split (critical to understand)
 
 - **Code** ships via git push to `master` → Vercel auto-deploys `venviewer.com`.
-- **Assets** (`packages/web/public/twin/trades-hall/**` — `manifest.json`, pano tiles, `mesh/dollhouse.glb`) are **gitignored** and served in production from Cloudflare R2 at `twin.venviewer.com` (env `VITE_TWIN_ASSET_BASE`). Locally the same files are read from `public/`. Any asset change (manifest edits, cleaned mesh) works locally immediately but reaches production ONLY when the owner (Blake) mints an R2 API token and runs `rclone copy packages/web/public/twin r2:venviewer-twin`. Flag asset changes clearly so he knows a sync is needed.
+- **Assets** (`packages/web/public/twin/trades-hall/**` — `manifest.json`, pano tiles, `mesh/dollhouse.glb`) are **gitignored** and read locally from `public/`. Do not use the historical flat `rclone` sync path. Production releases now go through the private-candidate, deterministic-QA, human-review, detached-attestation, immutable-publication, CAS-promotion, and rollback gates in `docs/operations/reconstruction-foundry-runbook.md`; the public Twin resolves that exact production pointer and verifies manifest bytes in-browser.
 
 ## Architecture map — read these files first, in this order
 

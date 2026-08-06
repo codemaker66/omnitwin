@@ -58,6 +58,15 @@ import {
   type LocalOfflineNormalizationPreviewHelperLike,
   type LocalOfflineNormalizationPreviewStartRequest,
 } from "../local-offline-normalization-preview.js";
+import type {
+  LocalOfflineNormalizationPreviewExecutionBridge,
+  LocalOfflineNormalizationPreviewExecutionFreshVerifierInput,
+  LocalOfflineNormalizationPreviewExecutionFreshVerifierResult,
+  LocalOfflineNormalizationPreviewExecutionReservation,
+  LocalOfflineNormalizationPreviewExecutionSession,
+  LocalOfflineNormalizationPreviewExecutionTransformInput,
+  LocalOfflineNormalizationPreviewExecutionTransformResult,
+} from "../local-offline-normalization-preview-execution-bridge.js";
 
 const KEY_ID = "local-preview-test-key";
 const PREVIEW_ASSET_ID = "fixture-preview";
@@ -568,6 +577,93 @@ function controllerOptionsWithPath(
   };
 }
 
+interface ExecutionBridgeProbe {
+  readonly calls: string[];
+  sessionStopCalls: number;
+  stopAllCalls: number;
+}
+
+function fakeExecutionBridge(
+  fixture: PreviewFixture,
+  options: {
+    readonly proof?: unknown;
+    readonly reserveError?: Error;
+    readonly stopError?: Error;
+    readonly afterTransform?: () => void | Promise<void>;
+    readonly runTransform?: (
+      input: LocalOfflineNormalizationPreviewExecutionTransformInput,
+    ) => Promise<LocalOfflineNormalizationPreviewExecutionTransformResult>;
+  } = {},
+): {
+  readonly bridge: LocalOfflineNormalizationPreviewExecutionBridge;
+  readonly probe: ExecutionBridgeProbe;
+} {
+  const probe: ExecutionBridgeProbe = {
+    calls: [],
+    sessionStopCalls: 0,
+    stopAllCalls: 0,
+  };
+  const session: LocalOfflineNormalizationPreviewExecutionSession = {
+    async runTransform(input) {
+      probe.calls.push("transform");
+      if (options.runTransform !== undefined) {
+        return await options.runTransform(input);
+      }
+      const result = await runFoundryOfflineNormalizeMeshGlbPreview({
+        invocation: fixture.invocation,
+        sourceBytes: input.sourceBytes,
+        permitEnvelope: fixture.envelope,
+        pinnedTrustedPermitKeys: fixture.trustedKeys,
+      });
+      await options.afterTransform?.();
+      return {
+        candidateBytes: Buffer.from(result.normalizedGlb),
+        report: result.report,
+      };
+    },
+    runFreshVerifier(
+      input: LocalOfflineNormalizationPreviewExecutionFreshVerifierInput,
+    ): Promise<LocalOfflineNormalizationPreviewExecutionFreshVerifierResult> {
+      probe.calls.push("fresh_verifier");
+      expect(sha256(input.freshSourceBytes)).toBe(fixture.invocation.source.sha256);
+      expect(sha256(input.candidateBytes)).toBe(input.report.output.sha256);
+      return Promise.resolve({ proof: options.proof ?? null });
+    },
+    stop() {
+      probe.sessionStopCalls += 1;
+      probe.calls.push("session_stop");
+      if (options.stopError !== undefined) {
+        return Promise.reject(options.stopError);
+      }
+      return Promise.resolve();
+    },
+  };
+  const bridge: LocalOfflineNormalizationPreviewExecutionBridge = {
+    reserveSession(
+      input: LocalOfflineNormalizationPreviewExecutionReservation,
+      signal: AbortSignal,
+    ) {
+      probe.calls.push("reserve");
+      expect(signal.aborted).toBe(false);
+      expect(input.invocation).toEqual(fixture.invocation);
+      expect(input.permitEnvelope).toEqual(fixture.envelope);
+      expect(input.permitPayloadSha256).toBe(
+        fixture.invocation.permit.payloadSha256,
+      );
+      if (options.reserveError !== undefined) {
+        return Promise.reject(options.reserveError);
+      }
+      return Promise.resolve(session);
+    },
+    stopAll() {
+      probe.stopAllCalls += 1;
+      probe.calls.push("stop_all");
+      return Promise.resolve();
+    },
+  };
+  return { bridge, probe };
+}
+
 describe("local offline normalization preview controller", () => {
   it("reports one exact ready preview without exposing paths or signed evidence", async () => {
     const fixture = await previewFixture();
@@ -749,7 +845,10 @@ describe("local offline normalization preview controller", () => {
     const helper = { current: null as FakeHelper | null };
     const controller = createLocalOfflineNormalizationPreviewController({
       ...fixture.controllerOptions,
-      helperTimeoutMs: 25,
+      // Leave enough time for exact-source custody to finish on a loaded
+      // Windows host; the passive helper itself still proves the fixed helper
+      // deadline and termination path.
+      helperTimeoutMs: 500,
       helperFactory: passiveHelperFactory((created) => {
         helper.current = created;
       }),
@@ -1228,7 +1327,10 @@ describe("local offline normalization preview controller", () => {
     const helper = { current: null as FakeHelper | null };
     const controller = createLocalOfflineNormalizationPreviewController({
       ...fixture.controllerOptions,
-      helperTimeoutMs: 25,
+      // Keep the deadline focused on the already-launched passive helper,
+      // rather than allowing exact-source setup time on a loaded host to
+      // consume the entire test deadline before helper creation.
+      helperTimeoutMs: 500,
       helperFactory: passiveHelperFactory((created) => {
         helper.current = created;
         created.terminateImplementation = () => new Promise<number>(() => undefined);
@@ -1798,5 +1900,236 @@ describe("local offline normalization preview controller", () => {
     expect(blocked.state).toBe("blocked");
     expect(blocked.message).toContain("DSSE_SIGNATURE_INVALID");
     expect(helperFactory).not.toHaveBeenCalled();
+  });
+
+  it("uses the first-class execution bridge but retains nothing without an authentic live proof", async () => {
+    const fixture = await previewFixture();
+    const fake = fakeExecutionBridge(fixture);
+    const controller = createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      executionBridge: fake.bridge,
+    });
+
+    const result = await controller.start(fixture.request);
+
+    expectFailureCode(result, "LOCAL_OFFLINE_PREVIEW_SANDBOX_PROOF_REJECTED");
+    expect(result.sandboxEstablished).toBe(false);
+    expect(result.output).toBeNull();
+    expect(controller.readVerifiedResult(fixture.request.requestId)).toBeNull();
+    expect(fake.probe.calls).toEqual([
+      "reserve",
+      "transform",
+      "fresh_verifier",
+      "session_stop",
+    ]);
+  });
+
+  it("rejects a shape-compatible fake proof and never serializes it", async () => {
+    const fixture = await previewFixture();
+    const shapedFake = Object.freeze({
+      sandboxEstablished: true as const,
+      deadlineAt: fixture.invocation.permit.expiresAt,
+      source: fixture.invocation.source,
+      toJSON: () => ({
+        sandboxEstablished: false as const,
+        claimStatus: "unauthenticated_integrity_claim" as const,
+      }),
+    });
+    const fake = fakeExecutionBridge(fixture, { proof: shapedFake });
+    const controller = createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      executionBridge: fake.bridge,
+    });
+
+    const result = await controller.start(fixture.request);
+
+    expectFailureCode(result, "LOCAL_OFFLINE_PREVIEW_SANDBOX_PROOF_REJECTED");
+    const serialized = JSON.stringify(result);
+    expect(serialized).toContain('"sandboxEstablished":false');
+    expect(serialized).not.toContain(fixture.envelope.payload);
+    expect(serialized).not.toContain("deadlineAt");
+  });
+
+  it("rereads the exact path after bridge transform and stops before verification when it changed", async () => {
+    const fixture = await previewFixture();
+    const mutated = Buffer.from(fixture.source);
+    const byte = mutated[mutated.length - 1];
+    if (byte === undefined) throw new Error("fixture source is empty");
+    mutated[mutated.length - 1] = byte ^ 0xff;
+    const fake = fakeExecutionBridge(fixture, {
+      afterTransform: async () => {
+        await writeFile(fixture.sourcePath, mutated);
+      },
+    });
+    const controller = createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      executionBridge: fake.bridge,
+    });
+
+    const result = await controller.start(fixture.request);
+
+    expect(result.state).toBe("failed");
+    expect(result.message).toMatch(
+      /LOCAL_OFFLINE_PREVIEW_SOURCE_(?:IDENTITY_CHANGED|HASH_MISMATCH)/u,
+    );
+    expect(fake.probe.calls).toEqual([
+      "reserve",
+      "transform",
+      "session_stop",
+    ]);
+  });
+
+  it("routes cancellation to the owned bridge session", async () => {
+    const fixture = await previewFixture();
+    const fake = fakeExecutionBridge(fixture, {
+      runTransform: async (input) =>
+        await new Promise<LocalOfflineNormalizationPreviewExecutionTransformResult>(
+          (_resolve, reject) => {
+            input.signal.addEventListener(
+              "abort",
+              () => {
+                reject(
+                  input.signal.reason instanceof Error
+                    ? input.signal.reason
+                    : new Error("cancelled"),
+                );
+              },
+              { once: true },
+            );
+          },
+        ),
+    });
+    const controller = createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      executionBridge: fake.bridge,
+    });
+    const run = controller.start(fixture.request);
+    await waitFor(() => fake.probe.calls.includes("transform"));
+
+    const cancelled = await controller.cancel(fixture.request.requestId);
+    const completed = await run;
+
+    expect(cancelled?.message).toContain("LOCAL_OFFLINE_PREVIEW_CANCELLED");
+    expect(completed.message).toContain("LOCAL_OFFLINE_PREVIEW_CANCELLED");
+    expect(fake.probe.sessionStopCalls).toBe(1);
+    expect(controller.readVerifiedResult(fixture.request.requestId)).toBeNull();
+  });
+
+  describe.each([
+    ["a raw stop error", () => new Error("raw sandbox stop failure")],
+    [
+      "CLEANUP_UNPROVED",
+      () => Object.assign(new Error("cleanup unproved"), {
+        code: "CLEANUP_UNPROVED",
+      }),
+    ],
+    [
+      "PROCESS_TERMINATION_UNCONFIRMED",
+      () => Object.assign(new Error("termination unconfirmed"), {
+        code: "PROCESS_TERMINATION_UNCONFIRMED",
+      }),
+    ],
+  ] as const)("sandbox cleanup reporting for %s", (_label, stopError) => {
+    it("preserves cleanup failure over a prior proof rejection without claiming a safe stop", async () => {
+      const fixture = await previewFixture();
+      const fake = fakeExecutionBridge(fixture, {
+        stopError: stopError(),
+      });
+      const controller = createLocalOfflineNormalizationPreviewController({
+        ...fixture.controllerOptions,
+        executionBridge: fake.bridge,
+      });
+
+      const result = await controller.start(fixture.request);
+
+      expectFailureCode(
+        result,
+        "LOCAL_OFFLINE_PREVIEW_SANDBOX_STOP_UNCONFIRMED",
+      );
+      expect(result.output).toBeNull();
+      expect(result.sandboxEstablished).toBe(false);
+      expect(result.message).toContain(
+        "isolated sandbox could not be confirmed stopped",
+      );
+      expect(result.message).not.toMatch(/stopped safely|helper/iu);
+      expect(fake.probe.sessionStopCalls).toBe(1);
+    });
+
+    it("preserves sandbox cleanup failure through cancellation", async () => {
+      const fixture = await previewFixture();
+      const fake = fakeExecutionBridge(fixture, {
+        stopError: stopError(),
+        runTransform: async (input) =>
+          await new Promise<LocalOfflineNormalizationPreviewExecutionTransformResult>(
+            (_resolve, reject) => {
+              input.signal.addEventListener(
+                "abort",
+                () => {
+                  reject(
+                    input.signal.reason instanceof Error
+                      ? input.signal.reason
+                      : new Error("cancelled"),
+                  );
+                },
+                { once: true },
+              );
+            },
+          ),
+      });
+      const controller = createLocalOfflineNormalizationPreviewController({
+        ...fixture.controllerOptions,
+        executionBridge: fake.bridge,
+      });
+      const run = controller.start(fixture.request);
+      await waitFor(() => fake.probe.calls.includes("transform"));
+
+      const cancelled = await controller.cancel(fixture.request.requestId);
+      const completed = await run;
+
+      for (const result of [cancelled, completed]) {
+        expect(result?.message).toContain(
+          "LOCAL_OFFLINE_PREVIEW_SANDBOX_STOP_UNCONFIRMED",
+        );
+        expect(result?.message).toContain(
+          "isolated sandbox could not be confirmed stopped",
+        );
+        expect(result?.message).not.toMatch(/stopped safely|helper/iu);
+        expect(result?.output).toBeNull();
+        expect(result?.sandboxEstablished).toBe(false);
+      }
+      expect(fake.probe.sessionStopCalls).toBe(1);
+      expect(controller.readVerifiedResult(fixture.request.requestId)).toBeNull();
+    });
+  });
+
+  it("fails closed when the bridge backend is unavailable and shuts it down only once", async () => {
+    const fixture = await previewFixture();
+    const unavailable = Object.assign(new Error("backend unavailable"), {
+      code: "BUNDLED_RELEASE_UNAVAILABLE",
+    });
+    const fake = fakeExecutionBridge(fixture, { reserveError: unavailable });
+    const controller = createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      executionBridge: fake.bridge,
+    });
+
+    const result = await controller.start(fixture.request);
+
+    expectFailureCode(result, "BUNDLED_RELEASE_UNAVAILABLE");
+    expect(result.output).toBeNull();
+    await controller.stop();
+    await controller.stop();
+    expect(fake.probe.stopAllCalls).toBe(1);
+  });
+
+  it("does not allow an execution bridge to reuse the legacy helper seam", async () => {
+    const fixture = await previewFixture();
+    const fake = fakeExecutionBridge(fixture);
+
+    expect(() => createLocalOfflineNormalizationPreviewController({
+      ...fixture.controllerOptions,
+      helperFactory: successHelperFactory(),
+      executionBridge: fake.bridge,
+    })).toThrow("cannot share the legacy helper injection seam");
   });
 });

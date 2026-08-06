@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./reconstruction-dsse": {
+      "types": "./dist/reconstruction-dsse.d.ts",
+      "import": "./dist/reconstruction-dsse.js",
+      "default": "./dist/reconstruction-dsse.js"
     }
   },
   "files": [

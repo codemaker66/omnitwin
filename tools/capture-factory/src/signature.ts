@@ -1,41 +1,13 @@
 import { open } from "node:fs/promises";
 import { extname } from "node:path";
-import type { CaptureFileFormat, CaptureFileSignature, E57PhysicalHeader } from "@omnitwin/types";
+import { E57_PHYSICAL_HEADER_BYTES, parseE57PhysicalHeader } from "@omnitwin/types";
+import type { CaptureFileFormat, CaptureFileSignature } from "@omnitwin/types";
 
-const SIGNATURE_BYTES = 48;
+const SIGNATURE_BYTES = E57_PHYSICAL_HEADER_BYTES;
 const E57_MAGIC = Buffer.from("ASTM-E57", "ascii");
 
 function startsWith(bytes: Buffer, prefix: Buffer): boolean {
   return bytes.length >= prefix.length && bytes.subarray(0, prefix.length).equals(prefix);
-}
-
-function safeInteger(value: bigint, label: string): number {
-  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error(`${label} exceeds JavaScript's safe integer range`);
-  }
-  return Number(value);
-}
-
-function parseE57Header(bytes: Buffer, actualBytes: number): E57PhysicalHeader {
-  if (bytes.length < SIGNATURE_BYTES) {
-    throw new Error("ASTM E57 file is shorter than its 48-byte physical header");
-  }
-  const physicalLengthBytes = safeInteger(bytes.readBigUInt64LE(16), "E57 physical length");
-  const xmlPhysicalOffsetBytes = safeInteger(bytes.readBigUInt64LE(24), "E57 XML offset");
-  const xmlLogicalLengthBytes = safeInteger(bytes.readBigUInt64LE(32), "E57 XML length");
-  const pageSizeBytes = safeInteger(bytes.readBigUInt64LE(40), "E57 page size");
-  if (pageSizeBytes <= 0) {
-    throw new Error("ASTM E57 page size must be positive");
-  }
-  return {
-    versionMajor: bytes.readUInt32LE(8),
-    versionMinor: bytes.readUInt32LE(12),
-    physicalLengthBytes,
-    xmlPhysicalOffsetBytes,
-    xmlLogicalLengthBytes,
-    pageSizeBytes,
-    fileLengthMatchesHeader: physicalLengthBytes === actualBytes,
-  };
 }
 
 function textPrefix(bytes: Buffer): string {
@@ -69,7 +41,7 @@ export async function inspectFileSignature(path: string, sizeBytes: number): Pro
     const bytes = buffer.subarray(0, bytesRead);
     const extension = extname(path).toLowerCase();
     const format = inferFormat(bytes, extension);
-    const e57Header = format === "e57" ? parseE57Header(bytes, sizeBytes) : null;
+    const e57Header = format === "e57" ? parseE57PhysicalHeader(bytes, sizeBytes) : null;
     if (e57Header !== null && !e57Header.fileLengthMatchesHeader) {
       throw new Error(`ASTM E57 physical length does not match file length: ${path}`);
     }

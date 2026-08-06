@@ -1,0 +1,346 @@
+{
+  "schemaVersion": "omnitwin.windows-explorer-drop-path-reopen-preview-v0-evidence.v0",
+  "reviewId": "T-542B",
+  "parentTask": "T-542",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "status": {
+    "slice": "in_progress_pending_real_explorer_gesture",
+    "implementation": "implemented",
+    "nativeVerification": "passed",
+    "realExplorerEndToEndVerification": "pending",
+    "parentTask": "in_progress",
+    "broaderGoal": "active",
+    "reasonNotComplete": "The helper-owned Windows OLE drop target and its local intake integration are implemented and the native gate is green, but no real human Explorer drag has yet reached the panel. Automated Computer Use pointer drags produced no OLE callbacks and therefore cannot substitute for the required gesture."
+  },
+  "scope": "Windows Explorer Drop / Node Path-Reopen Preview V0: a helper-owned visible Windows OLE drop panel accepts one CF_HDROP file/folder gesture and passes its selected roots into the existing process-owned local intake basket. Node.js reopens the selected paths, and the existing T-541 persistence contract can create one independently verified child workspace per accepted root under a durable collection index. The browser only opens the separate Windows panel and renders neutral path-free records. This is ordinary local product and 3D reconstruction intake engineering, not browser HTML5 drag-and-drop, retained-handle byte custody, reconstruction, training, cloud or cybersecurity work.",
+  "activity": {
+    "generatedNonVenueFixturePrepared": true,
+    "userOrVenueSourceRead": false,
+    "nativeDropPanelOpened": true,
+    "escapeCancellationObserved": true,
+    "automatedExplorerPointerDragAttempted": true,
+    "nativeOleCallbackObservedDuringAutomation": false,
+    "realHumanExplorerDropPerformed": false,
+    "dropSelectedRootsAttachedToBasketEndToEnd": false,
+    "dropSelectedRootsCopiedIntoWorkspaceEndToEnd": false,
+    "originalSourceWrittenOrChanged": false,
+    "reconstructionPerformed": false,
+    "registrationPerformed": false,
+    "trainingPerformed": false,
+    "enhancementPerformed": false,
+    "cloudRequestPerformed": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false,
+    "deployed": false,
+    "cybersecurityWorkPerformed": false
+  },
+  "contract": {
+    "helperBuildIdentifier": "venviewer-windows-source-helper/0.2.0",
+    "helperProtocolSchemaVersion": 1,
+    "helperOperation": "drop_sources",
+    "helperResponse": "drop_sources_ok",
+    "acquisitionEvidence": "windows_native_drop_cfhdrop_then_handle_open",
+    "viewSchemaVersion": "omnitwin.foundry.local-native-intake-view.v0",
+    "actionResultSchemaVersion": "omnitwin.foundry.local-native-intake-action-result.v0",
+    "reportSchemaVersion": "omnitwin.foundry.local-native-intake-report.v0",
+    "collectionIndexSchemaVersion": "omnitwin.foundry.local-native-intake-collection-index.v0",
+    "eventSchemaVersion": "trusted-windows-native-source-basket-event.v1",
+    "startConfirmation": "inspect_and_keep_verified_copies",
+    "mode": "ordinary_windows_native_selection_node_path_reopen_preview",
+    "filesystemModel": "node_path_reopen_after_native_selection",
+    "nativeCustodyClaimed": false,
+    "authority": "none",
+    "nativeDropTarget": {
+      "owner": "venviewer-windows-source-helper process",
+      "oleApartment": "OleInitialize/OleUninitialize on a dedicated STA thread",
+      "messageLoop": true,
+      "visibleTopmostPanel": true,
+      "registeredWindows": [
+        "top-level panel",
+        "instruction child"
+      ],
+      "registration": "RegisterDragDrop",
+      "cleanup": "RevokeDragDrop before window teardown",
+      "acceptedClipboardFormat": "CF_HDROP with TYMED_HGLOBAL",
+      "acceptedEffect": "DROPEFFECT_COPY",
+      "rejectedEffect": "DROPEFFECT_NONE",
+      "moveAccepted": false,
+      "maximumDroppedRoots": 128,
+      "mixedFileAndFolderGestureSupported": true,
+      "oneProtocolResponsePerGesture": true
+    },
+    "atomicity": {
+      "nativeCommand": "All CF_HDROP roots are opened and validated as candidates before the helper extends its retained source list.",
+      "browserBasket": "The basket appends no visible root until every returned selection passes the complete batch limits and conflict checks.",
+      "rejectionQualification": "If later basket validation rejects a helper-selected batch, the browser basket remains unchanged and the local controller terminally closes the helper. This record does not claim rollback followed by continued use of the same helper session."
+    },
+    "cancellation": {
+      "panelCloseButton": "drop_cancelled",
+      "panelEscapeKey": "drop_cancelled",
+      "cancelledResponseContainsSelections": false,
+      "browserBasketUnchanged": true,
+      "helperCancellationPollingMilliseconds": 100
+    },
+    "browserBoundary": {
+      "opensSeparateNativePanel": true,
+      "browserDropEventListeners": false,
+      "browserDataTransferUse": false,
+      "browserFileInput": false,
+      "browserReceivesDroppedFiles": false,
+      "browserReceivesFilesystemPaths": false,
+      "neutralLabels": "File N or Folder N",
+      "exactPublicFieldAllowlist": true,
+      "exactPublicSchemaVersionAllowlist": true,
+      "generatedNeutralLabelValidation": true,
+      "basenameRelativeAndAbsoluteLocatorRejection": true,
+      "sourceAndWorkspacePathsRemainProcessOwned": true,
+      "finalLiveBrowserQa": "pending after the real Explorer gesture"
+    },
+    "persistenceBoundary": {
+      "oneT541ChildWorkspacePerAcceptedRoot": true,
+      "durableTopLevelCollectionIndex": true,
+      "reopenVerifierChecksEveryStoredChild": true,
+      "verifiedThroughRealExplorerDrop": false
+    },
+    "truth": "Every imported member remains pending review. Copying preserves captured, enhanced-captured, generated-cinematic and concept/imagination labels without promotion. A local selection, copy or collection index does not establish rights, physical accuracy or authority for later processing.",
+    "notAuthorized": [
+      "rights approval",
+      "registration",
+      "reconstruction",
+      "model training",
+      "enhancement",
+      "worker dispatch",
+      "cloud upload",
+      "credential use",
+      "spend",
+      "signing",
+      "publication",
+      "deployment",
+      "release or physical-authority claims"
+    ]
+  },
+  "implementation": {
+    "nativeDropTarget": "tools/reconstruction-foundry/native/windows-source-helper/src/drop_target.rs",
+    "nativeProtocol": "tools/reconstruction-foundry/native/windows-source-helper/src/protocol.rs",
+    "nativeDropTests": "tools/reconstruction-foundry/native/windows-source-helper/tests/drop_target_windows.rs",
+    "helperProtocol": "tools/reconstruction-foundry/src/trusted-windows-native-source-helper-protocol.ts",
+    "helperProcessBridge": "tools/reconstruction-foundry/src/trusted-windows-native-source-helper-process-bridge.ts",
+    "strictAdapter": "tools/reconstruction-foundry/src/trusted-windows-native-source-adapter-v1.ts",
+    "sourceBasket": "tools/reconstruction-foundry/src/trusted-windows-native-source-basket.ts",
+    "controller": "tools/reconstruction-foundry/src/local-native-intake.ts",
+    "loopbackApp": "tools/reconstruction-foundry/src/local-native-intake-app.ts",
+    "browserAssets": "tools/reconstruction-foundry/src/local-native-intake-assets.ts",
+    "processComposition": "tools/reconstruction-foundry/src/local-native-intake-composition.ts",
+    "cli": "tools/reconstruction-foundry/src/cli.ts",
+    "entry": "tools/reconstruction-foundry/src/entry.ts",
+    "httpRoutes": [
+      "GET /api/native-source-basket",
+      "POST /api/native-source-basket/action",
+      "POST /api/native-source-basket/cancel-active",
+      "POST /api/native-source-basket/report",
+      "POST /api/stop"
+    ],
+    "lifecycle": {
+      "defaultSessionTtlMilliseconds": 14400000,
+      "minimumSessionTtlMilliseconds": 50,
+      "maximumSessionTtlMilliseconds": 86400000,
+      "expiredSessionRejectsFurtherNonStopActions": true,
+      "expiredSessionRetriesUnconfirmedShutdown": true,
+      "expiryRetryInitialDelayMilliseconds": 100,
+      "expiryRetryMaximumDelayMilliseconds": 5000,
+      "stopUsesOneSharedAttempt": true,
+      "controllerAndHelperCloseBeforeHttpListener": true,
+      "failedHelperCloseReturns503AndCanBeRetried": true,
+      "sigintRequestsConfirmedAppStop": true,
+      "sigtermRequestsConfirmedAppStop": true,
+      "shutdownSignalDuringStartupIsRemembered": true,
+      "failedSignalShutdownRemainsRetryable": true
+    },
+    "diagnosticTelemetry": {
+      "configuration": "debug builds only",
+      "prefix": "omnitwin_drop_trace",
+      "stages": [
+        "drag_enter",
+        "drag_over",
+        "drag_leave",
+        "drop_begin",
+        "drop_complete"
+      ],
+      "fields": [
+        "CF_HDROP availability",
+        "hover validity",
+        "offered effect bits",
+        "accepted"
+      ],
+      "locatorOrBasenameFields": false,
+      "presentInReleaseBinary": false
+    }
+  },
+  "preparedRealExplorerFixture": {
+    "kind": "generated_non_venue_two_files_and_one_nested_file_folder",
+    "selectedRootsExpected": 3,
+    "discoveredFilesExpected": 3,
+    "totalBytesExpected": 187,
+    "gesture": "Select alpha.obj, beta.ply and nested-capture together in Explorer, then drag them once into the separate Windows panel.",
+    "members": [
+      {
+        "neutralDescription": "OBJ file root",
+        "fixtureRelativePath": "alpha.obj",
+        "bytes": 40,
+        "sha256": "d88a99dac830a352977233bf34afa40802fc4a03f5bfa11f5bc594ad61a72ae0"
+      },
+      {
+        "neutralDescription": "PLY file root",
+        "fixtureRelativePath": "beta.ply",
+        "bytes": 106,
+        "sha256": "bfb923d2c48bd8c8103813a66b52b03c582a609cab6e986db4c794891ec99f24"
+      },
+      {
+        "neutralDescription": "folder root containing one OBJ",
+        "fixtureRelativePath": "nested-capture/frame.obj",
+        "bytes": 41,
+        "sha256": "6c30a33159b1c343006812c671666486c9236fd045a2adf6aca1db8829aec28c"
+      }
+    ],
+    "fixtureHashesRecheckedAtEvidenceTime": true,
+    "outputParentContainsOnlyPreparationMarker": true,
+    "dropCompleted": false,
+    "workspaceCollectionCreated": false,
+    "sourceHashesAfterCompletedDrop": "pending"
+  },
+  "desktopObservation": {
+    "driver": "Codex Computer Use",
+    "nativePanelVisible": true,
+    "topmostPanelObservedAfterRebuild": true,
+    "escapeClosedPanel": true,
+    "browserRenderedNeutralCancellation": true,
+    "basketChangedAfterCancellation": false,
+    "calibratedAutomatedPointerDragsAttempted": true,
+    "debugOleTraceLinesObserved": 0,
+    "inference": "The automation moved the pointer but did not initiate or reach Explorer OLE. Zero callbacks are an automation limitation, not evidence that the native drop target accepted or rejected a real Explorer gesture.",
+    "manualExplorerGestureRequested": true,
+    "manualExplorerGestureCompleted": false
+  },
+  "verification": {
+    "native": {
+      "command": "cargo test --target x86_64-pc-windows-msvc --all-targets",
+      "unitTestsPassed": 72,
+      "mainTestsPassed": 0,
+      "custodyWindowsTestsPassed": 28,
+      "dropTargetWindowsTestsPassed": 3,
+      "pathWindowsTestsPassed": 8,
+      "pickerWindowsTestsPassed": 2,
+      "protocolWindowsTestsPassed": 23,
+      "testsPassed": 136,
+      "testsFailed": 0,
+      "testsIgnored": 0,
+      "formatCheck": "passed",
+      "clippyAllTargetsDenyWarnings": "passed",
+      "optimizedReleaseBuild": "passed"
+    },
+    "releaseHelper": {
+      "bytes": 778752,
+      "sha256": "6d82ceb864e69b6d8d29ffef1dc1fa038a92ae484f3cccabcb19c8464129d9c0",
+      "debugDropTraceMarkerPresent": false,
+      "packagedSignedOrPublished": false
+    },
+    "typescriptIntegration": {
+      "lifecyclePrivacyFocused": {
+        "status": "passed",
+        "testsPassed": 46,
+        "testsFailed": 0,
+        "typecheck": "passed",
+        "focusedLint": "passed",
+        "diffCheck": "passed"
+      },
+      "t542Focused": {
+        "testFilesPassed": 9,
+        "testsPassed": 210,
+        "testsFailed": 0
+      },
+      "fullTools": {
+        "testFilesPassed": 57,
+        "testFilesFailed": 1,
+        "testsPassed": 949,
+        "testsFailed": 1,
+        "status": "qualified_existing_failure",
+        "qualification": "The sole failure is the pre-existing Windows production-release fixture rejecting the unrelated untracked packages/reconstruction-foundry/src/captured-quality-comparison.d.ts sibling in the shared dirty worktree."
+      },
+      "testCoveragePresentFor": [
+        "drop protocol shape and binding",
+        "one atomic mixed drop",
+        "picker/drop acquisition separation",
+        "path-free neutral basket output",
+        "drop cancellation",
+        "browser absence of HTML5 drag-and-drop handlers",
+        "TTL shutdown retry",
+        "SIGINT/SIGTERM confirmed shutdown",
+        "signal received during startup",
+        "shutdown retry after an unconfirmed close",
+        "exact public field, schema-version and neutral-label allowlists",
+        "basename, relative locator and absolute locator rejection"
+      ],
+      "signalQualification": "Signal behavior was verified with deterministic injected SIGINT/SIGTERM delivery and deferred shutdown. A real isolated Windows console or ConPTY delivery smoke was not run because child.kill(\"SIGINT\") on Windows would terminate abruptly rather than reliably exercise the JavaScript handler.",
+      "qualification": "The T-542-focused gate is green. The full tools result remains qualified only by the pre-existing unrelated release-fixture failure."
+    },
+    "corePackage": {
+      "testFilesPassed": 68,
+      "testsPassed": 799,
+      "testsSkipped": 1,
+      "testsFailed": 0,
+      "typecheck": "passed",
+      "build": "passed",
+      "lint": "qualified_existing_failure",
+      "lintErrorCount": 2,
+      "lintQualification": "Only the two known generated-declaration project-service errors remain; they are unrelated to T-542B."
+    },
+    "realExplorerEndToEnd": {
+      "status": "pending",
+      "requiredProof": [
+        "one real mixed Explorer gesture reaches the helper-owned OLE panel",
+        "three neutral roots appear in the path-free browser basket",
+        "the selected output folder receives three independently verified T-541 child workspaces",
+        "the durable collection index reopens with three verified children",
+        "all original fixture hashes remain unchanged",
+        "the final browser has no console warnings/errors or horizontal overflow",
+        "the listener and exact helper process are both absent after Stop"
+      ]
+    }
+  },
+  "limitations": [
+    "No real human Explorer drag has yet reached the panel, so T-542B and parent T-542 are not complete.",
+    "Computer Use pointer drags did not initiate Explorer OLE and emitted zero native callbacks. This does not diagnose a native helper failure and cannot be treated as end-to-end proof.",
+    "Node.js reopens canonical paths after native selection. No retained native source or output handle is claimed to transfer or retain byte custody.",
+    "Browser-list atomicity is guaranteed by delaying the append until complete batch validation. A later basket rejection closes the helper; this record does not claim rollback and continued use of the same helper session.",
+    "Live browser, durable copy/reopen and zero-process checks remain pending after the real gesture.",
+    "SIGINT/SIGTERM cleanup is covered by deterministic injected-signal tests; a real isolated Windows console or ConPTY signal-delivery smoke was not run.",
+    "Only generated non-venue fixtures are prepared. No user, Grand Hall, Reception, Matterport or XGRIDS source was imported.",
+    "A verified local collection would preserve evidence and truth only. It would not approve rights, physical accuracy, reconstruction, training, enhancement, cloud use, signing, publication or deployment."
+  ],
+  "continuation": {
+    "broaderGoalStatus": "active",
+    "parentTaskStatus": "in_progress",
+    "currentSlice": "T-542B Windows Explorer Drop / Node Path-Reopen Preview V0",
+    "nextRequiredAction": "Perform one real mixed Explorer drag of the prepared three-root fixture into the helper-owned Windows panel, then complete and verify the durable local collection flow.",
+    "completionRule": "Only after the real gesture, path-free basket, exact copy hashes, three-child collection reopen, browser QA and zero-process shutdown are observed may this evidence status and docs/state/tasks.md be changed to done.",
+    "stillOpen": [
+      "T-542B real Explorer end-to-end proof",
+      "T-542 parent launcher completion",
+      "T-533 human Reception room-envelope review",
+      "T-508 captured-quality programme",
+      "T-486 Grand Hall external review gates",
+      "T-539 clean-host qualification and production binding",
+      "the broader OmniTwin Foundry /goal"
+    ],
+    "outOfScopeAndNotBlockingThisLocalSlice": [
+      "cybersecurity work",
+      "identity attestation",
+      "signing",
+      "deployment",
+      "publication"
+    ]
+  }
+}

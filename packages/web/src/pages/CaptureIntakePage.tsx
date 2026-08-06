@@ -137,8 +137,8 @@ function CaptureStatus(props: {
       </section>
 
       <footer className="capture-intake-footer">
-        <p>The staged source can now enter the existing artifact-factory and human-review gates.</p>
-        <Link to="/dev/assets/rooms">Open runtime asset registry <ArrowRight aria-hidden="true" /></Link>
+        <p>The staged source can now enter the immutable release, QA, review, signing, and promotion gates.</p>
+        <Link to="/dashboard?view=foundry">Open Runtime Foundry <ArrowRight aria-hidden="true" /></Link>
       </footer>
     </>
   );

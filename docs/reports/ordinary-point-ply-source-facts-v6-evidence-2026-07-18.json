@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "omnitwin.local.ordinary-point-ply-source-facts-v6-evidence-manifest.v0",
+  "recordedAt": "2026-07-18",
+  "authority": "none",
+  "workstream": "T-508",
+  "scope": "Read-only, bounded structural evidence for ordinary fixed-width binary-little-endian PLY point geometry. This is ordinary local reconstruction-product engineering. Cybersecurity, credentials, penetration testing, cloud deployment, signing and publication are excluded from this slice.",
+  "inventory": {
+    "boundedSearch": "Repository plus six declared F: source roots",
+    "plyFileCount": 199,
+    "plyBreakdown": {
+      "ordinaryPointCandidates": 8,
+      "meshCandidates": 64,
+      "gaussianCandidates": 127
+    },
+    "xyzFileCount": 5,
+    "lasLazPtsPcdFileCount": 0,
+    "selectedProfile": "ordinary_fixed_width_binary_little_endian_ply",
+    "deferredInventory": [
+      {
+        "format": "xyz",
+        "sourcePath": "F:/VenviewerCaptureStaging/trades-hall-2026-07-10/source/matterpak/cloud.xyz",
+        "sourceBytes": 1611296012,
+        "observation": "A bounded prefix looked like headerless XYZRGB rows; no complete row pass or V6 fact is claimed."
+      },
+      {
+        "format": "las_laz",
+        "observation": "No real local LAS or LAZ input was found in the bounded inventory."
+      }
+    ]
+  },
+  "profile": {
+    "receiptSchemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+    "receiptDigestDomain": "VENVIEWER_FOUNDRY_INTAKE_RECEIPT_V0",
+    "sourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v6",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V6",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v6",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V6",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v6",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V6",
+    "inheritedProfile": "omnitwin.foundry.universal-source-facts.v5",
+    "format": "ply",
+    "target": "PLY 1.0 binary_little_endian with exactly one positive vertex element, unique fixed-width scalar properties, required x/y/z declarations and exact EOF arithmetic",
+    "inspectionCoverage": "complete_header_and_exact_fixed_width_payload_layout",
+    "gaussianPrecedence": "Inherited Gaussian inspection runs first. Established or explicit Gaussian outcomes never fall through to the ordinary point profile.",
+    "limits": {
+      "sourceMaxBytes": 137438953472,
+      "headerMaxBytes": 1048576,
+      "headerLineMaxBytes": 65536,
+      "elementMaxCount": 64,
+      "propertyMaxCount": 4096,
+      "combinedCommentAndObjInfoMaxCount": 256,
+      "vertexMaxCount": 100000000,
+      "vertexStrideMaxBytes": 32768
+    }
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only; no authentication or independent attestation.",
+    "sameOpenHandle": true,
+    "sourceBinding": "The V6 pass reads the already-open identity-checked handle, verifies exact byte length and complete SHA-256, binds successful point facts to that exact identity and rejects mismatched outcomes.",
+    "filesystemSnapshot": "not_atomic",
+    "headerBinding": "The schema enforces exact property order, aliases, widths, contiguous offsets, stride and payload arithmetic, plus the minimum and maximum header bytes that the recorded declarations and LF/CRLF/mixed line-ending mode can encode.",
+    "failureBinding": "Point success and every non-cancelled failure code, category and coverage are frozen. A point receipt candidate cannot be downgraded to outside V6.",
+    "unknownBinding": "All ten ordinary point unknowns are mandatory in Source Facts and Readiness and must derive the corresponding checklist requests.",
+    "cancellation": "Cancellation issues no V6 artifact.",
+    "xbinBehavior": "Atomic unavailable result with no partial facts, readiness files or checklist evidence.",
+    "policy": {
+      "sourceAccess": "read_only",
+      "mutation": "none",
+      "valueDecode": "none",
+      "reconstruction": "none",
+      "networkAccess": "none",
+      "authority": "none",
+      "rights": "not_evaluated"
+    }
+  },
+  "realSourceReplays": [
+    {
+      "id": "colmap_fused_ordinary_point_positive",
+      "sourcePath": "F:/E57/colmap_full/dense/1/fused.ply",
+      "sourceBytes": 23248,
+      "sourceMtimeMs": 1772648819702.8218,
+      "sourceSha256": "434571ab5a2355fe42ee45bbe9f8a6258fca3ec732ec16075a6ac808ac52c7e5",
+      "sourceRoleQualification": "Derived COLMAP stereo_fusion candidate context only; no digest-bound producer transcript. This is parser evidence, not captured, metric or authoritative geometry.",
+      "unchangedBeforeAndAfter": {
+        "size": true,
+        "mtime": true,
+        "sha256": true
+      },
+      "repeatedByteIdentically": true,
+      "result": {
+        "inputType": "ply_point_cloud",
+        "format": "ply",
+        "code": "POINT_PLY_SOURCE_FACTS_ESTABLISHED",
+        "headerBytes": 244,
+        "lineEndings": "crlf",
+        "vertexCount": 852,
+        "recordStrideBytes": 27,
+        "payloadBytes": 23004,
+        "exactFileLengthVerified": true,
+        "trailingBytes": 0,
+        "properties": [
+          { "ordinal": 0, "name": "x", "declaredType": "float", "canonicalType": "float32", "byteOffset": 0, "byteWidth": 4 },
+          { "ordinal": 1, "name": "y", "declaredType": "float", "canonicalType": "float32", "byteOffset": 4, "byteWidth": 4 },
+          { "ordinal": 2, "name": "z", "declaredType": "float", "canonicalType": "float32", "byteOffset": 8, "byteWidth": 4 },
+          { "ordinal": 3, "name": "nx", "declaredType": "float", "canonicalType": "float32", "byteOffset": 12, "byteWidth": 4 },
+          { "ordinal": 4, "name": "ny", "declaredType": "float", "canonicalType": "float32", "byteOffset": 16, "byteWidth": 4 },
+          { "ordinal": 5, "name": "nz", "declaredType": "float", "canonicalType": "float32", "byteOffset": 20, "byteWidth": 4 },
+          { "ordinal": 6, "name": "red", "declaredType": "uchar", "canonicalType": "uint8", "byteOffset": 24, "byteWidth": 1 },
+          { "ordinal": 7, "name": "green", "declaredType": "uchar", "canonicalType": "uint8", "byteOffset": 25, "byteWidth": 1 },
+          { "ordinal": 8, "name": "blue", "declaredType": "uchar", "canonicalType": "uint8", "byteOffset": 26, "byteWidth": 1 }
+        ]
+      },
+      "artifactChain": {
+        "receiptSha256": "15895f3b0e7a240684a09a7cb232888936a52e3cd73e91e77696f1837be237a8",
+        "sourceFactsSha256": "bc792ad77dfe97afca30ae9b9b43cf302edc99abe1fd7c3bccf33b9afc826fe7",
+        "sourceReadinessSha256": "1fb58d7743c18999558184138d70c889306818666be4b90f75f06430a63cbc1b",
+        "operatorEvidenceChecklistSha256": "d60549acfb80ac3ec58139382f9677bba37d6b060b8528ca3e1b23a8704bc436"
+      },
+      "canonicalSerialization": {
+        "receipt": { "bytes": 1799, "sha256": "2f2f15ffe6e68a4eb1f4e431b614735709bd0a4e220c4fe2e415357a05fbde50" },
+        "sourceFacts": { "bytes": 7868, "sha256": "fa8fb35781a11522461da2b12d81fb8e91f72fb43a445302241777cfcbe4fcc6" },
+        "sourceReadiness": { "bytes": 18933, "sha256": "b8a0a88ba03d591f4b2dc7574eac724397b7dc76b2ce1ddac5e761caaa352fca" },
+        "operatorEvidenceChecklist": { "bytes": 23287, "sha256": "08ec2a1c0e07c5fc494b4b3b5764aec9826b2b64365f5c16568c41b1687d49e6" }
+      },
+      "readiness": { "lane": "point_geometry", "gapCount": 11 },
+      "checklist": { "evidenceRequestCount": 11, "groupCount": 2, "normalCount": 10, "conditionalCount": 1 }
+    },
+    {
+      "id": "mesh_ply_negative",
+      "sourcePath": "F:/VENVIEWER -- TH PROJECT SPLAT OUTPUTS/lcc2-result/data/mesh/0_19.ply",
+      "sourceBytes": 6359,
+      "sourceMtimeMs": 1781271766043.9592,
+      "sourceSha256": "3607009a65ed2e7445024f8a38bbe8c1b8e12fb9a6332e5c0e99b7807dc32212",
+      "unchangedBeforeAndAfter": { "size": true, "mtime": true, "sha256": true },
+      "repeatedByteIdentically": true,
+      "result": {
+        "inputType": "ply_point_cloud",
+        "format": "ply",
+        "state": "facts_not_established",
+        "category": "unsupported_variant",
+        "code": "POINT_PLY_EXTRA_ELEMENT_UNSUPPORTED",
+        "facts": null,
+        "qualification": "The vertex-plus-face mesh is outside the single-vertex-element ordinary point profile; no corruption claim is made."
+      },
+      "artifactChain": {
+        "receiptSha256": "c7b1d01c8c9511e0dc4de600035bc18c4b3ea7042a43f4a20ef577965701c64e",
+        "sourceFactsSha256": "2e36741598442af16dbb1b97fb8f222ffb67708ace4edb5e8ea53e0f9ee30f44",
+        "sourceReadinessSha256": "9f6278404bd1f076decfb66e615ada4a9ffbfade0ff229effcbb53f687d10fdf",
+        "operatorEvidenceChecklistSha256": "c49a6b5f87f4aec57df15bdf96dbf9f26d32802878310feb10038044c2bd4c39"
+      },
+      "canonicalSerialization": {
+        "receipt": { "bytes": 1794, "sha256": "c549402ce48624aa285e21eea6234049f2f13f4eb8bc73a438d81e30dc6a3692" },
+        "sourceFacts": { "bytes": 5661, "sha256": "a8b610ef04427e73fd550542cd95fc77b9c4c2232d037edd99be76a6fe684858" },
+        "sourceReadiness": { "bytes": 19463, "sha256": "fd151162c0bb06f07ac7bfdeebcedfeff627a5f566d5ae357ae400146a0d125b" },
+        "operatorEvidenceChecklist": { "bytes": 25207, "sha256": "82d61be22dd52f02adbced0a06b9b9ae0b589f73444455edcb8b21e6efc0ff94" }
+      }
+    },
+    {
+      "id": "classic_gaussian_precedence",
+      "sourcePath": "F:/E57/colmap_dataset/export_05000.ply",
+      "sourceBytes": 7222206,
+      "sourceMtimeMs": 1772623136112.4639,
+      "sourceSha256": "508f0b052f540b486ab9eae115bb12c14df57c1e9f2ba6767a462584dc38a53b",
+      "unchangedBeforeAndAfter": { "size": true, "mtime": true, "sha256": true },
+      "repeatedByteIdentically": true,
+      "result": {
+        "inputType": "gaussian_ply",
+        "format": "gaussian_ply",
+        "code": "GAUSSIAN_PLY_FORMAT_FACTS_ESTABLISHED",
+        "ordinaryPointFactsIssued": false,
+        "headerBytes": 1550,
+        "gaussianCount": 30596,
+        "vertexStrideBytes": 236,
+        "payloadBytes": 7220656
+      },
+      "artifactChain": {
+        "receiptSha256": "cd6e3719c9c8de1bdf89d1925117173ea7b55e7eef98310efc45b1565285103d",
+        "sourceFactsSha256": "cc1a093340bf61ea5c51f21d02350f1de43b264792e2c38e2f5876442aeda4f6",
+        "sourceReadinessSha256": "7cc130c3d8acd034a8ced47e96a32ac33a281f1f4828d08ed0fbc8daa20e148d",
+        "operatorEvidenceChecklistSha256": "9a9f1f1ae174d3ce242f6c10a493f65e56a4f784e6370b734e6e932d5bafa640"
+      },
+      "canonicalSerialization": {
+        "receipt": { "bytes": 1741, "sha256": "002b4269908453fe369e45c2c84edbfeeee2fec62c6d822d97cf7e4baeed5afb" },
+        "sourceFacts": { "bytes": 16251, "sha256": "ead7a8cfe49fdf97f39c710ada6560fb86f208dce87a159a8bd3fcf11ecd26e7" },
+        "sourceReadiness": { "bytes": 19007, "sha256": "94fe97e7270a18071ebb471368fc3be32017c0d91a5872f00ae5ea36c1637ca7" },
+        "operatorEvidenceChecklist": { "bytes": 24615, "sha256": "f50931042711679f37768737317ec0927f04331a64c6e13cd1f0cacbd7e4f6fb" }
+      }
+    }
+  ],
+  "unresolvedFactCodes": [
+    "POINT_PLY_ATTRIBUTE_VALUES_UNKNOWN",
+    "POINT_PLY_PROPERTY_SEMANTICS_UNKNOWN",
+    "POINT_PLY_PHYSICAL_BOUNDS_AND_COMPLETENESS_UNKNOWN",
+    "POINT_PLY_UNITS_AND_SCALE_UNKNOWN",
+    "POINT_PLY_FRAME_CRS_AND_AXIS_UNKNOWN",
+    "POINT_PLY_GEOMETRY_ROLE_UNKNOWN",
+    "POINT_PLY_ACCURACY_AND_UNCERTAINTY_UNKNOWN",
+    "POINT_PLY_REGISTRATION_UNKNOWN",
+    "POINT_PLY_PROVENANCE_AND_CAPTURE_CLASS_UNKNOWN",
+    "POINT_PLY_RIGHTS_UNKNOWN"
+  ],
+  "evidenceRequestMapping": {
+    "POINT_PLY_ACCURACY_AND_UNCERTAINTY_UNKNOWN": "independent_control",
+    "POINT_PLY_ATTRIBUTE_VALUES_UNKNOWN": "bounded_inspection",
+    "POINT_PLY_FRAME_CRS_AND_AXIS_UNKNOWN": "registration_input",
+    "POINT_PLY_GEOMETRY_ROLE_UNKNOWN": "source_provenance",
+    "POINT_PLY_PHYSICAL_BOUNDS_AND_COMPLETENESS_UNKNOWN": "bounded_inspection",
+    "POINT_PLY_PROPERTY_SEMANTICS_UNKNOWN": "bounded_inspection",
+    "POINT_PLY_PROVENANCE_AND_CAPTURE_CLASS_UNKNOWN": "source_provenance",
+    "POINT_PLY_REGISTRATION_UNKNOWN": "independent_control",
+    "POINT_PLY_RIGHTS_UNKNOWN": "rights_decision",
+    "POINT_PLY_UNITS_AND_SCALE_UNKNOWN": "source_provenance"
+  },
+  "truthBoundaries": [
+    "No point coordinate, normal, color or other scalar value is decoded or validated.",
+    "Property names x, y and z are structural declarations, not proof of physical semantics.",
+    "Header and payload arithmetic do not establish units, scale, frame, CRS, axes, bounds, density, completeness, accuracy, registration, provenance, capture class, rights or authority.",
+    "The positive fused.ply is a derived COLMAP artifact candidate and is not treated as authoritative captured or metric geometry.",
+    "No reconstruction, registration, source mutation, network client, external service, cloud action, spend, release or publication occurred."
+  ],
+  "deferredProfiles": [
+    {
+      "format": "xyz",
+      "reason": "The observed real file is headerless and 1.61 GB. A distinct profile needs a complete bounded streaming row pass, explicit column-count and numeric-lexeme rules, byte and line caps, cancellation and exact receipt binding."
+    },
+    {
+      "format": "las_laz",
+      "reason": "No real local input was found. A future profile must be driven by a real receipted sample and a separately frozen parser contract."
+    },
+    {
+      "format": "decoded_point_values_and_bounds",
+      "reason": "Value decode, finite/range checks and physical bounds are a distinct later evidence profile, not a silent widening of V6."
+    }
+  ],
+  "uiEvidence": {
+    "source": "fused.ply",
+    "desktopViewportOverride": "1280x720",
+    "desktopDomClientViewport": "1265x720",
+    "mobileViewportOverride": "390x844",
+    "mobileDomClientViewport": "375x844",
+    "pageHorizontalOverflow": false,
+    "panelLocalHorizontalScroll": true,
+    "consoleWarningsOrErrors": 0,
+    "pointPropertyRows": 9,
+    "pointPropertyColumns": ["Order", "Property", "Type", "Offset", "Width"],
+    "downloadsConfirmedOnDisk": [
+      {
+        "filename": "foundry-universal-source-facts-v6.json",
+        "bytesIncludingTrailingLf": 7869,
+        "sha256IncludingTrailingLf": "303189a38898acfd9a13e5949865cc2e9b517a669cb5e5d312408dcd00adde2d"
+      },
+      {
+        "filename": "foundry-source-readiness-map-v6.json",
+        "bytesIncludingTrailingLf": 18934,
+        "sha256IncludingTrailingLf": "cc90e0191c04ff314175f8506877258b269d0a9a29600f4b3eafc5a919feb680"
+      },
+      {
+        "filename": "foundry-operator-evidence-checklist-v6.json",
+        "bytesIncludingTrailingLf": 23288,
+        "sha256IncludingTrailingLf": "490a0573eab3516561175f22f174a68317262682b6546e697080a57850fab7ed"
+      }
+    ],
+    "sessionShutdownVerified": true,
+    "qualification": "The browser download-event waiter timed out after the first click, but the UI reported the exact response fingerprint and all three resulting files were independently confirmed and hashed on disk. No screenshot file is claimed."
+  },
+  "independentReview": {
+    "verdict": "no_p0_p1_or_p2_correctness_issue",
+    "confirmed": [
+      "valid inspector-produced facts, readiness and checklist schema round trips",
+      "minimum and maximum encodable header bounds for LF, CRLF and mixed line endings",
+      "full property-declaration line limit",
+      "classic Gaussian exclusion and Gaussian-first precedence",
+      "exact point success and non-cancelled failure registry binding",
+      "mandatory preservation of all ten point unknowns through checklist derivation",
+      "point receipt candidates cannot be downgraded outside V6",
+      "canonical receipt-to-facts-to-readiness-to-checklist digest bindings",
+      "V1-V5 source-facts compatibility"
+    ]
+  },
+  "verification": {
+    "focusedV6": "3 files, 23 passed",
+    "legacyV1ToV5Compatibility": "5 files, 57 passed",
+    "reconstructionFoundry": "49 files, 610 passed, 1 existing skip",
+    "reconstructionFoundryTypecheck": "passed",
+    "reconstructionFoundryLint": "passed",
+    "reconstructionFoundryBuild": "passed",
+    "localFoundryFocusedApp": "2 files, 46 passed",
+    "localFoundryTypecheck": "passed",
+    "localFoundryLint": "passed",
+    "localFoundryBuild": "passed",
+    "localFoundryFullSuite": "Broad suite remained red only in concurrently changing unrelated offline-preview tests plus a full-suite-only 20-second 500-file guided-workflow timeout; every implicated file passed alone and no deterministic V6 failure was found.",
+    "finalExactRealReplay": "All three sources repeated byte-identically, matched every recorded chain digest and retained source size, mtime and SHA-256.",
+    "gitDiffCheck": "passed for reviewed V6 files; only the existing Windows line-ending advisory appeared"
+  },
+  "implementation": [
+    "packages/reconstruction-foundry/src/ply-point-cloud-source-facts.ts",
+    "packages/reconstruction-foundry/src/gaussian-ply-source-facts.ts",
+    "packages/reconstruction-foundry/src/source-facts-v6.ts",
+    "packages/reconstruction-foundry/src/source-readiness-v6.ts",
+    "packages/reconstruction-foundry/src/operator-evidence-checklist-v6.ts",
+    "packages/reconstruction-foundry/src/intake-receipt.ts",
+    "packages/reconstruction-foundry/src/index.ts",
+    "tools/reconstruction-foundry/src/local-app.ts",
+    "tools/reconstruction-foundry/src/local-app-assets.ts"
+  ]
+}

@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 // The walk chunk carries three + Spark — far beyond jsdom. The page contract
 // under test is the poster-first wiring, so the lazy module becomes a stub.
 vi.mock("../FreshWalk.js", () => ({
   default: () => <div data-testid="fresh-walk-stub" />,
+}));
+
+// The enquiry send. Hoisted so the mock factory can close over it (vi.mock is
+// lifted above imports). Only the network call is faked — the form, its
+// validation, and the payload it builds are the code under test.
+const submitGuestEnquiryMock = vi.hoisted(() => vi.fn());
+vi.mock("../../../api/configurations.js", () => ({
+  submitGuestEnquiry: submitGuestEnquiryMock,
 }));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
@@ -21,6 +29,11 @@ import {
 // rates, real contact, theme toggle with honest pressed state, and every
 // string through the claim guard.
 // ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  // Reset between tests so a queued *Once outcome can't leak forward.
+  submitGuestEnquiryMock.mockReset();
+});
 
 afterEach(() => {
   cleanup();
@@ -139,12 +152,69 @@ describe("the enquiry composer", () => {
     expect(screen.getByText(/The North Gallery holds exactly/)).toBeTruthy();
   });
 
-  it("composes the visible email from the draft, openable via mailto", () => {
+  it("composes the visible enquiry from the draft and offers a real send", () => {
     render(<FreshPage />);
     expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Conference" }));
     expect(screen.getByText("Enquiry — Conference for 100")).toBeTruthy();
-    expect(document.querySelector('a.fr-cta[href^="mailto:"]')).toBeTruthy();
+    // The primary action now submits to the API. It used to be an
+    // <a href="mailto:">, which meant the enquiry never became a record the
+    // events team could see — it only opened the visitor's own mail client.
+    expect(screen.getByRole("button", { name: "Send this enquiry" })).toBeTruthy();
+    expect(document.querySelector('a.fr-cta[href^="mailto:"]')).toBeNull();
+  });
+
+  it("refuses to send without an email address to reply to", () => {
+    render(<FreshPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Send this enquiry" }));
+    expect(
+      screen.getByText("Please add an email address so the team can reply to you."),
+    ).toBeTruthy();
+    expect(submitGuestEnquiryMock).not.toHaveBeenCalled();
+  });
+
+  it("posts the enquiry as a homepage lead and shows the reference back", async () => {
+    submitGuestEnquiryMock.mockResolvedValueOnce({
+      enquiryId: "3f9a2b1c-d4e5-4f6a-8b9c-0d1e2f3a4b5c",
+      reference: "3F9A2B1C",
+      message: "Your enquiry has been sent to the events team",
+    });
+    render(<FreshPage />);
+    fireEvent.change(screen.getByLabelText("Your email"), {
+      target: { value: "guest@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Jane Smith" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send this enquiry" }));
+
+    expect(await screen.findByText("Your enquiry is with the events team")).toBeTruthy();
+    expect(screen.getByText("3F9A2B1C")).toBeTruthy();
+
+    const payload = submitGuestEnquiryMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    // `source: "homepage"` is load-bearing: without it the API infers the twin
+    // from the venue slug and stamps the lead with the walkthrough's note.
+    expect(payload["source"]).toBe("homepage");
+    // The `venues.slug` ROW, not the asset/twin slug ("trades-hall"). Sending
+    // the asset spelling 404s against a real database — proven live 2026-08-04.
+    expect(payload["venueSlug"]).toBe("trades-hall-glasgow");
+    expect(payload["email"]).toBe("guest@example.com");
+    expect(payload["guestCount"]).toBe(100);
+  });
+
+  it("keeps the mail app and telephone reachable when the send fails", async () => {
+    submitGuestEnquiryMock.mockRejectedValueOnce(new Error("network down"));
+    render(<FreshPage />);
+    fireEvent.change(screen.getByLabelText("Your email"), {
+      target: { value: "guest@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send this enquiry" }));
+
+    // A failed send must never be a dead end — the composed message stays and
+    // the mailto returns as the fallback it now is.
+    expect(await screen.findByRole("link", { name: "Open in your email app" })).toBeTruthy();
+    expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
+    expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
   });
 
   it("sends the top CTAs to the composer, not to a phone link", () => {

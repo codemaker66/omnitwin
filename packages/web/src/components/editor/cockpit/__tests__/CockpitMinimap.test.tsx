@@ -10,6 +10,7 @@ import { getCatalogueItemBySlug } from "../../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } from "../../../../lib/trades-hall-visual-demo-state.js";
 import { useCockpitReplay } from "../../../../hooks/use-cockpit-replay.js";
 import { CockpitMinimap } from "../CockpitMinimap.js";
@@ -37,6 +38,7 @@ function reviewConflict(): RouteConflict {
 function resetStores(): void {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
 }
 
 beforeEach(() => {
@@ -65,6 +67,26 @@ describe("CockpitMinimap", () => {
     });
     const { container } = render(<CockpitMinimap />);
     expect(container.querySelectorAll(".cockpit-minimap__dot")).toHaveLength(2);
+  });
+
+  it("plots current phase-preview items without showing saved-plan dots", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("fixture round table missing");
+    usePlacementStore.setState({ placedItems: [createPlacedItem(table.id, 0, 0, 0)] });
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: null,
+      endsAt: null,
+    }, [createPlacedItem(table.id, 0, 0, 0), createPlacedItem(table.id, 4, 0, 0)]);
+
+    const { container } = render(<CockpitMinimap />);
+    expect(container.querySelectorAll(".cockpit-minimap__dot")).toHaveLength(0);
+    expect(container.querySelector(".cockpit-minimap__preview-canvas")?.getAttribute("data-preview-object-count")).toBe("2");
+    expect(screen.getByText(/Phase preview · saved plan unchanged/)).toBeTruthy();
   });
 
   it("requests a camera recentre when the plan is clicked", () => {

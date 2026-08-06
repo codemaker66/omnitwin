@@ -10,7 +10,6 @@ import {
 import { TwinViewer } from "../twin/TwinViewer.js";
 import {
   isDefaultTwinAssetBase,
-  twinAssetBase,
   useTwinManifest,
 } from "../twin/useTwinManifest.js";
 import "../twin/twin.css";
@@ -91,7 +90,7 @@ export function TwinPage(): ReactElement {
               // milestone; today's router always remounts).
               key={manifest.manifest.venueSlug}
               manifest={manifest.manifest}
-              assetBase={`${twinAssetBase()}/${venueSlug}`}
+              assetBase={manifest.assetBase}
             />
           </div>
         )}

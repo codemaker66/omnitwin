@@ -647,6 +647,9 @@ export {
   runtimeQaRecordSignedTransformArtifactId,
   runtimeQaRecordSignedTransformArtifactSha256,
   runtimeQaRecordAllowsPublicExposure,
+  runtimeGroupTransformMatrix,
+  runtimeGroupTransformMatchesMatrix,
+  runtimeQaViewTransformMatchesMatrix,
   type RuntimeQaCheckKey,
   type RuntimeQaCheckStatus,
   type RuntimeQaTransformPosture,
@@ -659,6 +662,8 @@ export {
   type RuntimeQaSparkLoad,
   type RuntimeQaSourceBundle,
   type RuntimeQaPublicExposure,
+  type RuntimeGroupTransformComponents,
+  type RuntimeGroupTransformMatrix,
   type RuntimeQaRecordV0,
   type RuntimeQaRecordRegistration,
   type RegisterRuntimeQaRecordInput,
@@ -1016,11 +1021,19 @@ export {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  ENQUIRY_SOURCES,
+  EnquirySourceSchema,
+  TWIN_ENQUIRY_SOURCE_NOTE,
+  HOMEPAGE_ENQUIRY_SOURCE_NOTE,
+  resolveEnquirySource,
+  enquirySourceNote,
+  enquiryReference,
   type EnquiryId,
   type EnquiryStatus,
   type Enquiry,
   type CreateEnquiry,
   type GuestEnquiry,
+  type EnquirySource,
 } from "./enquiry.js";
 
 export {
@@ -2320,6 +2333,10 @@ export {
   tradesHallRuntimeRoomForSlug,
   RuntimePackageManifestJsonSchema,
   ReviewedRuntimeProfileIdSchema,
+  APPROVED_ROOM_RUNTIME_PRESENTATION_CONTRACT_SCHEMA_VERSION,
+  ApprovedRoomRuntimePresentationContractSchema,
+  approvedRoomRuntimePresentationContractDigest,
+  buildApprovedRoomRuntimePresentationContract,
   ApprovedRoomRuntimeProfileSchema,
   RuntimePackagePreviewSchema,
   RuntimePackagePreviewVisualAssetSchema,
@@ -2382,6 +2399,8 @@ export {
   type R2TrainingOutputLane,
   type RuntimePackageManifestJson,
   type ReviewedRuntimeProfileId,
+  type ApprovedRoomRuntimePresentationContractBody,
+  type ApprovedRoomRuntimePresentationContract,
   type ApprovedRoomRuntimeProfile,
   type RuntimePackagePreview,
   type RuntimePackagePreviewVisualAsset,
@@ -2433,6 +2452,7 @@ export * from "./omnitwin-foundry-phase1.js";
 export * from "./omnitwin-foundry-offline-review.js";
 export * from "./booking.js";
 export * from "./diary-command.js";
+export * from "./room-layout-timeline.js";
 
 // G4 (03 §1): the one Action envelope — LIVE from Slice 1 (web action log).
 export * from "./action.js";

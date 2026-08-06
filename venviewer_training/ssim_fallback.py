@@ -1,14 +1,9 @@
-"""Pure-PyTorch SSIM as a fallback when fused-ssim is unavailable.
+"""Pure-PyTorch SSIM with the pinned ``fused_ssim`` callable interface.
 
-Drop-in for `from fused_ssim import fused_ssim`. Returns a scalar
-SSIM in [0, 1] — used by the trainer as the photometric companion
-loss to L1 / MS-SSIM blends. Numerically close to fused-ssim but
-~5–10× slower because it doesn't fuse the conv2d kernels.
-
-We pay the slowdown only when fused-ssim's wheel didn't compile
-cleanly against the pod's CUDA toolchain. In normal operation,
-`from fused_ssim import fused_ssim` succeeds and this module is
-never invoked.
+The focused contract tests cover arguments, shapes, range behavior and a
+negative-SSIM case.  They do not establish numerical equivalence with the
+fused CUDA package or a performance ratio.  Runtime selection between this
+module and ``fused_ssim`` also remains unproved in the pinned RunPod image.
 """
 
 from __future__ import annotations
@@ -29,19 +24,33 @@ def _gaussian_window(window_size: int, sigma: float, channels: int) -> torch.Ten
 def fused_ssim(
     img1: torch.Tensor,
     img2: torch.Tensor,
-    window_size: int = 11,
-    sigma: float = 1.5,
-    data_range: float = 1.0,
+    padding: str = "same",
+    train: bool = True,
 ) -> torch.Tensor:
-    """SSIM between two NCHW (or CHW) float tensors. Returns mean SSIM."""
+    """Match ``fused_ssim(img1, img2, padding="same", train=True)``."""
+
+    # The CUDA implementation uses ``train`` to choose saved backward state.
+    # Native PyTorch autograd records only what is needed automatically, so the
+    # value does not alter this fallback's calculation.
+    if not isinstance(train, bool):
+        raise TypeError("train must be boolean")
+    window_size = 11
+    sigma = 1.5
+    data_range = 1.0
     if img1.dim() == 3:
         img1 = img1.unsqueeze(0)
         img2 = img2.unsqueeze(0)
     if img1.shape != img2.shape:
         raise ValueError(f"shape mismatch: {tuple(img1.shape)} vs {tuple(img2.shape)}")
+    if img1.dim() != 4:
+        raise ValueError("images must be CHW or NCHW tensors")
 
     _, c, _, _ = img1.shape
-    pad = window_size // 2
+    if padding not in {"same", "valid"}:
+        raise ValueError("padding must be 'same' or 'valid'")
+    if padding == "valid" and (img1.shape[-2] < window_size or img1.shape[-1] < window_size):
+        raise ValueError("valid padding requires images at least 11x11")
+    pad = window_size // 2 if padding == "same" else 0
     window = _gaussian_window(window_size, sigma, c).to(img1.device, img1.dtype)
 
     mu1 = F.conv2d(img1, window, padding=pad, groups=c)

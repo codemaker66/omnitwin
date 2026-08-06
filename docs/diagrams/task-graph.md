@@ -39,6 +39,19 @@ flowchart TD
 
     subgraph A1 [a1 · this week — runpod foundation]
         T001(["T-001 — RunPod migration"])
+        %% 2026-07-12: capture-lane diagnosis added by the T-499 analysis
+        T500(["T-500 — raw-project audit + four-view diagnosis"])
+        T505(["T-505 — one-room E57-XGRIDS alignment proof"])
+        %% 2026-07-12: independent Foundry evidence and safe contract foundation
+        T506(["T-506 — Foundry evidence + contract foundation"])
+        %% 2026-07-12: identity-gated, no-compute Grand Hall ingest/reproduction slice
+        T507(["T-507 — Grand Hall Foundry phase 1"])
+        %% 2026-07-13: fail-closed review dossier + HD bake-off foundation
+        T508(["T-508 — Grand Hall review preflight + HD bake-off"])
+        %% 2026-07-14: deterministic authority-none full-factor recommendation
+        T509(["T-509 — provider recommendation V0"])
+        %% 2026-07-14: deterministic local Config B contract preflight; no training
+        T514(["T-514 — Config B contract preflight"])
         T002(["T-002 — RunPod runbook"])
         T003(["T-003 — Config B training"])
         T005(["T-005 — eval Config B"])
@@ -172,6 +185,7 @@ flowchart TD
         T482(["T-482 - 4D mission control"])
         T483(["T-483 - Trades House leaflet + craft quiz"])
         T485(["T-485 - persisted Ops review authority"])
+        T545(["T-545 - Grand Hall room-shape proposer V1"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -212,6 +226,13 @@ flowchart TD
         T387(["T-387 — PlayCanvas toolchain feasibility"])
         T388(["T-388 — SuperSplat diagnostic viewer fixture"])
         T389(["T-389 — PlayCanvas voxel/collision proxy eval"])
+        T501(["T-501 — XGRIDS-to-COLMAP ingestion bridge"])
+        T502(["T-502 — own-retrain baseline vs LCC2"])
+        T503(["T-503 — DSLR HD-enhancement pass"])
+        T510(["T-510 — semantics + recapture value"])
+        T511(["T-511 — three-OS operator slice"])
+        T512(["T-512 — open capture field trial"])
+        T513(["T-513 — provider parity + containment"])
     end
 
     subgraph D [d · tier 3 — geass cluster]
@@ -412,6 +433,27 @@ flowchart TD
     T124 --> T121
     T124 --> T127
     T001 --> T118
+    T001 --> T501
+    T500 --> T501
+    T501 --> T502
+    T506 --> T514
+    T514 --> T502
+    T500 --> T505
+    T505 --> T502
+    T506 --> T507
+    T507 --> T545
+    T507 --> T508
+    T508 --> T509
+    T505 --> T510
+    T507 --> T510
+    T506 --> T511
+    T509 --> T511
+    T500 --> T512
+    T511 --> T512
+    T502 --> T513
+    T508 --> T513
+    T509 --> T513
+    T502 --> T503
     T116 --> T091
     T116 --> T117
     T116 --> T120
@@ -521,9 +563,10 @@ flowchart TD
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
     class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467,T471,T472,T473,T474,T475,T476,T477,T478,T479 done
-    class T001,T060,T092,T118,T453,T469,T470 blocked
-    class T160,T480,T481,T482,T483,T484,T485 done
-    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462 notstarted
+    class T001,T060,T092,T118,T453,T469,T470,T505 blocked
+    class T160,T480,T481,T482,T483,T484,T485,T506,T507,T509,T514,T545 done
+    class T500,T508 inprogress
+    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462,T501,T502,T503,T510,T511,T512,T513 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -531,6 +574,71 @@ flowchart TD
 is queued for the moment T-018 lands. Edge `T-018 → T-053` carries the
 label "unblocks" because it expresses the activation trigger, not a
 code-level dependency.
+
+`T-506` is shown as a completed standalone evidence/contract foundation, not
+as completed reconstruction or training. Its dependency, completed strategy
+task `T-499`, is not otherwise visualised. The corrected execution gates for
+T-500–T-505 remain authoritative in `docs/state/tasks.md` and the T-506
+roadmap: stage-specific rights must pass; local trainer work is non-training
+contract proof; accepted D-016 keeps actual splat training on RunPod behind
+trusted rights approval, subject-bound short-lived confirmation and exact
+trusted compute approval.
+
+`T-507` closes the no-compute Grand Hall phase-one evidence slice after human
+decision B: immutable E57/COLMAP inventory, bounded metadata inspection,
+documented similarity reproduction, frozen holdout, residual evidence and an
+unreviewed transform proposal. It does not train, reconstruct a splat, claim
+independent metric accuracy, register evidence with T-486, sign, release or
+publish. T-486 remains the separate downstream human review/sign/publish
+authority, and legal, independent-control and human-review gates remain open.
+
+`T-545` is a completed authority-none geometry-proposer hardening slice beneath
+T-507, not a completed mesh. Its exact 6.5-million-point replay refuses a
+positive-y wall and flags unadjudicated outboard mass behind the negative-y
+surface, so no crop, advertised-dimension comparison or Poisson run follows.
+The next edge remains a sweep-tagged visibility adjudication and explicit human
+review adapter; the refusal does not block unrelated Foundry product work.
+
+`T-508` keeps those gates fail-closed while packaging exact T-507 and prepared-
+release bytes for offline evidence review. Its dossier cannot parse as an
+online T-486 review, evidence registration or signing payload. The HD bake-off
+selects a metric scaffold + captured radiance + explicit hero representation,
+with generated derivatives isolated from captured/metric truth. Product UI
+implementation remains in progress until one of three grounded visual
+directions is selected; external survey, rights and authenticated review remain
+owner gates.
+
+The disabled `0058` activation draft remains inside T-508 and is not a new
+completed node. Its exact bytes replay only a generation-1 disabled sentinel;
+independent review still rejects spec-complete 0058-A and 0059 pending an
+authenticated runner/verifier receipt, closed privileged callable APIs,
+source-scoped containment, a custody-specific authority horizon, Drizzle parity
+and the complete adversarial matrix.
+
+`T-509` adds a deterministic full-factor recommendation or explicit no-
+recommendation over the exact PlanOnly request/dossier. It is authority-none:
+it cannot reserve capacity, access credentials, dispatch, call a provider,
+mutate storage, authorize spend, sign, publish or promote. `T-510` through
+`T-513` replace the former roadmap-only `T-506I`–`T-506M` labels with real
+registry tasks for semantics/recapture, the three-OS operator slice, open
+professional capture and approved local/remote parity. Their incoming edges are
+gates, not authority granted by completion of an upstream plan.
+
+`T-514` closes only the local, authority-none Config B contract proof. Its
+preflight checks a pinhole-only synthetic COLMAP/depth fixture and returns
+`contract_valid_runtime_blocked`; it does not prove Tyro acceptance, distorted-
+camera training, external-depth loss wiring, bilateral output, D-014 packaging,
+evaluation, resume, RunPod execution or any quality improvement. T-502 remains
+gated by T-501 and T-505 and by those runtime and evidence requirements.
+
+`T-515` and `T-516` are completed private computer-vision evidence beneath the
+blocked T-505 node, not additional authority edges. T-515 proved the exact Reception
+E57 and XGRIDS geometry can be compared reproducibly but failed the proposed
+accuracy, overlap and mirror-separation checks. T-516 added an upright
+gravity-constrained fit plus full, cropped, side, angled, distance and control
+views. Those views show a clear shared room outline but decimetre-scale surface
+disagreement and a direction-dependent mirror warning. Neither task creates a
+reviewed transform, approves the crop or rights, or unlocks T-502 or runtime use.
 
 Subgraph A5 records the July 2026 hardening sweep and keeps its remaining
 external blockers visible: T-469 waits for the signed real-room evidence path

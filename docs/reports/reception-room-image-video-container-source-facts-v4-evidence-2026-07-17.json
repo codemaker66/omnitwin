@@ -1,0 +1,361 @@
+{
+  "schemaVersion": "omnitwin.local.image-video-container-source-facts-v4-evidence-manifest.v0",
+  "authority": "none",
+  "recordedAt": "2026-07-17",
+  "scope": "Read-only structural evidence for two exact local image files: one JPEG and one static PNG. ISO-BMFF support is deterministic-fixture-tested only. This manifest does not establish decoded pixels or samples, capture role, device, time, projection, calibration, sequence relationships, visual fidelity, provenance, rights, processing eligibility, or execution authorization.",
+  "specificationBasis": {
+    "png": "https://www.w3.org/TR/png-3/",
+    "jpeg": "https://www.itu.int/rec/T-REC-T.81/en",
+    "isoBmff": "https://www.iso.org/standard/85596.html",
+    "quickTimeAtoms": "https://developer.apple.com/documentation/quicktime-file-format/atoms",
+    "quickTimeFileTypeAtom": "https://developer.apple.com/documentation/quicktime-file-format/file_type_compatibility_atom"
+  },
+  "profile": {
+    "receiptSchemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+    "receiptDigestDomain": "VENVIEWER_FOUNDRY_INTAKE_RECEIPT_V0",
+    "sourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v4",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V4",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v4",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V4",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v4",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V4",
+    "inheritedProfile": "omnitwin.foundry.universal-source-facts.v3",
+    "inspectionCode": "MEDIA_CONTAINER_FORMAT_FACTS_ESTABLISHED",
+    "supportedProfiles": [
+      {
+        "format": "jpeg",
+        "profile": "jpeg_sof0_or_sof2_8bit_huffman",
+        "inspectionCoverage": "complete_marker_and_entropy_structure",
+        "realSourceReplayCount": 1,
+        "boundaries": "SOF0 baseline or SOF2 progressive, eight-bit Huffman JPEG only; exact EOI and EOF are required."
+      },
+      {
+        "format": "png",
+        "profile": "png_static",
+        "inspectionCoverage": "complete_chunk_table_and_crc",
+        "realSourceReplayCount": 1,
+        "boundaries": "Static PNG only; critical ordering, IHDR combinations, CRCs, transparency declarations and exact IEND/EOF are checked. APNG is rejected."
+      },
+      {
+        "format": "iso_bmff",
+        "profile": "iso_bmff_movie_video_track_declarations",
+        "inspectionCoverage": "complete_top_level_tiling_and_selected_movie_video_structure",
+        "realSourceReplayCount": 0,
+        "boundaries": "Deterministic fixtures only. File-type brands, complete top-level tiling and selected movie/video-track declarations are checked; HEIF/AVIF brands are excluded, and sample-table completeness, mdat binding and decoder compatibility are not established."
+      }
+    ],
+    "limits": {
+      "sourceMaxBytes": 137438953472,
+      "readChunkBytes": 1048576,
+      "dimensionMax": 1000000,
+      "pixelCountMax": 1000000000,
+      "jpegMarkerMaxCount": 65536,
+      "jpegMetadataMaxBytes": 67108864,
+      "pngChunkMaxCount": 65536,
+      "pngAncillaryMaxBytes": 268435456,
+      "bmffBoxMaxCount": 100000,
+      "bmffDepthMax": 32,
+      "bmffBrandMaxCount": 64,
+      "bmffTrackMaxCount": 256,
+      "bmffSampleDescriptionMaxCount": 256
+    }
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only.",
+    "sameOpenHandle": true,
+    "sourceIdentityBinding": "Receipt V0 is created first. During the later V4 facts pass, the complete SHA-256, byte count, up-to-128-byte magic prefix and bounded media inspection use one already-open handle; issuance binds those observations back to the exact receipt path, size, SHA-256, magic prefix, detection and retained media candidates.",
+    "filesystemSnapshot": "not_atomic",
+    "formatBinding": "An established JPEG, PNG or ISO-BMFF outcome must agree with the receipt-bound signature bytes and canonical media-candidate set before a V4 file result is issued.",
+    "xbinBehavior": "Atomic unavailable result with no partial facts, readiness lanes or ordinary checklist requests.",
+    "issuanceSurface": "The package root exposes the inspected-intake V4 entrypoint and canonical artifacts; caller-supplied V4 issuance is not public.",
+    "independentAttestation": "not_established"
+  },
+  "sources": [
+    {
+      "label": "Reception scan 143 skybox 5 native JPEG",
+      "evidencePath": "docs/reports/evidence/reception-room-e57-geometry-edge-exploratory-overlays-v1-2026-07-14/control__scan-143__skybox-5__native.jpg",
+      "receiptPath": "control__scan-143__skybox-5__native.jpg",
+      "sourceBytes": 2998854,
+      "sha256": "00d5e349f40661170da2be4e9d31093768c45ab05598bfd1591c2752c982d49d",
+      "neutralInputType": "generic_image",
+      "receiptDetectionOrder": [
+        "dslr_image",
+        "generic_image",
+        "matterport_panorama",
+        "panorama_360",
+        "phone_image"
+      ],
+      "retainedCanonicalCandidateOrder": [
+        "matterport_panorama",
+        "dslr_image",
+        "generic_image",
+        "panorama_360",
+        "phone_image"
+      ],
+      "facts": {
+        "format": "jpeg",
+        "profile": "jpeg_sof0_or_sof2_8bit_huffman",
+        "inspectionCoverage": "complete_marker_and_entropy_structure",
+        "width": 4096,
+        "height": 4096,
+        "pixelCount": 16777216,
+        "process": "baseline_sequential_dct",
+        "samplePrecisionBits": 8,
+        "componentCount": 3,
+        "scanCount": 1,
+        "restartMarkerCount": 0,
+        "markerCount": 11,
+        "appSegmentCount": 1,
+        "commentSegmentCount": 0,
+        "metadataPayloadBytes": 14,
+        "eoiOffsetBytes": 2998852,
+        "exactFileLengthVerified": true,
+        "trailingBytes": 0
+      },
+      "artifactChain": {
+        "receiptSha256": "1eeb996ed25e693d022b968e08d5adfa54950cf717e79d013094d96abc52c305",
+        "sourceFactsSha256": "e9c38ace08b6be6f5448b037bafcc30182a5f037f84d18b27662463c697e1eac",
+        "sourceReadinessSha256": "8bdf75d03fc155829aed6d0772a48c699f6fb1566588190dccb0e4d0009ab016",
+        "operatorEvidenceChecklistSha256": "f222253405f5a953e8ab92c3cb227ce158c1e3931ab1a8aaa54ba7a35d37130b"
+      }
+    },
+    {
+      "label": "Reception scan 143 skybox 5 overlay PNG",
+      "evidencePath": "docs/reports/evidence/reception-room-e57-geometry-edge-exploratory-overlays-v1-2026-07-14/control__scan-143__skybox-5__overlay.png",
+      "receiptPath": "control__scan-143__skybox-5__overlay.png",
+      "sourceBytes": 15177808,
+      "sha256": "e9f9c6393961b6eebca9b04f7737e6cbdec84d305fcd16da55cf034b3141b5ca",
+      "neutralInputType": "generic_image",
+      "receiptDetectionOrder": [
+        "dslr_image",
+        "generic_image",
+        "matterport_panorama",
+        "panorama_360",
+        "phone_image"
+      ],
+      "retainedCanonicalCandidateOrder": [
+        "matterport_panorama",
+        "dslr_image",
+        "generic_image",
+        "panorama_360",
+        "phone_image"
+      ],
+      "facts": {
+        "format": "png",
+        "profile": "png_static",
+        "inspectionCoverage": "complete_chunk_table_and_crc",
+        "width": 4096,
+        "height": 4096,
+        "pixelCount": 16777216,
+        "bitDepth": 8,
+        "colorType": "truecolor",
+        "channelCount": 3,
+        "interlace": "none",
+        "chunkCount": 234,
+        "idatCount": 232,
+        "idatPayloadBytes": 15174979,
+        "ancillaryCount": 0,
+        "ancillaryPayloadBytes": 0,
+        "paletteEntries": null,
+        "transparencyDeclared": false,
+        "allCrcsVerified": true,
+        "animationChunks": 0,
+        "exactFileLengthVerified": true,
+        "trailingBytes": 0
+      },
+      "artifactChain": {
+        "receiptSha256": "2bc34022d62a7310d035ff1795d539d71dd236a0a58d07b3598ef54236051258",
+        "sourceFactsSha256": "a62be0fd514533bd2fc621f7b374a45263556a73278ecef15c83ed8ca6429111",
+        "sourceReadinessSha256": "d271015fe5277dcec8a0d58f469cff82b3b2b20beb5f07cc5f71697430c040db",
+        "operatorEvidenceChecklistSha256": "2b06c1caa72523ae392e1af8d8e42ba6d1e7369560b89cd648ff76f15c1a5eb1"
+      }
+    }
+  ],
+  "perSourceChainSummary": {
+    "receiptFileCount": 1,
+    "assetCount": 1,
+    "establishedCount": 1,
+    "factsNotEstablishedCount": 0,
+    "representedLaneCount": 1,
+    "establishedLaneCount": 1,
+    "readinessGapCount": 11,
+    "evidenceRequestCount": 11,
+    "normalEvidenceRequestCount": 10,
+    "conditionalEvidenceRequestCount": 1,
+    "checklistGroupCount": 2,
+    "affectedLaneCount": 8
+  },
+  "realSourceCoverage": {
+    "jpegSourceCount": 1,
+    "pngSourceCount": 1,
+    "isoBmffSourceCount": 0,
+    "isoBmffEvidence": "deterministic_fixtures_only"
+  },
+  "unresolvedFactCodes": [
+    "MEDIA_CAPTURE_ROLE_UNKNOWN",
+    "MEDIA_PROVENANCE_CLASS_UNKNOWN",
+    "MEDIA_CAPTURE_DEVICE_UNKNOWN",
+    "MEDIA_CAPTURE_TIME_UNKNOWN",
+    "MEDIA_CAMERA_CALIBRATION_UNKNOWN",
+    "MEDIA_PROJECTION_UNKNOWN",
+    "MEDIA_PIXEL_OR_SAMPLE_DECODE_UNKNOWN",
+    "MEDIA_SEQUENCE_RELATIONSHIP_UNKNOWN",
+    "MEDIA_VISUAL_FIDELITY_UNKNOWN",
+    "MEDIA_RIGHTS_UNKNOWN"
+  ],
+  "evidenceRequestMapping": {
+    "bounded_inspection": [
+      "MEDIA_PIXEL_OR_SAMPLE_DECODE_UNKNOWN"
+    ],
+    "source_provenance": [
+      "MEDIA_CAPTURE_DEVICE_UNKNOWN",
+      "MEDIA_CAPTURE_ROLE_UNKNOWN",
+      "MEDIA_CAPTURE_TIME_UNKNOWN",
+      "MEDIA_PROVENANCE_CLASS_UNKNOWN"
+    ],
+    "registration_input": [
+      "MEDIA_CAMERA_CALIBRATION_UNKNOWN",
+      "MEDIA_PROJECTION_UNKNOWN",
+      "MEDIA_SEQUENCE_RELATIONSHIP_UNKNOWN"
+    ],
+    "appearance_reference": [
+      "MEDIA_VISUAL_FIDELITY_UNKNOWN"
+    ],
+    "rights_decision": [
+      "MEDIA_RIGHTS_UNKNOWN"
+    ]
+  },
+  "uiEvidence": {
+    "source": "control__scan-143__skybox-5__native.jpg",
+    "scope": "The rendered browser evidence covers the real JPEG chain only; the PNG chain was replayed through the same current local app without a separate screenshot, and ISO-BMFF remains fixture-only.",
+    "truthLabelsVerifiedUniqueAndVisible": [
+      "Universal Source Facts V4",
+      "Container facts established",
+      "Still unknown beyond the container",
+      "Source Readiness Map V4",
+      "Operator Evidence Checklist V4"
+    ],
+    "desktop": {
+      "path": "docs/reports/evidence/image-video-container-source-facts-v4-desktop-2026-07-17.png",
+      "viewport": "1280x720",
+      "screenshotRaster": "1264x14424",
+      "bytes": 1400878,
+      "sha256": "11abf4ca1040507dfa99f8c427eeb3d845f4b27b1011ae199ca57e030a2aa91d",
+      "pageHorizontalOverflow": false,
+      "consoleWarningOrErrorCount": 0
+    },
+    "mobile": {
+      "path": "docs/reports/evidence/image-video-container-source-facts-v4-mobile-2026-07-17.png",
+      "viewport": "320x844",
+      "screenshotRaster": "304x31989",
+      "bytes": 1183244,
+      "sha256": "dd082b79a8429ac169826609e383c937c4b9070e492051fdbb5372980a558788",
+      "pageHorizontalOverflow": false,
+      "consoleWarningOrErrorCount": 0
+    },
+    "downloadControls": [
+      {
+        "artifact": "receipt",
+        "buttonCount": 1,
+        "requestCompleted": true
+      },
+      {
+        "artifact": "sourceFacts",
+        "buttonCount": 1,
+        "requestCompleted": true
+      },
+      {
+        "artifact": "sourceReadiness",
+        "buttonCount": 1,
+        "requestCompleted": true
+      },
+      {
+        "artifact": "operatorEvidenceChecklist",
+        "buttonCount": 1,
+        "requestCompleted": true
+      }
+    ],
+    "downloadChecks": [
+      {
+        "artifact": "receipt",
+        "status": 200,
+        "attachmentFilename": "foundry-universal-intake-receipt-v0.json",
+        "schemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+        "artifactDigest": "1eeb996ed25e693d022b968e08d5adfa54950cf717e79d013094d96abc52c305",
+        "responseBytes": 3449
+      },
+      {
+        "artifact": "sourceFacts",
+        "status": 200,
+        "attachmentFilename": "foundry-universal-source-facts-v4.json",
+        "schemaVersion": "omnitwin.foundry.universal-source-facts.v4",
+        "artifactDigest": "e9c38ace08b6be6f5448b037bafcc30182a5f037f84d18b27662463c697e1eac",
+        "responseBytes": 7456
+      },
+      {
+        "artifact": "sourceReadiness",
+        "status": 200,
+        "attachmentFilename": "foundry-source-readiness-map-v4.json",
+        "schemaVersion": "omnitwin.foundry.source-readiness-map.v4",
+        "artifactDigest": "8bdf75d03fc155829aed6d0772a48c699f6fb1566588190dccb0e4d0009ab016",
+        "responseBytes": 19789
+      },
+      {
+        "artifact": "operatorEvidenceChecklist",
+        "status": 200,
+        "attachmentFilename": "foundry-operator-evidence-checklist-v4.json",
+        "schemaVersion": "omnitwin.foundry.operator-evidence-checklist.v4",
+        "artifactDigest": "f222253405f5a953e8ab92c3cb227ce158c1e3931ab1a8aaa54ba7a35d37130b",
+        "responseBytes": 23426
+      }
+    ]
+  },
+  "verification": {
+    "focusedV4": {
+      "testFiles": 3,
+      "passed": 31
+    },
+    "frozenPriorGenerationSerializationGoldens": "passed",
+    "sharedTypes": {
+      "testFiles": 91,
+      "passed": 2110,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "reconstructionFoundry": {
+      "testFiles": 41,
+      "passed": 539,
+      "skipped": 1,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "reconstructionFoundryCli": {
+      "testFiles": 16,
+      "passed": 214,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "focusedLocalAppV4": {
+      "testFiles": 2,
+      "passed": 44
+    },
+    "responsiveBrowserQa": "desktop_and_mobile_truth_labels_visible_no_page_horizontal_overflow_no_console_warnings_or_errors",
+    "browserQaRegression": "The receipt's stale unversioned attachment filename was found, changed to foundry-universal-intake-receipt-v0.json, regression-pinned and rechecked through the UI and HTTP endpoint.",
+    "independentFinalAudit": "no_remaining_actionable_p0_p1_p2_or_p3_findings"
+  },
+  "limitations": [
+    "JPEG success is limited to SOF0 or SOF2 eight-bit Huffman marker and entropy structure; it does not decode pixels or establish colour-transform output.",
+    "PNG success is limited to static PNG chunk order, declarations and CRCs; APNG is rejected and IDAT pixels are not decoded.",
+    "ISO-BMFF has deterministic fixture evidence only. No real ISO-BMFF source was replayed.",
+    "The ISO-BMFF profile establishes complete top-level tiling and selected movie/video declarations only; it does not establish sample-table completeness, mdat binding, sample decoding or decoder compatibility.",
+    "Optional metadata payloads are bounded and counted but are not retained or promoted into device, time, projection, provenance, fidelity or rights authority.",
+    "Container success does not select a DSLR, phone, Matterport, panorama, drone, generic media, captured, enhanced-captured, generated or concept/imagination role.",
+    "The V4 digest proves canonical local self-consistency only; it is not independent attestation that the inspector ran or that source declarations are authoritative.",
+    "Receipt creation and the later V4 facts pass are separate filesystem observations; digest binding is not an atomic filesystem snapshot.",
+    "The rendered browser screenshots cover the real JPEG chain only.",
+    "No source file was changed and no cybersecurity work, reconstruction, upload, external service, training job, deployment, release, publication, or authority promotion occurred."
+  ]
+}

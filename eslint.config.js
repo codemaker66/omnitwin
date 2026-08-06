@@ -49,6 +49,17 @@ export default tseslint.config(
     },
   },
   {
+    ...tseslint.configs.disableTypeChecked,
+    files: ["tools/reconstruction-foundry/scripts/**/*.mjs"],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: {
+        Buffer: "readonly",
+        process: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/index.ts"],
     rules: {
       // Barrel re-exports deprecated symbols for backward compatibility

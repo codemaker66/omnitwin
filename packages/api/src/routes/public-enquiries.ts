@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { GuestEnquirySchema } from "@omnitwin/types";
+import {
+  GuestEnquirySchema,
+  enquiryReference,
+  enquirySourceNote,
+  resolveEnquirySource,
+  type EnquirySource,
+} from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { sendEmailAsync } from "../services/email.js";
-import { newEnquiryNotification } from "../services/email-templates.js";
+import { enquiryReceived, newEnquiryNotification } from "../services/email-templates.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -12,9 +18,9 @@ import { newEnquiryNotification } from "../services/email-templates.js";
 
 const GuestEnquiryBody = GuestEnquirySchema;
 
-/** Marks a venue-wide twin enquiry so the events team can re-scope the space
- *  (a twin enquiry has no config and is anchored to the venue's flagship). */
-const TWIN_SOURCE_NOTE = "Sent from the venue's virtual walkthrough (the twin).";
+/** Last-resort venue name for the guest acknowledgement, used only if the
+ *  anchored venue somehow has no name. The email must never ship "null". */
+const FALLBACK_VENUE_NAME = "the venue";
 
 /**
  * Venues whose public twin is published and may therefore receive walkthrough
@@ -28,10 +34,41 @@ const TWIN_SOURCE_NOTE = "Sent from the venue's virtual walkthrough (the twin)."
  * a `venues.twinPublished` column.
  */
 function twinPublicVenueSlugs(): readonly string[] {
-  return (process.env["TWIN_PUBLIC_VENUE_SLUGS"] ?? "trades-hall")
+  // Both flagship spellings by default. The asset/twin namespace uses
+  // "trades-hall" (manifests, R2 paths, TRADES_HALL_VENUE_SLUG) while the
+  // `venues` row this route resolves is seeded "trades-hall-glasgow". That
+  // divergence made the homepage enquiry 404 against a real database on
+  // 2026-08-04 while every unit test passed — the tests mocked the network,
+  // so no test ever resolved a slug against an actual venues row.
+  //
+  // Listing both is safe: this is only the opt-in gate. The venue lookup
+  // below must still find a live row, so an allowlisted slug with no venue
+  // returns the same 404 as an unlisted one — the allowlist can never grant
+  // access to a venue that does not exist.
+  return (process.env["TWIN_PUBLIC_VENUE_SLUGS"] ?? "trades-hall,trades-hall-glasgow")
     .split(",")
     .map((slug) => slug.trim())
     .filter((slug) => slug.length > 0);
+}
+
+/**
+ * Contact details printed in the guest acknowledgement so the email is never a
+ * dead end. Same shape as twinPublicVenueSlugs above: env-overridable, and
+ * defaulted to the flagship's ALREADY-PUBLIC details so the live site works
+ * with no extra deploy step. These are the exact values the homepage footer
+ * shows (packages/web/src/pages/landing/rite-copy.ts) — if the venue changes
+ * them there, set VENUE_CONTACT_EMAIL / VENUE_CONTACT_PHONE to match.
+ *
+ * Multi-venue should promote these to columns on `venues`, which today has a
+ * name and an address but no contact fields.
+ */
+function venueContactEmail(): string {
+  return process.env["VENUE_CONTACT_EMAIL"] ?? "info@tradeshallglasgow.co.uk";
+}
+
+function venueContactPhone(): string | null {
+  const phone = process.env["VENUE_CONTACT_PHONE"] ?? "0141 552 2418";
+  return phone.trim().length > 0 ? phone : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,12 +97,16 @@ export async function publicEnquiryRoutes(
     // attach enquiries to another user's workspace); the venue path only
     // resolves a live venue by its already-public slug and never trusts a
     // client-supplied venueId.
+    // Which front door this came through. Descriptive only — it never widens
+    // which venues may be reached; that stays the anchor's job below.
+    const source: EnquirySource = resolveEnquirySource(parsed.data);
+
     let anchor: {
       venueId: string;
       spaceId: string;
       configurationId: string | null;
       spaceName: string;
-      fromTwin: boolean;
+      venueName: string;
     };
 
     if (parsed.data.configurationId !== undefined) {
@@ -87,12 +128,18 @@ export async function publicEnquiryRoutes(
       if (space === undefined) {
         return reply.status(500).send({ error: "Space not found for configuration", code: "INTERNAL_ERROR" });
       }
+      // Venue name is for the guest acknowledgement only; the venue id came
+      // from the already-authorised config, so this widens nothing.
+      const [configVenue] = await db.select({ name: venues.name })
+        .from(venues)
+        .where(eq(venues.id, space.venueId))
+        .limit(1);
       anchor = {
         venueId: space.venueId,
         spaceId: config.spaceId,
         configurationId: parsed.data.configurationId,
         spaceName: space.name,
-        fromTwin: false,
+        venueName: configVenue?.name ?? FALLBACK_VENUE_NAME,
       };
     } else {
       // venueSlug path. Anchor the venue-wide enquiry to the venue's flagship
@@ -106,7 +153,7 @@ export async function publicEnquiryRoutes(
       if (!twinPublicVenueSlugs().includes(slug)) {
         return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
-      const [venue] = await db.select({ id: venues.id })
+      const [venue] = await db.select({ id: venues.id, name: venues.name })
         .from(venues)
         .where(and(eq(venues.slug, slug), isNull(venues.deletedAt)))
         .limit(1);
@@ -129,18 +176,21 @@ export async function publicEnquiryRoutes(
         spaceId: flagship.id,
         configurationId: null,
         spaceName: flagship.name,
-        fromTwin: true,
+        venueName: venue.name,
       };
     }
 
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
-    // Twin enquiries carry the source note first so it survives even a long
-    // message; the input message stays within its 2000-char validation.
-    const composedMessage = anchor.fromTwin
+    // Enquiries from a front door with its own note (twin, homepage) carry it
+    // first so it survives even a long message; the input message stays within
+    // its 2000-char validation. The planner has no note — its configuration is
+    // itself the context.
+    const sourceNote = enquirySourceNote(source);
+    const composedMessage = sourceNote !== null
       ? parsed.data.message !== undefined
-        ? `${TWIN_SOURCE_NOTE}\n\n${parsed.data.message}`
-        : TWIN_SOURCE_NOTE
+        ? `${sourceNote}\n\n${parsed.data.message}`
+        : sourceNote
       : parsed.data.message ?? null;
     const [enquiry] = await db.insert(enquiries).values({
       configurationId: anchor.configurationId,
@@ -223,9 +273,35 @@ export async function publicEnquiryRoutes(
       });
     }
 
+    // Acknowledge the GUEST. Until this existed, every public enquiry notified
+    // the venue and told the sender nothing — the single loudest complaint in
+    // the wedding-client research (docs/research/r3-client-journey.md).
+    //
+    // Fire-and-forget on purpose, and keyed to the enquiry so a retried POST
+    // cannot double-send: the enquiry is already committed, and a mail
+    // provider outage must never turn a captured lead into a 500.
+    const ackData = await enquiryReceived({
+      venueName: anchor.venueName,
+      reference: enquiryReference(enquiry.id),
+      contactName: parsed.data.name ?? null,
+      spaceName: anchor.spaceName,
+      eventType: parsed.data.eventType ?? null,
+      eventDate: parsed.data.eventDate ?? null,
+      guestCount: parsed.data.guestCount ?? null,
+      message: parsed.data.message ?? null,
+      venueEmail: venueContactEmail(),
+      venuePhone: venueContactPhone(),
+    });
+    sendEmailAsync({ to: parsed.data.email, ...ackData }, {
+      db,
+      idempotencyKey: `enquiry-ack:${enquiry.id}`,
+      logger: request.log,
+    });
+
     return reply.status(201).send({
       data: {
         enquiryId: enquiry.id,
+        reference: enquiryReference(enquiry.id),
         message: "Your enquiry has been sent to the events team",
       },
     });

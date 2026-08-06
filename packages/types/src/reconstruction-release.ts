@@ -5,6 +5,15 @@ import {
   stableCanonicalJson,
 } from "./canonical-layout-snapshot.js";
 import { RuntimeSlugSchema } from "./asset-version.js";
+import {
+  ReconstructionDsseEnvelopeSchema,
+} from "./reconstruction-dsse.js";
+
+export {
+  RECONSTRUCTION_DSSE_MAX_SIGNATURES,
+  ReconstructionDsseEnvelopeSchema,
+  type ReconstructionDsseEnvelope,
+} from "./reconstruction-dsse.js";
 
 // ---------------------------------------------------------------------------
 // Evidence-to-Runtime Reconstruction Foundry
@@ -26,7 +35,6 @@ export const RECONSTRUCTION_SIGNING_PAYLOAD_SCHEMA_VERSION =
 export const RECONSTRUCTION_ATTESTATION_PREDICATE_SCHEMA_VERSION =
   "venviewer.reconstruction-attestation-predicate.v1";
 export const RECONSTRUCTION_DSSE_PAYLOAD_TYPE = "application/vnd.in-toto+json";
-export const RECONSTRUCTION_DSSE_MAX_SIGNATURES = 16;
 export const RECONSTRUCTION_IN_TOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1";
 export const RECONSTRUCTION_ATTESTATION_PREDICATE_TYPE =
   "https://venviewer.com/attestations/reconstruction-release/v1";
@@ -479,11 +487,6 @@ function isCanonicalBase64(value: string): boolean {
   return true;
 }
 
-function canonicalBase64DecodedByteLength(value: string): number {
-  const paddingBytes = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
-  return (value.length / 4) * 3 - paddingBytes;
-}
-
 function signingPayloadUtf8Bytes(value: string): Uint8Array {
   const bytes: number[] = [];
   for (const character of value) {
@@ -525,36 +528,6 @@ function canonicalBase64(bytes: Uint8Array): string {
   }
   return output;
 }
-
-export const ReconstructionDsseEnvelopeSchema = z
-  .object({
-    payloadType: z.string().trim().min(1).max(240),
-    payload: z.string().min(1).refine(
-      isCanonicalBase64,
-      "DSSE payload must use canonical base64.",
-    ),
-    signatures: z.array(z.object({
-      keyid: z.string().trim().min(1).max(200),
-      sig: z.string().min(1)
-        .refine(isCanonicalBase64, "DSSE signatures must use canonical base64.")
-        .refine(
-          (value) => canonicalBase64DecodedByteLength(value) === 64,
-          "Ed25519 DSSE signatures must encode exactly 64 bytes.",
-        ),
-    }).strict()).min(1).max(RECONSTRUCTION_DSSE_MAX_SIGNATURES),
-  })
-  .strict()
-  .superRefine((envelope, ctx) => {
-    const keyIds = envelope.signatures.map((signature) => signature.keyid);
-    if (new Set(keyIds).size !== keyIds.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["signatures"],
-        message: "A DSSE envelope may contain at most one signature per key ID.",
-      });
-    }
-  });
-export type ReconstructionDsseEnvelope = z.infer<typeof ReconstructionDsseEnvelopeSchema>;
 
 export const ReconstructionReleaseSigningStatementSchema = z
   .object({

@@ -1,0 +1,23 @@
+[package]
+name = "venviewer-extra-stdio-proof-helper"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.87.0"
+license = "UNLICENSED"
+publish = false
+description = "Proof-only Node extra-stdio mapping fixture for Windows"
+
+[dependencies]
+venviewer-windows-source-helper = { path = "../../.." }
+
+[profile.release]
+codegen-units = 1
+debug = 0
+incremental = false
+lto = "fat"
+opt-level = 3
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

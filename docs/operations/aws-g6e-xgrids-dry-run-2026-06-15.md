@@ -4,6 +4,12 @@ Date: 2026-06-15
 Status: operator dry-run record
 Task: T-454
 
+> Contract update — 2026-07-13: this is a historical dry-run record. The
+> mutable `POST /admin/assets/register-runtime-package` route named below is
+> retired and returns HTTP 410. Current operators must use create-only
+> `POST /admin/assets/runtime-package-revisions` with the request body wrapped
+> in `{ "package": ... }`; see the current processing runbook.
+
 This record validates the XGRIDS / PortalCam processing lane at the runbook and
 registration-contract boundary. It does not prove that an AWS instance was
 launched, that a room was processed, that an R2 object exists, or that any room

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
@@ -13,6 +13,12 @@ import { ProposalsView } from "../components/dashboard/ProposalsView.js";
 import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
 import { useAuthStore } from "../stores/auth-store.js";
+
+const RuntimeFoundryView = lazy(() =>
+  import("../components/dashboard/RuntimeFoundryView.js").then((module) => ({
+    default: module.RuntimeFoundryView,
+  })),
+);
 
 // ---------------------------------------------------------------------------
 // DashboardPage — hallkeeper management interface
@@ -47,12 +53,13 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "search",
   "loadouts",
   "settings",
+  "foundry",
   "onboarding",
   "admin",
 ];
 
 const STAFF_ONLY_VIEWS = new Set<DashboardView>(["pipeline", "proposals"]);
-const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["foundry", "onboarding", "admin"]);
 type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
@@ -230,6 +237,12 @@ export function DashboardPage(): React.ReactElement {
         return <LoadoutsView />;
       case "settings":
         return <VenueSettings />;
+      case "foundry":
+        return (
+          <Suspense fallback={<section className="vv-state-panel" role="status">Loading Runtime Foundry…</section>}>
+            <RuntimeFoundryView />
+          </Suspense>
+        );
       case "onboarding":
         return <OnboardingView />;
       case "admin":

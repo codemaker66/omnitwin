@@ -1,0 +1,14 @@
+[build]
+target = "x86_64-pc-windows-msvc"
+
+[target.x86_64-pc-windows-msvc]
+# These are the local-development defaults. Reproducible release builds must
+# use scripts/build-release.ps1, which preserves both flags and adds dynamic
+# path-prefix remapping for the source, target, Cargo, Rustup, temp, and user
+# roots without checking a developer-specific absolute path into the repo.
+rustflags = [
+  "-C",
+  "target-feature=+crt-static",
+  "-C",
+  "link-arg=/Brepro",
+]

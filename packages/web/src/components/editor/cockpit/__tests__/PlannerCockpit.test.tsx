@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
@@ -12,7 +13,11 @@ vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+afterEach(() => {
+  cleanup();
+  useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
+});
 
 describe("PlannerCockpit", () => {
   it("renders the grid regions, the live editor, and the nav rail", () => {
@@ -56,5 +61,26 @@ describe("PlannerCockpit", () => {
 
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("fallback");
     expect(screen.getByTestId("room-resolve-caption").getAttribute("data-visible")).toBe("false");
+  });
+
+  it("marks timeline preview as read-only and shows the saved-plan honesty caption", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: "2026-07-18T19:00:00.000Z",
+      endsAt: "2026-07-18T21:15:00.000Z",
+    }, []);
+
+    const { container } = render(<PlannerCockpit />);
+    expect(screen.getByTestId("cockpit-shell").getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(container.querySelector(".cockpit-stage")?.getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
+      "Phase preview · saved plan unchanged",
+    );
+    expect(screen.queryByTestId("cockpit-dock-mock")).toBeNull();
+    expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
   });
 });

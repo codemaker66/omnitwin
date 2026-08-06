@@ -1,0 +1,511 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.omnitwin.invalid/foundry/activation-v1-request-schemas.schema.json",
+  "title": "OmniTwin Foundry activation V1 administrative requests",
+  "description": "Closed JSON value schemas for the eleven fdv1 activation-plane jsonb inputs. SQL-enforced cross-row rules are identified by x-fdv1Rules and normatively defined in the adjacent Markdown contract.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/registerStorageProfile" },
+    { "$ref": "#/$defs/revokeStorageProfile" },
+    { "$ref": "#/$defs/registerWorkload" },
+    { "$ref": "#/$defs/revokeWorkload" },
+    { "$ref": "#/$defs/revokeBrokerAuthorization" },
+    { "$ref": "#/$defs/revokeCustodianAuthorization" },
+    { "$ref": "#/$defs/registerExecutor" },
+    { "$ref": "#/$defs/revokeExecutor" },
+    { "$ref": "#/$defs/activate" },
+    { "$ref": "#/$defs/revokeActivation" },
+    { "$ref": "#/$defs/disableEpoch" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": { "const": "00000000-0000-0000-0000-000000000000" }
+    },
+    "sha": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "key120": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[a-z0-9][a-z0-9._-]{0,119}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[!-~]{1,160}$"
+    },
+    "utcMilliseconds": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$",
+      "x-fdv1Rules": ["calendar_valid", "db_millisecond_round_trip_equal"]
+    },
+    "adminEvidenceId": { "$ref": "#/$defs/uuid" },
+    "inclusionProof": {
+      "type": "string",
+      "minLength": 38,
+      "maxLength": 1403,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9_-]+$",
+      "x-fdv1Rules": ["canonical_unpadded_base64url", "otfdmp01_decoded_length_equals_28_plus_32_times_header_depth", "decoded_length_28_through_1052"]
+    },
+    "ed25519Spki": {
+      "type": "string",
+      "minLength": 59,
+      "maxLength": 59,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9_-]+$",
+      "x-fdv1Rules": ["canonical_unpadded_base64url", "rfc8410_ed25519_spki_der_exactly_44_bytes"]
+    },
+    "trustBundle": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 21846,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9_-]+$",
+      "x-fdv1Rules": ["canonical_unpadded_base64url", "decoded_length_1_through_16384", "strict_utf8_jcs_trust_bundle_v1"]
+    },
+    "spiffeId": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2048,
+      "pattern": "^(?![\\s\\S]*[^\\u0021-\\u007e])spiffe://[^/?#]+/[^?#]+$",
+      "x-fdv1Rules": ["normalized_spiffe_uri", "nonempty_trust_domain_and_path", "no_query_or_fragment"]
+    },
+    "identityText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029])[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+$",
+      "x-fdv1Rules": ["nfc", "no_surrounding_whitespace", "utf8_length_at_most_240"]
+    },
+    "workloadCommon": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "bindingKind",
+        "validFrom",
+        "expiresAt",
+        "inclusionProofBase64url",
+        "adminEvidenceId",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.register-workload.request.v1" },
+        "bindingKind": { "enum": ["trust_root", "db_caller", "evidence_signer"] },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "inclusionProofBase64url": { "$ref": "#/$defs/inclusionProof" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      }
+    },
+    "registerStorageProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 21,
+      "minProperties": 21,
+      "required": [
+        "schemaVersion",
+        "profileId",
+        "profileVersion",
+        "bucket",
+        "rootPrefix",
+        "brokerPolicySha256",
+        "custodianPolicySha256",
+        "kmsConfigurationSha256",
+        "retentionConfigurationSha256",
+        "retentionDays",
+        "maximumResultCustodySeconds",
+        "validFrom",
+        "expiresAt",
+        "infrastructureEvidenceId",
+        "brokerCallerAuthorizationId",
+        "storageCreateSignerAuthorizationId",
+        "custodianCallerAuthorizationId",
+        "storageReadSignerAuthorizationId",
+        "verifierSignerAuthorizationId",
+        "adminEvidenceId",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.register-storage-profile.request.v1" },
+        "profileId": { "$ref": "#/$defs/key120" },
+        "profileVersion": { "$ref": "#/$defs/key120" },
+        "bucket": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9][A-Za-z0-9._-]{0,254}$" },
+        "rootPrefix": { "type": "string", "minLength": 2, "maxLength": 1024, "pattern": "^(?![\\s\\S]*[^\\u0021-\\u007e])(?![\\s\\S]*[\\\\?#])[!-~]+/$", "x-fdv1Rules": ["ascii", "no_uri_prefix", "no_empty_dot_or_dotdot_segment", "no_surrounding_whitespace"] },
+        "brokerPolicySha256": { "$ref": "#/$defs/sha" },
+        "custodianPolicySha256": { "$ref": "#/$defs/sha" },
+        "kmsConfigurationSha256": { "$ref": "#/$defs/sha" },
+        "retentionConfigurationSha256": { "$ref": "#/$defs/sha" },
+        "retentionDays": { "type": "integer", "minimum": 1, "maximum": 36500 },
+        "maximumResultCustodySeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "infrastructureEvidenceId": { "$ref": "#/$defs/uuid" },
+        "brokerCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "storageCreateSignerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "custodianCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "storageReadSignerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "verifierSignerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 8192,
+      "x-fdv1Rules": ["valid_from_before_expires_at", "storage_profile_predecessor_exact", "storage_signer_pairings_exact", "namespace_prescan_clear"]
+    },
+    "revokeStorageProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-storage-profile.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "configuration_compromise", "namespace_compromise", "service_decommissioned"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "registerTrustRoot": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/workloadCommon" },
+        {
+          "type": "object",
+          "required": ["inclusionAuthorityRootAuthorizationId", "trustDomain", "rootPublicKeyDerBase64url", "authorizedLeafMerkleRootSha256", "trustBundleBase64url"],
+          "properties": {
+            "bindingKind": { "const": "trust_root" },
+            "inclusionAuthorityRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "trustDomain": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$", "x-fdv1Rules": ["normalized_dns_name", "dns_label_lengths_valid"] },
+            "rootPublicKeyDerBase64url": { "$ref": "#/$defs/ed25519Spki" },
+            "authorizedLeafMerkleRootSha256": { "$ref": "#/$defs/sha" },
+            "trustBundleBase64url": { "$ref": "#/$defs/trustBundle" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false,
+      "x-fdv1MaxJcsBytes": 32768,
+      "x-fdv1Rules": ["valid_from_before_expires_at", "inclusion_authority_is_current_prior_trust_root", "registration_window_within_authorizing_root", "runtime_inclusion_proof_verified_by_named_authority_root", "strict_candidate_bundle_matches_request_domain_key_validity_and_authorized_leaf_merkle_root"]
+    },
+    "registerDbCaller": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/workloadCommon" },
+        {
+          "type": "object",
+          "required": [
+            "parentRootAuthorizationId",
+            "plane",
+            "dbSessionRole",
+            "dbSystemUserSha256",
+            "spiffeId",
+            "issuer",
+            "subject",
+            "audience",
+            "credentialKind",
+            "serviceArtifactSha256",
+            "serviceConfigurationSha256"
+          ],
+          "properties": {
+            "bindingKind": { "const": "db_caller" },
+            "parentRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "plane": { "enum": ["activation", "claimer", "submit_gateway", "recovery_gateway", "evidence_admitter", "output_broker", "output_custodian", "watchdog"] },
+            "dbSessionRole": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[a-z_][a-z0-9_]{0,62}$" },
+            "dbSystemUserSha256": { "$ref": "#/$defs/sha" },
+            "spiffeId": { "$ref": "#/$defs/spiffeId" },
+            "issuer": { "$ref": "#/$defs/identityText" },
+            "subject": { "$ref": "#/$defs/identityText" },
+            "audience": { "$ref": "#/$defs/identityText" },
+            "credentialKind": { "const": "spiffe_x509_svid" },
+            "serviceArtifactSha256": { "$ref": "#/$defs/sha" },
+            "serviceConfigurationSha256": { "$ref": "#/$defs/sha" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false,
+      "x-fdv1MaxJcsBytes": 8192,
+      "x-fdv1Rules": ["valid_from_before_expires_at", "registration_window_within_parent_root", "runtime_inclusion_proof_required", "catalog_login_identity_exact"]
+    },
+    "registerEvidenceSigner": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/workloadCommon" },
+        {
+          "type": "object",
+          "required": [
+            "parentRootAuthorizationId",
+            "evidenceKind",
+            "pairedCallerAuthorizationId",
+            "spiffeId",
+            "issuer",
+            "subject",
+            "audience",
+            "credentialKind",
+            "signerPublicKeyDerBase64url",
+            "maximumReceiptLagSeconds",
+            "serviceArtifactSha256",
+            "serviceConfigurationSha256"
+          ],
+          "properties": {
+            "bindingKind": { "const": "evidence_signer" },
+            "parentRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "evidenceKind": { "enum": ["admin_action", "predecessor_source", "gateway_token_commitment", "runner_terminal", "provider_result", "storage_create", "storage_read", "glb_verifier"] },
+            "pairedCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "spiffeId": { "$ref": "#/$defs/spiffeId" },
+            "issuer": { "$ref": "#/$defs/identityText" },
+            "subject": { "$ref": "#/$defs/identityText" },
+            "audience": { "$ref": "#/$defs/identityText" },
+            "credentialKind": { "const": "spiffe_x509_svid" },
+            "signerPublicKeyDerBase64url": { "$ref": "#/$defs/ed25519Spki" },
+            "maximumReceiptLagSeconds": { "type": "integer", "minimum": 1, "maximum": 300 },
+            "serviceArtifactSha256": { "$ref": "#/$defs/sha" },
+            "serviceConfigurationSha256": { "$ref": "#/$defs/sha" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false,
+      "x-fdv1MaxJcsBytes": 8192,
+      "x-fdv1Rules": ["valid_from_before_expires_at", "registration_window_within_parent_root", "registration_window_within_paired_caller", "runtime_inclusion_proof_required", "evidence_kind_semantic_plane_derived", "paired_caller_binding_recomputed_and_pairing_policy_exact"]
+    },
+    "registerWorkload": {
+      "oneOf": [
+        { "$ref": "#/$defs/registerTrustRoot" },
+        { "$ref": "#/$defs/registerDbCaller" },
+        { "$ref": "#/$defs/registerEvidenceSigner" }
+      ]
+    },
+    "revokeWorkloadNonCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-workload.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "service_decommissioned"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      }
+    },
+    "revokeWorkloadCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "compromiseNotBefore", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-workload.request.v1" },
+        "reasonCode": { "const": "security_compromise" },
+        "compromiseNotBefore": { "$ref": "#/$defs/utcMilliseconds" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1Rules": ["compromise_not_before_not_after_db_recorded_time"]
+    },
+    "revokeWorkload": {
+      "oneOf": [
+        { "$ref": "#/$defs/revokeWorkloadNonCompromise" },
+        { "$ref": "#/$defs/revokeWorkloadCompromise" }
+      ],
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "revokeBrokerAuthorizationNonCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-broker-authorization.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "service_decommissioned"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      }
+    },
+    "revokeBrokerAuthorizationCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "compromiseNotBefore", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-broker-authorization.request.v1" },
+        "reasonCode": { "const": "security_compromise" },
+        "compromiseNotBefore": { "$ref": "#/$defs/utcMilliseconds" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1Rules": ["compromise_not_before_not_after_db_recorded_time"]
+    },
+    "revokeBrokerAuthorization": {
+      "oneOf": [
+        { "$ref": "#/$defs/revokeBrokerAuthorizationNonCompromise" },
+        { "$ref": "#/$defs/revokeBrokerAuthorizationCompromise" }
+      ],
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "revokeCustodianAuthorizationNonCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-custodian-authorization.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "service_decommissioned"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      }
+    },
+    "revokeCustodianAuthorizationCompromise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "compromiseNotBefore", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-custodian-authorization.request.v1" },
+        "reasonCode": { "const": "security_compromise" },
+        "compromiseNotBefore": { "$ref": "#/$defs/utcMilliseconds" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1Rules": ["compromise_not_before_not_after_db_recorded_time"]
+    },
+    "revokeCustodianAuthorization": {
+      "oneOf": [
+        { "$ref": "#/$defs/revokeCustodianAuthorizationNonCompromise" },
+        { "$ref": "#/$defs/revokeCustodianAuthorizationCompromise" }
+      ],
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "registerExecutor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "submitCallerAuthorizationId",
+        "runnerSignerAuthorizationId",
+        "recoveryCallerAuthorizationId",
+        "providerSignerAuthorizationId",
+        "providerKind",
+        "providerTarget",
+        "providerAdapterId",
+        "providerAdapterVersion",
+        "providerAdapterArtifactSha256",
+        "providerAdapterConfigurationSha256",
+        "providerDeploymentSha256",
+        "requestProfileId",
+        "requestProfileVersion",
+        "requestProfileSha256",
+        "workerProfileId",
+        "workerProfileSha256",
+        "containerImageDigest",
+        "stageId",
+        "validFrom",
+        "expiresAt",
+        "adminEvidenceId",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.register-executor.request.v1" },
+        "submitCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "runnerSignerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "recoveryCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "providerSignerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "providerKind": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[a-z0-9][a-z0-9._-]{0,39}$" },
+        "providerTarget": { "type": "string", "minLength": 1, "maxLength": 240, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[!-~]+$", "x-fdv1Rules": ["canonical_provider_target"] },
+        "providerAdapterId": { "$ref": "#/$defs/key120" },
+        "providerAdapterVersion": { "$ref": "#/$defs/key120" },
+        "providerAdapterArtifactSha256": { "$ref": "#/$defs/sha" },
+        "providerAdapterConfigurationSha256": { "$ref": "#/$defs/sha" },
+        "providerDeploymentSha256": { "$ref": "#/$defs/sha" },
+        "requestProfileId": { "$ref": "#/$defs/key120" },
+        "requestProfileVersion": { "$ref": "#/$defs/key120" },
+        "requestProfileSha256": { "$ref": "#/$defs/sha" },
+        "workerProfileId": { "$ref": "#/$defs/key120" },
+        "workerProfileSha256": { "$ref": "#/$defs/sha" },
+        "containerImageDigest": { "type": "string", "minLength": 73, "maxLength": 512, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[!-~]+@sha256:[a-f0-9]{64}$", "x-fdv1Rules": ["oci_digest_only_parse_serialize_equal", "exactly_one_digest_separator"] },
+        "stageId": { "$ref": "#/$defs/key120" },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 16384,
+      "x-fdv1Rules": ["four_authorizations_pairwise_distinct_and_current", "runner_submit_pair_exact", "provider_recovery_pair_exact", "provider_signer_adapter_digest_equal", "valid_from_before_expires_at", "window_within_all_bindings", "complete_executor_predecessor_set"]
+    },
+    "revokeExecutor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-executor.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "identity_compromise", "adapter_compromise", "deployment_compromise", "service_decommissioned"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "activate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "candidateId", "closureId", "executorAuthorizationId", "storageProfileResourceId", "activationId", "executionId", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.activate.request.v1" },
+        "candidateId": { "$ref": "#/$defs/uuid" },
+        "closureId": { "$ref": "#/$defs/uuid" },
+        "executorAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "storageProfileResourceId": { "$ref": "#/$defs/uuid" },
+        "activationId": { "$ref": "#/$defs/uuid" },
+        "executionId": { "$ref": "#/$defs/uuid" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 4096,
+      "x-fdv1Rules": ["activation_and_execution_ids_distinct_unused", "complete_predecessor_set", "current_enabled_epoch_and_policies_derived"]
+    },
+    "revokeActivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "reasonCode", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.revoke-activation.request.v1" },
+        "reasonCode": { "enum": ["administrative_revocation", "authority_compromise", "security_response"] },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "x-fdv1MaxJcsBytes": 1024
+    },
+    "disableEpoch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "disabledReason", "priorEpochId", "sourceKind", "sourceId", "adminEvidenceId", "idempotencyKey"],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.disable-epoch.request.v1" },
+        "disabledReason": { "const": "containment" },
+        "priorEpochId": { "$ref": "#/$defs/uuid" },
+        "sourceKind": { "enum": ["derivative_policy_revocation", "derivative_policy_generation_superseded", "base_policy_revocation", "base_policy_generation_superseded", "registry_attestation_revocation", "workload_authorization_revocation", "executor_authorization_revocation", "output_broker_authorization_revocation", "output_custodian_authorization_revocation", "quarantine_storage_profile_revocation", "activation_revocation", "global_or_scoped_kill", "quarantine_security_event"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9._:-]+$" },
+        "adminEvidenceId": { "$ref": "#/$defs/adminEvidenceId" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "sourceKind": { "enum": ["derivative_policy_generation_superseded", "base_policy_generation_superseded"] } }, "required": ["sourceKind"] },
+          "then": { "properties": { "sourceId": { "type": "string", "minLength": 3, "maxLength": 140, "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[a-z0-9][a-z0-9._-]{0,119}:[1-9][0-9]{0,18}$", "x-fdv1Rules": ["generation_suffix_fits_positive_int64"] } } },
+          "else": { "properties": { "sourceId": { "$ref": "#/$defs/uuid" } } }
+        }
+      ],
+      "x-fdv1MaxJcsBytes": 4096,
+      "x-fdv1Rules": ["prior_epoch_latest_effective", "source_exact_and_current", "next_generation_contiguous", "recursive_and_clock_sources_forbidden"]
+    }
+  },
+  "x-fdv1GlobalRules": [
+    "top_level_depth_exactly_one",
+    "no_json_null",
+    "unknown_keys_forbidden",
+    "strings_nfc",
+    "ascii_strings_no_control_or_nul",
+    "json_integers_scale_zero",
+    "jcs_size_bound",
+    "mixed_signature_scalar_target_not_duplicated_in_request",
+    "admin_action_binds_exact_call_wrapper",
+    "workload_registration_uses_frozen_inclusion_proof_contract"
+  ]
+}

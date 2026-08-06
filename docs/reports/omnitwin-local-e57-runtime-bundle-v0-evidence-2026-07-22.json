@@ -1,0 +1,258 @@
+{
+  "schemaVersion": "omnitwin.local-e57-runtime-bundle-v0-evidence.v0",
+  "reviewId": "T-539",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "scope": "Deterministic application-local CPython 3.13 E57 bundle and legal-pack materialization, complete-tree receipt verification, clean-host qualification contract, fail-closed aggregate-only adapter binding contract and nontechnical readiness status. This is ordinary local reconstruction engineering, not cybersecurity work, and it does not claim that clean-host qualification or production binding has occurred.",
+  "activity": {
+    "runtimePackageInstallerUsed": false,
+    "workspaceOfflineDependencyInstallPerformed": true,
+    "systemInstallationPerformed": false,
+    "microsoftRuntimeInstallerDownloaded": false,
+    "microsoftRuntimeInstallerExecuted": false,
+    "isolatedBundleMaterializationPerformed": true,
+    "isolatedBundleRuntimeExecutionPerformed": false,
+    "cleanHostQualificationPerformed": false,
+    "productionAdapterBindingIssued": false,
+    "userProvidedSourceFileRead": false,
+    "qualificationSyntheticFixtureFileRead": false,
+    "unitTestSyntheticFixtureFileRead": true,
+    "unitTestSyntheticFixtureIsGeneratedAndNonVenue": true,
+    "venueDataAccessed": false,
+    "cloudWorkloadStarted": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false
+  },
+  "parentEnvironment": {
+    "reviewId": "T-536",
+    "path": "configs/reconstruction/local-e57-intake-environment-v0.manifest.json",
+    "environmentSha256": "34ad3f54ea5a5afcca908c66f48ab039381d6910b2372afbafee0c1f8545ea1e"
+  },
+  "bundleReceipt": {
+    "path": "configs/reconstruction/local-e57-runtime-bundle-v0.receipt.json",
+    "schemaVersion": "omnitwin.foundry.local-e57-runtime-bundle.v0",
+    "digestDomain": "VENVIEWER_FOUNDRY_LOCAL_E57_RUNTIME_BUNDLE_V0 plus one NUL byte",
+    "bundleId": "omnitwin-local-e57-cp313-windows-x64-v0",
+    "bundleReceiptSha256": "9d93928658fb650a319edf1b65bad250b8fa213d810e3554d5e345b42a974696",
+    "fileByteSize": 183683,
+    "fileSha256": "a617c29cd7e19c17cda0bc61f365c36d382df35c8b73b57a766f32291f1d4e24",
+    "fileCount": 1032,
+    "totalFileBytes": 66757784,
+    "roleCounts": {
+      "pythonRuntime": 34,
+      "sitePackage": 967,
+      "probe": 1,
+      "legal": 30
+    },
+    "target": "CPython 3.13.14, Windows x64, E57 aggregate-only intake",
+    "execution": "disabled",
+    "materialization": "candidate_materialized_and_reproduced_not_qualified"
+  },
+  "deterministicMaterialization": {
+    "isolatedRuns": 2,
+    "freshOutputRootRequired": true,
+    "bundleDirectoryPublishedByAtomicRename": true,
+    "receiptSidecarWrittenSeparately": true,
+    "bundleAndSidecarPairPublicationAtomic": false,
+    "sidecarWriteFailureRollsBackOnlyAnUnchangedFullyVerifiedNewBundle": true,
+    "crashBetweenDirectoryAndSidecarPublicationRemainsRecoverableButNotTransactional": true,
+    "overwriteRefused": true,
+    "canonicalReceiptByteSize": 183683,
+    "receiptBytesIdenticalAcrossRuns": true,
+    "bundleReceiptSha256IdenticalAcrossRuns": true,
+    "sourceArchives": [
+      "python-3.13.14-embed-amd64.zip",
+      "pye57-0.4.19-cp313-cp313-win_amd64.whl",
+      "numpy-2.5.1-cp313-cp313-win_amd64.whl",
+      "pyquaternion-0.9.9-py3-none-any.whl"
+    ],
+    "archiveExtractionLibrary": "fflate 0.8.2, added as an exact workspace dependency and resolved from the existing offline pnpm store",
+    "temporaryOutputDisposition": "Two isolated temporary candidate roots were used only to prove deterministic assembly. Their machine-specific paths are deliberately absent from product DTOs and this evidence record.",
+    "runtimeExecuted": false,
+    "qualificationClaimed": false
+  },
+  "reviewedProbe": {
+    "bundlePath": "probe/foundry_phase1_probe.py",
+    "sourcePath": "tools/capture-factory/python/foundry_phase1_probe.py",
+    "byteSize": 77513,
+    "sha256": "396342132a56eb585cb8f3f5d7320a2516d4ed208839c7d769d5e9796d8b697c",
+    "builderRejectsSubstitution": true,
+    "adapterInvocationMode": "inspect-e57-aggregate",
+    "adapterCanInvokeOtherProbeModes": false,
+    "probeFileContainsDormantNonE57Modes": true,
+    "claimBoundary": "This is the exact reviewed phase-one probe used through a fixed aggregate-only E57 adapter invocation. The probe file also contains dormant COLMAP/alignment modes, so the bundle is not described as an E57-only code closure."
+  },
+  "completeTreeVerification": {
+    "exactReceiptFileListRequired": true,
+    "canonicalWindowsPortablePathsRequired": true,
+    "windowsForbiddenCharactersAndControlCharactersRejected": true,
+    "lexicalSortRequired": true,
+    "caseFoldUniquenessRequired": true,
+    "unexpectedFileRejected": true,
+    "missingFileRejected": true,
+    "unexpectedDirectoryRejected": true,
+    "symlinkOrJunctionRejected": true,
+    "hardlinkRejected": true,
+    "fileIdentityCheckedBeforeAndAfterHashing": true,
+    "everyFileFullySha256Hashed": true,
+    "completeTreeMutationCheckedBeforeAndAfterActivity": true
+  },
+  "microsoftCppRuntime": {
+    "disposition": "central_prerequisite_direct_from_microsoft",
+    "packageId": "Microsoft.VisualCpp.Redist.14.Latest",
+    "selectedVersion": "14.51.36247",
+    "architecture": "x64",
+    "filename": "VC_redist.x64.exe",
+    "byteSize": 18731856,
+    "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
+    "fixedVersionUrl": "https://aka.ms/vs/18/release/14.51.36247/VC_redist.x64.exe",
+    "exactPayloadUrl": "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+    "floatingPolicyUrl": "https://aka.ms/vc14/vc_redist.x64.exe",
+    "allowCompatibleNewerV14": true,
+    "selectedInstallerBundled": false,
+    "canonicalMsvcp140DllBundled": false,
+    "officialCpythonVcruntimeDllsPreserved": true,
+    "receiptListedRenamedMsvcpDllPresent": true,
+    "installed": false,
+    "organizationRedistributionAuthorization": "not_evidenced",
+    "runtimeTermsReceipt": {
+      "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+      "byteSize": 39553,
+      "sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783"
+    },
+    "claimBoundary": "This exact installer and the canonical MSVCP140.dll it centrally provides are selected prerequisites and are not bundle members. The bundle does preserve the official CPython archive's VCRUNTIME140 DLLs and NumPy's receipt-listed renamed MSVCP copy. The selected artifact is not claimed to be the publisher wheel's intrinsic minimum and was not downloaded or run."
+  },
+  "pybind11": {
+    "versionClaim": "inferred_3.0.1_not_attested",
+    "candidateTag": "v3.0.1",
+    "candidateRevision": "f5fbe867d2d26e4a0a9177a51f6e568868ad3dc8",
+    "sourceToBinaryAttestationState": "absent",
+    "exactPatchClaimAllowed": false,
+    "consumptionMode": "exact_publisher_wheel_as_opaque_binary",
+    "legalNoticePath": "legal/third-party/pybind11-LICENSE.txt",
+    "legalNoticeByteSize": 1684,
+    "legalNoticeSha256": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+    "legalNoticeSourceUrl": "https://raw.githubusercontent.com/pybind/pybind11/f5fbe867d2d26e4a0a9177a51f6e568868ad3dc8/LICENSE",
+    "noticeGate": "closed",
+    "buildProvenanceGate": "retained_as_opaque_publisher_binary_limitation"
+  },
+  "qualificationContract": {
+    "schemaVersion": "omnitwin.foundry.local-e57-runtime-qualification.v0",
+    "digestDomain": "VENVIEWER_FOUNDRY_LOCAL_E57_RUNTIME_QUALIFICATION_V0 plus one NUL byte",
+    "realReceiptState": "not_issued",
+    "hostRequirement": "disposable supported clean Windows 11 x64 image",
+    "dataBoundary": "synthetic fixture only; no user or venue source",
+    "requiredEvidence": [
+      "expected pre-install missing-runtime failure",
+      "exact installer size, SHA-256 and Microsoft Authenticode signer",
+      "central v14 registry version",
+      "synthetic E57 aggregate-only probe pass",
+      "complete loaded-native-module inventory with path, version, size and SHA-256",
+      "canonical MSVCP140.dll resolved from the declared central Windows runtime while receipt-listed VCRUNTIME and renamed NumPy runtime-family DLLs remain explicit bundle members",
+      "no undeclared application or third-party native dependency",
+      "snapshot restored after qualification"
+    ],
+    "qualificationClaimed": false
+  },
+  "adapterBinding": {
+    "schemaVersion": "omnitwin.foundry.local-e57-runtime-adapter-binding.v0",
+    "digestDomain": "VENVIEWER_FOUNDRY_LOCAL_E57_RUNTIME_ADAPTER_BINDING_V0 plus one NUL byte",
+    "productionBinding": "null",
+    "defaultRefusalCode": "RUNTIME_BUNDLE_UNBOUND",
+    "processSpawnBeforeFullBundleQualificationAndVerification": false,
+    "testOnlySyntheticBindingFactory": true,
+    "crossLinksRequired": [
+      "bundle receipt digest",
+      "clean-host qualification digest",
+      "adapter-binding digest"
+    ],
+    "runtimeTreeVerifiedBeforeAndAfterProbe": true,
+    "readMode": "aggregate_metadata_only",
+    "pointRecordReads": false,
+    "embeddedImageReads": false,
+    "writeMode": false,
+    "productionBindingIssued": false
+  },
+  "workbench": {
+    "surface": "existing loopback Reconstruction Foundry workbench",
+    "stateRoute": "/api/state",
+    "heading": "Candidate bundle recorded — clean-host check still open",
+    "executionControlsAdded": 0,
+    "bundleFilesRendered": 1032,
+    "legalItemsRendered": 30,
+    "openGateCount": 3,
+    "openGates": [
+      "central-runtime-setup-review",
+      "clean-host-qualification",
+      "production-adapter-binding"
+    ],
+    "candidateBundleReceiptRendered": "9d93928658fb650a319edf1b65bad250b8fa213d810e3554d5e345b42a974696",
+    "browserParser": "Exact follow-up keys, parent digest, bundle digest, counts, candidate state, no-execution state and all three open-gate identities are required before rendering."
+  },
+  "browserLayoutQa": {
+    "desktopViewport": "1440x1000",
+    "mobileViewport": "320x800",
+    "desktopDocumentWidth": {
+      "scrollWidth": 1440,
+      "clientWidth": 1440
+    },
+    "mobileDocumentWidth": {
+      "scrollWidth": 320,
+      "clientWidth": 320
+    },
+    "mobileRuntimePanelWidth": {
+      "scrollWidth": 242,
+      "clientWidth": 242
+    },
+    "horizontalOverflowObserved": false,
+    "headingAndCountsVerifiedAtBothWidths": true,
+    "consoleWarningsOrErrors": 0,
+    "desktopScreenshot": {
+      "path": "output/playwright/t539-e57-runtime-desktop.png",
+      "byteSize": 182434,
+      "sha256": "8ce5a6bd1fc9da544e5ea0559493a7ed96c373389b537497f32a000f48bef951"
+    },
+    "mobileScreenshot": {
+      "path": "output/playwright/t539-e57-runtime-mobile.png",
+      "byteSize": 80769,
+      "sha256": "09f0260ed13ec1a1bea6ea07491cd57e694eb649ac3580e23c3d6235b6dca3f6"
+    },
+    "browserSessionClosed": true,
+    "listenerShutdownConfirmed": true
+  },
+  "verification": {
+    "focusedCoreRuntimeBundle": "3 passed",
+    "focusedToolRuntimeAndWorkbench": "72 passed",
+    "targetedCoreLint": "passed",
+    "targetedToolLint": "passed",
+    "coreTypecheck": "passed",
+    "targetedToolTypecheck": "passed",
+    "coreBuild": "passed",
+    "fullCoreSuite": "66/66 test files; 777 passed and 1 skipped",
+    "fullToolSuite": "49/49 test files; 793/793 tests passed",
+    "fullSuiteStatus": "passed"
+  },
+  "primarySources": [
+    "https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170",
+    "https://learn.microsoft.com/en-us/cpp/windows/choosing-a-deployment-method?view=msvc-170",
+    "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170",
+    "https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution",
+    "https://aka.ms/VCRedistLicense",
+    "https://raw.githubusercontent.com/davidcaron/pye57/64c9000738ad54242e87e1da6bca6b683b13374b/pyproject.toml",
+    "https://github.com/davidcaron/pye57/actions/runs/19717571335",
+    "https://github.com/pybind/pybind11/compare/v3.0.0...v3.0.1.diff",
+    "https://raw.githubusercontent.com/pybind/pybind11/f5fbe867d2d26e4a0a9177a51f6e568868ad3dc8/LICENSE"
+  ],
+  "continuation": {
+    "t539": "done_for_deterministic_candidate_bundle_contract_materialization_legal_pack_fail_closed_adapter_and_readiness_slice",
+    "cleanHostQualification": "active_not_performed",
+    "productionAdapterBinding": "active_withheld_until_qualification",
+    "t533": "active_pending_human_room_envelope_review",
+    "t508": "active",
+    "t486": "active",
+    "broaderGoal": "active",
+    "nextProductStep": "On a disposable supported Windows 11 x64 image, directly acquire and verify the exact selected Microsoft prerequisite, run the synthetic-only clean-host qualification, record every loaded native module, restore the snapshot, and only then issue and compile the cross-bound production adapter binding."
+  }
+}

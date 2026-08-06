@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   newEnquiryNotification,
   enquiryApproved,
+  enquiryReceived,
   enquiryRejected,
 } from "../services/email-templates.js";
+import { findUnsupportedProposalClaim } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Email template tests
@@ -146,6 +148,90 @@ describe("enquiryRejected", () => {
   it("includes venue name", async () => {
     const { html } = await enquiryRejected(baseData);
     expect(html).toContain("Trades Hall Glasgow");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enquiryReceived — the client's acknowledgement.
+//
+// The first email a guest gets, and until now the one that did not exist: the
+// hallkeeper was notified on every public enquiry and the sender heard nothing.
+//
+// Two rules shape the copy. It must echo what they sent, so they can see it
+// arrived intact and correct it if not. And it must promise nothing the venue
+// has not decided — availability above all. The page can compute room fit from
+// published capacities; neither it nor this email can know whether a date is
+// free, and implying otherwise would be the exact claim the guard exists to
+// stop reaching a client.
+// ---------------------------------------------------------------------------
+
+describe("enquiryReceived", () => {
+  const baseData = {
+    venueName: "Trades Hall Glasgow",
+    reference: "3F9A2B1C",
+    contactName: "Jane Smith",
+    spaceName: "Grand Hall",
+    eventType: "Wedding",
+    eventDate: "2026-06-15",
+    guestCount: 120,
+    message: "We'd love to host our reception here.",
+    venueEmail: "events@tradeshallglasgow.com",
+    venuePhone: "+44 141 552 2418",
+  } as const;
+
+  it("puts the reference in the subject, where a reply will quote it", async () => {
+    const { subject } = await enquiryReceived(baseData);
+    expect(subject).toContain("3F9A2B1C");
+  });
+
+  it("shows the reference in the body too", async () => {
+    const { html } = await enquiryReceived(baseData);
+    expect(html).toContain("3F9A2B1C");
+  });
+
+  it("echoes back what the guest actually sent", async () => {
+    const { html } = await enquiryReceived(baseData);
+    expect(html).toContain("2026-06-15");
+    expect(html).toContain("120");
+    expect(html).toContain("Wedding");
+    expect(html).toContain("Grand Hall");
+  });
+
+  it("gives the guest a way to reach a human", async () => {
+    const { html } = await enquiryReceived(baseData);
+    expect(html).toContain("events@tradeshallglasgow.com");
+    expect(html).toContain("+44 141 552 2418");
+  });
+
+  it("never claims the date is available or held", async () => {
+    const { subject, html } = await enquiryReceived(baseData);
+    const text = `${subject} ${html}`.toLowerCase();
+    for (const claim of ["is available", "we have held", "we've held", "your date is confirmed", "booking confirmed"]) {
+      expect(text, `acknowledgement implied availability: ${claim}`).not.toContain(claim);
+    }
+  });
+
+  it("passes the proposal claim guard", async () => {
+    const { subject, html } = await enquiryReceived(baseData);
+    expect(findUnsupportedProposalClaim(subject)).toBeNull();
+    expect(findUnsupportedProposalClaim(html)).toBeNull();
+  });
+
+  it("leaks no literal 'null' when optional details were not given", async () => {
+    const { html } = await enquiryReceived({
+      ...baseData,
+      contactName: null,
+      eventType: null,
+      eventDate: null,
+      guestCount: null,
+      message: null,
+      venuePhone: null,
+    });
+    expect(html).not.toContain(">null<");
+    expect(html).not.toContain("undefined");
+    // The reference must survive even the emptiest submission — it is the
+    // guest's only handle on the enquiry.
+    expect(html).toContain("3F9A2B1C");
   });
 });
 

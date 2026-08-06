@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omnitwin.local/schemas/omnitwin-local-hd-worker-manifest-v0.schema.json",
+  "title": "OmniTwin Foundry local HD worker dependency manifest v0",
+  "description": "A digest-bound, fail-closed record of candidate worker root identities. It is not an installation lock, worker approval, source binding, or execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestId",
+    "reviewedOn",
+    "reviewClass",
+    "overall",
+    "manifestState",
+    "installationState",
+    "runtimeVerificationState",
+    "binding",
+    "execution",
+    "authority",
+    "architecture",
+    "activity",
+    "capabilityLanes",
+    "components",
+    "exclusions",
+    "legacyDocker",
+    "nextAction",
+    "manifestSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "omnitwin.foundry.local-hd-worker-manifest.v0" },
+    "manifestId": { "$ref": "#/$defs/safeId" },
+    "reviewedOn": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "reviewClass": { "const": "engineering_screen_only" },
+    "overall": { "const": "planned_not_installed_not_execution_ready" },
+    "manifestState": { "const": "recorded_with_open_closure_items" },
+    "installationState": { "const": "not_installed" },
+    "runtimeVerificationState": { "const": "not_performed" },
+    "binding": { "const": "not_bound_to_current_source_or_plan" },
+    "execution": { "const": "disabled" },
+    "authority": { "const": "none" },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localWindows", "gpuWorker"],
+      "properties": {
+        "localWindows": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "gaussianTraining"],
+          "properties": {
+            "status": { "const": "planned_components_only" },
+            "gaussianTraining": { "const": "not_enabled" }
+          }
+        },
+        "gpuWorker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "canonicalForGaussianTraining", "workerImage"],
+          "properties": {
+            "status": { "const": "separate_review_required" },
+            "canonicalForGaussianTraining": { "const": true },
+            "workerImage": { "const": "not_defined" }
+          }
+        }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workerInstallationPerformed",
+        "workerRuntimeVerificationPerformed",
+        "venueDataAccessed",
+        "cloudWorkloadStarted",
+        "modelOptimizationStarted"
+      ],
+      "properties": {
+        "workerInstallationPerformed": { "const": false },
+        "workerRuntimeVerificationPerformed": { "const": false },
+        "venueDataAccessed": { "const": false },
+        "cloudWorkloadStarted": { "const": false },
+        "modelOptimizationStarted": { "const": false }
+      }
+    },
+    "capabilityLanes": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/capabilityLane" }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/component" }
+    },
+    "exclusions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/exclusion" }
+    },
+    "legacyDocker": { "$ref": "#/$defs/legacyDocker" },
+    "nextAction": { "type": "string", "minLength": 1, "maxLength": 700 },
+    "manifestSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$comment": "The TypeScript verifier additionally enforces unique ids, valid lane component references, the domain-separated manifest digest, and the reviewed-remote-only disabled Gaussian lane.",
+  "$defs": {
+    "safeId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,119}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "exactArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "url", "byteSize", "sha256", "digestEvidence", "reverifyOnAcquire"],
+      "properties": {
+        "kind": {
+          "enum": ["github_release_asset", "github_tag_archive", "pypi_wheel", "source_archive"]
+        },
+        "url": { "type": "string", "format": "uri", "maxLength": 1000 },
+        "byteSize": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "digestEvidence": {
+          "enum": ["observed", "publisher_attested", "publisher_attested_and_observed"]
+        },
+        "reverifyOnAcquire": { "type": "boolean" }
+      }
+    },
+    "legalText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "label", "url", "byteSize", "sha256", "redistributionRequired"],
+      "properties": {
+        "kind": { "enum": ["attribution", "license", "notice"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "url": { "type": "string", "format": "uri", "maxLength": 1000 },
+        "byteSize": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "redistributionRequired": { "type": "boolean" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "role",
+        "version",
+        "tag",
+        "revision",
+        "repository",
+        "artifact",
+        "licenseSpdx",
+        "legalTexts",
+        "noticeClosureStatus",
+        "closureStatus",
+        "closureItems",
+        "excludedAssets",
+        "installationState",
+        "runtimeVerificationState",
+        "execution"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeId" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tag": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "revision": { "$ref": "#/$defs/gitCommit" },
+        "repository": { "type": "string", "format": "uri", "maxLength": 1000 },
+        "artifact": { "$ref": "#/$defs/exactArtifact" },
+        "licenseSpdx": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "legalTexts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/legalText" }
+        },
+        "noticeClosureStatus": {
+          "enum": ["missing_from_selected_binary", "open_dependency_notice_review"]
+        },
+        "closureStatus": { "const": "root_identity_pinned_dependency_closure_open" },
+        "closureItems": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "excludedAssets": {
+          "type": "array",
+          "maxItems": 40,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "installationState": { "const": "not_installed" },
+        "runtimeVerificationState": { "const": "not_performed" },
+        "execution": { "const": "disabled" }
+      }
+    },
+    "capabilityLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "runtimeProfile", "componentIds", "executionLocation", "state", "boundary"],
+      "properties": {
+        "id": {
+          "enum": [
+            "camera_registration",
+            "e57_read_only_intake",
+            "gaussian_training",
+            "geometry_registration_and_qa",
+            "photometric_compensation"
+          ]
+        },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "runtimeProfile": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "componentIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/safeId" }
+        },
+        "executionLocation": {
+          "enum": ["local_windows_candidate", "reviewed_remote_gpu_worker_only"]
+        },
+        "state": {
+          "enum": ["planned_closure_incomplete_execution_disabled", "execution_disabled_under_current_architecture"]
+        },
+        "boundary": { "type": "string", "minLength": 1, "maxLength": 700 }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeId" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 700 }
+      }
+    },
+    "legacyDocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "disposition", "reason"],
+      "properties": {
+        "path": { "const": "infra/runpod/Dockerfile" },
+        "disposition": { "const": "do_not_build_run_or_deploy" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 700 }
+      }
+    }
+  }
+}

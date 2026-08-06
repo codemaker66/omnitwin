@@ -239,13 +239,138 @@ function usablePackageUrl(published: RuntimePackage): string | null {
   return parsed.ok ? parsed.url : null;
 }
 
+interface Lcc2ChunkAddress {
+  readonly depth: number;
+  readonly format: "sog" | "spz";
+  readonly identity: string;
+  readonly url: string;
+}
+
+type Lcc2ChunkAddressResult =
+  | { readonly kind: "chunk"; readonly chunk: Lcc2ChunkAddress }
+  | { readonly kind: "malformed" }
+  | { readonly kind: "not_lcc2" };
+
+// RuntimeHierarchyNodeRangeV1 uses a root node named `0`. Requiring that root
+// here avoids treating ordinary numeric tile names such as 12_34.sog as LCC2.
+const LCC2_CHUNK_FILE_NAME = /^(0(?:_(?:0|[1-9]\d*))+?)\.(sog|spz)$/iu;
+
+function lcc2ChunkAddress(url: string): Lcc2ChunkAddressResult {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, "https://venviewer.local");
+  } catch {
+    return { kind: "malformed" };
+  }
+
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(parsed.pathname);
+  } catch {
+    return { kind: "malformed" };
+  }
+
+  const separator = pathname.lastIndexOf("/");
+  const fileName = pathname.slice(separator + 1);
+  const lowerFileName = fileName.toLowerCase();
+  const isSogOrSpz = lowerFileName.endsWith(".sog") || lowerFileName.endsWith(".spz");
+  const match = LCC2_CHUNK_FILE_NAME.exec(fileName);
+  if (match === null) {
+    // A file beginning with the canonical LCC2 root prefix is intended to be
+    // a hierarchy chunk. Fail closed if it is malformed. Other names,
+    // including ordinary numeric tiles, are not reinterpreted as LCC2.
+    return isSogOrSpz && /^0_/u.test(fileName)
+      ? { kind: "malformed" }
+      : { kind: "not_lcc2" };
+  }
+
+  const nodePath = match[1];
+  const format = match[2]?.toLowerCase();
+  if (nodePath === undefined || (format !== "sog" && format !== "spz")) {
+    return { kind: "malformed" };
+  }
+
+  return {
+    kind: "chunk",
+    chunk: {
+      depth: nodePath.split("_").length - 1,
+      format,
+      // The production API deliberately gives each asset its own
+      // /runtime-assets/{assetVersionId}/ directory. Logical chunk identity is
+      // therefore the format plus node path, not its delivery URL directory
+      // or query string.
+      identity: `${format}|${nodePath}`,
+      url,
+    },
+  };
+}
+
+/**
+ * Validate one already-declared LCC2 SOG/SPZ frontier.
+ *
+ * LCC2 node paths encode hierarchy depth in underscore-separated numeric
+ * segments (for example 0_0, 0_1_0, and 0_1_0_5). Chunks from different
+ * depths are replacement levels, not additive layers. A URL filename cannot
+ * prove that every chunk needed for a deeper level is present, so this
+ * function never tries to repair a mixed-level package by keeping only its
+ * deepest filenames. Mixed levels fail closed. A reviewed package must
+ * declare only the complete, non-overlapping frontier it intends to mount.
+ * The declared order is preserved for deterministic loading.
+ *
+ * An empty result means the URL set looked like an LCC2 family but was
+ * ambiguous or malformed. A wholly non-LCC2 multi-file scene is unchanged.
+ */
+export function selectNonOverlappingLcc2UrlFrontier(
+  urls: readonly string[],
+): readonly string[] {
+  const parsed = urls.map(lcc2ChunkAddress);
+  const chunks = parsed.flatMap((result) => result.kind === "chunk" ? [result.chunk] : []);
+  if (chunks.length === 0) {
+    return parsed.some((result) => result.kind === "malformed") ? [] : [...urls];
+  }
+
+  // A numeric LCC2 family mixed with an ordinary/malformed member, another
+  // format, another hierarchy level, or the same logical chunk behind two
+  // delivery URLs is not a proven frontier. The viewer falls back instead of
+  // rendering a partial or overlapping room. Delivery directories may differ
+  // because the API serves each asset under its own immutable version id.
+  if (chunks.length !== parsed.length) return [];
+  const format = chunks[0]?.format;
+  if (format === undefined || chunks.some((chunk) => chunk.format !== format)) return [];
+  if (new Set(chunks.map((chunk) => chunk.identity)).size !== chunks.length) return [];
+  if (new Set(chunks.map((chunk) => chunk.depth)).size !== 1) return [];
+  return chunks.map((chunk) => chunk.url);
+}
+
 function usablePackageUrls(published: RuntimePackage, primaryUrl: string): readonly string[] {
   const declaredUrls = Array.isArray(published.visualAssetUrls) ? published.visualAssetUrls : [];
-  const urls = declaredUrls.length > 0 ? declaredUrls : [primaryUrl];
-  const usable = urls
-    .map((url) => parseRuntimeSplatUrl(url))
-    .flatMap((parsed) => parsed.ok && parsed.url !== null ? [parsed.url] : []);
-  return Array.from(new Set(usable));
+  const declaredIds = published.manifestJson.assets.visualAssetVersionIds;
+
+  // A declared multi-file visual is one atomic scene. Rendering a surviving
+  // subset can create holes or, for replacement LoD trees, overlap the wrong
+  // levels. Require one valid, unique URL for every exact manifest member and
+  // require the primary URL to be part of that same set.
+  if (declaredIds !== undefined) {
+    if (declaredUrls.length !== declaredIds.length) return [];
+
+    const urls: string[] = [];
+    const seen = new Set<string>();
+    for (const url of declaredUrls) {
+      const parsed = parseRuntimeSplatUrl(url);
+      if (!parsed.ok || parsed.url === null || seen.has(parsed.url)) return [];
+      seen.add(parsed.url);
+      urls.push(parsed.url);
+    }
+    if (!seen.has(primaryUrl)) return [];
+    return selectNonOverlappingLcc2UrlFrontier(urls);
+  }
+
+  // Legacy manifests name only one primary asset. Do not let an undeclared
+  // URL list silently broaden that package's membership in the browser.
+  if (declaredUrls.length === 0) return [primaryUrl];
+  if (declaredUrls.length !== 1) return [];
+  const parsed = parseRuntimeSplatUrl(declaredUrls[0]);
+  return parsed.ok && parsed.url === primaryUrl ? [primaryUrl] : [];
 }
 
 export function decideRuntimeAsset(
@@ -268,7 +393,7 @@ export function decideRuntimeAsset(
         };
       }
       return {
-        splatUrl: packageUrl,
+        splatUrl: packageUrls[0] ?? packageUrl,
         splatUrls: packageUrls,
         source: "package",
         evidenceStatus: published.evidenceStatus,

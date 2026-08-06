@@ -92,6 +92,10 @@ export type BatchSaveResponse = z.infer<typeof BatchSaveResponseSchema>;
 
 const GuestEnquiryResponseSchema = z.object({
   enquiryId: z.string(),
+  // The short handle the acknowledgement email prints. Optional so a client
+  // built against an older API still parses; callers fall back to deriving it
+  // from enquiryId with the same shared helper the server used.
+  reference: z.string().optional(),
   message: z.string(),
 });
 

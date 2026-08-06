@@ -1,0 +1,876 @@
+{
+  "schemaVersion": "omnitwin.hd-stack-license-evidence.v1",
+  "reviewId": "T-534",
+  "asOf": "2026-07-19",
+  "authority": "none",
+  "reviewClass": "engineering_screen_only",
+  "legalAdvice": false,
+  "scope": {
+    "included": [
+      "internal_offline_use",
+      "vendored_or_shipped_code",
+      "distributed_weights_data_and_assets",
+      "vendor_or_cloud_service_terms",
+      "independent_study_or_implementation_candidates_without_code_copying_or_patent_clearance"
+    ],
+    "excluded": [
+      "cybersecurity_review",
+      "identity_attestation",
+      "credential_use",
+      "signing",
+      "deployment",
+      "publication",
+      "paid_compute"
+    ],
+    "sourceAssetRightsRule": "A code or format licence never establishes rights in venue captures, photographs, video, point clouds, splats, checkpoints, datasets or generated outputs."
+  },
+  "outcome": {
+    "ordinaryLocalEngineering": "continue_for_integrated_browser_stack_and_newly_written_local_code",
+    "legacyRunpodTrainerImage": "excluded_pending_exact_image_closure",
+    "commercialTrainingOnRealVenueAssets": "requires_source_rights_evidence",
+    "publicRedistributionOfRealVenueAssets": "requires_source_rights_evidence",
+    "rawXgridsDecoder": "do_not_build",
+    "aiVisualDerivatives": "optional_separate_labelled_lane_only",
+    "t486SigningOrPublication": "not_authorised"
+  },
+  "integratedRuntime": [
+    {
+      "package": "three",
+      "version": "0.180.0",
+      "revision": "0af9729d0c143a86a1d725d6e2c3ad83301f3f34",
+      "licence": "MIT",
+      "decision": "candidate_at_current_lock",
+      "source": "https://github.com/mrdoob/three.js/blob/0af9729d0c143a86a1d725d6e2c3ad83301f3f34/LICENSE"
+    },
+    {
+      "package": "@react-three/fiber",
+      "version": "8.18.0",
+      "revision": "f81bfe8cb29373d2687433c6130e0ce1daf7222c",
+      "licence": "MIT",
+      "decision": "candidate_at_current_lock",
+      "source": "https://github.com/pmndrs/react-three-fiber/blob/f81bfe8cb29373d2687433c6130e0ce1daf7222c/LICENSE"
+    },
+    {
+      "package": "@sparkjsdev/spark",
+      "version": "2.0.0",
+      "revision": "ea56ee73f1ec015deac852998870e1dc80f21a7f",
+      "licence": "MIT",
+      "decision": "candidate_at_current_lock",
+      "source": "https://github.com/sparkjsdev/spark/blob/ea56ee73f1ec015deac852998870e1dc80f21a7f/LICENSE"
+    }
+  ],
+  "entries": [
+    {
+      "id": "e57-core",
+      "name": "Planned pye57 0.4.19 plus libE57Format 3.1.1 local closure",
+      "role": "read-only E57 intake and bounded inspection",
+      "terms": "MIT wrapper plus Boost-1.0 core; Xerces and the exact native binary closure remain separate",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "source E57 rights separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "create_new_local_manifest_do_not_infer_approval_from_legacy_runpod_image",
+      "primarySources": [
+        "https://github.com/davidcaron/pye57/blob/64c9000738ad54242e87e1da6bca6b683b13374b/LICENSE",
+        "https://github.com/asmaloney/libE57Format/blob/1914b8ea972251d3bb49a33828497dde683205d9/LICENSE.md",
+        "https://github.com/asmaloney/libE57Format/releases/tag/v3.1.1"
+      ]
+    },
+    {
+      "id": "pdal",
+      "name": "PDAL 2.10.2",
+      "role": "offline point-cloud I/O, filtering and tiling",
+      "terms": "BSD-3-Clause core; plugins and build dependencies vary",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "source point-cloud rights separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "catalogue_candidate_not_currently_integrated",
+      "primarySources": [
+        "https://github.com/PDAL/PDAL/blob/27008f6241be44585c866a29dfc13bb16d678dab/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "open3d",
+      "name": "Open3D 0.19.0",
+      "role": "offline ICP, TSDF and geometry QA",
+      "terms": "MIT core; optional ML, CUDA, datasets and dependencies vary",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "optional models and source geometry separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "planned_0_19_local_candidate_not_the_legacy_0_18_cloud_pin",
+      "primarySources": [
+        "https://github.com/isl-org/Open3D/blob/1e7b17438687a0b0c1e5a7187321ac7044afe275/LICENSE"
+      ]
+    },
+    {
+      "id": "colmap",
+      "name": "COLMAP 4.1.1 and integrated global mapper",
+      "role": "camera registration and SfM/MVS",
+      "terms": "new-BSD/BSD-3-like core; COPYING expressly excludes dependencies",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "no mandatory weights; source imagery rights separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "preferred_registration_core_after_exact_build_audit",
+      "primarySources": [
+        "https://github.com/colmap/colmap/blob/a0d785fba74b2664f31edc4a29026a8b27c00f67/COPYING.txt",
+        "https://github.com/colmap/colmap/releases/tag/4.1.1"
+      ]
+    },
+    {
+      "id": "glomap",
+      "name": "Standalone GLOMAP 1.2.0",
+      "role": "legacy global SfM reproduction only",
+      "terms": "BSD-3-Clause; repository archived and deprecated in favour of COLMAP",
+      "internalOffline": "legacy_only",
+      "shippedCode": "avoid_new_adoption",
+      "weightsDataAssets": "none mandatory",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "use_colmap_global_mapper",
+      "primarySources": [
+        "https://github.com/colmap/glomap/blob/99806d0869f802fad218516a2e027793e7ca687d/LICENSE",
+        "https://github.com/colmap/glomap/blob/99806d0869f802fad218516a2e027793e7ca687d/README.md"
+      ]
+    },
+    {
+      "id": "hloc",
+      "name": "Hierarchical-Localization 1.4",
+      "role": "register high-resolution hero photographs",
+      "terms": "Apache-2.0 root; model zoo, downloaded weights and submodules vary",
+      "internalOffline": "conditional",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "exact_detector_matcher_checkpoint_only",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "allow_list_permissive_detector_matcher_lane",
+      "primarySources": [
+        "https://github.com/cvg/Hierarchical-Localization/blob/80ccb7ee3bc048cb3a8ef221c5bc4d8ac25d5792/LICENSE",
+        "https://github.com/cvg/Hierarchical-Localization/blob/80ccb7ee3bc048cb3a8ef221c5bc4d8ac25d5792/.gitmodules",
+        "https://github.com/cvg/Hierarchical-Localization/releases/tag/v1.4"
+      ]
+    },
+    {
+      "id": "gsplat",
+      "name": "gsplat 1.5.3",
+      "role": "preferred owned-data Gaussian training and rendering base",
+      "terms": "Apache-2.0; no mandatory official checkpoint",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "self-trained outputs and source inputs separately governed",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "preferred_training_base_at_existing_source_lock",
+      "primarySources": [
+        "https://github.com/nerfstudio-project/gsplat/blob/937e29912570c372bed6747a5c9bf85fed877bae/LICENSE",
+        "https://github.com/nerfstudio-project/gsplat/releases/tag/v1.5.3"
+      ]
+    },
+    {
+      "id": "nerfstudio",
+      "name": "Nerfstudio 1.1.5",
+      "role": "training framework and viewer",
+      "terms": "Apache-2.0 framework; methods, plugins, weights and datasets separate",
+      "internalOffline": "conditional",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "allow_list_exact_method_and_model",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "framework_only_not_blanket_method_clearance",
+      "primarySources": [
+        "https://github.com/nerfstudio-project/nerfstudio/blob/6b60855003011b2ca23c2fe3f8e2ca6314c69924/LICENSE",
+        "https://github.com/nerfstudio-project/nerfstudio/releases/tag/v1.1.5"
+      ]
+    },
+    {
+      "id": "legacy-runpod-trainer-image",
+      "name": "Checked-in infra/runpod trainer image",
+      "role": "legacy cloud training image; not the approved local reconstruction lane",
+      "terms": "pins Open3D 0.18.0, pye57 0.4.16 and gsplat 1.5.3+pt24cu124, but acquires SPZ and DN-Splatter from moving main and has no frozen whole-image dependency, notice or source-asset closure",
+      "internalOffline": "excluded_from_t534_candidate_path",
+      "shippedCode": "blocked_pending_exact_image_bom_pins_notices_and_dependency_review",
+      "weightsDataAssets": "source captures, base image, wheels, examples and generated outputs remain separately governed",
+      "techniqueOnly": "not_applicable",
+      "decision": "do_not_build_run_deploy_or_treat_as_approved_by_this_review",
+      "localEvidence": "infra/runpod/Dockerfile",
+      "primarySources": [
+        "https://github.com/isl-org/Open3D/blob/1e7b17438687a0b0c1e5a7187321ac7044afe275/LICENSE",
+        "https://github.com/davidcaron/pye57/blob/64c9000738ad54242e87e1da6bca6b683b13374b/LICENSE",
+        "https://github.com/nerfstudio-project/gsplat/blob/937e29912570c372bed6747a5c9bf85fed877bae/LICENSE",
+        "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/LICENSE",
+        "https://github.com/maturk/dn-splatter/blob/97588b4290128ce7ba6fdbfaac3020b42b17de4c/LICENSE"
+      ]
+    },
+    {
+      "id": "dn-splatter",
+      "name": "DN-Splatter",
+      "role": "depth and normal supervision",
+      "terms": "Apache-2.0 code; Omnidata, DSINE and benchmark datasets separate",
+      "internalOffline": "conditional_owned_sensor_depth_lane",
+      "shippedCode": "hold_until_dependency_closure",
+      "weightsDataAssets": "do_not_redistribute_unreviewed_third_party_material",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "research_candidate_not_initial_production_dependency",
+      "primarySources": [
+        "https://github.com/maturk/dn-splatter/blob/97588b4290128ce7ba6fdbfaac3020b42b17de4c/LICENSE"
+      ]
+    },
+    {
+      "id": "3dgrut",
+      "name": "NVIDIA 3DGRUT 1.1.0",
+      "role": "advanced distorted-camera Gaussian rendering research",
+      "terms": "Apache-2.0 core with mixed dependencies including GPL-3.0 plyfile and OptiX/tiny-cuda-nn closure",
+      "internalOffline": "conditional",
+      "shippedCode": "high_diligence",
+      "weightsDataAssets": "locally produced only; inputs separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "prefer_gsplat_for_initial_production_lane",
+      "primarySources": [
+        "https://github.com/nv-tlabs/3dgrut/blob/a37ef721012dea0f29c0fcfff2d525023b4e854a/LICENSE",
+        "https://github.com/nv-tlabs/3dgrut/blob/a37ef721012dea0f29c0fcfff2d525023b4e854a/ATTRIBUTIONS.md"
+      ]
+    },
+    {
+      "id": "graphdeco-3dgs",
+      "name": "Original graphdeco Gaussian Splatting",
+      "role": "historical baseline only",
+      "terms": "custom noncommercial research and evaluation licence",
+      "internalOffline": "research_only",
+      "shippedCode": "blocked_without_explicit_consent",
+      "weightsDataAssets": "restricted",
+      "techniqueOnly": "independent_study_candidate_no_code_copying_patent_freedom_to_operate_unresolved",
+      "decision": "exclude_from_commercial_stack",
+      "primarySources": [
+        "https://github.com/graphdeco-inria/gaussian-splatting/blob/54c035f7834b564019656c3e3fcc3646292f727d/LICENSE.md"
+      ]
+    },
+    {
+      "id": "mip-splatting",
+      "name": "Mip-Splatting",
+      "role": "antialiasing technique reference",
+      "terms": "no root licence; README instructs users to follow original 3DGS terms",
+      "internalOffline": "research_only",
+      "shippedCode": "blocked",
+      "weightsDataAssets": "not_cleared",
+      "techniqueOnly": "independent_implementation_candidate_no_code_copying_patent_freedom_to_operate_unresolved",
+      "decision": "use_gsplat_antialiasing_path_instead",
+      "primarySources": [
+        "https://github.com/autonomousvision/mip-splatting/blob/dda02ab5ecf45d6edb8c540d9bb65c7e451345a9/README.md"
+      ]
+    },
+    {
+      "id": "spz",
+      "name": "Niantic SPZ source tag v3.0.0+adobe.32 at 21715c3b (declared package 1.1.0; format v4)",
+      "role": "lossy splat interchange and delivery",
+      "terms": "MIT implementation; samples have no separate asset licence located",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "exclude_sample_assets_and_preserve_source_splat_rights",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "transport_only_never_archive_or_evidence_master",
+      "primarySources": [
+        "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/LICENSE",
+        "https://github.com/nianticlabs/spz/blob/21715c3b7a609ea6fb7c69b8ae42181a12b59f22/CMakeLists.txt#L3-L6",
+        "https://github.com/nianticlabs/spz/tree/v3.0.0%2Badobe.32"
+      ]
+    },
+    {
+      "id": "splat-transform",
+      "name": "PlayCanvas SplatTransform 3.1.3",
+      "role": "offline/browser conversion, cleanup, LOD and diagnostics",
+      "terms": "MIT code; exact closure includes Adobe SPZ and PlayCanvas; fixtures are not blanket-cleared",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "input_and_output_rights_persist",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "review_upgrade_from_stale_3_0_pin_before_adoption",
+      "primarySources": [
+        "https://github.com/playcanvas/splat-transform/blob/51fe3dfcd706b6ef7610e224b13293bc74fb450d/LICENSE",
+        "https://github.com/playcanvas/splat-transform/blob/51fe3dfcd706b6ef7610e224b13293bc74fb450d/package.json"
+      ]
+    },
+    {
+      "id": "playcanvas-stack",
+      "name": "SuperSplat 2.31.1, Viewer 1.27.1, Engine 2.20.6 and React 0.11.5",
+      "role": "optional editor, diagnostic viewer and secondary runtime experiments",
+      "terms": "MIT code; source examples and environment assets have mixed or absent terms",
+      "internalOffline": "candidate_narrow_package_only",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "exclude_repo_assets_unless_individually_cleared",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "catalogue_candidates_not_currently_integrated",
+      "primarySources": [
+        "https://github.com/playcanvas/supersplat/blob/206b289158ccb0386ac1ec0c8e85ffc80eea2a2c/LICENSE",
+        "https://github.com/playcanvas/supersplat/releases/tag/v2.31.1",
+        "https://github.com/playcanvas/supersplat-viewer/blob/528ce7e78fd3c2ce868fae7066124b2fdc7eee1d/LICENSE",
+        "https://github.com/playcanvas/engine/blob/9a2a8ef77d2bf0954a7689d4c2f7505af9fc0ac1/LICENSE",
+        "https://github.com/playcanvas/react/blob/fa2f272eedec708f655abdfb98ed6abc639ea3ec/LICENSE"
+      ]
+    },
+    {
+      "id": "khr-gaussian-splatting",
+      "name": "KHR_gaussian_splatting",
+      "role": "feature-flagged glTF interchange",
+      "terms": "Release Candidate specification text under Khronos specification copyright terms; no patent or trademark grant in that text",
+      "internalOffline": "candidate_for_interop_testing",
+      "shippedCode": "pending_review",
+      "weightsDataAssets": "payload_rights_separate",
+      "techniqueOnly": "use_unmodified_spec_for_implementation",
+      "decision": "do_not_claim_ratification_or_conformance",
+      "primarySources": [
+        "https://github.com/KhronosGroup/glTF/blob/77b44be7bef26e01fb0b140e3d5bb1716421c5e9/extensions/2.0/Khronos/KHR_gaussian_splatting/README.md",
+        "https://github.com/KhronosGroup/glTF/blob/77b44be7bef26e01fb0b140e3d5bb1716421c5e9/LICENSES/LicenseRef-KhronosSpecCopyright.txt"
+      ]
+    },
+    {
+      "id": "basis-universal",
+      "name": "Basis Universal",
+      "role": "texture compression and transcoding",
+      "terms": "Apache-2.0 core with NOTICE and separately listed permissive dependencies",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "test_images_excluded",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "candidate_after_notice_and_dependency_bom",
+      "primarySources": [
+        "https://github.com/BinomialLLC/basis_universal/blob/d77f9308e2d363c4a8b60d11be33e09a16290fe3/LICENSE",
+        "https://github.com/BinomialLLC/basis_universal/blob/d77f9308e2d363c4a8b60d11be33e09a16290fe3/NOTICE"
+      ]
+    },
+    {
+      "id": "ktx-software",
+      "name": "KTX-Software",
+      "role": "KTX2 container tooling",
+      "terms": "mixed repository; default build includes Ericsson custom-licensed ETC source",
+      "internalOffline": "conditional",
+      "shippedCode": "needs_isolation",
+      "weightsDataAssets": "mixed_assets",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "do_not_adopt_default_whole_build_as_apache",
+      "primarySources": [
+        "https://github.com/KhronosGroup/KTX-Software/blob/78ad9c1d0e014d8958450fccbf750cd6793c3903/LICENSE.md",
+        "https://github.com/KhronosGroup/KTX-Software/blob/78ad9c1d0e014d8958450fccbf750cd6793c3903/external/etcdec/etcdec.cxx"
+      ]
+    },
+    {
+      "id": "splat-analyzer",
+      "name": "Splat Analyzer",
+      "role": "approximate semantic proposal boxes",
+      "terms": "MIT app and Apache OWLv2/CUDA gsplat; Apple gsplat-mps lane is AGPL-3.0",
+      "internalOffline": "conditional_cuda_lane",
+      "shippedCode": "conditional_cuda_lane_only",
+      "weightsDataAssets": "OWLv2_Apache_conditions_and_source_splat_rights",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "human_review_only_never_measurement_or_collision_truth",
+      "primarySources": [
+        "https://github.com/nigelhartman/splat_analyzer/blob/e199fef611296249cb15604474ae08aecc7db69f/LICENSE.md",
+        "https://huggingface.co/google/owlv2-base-patch16-ensemble/blob/cfd3195ba4ea9592eec887ded089f4c08eff231d/README.md",
+        "https://github.com/iffyloop/gsplat-mps/blob/10372c263f8e54427183de8a5855a62f94c2f206/LICENSE"
+      ]
+    },
+    {
+      "id": "meshcoder",
+      "name": "MeshCoder",
+      "role": "editable hero-object proxy research",
+      "terms": "MIT code; released model CC-BY-NC-SA-4.0 plus Llama terms; dataset licence metadata conflicts",
+      "internalOffline": "research_only_for_released_stack",
+      "shippedCode": "code_only_conditional_with_independent_model",
+      "weightsDataAssets": "noncommercial_or_unclear",
+      "techniqueOnly": "independent_strategy_study_candidate_no_code_or_weight_copying_patent_review_unresolved",
+      "decision": "exclude_released_model_and_dataset_from_production",
+      "primarySources": [
+        "https://github.com/InternRobotics/MeshCoder/blob/bc72d5fa3d3c3659930eee1a595c5bd93c3aab06/LICENSE",
+        "https://huggingface.co/InternRobotics/MeshCoder/blob/f1490abdbce75db6886b88bcfce9fbec250b5596/README.md",
+        "https://huggingface.co/datasets/InternRobotics/MeshCoderDataset/blob/e199a6fe086f406aaa7feb7081f0e7881949e8f3/README.md"
+      ]
+    },
+    {
+      "id": "scarf-slam",
+      "name": "ScaRF-SLAM",
+      "role": "alternative mapping research",
+      "terms": "GPL-3.0 code; README commercial-contact ambiguity; default DA3 giant model CC-BY-NC-4.0",
+      "internalOffline": "research_only_for_default_stack",
+      "shippedCode": "copyleft_and_commercial_clarification_required",
+      "weightsDataAssets": "default_weight_noncommercial",
+      "techniqueOnly": "independent_concept_study_candidate_no_code_or_weight_copying_patent_review_unresolved",
+      "decision": "exclude_released_default_pipeline_from_production",
+      "primarySources": [
+        "https://github.com/ori-drs/ScaRF-SLAM/blob/a309a6541ea7ba70d5fd281be5396082dfe4f1ac/LICENSE",
+        "https://huggingface.co/depth-anything/DA3NESTED-GIANT-LARGE/blob/8615eefb62f2db4f8d6ebaa59160086981672829/README.md"
+      ]
+    },
+    {
+      "id": "artifixer",
+      "name": "NVIDIA ArtiFixer",
+      "role": "optional reconstruction repair research",
+      "terms": "Apache-2.0 code; official 14B checkpoint under NVIDIA One-Way Noncommercial and R&D-only card",
+      "internalOffline": "research_only_for_released_stack",
+      "shippedCode": "code_only_conditional_with_independent_model",
+      "weightsDataAssets": "official_checkpoint_noncommercial",
+      "techniqueOnly": "independent_strategy_study_candidate_no_code_or_weight_copying_patent_review_unresolved",
+      "decision": "exclude_released_checkpoint_from_commercial_derivative_lane",
+      "primarySources": [
+        "https://github.com/nv-tlabs/ArtiFixer/blob/8e882d6884cea08daa58d5c8d4552d0142e617f1/LICENSE",
+        "https://huggingface.co/nvidia/ArtiFixer/blob/20c7f748286adc652f4060a03aab2c0c34e67500/README.md"
+      ]
+    },
+    {
+      "id": "worldmesh",
+      "name": "WorldMesh",
+      "role": "mesh-structured generative-world research",
+      "terms": "MIT core but bundled SAM custom, ComfyUI GPL-3.0, Apple Depth Pro, Apache Nerfstudio, noncommercial FLUX and Mip-Splatting setup dependencies",
+      "internalOffline": "research_only_for_whole_pipeline",
+      "shippedCode": "core_file_extraction_only_after_audit",
+      "weightsDataAssets": "mixed_noncommercial_gated_or_under_documented",
+      "techniqueOnly": "independent_architecture_study_candidate_no_bundled_code_weight_or_asset_clearance",
+      "decision": "do_not_adopt_whole_pipeline_or_container",
+      "primarySources": [
+        "https://github.com/mschneider456/worldmesh/blob/ee19422fbc41592130636d8d2d12a3b155d60867/LICENSE",
+        "https://github.com/mschneider456/worldmesh/blob/ee19422fbc41592130636d8d2d12a3b155d60867/setup.sh",
+        "https://huggingface.co/datasets/mas456/worldmesh"
+      ]
+    },
+    {
+      "id": "simfoundry",
+      "name": "SimFoundry",
+      "role": "real-to-sim technique reference",
+      "terms": "official page links paper but no code repository, checkpoint release or licence",
+      "internalOffline": "not_available",
+      "shippedCode": "not_available",
+      "weightsDataAssets": "not_available",
+      "techniqueOnly": "paper_inspiration_candidate_no_implementation_or_patent_clearance",
+      "decision": "inspiration_only",
+      "primarySources": [
+        "https://research.nvidia.com/labs/gear/simfoundry/"
+      ]
+    },
+    {
+      "id": "neuworld",
+      "name": "NeuWorld",
+      "role": "cinematic neural-world exploration reference",
+      "terms": "placeholder repository has no licence, code or checkpoints; README says release is under internal review",
+      "internalOffline": "not_available",
+      "shippedCode": "not_available",
+      "weightsDataAssets": "not_available",
+      "techniqueOnly": "citation_inspiration_candidate_no_implementation_or_patent_clearance",
+      "decision": "citation_and_inspiration_only",
+      "primarySources": [
+        "https://github.com/WU-CVGL/NeuWorld",
+        "https://lizhiqi49.github.io/NeuWorld/"
+      ]
+    },
+    {
+      "id": "cl-splats",
+      "name": "CL-Splats",
+      "role": "continual local Gaussian updates and historical-state recovery research",
+      "codeStatus": "Official public reimplementation inspected at 587fffc207f9c7cbb348f35e6d1d223d007eab69; README still lists replication modules for release.",
+      "releaseStatus": "No Git tags or GitHub Releases.",
+      "terms": "Original contributions are MIT, but files derived from 3DGS retain the Inria/MPII noncommercial research/evaluation licence; the companion dataset has no declared licence metadata or licence file.",
+      "internalOffline": "research_only_not_product_dependency",
+      "shippedCode": "blocked_as_whole_repository",
+      "weightsDataAssets": "blocked_absent_separate_dataset_and_checkpoint_rights",
+      "techniqueOnly": "independent_method_study_candidate_no_restricted_code_copying_patent_review_unresolved",
+      "decision": "reference_only_or_independent_reimplementation_over_permissive_components",
+      "primarySources": [
+        "https://arxiv.org/abs/2506.21117",
+        "https://github.com/jan-ackermann/cl-splats/tree/587fffc207f9c7cbb348f35e6d1d223d007eab69",
+        "https://github.com/jan-ackermann/cl-splats/blob/587fffc207f9c7cbb348f35e6d1d223d007eab69/LICENSE",
+        "https://github.com/jan-ackermann/cl-splats/blob/587fffc207f9c7cbb348f35e6d1d223d007eab69/3DGS_LICENSE.md",
+        "https://github.com/jan-ackermann/cl-splats/releases",
+        "https://huggingface.co/datasets/ackermannj/cl-splats-dataset"
+      ]
+    },
+    {
+      "id": "cross-temporal-3dgs",
+      "name": "Cross-Temporal 3D Gaussian Splatting",
+      "role": "sparse-view cross-temporal reconstruction research",
+      "codeStatus": "No official code repository is linked from the paper or authoritative publication.",
+      "releaseStatus": "Paper only; no code, model or dataset release identified.",
+      "terms": "The arXiv non-exclusive distribution licence is not a software implementation licence; the paper reports use of the restricted official 3DGS implementation.",
+      "internalOffline": "paper_reference_only",
+      "shippedCode": "blocked_no_public_implementation_or_software_licence",
+      "weightsDataAssets": "blocked_no_public_dataset_or_model_terms",
+      "techniqueOnly": "paper_study_candidate_no_implementation_or_patent_clearance",
+      "decision": "paper_only_no_dependency",
+      "primarySources": [
+        "https://arxiv.org/abs/2512.00534",
+        "https://arxiv.org/html/2512.00534",
+        "https://ojs.aaai.org/index.php/AAAI/article/download/37217/41179",
+        "https://arxiv.org/licenses/nonexclusive-distrib/1.0/license.html"
+      ]
+    },
+    {
+      "id": "gaussianupdate",
+      "name": "GaussianUpdate",
+      "role": "continual Gaussian scene updates with generative replay research",
+      "codeStatus": "The official project page links paper and supplementary material but no implementation repository.",
+      "releaseStatus": "No official code, package, checkpoint or dataset release identified.",
+      "terms": "The paper is CC BY 4.0; that covers the article, not absent implementation code. The reported implementation is based on official 3DGS.",
+      "internalOffline": "paper_reference_only",
+      "shippedCode": "blocked_no_public_implementation_or_software_licence",
+      "weightsDataAssets": "blocked_no_project_model_or_dataset_release_terms",
+      "techniqueOnly": "paper_study_candidate_no_implementation_or_patent_clearance",
+      "decision": "paper_only_no_dependency",
+      "primarySources": [
+        "https://zju3dv.github.io/GaussianUpdate/",
+        "https://arxiv.org/abs/2508.08867",
+        "https://arxiv.org/html/2508.08867",
+        "https://creativecommons.org/licenses/by/4.0/"
+      ]
+    },
+    {
+      "id": "react-gs",
+      "name": "ReAct-GS",
+      "role": "detail recovery through densification and frozen-primitive reactivation",
+      "codeStatus": "Official repository inspected at its sole main commit 5cf1b9dd7a3ac0cc991976969a41cfb1fcad90a5.",
+      "releaseStatus": "No Git tags or GitHub Releases.",
+      "terms": "The project expressly uses the original Gaussian-Splatting noncommercial research/evaluation licence.",
+      "internalOffline": "research_only_not_product_dependency",
+      "shippedCode": "blocked",
+      "weightsDataAssets": "no_official_weights_release_found_and_benchmark_rights_are_separate",
+      "techniqueOnly": "independent_method_study_candidate_no_restricted_code_copying_patent_review_unresolved",
+      "decision": "reference_only_or_independent_reimplementation_over_permissive_components",
+      "primarySources": [
+        "https://arxiv.org/abs/2510.19653",
+        "https://github.com/react-gs/ReAct-GS/tree/5cf1b9dd7a3ac0cc991976969a41cfb1fcad90a5",
+        "https://github.com/react-gs/ReAct-GS/blob/5cf1b9dd7a3ac0cc991976969a41cfb1fcad90a5/LICENSE.md",
+        "https://github.com/react-gs/ReAct-GS/releases"
+      ]
+    },
+    {
+      "id": "wild-gaussians",
+      "name": "WildGaussians",
+      "role": "appearance variation and transient-occluder handling",
+      "codeStatus": "Official repository inspected at 66fa22ac74a6ffba024842dff29ded114d41f4d0.",
+      "releaseStatus": "No Git tags or GitHub Releases; checkpoints and predictions are published separately.",
+      "terms": "Original contributions are MIT, but the root licence embeds noncommercial 3DGS renderer terms and the README also requires following the 3DGS and Mip-Splatting licences.",
+      "internalOffline": "research_only_not_product_dependency",
+      "shippedCode": "blocked_as_whole_repository",
+      "weightsDataAssets": "blocked_pending_checkpoint_and_dataset_provenance_clearance",
+      "techniqueOnly": "independent_method_study_candidate_no_restricted_code_copying_patent_review_unresolved",
+      "decision": "reference_only_or_independent_reimplementation_over_permissive_rasterizer",
+      "primarySources": [
+        "https://arxiv.org/abs/2407.08447",
+        "https://github.com/jkulhanek/wild-gaussians/tree/66fa22ac74a6ffba024842dff29ded114d41f4d0",
+        "https://github.com/jkulhanek/wild-gaussians/blob/66fa22ac74a6ffba024842dff29ded114d41f4d0/LICENSE",
+        "https://github.com/jkulhanek/wild-gaussians/releases",
+        "https://huggingface.co/jkulhanek/wild-gaussians/tree/4f2f944f9cbb36f465db82e0535a53aa70422b0e"
+      ]
+    },
+    {
+      "id": "youtube-vbtq3tvi5ok",
+      "name": "View Dependent PPISP interview (YouTube vbtQ3tvi5ok)",
+      "role": "explanatory reference for PPISP photometric compensation",
+      "codeStatus": "Not a code release.",
+      "releaseStatus": "Public streaming video only.",
+      "terms": "No Creative Commons designation was exposed; conservatively treat the video under YouTube's default Standard YouTube Licence.",
+      "internalOffline": "reference_only",
+      "shippedCode": "not_applicable_no_code",
+      "weightsDataAssets": "do_not_copy_bundle_or_redistribute_video_or_transcript_without_permission",
+      "techniqueOnly": "context_reference_only_no_reuse_rights",
+      "decision": "cite_or_link_only_evaluate_official_ppisp_code_separately",
+      "primarySources": [
+        "https://www.youtube.com/watch?v=vbtQ3tvi5ok",
+        "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=vbtQ3tvi5ok&format=json",
+        "https://www.youtube.com/@ViewDependent",
+        "https://support.google.com/youtube/answer/2797468?hl=en-GB",
+        "https://research.nvidia.com/labs/sil/projects/ppisp/"
+      ]
+    },
+    {
+      "id": "ppisp",
+      "name": "NVIDIA PPISP 1.2.1",
+      "role": "physically plausible exposure, vignetting, colour and camera-response compensation",
+      "codeStatus": "Official implementation at tag v1.2.1 and commit df33809f7b3b20ac06de088dfc871b144b8fb54d.",
+      "releaseStatus": "Tagged source release; no packaged GitHub Release asset required.",
+      "terms": "Apache-2.0 code with an official third-party attribution file.",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional_after_exact_dependency_and_notice_packaging",
+      "weightsDataAssets": "no_mandatory_weights_optional_official_dataset_is_CC_BY_4_0_and_separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_dependency_and_patent_review",
+      "decision": "preferred_conditional_photometric_compensation_candidate",
+      "primarySources": [
+        "https://research.nvidia.com/labs/sil/projects/ppisp/",
+        "https://github.com/nv-tlabs/ppisp/tree/v1.2.1",
+        "https://github.com/nv-tlabs/ppisp/blob/df33809f7b3b20ac06de088dfc871b144b8fb54d/LICENSE",
+        "https://github.com/nv-tlabs/ppisp/blob/v1.2.1/ATTRIBUTIONS.md",
+        "https://github.com/nv-tlabs/ppisp/tags",
+        "https://huggingface.co/datasets/nvidia/PhysicalAI-NuRec-PPISP/blob/main/README.md"
+      ]
+    },
+    {
+      "id": "three-meshlets",
+      "name": "Three Meshlets experimental demo",
+      "role": "browser meshlet rendering technique reference",
+      "terms": "MIT Three.js fork and meshoptimizer code; bundled demo assets include noncommercial or unclear material",
+      "internalOffline": "research_only_for_demo",
+      "shippedCode": "conditional_code_extraction",
+      "weightsDataAssets": "do_not_ship_demo_assets",
+      "techniqueOnly": "independent_demo_idea_candidate_no_bundle_or_asset_clearance",
+      "decision": "own_assets_and_exact_dependency_closure_required",
+      "primarySources": [
+        "https://github.com/needle-tools/three.js/blob/feature/meshlet-creation-sample/examples/webgpu_compute_nanite_meshlets.html",
+        "https://github.com/needle-tools/three.js/blob/feature/meshlet-creation-sample/LICENSE"
+      ]
+    },
+    {
+      "id": "motionbricks",
+      "name": "MotionBricks / GR00T Whole-Body Control",
+      "role": "optional cinematic simulated-guest animation",
+      "terms": "Apache-2.0 source code; released weights under NVIDIA Open Model License; BONES-SEED training data has noncommercial and retraining restrictions",
+      "internalOffline": "conditional",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "released_weights_conditional_bones_retraining_blocked_by_default",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "optional_runtime_only_never_capture_truth",
+      "primarySources": [
+        "https://github.com/NVlabs/GR00T-WholeBodyControl/blob/4141c34280abb67c82e115342a8720f4a83d750d/motionbricks/README.md",
+        "https://github.com/NVlabs/GR00T-WholeBodyControl/blob/4141c34280abb67c82e115342a8720f4a83d750d/LICENSE",
+        "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
+        "https://bones.studio/info/seed-license"
+      ]
+    },
+    {
+      "id": "xgrids-lcc",
+      "name": "XGRIDS LCC format",
+      "role": "proprietary captured-splat source",
+      "terms": "bespoke non-OSI format grant with attribution, flow-down, public-derivative, competitive-AI-training and termination conditions",
+      "internalOffline": "needs_written_purpose_review",
+      "shippedCode": "not_applicable",
+      "weightsDataAssets": "payload_rights_not_granted_by_whitepaper",
+      "techniqueOnly": "spec_reading_only",
+      "decision": "blocked_by_default_for_product_ingest_training_or_redistribution",
+      "primarySources": [
+        "https://github.com/xgrids/LCCWhitepaper/blob/b38c2eb31be24e4220f23c69c4a0f3306356920e/README.md#4-license-and-restrictions"
+      ]
+    },
+    {
+      "id": "xgrids-lcc2",
+      "name": "XGRIDS LCC2 format",
+      "role": "proprietary captured-splat source",
+      "terms": "bespoke non-OSI grant retaining LCC obligations and adding broad prohibited-use clauses",
+      "internalOffline": "needs_written_purpose_review",
+      "shippedCode": "not_applicable",
+      "weightsDataAssets": "payload_and_derivative_rights_separate",
+      "techniqueOnly": "spec_reading_only",
+      "decision": "blocked_by_default_for_product_ingest_training_or_redistribution",
+      "primarySources": [
+        "https://github.com/xgrids/LCC2Whitepaper/blob/039367dbe53ccbfa07b44a8e6280ceb4ebf8aa0b/README.md#5-license-and-restrictions"
+      ]
+    },
+    {
+      "id": "xgrids-sdks",
+      "name": "XGRIDS Web 0.6.1, Unity 1.2.18 and Unreal 3.0.0 SDKs",
+      "role": "vendor runtime integrations",
+      "terms": "public README/release surfaces with no root LICENSE or affirmative commercial redistribution grant",
+      "internalOffline": "pending_review",
+      "shippedCode": "do_not_bundle",
+      "weightsDataAssets": "LCC_payload_and_customer_rights_separate",
+      "techniqueOnly": "not_needed",
+      "decision": "use_vendor_portal_terms_or_written_permission_only",
+      "primarySources": [
+        "https://github.com/xgrids/LCC-Web-SDK/releases/tag/v0.6.1",
+        "https://github.com/xgrids/LCC-Unity-SDK/releases/tag/v1.2.18",
+        "https://github.com/xgrids/LCC-Unreal-SDK/releases/tag/v3.0.0"
+      ]
+    },
+    {
+      "id": "xgrids-raw",
+      "name": "XGRIDS PortalCam raw XBIN project",
+      "role": "retained raw capture source",
+      "terms": "official manuals describe files and exports but do not grant content, decoding, training or redistribution rights; current store terms are restrictive",
+      "internalOffline": "pending_exact_customer_vendor_agreement",
+      "shippedCode": "no_public_decoder_found",
+      "weightsDataAssets": "possession_does_not_establish_rights",
+      "techniqueOnly": "not_applicable",
+      "decision": "official_export_bridge_only_no_reverse_engineering",
+      "primarySources": [
+        "https://docs.xgrids.com/en-us/01-lingshi-p1/v1.3.0/05-faq.html",
+        "https://store.xgrids.com/policies/terms-of-service"
+      ]
+    },
+    {
+      "id": "matterport",
+      "name": "Matterport E57 and MatterPak exports",
+      "role": "metric and spatial source",
+      "terms": "customer owns Customer Data and Spaces as between customer and Matterport, but must have subject-property permissions and remains responsible for Digital Assets; contract and account identity are required",
+      "internalOffline": "conditional_on_contract_and_venue_permission",
+      "shippedCode": "not_applicable",
+      "weightsDataAssets": "commercial_display_transformation_cloud_and_training_purposes_must_be_supported",
+      "techniqueOnly": "not_applicable",
+      "decision": "external_rights_evidence_required_for_real_assets",
+      "primarySources": [
+        "https://matterport.com/en-gb/legal/platform-subscription-agreement",
+        "https://matterport.com/add-ons/matterpak"
+      ]
+    },
+    {
+      "id": "external-dcc-tools",
+      "name": "CloudCompare and Blender",
+      "role": "manual point-cloud and mesh review",
+      "terms": "GPL applications; outputs are not automatically GPL but add-ons, scripts and source assets vary",
+      "internalOffline": "external_tool",
+      "shippedCode": "needs_isolation",
+      "weightsDataAssets": "source_assets_separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "operate_separately_do_not_embed_in_closed_app",
+      "primarySources": [
+        "https://github.com/CloudCompare/CloudCompare",
+        "https://www.blender.org/about/license/"
+      ]
+    },
+    {
+      "id": "proprietary-reconstruction-dcc",
+      "name": "RealityScan and Unreal Engine",
+      "role": "optional external bake-off, inspection and high-end composition",
+      "terms": "proprietary vendor products with account, seat, output, redistribution and service-specific terms",
+      "internalOffline": "external_tool_after_account_terms",
+      "shippedCode": "do_not_embed_without_separate_terms",
+      "weightsDataAssets": "source_and_vendor_content_rights_separate",
+      "techniqueOnly": "not_applicable",
+      "decision": "not_core_super_app_dependency",
+      "primarySources": [
+        "https://www.realityscan.com/license?lang=en-US",
+        "https://www.realityscan.com/eula?lang=en-US",
+        "https://www.unrealengine.com/eula/unreal"
+      ]
+    },
+    {
+      "id": "openusd",
+      "name": "OpenUSD 26.05",
+      "role": "future DCC and composition interchange",
+      "terms": "Tomorrow Open Source Technology License 1.0 plus NOTICE and third-party closure",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "sample_and_source_assets_separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "catalogue_candidate_not_currently_integrated",
+      "primarySources": [
+        "https://github.com/PixarAnimationStudios/OpenUSD/blob/2095fafafd033fa23386d7ec6d58c7cc33974518/LICENSE.txt",
+        "https://github.com/PixarAnimationStudios/OpenUSD/blob/2095fafafd033fa23386d7ec6d58c7cc33974518/NOTICE.txt"
+      ]
+    },
+    {
+      "id": "cesium",
+      "name": "CesiumJS 1.143 and 3D Tiles",
+      "role": "optional geospatial hierarchy and browser runtime",
+      "terms": "Apache-2.0 code; Cesium ion, imagery, terrain, providers and sample data separate",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "provider_and_geospatial_content_terms_separate",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "optional_catalogue_candidate_not_currently_integrated",
+      "primarySources": [
+        "https://github.com/CesiumGS/cesium/blob/9d08a13ce492de3dea82d8eeb88d1db959592d61/LICENSE.md",
+        "https://docs.ogc.org/cs/22-025r4/22-025r4.html"
+      ]
+    },
+    {
+      "id": "recast-detour",
+      "name": "Recast/Detour",
+      "role": "deterministic navmesh and pathfinding support",
+      "terms": "zlib",
+      "internalOffline": "candidate",
+      "shippedCode": "candidate_after_notice_and_pin",
+      "weightsDataAssets": "generated_routes_not_survey_truth",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "simulation_support_only",
+      "primarySources": [
+        "https://github.com/recastnavigation/recastnavigation/blob/main/License.txt"
+      ]
+    },
+    {
+      "id": "rvo2",
+      "name": "RVO2 / ORCA",
+      "role": "local collision-avoidance simulation",
+      "terms": "Apache-2.0",
+      "internalOffline": "candidate",
+      "shippedCode": "conditional",
+      "weightsDataAssets": "simulation_inputs_and_outputs_assumption_bound",
+      "techniqueOnly": "independent_implementation_candidate_subject_to_exact_closure_and_patent_review",
+      "decision": "illustrative_guest_flow_only",
+      "primarySources": [
+        "https://github.com/snape/RVO2/blob/main/LICENSE"
+      ]
+    },
+    {
+      "id": "cloud-services",
+      "name": "RunPod, Cloudflare R2 and AWS EC2",
+      "role": "optional cloud compute and storage adapters",
+      "terms": "service contracts, not open-source grants; account owner, customer-content, marketplace, region, retention and cost terms apply",
+      "internalOffline": "not_needed_for_local_path",
+      "shippedCode": "provider_adapter_only",
+      "weightsDataAssets": "upload_only_after_source_rights_and_account_acceptance",
+      "techniqueOnly": "not_applicable",
+      "decision": "conditional_future_handoff_no_credentials_or_spend_in_review",
+      "primarySources": [
+        "https://www.runpod.io/legal/terms-of-service",
+        "https://developers.cloudflare.com/r2/",
+        "https://aws.amazon.com/agreement/",
+        "https://aws.amazon.com/service-terms/"
+      ]
+    },
+    {
+      "id": "supporting-transfer-and-container-tools",
+      "name": "rclone, Docker Desktop and WSL",
+      "role": "operator-side transfer and container execution support",
+      "terms": "tool code and vendor subscription/OS terms are distinct; these do not grant rights in transferred inputs or images",
+      "internalOffline": "conditional_operator_tool",
+      "shippedCode": "not_part_of_app_runtime",
+      "weightsDataAssets": "container_images_and_payloads_need_own_bom_and_rights",
+      "techniqueOnly": "not_applicable",
+      "decision": "external_support_only_recheck_exact_distribution_plan",
+      "primarySources": [
+        "https://github.com/rclone/rclone",
+        "https://www.docker.com/legal/docker-subscription-service-agreement/",
+        "https://learn.microsoft.com/windows/wsl/"
+      ]
+    }
+  ],
+  "externalEvidenceNeeded": [
+    {
+      "id": "matterport-contract",
+      "needed": "The applicable Matterport customer/order/export record and agreement version for each real source."
+    },
+    {
+      "id": "venue-permission",
+      "needed": "Written venue permission covering intended commercial display, transformation, cloud processing and, only if desired, model training."
+    },
+    {
+      "id": "xgrids-rights",
+      "needed": "The XGRIDS purchase/account/export terms or written vendor permission for the exact LCC/LCC2/PortalCam sources and derived outputs."
+    },
+    {
+      "id": "ai-model-record",
+      "needed": "The exact selected model card, checkpoint digest, base-model terms, data provenance and intended output exposure for every optional AI derivative."
+    }
+  ],
+  "contradictionsAndDrift": [
+    "SplatTransform advanced from 3.0.0 to 3.1.3 after the 2026-07-14 screen; the old reviewed pin is not continuing approval.",
+    "SuperSplat advanced from 2.29.0 to 2.31.1; no PlayCanvas package is currently integrated.",
+    "XGRIDS Unreal SDK advanced from 0.9.0 to 3.0.0 without adding a public root redistribution licence.",
+    "COLMAP advanced from 4.1.0 to 4.1.1; upgrade requires a new exact build closure.",
+    "Mip-Splatting has no root LICENSE.md despite an earlier matrix link; its README points to the original 3DGS restrictions.",
+    "MeshCoder dataset metadata says CC-BY-SA-4.0 while its access gate states CC-BY-NC-SA-4.0; the stricter noncommercial reading is applied.",
+    "Spark 2.1.0 package metadata names a nonexistent sparkjs-dev/spark repository while the canonical source is sparkjsdev/spark; OmniTwin remains on 2.0.0.",
+    "KTX-Software's top-level summary cites a stale ETC path while the default build includes a restrictive Ericsson file at external/etcdec/etcdec.cxx.",
+    "The first T-534 draft paired several named releases with moving-main licence revisions; libE57Format 3.1.1, COLMAP 4.1.1, hloc v1.4, gsplat 1.5.3, Nerfstudio 1.1.5 and SuperSplat 2.31.1 are now bound to their exact release commits.",
+    "Niantic SPZ commit 21715c3b is tag v3.0.0+adobe.32 while the source declares package 1.1.0 and file-format v4; those three identities remain distinct.",
+    "The checked-in infra/runpod/Dockerfile pins older Open3D 0.18.0 and pye57 0.4.16, but also acquires SPZ and DN-Splatter from moving main; it is a legacy uncleared cloud image, not the planned pye57 0.4.19/Open3D 0.19 local lane."
+  ],
+  "nonAnswersRejected": [
+    "A GitHub sidebar licence label without reading the exact licence file.",
+    "A paper or project page without released code and terms.",
+    "A permissive framework licence used as evidence for model weights or datasets.",
+    "A permissive core licence used as clearance for a bundled repository, container or example-asset tree.",
+    "A format conversion used as evidence that upstream capture restrictions disappeared.",
+    "Possession of raw capture files used as evidence of commercial, training or redistribution permission.",
+    "An open-source code licence used as ownership allocation for trained or generated output."
+  ],
+  "invariants": [
+    "Captured and metric layers remain separate from optional generated visual derivatives.",
+    "No blocked or pending tool is installed, invoked or added as a dependency by this review.",
+    "The existence of infra/runpod/Dockerfile is not approval to build, run or deploy that legacy image.",
+    "No source asset is uploaded to a cloud provider by this review.",
+    "No credential, signature, production database, object-store mutation, publication or spend occurs.",
+    "Every future release records exact code version, dependency closure, model digest, data rights and source-input permission."
+  ]
+}

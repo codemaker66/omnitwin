@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "omnitwin.durable-local-intake-workspace-v0-evidence.v0",
+  "reviewId": "T-541",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "scope": "Durable Local Intake Workspace V0: one already-inspected source can be copied only after an explicit operator action into a trusted local workspace, fully verified, closed, reopened from the saved copy, reported and explicitly deleted. This is ordinary local product and 3D reconstruction engineering. It grants no reconstruction, training, enhancement, cloud, signing, publication or release authority.",
+  "activity": {
+    "generatedNonVenueFixtureRead": true,
+    "userOrVenueSourceRead": false,
+    "originalSourceWrittenOrChanged": false,
+    "workspaceCopyCreated": true,
+    "workspaceReopenedWithoutOriginalPath": true,
+    "workspaceCopyDeleted": true,
+    "reconstructionPerformed": false,
+    "trainingPerformed": false,
+    "enhancementPerformed": false,
+    "cloudRequestPerformed": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false
+  },
+  "contract": {
+    "intentSchemaVersion": "omnitwin.foundry.local-intake-workspace-intent.v0",
+    "indexSchemaVersion": "omnitwin.foundry.local-intake-workspace-index.v0",
+    "controllerSchemaVersion": "omnitwin.foundry.local-intake-workspace-controller.v0",
+    "copyConfirmation": "copy_into_local_workspace",
+    "deleteConfirmation": "delete_local_workspace_copy",
+    "localPersistence": "explicit_copy_only",
+    "resume": "file_boundary_only",
+    "deletion": "explicit_digest_bound_only",
+    "authority": "none",
+    "notAuthorized": [
+      "job planning",
+      "job submission",
+      "cloud upload",
+      "reconstruction",
+      "model training",
+      "enhancement",
+      "execution",
+      "signing",
+      "publication",
+      "promotion"
+    ],
+    "persistedMembers": [
+      "workspace-intent.json",
+      "evidence/intake-receipt.json",
+      "optional evidence/admission-review.json",
+      "optional evidence/admission-result.json",
+      "payload/<source-label>/...",
+      "workspace-index.json"
+    ],
+    "copyGuarantees": {
+      "allReceiptFilesIncluded": true,
+      "zeroByteFilesIncluded": true,
+      "duplicateContentFilesIncluded": true,
+      "sourceMtimesPreserved": true,
+      "sourceReceiptReproducedFromCopiedPayload": true,
+      "fullFileHashesVerified": true,
+      "exactWorkspaceTreeVerified": true,
+      "symlinksRejected": true,
+      "hardlinksRejected": true,
+      "browserCanSupplyFilesystemPaths": false,
+      "persistedStatusContainsAbsolutePaths": false
+    },
+    "truth": "The original receipt remains evidence. A guided admission draft is persisted only when it exactly follows from the same receipt. Pending, admitted and excluded members remain distinct, and captured, enhanced-captured, generated-cinematic and concept/imagination provenance counts are preserved without promotion.",
+    "deleteBehavior": "Deletion requires both current digests and the exact confirmation, renames the workspace before recursive removal, restores the original workspace path after an ordinary removal failure, reports that the original source is unchanged and explicitly does not claim secure erasure."
+  },
+  "implementation": {
+    "core": "packages/reconstruction-foundry/src/local-intake-workspace-v0.ts",
+    "coreTests": "packages/reconstruction-foundry/src/__tests__/local-intake-workspace-v0.test.ts",
+    "controller": "tools/reconstruction-foundry/src/local-intake-workspace.ts",
+    "controllerTests": "tools/reconstruction-foundry/src/__tests__/local-intake-workspace.test.ts",
+    "httpIntegrationTests": "tools/reconstruction-foundry/src/__tests__/local-app-local-intake-workspace.test.ts",
+    "localApp": "tools/reconstruction-foundry/src/local-app.ts",
+    "workbench": "tools/reconstruction-foundry/src/local-app-assets.ts",
+    "cli": "tools/reconstruction-foundry/src/cli.ts",
+    "httpRoutes": [
+      "POST /api/local-intake-workspace/start",
+      "POST /api/local-intake-workspace/status",
+      "POST /api/local-intake-workspace/cancel",
+      "POST /api/local-intake-workspace/report",
+      "POST /api/local-intake-workspace/delete-and-stop"
+    ],
+    "exports": [
+      "compileFoundryLocalIntakeWorkspaceIntentV0",
+      "startFoundryLocalIntakeWorkspaceV0",
+      "resumeFoundryLocalIntakeWorkspaceV0",
+      "inspectFoundryLocalIntakeWorkspaceV0",
+      "verifyFoundryLocalIntakeWorkspaceV0",
+      "resolveFoundryLocalIntakeWorkspaceSourcePathV0",
+      "deleteFoundryLocalIntakeWorkspaceV0",
+      "createLocalIntakeWorkspaceControllerV0"
+    ]
+  },
+  "realLocalObservation": {
+    "fixtureKind": "generated_non_venue_three_file_directory",
+    "fileCount": 3,
+    "totalBytes": 29,
+    "includedZeroByteFile": true,
+    "sourceFileSha256": {
+      "room-notes.txt": "48ede14f786c5cdadbdf3301f3c31b8bd86cea5fc8d6431fe5b3d1e6df2edf70",
+      "zero.dat": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "nested/sample.bin": "66840dda154e8a113c31dd0ad32f7f3a366a80e8136979d8f5a101d3d29d6f72"
+    },
+    "receiptSha256": "43a10a58130aa557b8637f5aa31a2250cbd7925b185b7dc47cfeb65d063e6e65",
+    "workspaceSha256": "77aa0e0571078b52cd70ed68772909757e6d3a8aa7afc1008df8503fcdfde4f6",
+    "copiedHashesEqualSourceHashes": true,
+    "storedFileCountRendered": 3,
+    "storedTotalBytesRendered": 29,
+    "pendingReviewCountRendered": 3,
+    "firstSessionStoppedWithoutDeletingWorkspace": true,
+    "secondSessionReopenedWithWorkspaceArgumentOnly": true,
+    "reopenedDigestMatched": true,
+    "reportResponse": {
+      "status": 200,
+      "contentDisposition": "attachment; filename=\"foundry-local-intake-workspace-record-v0.json\"",
+      "schemaVersion": "omnitwin.foundry.local-intake-workspace-index.v0",
+      "fileCount": 3,
+      "totalBytes": 29,
+      "authority": "none",
+      "absoluteUserPathPresent": false
+    },
+    "deleteAndStopCompleted": true,
+    "workspaceAbsentAfterDelete": true,
+    "originalSourcePresentAfterDelete": true,
+    "originalHashesUnchangedAfterDelete": true
+  },
+  "browserVerification": {
+    "driver": "Codex in-app Browser plugin",
+    "flow": "local workbench -> save inspected source to configured local workspace -> stored/resumable state -> explicit delete-and-stop confirmation",
+    "defaultDesktopLayoutInspected": true,
+    "mobileViewportOverride": {
+      "width": 390,
+      "height": 844,
+      "documentClientWidth": 375,
+      "documentScrollWidth": 375,
+      "horizontalOverflow": false
+    },
+    "plainLanguageBoundariesRendered": true,
+    "storedStateRendered": true,
+    "reopenedStateRendered": true,
+    "deleteRequiresCheckbox": true,
+    "deletedStateRendered": true,
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "listenerClosedAfterQa": true,
+    "downloadQualification": "The browser button was invoked, but the automation backend did not surface its blob-download event within 15 seconds. The real authenticated report route separately returned the exact attachment response and parsed canonical record; OS Downloads-folder persistence was not independently observed."
+  },
+  "verification": {
+    "corePackage": {
+      "focusedTestFilesPassed": 1,
+      "focusedTestsPassed": 5,
+      "fullTestFilesPassed": 68,
+      "testsPassed": 797,
+      "testsSkipped": 1,
+      "testsFailed": 0,
+      "typecheck": "passed",
+      "build": "passed",
+      "targetedLintErrors": 0,
+      "targetedLintWarnings": 0
+    },
+    "toolsPackage": {
+      "focusedTestFilesPassed": 8,
+      "focusedTestsPassed": 79,
+      "focusedTestsFailed": 0,
+      "typecheck": "passed",
+      "targetedLintErrors": 0,
+      "targetedLintWarnings": 0,
+      "fullSuite": {
+        "testFilesPassed": 53,
+        "testFilesFailed": 1,
+        "testsPassed": 880,
+        "testsFailed": 1,
+        "qualification": "The sole failure is the existing Windows production-release fixture rejecting the unrelated untracked packages/reconstruction-foundry/src/captured-quality-comparison.d.ts sibling in the shared dirty worktree. The T-541 route, controller, CLI and UI assertions passed. Experimental SQLite warnings were informational."
+      },
+      "build": {
+        "status": "qualified_existing_failure",
+        "diagnostics": 18,
+        "ts6059Diagnostics": 9,
+        "ts6307Diagnostics": 9,
+        "diagnosticsNamingLocalIntakeWorkspaceV0": 0,
+        "qualification": "The known tools cross-package rootDir/file-list boundary remains red. No diagnostic names local-intake-workspace-v0.ts."
+      }
+    },
+    "httpIntegration": "Two real-server route tests cover exact token/origin/method/body boundaries, path-leak rejection, ready-to-stored flow, report retrieval, stale delete preflight, successful deletion, injected deletion failure, retry and unchanged source bytes.",
+    "diffWhitespaceErrors": 0,
+    "lineEndingNotices": "Git reported only the shared worktree's existing LF-to-CRLF checkout notices on tracked files."
+  },
+  "limitations": [
+    "Only generated non-venue files were used for the end-to-end observation; no Grand Hall, Reception, Matterport, XGRIDS or other user source was copied.",
+    "V0 accepts one process-selected source and one process-selected workspace. It is not yet the native drag-and-drop, picker-driven, multi-source Foundry launcher requested by the broader goal.",
+    "Resume is at a completed-file boundary. A cancelled large file is recopied from its beginning rather than resumed from a byte offset.",
+    "Ordinary recursive-removal failure and restoration are tested, but process crash or power loss after the deletion rename is not verified or claimed recoverable by V0.",
+    "Deletion does not claim secure erasure.",
+    "The OS Downloads-folder result of the browser-generated blob was not independently inspected; the exact report route and response were verified directly.",
+    "A stored workspace preserves evidence and truth only. It does not approve rights, registration, physical accuracy, reconstruction, training, enhancement, worker execution, cloud upload, signing or publication."
+  ],
+  "continuation": {
+    "broaderGoalStatus": "active",
+    "recommendedNextLocalSlice": "T-542 Native Drag-and-Drop Intake Launcher V0",
+    "nextSliceBoundary": "Use the existing trusted native Windows source helper and basket to let a nontechnical operator pick or drop multiple E57, OBJ, GLB, supported splat, photo and video sources plus a workspace without typing CLI paths. Keep browser requests path-free, inspect each source read-only and attach each accepted item to this durable workspace contract. Do not add reconstruction, training, enhancement or cloud dispatch in that launcher slice.",
+    "stillOpen": [
+      "T-533 human Reception room-envelope review",
+      "T-486 Grand Hall external review gates",
+      "T-539 E57 clean-host qualification and production binding",
+      "T-508 captured-quality programme",
+      "the broader OmniTwin Foundry /goal"
+    ]
+  }
+}

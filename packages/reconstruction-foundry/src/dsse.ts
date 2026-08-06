@@ -2,7 +2,7 @@ import { verify, type KeyObject } from "node:crypto";
 import {
   ReconstructionDsseEnvelopeSchema,
   type ReconstructionDsseEnvelope,
-} from "@omnitwin/types";
+} from "@omnitwin/types/reconstruction-dsse";
 import { FoundryIntegrityError } from "./errors.js";
 import { sha256Bytes } from "./hash.js";
 

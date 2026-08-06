@@ -93,7 +93,10 @@ Recommended additional fields:
 
 ## Initial Candidate Tool Families
 
-This table is a conservative starting register, not approval. Licenses and source URLs must be verified against official sources before use beyond internal research.
+This table began as a conservative starting register, not approval. Its
+purpose-scoped version/status details are superseded by the T-534 section below
+wherever they differ; the table is retained only as the candidate-family
+inventory.
 
 | Tool / family | Intended purpose | Initial license posture | Default status |
 |---|---|---|---|
@@ -102,18 +105,75 @@ This table is a conservative starting register, not approval. Licenses and sourc
 | Vadere | Simulation comparison/model sanity checks | License pending official review. | `pending_review`, `benchmark_only` |
 | MILo | Residual Radiance research candidate | License pending official review; neural research repositories often have non-production constraints. | `pending_review`, `research_only` |
 | Gaussian Frosting | Surface-bound residual research candidate | License pending official review; generated assets and training code terms must be reviewed separately. | `pending_review`, `research_only` |
-| Spark 2.0 | Production splat runtime candidate already required by D-001/T-087 | License/source package terms must be reviewed before wider production claims. | `pending_review` for license ledger; runtime architecture remains D-001 |
-| Niantic SPZ | Splat compression / asset delivery candidate | License pending official review; asset encoder/decoder and format implementation terms may differ. | `pending_review` |
-| PlayCanvas splat-transform | Offline post-training splat cleanup, format conversion, summary stats, voxel/collision proxy generation, and diagnostic SOG/LOD export | Official npm and GitHub sources report MIT for `@playcanvas/splat-transform` 2.1.0. Production/evidence use still requires Venviewer fixture review, version pinning, artifact hashes, attribution handling, and generated-output provenance. | `pending_review` for production evidence; candidate for internal post-training spike |
-| PlayCanvas SuperSplat | Internal visual QA/editor for splat outputs and diagnostic camera/settings authoring | Official GitHub source reports MIT. Any manual edit/export must be treated as a human-authored derivative artifact with provenance, reviewer, parameters, and limitations. | `pending_review`, `research_only` |
-| PlayCanvas SuperSplat Viewer | Internal static diagnostic viewer for `.ply`, `.sog`, `.compressed.ply`, `.meta.json`, `.lod-meta.json`, and collision/voxel artifacts | Official npm and GitHub sources report MIT for `@playcanvas/supersplat-viewer` 1.22.4. Production embedding, public exposure, and customer-deliverable use require CORS/access-control, attribution, and artifact-provenance review. | `pending_review`, `research_only` |
-| PlayCanvas Engine | Underlying renderer for PlayCanvas/SuperSplat diagnostic tooling | Official npm and GitHub sources report MIT for `playcanvas` 2.18.1. Do not adopt as a second Venviewer runtime while Spark remains the runtime path unless separately scoped. | `pending_review`, `research_only` |
-| PlayCanvas React | Optional React bindings for future PlayCanvas diagnostic experiments | Official npm source reports MIT for `@playcanvas/react` 0.11.3 with React/React DOM and `sync-ammo` peer surface. Avoid production dependency adoption unless a future task explicitly scopes a second scene stack. | `pending_review`, `research_only` |
-| KTX2 / BasisU | Texture compression / runtime delivery candidate | License pending official review for encoder, transcoder, and bundled binaries. | `pending_review` |
-| Recast/Detour | Navmesh route-finding research and future pathing | License pending official review; route-finding remains deferred from v0 evidence. | `pending_review`, `research_only` |
-| ORCA / RVO2 | Local collision avoidance research | License pending official review; implementation variants may have different terms. | `pending_review`, `research_only` |
+| Spark 2.0 | Production splat runtime candidate already required by D-001/T-087 | The exact integrated `@sparkjsdev/spark` 2.0.0 package is MIT; retain the pin and notice, and keep rights in every rendered asset separate. Spark 2.1.0 remains an unadopted upgrade candidate. | `candidate` at the exact integrated pin; runtime architecture remains D-001 |
+| Niantic SPZ | Splat compression / asset delivery candidate | The official `nianticlabs/spz` repository is MIT at inspected commit `21715c3b7a609ea6fb7c69b8ae42181a12b59f22`, tagged `v3.0.0+adobe.32`; the same source declares package 1.1.0 and documents file-format v4, so those identities must not be collapsed. Dependency adoption, notices, provenance and source-SPZ rights remain separate. | `candidate` for exact transport-code review; not archive/evidence master |
+| PlayCanvas splat-transform | Offline post-training splat cleanup, format conversion, summary stats, voxel/collision proxy generation, and diagnostic SOG/LOD export | Official npm and GitHub sources report MIT for `@playcanvas/splat-transform` 3.1.3. Production/evidence use still requires an exact dependency and asset inventory, artifact hashes, notices, and generated-output provenance. | `candidate` for internal offline conversion at the inspected release |
+| PlayCanvas SuperSplat | Internal visual QA/editor for splat outputs and diagnostic camera/settings authoring | SuperSplat 2.31.1 is MIT. Any manual edit/export remains a human-authored derivative artifact whose source rights, reviewer, parameters and limitations must be recorded. | `candidate` as an isolated internal editor; not currently integrated |
+| PlayCanvas SuperSplat Viewer | Internal static diagnostic viewer for `.ply`, `.sog`, `.compressed.ply`, `.meta.json`, `.lod-meta.json`, and collision/voxel artifacts | `@playcanvas/supersplat-viewer` 1.27.1 is MIT. Production embedding still needs an exact dependency/asset inventory and notices. | `candidate`; not currently integrated |
+| PlayCanvas Engine | Underlying renderer for PlayCanvas/SuperSplat diagnostic tooling | `playcanvas` 2.20.6 is MIT. Do not adopt it as a second Venviewer runtime while Spark remains the selected runtime unless separately scoped. | `candidate`; not currently integrated |
+| PlayCanvas React | Optional React bindings for future PlayCanvas diagnostic experiments | `@playcanvas/react` 0.11.5 is MIT. Avoid adoption unless a future task explicitly scopes a second scene stack and closes its peer dependencies. | `candidate`; not currently integrated |
+| KTX2 / BasisU | Texture compression / runtime delivery candidate | Basis Universal core is Apache-2.0 with NOTICE obligations and repository test assets excluded from that grant. KTX-Software needs isolation because its default build includes Ericsson-custom-licensed ETC code. | Basis core `candidate`; KTX-Software `needs_isolation` |
+| Recast/Detour | Navmesh route-finding research and future pathing | Recast/Detour is zlib-licensed; use remains assumption-bound and does not establish surveyed geometry, safety, or operational truth. | `candidate` for bounded simulation; not currently integrated |
+| ORCA / RVO2 | Local collision avoidance research | The inspected RVO2 implementation is Apache-2.0; preserve notices and keep the exact implementation pinned because ORCA variants can differ. | `candidate` for bounded simulation; not currently integrated |
 | Pathfinder / MassMotion / AnyLogic | Professional simulator comparison or expert benchmark | Commercial/proprietary terms expected; use only with proper license. | `benchmark_only`, `needs_commercial_license` |
 | Neural research repositories | Residual, reconstruction, relighting, or appearance experiments | Varied licenses, model/data terms, and paper-code constraints. | `pending_review`, `research_only` |
+
+## 2026-07-19 HD super-app purpose-scoped review
+
+Review ID: `T-534`
+
+Evidence: `docs/reports/omnitwin-hd-stack-license-evidence-v1-2026-07-19.json`
+
+Report: `docs/reports/omnitwin-hd-stack-license-evidence-v1-2026-07-19.md`
+Detailed primary-source matrix:
+`docs/reports/omnitwin-foundry-technology-license-matrix.md`
+
+This review deliberately excludes cybersecurity, identity attestation,
+signing, deployment and publication from ordinary super-app construction.
+Those are not required to keep building local intake, reconstruction, quality
+review and optional clearly separated visual derivatives. It is an engineering
+screen, not legal advice or a blanket production approval.
+
+| Product slice | Exact intended use | Purpose-scoped posture |
+|---|---|---|
+| Current browser runtime | Locked Three.js 0.180.0, React Three Fiber 8.18.0 and Spark 2.0.0 | MIT code at the exact pins is a `candidate`; keep notices, current lock and independently cleared splat assets. Spark 2.1.0 is only an upgrade candidate. |
+| E57/point-cloud foundation | planned pye57 0.4.19/libE57Format, PDAL and Open3D 0.19 for read-only local inspection, registration and deterministic geometry work | Permissive code candidates for a new local manifest. The checked-in legacy RunPod image instead pins pye57 0.4.16/Open3D 0.18 and is not approval of this lane; E57/venue rights remain separate. |
+| Camera registration | COLMAP 4.1.1/global mapper and a curated hloc detector/matcher lane | Conditional candidate. COLMAP dependencies and every hloc submodule/checkpoint are separately reviewed; standalone GLOMAP is legacy-only. |
+| Splat training | a planned exact-release gsplat 1.5.3 lane requiring a new pinned local environment manifest for owned/authorised photographs, video frames and depth | Preferred conditional candidate. Apache-2.0 code does not grant input or trained-output rights. The existing RunPod Dockerfile is excluded because it contains moving-main SPZ/DN-Splatter acquisition; Nerfstudio/DN-Splatter may be allow-listed only at exact method/weight/data closures. |
+| Conversion and QA | SPZ, SplatTransform 3.1.3, SuperSplat/Viewer and optional PlayCanvas packages | MIT code candidates after exact dependency, asset and notice inventory. No PlayCanvas package is currently integrated. Conversion never cleanses source restrictions. |
+| Texture delivery | Basis Universal core | Apache-2.0 candidate with NOTICE and third-party BOM; exclude repository test images. KTX-Software as a whole is `needs_isolation` because the default build includes Ericsson-custom-licensed ETC code. |
+| Gaussian glTF | Feature-flagged `KHR_gaussian_splatting` adapter | `pending_review`: Release Candidate only; specification text has Khronos-specific terms and does not itself grant patent/trademark rights. |
+| Semantic proposals | Splat Analyzer CUDA lane using MIT app + Apache gsplat/OWLv2 | Conditional internal proposal tool only. Human review required; never collision/measurement authority. Apple `gsplat-mps` lane is AGPL-3.0 and remains isolated. |
+| AI/cinematic and continual-update derivatives | Separate opt-in output family, never captured or metric truth | Released ArtiFixer, MeshCoder and ScaRF default model lanes are `research_only`/noncommercial. WorldMesh, CL-Splats, ReAct-GS and WildGaussians whole repositories are not production-clean. Cross-Temporal 3DGS, GaussianUpdate, SimFoundry and NeuWorld are paper/citation study candidates only. PPISP 1.2.1 is a separate Apache-2.0 photometric candidate after dependency/notice closure. |
+| XGRIDS source | Officially exported SOG/SPZ/PLY/GLB only; raw XBIN/LCC/LCC2 stays untouched unless written rights support the exact purpose | LCC/LCC2 custom terms and SDKs do not create a permissive production lane. Raw/source/model rights are `pending_review`; no raw decoder, reverse engineering, model training or public redistribution. |
+| External DCC/reconstruction | CloudCompare, Blender and RealityScan operated separately | External tools only. Do not embed/link/host as part of the closed application without a separate compliance decision. |
+| Cloud handoff | RunPod/AWS compute and Cloudflare R2 storage behind provider adapters | Service-contract gate plus an exact worker-image gate. The checked-in `infra/runpod/Dockerfile` is excluded pending immutable dependency/BOM/notice closure. This does not block browser or newly written local product engineering. |
+| Guest-flow support | Recast/Detour and RVO2/ORCA | zlib/Apache code candidates for assumption-bound simulation. They do not establish surveyed layout, safety or operational truth. |
+
+The supplied-inventory references are now explicit rather than silently
+omitted: CL-Splats, Cross-Temporal 3DGS, GaussianUpdate, ReAct-GS and
+WildGaussians remain research/paper-study candidates under the boundaries
+above; YouTube reference `vbtQ3tvi5ok` is cite/link-only media, while its PPISP
+subject is reviewed separately as a conditional Apache-2.0 code candidate.
+
+### Unresolved external evidence
+
+The code stack is no longer a blanket blocker. The following evidence remains
+external and purpose-specific:
+
+1. the Matterport customer/order/export record for each actual E57/MatterPak
+   source and the applicable agreement version;
+2. written venue permission covering the intended commercial display,
+   transformation, cloud processing and—only if desired—model-training uses of
+   the photographs, video and scans;
+3. XGRIDS purchase/account/export terms or written vendor permission for the
+   exact LCC/LCC2/PortalCam sources and intended derived outputs; and
+4. a model-card/checkpoint digest and dataset/input-rights record for every
+   optional visual-generation model actually selected.
+
+Until those records exist, local structure inspection and UI/product work may
+continue, but external upload, commercial training, public redistribution and
+authority claims stay unavailable for the affected real assets.
 
 ## Generated Artifact Provenance
 

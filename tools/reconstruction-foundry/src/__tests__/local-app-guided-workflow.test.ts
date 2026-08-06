@@ -113,7 +113,12 @@ function sendRequest(
         });
       });
     });
-    request.on("error", rejectResult);
+    request.on("error", (error: Error) => {
+      rejectResult(new Error(
+        `${input.method ?? "GET"} ${input.path} failed: ${error.message}`,
+        { cause: error },
+      ));
+    });
     if (input.body !== undefined) request.write(input.body);
     request.end();
   });
@@ -304,19 +309,38 @@ describe("Foundry local guided review HTTP contract", () => {
     const sourceAtLimit = await makeFileCountFixture(LOCAL_FOUNDRY_MAX_GUIDED_FILES);
     const appAtLimit = await startLocalFoundryApp({ source: sourceAtLimit });
     openApps.push(appAtLimit);
-    const receiptAtLimit = await waitForReady(appAtLimit, 20_000);
+    const receiptAtLimit = await waitForReady(appAtLimit, 30_000).catch(
+      (error: unknown) => {
+        throw new Error("The 500-file fixture did not reach a readable ready state.", {
+          cause: error,
+        });
+      },
+    );
     expect(receiptAtLimit.files).toHaveLength(LOCAL_FOUNDRY_MAX_GUIDED_FILES);
+    const stateAfterLargeInspection = await getArtifact(appAtLimit, "/api/state");
+    expect(stateAfterLargeInspection.status).toBe(200);
+    expect(stateAfterLargeInspection.headers.connection).toBe("close");
     const accepted = await postJson(
       appAtLimit,
       "/api/admission-draft",
       allObjAdmissionBody(receiptAtLimit),
     );
     expect(accepted.status, accepted.body).toBe(201);
+    // The two file-count boundaries are independent. Close the first local
+    // server before inspecting the second 500+ file tree so this contract test
+    // does not turn concurrent fixture indexing into an accidental timing gate.
+    await appAtLimit.stop();
 
     const sourceOverLimit = await makeFileCountFixture(LOCAL_FOUNDRY_MAX_GUIDED_FILES + 1);
     const appOverLimit = await startLocalFoundryApp({ source: sourceOverLimit });
     openApps.push(appOverLimit);
-    const receiptOverLimit = await waitForReady(appOverLimit, 20_000);
+    const receiptOverLimit = await waitForReady(appOverLimit, 30_000).catch(
+      (error: unknown) => {
+        throw new Error("The 501-file fixture did not reach a readable ready state.", {
+          cause: error,
+        });
+      },
+    );
     expect(receiptOverLimit.files).toHaveLength(LOCAL_FOUNDRY_MAX_GUIDED_FILES + 1);
     const downloadableReceipt = await getArtifact(appOverLimit, "/api/receipt");
     expect(downloadableReceipt.status).toBe(200);
@@ -327,7 +351,7 @@ describe("Foundry local guided review HTTP contract", () => {
     expectSafeError(rejected, 409);
     expect(rejected.body).toContain("supports at most 500 files");
     expect(rejected.body).toContain("no file is silently omitted");
-  }, 60_000);
+  }, 90_000);
 
   it("binds every file decision to the exact receipt before creating a draft", async () => {
     const source = await makeGuidedFixture();

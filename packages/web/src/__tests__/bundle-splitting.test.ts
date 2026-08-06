@@ -124,6 +124,13 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`return "react-vendor"`);
   });
 
+  it("removes local Reception evidence splats from build output", async () => {
+    const { raw } = await readSource(SRC);
+    expect(raw).toContain("omit-internal-reception-splats");
+    expect(raw).toContain('resolve(outputDirectory, "splats", "reception")');
+    expect(raw).toContain("await rm(target, { recursive: true, force: true })");
+  });
+
   it("three chunk groups three.js with R3F, drei, and stdlib", async () => {
     const { codeOnly } = await readSource(SRC);
     // The shared 3D stack must be in the same chunk so 3D routes

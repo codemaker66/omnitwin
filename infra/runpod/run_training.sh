@@ -53,6 +53,19 @@ if [[ "$TRAINER" != "gsplat" ]]; then
 fi
 [[ -f "$CONFIG"   ]] || { echo "config file not found: $CONFIG" >&2; exit 66; }
 
+# This legacy operator script predates the Foundry JobSpec, purpose-aware
+# rights decision, single-use execution confirmation, provider plan, budget
+# approval, and durable attempt ledger. It must remain unreachable until a
+# trusted executor consumes those records atomically. Environment variables or
+# command-line booleans are not an acceptable bypass.
+cat >&2 <<'EOF'
+BLOCKED: legacy RunPod training is not connected to the Foundry execution gate.
+No training was started. Build and validate a plan-only JobSpec, then use the
+future durable executor after rights, confirmation, compute approval, cost,
+kill-switch, and attempt-ledger controls are implemented.
+EOF
+exit 78
+
 # ============================================================================
 # run id + paths
 # ============================================================================

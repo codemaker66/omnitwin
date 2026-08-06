@@ -357,7 +357,7 @@ curl -X POST "<API_BASE>/admin/assets/register-version" \
   }'
 ```
 
-### 4. Register Or Update The Runtime Package
+### 4. Create An Immutable Runtime-Package Revision
 
 Start with `draft`. Move to `internal_ready` only after the internal dev route
 loads the asset through Spark and the operator has saved evidence of the
@@ -365,39 +365,48 @@ successful render. Do not use `published` until a separate review explicitly
 approves it.
 
 ```bash
-curl -X POST "<API_BASE>/admin/assets/register-runtime-package" \
+curl -X POST "<API_BASE>/admin/assets/runtime-package-revisions" \
   -H "Authorization: Bearer <ADMIN_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "venueSlug": "trades-hall",
-    "roomSlug": "<ROOM_SLUG>",
-    "primaryVisualAssetVersionId": "<ASSET_VERSION_ID>",
-    "semanticMeshAssetVersionId": null,
-    "collisionAssetVersionId": null,
-    "pointCloudAssetVersionId": null,
-    "manifestJson": {
-      "schemaVersion": "venviewer.runtime-package.v1",
+    "package": {
       "venueSlug": "trades-hall",
       "roomSlug": "<ROOM_SLUG>",
-      "packageType": "room-runtime",
-      "assets": {
-        "primaryVisualAssetVersionId": "<ASSET_VERSION_ID>",
-        "semanticMeshAssetVersionId": null,
-        "collisionAssetVersionId": null,
-        "pointCloudAssetVersionId": null
+      "primaryVisualAssetVersionId": "<ASSET_VERSION_ID>",
+      "semanticMeshAssetVersionId": null,
+      "collisionAssetVersionId": null,
+      "pointCloudAssetVersionId": null,
+      "manifestJson": {
+        "schemaVersion": "venviewer.runtime-package.v1",
+        "venueSlug": "trades-hall",
+        "roomSlug": "<ROOM_SLUG>",
+        "packageType": "room-runtime",
+        "assets": {
+          "primaryVisualAssetVersionId": "<ASSET_VERSION_ID>",
+          "semanticMeshAssetVersionId": null,
+          "collisionAssetVersionId": null,
+          "pointCloudAssetVersionId": null
+        },
+        "generatedAt": "<EXPLICIT_ISO_GENERATED_AT>",
+        "notes": "Internal runtime package for XGRIDS PortalCam processed splat. Human review required."
       },
-      "generatedAt": "2026-06-06T00:00:00.000Z",
-      "notes": "Internal runtime package for XGRIDS PortalCam processed splat. Human review required."
-    },
-    "evidenceStatus": "unverified",
-    "runtimeStatus": "draft"
+      "evidenceStatus": "unverified",
+      "runtimeStatus": "draft"
+    }
   }'
 ```
 
+Record the returned `receipt.packageId`, `receipt.revision`, and
+`receipt.contentDigest`. Repeating the exact same payload returns that same
+identity without inserting a duplicate. The retired
+`/admin/assets/register-runtime-package` endpoint returns HTTP 410 and never
+updates an older package.
+
 ### 5. Internal Runtime URLs
 
-After a RuntimePackage is registered and moved to an internal loadable status,
-inspect it on the internal route:
+After a draft revision is registered, create a new `internal_ready` revision
+only after the required review; older revisions are never edited. Then inspect
+the latest eligible revision on the internal route:
 
 ```text
 https://venviewer.com/dev/trades-hall-visual?venue=trades-hall&room=robert-adam-room

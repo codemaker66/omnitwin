@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ApprovedRoomRuntimeProfileSchema,
+  buildApprovedRoomRuntimePresentationContract,
   AssetVersionSchema,
   CreateRuntimePackageRevisionInputSchema,
   LatestRuntimePackageQuerySchema,
@@ -971,11 +972,37 @@ describe("reviewed runtime profile id schema", () => {
 });
 
 describe("approved room runtime profile schema", () => {
+  const presentationContract = buildApprovedRoomRuntimePresentationContract({
+    schemaVersion: "venviewer.approved-room-runtime-presentation.v1",
+    groupTransform: {
+      position: [0, 0, 0],
+      rotationEulerRadians: [-Math.PI / 2, 0, 0],
+      uniformScale: 1,
+    },
+    cameraPolicy: {
+      id: "reception-scroll-dolly-v1",
+      route: "/living-hall",
+      pathDigest: "a".repeat(64),
+      initialPosition: [-2.372, 0.035, 1.046],
+      initialTarget: [-0.996, -0.071, 7.102],
+      verticalFovDegrees: 62,
+      nearPlaneMetres: 0.05,
+      farPlaneMetres: 150,
+      approachRatePerSecond: 2.6,
+      settleEpsilon: 0.0004,
+      reducedMotionMode: "pin_to_scroll_position",
+    },
+    rendererProfile: {
+      id: "reception-fixed-fine-review-v1",
+      digest: "b".repeat(64),
+    },
+  });
   const profile = {
     scope: "approved_room_runtime_profile",
     venueSlug: "trades-hall",
     roomSlug: "reception-room",
     profileId: "quality-sog-fine-v1",
+    presentationContract,
     visualAssetUrls: [
       "https://api.example.test/runtime-assets/first.sog",
       "https://api.example.test/runtime-assets/second.sog",
@@ -1004,6 +1031,19 @@ describe("approved room runtime profile schema", () => {
     expect(ApprovedRoomRuntimeProfileSchema.safeParse({
       ...profile,
       visualAssetUrls: [profile.visualAssetUrls[0], profile.visualAssetUrls[0]],
+    }).success).toBe(false);
+  });
+
+  it("rejects a presentation contract whose body no longer matches its digest", () => {
+    expect(ApprovedRoomRuntimeProfileSchema.safeParse({
+      ...profile,
+      presentationContract: {
+        ...presentationContract,
+        cameraPolicy: {
+          ...presentationContract.cameraPolicy,
+          route: "/another-route",
+        },
+      },
     }).success).toBe(false);
   });
 

@@ -1,0 +1,883 @@
+{
+  "schemaVersion": "venviewer.reception-room-fixed-view.v1",
+  "createdAt": "2026-07-12T13:02:53+01:00",
+  "currentAsOf": "2026-07-22",
+  "currentInterpretation": {
+    "candidateDecision": "no_stable_physical_or_commercial_winner",
+    "controllingEvidenceRef": "docs/reports/reception-room-hd-evidence.json#currentQualityReconciliation",
+    "historicalCaptureReceiptsChanged": false,
+    "plainLanguage": "The fixed captures prove repeatable differences and known display faults. They do not select Quality or Mobile as the physically truer product candidate. The later camera holdout reversed the earlier directional lead, and blind image-quality families disagree.",
+    "nextDecisiveCapture": "The development real-component route now has renderer-owned asset, build, camera, transform and fresh-frame records proved with generated Spark data. Independently review the adapter, then use an authorized lossless source photograph and calibrated camera for a source-view diagnostic that cannot select Quality or Mobile. Held-out execution remains disabled until the reviewed adapter is explicitly allowlisted.",
+    "lccCapturePaused": true,
+    "requiredExactResumePhrase": "Resume LCC capture",
+    "protectedReferencesReadForThisReconciliation": false
+  },
+  "purpose": "Same-camera Reception Room source, codec, LOD, and runtime diagnosis. This manifest is a QA camera set, not a metric camera calibration.",
+  "postCaptureAddenda": {
+    "asOf": "2026-07-16",
+    "originalCaptureReceiptsChanged": false,
+    "newExactPrivatePackageCaptureCompleted": false,
+    "newLocalRealComponentCaptureCompleted": true,
+    "newProtectedRouteCaptureCompleted": false,
+    "currentEnvironmentDrift": {
+      "checkedAt": "2026-07-15",
+      "recordedFileCount": 7,
+      "currentHashMatchCount": 3,
+      "currentHashMismatchCount": 4,
+      "mismatchedPaths": ["pnpm-lock.yaml", "packages/web/src/components/scene/SparkSplatLayer.tsx", "packages/web/src/router.tsx", "packages/web/vite.config.ts"],
+      "rule": "The 42 PNG receipts remain valid historical evidence. Any new capture is a fresh run with new environment hashes; do not append new pixel metrics to the old run as if it were bit-reproducible."
+    },
+    "historicalStatusNote": "Blocked statuses below describe the 2026-07-12 capture session. The active-editor blocker cleared during a later read-only 2026-07-14 check. A separate 2026-07-16 database-free real-component run now exists; the corrected asset-backed LCC, independent-viewer and protected authenticated-route captures are still missing.",
+    "note": "The original 42-image receipts remain unchanged. A separate 2026-07-16 run loaded the reviewed Quality and Mobile four-file candidates through the real Living Hall scene component and produced 24 new lossless PNGs. The run proves reproducible pairwise differences, not physical truth, a protected-route result or a visual quality improvement. The 2026-07-15 structural pass still produced no transform because both real inputs failed the room-floor boundary gate.",
+    "runtimeProfileSecurityHardening": {
+      "status": "implemented_locally_not_deployed",
+      "captureReceiptsChanged": false,
+      "serverOnlyReviewedByteProfileReceipts": ["asset IDs", "original filenames", "byte hashes", "storage identities", "hierarchy hash", "composition decision"],
+      "anonymousPresentationAllowlist": [],
+      "publicBoundaryRule": "Those values are absent from the public response and production bundle. Authenticated administrator preview metadata remains a separate private path.",
+      "publicClientContract": "No reviewed Reception byte profile is currently eligible for anonymous presentation, so the public Living Hall receives no profile or member URL.",
+      "anonymousPresentationEligibility": {"quality-sog-fine-v1":false,"mobile-spz-fine-v1":false,"reason":"Neither reviewed byte profile has an exact reviewed immutable presentation contract."},
+      "futurePresentationContractRequirements": ["exact group transform", "exact camera policy and route", "renderer-profile digest", "browser applies every reviewed value exactly rather than using local presentation defaults"],
+      "futureAnonymousMemberUrlShape": "/assets/runtime-profiles/<eligible-reviewed-profile>/members/<ordinal>/content.sog",
+      "releaseGatesPerMetadataAndByteRequest": ["room publicShowcaseEnabled", "exact reviewed byte identity and immutable presentation contract", "published package", "human-reviewed public QA", "every required QA check is present and passed", "linked signed transform", "QA and transform match exact package/venue/room", "QA binds exact transform-content SHA-256", "same immutable package revision and member immediately before send"],
+      "runtimeProfileStorageRule": "Dedicated private runtime-profile R2 credentials and bucket only; no public URL field, no fallback to legacy upload/Foundry credentials or buckets, and bucket name must be distinct.",
+      "immutableReviewRule": "Transform-artifact and QA-record IDs accept exact idempotent retries only; changed content must use a new ID.",
+      "memberByteRule": "A cache miss reads the complete private object and verifies registered byte count and SHA-256 before caching or returning any selected bytes; cache hits retain that exact SHA-256/size identity and every request is re-authorized immediately before send.",
+      "verifiedByteCache": {"scope":"per_api_process","maximumBytes":67108864,"maximumEntries":16,"ttlMilliseconds":300000,"singleFlight":"identical SHA-256 and size only; authorization is never shared"},
+      "transferAdmission": {"scope":"per_api_process","activeVerifiedResponses":2,"maximumQueuedWaiters":16,"queueDiscipline":"FIFO","queueTimeoutMilliseconds":300000,"maximumMemberBytes":16777216,"upstreamTimeoutMilliseconds":30000,"absoluteResponseTransferDeadlineMilliseconds":180000,"absoluteDeadlineAction":"abort upstream work and destroy the stalled response","slotRelease":"after both handler work and response finish/close or forced-deadline settlement","unfinishedClose":"abort upstream work before final release"},
+      "memberRouteRateLimit": "24 requests per minute per client IP; edge/WAF controls are still required for distributed traffic.",
+      "trustedOriginRule": "PUBLIC_API_ORIGIN is required and clean HTTPS in production; public member URLs never derive from request Host headers and the client pins them to configured API origin.",
+      "privatePreviewDisconnectRule": "The administrator-only private-preview byte route registers disconnect handling before database/package lookup, preventing a lookup-time disconnect from later acquiring or stranding a verified-transfer slot. Private byte preview does not grant anonymous presentation eligibility.",
+      "legacyDetailedMetadataAndDirectAssetIdStreams": "platform_admin_only",
+      "legacyBrowserResolver": "retired_to_safe_fallback",
+      "legacyPublicSingleVisualPolicy": "retired for every room; each room requires a reviewed immutable presentation contract in addition to reviewed bytes",
+      "receptionPublicShowcaseEnabled": false,
+      "publicProfileCurrentlyReturned": false,
+      "migrationDeploymentRegistrationOrPublicPointerChanged": false,
+      "runtimeProfilePrivateStorageProvisionedOrCopied": false,
+      "directAnonymousPrivateBucketAccessDenialVerified": false,
+      "edgeRateLimitOrWafConfiguredByThisWork": false,
+      "externalActivationRequirements": ["review and bind the exact group transform, camera policy/route and renderer-profile digest", "make the browser apply the reviewed presentation values exactly", "provision dedicated least-privilege private runtime-profile R2 credentials and bucket", "copy and byte-verify the exact reviewed objects", "prove direct anonymous/public bucket access is denied", "install edge rate-limit and WAF controls", "retain publicShowcaseEnabled=false until all activation gates pass"]
+    },
+    "reports": [
+      "docs/reports/reception-room-e57-geometry-edge-visual-diagnosis-2026-07-14.md",
+      "docs/reports/lcc2-authoritative-frontier-evidence-2026-07-14.md",
+      "docs/reports/reception-room-private-exact-package-preview-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-cv-alignment-diagnostic-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-gravity-overlay-diagnostic-2026-07-14.md",
+      "docs/reports/reception-room-e57-xgrids-structural-cv-diagnostic-2026-07-15.md",
+      "docs/reports/reception-room-local-real-component-quality-preflight-2026-07-16.md",
+      "docs/reports/reception-room-source-photo-comparison-v0.md"
+    ]
+  },
+  "postCaptureRuns": [
+    {
+      "id": "reception-local-real-component-2026-07-16",
+      "status": "complete_pairwise_diagnostic_no_quality_winner",
+      "separateFromHistoricalCaptureProfileAndReceipts": true,
+      "scope": "database-free development-only review through the real Living Hall scene component",
+      "route": "/dev/reception-quality-preflight",
+      "routeBoundary": {
+        "developmentOnly": true,
+        "hardCodedCandidatesAndViews": true,
+        "arbitraryAssetUrlAccepted": false,
+        "protectedAuthenticatedRoute": false,
+        "excludedFromProductionBundle": true
+      },
+      "candidates": [
+        {
+          "id": "quality-sog-fine-real-component",
+          "namedFilesLoaded": ["0_15_0_0.sog", "0_1_0_5.sog", "0_6_0_0.sog", "0_7_0_0.sog"],
+          "observedLoadedSourceCount": 4,
+          "observedDecodedSplatTotal": 2002009
+        },
+        {
+          "id": "mobile-spz-fine-real-component",
+          "namedFilesLoaded": ["0_13_0_0.spz", "0_3_0_0.spz", "0_7_0_1.spz", "0_8_0_0.spz"],
+          "observedLoadedSourceCount": 4,
+          "observedDecodedSplatTotal": 1978258
+        }
+      ],
+      "assetIntegrityScope": "The route and sidecars prove that the four named files loaded and the decoded totals matched. This run does not re-hash the bytes served by the local asset servers.",
+      "viewerProfile": {
+        "id": "reception-fixed-fine-review-v1",
+        "canvas": {"dprRange":[1,2],"observedEffectiveDprApproximately":1,"antialias":false,"outputColorSpace":"sRGB","toneMapping":"ACESFilmicToneMapping","toneMappingExposure":1},
+        "spark": {"maxSh":3,"enableLod":false,"preBlurAmount":0,"blurAmount":0.3,"sortRadial":true,"minSortIntervalMs":0},
+        "profileRule": "All renderer controls recorded in the sidecars are pinned. Blur 0.3 with pre-blur 0 is a controlled baseline, not a proved optimum."
+      },
+      "views": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "cameraRule": "Exact position, quaternion, world, view and projection matrices were retained in each sidecar. The six views use one camera position with different framings, so they do not test what happens when the viewer moves.",
+      "capture": {
+        "method": "Chrome DevTools Page.captureScreenshot requested as PNG",
+        "pixelDimensions": [1200, 900],
+        "screenshotFormat": "PNG",
+        "screenshotCompression": "lossless",
+        "candidateViewPairs": 12,
+        "repeatsPerPair": 2,
+        "screenshotCount": 24,
+        "sidecarCount": 12,
+        "repeatDelayMilliseconds": 500,
+        "byteIdenticalRepeatPairs": 12,
+        "preliminaryRejectedCapture": "An earlier screenshot path was reported to have returned JPEG bytes under .png names. Those discarded bytes and their rejection log/hash were not retained, so the incident is not independently reproducible; it was excluded from the metric set. The final 24 files independently pass PNG-signature, 1200x900, eight-bit-RGB and hash checks.",
+        "preliminaryRejectedCaptureArtifactRetained": false,
+        "preliminaryRejectedCaptureSha256": null,
+        "preliminaryRejectedCaptureIndependentReverification": "not_possible"
+      },
+      "evidenceRoot": "output/playwright/reception-hd-real-component-2026-07-16",
+      "receipts": {
+        "captureManifest": {"path":"output/playwright/reception-hd-real-component-2026-07-16/capture-manifest.json","sha256":"e414ee58d64266c59bebfa23485f897c8c3472929853ec3b398e093ae43faf5b","createdAt":"2026-07-16T00:35:27.947Z"},
+        "cvTriage": {"path":"output/playwright/reception-hd-real-component-2026-07-16/cv-triage.json","sha256":"9cc0af09bdc25fc004e34f1d0e741611f699145c81bf7e9e6be8befd7c58f15b","embeddedReceiptSha256":"55bf71044439e9ce15cb6d069f296a155ba5aa8b33f46b4ed34a87648a9143dc"},
+        "pixelMetrics": {"path":"output/playwright/reception-hd-real-component-2026-07-16/pixel-metrics.json","sha256":"d79443a4594d97fab25724acc97772159d41f09f6b0a1cc63e89a0863490caf3"},
+        "boardIndex": {"path":"output/playwright/reception-hd-real-component-2026-07-16/cv-boards-current/index.json","sha256":"006dddb62557244c49897382d4a893ca1885e15971380848cf52f1f075f80bb3","embeddedReceiptSha256":"52cf083c4cf21446defe000385d43dcc7ddd3f849432ff7f578b0908abc5886f"}
+      },
+      "integrity": {
+        "sealTimeEnvironmentFileHashesVerified": "15/15",
+        "currentEnvironmentRecheck": {
+          "checkedAt": "2026-07-16",
+          "recordedFileCount": 15,
+          "currentHashMatchCount": 13,
+          "currentHashMismatchCount": 2,
+          "mismatches": [
+            {"path":"pnpm-lock.yaml","recordedSizeBytes":282823,"recordedSha256":"a9aa8eb057a98849c1a9f7889c0e2c8a71a4448023c914a0a754680baddb5146","currentSizeBytes":285839,"currentSha256":"767b459e11b52b8bc7fe17d5e5bf69fec3230f02618555e7eefb6aa6c01450c1"},
+            {"path":"packages/web/src/router.tsx","recordedSizeBytes":17251,"recordedSha256":"6eebd7866b2f9f831f70c8c78b7c3cca4461ebfee0f7f43c33ec0ac2959199f8","currentSizeBytes":18038,"currentSha256":"95c6020e9610e8cd6a89f9cbc6c0947544935c0d4a20d577ea9d0d4d1ba3fb0c"}
+          ],
+          "meaning": "The immutable screenshots remain valid historical evidence, but today's whole app is not proved bit-reproducible from this selected environment list."
+        },
+        "environmentManifestScope": "selected capture/render/CV files; not a complete transitive-module inventory",
+        "screenshotHashesVerified": "24/24",
+        "sidecarHashesVerified": "12/12",
+        "repeatPairsVerified": "12/12",
+        "cvInputHashesVerified": "12/12",
+        "cvReceiptAndManifestBindingVerified": true,
+        "boardInputsAndOutputsVerified": "12/12"
+      },
+      "computerVision": {
+        "directions": ["Quality to Mobile", "Mobile to Quality"],
+        "perDirectionVerdicts": {"review":5,"notAssessable":1,"triageClear":0},
+        "notAssessableView": "ceiling-moulding",
+        "psnrDbRange": [26.912251, 29.773793],
+        "ssimRange": [0.941555, 0.961395],
+        "normalizedRgbMaeRange": [0.025317, 0.040604],
+        "decisionRule": "Both directions are diagnostic because neither image is physical truth. Edge or gradient energy cannot by itself select a winner."
+      },
+      "limits": [
+        "local development route, not the protected authenticated route",
+        "no registered held-out photograph or independently trusted scan at these cameras",
+        "same optical centre and static repeats; no near/mid/far orbit or moving-camera evidence",
+        "no FPS, load-time, GPU-memory or named-device result",
+        "no human acceptance or product quality improvement"
+      ],
+      "report": "docs/reports/reception-room-local-real-component-quality-preflight-2026-07-16.md",
+      "nextCapture": "Add spatially distinct near/mid/far/orbit stills and moving-camera performance/device evidence with a registered held-out reference; retain separate LCC and independent-viewer contexts; then repeat through the protected route after authorization."
+    },
+    {
+      "id": "reception-captured-quality-triage-2026-07-18",
+      "status": "complete_regression_triage_no_winner",
+      "scope": "receipt-bound local captured-quality comparison through the real loopback workbench",
+      "evidenceRef": "docs/reports/reception-room-captured-quality-comparison-v0-evidence-2026-07-18.json",
+      "report": "docs/reports/reception-room-captured-quality-comparison-v0-report-2026-07-18.md",
+      "views": [
+        "overview",
+        "timber-left",
+        "timber-right",
+        "floor-surface",
+        "ceiling-moulding",
+        "column-skirting"
+      ],
+      "cameraQualification": "The six views use one camera position with different framings. This run proves repeatable same-position differences, not orbit quality or physical truth.",
+      "capture": {
+        "pixelDimensions": [1200, 900],
+        "profileViewPairs": 12,
+        "repeatsPerPair": 2,
+        "screenshotCount": 24,
+        "byteIdenticalRepeatPairs": 12,
+        "allEightSourcesUnchanged": true
+      },
+      "metrics": {
+        "meanAbsoluteErrorRange": [0.028078, 0.044548],
+        "ssimRange": [0.939355, 0.963672],
+        "psnrDbRange": [25.698124, 29.266582],
+        "verdict": "review",
+        "winner": "not_selected"
+      },
+      "canonicalReport": {
+        "selfDigestVerified": true,
+        "reportSha256": "7f3e11b92ee6a2c60ca13a5391b02a319f25dda80de7db3f8ff61a442ae3fe99",
+        "fileSha256": "bf824e25d7c8a7750fa5a5aef5964b96b6559de3ab7dc5e106d9e8a50678b5a7"
+      },
+      "sourceFileReceipts": {
+        "evidenceSha256": "008f3dfec922d055c57801a9d85315b666f08b7f784a5c961118da7370ac0f4a",
+        "reportSha256": "3c7503f7d605ddf3cddf0b74beee110d9cd34d9da11d4f17a48f52c8376e61b6"
+      },
+      "limits": [
+        "no LCC Studio source-stage capture",
+        "no independent-viewer source/export capture",
+        "no protected product-route capture",
+        "no spatially distinct optical centres",
+        "no physical or commercial winner"
+      ]
+    }
+  ],
+  "handling": {
+    "classification": "INTERNAL",
+    "publicRedactionRequired": true,
+    "sensitiveFields": ["absolute local paths", "project identifiers", "asset hashes", "provisional E57 station bounds", "venue screenshots"]
+  },
+  "repository": {
+    "root": "C:\\Users\\blake\\omnitwin2",
+    "head": "e5c2f0a87e3e2da5a7eab87e375865fd62eadb5d",
+    "route": "/dev/splat-fixture",
+    "captureDriver": "Playwright CLI 0.1.17",
+    "browserUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "worktreeAtCapture": "dirty_user_owned; exact capture-time diff and browser-binary snapshot not retained",
+    "captureScriptsActuallyUsed": [
+      {
+        "path": "tools/reception-hd/capture-variant-matrix.actual.js",
+        "originalWorkingPath": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\work\\capture-variant-matrix.js",
+        "sizeBytes": 3459,
+        "sha256": "FD9E8E5A4AA709FEEA63F45A64C1FAEAE926E4C4A64AD92C34FF9522FFE5EEC5",
+        "scope": "first six variants at six framings"
+      },
+      {
+        "path": "tools/reception-hd/capture-mobile-sog.actual.js",
+        "originalWorkingPath": "C:\\Users\\blake\\Documents\\Codex\\2026-07-12\\new-chat-2\\work\\capture-mobile-sog.js",
+        "sizeBytes": 1996,
+        "sha256": "D4C117B6FD39427DFA4EC409BB2B8ACC70A30067DB0AF976AFAE2F267EE2477D",
+        "scope": "Mobile SOG fine variant at six framings"
+      }
+    ],
+    "canonicalReplayScript": "tools/reception-hd/capture-fixed-views.playwright.js",
+    "canonicalReplayScriptSha256": "C394022C859AAC66946EB248F45F1A0CC487C733C3161F3634EC09EC66043F5C",
+    "canonicalReplayScriptCreatedAfterCapture": true,
+    "metricScript": "tools/reception-hd/compare_fixed_views.py",
+    "metricScriptReceiptScope": "historical capture-time/finalization receipt retained unchanged",
+    "metricScriptSizeBytes": 5497,
+    "metricScriptSha256": "80ECD4E94382CDAB62AA8C6B5D6319BA4CB11B454D6FB3DA1C97C9E2443242E3",
+    "currentMetricScript": {
+      "checkedAt": "2026-07-16",
+      "sizeBytes": 6025,
+      "sha256": "628a96a1f54a6b55515b508edfce632c9be8d462fdd234f937005e8c756c8d90",
+      "semanticReplay": "Reproduced the historical seven-comparison metric artifact exactly; current bytes are not represented as the old capture-time receipt."
+    },
+    "captureEnvironmentFilesHashedAtFinalization": [
+      {"path":"package.json","sizeBytes":1436,"sha256":"2437AE731A35F4FE0A621CF8D083B78D8F5A248FB7D1DB5B5DECD8C7284FB7A0","gitState":"modified"},
+      {"path":"pnpm-lock.yaml","sizeBytes":290732,"sha256":"AF3D8149E8030EFB7DFA510957261D25306BEE9057C8FF4D79ACDC0A7B178489","gitState":"modified"},
+      {"path":"packages/web/package.json","sizeBytes":1601,"sha256":"6619CE2B523B41EAB04CCAF9D55CE98CB36166E2333CCA1DA2771787334A2F95","gitState":"clean_at_head"},
+      {"path":"packages/web/src/pages/SplatFixturePage.tsx","sizeBytes":6671,"sha256":"3A6C30948332ED8A2156468BA426A5DF2F02959BD1153F825D127B461F831AF1","gitState":"clean_at_head"},
+      {"path":"packages/web/src/components/scene/SparkSplatLayer.tsx","sizeBytes":5107,"sha256":"AFAFF819E205C911235005BFAFBA18D037BD1AD1A0B73AC22AF07672F0BD0616","gitState":"clean_at_head"},
+      {"path":"packages/web/src/router.tsx","sizeBytes":16067,"sha256":"4A4BE344B2EE20870E00ECD9CA72BFFBF0A05451AFC57DF2A7F0B4105B11CC3F","gitState":"clean_at_head"},
+      {"path":"packages/web/vite.config.ts","sizeBytes":4103,"sha256":"86CD309A96B757A19F554CF3BD325652012DBA5F98EAA80B075D0658027C468F","gitState":"clean_at_head"}
+    ],
+    "captureEnvironmentProvenanceLimit": "Hashes above were taken at report finalization, not atomically at screenshot time. Clean-at-HEAD fixture sources are recoverable from HEAD; modified root package/lock state and the exact Chrome binary are not a bit-reproducible capture snapshot."
+  },
+  "replayProcedure": {
+    "status": "historical_do_not_run_without_exact_resume_phrase",
+    "historicalOnly": true,
+    "authorizationState": "paused",
+    "requiredExactResumePhrase": "Resume LCC capture",
+    "historicalServerCommands": [
+      "pnpm --filter @omnitwin/web dev --host 127.0.0.1 --port 5182",
+      "Set-Location 'C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output'; python -m http.server 5190 --bind 127.0.0.1",
+      "Set-Location 'C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output'; python -m http.server 5191 --bind 127.0.0.1"
+    ],
+    "historicalBrowserCommands": [
+      "npx --yes --package @playwright/cli playwright-cli -s=reception-hd open http://127.0.0.1:5182/dev/splat-fixture",
+      "$CaptureCode = Get-Content -Raw -LiteralPath 'tools/reception-hd/capture-fixed-views.playwright.js'",
+      "npx --yes --package @playwright/cli playwright-cli -s=reception-hd run-code $CaptureCode",
+      "npx --yes --package @playwright/cli playwright-cli -s=reception-hd close"
+    ],
+    "runRule": "Do not run these historical commands while capture is paused. They are retained only as a provenance receipt. Run nothing unless the user types exactly 'Resume LCC capture'; even then, revalidate every command against the current environment before use. Treat any later output as a new run and recompute hashes."
+  },
+  "coordinateConvention": {
+    "source": "LCC export Z-up local frame",
+    "fixtureWorld": "Three.js right-handed Y-up world",
+    "sourceToFixtureRotationEulerRadiansXYZ": [-1.5707963267948966, 0, 0],
+    "translation": [0, 0, 0],
+    "scale": [1, 1, 1],
+    "cameraValuesAre": "post-rotation fixture-world coordinates",
+    "cameraUp": [0, 1, 0],
+    "actualViewAndProjectionMatricesRetained": false,
+    "metricAuthority": false,
+    "limitation": "This visual transform is not a reviewed LCC-to-E57 TransformArtifact."
+  },
+  "captureProfile": {
+    "viewportCssPixels": [1200, 900],
+    "deviceScaleFactor": 1,
+    "capturedPixelDimensions": [1200, 900],
+    "aspectRatio": 1.3333333333333333,
+    "screenshotFormat": "PNG",
+    "screenshotCompression": "lossless",
+    "postLoadSettleMilliseconds": 1000,
+    "loadGate": "window.__splatFixture.status === 'loaded'",
+    "uiOverlayHiddenBeforeCapture": true,
+    "renderer": {
+      "threeVersion": "0.180.0",
+      "reactThreeFiberVersion": "8.18.0",
+      "sparkVersion": "2.0.0",
+      "canvasDprSetting": [1, 2],
+      "effectiveCaptureDpr": 1,
+      "webglAntialias": true,
+      "powerPreference": "high-performance",
+      "cameraNear": 0.1,
+      "cameraFar": 120,
+      "background": "#101217",
+      "toneMapping": "framework default; not explicitly pinned",
+      "outputColorSpace": "framework default; not explicitly pinned",
+      "assetAntialiasFlag": false,
+      "sparkSettings": {
+        "transparent": true,
+        "depthWrite": false,
+        "preBlurAmount": "Spark default 0; not explicitly pinned",
+        "blurAmount": "Spark default 0.3; not explicitly pinned",
+        "sortRadial": "Spark default true; not explicitly pinned",
+        "focalAdjustment": "Spark default 1; not explicitly pinned",
+        "maxSh": "Spark default 3; not explicitly pinned"
+      }
+    },
+    "network": {
+      "mode": "local-only",
+      "viteOrigin": "http://127.0.0.1:5182",
+      "qualityAssetOrigin": "http://127.0.0.1:5190",
+      "mobileAssetOrigin": "http://127.0.0.1:5191",
+      "diskRootMappings": {
+        "http://127.0.0.1:5190": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output",
+        "http://127.0.0.1:5191": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output"
+      },
+      "canonicalAliasIdentity": [
+        {
+          "servedRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\render2",
+          "canonicalRoot": "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result",
+          "identity": "byte-identical files by SHA-256"
+        },
+        {
+          "servedRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2",
+          "canonicalRoot": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result",
+          "identity": "byte-identical files by SHA-256"
+        },
+        {
+          "servedRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2-spz",
+          "canonicalRoot": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result",
+          "identity": "byte-identical files by SHA-256"
+        }
+      ],
+      "assetsUploaded": false
+    }
+  },
+  "variants": [
+    {
+      "id": "quality-sh3-ply",
+      "label": "Earlier Quality source PLY, SH3",
+      "assetIds": ["quality-sh3-ply-fine"],
+      "filePaths": [
+        "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud.ply"
+      ],
+      "pointCount": 2002028,
+      "shDegree": 3,
+      "lodPolicy": "single full source",
+      "diagnosticRole": "source master comparator"
+    },
+    {
+      "id": "quality-sh3-sog-leaf",
+      "label": "Earlier Quality valid SOG fine frontier, SH3",
+      "assetIds": [
+        "quality-sog-fine-a",
+        "quality-sog-fine-b",
+        "quality-sog-fine-c",
+        "quality-sog-fine-d"
+      ],
+      "filePaths": [
+        "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_15_0_0.sog",
+        "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_1_0_5.sog",
+        "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_6_0_0.sog",
+        "F:\\VENVIEWER -- TH PROJECT SPLAT OUTPUTS\\lcc2-result\\data\\3dgs\\0_7_0_0.sog"
+      ],
+      "servedFileRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\1900549066649638\\output\\render2",
+      "pointCount": 2002009,
+      "selectedBytes": 35735101,
+      "shDegree": 3,
+      "lodPolicy": "valid fixed fine frontier",
+      "diagnosticRole": "recommended Stage-0 runtime candidate"
+    },
+    {
+      "id": "mobile-sh0-ply",
+      "label": "Later Mobile/Portable source PLY, DC-only",
+      "assetIds": ["mobile-sh0-ply-fine"],
+      "filePaths": [
+        "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\ply-result\\point_cloud\\iteration_100\\point_cloud.ply"
+      ],
+      "pointCount": 1979247,
+      "shDegree": 0,
+      "lodPolicy": "single full source",
+      "diagnosticRole": "current-source lineage comparator"
+    },
+    {
+      "id": "mobile-sh0-sog-leaf",
+      "label": "Later Mobile valid SOG fine frontier, DC-only",
+      "assetIds": [
+        "mobile-sog-fine-a",
+        "mobile-sog-fine-b",
+        "mobile-sog-fine-c",
+        "mobile-sog-fine-d"
+      ],
+      "filePaths": [
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_14_0_2.sog",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_3_0_0.sog",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_8_0_0.sog",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_sog_visual\\lcc2-result\\data\\3dgs\\0_9_0_0.sog"
+      ],
+      "servedFileRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2",
+      "pointCount": 1979204,
+      "selectedBytes": 23597956,
+      "shDegree": 0,
+      "lodPolicy": "valid fixed fine frontier",
+      "diagnosticRole": "same-Mobile-source SOG comparator"
+    },
+    {
+      "id": "mobile-sh0-spz-leaf",
+      "label": "Later Mobile valid SPZ fine frontier, DC-only",
+      "assetIds": [
+        "mobile-spz-fine-a",
+        "mobile-spz-fine-b",
+        "mobile-spz-fine-c",
+        "mobile-spz-fine-d"
+      ],
+      "filePaths": [
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_13_0_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_3_0_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_7_0_1.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_8_0_0.spz"
+      ],
+      "servedFileRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2-spz",
+      "pointCount": 1978258,
+      "selectedBytes": 30010681,
+      "shDegree": 0,
+      "lodPolicy": "valid fixed fine frontier",
+      "diagnosticRole": "valid current-encoding comparator"
+    },
+    {
+      "id": "mobile-sh0-spz-all-invalid",
+      "label": "Later Mobile all seven non-environment SPZ chunks",
+      "assetIds": [
+        "mobile-spz-coarse",
+        "mobile-spz-medium-a",
+        "mobile-spz-medium-b",
+        "mobile-spz-fine-a",
+        "mobile-spz-fine-b",
+        "mobile-spz-fine-c",
+        "mobile-spz-fine-d"
+      ],
+      "filePaths": [
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_2_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_3_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_13_0_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_3_0_0.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_7_0_1.spz",
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_8_0_0.spz"
+      ],
+      "servedFileRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2-spz",
+      "pointCount": 3455732,
+      "selectedBytes": 52838644,
+      "shDegree": 0,
+      "lodPolicy": "invalid additive parent-plus-child set",
+      "diagnosticRole": "current internal runtime defect reproduction",
+      "mustNeverShipAsFixedSet": true
+    },
+    {
+      "id": "mobile-sh0-spz-coarse",
+      "label": "Later Mobile coarse SPZ root only",
+      "assetIds": ["mobile-spz-coarse"],
+      "filePaths": [
+        "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_visual\\lcc2-result\\data\\3dgs\\0_0.spz"
+      ],
+      "servedFileRoot": "C:\\Users\\blake\\AppData\\Local\\LccStudio\\DATA\\19005490661556650\\output\\render2-spz",
+      "pointCount": 491784,
+      "shDegree": 0,
+      "lodPolicy": "valid coarse frontier but inadequate for hero-quality target",
+      "diagnosticRole": "conditional one-URL public-schema coarse-root outcome reproduction"
+    }
+  ],
+  "automatedViews": [
+    {
+      "id": "overview",
+      "featureClass": "room-scale consistency and broad edge stability",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [-2.652, -5.022, -11.676],
+      "verticalFovDegrees": 48,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-overview-<variant-id>.png"
+    },
+    {
+      "id": "timber-left",
+      "featureClass": "dark timber doors, panels and glazing on the left",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [-6.5, -3.5, -11.5],
+      "verticalFovDegrees": 25,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-timber-left-<variant-id>.png"
+    },
+    {
+      "id": "timber-right",
+      "featureClass": "dark timber doors, panels and glazing on the right",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [0, -3.5, -11.5],
+      "verticalFovDegrees": 25,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-timber-right-<variant-id>.png"
+    },
+    {
+      "id": "floor-surface",
+      "featureClass": "planar surface edge ghosting and LoD duplication",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [-3, -5, -4],
+      "verticalFovDegrees": 28,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-floor-surface-<variant-id>.png"
+    },
+    {
+      "id": "ceiling-moulding",
+      "featureClass": "ceiling moulding and high-frequency edge stability",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [-3, 0, -11.5],
+      "verticalFovDegrees": 24,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-ceiling-moulding-<variant-id>.png"
+    },
+    {
+      "id": "column-skirting",
+      "featureClass": "column/skirting boundary and structural edge stability",
+      "camera": [-2.408, 1.449, 9.752],
+      "lookAt": [1, -3, -10],
+      "verticalFovDegrees": 24,
+      "near": 0.1,
+      "far": 120,
+      "status": "captured",
+      "filenameTemplate": "matrix-column-skirting-<variant-id>.png"
+    }
+  ],
+  "metricArtifact": {
+    "path": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation\\fixed-view-metrics.json",
+    "sizeBytes": 9407,
+    "sha256": "55C0DBDE098EF55E808EB44A7745CDE07646E7A56F21E48FDC3C3B5350327233",
+    "containsPerViewValues": true,
+    "method": {
+      "sampleDomain": "uint8 sRGB RGB values normalized to [0,1], without linear-light conversion",
+      "scope": "full 1200x900 frame including identical background; no mask",
+      "psnr": "10*log10(1/MSE), data_range=1",
+      "ssim": "skimage-compatible 7x7 uniform window, sample covariance, K1=0.01, K2=0.03, data_range=1, reflect boundary, RGB mean",
+      "mae": "mean absolute error over every RGB sample",
+      "packages": {
+        "numpy": "2.4.2",
+        "Pillow": "12.0.0",
+        "scipy": "1.17.0"
+      }
+    }
+  },
+  "comparisonSummary": [
+    {
+      "a": "quality-sh3-ply",
+      "b": "quality-sh3-sog-leaf",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [41.88, 42.73],
+      "ssimRange": [0.966711, 0.971788],
+      "maeRange": [0.005432, 0.006021],
+      "finding": "High pixel agreement in tested views; encoder version/settings and direct single-generation provenance are not established; does not establish real-world/source detail."
+    },
+    {
+      "a": "mobile-sh0-ply",
+      "b": "mobile-sh0-sog-leaf",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [41.436814, 43.74835],
+      "ssimRange": [0.958019, 0.970598],
+      "maeRange": [0.004788, 0.006223],
+      "finding": "High Mobile PLY-to-SOG-package agreement in tested views."
+    },
+    {
+      "a": "mobile-sh0-ply",
+      "b": "mobile-sh0-spz-leaf",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [41.79, 43.65],
+      "ssimRange": [0.95963, 0.970183],
+      "maeRange": [0.004861, 0.006033],
+      "finding": "High Mobile PLY-to-SPZ-package agreement in tested views."
+    },
+    {
+      "a": "mobile-sh0-sog-leaf",
+      "b": "mobile-sh0-spz-leaf",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [42.025483, 44.018868],
+      "ssimRange": [0.95827, 0.969874],
+      "maeRange": [0.004584, 0.005772],
+      "finding": "Same-Mobile-source SOG and SPZ valid fine packages are similar at the six tested same-centre framings."
+    },
+    {
+      "a": "mobile-sh0-spz-leaf",
+      "b": "mobile-sh0-spz-all-invalid",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [27.74, 30.21],
+      "ssimRange": [0.911731, 0.930638],
+      "maeRange": [0.017664, 0.024377],
+      "finding": "Invalid all-level composition visibly doubles and smears edges."
+    },
+    {
+      "a": "mobile-sh0-spz-leaf",
+      "b": "mobile-sh0-spz-coarse",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [34.03, 36.32],
+      "ssimRange": [0.914215, 0.935022],
+      "maeRange": [0.00961, 0.01328],
+      "finding": "Coarse-only is visibly softer than the fine frontier."
+    },
+    {
+      "a": "quality-sh3-ply",
+      "b": "mobile-sh0-ply",
+      "viewIds": ["overview", "timber-left", "timber-right", "floor-surface", "ceiling-moulding", "column-skirting"],
+      "psnrRangeDb": [25.42, 29.16],
+      "ssimRange": [0.906682, 0.932757],
+      "maeRange": [0.028553, 0.045893],
+      "finding": "Sources materially differ; separate reconstruction/settings/SH/counts confound cause."
+    }
+  ],
+  "excludedArtifacts": [
+    {
+      "id": "mobile-attached-mesh-master",
+      "path": "C:\\Users\\blake\\Downloads\\reception-room_xgrids_lcc2_spz_with_mesh\\mesh-files\\Reception Room Mobile.ply",
+      "status": "inventoried_not_rendered",
+      "reason": "The automated matrix intentionally isolated pure splat source/codec/LoD loss. The mesh is XYZ-only, 10209 vertices / 19747 faces, and has no reviewed LCC-to-E57/runtime transform or lighting/material profile.",
+      "requiredNextView": "After transform review, capture mesh-only and hybrid column/skirting/cornice near-mid-far views and test z-fighting, silhouette, occlusion and lighting mismatch."
+    },
+    {
+      "id": "quality-sog-environment",
+      "status": "inventoried_not_rendered",
+      "reason": "The first matrix isolated the non-environment LOD frontier. Exclusion is a diagnostic choice, not a release decision.",
+      "requiredNextView": "A/B Quality fine frontier with and without env.sog at overview, boundary and moving cameras before any release candidate is approved."
+    },
+    {
+      "id": "mobile-spz-environment",
+      "status": "inventoried_not_rendered",
+      "reason": "The first matrix isolated the non-environment LOD frontier.",
+      "requiredNextView": "A/B environment separately if the Mobile package remains a candidate."
+    }
+  ],
+  "requiredManualViews": {
+    "missingArtifactId": "RR-LCC-HERO-CAPTURE-SET",
+    "reason": "The original generic feature list named a fireplace, chandelier, painting and table that are not present in the captured empty Reception Room. The asset-backed feature list below replaces it with visible fixed room features. Exact LCC, independent-viewer and product-route captures are still missing.",
+    "operatorSafetyGate": "The earlier active-editor warning cleared during a later read-only check. Before a new capture, still confirm the current project is saved and that no second editor owns it; never click through a concurrent-editor corruption warning.",
+    "outputRoot": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation\\manual-cross-context",
+    "applicationMetadataFiles": ["RR-LCC-ABOUT.png", "RR-LCC-HD-STATE.png"],
+    "commonChecklist": [
+      "Record LCC Studio version, Windows display scale, project ID/name, reconstruction mode, quality level, SH/antialias metadata if exposed, exposure/brightness controls, and HD activation state.",
+      "Open the earlier Quality Reception project only after confirming no other editor owns it.",
+      "Use perspective projection and disable any visual treatment that cannot be reproduced in Spark.",
+      "Frame the feature with context around all four edges at a useful product viewing distance.",
+      "Record camera position, target, up vector, FOV/focal length, viewport and device scale if exposed.",
+      "If camera values are unavailable, save the named camera-unavailable text sidecar.",
+      "Do not change exposure/brightness between the per-feature source/export/runtime captures.",
+      "Capture a matching held-out reference photograph where safe; never use it in BA/training for this evaluation.",
+      "Repeat source framing in Quality PLY, valid Quality SOG fine, valid Mobile SOG fine, valid Mobile SPZ fine, and private Venviewer candidate.",
+      "Review at 100 percent pixels and in a short orbit for edge ghosts, missing surfaces, SH/view-dependent colour, floaters, transparency, seams and exposure."
+    ],
+    "featureStageCoverage": {
+      "meaning": "Every row below still needs the same visible feature checked in all four contexts. The existing development Spark captures satisfy none of these four contexts because they did not use the protected product route.",
+      "stages": [
+        "original_lcc_studio_model",
+        "master_ply_or_lcc2_independent_viewer",
+        "sog_or_spz_independent_viewer",
+        "venviewer_spark_protected_product_route"
+      ],
+      "rows": [
+        {"featureId": "timber-doors-a", "originalLccStudio": "missing", "masterIndependentViewer": "missing", "compressedIndependentViewer": "missing", "protectedProductRoute": "missing"},
+        {"featureId": "curtains-windows-a", "originalLccStudio": "missing", "masterIndependentViewer": "missing", "compressedIndependentViewer": "missing", "protectedProductRoute": "missing"},
+        {"featureId": "column-moulding-a", "originalLccStudio": "missing", "masterIndependentViewer": "missing", "compressedIndependentViewer": "missing", "protectedProductRoute": "missing"},
+        {"featureId": "floorboards-a", "originalLccStudio": "missing", "masterIndependentViewer": "missing", "compressedIndependentViewer": "missing", "protectedProductRoute": "missing"},
+        {"featureId": "room-depth-detail-a", "originalLccStudio": "missing", "masterIndependentViewer": "missing", "compressedIndependentViewer": "missing", "protectedProductRoute": "missing"}
+      ]
+    },
+    "views": [
+      {
+        "id": "timber-doors-a",
+        "featureClass": "dark timber doors, panel edges and glazing",
+        "status": "partially_automated_exact_lcc_view_missing",
+        "requiredFiles": [
+          "RR-TIMBER-DOORS-A-LCC-QUALITY.png",
+          "RR-TIMBER-DOORS-A-PLY-SH3.png",
+          "RR-TIMBER-DOORS-A-SOG-SH3-FINE.png",
+          "RR-TIMBER-DOORS-A-SOG-SH0-FINE.png",
+          "RR-TIMBER-DOORS-A-SPZ-SH0-FINE.png",
+          "RR-TIMBER-DOORS-A-VENVIEWER-CANDIDATE.png"
+        ],
+        "cameraSidecarIfUnavailable": "RR-TIMBER-DOORS-A-LCC-QUALITY-camera-unavailable.txt"
+      },
+      {
+        "id": "curtains-windows-a",
+        "featureClass": "curtain folds, window edges and glazing transitions",
+        "status": "blocked_operator_action",
+        "requiredFiles": [
+          "RR-CURTAINS-WINDOWS-A-LCC-QUALITY.png",
+          "RR-CURTAINS-WINDOWS-A-PLY-SH3.png",
+          "RR-CURTAINS-WINDOWS-A-SOG-SH3-FINE.png",
+          "RR-CURTAINS-WINDOWS-A-SOG-SH0-FINE.png",
+          "RR-CURTAINS-WINDOWS-A-SPZ-SH0-FINE.png",
+          "RR-CURTAINS-WINDOWS-A-VENVIEWER-CANDIDATE.png"
+        ],
+        "cameraSidecarIfUnavailable": "RR-CURTAINS-WINDOWS-A-LCC-QUALITY-camera-unavailable.txt"
+      },
+      {
+        "id": "column-moulding-a",
+        "featureClass": "column base/capital with nearby cornice or skirting",
+        "status": "partially_automated_exact_lcc_view_missing",
+        "requiredFiles": [
+          "RR-COLUMN-MOULDING-A-LCC-QUALITY.png",
+          "RR-COLUMN-MOULDING-A-PLY-SH3.png",
+          "RR-COLUMN-MOULDING-A-SOG-SH3-FINE.png",
+          "RR-COLUMN-MOULDING-A-SOG-SH0-FINE.png",
+          "RR-COLUMN-MOULDING-A-SPZ-SH0-FINE.png",
+          "RR-COLUMN-MOULDING-A-VENVIEWER-CANDIDATE.png"
+        ],
+        "cameraSidecarIfUnavailable": "RR-COLUMN-MOULDING-A-LCC-QUALITY-camera-unavailable.txt"
+      },
+      {
+        "id": "floorboards-a",
+        "featureClass": "polished floorboard grain, seams and reflections",
+        "status": "partially_automated_exact_lcc_view_missing",
+        "requiredFiles": [
+          "RR-FLOORBOARDS-A-LCC-QUALITY.png",
+          "RR-FLOORBOARDS-A-PLY-SH3.png",
+          "RR-FLOORBOARDS-A-SOG-SH3-FINE.png",
+          "RR-FLOORBOARDS-A-SOG-SH0-FINE.png",
+          "RR-FLOORBOARDS-A-SPZ-SH0-FINE.png",
+          "RR-FLOORBOARDS-A-VENVIEWER-CANDIDATE.png"
+        ],
+        "cameraSidecarIfUnavailable": "RR-FLOORBOARDS-A-LCC-QUALITY-camera-unavailable.txt"
+      },
+      {
+        "id": "room-depth-detail-a",
+        "featureClass": "doorway and room depth with a fixed wall light, vent, extinguisher or similar small feature",
+        "status": "blocked_operator_action",
+        "requiredFiles": [
+          "RR-ROOM-DEPTH-DETAIL-A-LCC-QUALITY.png",
+          "RR-ROOM-DEPTH-DETAIL-A-PLY-SH3.png",
+          "RR-ROOM-DEPTH-DETAIL-A-SOG-SH3-FINE.png",
+          "RR-ROOM-DEPTH-DETAIL-A-SOG-SH0-FINE.png",
+          "RR-ROOM-DEPTH-DETAIL-A-SPZ-SH0-FINE.png",
+          "RR-ROOM-DEPTH-DETAIL-A-VENVIEWER-CANDIDATE.png"
+        ],
+        "cameraSidecarIfUnavailable": "RR-ROOM-DEPTH-DETAIL-A-LCC-QUALITY-camera-unavailable.txt"
+      }
+    ]
+  },
+  "requiredCrossContextViews": {
+    "status": "blocked_missing_contexts",
+    "blockerIds": ["RR-INDEPENDENT-VIEWER-CAPTURE-SET", "RR-ACTUAL-ROUTE-CAPTURE-SET"],
+    "outputRoot": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation\\manual-cross-context",
+    "featureCodes": ["TIMBER-DOORS", "CURTAINS-WINDOWS", "COLUMN-MOULDING", "FLOORBOARDS", "ROOM-DEPTH-DETAIL"],
+    "contexts": [
+      {"id":"independent-ply-sh3","rendererRule":"Pinned non-Venviewer renderer such as SuperSplat","filenamePattern":"RR-<FEATURE>-A-INDEPENDENT-PLY-SH3.png"},
+      {"id":"independent-sog-sh3-fine","rendererRule":"Same independent renderer","filenamePattern":"RR-<FEATURE>-A-INDEPENDENT-SOG-SH3-FINE.png"},
+      {"id":"independent-sog-sh0-fine","rendererRule":"Same independent renderer","filenamePattern":"RR-<FEATURE>-A-INDEPENDENT-SOG-SH0-FINE.png"},
+      {"id":"independent-spz-sh0-fine","rendererRule":"Same independent renderer","filenamePattern":"RR-<FEATURE>-A-INDEPENDENT-SPZ-SH0-FINE.png"},
+      {"id":"actual-mobile-fine","rendererRule":"Actual private product route, valid Mobile fine frontier","filenamePattern":"RR-<FEATURE>-A-ACTUAL-MOBILE-FINE.png"},
+      {"id":"actual-quality-fine","rendererRule":"Actual private product route, valid Quality fine candidate","filenamePattern":"RR-<FEATURE>-A-ACTUAL-QUALITY-FINE.png"}
+    ],
+    "historicalDiagnosticControls": [
+      {"id":"diagnostic-mobile-all-invalid","rendererRule":"Historical /dev/splat-fixture evidence only; never admit through the protected product route","filenamePattern":"matrix-<VIEW>-mobile-spz-all-invalid.png"},
+      {"id":"diagnostic-mobile-coarse","rendererRule":"Historical /dev/splat-fixture evidence only; never treat as a protected-route candidate","filenamePattern":"matrix-<VIEW>-mobile-spz-coarse.png"}
+    ],
+    "sidecarPattern": "same PNG stem with .json extension",
+    "sidecarRequiredFields": ["applicationBuild", "assetIdsAndHashes", "importOptions", "rendererSettings", "viewport", "effectiveDpr", "exposureAndToneMapping", "cameraPositionTargetUpFov", "viewMatrix", "projectionMatrix", "cameraMatch", "loadResultAndCount", "fps", "gpuMemory", "loadTime", "capturedAt"],
+    "cameraRule": "Use the LCC camera when exposed. Otherwise save cameraMatch=visual_only after reviewed side-by-side framing and exclude the image from pixel metrics."
+  },
+  "screenshotRoot": "C:\\Users\\blake\\omnitwin2\\output\\playwright\\reception-hd-investigation",
+  "screenshotIntegrity": [
+    {"name":"matrix-ceiling-moulding-mobile-sh0-ply.png","bytes":1311948,"sha256":"F02A67FA8449287AAC5EDD0AC27EB5475E1DB2A0FAE97F09C07F8622CF416779"},
+    {"name":"matrix-ceiling-moulding-mobile-sh0-spz-all-invalid.png","bytes":1352228,"sha256":"1630A5340D09AA44429E843F2D293DE6250759FB1F42403FB5B1FC39263A7595"},
+    {"name":"matrix-ceiling-moulding-mobile-sh0-spz-coarse.png","bytes":1277217,"sha256":"079203A0FEA99187A2367D772174235C238FEC431132ED7CBC6C0D7A2CC2CD10"},
+    {"name":"matrix-ceiling-moulding-mobile-sh0-spz-leaf.png","bytes":1311218,"sha256":"6AB655DD1A2124BACDF441FF8BA9B9DA16724B1CC3DF400A1CD41867040B3BDF"},
+    {"name":"matrix-ceiling-moulding-quality-sh3-ply.png","bytes":1273976,"sha256":"68E9C08657C28F2C8277F4BD9776A0A9F46F120F0DF1F418DF00A0FB073A233C"},
+    {"name":"matrix-ceiling-moulding-quality-sh3-sog-leaf.png","bytes":1271421,"sha256":"6D27CB7A001BCF125B67A910FC9ECCC54564B1168B0576DC1C8C3E2C8AE80697"},
+    {"name":"matrix-column-skirting-mobile-sh0-ply.png","bytes":1374461,"sha256":"45199DCC32C6F2772B828BF376AA415103D2491794C82041B748E5B1B9DF381D"},
+    {"name":"matrix-column-skirting-mobile-sh0-spz-all-invalid.png","bytes":1427324,"sha256":"EA84AE0B1AE230EAC05E3F5D55C1E9979599EAE2D483E4E5B74CC3C3A807897F"},
+    {"name":"matrix-column-skirting-mobile-sh0-spz-coarse.png","bytes":1339620,"sha256":"F3BCAAE68651AE6181870E63FF56B7998A07AEECF09C4E0FF16F60290FA6AC13"},
+    {"name":"matrix-column-skirting-mobile-sh0-spz-leaf.png","bytes":1373126,"sha256":"84DF96D5CEDE0EEC8A02AB7E882ABAB782F6749AC339C779C2A7F1E9134081F0"},
+    {"name":"matrix-column-skirting-quality-sh3-ply.png","bytes":1341447,"sha256":"492A29A4FC476701EE7E8B14E4317F362C732992C05E9613A02036BAE7603ACB"},
+    {"name":"matrix-column-skirting-quality-sh3-sog-leaf.png","bytes":1341318,"sha256":"98E89957D6543260ADAB7281850BB4056D86CAFD19B2A787BCA42EB752D35E04"},
+    {"name":"matrix-floor-surface-mobile-sh0-ply.png","bytes":1400610,"sha256":"C5100ED847AAD3E1D4B9B0FDBCF26A71BACBC426511BB7517ECEF19B6C3AACDE"},
+    {"name":"matrix-floor-surface-mobile-sh0-spz-all-invalid.png","bytes":1432941,"sha256":"D57A365E9EBDAEB4F9EC17A434B6D39C96B97721A6ED7CC72065888553F238BC"},
+    {"name":"matrix-floor-surface-mobile-sh0-spz-coarse.png","bytes":1357928,"sha256":"77B1FC66B0BA690471F96A05F07088AD3A1A8AB307B2B5F0B08AC4DC9DC9CE99"},
+    {"name":"matrix-floor-surface-mobile-sh0-spz-leaf.png","bytes":1400451,"sha256":"0ED3EC359D48C7CD0EA1CA51F0D92F9BF9C1CCF4C24A1BC00197187F3EEDC900"},
+    {"name":"matrix-floor-surface-quality-sh3-ply.png","bytes":1362200,"sha256":"AA20F7D7EF47796E98864CB9C3FD28A59727BB31057C6228E8FE4A2A1CEC99E0"},
+    {"name":"matrix-floor-surface-quality-sh3-sog-leaf.png","bytes":1362973,"sha256":"1D871135E5F6C29B20E0CD431924A40F1F9D79C435C9BAF1C7DB7804CE3DB1E1"},
+    {"name":"matrix-overview-mobile-sh0-ply.png","bytes":1434155,"sha256":"D1C961378063D3854DB0BA23172054123BADB1CBD4A91EE33D46947D553B7C37"},
+    {"name":"matrix-overview-mobile-sh0-spz-all-invalid.png","bytes":1484722,"sha256":"4B1C15AA9EB6EBB552AC60469558F7836D465132CE1ED9968290B294BE5E7408"},
+    {"name":"matrix-overview-mobile-sh0-spz-coarse.png","bytes":1403258,"sha256":"D566E629A7DCE736BDD24D8741122D9B86999E93CA35FA756495D6CEBE37B766"},
+    {"name":"matrix-overview-mobile-sh0-spz-leaf.png","bytes":1434425,"sha256":"BC0EDA76693E12FD9F1DE701D5FBA893CC1F75060DC9AE8007F18735D45BD798"},
+    {"name":"matrix-overview-quality-sh3-ply.png","bytes":1381613,"sha256":"01D7C95809F692EBB4CE4F5B77378DDCB4DF9E5559DF465107E7058634FF47B3"},
+    {"name":"matrix-overview-quality-sh3-sog-leaf.png","bytes":1381296,"sha256":"CBF92BCD82046870E0256F390F6D06F1715BBA73622C88A8BBC38B806A7BCA5C"},
+    {"name":"matrix-timber-left-mobile-sh0-ply.png","bytes":1332922,"sha256":"CA7B6F65623D03C83570C70004CD02B44DD10EC20EBA84BF6AD81602F65BD7CA"},
+    {"name":"matrix-timber-left-mobile-sh0-spz-all-invalid.png","bytes":1380734,"sha256":"25F31EAD84C00FD8F574B2244E9DD11D20B7FC65B2D0A7F6B29425BB118A5D37"},
+    {"name":"matrix-timber-left-mobile-sh0-spz-coarse.png","bytes":1292820,"sha256":"625BBDC0DA21E585481C5172846F7D00878FBF12E33B925D02FA55650278A89A"},
+    {"name":"matrix-timber-left-mobile-sh0-spz-leaf.png","bytes":1332387,"sha256":"1F1D484B416F2C02CA1299C3A4F6F30A1B4D58811C65716E34AF70355C89EEC2"},
+    {"name":"matrix-timber-left-quality-sh3-ply.png","bytes":1291885,"sha256":"458D8C13A4A693BD2E54682EDFBE45421579F26C72349002A7997228F0731DC2"},
+    {"name":"matrix-timber-left-quality-sh3-sog-leaf.png","bytes":1292108,"sha256":"0C4BE4E05648896E81507C37A94EBB86DC13656B0536A3DD7D6812994D09E536"},
+    {"name":"matrix-timber-right-mobile-sh0-ply.png","bytes":1379353,"sha256":"1ED748F728BA56B52A7D65AD99472DD5E9A4E45D60ABB338AC8FF69AF0B896E6"},
+    {"name":"matrix-timber-right-mobile-sh0-spz-all-invalid.png","bytes":1432079,"sha256":"C8897C74B652849DFE808DC057EF585EDC77BF18EDE9086D64577FC707A8C995"},
+    {"name":"matrix-timber-right-mobile-sh0-spz-coarse.png","bytes":1346301,"sha256":"212EECBB8DBD4D17575C32DF2A236C9AA5EB10724AB2E2CE68606E15F54802BA"},
+    {"name":"matrix-timber-right-mobile-sh0-spz-leaf.png","bytes":1378641,"sha256":"0F21C6DCE8B407CCC8F911E25D248ED141600D3B8634227256E2DBF873A7F69C"},
+    {"name":"matrix-timber-right-quality-sh3-ply.png","bytes":1343079,"sha256":"7FC0E1AF002CA03BECAC3BBA06A4A6EB95B2E5875ED43317FD0E2A8EC510AFD0"},
+    {"name":"matrix-timber-right-quality-sh3-sog-leaf.png","bytes":1343226,"sha256":"3D084E09F00FA80B0D9F0412F99E80F0335E40A38B3B1F45CA90B0AB081FE283"},
+    {"name":"matrix-ceiling-moulding-mobile-sh0-sog-leaf.png","bytes":1310190,"sha256":"0F299996E3DF2DFC84C06E5BEED6FE49C3F47E1474EFC634465F490DC4369924"},
+    {"name":"matrix-column-skirting-mobile-sh0-sog-leaf.png","bytes":1373240,"sha256":"A35D153C340C80982895F7098B17709243FF1C9152C87C91706EE628FFDC6C5B"},
+    {"name":"matrix-floor-surface-mobile-sh0-sog-leaf.png","bytes":1401190,"sha256":"D16C28157460FABC7F13FDF03CA5616BF21137978A8B5C8BC44AC10DD73C9016"},
+    {"name":"matrix-overview-mobile-sh0-sog-leaf.png","bytes":1433840,"sha256":"0E15296B40CB99AD24C4A781532EB55878353C16A5D0AE0A4DA843BCE7A18946"},
+    {"name":"matrix-timber-left-mobile-sh0-sog-leaf.png","bytes":1332040,"sha256":"934F4F2FF7EC7F74744D5F01360C1B8467216EC455D3645569AF49F177C5002E"},
+    {"name":"matrix-timber-right-mobile-sh0-sog-leaf.png","bytes":1378803,"sha256":"9F89CA1C88D2E716DAB3B1C0D93C8D71916818C12C9B35A4F5BE91E23E2DAFF2"}
+  ],
+  "knownLimitations": [
+    "The 42 automated screenshots are all from one Venviewer Spark dev fixture; no separate independent-viewer or actual-product-route context has been captured.",
+    "The six automated views are deterministic diagnostic cameras, not the complete five-feature product review.",
+    "The six automated views use one camera position with different target and FOV framings; they do not test view-dependent appearance when the viewer moves. Spatially distinct near/mid/far and orbit cameras are required.",
+    "Actual view/projection matrices and a machine-readable load-result artifact were not retained; the next capture must store both.",
+    "No LCC Studio source image, held-out physical reference, or true novel-view path is represented.",
+    "The dev fixture and actual internal/public product routes differ in DPR, UI, package resolution and possibly postprocessing.",
+    "Pairwise PSNR/SSIM/MAE measure image agreement, not physical truth.",
+    "The reported pixel metrics cover the full RGB frame including identical background pixels; candidate acceptance must also report feature-masked metrics.",
+    "A Laplacian-variance test was rejected because doubled edges scored as artificially sharp.",
+    "The Quality-versus-Mobile comparison is confounded by separate reconstructions and settings.",
+    "The exact dirty-worktree diff, resolved dependency tree and Chrome binary were not snapshotted atomically at capture time; replay is not bit-reproducible."
+  ],
+  "preparedLocalComparison": {
+    "schemaVersion": "venviewer.reception-prepared-local-comparison.v2",
+    "id": "RR-ORIGINAL-SOURCE-MATCHED-COMPARISON-V0",
+    "asOf": "2026-07-22",
+    "authority": "none",
+    "evidenceRecord": "docs/reports/reception-room-hd-evidence.json#sourcePhotoComparisonV0",
+    "status": "source_view_diagnostic_implementation_proved_generated_inputs_only",
+    "sourceViewDecisionAuthority": "diagnostic_only_never_selects_quality_or_mobile",
+    "browserHelperProofBoundary": "generated fixtures, runner-owned immutable-build and fake-page rejection checks, plus one generated-Gaussian Spark/Three framebuffer test; development capture is wired, but no authorized Reception source-photo run through the new completed-frame connection or real customer-facing app-page run exists",
+    "scorerPassingGeneratedTests": 38,
+    "browserHelperPassingGeneratedFixtureTests": 26,
+    "realVenviewerTelemetryWired": true,
+    "heldoutExecutionAvailable": false,
+    "heldoutBlocker": "no independently reviewed and allowlisted renderer-owned capture adapter",
+    "trustedHeldoutRunnerAllowlistEmpty": true,
+    "realReceptionRunCompleted": false,
+    "productWinnerEnabled": false,
+    "receiptsAreIndependentAuthentication": false,
+    "receiptBoundary": "Hash-bound operator declarations are not independent proof of rights, room state, lineage, camera validity or timing.",
+    "lccReadOrResumed": false,
+    "protectedReferencePixelsRead": false,
+    "cloudPaidDeployOrPublicationAction": false,
+    "operatorGuide": "docs/reports/reception-room-source-photo-comparison-v0.md"
+  },
+  "nextCapture": "The development real-component route now provides renderer-owned asset, build, camera, transform and fresh-frame records, proved with generated Spark data. Independently review that connection. Then, if an authorized lossless source photograph and calibrated camera are available, run source_view_diagnostic only; no authorized Reception source-photo package has yet passed through this connection, and the mode cannot select Quality or Mobile. Held-out execution stays disabled until the adapter is allowlisted and a separate six-station clean reference set exists. Separately add the 21-frame movement test, spatially distinct views, performance and device evidence. LCC remains paused until Blake types exactly Resume LCC capture."
+}

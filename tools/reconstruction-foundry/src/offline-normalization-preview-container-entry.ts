@@ -33,7 +33,12 @@ function bestEffortZeroize(bytes: Uint8Array | null | undefined): void {
   }
 }
 
-function boundedChunkCopy(value: unknown, remainingBytes: number): Buffer {
+const INPUT_BLOCK_BYTES = 64 * 1024;
+
+function boundedChunkView(
+  value: unknown,
+  remainingBytes: number,
+): Uint8Array {
   if (!(value instanceof Uint8Array)) fail();
   if (
     !Number.isSafeInteger(value.byteLength) ||
@@ -42,24 +47,39 @@ function boundedChunkCopy(value: unknown, remainingBytes: number): Buffer {
   ) {
     fail();
   }
-  try {
-    return Buffer.from(value);
-  } catch {
-    return fail();
-  }
+  return value;
 }
 
 async function readOneEofTerminatedRequest(input: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
+  const blocks: Buffer[] = [];
   let totalBytes = 0;
+  let blockOffset = INPUT_BLOCK_BYTES;
   try {
     for await (const value of input as AsyncIterable<unknown>) {
-      const chunk = boundedChunkCopy(
+      const chunk = boundedChunkView(
         value,
         FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES -
           totalBytes,
       );
-      chunks.push(chunk);
+      let chunkOffset = 0;
+      while (chunkOffset < chunk.byteLength) {
+        if (blockOffset === INPUT_BLOCK_BYTES) {
+          blocks.push(Buffer.allocUnsafe(INPUT_BLOCK_BYTES));
+          blockOffset = 0;
+        }
+        const block = blocks.at(-1);
+        if (block === undefined) fail();
+        const copyBytes = Math.min(
+          chunk.byteLength - chunkOffset,
+          INPUT_BLOCK_BYTES - blockOffset,
+        );
+        block.set(
+          chunk.subarray(chunkOffset, chunkOffset + copyBytes),
+          blockOffset,
+        );
+        chunkOffset += copyBytes;
+        blockOffset += copyBytes;
+      }
       totalBytes += chunk.byteLength;
     }
     if (
@@ -69,9 +89,16 @@ async function readOneEofTerminatedRequest(input: Readable): Promise<Buffer> {
     ) {
       fail();
     }
-    return Buffer.concat(chunks, totalBytes);
+    const request = Buffer.allocUnsafe(totalBytes);
+    let outputOffset = 0;
+    for (const block of blocks) {
+      const copyBytes = Math.min(block.byteLength, totalBytes - outputOffset);
+      block.copy(request, outputOffset, 0, copyBytes);
+      outputOffset += copyBytes;
+    }
+    return request;
   } finally {
-    for (const chunk of chunks) bestEffortZeroize(chunk);
+    for (const block of blocks) bestEffortZeroize(block);
   }
 }
 
@@ -147,7 +174,9 @@ function waitForSingleBoundedWrite(
  * The caller must end `input`; concatenated or trailing wire messages are
  * rejected by the authenticated wire decoder. This function performs no
  * filesystem, network, subprocess, persistence, environment-configuration,
- * or browser work. It does not establish an operating-system sandbox.
+ * or browser work. It does not establish an operating-system sandbox or its
+ * own wall-clock bound; the pinned image must run it beneath the fixed PID-1
+ * watchdog, with an independent host deadline as a second layer.
  */
 export async function runOfflineNormalizationPreviewContainerEntry(
   input: Readable,

@@ -30,11 +30,8 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   }
 }
 
-/**
- * Creates a Drizzle ORM instance connected to Neon via WebSocket Pool.
- * Supports db.transaction() for atomic operations.
- */
-export function createDb(databaseUrl: string): Database {
+/** Configure the Neon WebSocket driver for the database URL's locality. */
+export function configureNeonDriverForDatabaseUrl(databaseUrl: string): void {
   if (isLocalDatabaseUrl(databaseUrl)) {
     neonConfig.wsProxy = (host) => `${host}:${String(LOCAL_WS_PROXY_PORT)}/v1`;
     neonConfig.useSecureWebSocket = false;
@@ -48,6 +45,14 @@ export function createDb(databaseUrl: string): Database {
     neonConfig.pipelineTLS = true;
     neonConfig.pipelineConnect = "password";
   }
+}
+
+/**
+ * Creates a Drizzle ORM instance connected to Neon via WebSocket Pool.
+ * Supports db.transaction() for atomic operations.
+ */
+export function createDb(databaseUrl: string): Database {
+  configureNeonDriverForDatabaseUrl(databaseUrl);
   const pool = new Pool({ connectionString: databaseUrl });
   // An idle pooled client can error at any time (dropped socket, server
   // restart). Without a listener that is an unhandled 'error' event — it

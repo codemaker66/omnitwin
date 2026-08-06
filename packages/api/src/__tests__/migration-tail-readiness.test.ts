@@ -460,6 +460,14 @@ describe("migration tail rollout readiness", () => {
       readFile(resolve("../../.github/workflows/deploy.yml"), "utf8"),
     ]);
     expect(script).toContain("SET TRANSACTION READ ONLY");
+    const driverConfigurationIndex = script.indexOf(
+      "configureNeonDriverForDatabaseUrl(databaseUrl);",
+    );
+    const poolConstructionIndex = script.indexOf(
+      "const pool = new Pool({ connectionString: databaseUrl });",
+    );
+    expect(driverConfigurationIndex).toBeGreaterThan(-1);
+    expect(poolConstructionIndex).toBeGreaterThan(driverConfigurationIndex);
     const executedSql = [...script.matchAll(/execute\(sql`([\s\S]*?)`\)/g)]
       .map((match) => match[1] ?? "")
       .join("\n");

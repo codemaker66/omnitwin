@@ -1,0 +1,847 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.omnitwin.invalid/foundry/activation-v1-workload-inclusion-proof.schema.json",
+  "title": "OmniTwin Foundry activation V1 workload-authorization Merkle leaf",
+  "description": "Closed SQL-constructed, root-independent authorization-leaf values committed by the V1 workload-registry Merkle proof. Root-dependent authority and inherited values belong only in the atomic verification record. This schema never validates the binary proof itself.",
+  "oneOf": [
+    { "$ref": "#/$defs/trustRootLeaf" },
+    { "$ref": "#/$defs/dbCallerLeaf" },
+    { "$ref": "#/$defs/evidenceSignerLeaf" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": { "const": "00000000-0000-0000-0000-000000000000" }
+    },
+    "sha256": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "ed25519KeyId": {
+      "type": "string",
+      "minLength": 79,
+      "maxLength": 79,
+      "pattern": "^ed25519-sha256:[a-f0-9]{64}$"
+    },
+    "ed25519Spki": {
+      "type": "string",
+      "minLength": 59,
+      "maxLength": 59,
+      "pattern": "^[A-Za-z0-9_-]{59}$"
+    },
+    "base64urlProof": {
+      "type": "string",
+      "minLength": 38,
+      "maxLength": 1403,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[A-Za-z0-9_-]+$"
+    },
+    "registryGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "utcMilliseconds": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "trustDomain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$"
+    },
+    "spiffeId": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 2048,
+      "pattern": "^(?![\\s\\S]*[^\\u0021-\\u007e])spiffe://[^/?#]+/[^?#]+$"
+    },
+    "identityText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[^\\u0000-\\u0020\\u007f](?:[^\\u0000-\\u001f\\u007f]{0,238}[^\\u0000-\\u0020\\u007f])?$"
+    },
+    "dbRole": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^(?![\\s\\S]*[\\r\\n\\u2028\\u2029])[a-z_][a-z0-9_]{0,62}$"
+    },
+    "trustBundleV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 12,
+      "maxProperties": 12,
+      "required": [
+        "schemaVersion",
+        "trustDomain",
+        "registryGeneration",
+        "registryRootSha256",
+        "authorizedLeafMerkleRootSha256",
+        "authorizedLeafMerklePolicySha256",
+        "rootSignerKeyId",
+        "rootSignerPublicKeyDerBase64url",
+        "rootSignerPublicKeySha256",
+        "identityPolicySha256",
+        "validFrom",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-trust-bundle.v1" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "registryGeneration": { "$ref": "#/$defs/registryGeneration" },
+        "registryRootSha256": { "$ref": "#/$defs/sha256" },
+        "authorizedLeafMerkleRootSha256": { "$ref": "#/$defs/sha256" },
+        "authorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "rootSignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "rootSignerPublicKeyDerBase64url": { "$ref": "#/$defs/ed25519Spki" },
+        "rootSignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "identityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" }
+      }
+    },
+    "pairedCallerBindingV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 16,
+      "maxProperties": 16,
+      "required": [
+        "schemaVersion",
+        "workloadIdentitySha256",
+        "plane",
+        "validFrom",
+        "expiresAt",
+        "originKind",
+        "parentTrustDomain",
+        "parentValidFrom",
+        "parentExpiresAt",
+        "parentSignerKeyId",
+        "parentSignerPublicKeySha256",
+        "parentIdentityPolicySha256",
+        "parentAuthorizedLeafMerklePolicySha256",
+        "parentTrustBundleSchemaSha256",
+        "parentTrustBundleParserArtifactSha256",
+        "parentTrustBundleParserConfigurationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.paired-caller-binding.v1" },
+        "workloadIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "plane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "originKind": { "enum": ["bootstrap_ceremony", "admin_action"] },
+        "parentTrustDomain": { "$ref": "#/$defs/trustDomain" },
+        "parentValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "parentExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "parentSignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "parentSignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "parentIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "parentAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "parentTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "parentTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "parentTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dbCallerIdentityV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 13,
+      "maxProperties": 13,
+      "required": [
+        "schemaVersion",
+        "plane",
+        "dbRoleOid",
+        "dbSessionRole",
+        "dbSystemUserSha256",
+        "spiffeId",
+        "trustDomain",
+        "issuer",
+        "subject",
+        "audience",
+        "credentialKind",
+        "serviceArtifactSha256",
+        "serviceConfigurationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.db-caller-identity.v1" },
+        "plane": { "enum": ["activation", "claimer", "submit_gateway", "recovery_gateway", "evidence_admitter", "output_broker", "output_custodian", "watchdog"] },
+        "dbRoleOid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "dbSessionRole": { "$ref": "#/$defs/dbRole" },
+        "dbSystemUserSha256": { "$ref": "#/$defs/sha256" },
+        "spiffeId": { "$ref": "#/$defs/spiffeId" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "issuer": { "$ref": "#/$defs/identityText" },
+        "subject": { "$ref": "#/$defs/identityText" },
+        "audience": { "$ref": "#/$defs/identityText" },
+        "credentialKind": { "const": "spiffe_x509_svid" },
+        "serviceArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "serviceConfigurationSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "evidenceSignerIdentityV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 13,
+      "maxProperties": 13,
+      "required": [
+        "schemaVersion",
+        "evidenceKind",
+        "semanticPlane",
+        "spiffeId",
+        "trustDomain",
+        "issuer",
+        "subject",
+        "audience",
+        "credentialKind",
+        "signerKeyId",
+        "signerPublicKeySha256",
+        "serviceArtifactSha256",
+        "serviceConfigurationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.evidence-signer-identity.v1" },
+        "evidenceKind": { "enum": ["admin_action", "predecessor_source", "gateway_token_commitment", "runner_terminal", "provider_result", "storage_create", "storage_read", "glb_verifier"] },
+        "semanticPlane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+        "spiffeId": { "$ref": "#/$defs/spiffeId" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "issuer": { "$ref": "#/$defs/identityText" },
+        "subject": { "$ref": "#/$defs/identityText" },
+        "audience": { "$ref": "#/$defs/identityText" },
+        "credentialKind": { "const": "spiffe_x509_svid" },
+        "signerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "signerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "serviceArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "serviceConfigurationSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "evidenceKind": { "enum": ["admin_action", "predecessor_source"] } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "activation" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "gateway_token_commitment" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "enum": ["submit_gateway", "recovery_gateway"] } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "runner_terminal" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "submit_gateway" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "provider_result" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "recovery_gateway" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "storage_create" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "output_broker" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "enum": ["storage_read", "glb_verifier"] } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "output_custodian" } } }
+        }
+      ]
+    },
+    "pairingPolicyV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 19,
+      "maxProperties": 19,
+      "required": [
+        "schemaVersion",
+        "authorityRootAuthorizationId",
+        "authorityRootAuthorizationSha256",
+        "authorityRegistryGeneration",
+        "authorityRegistryRootSha256",
+        "pairedCallerParentRootAuthorizationId",
+        "pairedCallerParentRootAuthorizationSha256",
+        "pairedCallerRegistryGeneration",
+        "pairedCallerRegistryRootSha256",
+        "pairedCallerAuthorizationId",
+        "pairedCallerAuthorizationSha256",
+        "pairedCallerBindingSha256",
+        "pairedCallerWorkloadIdentitySha256",
+        "pairedCallerPlane",
+        "pairedCallerDbRoleOid",
+        "evidenceKind",
+        "semanticPlane",
+        "deliveryChannel",
+        "crossRootRule"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.pairing-policy.v1" },
+        "authorityRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "authorityRootAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityRegistryGeneration": { "$ref": "#/$defs/registryGeneration" },
+        "authorityRegistryRootSha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerParentRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "pairedCallerParentRootAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerRegistryGeneration": { "$ref": "#/$defs/registryGeneration" },
+        "pairedCallerRegistryRootSha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "pairedCallerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerBindingSha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerWorkloadIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "pairedCallerPlane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+        "pairedCallerDbRoleOid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "evidenceKind": { "enum": ["admin_action", "predecessor_source", "gateway_token_commitment", "runner_terminal", "provider_result", "storage_create", "storage_read", "glb_verifier"] },
+        "semanticPlane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+        "deliveryChannel": { "const": "authenticated_evidence_ledger" },
+        "crossRootRule": { "const": "explicit-authority-and-caller-parent-pairs" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "evidenceKind": { "enum": ["admin_action", "predecessor_source"] },
+            "semanticPlane": { "const": "activation" },
+            "pairedCallerPlane": { "const": "activation" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "const": "gateway_token_commitment" },
+            "semanticPlane": { "const": "submit_gateway" },
+            "pairedCallerPlane": { "const": "submit_gateway" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "const": "gateway_token_commitment" },
+            "semanticPlane": { "const": "recovery_gateway" },
+            "pairedCallerPlane": { "const": "recovery_gateway" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "const": "runner_terminal" },
+            "semanticPlane": { "const": "submit_gateway" },
+            "pairedCallerPlane": { "const": "submit_gateway" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "const": "provider_result" },
+            "semanticPlane": { "const": "recovery_gateway" },
+            "pairedCallerPlane": { "const": "recovery_gateway" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "const": "storage_create" },
+            "semanticPlane": { "const": "output_broker" },
+            "pairedCallerPlane": { "const": "output_broker" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        },
+        {
+          "properties": {
+            "evidenceKind": { "enum": ["storage_read", "glb_verifier"] },
+            "semanticPlane": { "const": "output_custodian" },
+            "pairedCallerPlane": { "const": "output_custodian" }
+          },
+          "required": ["evidenceKind", "semanticPlane", "pairedCallerPlane"]
+        }
+      ]
+    },
+    "merklePolicyV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 19,
+      "maxProperties": 19,
+      "required": [
+        "schemaVersion",
+        "hashContext",
+        "hashAlgorithm",
+        "hashAlgorithmId",
+        "proofMagic",
+        "proofVersion",
+        "leafHashTag",
+        "nodeHashTag",
+        "emptyHashTag",
+        "verificationHashTag",
+        "policyHashTag",
+        "maxDepth",
+        "maxProofBytes",
+        "maxLeafJcsBytes",
+        "maxTrustBundleBytes",
+        "treeShape",
+        "proofEncoding",
+        "leafSchemaId",
+        "leafSchemaArtifactSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-merkle-policy.v1" },
+        "hashContext": { "const": "OMNITWIN-FDV1-WORKLOAD-MERKLE-V1" },
+        "hashAlgorithm": { "const": "sha256" },
+        "hashAlgorithmId": { "const": 1 },
+        "proofMagic": { "const": "OTFDMP01" },
+        "proofVersion": { "const": 1 },
+        "leafHashTag": { "const": 0 },
+        "nodeHashTag": { "const": 1 },
+        "emptyHashTag": { "const": 2 },
+        "verificationHashTag": { "const": 3 },
+        "policyHashTag": { "const": 4 },
+        "maxDepth": { "const": 32 },
+        "maxProofBytes": { "const": 1052 },
+        "maxLeafJcsBytes": { "const": 16384 },
+        "maxTrustBundleBytes": { "const": 16384 },
+        "treeShape": { "const": "left-complete-indexed-empty-v1" },
+        "proofEncoding": { "const": "otfdmp01-big-endian-lsb-index-v1" },
+        "leafSchemaId": { "const": "https://schemas.omnitwin.invalid/foundry/activation-v1-workload-inclusion-proof.schema.json" },
+        "leafSchemaArtifactSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "verificationRecordCommon": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "bindingKind",
+        "authorityRelation",
+        "authorityRootAuthorizationId",
+        "authorityRootAuthorizationSha256",
+        "authorityRegistryGeneration",
+        "authorityRegistryRootSha256",
+        "authorityAuthorizedLeafMerkleRootSha256",
+        "authorityAuthorizedLeafMerklePolicySha256",
+        "authoritySignerKeyId",
+        "authoritySignerPublicKeySha256",
+        "authorityTrustBundleSha256",
+        "authorityTrustBundleSchemaSha256",
+        "authorityTrustBundleParserArtifactSha256",
+        "authorityTrustBundleParserConfigurationSha256",
+        "authorityIdentityPolicySha256",
+        "authorityValidFrom",
+        "authorityExpiresAt",
+        "databaseVerificationTime",
+        "authorityCurrentAtDatabaseTime",
+        "authorityLineageUnrevokedAtDatabaseTime",
+        "targetValidityWindowContained",
+        "derivedTargetRegistryGeneration",
+        "derivedTargetRegistryRootSha256",
+        "derivedTargetTrustBundleSha256",
+        "derivedTargetTrustBundleSchemaSha256",
+        "derivedTargetTrustBundleParserArtifactSha256",
+        "derivedTargetTrustBundleParserConfigurationSha256",
+        "derivedTargetIdentityPolicySha256",
+        "derivedTargetTrustDomain",
+        "targetValidFrom",
+        "targetExpiresAt",
+        "leafSchemaArtifactSha256",
+        "merkleDepth",
+        "leafIndex",
+        "leafCount",
+        "leafJcsSha256",
+        "leafCommitmentSha256",
+        "proofBase64url",
+        "proofSha256",
+        "computedMerkleRootSha256",
+        "rootComparison",
+        "verdict"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-inclusion-verification.v1" },
+        "bindingKind": { "enum": ["trust_root", "db_caller", "evidence_signer"] },
+        "authorityRelation": { "enum": ["inclusion_authority", "parent_root"] },
+        "authorityRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+        "authorityRootAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityRegistryGeneration": { "$ref": "#/$defs/registryGeneration" },
+        "authorityRegistryRootSha256": { "$ref": "#/$defs/sha256" },
+        "authorityAuthorizedLeafMerkleRootSha256": { "$ref": "#/$defs/sha256" },
+        "authorityAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "authoritySignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "authoritySignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "authorityValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "authorityExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "databaseVerificationTime": { "$ref": "#/$defs/utcMilliseconds" },
+        "authorityCurrentAtDatabaseTime": { "const": true },
+        "authorityLineageUnrevokedAtDatabaseTime": { "const": true },
+        "targetValidityWindowContained": { "const": true },
+        "derivedTargetRegistryGeneration": { "$ref": "#/$defs/registryGeneration" },
+        "derivedTargetRegistryRootSha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetTrustBundleSha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "derivedTargetTrustDomain": { "$ref": "#/$defs/trustDomain" },
+        "targetValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "targetExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "leafSchemaArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "merkleDepth": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "leafIndex": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "leafCount": { "type": "integer", "minimum": 1, "maximum": 4294967296 },
+        "leafJcsSha256": { "$ref": "#/$defs/sha256" },
+        "leafCommitmentSha256": { "$ref": "#/$defs/sha256" },
+        "proofBase64url": { "$ref": "#/$defs/base64urlProof" },
+        "proofSha256": { "$ref": "#/$defs/sha256" },
+        "computedMerkleRootSha256": { "$ref": "#/$defs/sha256" },
+        "rootComparison": { "const": "equal" },
+        "verdict": { "const": "included" }
+      }
+    },
+    "trustRootVerificationRecord": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/verificationRecordCommon" },
+        {
+          "type": "object",
+          "required": [
+            "derivedTargetSignerKeyId",
+            "derivedTargetSignerPublicKeySha256",
+            "derivedTargetAuthorizedLeafMerkleRootSha256",
+            "derivedTargetAuthorizedLeafMerklePolicySha256"
+          ],
+          "properties": {
+            "bindingKind": { "const": "trust_root" },
+            "authorityRelation": { "const": "inclusion_authority" },
+            "derivedTargetSignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+            "derivedTargetSignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+            "derivedTargetAuthorizedLeafMerkleRootSha256": { "$ref": "#/$defs/sha256" },
+            "derivedTargetAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ],
+      "minProperties": 47,
+      "maxProperties": 47,
+      "unevaluatedProperties": false
+    },
+    "dbCallerVerificationRecord": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/verificationRecordCommon" },
+        {
+          "type": "object",
+          "required": ["derivedTargetDbRoleOid"],
+          "properties": {
+            "bindingKind": { "const": "db_caller" },
+            "authorityRelation": { "const": "parent_root" },
+            "derivedTargetDbRoleOid": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+          }
+        }
+      ],
+      "minProperties": 44,
+      "maxProperties": 44,
+      "unevaluatedProperties": false
+    },
+    "evidenceSignerVerificationRecord": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/verificationRecordCommon" },
+        {
+          "type": "object",
+          "required": [
+            "pairedCallerAuthorizationId",
+            "pairedCallerAuthorizationSha256",
+            "pairedCallerParentRootAuthorizationId",
+            "pairedCallerParentRootAuthorizationSha256",
+            "pairedCallerRegistryGeneration",
+            "pairedCallerRegistryRootSha256",
+            "pairedCallerBindingSha256",
+            "pairedCallerWorkloadIdentitySha256",
+            "pairedCallerPlane",
+            "pairedCallerDbRoleOid",
+            "pairedCallerValidFrom",
+            "pairedCallerExpiresAt",
+            "pairedCallerCurrentAtDatabaseTime",
+            "pairedCallerLineageUnrevokedAtDatabaseTime",
+            "pairedCallerCatalogBindingCurrentAtDatabaseTime",
+            "targetValidityWindowContainedByPairedCaller",
+            "pairingPolicySha256"
+          ],
+          "properties": {
+            "bindingKind": { "const": "evidence_signer" },
+            "authorityRelation": { "const": "parent_root" },
+            "pairedCallerAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "pairedCallerAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+            "pairedCallerParentRootAuthorizationId": { "$ref": "#/$defs/uuid" },
+            "pairedCallerParentRootAuthorizationSha256": { "$ref": "#/$defs/sha256" },
+            "pairedCallerRegistryGeneration": { "$ref": "#/$defs/registryGeneration" },
+            "pairedCallerRegistryRootSha256": { "$ref": "#/$defs/sha256" },
+            "pairedCallerBindingSha256": { "$ref": "#/$defs/sha256" },
+            "pairedCallerWorkloadIdentitySha256": { "$ref": "#/$defs/sha256" },
+            "pairedCallerPlane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+            "pairedCallerDbRoleOid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+            "pairedCallerValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+            "pairedCallerExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+            "pairedCallerCurrentAtDatabaseTime": { "const": true },
+            "pairedCallerLineageUnrevokedAtDatabaseTime": { "const": true },
+            "pairedCallerCatalogBindingCurrentAtDatabaseTime": { "const": true },
+            "targetValidityWindowContainedByPairedCaller": { "const": true },
+            "pairingPolicySha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ],
+      "minProperties": 60,
+      "maxProperties": 60,
+      "unevaluatedProperties": false
+    },
+    "verificationRecordV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/trustRootVerificationRecord" },
+        { "$ref": "#/$defs/dbCallerVerificationRecord" },
+        { "$ref": "#/$defs/evidenceSignerVerificationRecord" }
+      ]
+    },
+    "trustRootLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 26,
+      "maxProperties": 26,
+      "required": [
+        "schemaVersion",
+        "bindingKind",
+        "authorityRelation",
+        "registrationOrigin",
+        "authorityAuthorizedLeafMerklePolicySha256",
+        "authoritySignerKeyId",
+        "authoritySignerPublicKeySha256",
+        "authorityTrustBundleSchemaSha256",
+        "authorityTrustBundleParserArtifactSha256",
+        "authorityTrustBundleParserConfigurationSha256",
+        "authorityIdentityPolicySha256",
+        "authorityTrustDomain",
+        "authorityValidFrom",
+        "authorityExpiresAt",
+        "targetTrustBundleSha256",
+        "targetTrustBundleSchemaSha256",
+        "targetTrustBundleParserArtifactSha256",
+        "targetTrustBundleParserConfigurationSha256",
+        "targetIdentityPolicySha256",
+        "validFrom",
+        "expiresAt",
+        "trustDomain",
+        "signerKeyId",
+        "signerPublicKeySha256",
+        "authorizedLeafMerkleRootSha256",
+        "authorizedLeafMerklePolicySha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-authorization-leaf.v1" },
+        "bindingKind": { "const": "trust_root" },
+        "authorityRelation": { "const": "inclusion_authority" },
+        "registrationOrigin": { "const": "runtime_admin_action" },
+        "authorityAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "authoritySignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "authoritySignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustDomain": { "$ref": "#/$defs/trustDomain" },
+        "authorityValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "authorityExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "targetTrustBundleSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "targetIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "signerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "signerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "authorizedLeafMerkleRootSha256": { "$ref": "#/$defs/sha256" },
+        "authorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dbCallerLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 33,
+      "maxProperties": 33,
+      "required": [
+        "schemaVersion",
+        "bindingKind",
+        "authorityRelation",
+        "registrationOrigin",
+        "authorityAuthorizedLeafMerklePolicySha256",
+        "authoritySignerKeyId",
+        "authoritySignerPublicKeySha256",
+        "authorityTrustBundleSchemaSha256",
+        "authorityTrustBundleParserArtifactSha256",
+        "authorityTrustBundleParserConfigurationSha256",
+        "authorityIdentityPolicySha256",
+        "authorityTrustDomain",
+        "authorityValidFrom",
+        "authorityExpiresAt",
+        "targetTrustBundleSchemaSha256",
+        "targetTrustBundleParserArtifactSha256",
+        "targetTrustBundleParserConfigurationSha256",
+        "targetIdentityPolicySha256",
+        "validFrom",
+        "expiresAt",
+        "plane",
+        "dbRoleOid",
+        "dbSessionRole",
+        "dbSystemUserSha256",
+        "spiffeId",
+        "trustDomain",
+        "issuer",
+        "subject",
+        "audience",
+        "credentialKind",
+        "workloadIdentitySha256",
+        "serviceArtifactSha256",
+        "serviceConfigurationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-authorization-leaf.v1" },
+        "bindingKind": { "const": "db_caller" },
+        "authorityRelation": { "const": "parent_root" },
+        "registrationOrigin": { "const": "runtime_admin_action" },
+        "authorityAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "authoritySignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "authoritySignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustDomain": { "$ref": "#/$defs/trustDomain" },
+        "authorityValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "authorityExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "targetTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "targetIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "plane": { "enum": ["activation", "claimer", "submit_gateway", "recovery_gateway", "evidence_admitter", "output_broker", "output_custodian", "watchdog"] },
+        "dbRoleOid": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "dbSessionRole": { "$ref": "#/$defs/dbRole" },
+        "dbSystemUserSha256": { "$ref": "#/$defs/sha256" },
+        "spiffeId": { "$ref": "#/$defs/spiffeId" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "issuer": { "$ref": "#/$defs/identityText" },
+        "subject": { "$ref": "#/$defs/identityText" },
+        "audience": { "$ref": "#/$defs/identityText" },
+        "credentialKind": { "const": "spiffe_x509_svid" },
+        "workloadIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "serviceArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "serviceConfigurationSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "evidenceSignerLeaf": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 35,
+      "maxProperties": 35,
+      "required": [
+        "schemaVersion",
+        "bindingKind",
+        "authorityRelation",
+        "registrationOrigin",
+        "authorityAuthorizedLeafMerklePolicySha256",
+        "authoritySignerKeyId",
+        "authoritySignerPublicKeySha256",
+        "authorityTrustBundleSchemaSha256",
+        "authorityTrustBundleParserArtifactSha256",
+        "authorityTrustBundleParserConfigurationSha256",
+        "authorityIdentityPolicySha256",
+        "authorityTrustDomain",
+        "authorityValidFrom",
+        "authorityExpiresAt",
+        "targetTrustBundleSchemaSha256",
+        "targetTrustBundleParserArtifactSha256",
+        "targetTrustBundleParserConfigurationSha256",
+        "targetIdentityPolicySha256",
+        "validFrom",
+        "expiresAt",
+        "evidenceKind",
+        "semanticPlane",
+        "pairedCallerBindingSha256",
+        "spiffeId",
+        "trustDomain",
+        "issuer",
+        "subject",
+        "audience",
+        "credentialKind",
+        "workloadIdentitySha256",
+        "signerKeyId",
+        "signerPublicKeySha256",
+        "maximumReceiptLagSeconds",
+        "serviceArtifactSha256",
+        "serviceConfigurationSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "omnitwin.foundry.fdv1.workload-authorization-leaf.v1" },
+        "bindingKind": { "const": "evidence_signer" },
+        "authorityRelation": { "const": "parent_root" },
+        "registrationOrigin": { "const": "runtime_admin_action" },
+        "authorityAuthorizedLeafMerklePolicySha256": { "$ref": "#/$defs/sha256" },
+        "authoritySignerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "authoritySignerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "authorityIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "authorityTrustDomain": { "$ref": "#/$defs/trustDomain" },
+        "authorityValidFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "authorityExpiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "targetTrustBundleSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "targetTrustBundleParserConfigurationSha256": { "$ref": "#/$defs/sha256" },
+        "targetIdentityPolicySha256": { "$ref": "#/$defs/sha256" },
+        "validFrom": { "$ref": "#/$defs/utcMilliseconds" },
+        "expiresAt": { "$ref": "#/$defs/utcMilliseconds" },
+        "evidenceKind": { "enum": ["admin_action", "predecessor_source", "gateway_token_commitment", "runner_terminal", "provider_result", "storage_create", "storage_read", "glb_verifier"] },
+        "semanticPlane": { "enum": ["activation", "submit_gateway", "recovery_gateway", "output_broker", "output_custodian"] },
+        "pairedCallerBindingSha256": { "$ref": "#/$defs/sha256" },
+        "spiffeId": { "$ref": "#/$defs/spiffeId" },
+        "trustDomain": { "$ref": "#/$defs/trustDomain" },
+        "issuer": { "$ref": "#/$defs/identityText" },
+        "subject": { "$ref": "#/$defs/identityText" },
+        "audience": { "$ref": "#/$defs/identityText" },
+        "credentialKind": { "const": "spiffe_x509_svid" },
+        "workloadIdentitySha256": { "$ref": "#/$defs/sha256" },
+        "signerKeyId": { "$ref": "#/$defs/ed25519KeyId" },
+        "signerPublicKeySha256": { "$ref": "#/$defs/sha256" },
+        "maximumReceiptLagSeconds": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "serviceArtifactSha256": { "$ref": "#/$defs/sha256" },
+        "serviceConfigurationSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "evidenceKind": { "enum": ["admin_action", "predecessor_source"] } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "activation" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "gateway_token_commitment" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "enum": ["submit_gateway", "recovery_gateway"] } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "runner_terminal" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "submit_gateway" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "provider_result" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "recovery_gateway" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "const": "storage_create" } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "output_broker" } } }
+        },
+        {
+          "if": { "properties": { "evidenceKind": { "enum": ["storage_read", "glb_verifier"] } }, "required": ["evidenceKind"] },
+          "then": { "properties": { "semanticPlane": { "const": "output_custodian" } } }
+        }
+      ]
+    }
+  }
+}

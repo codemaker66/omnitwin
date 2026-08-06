@@ -33,10 +33,16 @@ vi.mock("@omnitwin/types", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/reception-reviewed-runtime-profile.js", () => ({
-  matchReceptionReviewedRuntimeProfile: vi.fn(() => "quality-sog-fine-v1"),
-  isReceptionReviewedProfilePresentationCandidate: vi.fn(() => true),
-}));
+vi.mock("../lib/reception-reviewed-runtime-profile.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../lib/reception-reviewed-runtime-profile.js")
+  >();
+  return {
+    ...actual,
+    matchReceptionReviewedRuntimeProfile: vi.fn(() => "quality-sog-fine-v1"),
+    isReceptionReviewedProfilePresentationCandidate: vi.fn(() => true),
+  };
+});
 
 import { RUNTIME_QA_CHECK_KEYS, type RuntimeQaRecordV0 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -47,9 +53,12 @@ import {
   runtimeTransformArtifacts,
 } from "../db/schema.js";
 import type { Env } from "../env.js";
+import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
 import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifact-receipt.js";
+import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 import {
   assetRoutes,
+  runtimeQaPublicPackageBinding,
   type AssetVersionRow,
   type RuntimePackageRow,
   type RuntimeQaRecordRow,
@@ -118,32 +127,44 @@ function buildState(generation: string): RouteState {
       updatedAt: NOW,
     };
   });
-  const pkg: RuntimePackageRow = {
-    id: PACKAGE_ID,
+  const manifestJson: RuntimePackageRow["manifestJson"] = {
+    schemaVersion: "venviewer.runtime-package.v1",
     venueSlug: "trades-hall",
     roomSlug: "reception-room",
-    revision: 9,
-    identityKind: "content_sha256",
-    contentDigest: createHash("sha256").update(`package-${generation}`).digest("hex"),
+    packageType: "room-runtime",
+    assets: {
+      primaryVisualAssetVersionId: ASSET_IDS[0],
+      visualAssetVersionIds: [...ASSET_IDS],
+      visualAssetReceipts: assets.map((asset) => ({
+        assetVersionId: asset.id,
+        fileName: asset.fileName,
+        fileExt: ".sog" as const,
+        sha256: asset.sha256 ?? "",
+        sizeBytes: asset.sizeBytes ?? 0,
+        storageKeySha256: runtimeAssetStorageKeySha256(asset.r2Key ?? ""),
+      })),
+      semanticMeshAssetVersionId: null,
+      collisionAssetVersionId: null,
+      pointCloudAssetVersionId: null,
+    },
+  };
+  const packageInput = {
+    venueSlug: "trades-hall",
+    roomSlug: "reception-room",
     primaryVisualAssetVersionId: ASSET_IDS[0],
     semanticMeshAssetVersionId: null,
     collisionAssetVersionId: null,
     pointCloudAssetVersionId: null,
-    manifestJson: {
-      schemaVersion: "venviewer.runtime-package.v1",
-      venueSlug: "trades-hall",
-      roomSlug: "reception-room",
-      packageType: "room-runtime",
-      assets: {
-        primaryVisualAssetVersionId: ASSET_IDS[0],
-        visualAssetVersionIds: [...ASSET_IDS],
-        semanticMeshAssetVersionId: null,
-        collisionAssetVersionId: null,
-        pointCloudAssetVersionId: null,
-      },
-    },
+    manifestJson,
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
+  } as const;
+  const pkg: RuntimePackageRow = {
+    id: PACKAGE_ID,
+    revision: 9,
+    identityKind: "content_sha256",
+    contentDigest: computeRuntimePackageRevisionDigest(packageInput),
+    ...packageInput,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -154,8 +175,8 @@ function buildState(generation: string): RouteState {
     units: "meters",
     matrix: [
       1, 0, 0, 0,
+      0, 0, -1, 0,
       0, 1, 0, 0,
-      0, 0, 1, 0,
       0, 0, 0, 1,
     ],
     alignmentMethod: "landmark_solve",
@@ -207,6 +228,8 @@ function buildState(generation: string): RouteState {
     updatedAt: new Date("2026-07-16T11:00:00.000Z"),
   };
   const evidenceRef = { label: "Route test", ref: "route-test-evidence" };
+  const runtimePackageBinding = runtimeQaPublicPackageBinding(pkg, assets);
+  if (runtimePackageBinding === null) throw new Error("Route test package binding must resolve.");
   const record: RuntimeQaRecordV0 = {
     schemaVersion: "runtime-qa-record.v0",
     recordId: `reception-room-route-test-${generation}`,
@@ -217,6 +240,7 @@ function buildState(generation: string): RouteState {
     recordedBy: "runtime-qa-operator",
     assetEvidenceStatus: "human_reviewed",
     runtimeStatus: "published",
+    runtimePackageBinding,
     sourceBundle: {
       sourceLabel: "Reviewed Reception route test bundle",
       sourceBundleHash: createHash("sha256").update(`source-${generation}`).digest("hex"),
@@ -236,22 +260,22 @@ function buildState(generation: string): RouteState {
     viewTransform: {
       posture: "signed_room_local_transform",
       position: [0, 0, 0],
-      rotation: [0, 0, 0],
+      rotation: [-Math.PI / 2, 0, 0],
       scale: 1,
       signedTransformArtifactId: TRANSFORM_ID,
       signedTransformArtifactSha256: runtimeTransformArtifactSha256(transformArtifact),
       note: "Exact route-test transform binding.",
     },
     cameraProfile: {
-      position: [0, 2, 8],
-      target: [0, 1, 0],
+      position: [-2.372, 0.035, 1.046],
+      target: [-0.996, -0.071, 7.102],
       arrivalPosition: null,
       arrivalTarget: null,
       arrivalDurationMs: 0,
-      fov: 48,
+      fov: 62,
       targetBounds: null,
       cameraBounds: null,
-      note: "Route test camera profile.",
+      note: "Reviewed Living Hall authored-dolly presentation camera.",
     },
     checks: RUNTIME_QA_CHECK_KEYS.map((checkKey) => ({
       checkKey,
@@ -341,6 +365,42 @@ afterEach(async () => {
 });
 
 describe("anonymous reviewed-profile member route", () => {
+  it("returns the exact versioned presentation contract with the approved profile", async () => {
+    const state = buildState("approved-contract");
+    const server = await routeServer(state);
+    openServers.push(server);
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/assets/runtime-packages/approved-profile" +
+        "?venue=trades-hall&room=reception-room",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      data: {
+        scope: "approved_room_runtime_profile",
+        profileId: "quality-sog-fine-v1",
+        presentationContract: {
+          schemaVersion: "venviewer.approved-room-runtime-presentation.v1",
+          contractDigest: "97f902723a8e3e9d833dec556eec8fc02a93e4cc58e715903ddad19f5428e239",
+          groupTransform: {
+            position: [0, 0, 0],
+            rotationEulerRadians: [-Math.PI / 2, 0, 0],
+            uniformScale: 1,
+          },
+          cameraPolicy: {
+            id: "reception-scroll-dolly-v1",
+            route: "/living-hall",
+          },
+          rendererProfile: {
+            id: "reception-fixed-fine-review-v1",
+            digest: "c67681bdbbba8f9155c3d78cbc8843b4d2d7515db7efe26ea1788905fd58d863",
+          },
+        },
+      },
+    });
+  });
+
   it("loads all four ordinary members through two active slots and the bounded queue", async () => {
     const generation = "four-member";
     const state = buildState(generation);

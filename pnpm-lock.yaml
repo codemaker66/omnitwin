@@ -168,6 +168,9 @@ importers:
       '@omnitwin/types':
         specifier: workspace:*
         version: link:../types
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       gltf-validator:
         specifier: 2.0.0-dev.3.10
         version: 2.0.0-dev.3.10
@@ -343,6 +346,9 @@ importers:
       '@omnitwin/types':
         specifier: workspace:*
         version: link:../../packages/types
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       hash-wasm:
         specifier: 4.12.0
         version: 4.12.0

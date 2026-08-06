@@ -212,4 +212,16 @@ This is not the AI being difficult. This is the AI protecting Blake from the AI'
 
 ---
 
+## CAUGHT FAILURE MODES (append-only log)
+
+### 2026-07-12 — Negative-existence claims
+
+A search that fails to find X is evidence that X is obscure, not proof that X does not exist. Phrase such verdicts as "not found by [method] as of [date]", never "does not exist" or "hallucinated". When anyone — including a rival model — later supplies a specific URL or citation, fetch it directly and verify before defending the earlier verdict. Caught in practice: "Splat Analyzer" was reported NOT FOUND after eight web-search strategies, then verified real minutes after a direct URL was supplied (github.com/nigelhartman/splat_analyzer — MIT, 14 stars, too small for keyword search to surface).
+
+### 2026-07-16 — Resumed-conversation date drift
+
+A conversation resumed days later contains artifacts that keep their ORIGINAL dates; only new work gets today's date. Run `date` before dating anything, and never bulk-rewrite dates in either direction. Caught in practice: a session resumed on 07-16 first assumed its earlier turns were also 07-16 and bulk re-dated 07-12 artifacts forward; concurrent sessions' work (T-506+, dated 07-13/14) proved the earlier turns were genuinely 07-12; both the original assumption and the over-correction had to be unwound surgically.
+
+---
+
 *This document is version 1.0. It should evolve as we learn which failure modes actually occur during development. Every time an AI failure mode is caught, add it to this document so it never happens again.*

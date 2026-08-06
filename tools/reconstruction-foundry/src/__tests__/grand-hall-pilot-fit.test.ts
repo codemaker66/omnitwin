@@ -10,7 +10,12 @@ import {
 import {
   fitSimilarityHorn,
   buildPilotFitReport,
+  deriveExcludedPilotSweepIndices,
   PILOT_HELD_OUT_SWEEPS,
+  PILOT_INCLUDED_SWEEPS,
+  PILOT_TARGET_FRAME_ID,
+  PILOT_TARGET_FRAME_LABEL,
+  selectBoundedPilotCorrespondences,
 } from "../grand-hall-pilot-fit.js";
 
 function colmapCamerasFixture(): Uint8Array {
@@ -148,21 +153,55 @@ describe("similarity fit with held-out sweep centres", () => {
     }
   });
 
-  it("holds out one complete sweep centre per decade and reports both residual sets", () => {
-    expect(PILOT_HELD_OUT_SWEEPS).toEqual([5, 15, 25, 35, 45]);
+  it("uses the frozen T-507 holdout and excludes adjacent-space sweep 49 before partitioning", () => {
+    expect(PILOT_INCLUDED_SWEEPS).toEqual(Array.from({ length: 49 }, (_, index) => index));
+    expect(PILOT_HELD_OUT_SWEEPS).toEqual([5, 15, 25, 35, 44]);
     const correspondences = Array.from({ length: 50 }, (_, index) => ({
       sweepIndex: index,
       source: [index, index * 2, index * 3] as [number, number, number],
       target: [index * 2 + 1, index * 4 + 1, index * 6 + 1] as [number, number, number],
     }));
+    const bounded = selectBoundedPilotCorrespondences(correspondences);
+    expect(bounded).toHaveLength(49);
+    expect(bounded.map(({ sweepIndex }) => sweepIndex)).not.toContain(49);
+    expect(
+      deriveExcludedPilotSweepIndices(
+        correspondences.map(({ sweepIndex }) => sweepIndex),
+        bounded.map(({ sweepIndex }) => sweepIndex),
+      ),
+    ).toEqual([49]);
+    expect(deriveExcludedPilotSweepIndices([50, 49, 50, 0], [0])).toEqual([49, 50]);
+
     const report = buildPilotFitReport(correspondences);
-    expect(report.fitSet.count).toBe(45);
+    expect(report.fitSet.count).toBe(44);
     expect(report.heldOutSet.count).toBe(5);
-    expect(report.heldOutSet.sweepIndices).toEqual([5, 15, 25, 35, 45]);
+    expect(report.heldOutSet.sweepIndices).toEqual([5, 15, 25, 35, 44]);
+    expect(report.fitSet.sweepIndices).not.toContain(49);
+    expect(report.heldOutSet.sweepIndices).not.toContain(49);
+    expect(report.sourceFrameId).toBe("colmap-sfm");
+    expect(report.targetFrameId).toBe(PILOT_TARGET_FRAME_ID);
+    expect(report.targetFrameId).toBe("e57-global-diagnostic");
+    expect(report.targetFrameLabel).toBe(PILOT_TARGET_FRAME_LABEL);
+    expect(report.targetFrameLabel).toContain("not independent survey control");
     // The synthetic relation is an exact similarity (scale 2, translation 1),
     // so all residual statistics collapse to ~0 in both sets.
     expect(report.fitSet.residuals.maxMeters).toBeLessThan(1e-9);
     expect(report.heldOutSet.residuals.maxMeters).toBeLessThan(1e-9);
     expect(report.sfmLeakDocumented).toContain("jointly");
+  });
+
+  it("fails closed when an in-scope sweep is missing or duplicated", () => {
+    const correspondences = Array.from({ length: 49 }, (_, index) => ({
+      sweepIndex: index,
+      source: [index, index * 2, index * 3] as [number, number, number],
+      target: [index * 2 + 1, index * 4 + 1, index * 6 + 1] as [number, number, number],
+    }));
+
+    expect(() => selectBoundedPilotCorrespondences(correspondences.slice(1))).toThrow(
+      "missing sweeps: 0",
+    );
+    expect(() =>
+      selectBoundedPilotCorrespondences([...correspondences, correspondences[0]!]),
+    ).toThrow("duplicate sweep 0");
   });
 });

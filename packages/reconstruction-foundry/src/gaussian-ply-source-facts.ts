@@ -9,6 +9,15 @@ export const FOUNDRY_GAUSSIAN_PLY_COMMENT_MAX_COUNT = 256;
 export const FOUNDRY_GAUSSIAN_PLY_VERTEX_MAX_COUNT = 100_000_000;
 export const FOUNDRY_GAUSSIAN_PLY_VERTEX_STRIDE_MAX_BYTES = 32_768;
 
+export const FOUNDRY_GAUSSIAN_PLY_REQUIRED_FLOAT32_PROPERTY_NAMES =
+  Object.freeze([
+    "x", "y", "z",
+    "f_dc_0", "f_dc_1", "f_dc_2",
+    "opacity",
+    "scale_0", "scale_1", "scale_2",
+    "rot_0", "rot_1", "rot_2", "rot_3",
+  ] as const);
+
 export const FOUNDRY_GAUSSIAN_PLY_SOURCE_FACTS_LIMITATIONS = Object.freeze([
   "GAUSSIAN_ATTRIBUTE_VALUES_ARE_NOT_DECODED_OR_VALIDATED",
   "COMMENTS_AND_OBJ_INFO_ARE_NON_AUTHORITATIVE_AND_NOT_RETAINED_VERBATIM",
@@ -657,13 +666,7 @@ function inspectLayout(
   fileSize: number,
 ): FoundryGaussianPlySourceFacts {
   const byName = propertyMap(parsed.vertex.properties);
-  for (const name of [
-    "x", "y", "z",
-    "f_dc_0", "f_dc_1", "f_dc_2",
-    "opacity",
-    "scale_0", "scale_1", "scale_2",
-    "rot_0", "rot_1", "rot_2", "rot_3",
-  ]) {
+  for (const name of FOUNDRY_GAUSSIAN_PLY_REQUIRED_FLOAT32_PROPERTY_NAMES) {
     requireFloat32(byName, name);
   }
   const normalNames = ["nx", "ny", "nz"] as const;

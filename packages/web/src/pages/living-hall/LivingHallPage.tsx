@@ -11,6 +11,16 @@ import {
 } from "./gold-ink.js";
 import { hasYourTable } from "./turn.js";
 import { useSectionScrollProgress } from "./useSectionScrollProgress.js";
+import { useLivingHallRuntimeAsset } from "./useLivingHallRuntimeAsset.js";
+import { RECEPTION_FIXED_FINE_REVIEW_PROFILE } from "./reception-viewer-profile.js";
+import { RECEPTION_LIVING_HALL_PRESENTATION_CONTRACT } from
+  "./reception-presentation-contract.js";
+import type { ReceptionLocalPreflightSelection } from "./reception-local-preflight.js";
+import { buildReceptionCaptureConfiguration } from "./reception-capture-contract.js";
+import {
+  buildReceptionCandidateComparisonSearch,
+  EXPERIMENTAL_E57_CAMERA_NOTICE,
+} from "./reception-experimental-camera.js";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
@@ -127,7 +137,19 @@ function webGl2Available(): boolean {
   }
 }
 
-export function LivingHallPage(): ReactElement {
+export interface LivingHallPageProps {
+  readonly previewPackageId?: string | null;
+  readonly localPreflight?: ReceptionLocalPreflightSelection | null;
+  readonly localCaptureOnly?: boolean;
+  readonly localCaptureNonce?: string | null;
+}
+
+export function LivingHallPage({
+  previewPackageId = null,
+  localPreflight = null,
+  localCaptureOnly = false,
+  localCaptureNonce = null,
+}: LivingHallPageProps = {}): ReactElement {
   const [searchParams] = useSearchParams();
   const reducedMotion = useReducedMotion();
   const [eventType, setEventType] = useState<DressingEventType>("wedding");
@@ -158,9 +180,29 @@ export function LivingHallPage(): ReactElement {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [exitSandbox, sandboxActive]);
-  const sceneRequested = searchParams.get("scene") !== "0";
+  const runtimeAsset = useLivingHallRuntimeAsset({
+    isDevelopment: import.meta.env.DEV,
+    sceneParameter: searchParams.get("scene"),
+    previewPackageId,
+  });
+  // Vite replaces this condition with `false` in production. The production
+  // page therefore cannot accept local diagnostic sources even if another
+  // component accidentally supplies the prop.
+  const acceptedLocalPreflight = import.meta.env.DEV && previewPackageId === null
+    ? localPreflight
+    : null;
+  const acceptedCaptureOnly = acceptedLocalPreflight !== null && localCaptureOnly;
+  const captureConfiguration = useMemo(() => {
+    if (!acceptedCaptureOnly || localCaptureNonce === null) return null;
+    return buildReceptionCaptureConfiguration(acceptedLocalPreflight, localCaptureNonce);
+  }, [acceptedCaptureOnly, acceptedLocalPreflight, localCaptureNonce]);
+  const activeSplatSources = acceptedLocalPreflight?.splatSources ?? runtimeAsset.splatSources;
+  const activePresentationContract = acceptedLocalPreflight !== null
+    ? RECEPTION_LIVING_HALL_PRESENTATION_CONTRACT
+    : runtimeAsset.presentationContract;
   const sceneCapable = useMemo(() => webGl2Available(), []);
-  const sceneActive = sceneRequested && sceneCapable && !sceneFailed;
+  const sceneActive = activeSplatSources.length > 0 &&
+    activePresentationContract !== null && sceneCapable && !sceneFailed;
   const handleSceneFailed = useCallback(() => {
     setSandboxActive(false);
     setSceneFailed(true);
@@ -169,17 +211,86 @@ export function LivingHallPage(): ReactElement {
   useEffect(() => {
     document.title = LH_META_TITLE;
   }, []);
+  const privatePreviewMessage = runtimeAsset.status === "private-preview-ready"
+    ? "This exact package is loaded for private review."
+    : runtimeAsset.status === "private-preview-fallback"
+      ? "This exact package could not be loaded. The photograph is shown instead; nothing else was substituted."
+      : "Loading this exact package for private review…";
+  const oppositeCandidate = acceptedLocalPreflight?.candidateId === "mobile"
+    ? "quality"
+    : "mobile";
+  const oppositeCandidateSearch = acceptedLocalPreflight === null
+    ? ""
+    : buildReceptionCandidateComparisonSearch(
+      oppositeCandidate,
+      acceptedLocalPreflight.reviewView,
+      acceptedCaptureOnly,
+    );
 
   return (
-    <div className={`lh-root${sceneActive ? " has-scene" : ""}`}>
+    <div
+      className={`lh-root${sceneActive ? " has-scene" : ""}${acceptedCaptureOnly ? " is-cv-capture" : ""}`}
+      data-runtime-asset-state={acceptedLocalPreflight === null
+        ? runtimeAsset.status
+        : "local-preflight"}
+      data-preflight-candidate-id={acceptedLocalPreflight?.candidateId}
+      data-preflight-runtime-profile-id={acceptedLocalPreflight?.runtimeProfileId}
+      data-preflight-expected-splat-count={acceptedLocalPreflight?.expectedGaussianCount}
+      data-preflight-review-view-id={acceptedLocalPreflight?.reviewView.id}
+      data-preflight-capture-only={acceptedCaptureOnly || undefined}
+      data-preflight-loaded-asset-set-sha256={captureConfiguration?.assetSetSha256}
+      data-preflight-renderer-config-digest={captureConfiguration?.rendererBinding.digest}
+      data-preflight-runtime-build-digest={captureConfiguration?.rendererBinding.runtimeBuildDigest}
+      data-preflight-runtime-environment-digest={captureConfiguration?.rendererBinding.runtimeEnvironmentDigest}
+      data-preflight-profile-digest={captureConfiguration?.rendererBinding.profileDigest}
+      data-preflight-tone-map-digest={captureConfiguration?.rendererBinding.toneMapDigest}
+      data-preflight-exposure-digest={captureConfiguration?.rendererBinding.exposureDigest}
+      data-preflight-colour-space-digest={captureConfiguration?.rendererBinding.colourSpaceDigest}
+    >
+      {previewPackageId !== null && (
+        <aside className="lh-private-preview" role="status" aria-live="polite">
+          <strong>Private exact-version review</strong>
+          <span>Package {previewPackageId}</span>
+          <span>{privatePreviewMessage}</span>
+          <span>Viewer profile {RECEPTION_FIXED_FINE_REVIEW_PROFILE.id}</span>
+          <span>This view cannot publish or replace the public room.</span>
+        </aside>
+      )}
+      {acceptedLocalPreflight !== null && (
+        <aside className="lh-private-preview" role="status" aria-live="polite">
+          <strong>
+            {acceptedLocalPreflight.reviewView.experimentalViewId === undefined
+              ? "Local computer-vision preflight"
+              : EXPERIMENTAL_E57_CAMERA_NOTICE}
+          </strong>
+          <span>{acceptedLocalPreflight.label}</span>
+          <span>Fixed camera: {acceptedLocalPreflight.reviewView.label}</span>
+          <span>
+            Expected total: {acceptedLocalPreflight.expectedGaussianCount.toLocaleString()} splats
+          </span>
+          <span>Viewer profile {RECEPTION_FIXED_FINE_REVIEW_PROFILE.id}</span>
+          <Link to={`/dev/reception-quality-preflight?${oppositeCandidateSearch}`}>
+            Open the same camera with the other candidate
+          </Link>
+          <span>
+            Development only. This cannot publish, replace the protected room,
+            or grant physical approval.
+          </span>
+        </aside>
+      )}
       {sceneActive && (
         <Suspense fallback={null}>
           <LivingHallScene
+            key={activeSplatSources.map((source) => source.id).join("\n")}
+            splatSources={activeSplatSources}
+            presentationContract={activePresentationContract}
             reducedMotion={reducedMotion}
             eventType={eventType}
             sandboxActive={sandboxActive}
             onSandboxExit={exitSandbox}
             onSceneFailed={handleSceneFailed}
+            reviewView={acceptedLocalPreflight?.reviewView}
+            captureConfiguration={captureConfiguration ?? undefined}
           />
         </Suspense>
       )}

@@ -126,8 +126,32 @@ export function fitSimilarityHorn(
   return { scale, rotationRows, translation, apply };
 }
 
-/** One complete sweep centre per decade, fixed before any fitting. */
-export const PILOT_HELD_OUT_SWEEPS: readonly number[] = [5, 15, 25, 35, 45];
+/**
+ * The bounded Grand Hall diagnostic scope frozen by T-507. Sweep 49 is an
+ * adjacent space and is deliberately not a member of this set.
+ */
+export const PILOT_INCLUDED_SWEEPS: readonly number[] = Object.freeze(
+  Array.from({ length: 49 }, (_, sweepIndex) => sweepIndex),
+);
+
+/** One complete sweep centre per decade, frozen by T-507 before fitting. */
+export const PILOT_HELD_OUT_SWEEPS: readonly number[] = Object.freeze([
+  5,
+  15,
+  25,
+  35,
+  44,
+]);
+
+export const PILOT_SOURCE_FRAME_ID = "colmap-sfm";
+export const PILOT_TARGET_FRAME_ID = "e57-global-diagnostic";
+export const PILOT_TARGET_FRAME_LABEL =
+  "E57 global scan-pose frame (same-lineage diagnostic; not independent survey control)";
+export const PILOT_TRANSFORM_ID =
+  "colmap-sfm-to-e57-global-diagnostic-proposed";
+
+const PILOT_INCLUDED_SWEEP_SET = new Set(PILOT_INCLUDED_SWEEPS);
+const PILOT_HELD_OUT_SWEEP_SET = new Set(PILOT_HELD_OUT_SWEEPS);
 
 export interface PilotCorrespondence {
   readonly sweepIndex: number;
@@ -143,6 +167,10 @@ export interface ResidualStatistics {
 }
 
 export interface PilotFitReport {
+  readonly sourceFrameId: typeof PILOT_SOURCE_FRAME_ID;
+  readonly targetFrameId: typeof PILOT_TARGET_FRAME_ID;
+  readonly targetFrameLabel: typeof PILOT_TARGET_FRAME_LABEL;
+  readonly scopePolicy: string;
   readonly correspondenceMethod: string;
   readonly heldOutPolicy: string;
   readonly sfmLeakDocumented: string;
@@ -162,6 +190,53 @@ export interface PilotFitReport {
   readonly overlapFraction: number;
 }
 
+/**
+ * Selects the exact 0-48 Grand Hall evidence epoch and returns it in sweep
+ * order. Out-of-scope observations, including adjacent-space sweep 49, cannot
+ * enter either fitting or held-out evaluation. Missing or duplicate in-scope
+ * sweeps fail closed instead of silently changing the diagnostic population.
+ */
+export function selectBoundedPilotCorrespondences(
+  correspondences: readonly PilotCorrespondence[],
+): readonly PilotCorrespondence[] {
+  const bySweep = new Map<number, PilotCorrespondence>();
+  for (const correspondence of correspondences) {
+    if (!PILOT_INCLUDED_SWEEP_SET.has(correspondence.sweepIndex)) continue;
+    if (bySweep.has(correspondence.sweepIndex)) {
+      throw new Error(
+        `bounded Grand Hall diagnostic has duplicate sweep ${String(correspondence.sweepIndex)}`,
+      );
+    }
+    bySweep.set(correspondence.sweepIndex, correspondence);
+  }
+
+  const missing = PILOT_INCLUDED_SWEEPS.filter((sweepIndex) => !bySweep.has(sweepIndex));
+  if (missing.length > 0) {
+    throw new Error(
+      `bounded Grand Hall diagnostic is missing sweeps: ${missing.join(",")}`,
+    );
+  }
+
+  return PILOT_INCLUDED_SWEEPS.map((sweepIndex) => {
+    const correspondence = bySweep.get(sweepIndex);
+    if (correspondence === undefined) {
+      throw new Error(`bounded Grand Hall diagnostic lost sweep ${String(sweepIndex)}`);
+    }
+    return correspondence;
+  });
+}
+
+/** Reports discovered sweep indices that did not enter the bounded population. */
+export function deriveExcludedPilotSweepIndices(
+  discoveredSweepIndices: readonly number[],
+  boundedSweepIndices: readonly number[],
+): readonly number[] {
+  const bounded = new Set(boundedSweepIndices);
+  return [...new Set(discoveredSweepIndices.filter((sweepIndex) => !bounded.has(sweepIndex)))].sort(
+    (a, b) => a - b,
+  );
+}
+
 function residualStatistics(residuals: readonly number[]): ResidualStatistics {
   const sorted = [...residuals].sort((a, b) => a - b);
   const n = sorted.length;
@@ -178,8 +253,13 @@ function residualStatistics(residuals: readonly number[]): ResidualStatistics {
 export function buildPilotFitReport(
   correspondences: readonly PilotCorrespondence[],
 ): PilotFitReport {
-  const heldOut = correspondences.filter((c) => PILOT_HELD_OUT_SWEEPS.includes(c.sweepIndex));
-  const fitSet = correspondences.filter((c) => !PILOT_HELD_OUT_SWEEPS.includes(c.sweepIndex));
+  const boundedCorrespondences = selectBoundedPilotCorrespondences(correspondences);
+  const heldOut = boundedCorrespondences.filter((correspondence) =>
+    PILOT_HELD_OUT_SWEEP_SET.has(correspondence.sweepIndex),
+  );
+  const fitSet = boundedCorrespondences.filter(
+    (correspondence) => !PILOT_HELD_OUT_SWEEP_SET.has(correspondence.sweepIndex),
+  );
   const fit = fitSimilarityHorn(
     fitSet.map((c) => c.source),
     fitSet.map((c) => c.target),
@@ -193,10 +273,15 @@ export function buildPilotFitReport(
     );
   };
   return {
+    sourceFrameId: PILOT_SOURCE_FRAME_ID,
+    targetFrameId: PILOT_TARGET_FRAME_ID,
+    targetFrameLabel: PILOT_TARGET_FRAME_LABEL,
+    scopePolicy:
+      "Exact T-507 Grand Hall sweeps 0-48 only; adjacent-space sweep 49 and all other observations are excluded before fit/holdout partitioning.",
     correspondenceMethod:
       "Per-sweep COLMAP camera centre (mean of the sweep's registered cubeface centres, each -R^T t) matched to the E57 data3D pose translation at the same sweep index; similarity solved on the fit set only by Horn's closed-form quaternion method with uniform weights and no outlier rejection.",
     heldOutPolicy:
-      "Complete sweep centres held out before fitting - one per decade of 0-49, fixed as sweeps 5/15/25/35/45; their residuals are reported separately and never enter the solve.",
+      "Complete sweep centres held out before fitting - the frozen T-507 set 5/15/25/35/44 within bounded Grand Hall sweeps 0-48; their residuals are reported separately and never enter the solve.",
     sfmLeakDocumented:
       "Held-out sweep centres derive from the same jointly-optimized COLMAP reconstruction as the fit set, so they are not independent observations; their residuals bound interpolation stability of the diagnostic, not surveyed accuracy.",
     scale: fit.scale,
@@ -212,6 +297,6 @@ export function buildPilotFitReport(
       sweepIndices: heldOut.map((c) => c.sweepIndex),
       residuals: residualStatistics(heldOut.map(residualOf)),
     },
-    overlapFraction: correspondences.length / 50,
+    overlapFraction: boundedCorrespondences.length / PILOT_INCLUDED_SWEEPS.length,
   };
 }

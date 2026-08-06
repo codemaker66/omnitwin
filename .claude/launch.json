@@ -1,0 +1,46 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@omnitwin/web", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "web-dev-5188",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@omnitwin/web", "dev", "--", "--port", "5188", "--strictPort"],
+      "port": 5188,
+      "autoPort": false
+    },
+    {
+      "name": "web-dev-5199",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "C:/Users/blake/omnitwin2/packages/web",
+        "dev",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
+      "port": 5199,
+      "autoPort": false
+    },
+    {
+      "name": "twin-shell-5191",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "C:/Users/blake/omnitwin2/.claude/worktrees/twin-nadir-fill/packages/web",
+        "dev",
+        "--port",
+        "5191",
+        "--strictPort"
+      ],
+      "port": 5191,
+      "autoPort": false
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
+  resolveWebApiOrigin,
   resolveWebClerkPublishableKey,
 } from "../lib/production-env.js";
 
@@ -16,6 +17,7 @@ describe("Vite production environment guard", () => {
     expect(() => {
       assertRequiredProductionEnv("production", {
         VITE_CLERK_PUBLISHABLE_KEY: "pk_live_local",
+        VITE_API_URL: "https://api.venviewer.com",
       });
     }).not.toThrow();
   });
@@ -24,6 +26,7 @@ describe("Vite production environment guard", () => {
     expect(() => {
       assertRequiredProductionEnv("production", {
         CLERK_PUBLISHABLE_KEY: "pk_live_local",
+        VITE_API_URL: "https://api.venviewer.com",
       });
     }).not.toThrow();
   });
@@ -43,6 +46,27 @@ describe("Vite production environment guard", () => {
     }).toThrow("live Clerk publishable key");
   });
 
+  it("requires one clean HTTPS API origin for production builds", () => {
+    expect(() => {
+      assertRequiredProductionEnv("production", {
+        VITE_CLERK_PUBLISHABLE_KEY: "pk_live_local",
+      });
+    }).toThrow("VITE_API_URL");
+
+    for (const value of [
+      "http://api.venviewer.com",
+      "https://user:pass@api.venviewer.com",
+      "https://api.venviewer.com/path",
+      "https://api.venviewer.com?wrong=1",
+      "https://api.venviewer.com#wrong",
+    ]) {
+      expect(resolveWebApiOrigin({ VITE_API_URL: value })).toBeUndefined();
+    }
+    expect(resolveWebApiOrigin({
+      VITE_API_URL: " https://api.venviewer.com ",
+    })).toBe("https://api.venviewer.com");
+  });
+
   it("does not require production-only env for development mode", () => {
     expect(() => {
       assertRequiredProductionEnv("development", {});
@@ -57,6 +81,7 @@ describe("Vite production environment guard", () => {
     expect(() => {
       assertRequiredProductionEnv("production", {
         VITE_CLERK_PUBLISHABLE_KEY: "pk_live_local",
+        VITE_API_URL: "https://api.venviewer.com",
         SENTRY_AUTH_TOKEN: "sntrys_secret",
       });
     }).toThrow("Sentry source-map upload requires SENTRY_AUTH_TOKEN, SENTRY_ORG, and SENTRY_PROJECT");

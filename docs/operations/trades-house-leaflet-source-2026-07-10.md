@@ -20,6 +20,11 @@ The corrective reference confirms that the quiz has no responsive breakpoint:
 its portrait frame is always centred, `width: 100%`, and capped at `520px`.
 The Craft rails remain absolutely positioned inside that frame at every
 viewport width; no full-width desktop reinterpretation is part of the source.
+The opening screen therefore remains unchanged on iPhone. The native question
+and result screens add height-aware spacing below `700px` so the complete flow
+fits portrait iPhones without scrolling; this is a delivery adaptation because
+the supplied result copy exceeds an iPhone SE viewport at its original fixed
+sizes.
 
 ## Implementation boundary
 

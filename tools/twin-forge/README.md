@@ -123,25 +123,23 @@ It performs no geometry transformation and cannot be combined with `--mesh` or
 GLB structural validity. Replacing a MatterPak presentation mesh does not grant
 E57 room-shell authority, signing, or promotion status under D-024.
 
-## Publishing to production (Cloudflare R2)
+## Production release
 
-Decision of record: R2 (zero egress). One-time setup Blake does in the
-Cloudflare dashboard: create bucket `venviewer-twin`, attach the public custom
-domain `twin.venviewer.com`, create an R2 API token (Object Read & Write,
-scoped to the bucket).
+Do not flat-copy this directory into a public bucket with `rclone` or another
+general-purpose sync tool. That historical path had no private-candidate
+boundary, independent readback QA, evidence-bound approval, detached
+attestation, atomic pointer, or rollback ledger.
 
-Then, per venue publish (rclone shown; any S3-compatible tool works):
+Production now goes through the Evidence-to-Runtime Reconstruction Foundry:
 
 ```powershell
-# ~/.config/rclone/rclone.conf → [r2] type=s3, provider=Cloudflare,
-#   access_key_id/secret_access_key from the R2 token,
-#   endpoint=https://<account-id>.r2.cloudflarestorage.com
-rclone copy "C:\Users\blake\omnitwin2\packages\web\public\twin" r2:venviewer-twin --progress
+pnpm reconstruction:foundry -- prepare --bundle "packages\web\public\twin\trades-hall" --out "output\foundry\trades-hall-prepared"
+pnpm reconstruction:foundry -- upload-candidate --prepared "output\foundry\trades-hall-prepared"
 ```
 
-Finally set the Vercel production env `VITE_TWIN_ASSET_BASE=https://twin.venviewer.com`
-and redeploy. Until then, production's `/venues/<venue>/twin` renders the
-graceful "twin is being prepared" state by design.
+Continue in **Dashboard → Runtime Foundry**. The complete storage, review,
+keyless KMS signing, immutable publication, promotion, and rollback procedure
+is in `docs/operations/reconstruction-foundry-runbook.md`.
 
 ## Guarantees & gotchas
 
@@ -157,8 +155,8 @@ graceful "twin is being prepared" state by design.
   overrides file. Unknown, self-referential, or contradictory overrides fail.
 - `contentHashes` covers exactly every non-manifest bundle file. Missing files,
   unexpected files, digest mismatches, and a mesh byte-count mismatch all block
-  promotion. Formal signing joins the existing
-  AssetVersion registration flow in a later phase (D-014).
+  Foundry intake. Formal signing is detached DSSE/in-toto over the exact release,
+  QA, public-review, TransformArtifact, and Scene Authority evidence digests.
 - Existing non-empty output directories are replaceable only when they contain
   a schema-valid twin manifest for the same venue and no files outside that
   manifest's namespace. Missing bundle files are repairable; unexpected files

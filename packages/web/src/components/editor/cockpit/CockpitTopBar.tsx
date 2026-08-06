@@ -3,6 +3,7 @@ import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
@@ -41,7 +42,7 @@ function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
 export function CockpitTopBar(): ReactElement {
   const space = useEditorStore((s) => s.space);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
-  const objectCount = useEditorStore((s) => s.objects.length);
+  const savedObjectCount = useEditorStore((s) => s.objects.length);
   const isDirty = useEditorStore((s) => s.isDirty);
   const isSaving = useEditorStore((s) => s.isSaving);
   const saveError = useEditorStore((s) => s.saveError);
@@ -51,7 +52,10 @@ export function CockpitTopBar(): ReactElement {
   const layersOpen = useCockpitStore((s) => s.layersOpen);
   const overlayVisibility = useCockpitStore((s) => s.overlayVisibility);
   const selectedPhaseId = useCockpitStore((s) => s.selectedPhaseId);
+  const previewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
+  const previewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
   const linked = useLinkedEvent();
+  const objectCount = previewFrame === null ? savedObjectCount : previewObjectCount;
 
   const model = buildTopBarModel({
     spaceName: space?.name ?? null,
@@ -65,10 +69,24 @@ export function CockpitTopBar(): ReactElement {
   const activePhase = linked.graph !== null
     ? (linked.graph.phases.find((phase) => phase.id === selectedPhaseId) ?? linked.graph.phases[0] ?? null)
     : null;
-  const event = eventCell(linked, activePhase?.name ?? null);
+  const event = previewFrame === null
+    ? eventCell(linked, activePhase?.name ?? null)
+    : {
+        kicker: "Phase preview",
+        value: `${previewFrame.eventName} → ${previewFrame.phaseName}`,
+      };
+  const previewCountLabel = objectCount === 1 ? "1 phase preview item" : `${objectCount.toLocaleString("en-GB")} phase preview items`;
+  const summaryLabel = previewFrame === null
+    ? model.summaryLabel
+    : `${previewCountLabel} · saved plan unchanged`;
 
   return (
-    <header className="cockpit-topbar" data-testid="cockpit-topbar" aria-label="Planner status">
+    <header
+      className="cockpit-topbar"
+      data-testid="cockpit-topbar"
+      data-layout-timeline-preview={String(previewFrame !== null)}
+      aria-label="Planner status"
+    >
       <div className="cockpit-topbar__brand">
         <span className="cockpit-topbar__mark" aria-hidden="true">Vv</span>
         <span className="cockpit-topbar__brand-copy">
@@ -110,7 +128,7 @@ export function CockpitTopBar(): ReactElement {
       </div>
 
       <div className="cockpit-topbar__actions">
-        <span className="cockpit-topbar__summary">{model.summaryLabel}</span>
+        <span className="cockpit-topbar__summary">{summaryLabel}</span>
         <div className="cockpit-topbar__layers">
           <button
             type="button"

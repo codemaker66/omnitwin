@@ -1,5 +1,6 @@
 import { type FC, type ReactElement } from "react";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import type { CockpitMode } from "../../../lib/cockpit-modes.js";
 import { CockpitTruthRail } from "./CockpitTruthRail.js";
 import { FlowLensPanel } from "./FlowLensPanel.js";
@@ -12,6 +13,10 @@ import { LightingLensPanel } from "./LightingLensPanel.js";
 import { PowerLensPanel } from "./PowerLensPanel.js";
 import { RiggingLensPanel } from "./RiggingLensPanel.js";
 import { AVLensPanel } from "./AVLensPanel.js";
+import {
+  FurnitureInspectionDock,
+  useSelectedGeneratedFurniture,
+} from "./FurnitureInspectionDock.js";
 
 // ---------------------------------------------------------------------------
 // CockpitRightDock — the contextual right column (Epic 0).
@@ -43,6 +48,25 @@ export function panelForMode(mode: CockpitMode): FC | null {
 
 export function CockpitRightDock(): ReactElement {
   const activeMode = useCockpitStore((state) => state.activeMode);
+  const previewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
+  const generatedFurnitureSelection = useSelectedGeneratedFurniture();
+  if (previewFrame !== null) {
+    return (
+      <aside
+        className="cockpit-panel cockpit-preview-lock"
+        data-testid="cockpit-right-dock-preview-lock"
+        aria-label="Right dock disabled during phase preview"
+        aria-disabled="true"
+      >
+        <p className="cockpit-preview-lock__title">Phase preview</p>
+        <strong>{previewFrame.phaseName}</strong>
+        <p>Saved plan unchanged. Exit the timeline preview to use editing and review tools.</p>
+      </aside>
+    );
+  }
+  if (activeMode === "design" && generatedFurnitureSelection !== null) {
+    return <FurnitureInspectionDock selection={generatedFurnitureSelection} />;
+  }
   const Panel = panelForMode(activeMode);
   return Panel !== null ? <Panel /> : <CockpitTruthRail />;
 }

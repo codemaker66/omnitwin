@@ -7,6 +7,7 @@ import { Pool } from "@neondatabase/serverless";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { z } from "zod";
+import { configureNeonDriverForDatabaseUrl } from "../db/client.js";
 
 const API_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MIGRATION_ROOT = resolve(API_ROOT, "drizzle");
@@ -228,6 +229,7 @@ function rowToNameSet(rows: readonly Record<string, unknown>[], key: string): Re
 }
 
 async function collectCatalogEvidence(databaseUrl: string): Promise<CatalogEvidence> {
+  configureNeonDriverForDatabaseUrl(databaseUrl);
   const pool = new Pool({ connectionString: databaseUrl });
   const db = drizzle(pool);
   try {

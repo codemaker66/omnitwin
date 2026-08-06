@@ -19,6 +19,10 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_RELEASE?: string;
   /** Optional browser traces sample rate in the inclusive range 0..1. */
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
+  /** Development-only loopback origin for the exact Reception Quality files. */
+  readonly VITE_RECEPTION_QUALITY_ORIGIN?: string;
+  /** Development-only loopback origin for the exact Reception Mobile files. */
+  readonly VITE_RECEPTION_MOBILE_ORIGIN?: string;
 }
 
 interface ImportMeta {
@@ -26,3 +30,7 @@ interface ImportMeta {
 }
 
 declare const __VENVIEWER_CLERK_PUBLISHABLE_KEY__: string | undefined;
+/** SHA-256 identity of the exact Reception capture route and dependency inputs. */
+declare const __VENVIEWER_RECEPTION_CAPTURE_RUNTIME_BUILD_DIGEST__: string;
+/** SHA-256 identity of the two non-secret Reception candidate origins. */
+declare const __VENVIEWER_RECEPTION_CAPTURE_RUNTIME_ENVIRONMENT_DIGEST__: string;

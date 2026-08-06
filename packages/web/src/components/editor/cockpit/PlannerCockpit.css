@@ -132,6 +132,65 @@
   padding-left: 0;
 }
 
+/* Timeline playback is a read-only presentation lens. Keep the editor mounted
+   (its saved plan and undo state stay warm), while making mutation controls
+   visibly unavailable until the preview is closed. Camera navigation remains
+   available on the canvas. */
+.cockpit-stage[data-layout-timeline-preview="true"] [data-testid="planner-toolbar"],
+.cockpit-stage[data-layout-timeline-preview="true"] .planner-command-deck,
+.cockpit-stage[data-layout-timeline-preview="true"] .planner-section-slider-dock,
+.cockpit-stage[data-layout-timeline-preview="true"] .camera-reference-composer,
+.cockpit-stage[data-layout-timeline-preview="true"] .placement-coach-widget {
+  pointer-events: none;
+  opacity: 0.38;
+}
+
+.layout-timeline-preview-caption {
+  position: absolute;
+  z-index: 28;
+  inset-inline-start: calc(var(--cockpit-toolbox-width, 68px) + 18px);
+  bottom: 16px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--house-hairline);
+  border-inline-start-color: var(--house-accent-brass);
+  border-radius: 7px;
+  background: var(--house-bg-1);
+  color: var(--house-text-2);
+  font: 600 10px/1.2 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.045em;
+  pointer-events: none;
+}
+
+.cockpit-preview-lock {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 28px;
+  background: var(--house-bg-1);
+  color: var(--house-text-2);
+  pointer-events: none;
+}
+
+.cockpit-preview-lock strong {
+  color: var(--house-text-1);
+  font-size: 16px;
+}
+
+.cockpit-preview-lock p {
+  max-width: 28ch;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cockpit-preview-lock__title {
+  color: var(--house-accent-brass);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cockpit-shell *,
   .cockpit-shell *::before,

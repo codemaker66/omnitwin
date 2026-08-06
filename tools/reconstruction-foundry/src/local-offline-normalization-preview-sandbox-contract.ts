@@ -3,10 +3,17 @@ import {
   stableCanonicalJson,
   toCanonicalJson,
 } from "@omnitwin/reconstruction-foundry";
+import { posix } from "node:path";
 import {
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2,
+  LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2,
   parseLocalOfflinePreviewContainerConfiguration,
   type LocalOfflinePreviewContainerConfiguration,
 } from "./local-offline-normalization-preview-container-preflight.js";
+import {
+  FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES,
+} from "../../../packages/reconstruction-foundry/src/offline-normalize-mesh-glb-preview-sandbox-wire.js";
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_POLICY_V0 =
   "omnitwin.reconstruction-foundry.offline-preview-sandbox-policy.v0";
@@ -16,14 +23,20 @@ export const LOCAL_OFFLINE_PREVIEW_SANDBOX_EVIDENCE_V0 =
   "omnitwin.reconstruction-foundry.offline-preview-sandbox-evidence.v0";
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND =
-  "docker_desktop_wsl2_shared_kernel";
+  "docker_linux_shared_kernel";
+export const LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS =
+  "unauthenticated_integrity_claim";
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_LIMITATIONS = Object.freeze([
-  "The worker shares the Docker Desktop Linux kernel; this is container isolation, not a dedicated virtual machine.",
+  "The worker shares a Linux Docker engine kernel; this is container isolation, not a dedicated virtual machine, and this claim alone does not prove Docker Desktop or WSL2.",
   "The Docker engine, Docker Desktop virtual machine, operating system, and paging layers remain trusted and may retain metadata or bytes.",
+  "The Docker executable, seccomp profile, application bundle, and ledger path must be protected from hostile same-user replacement between validation and use; this runner does not defeat same-user filesystem races or snapshot rollback.",
+  "If a Docker create process cannot be confirmed terminated, no success witness is issued and cleanup remains explicitly unproved until later reconciliation confirms the private label is absent.",
+  "Permit replay prevention is at-most-once only within one intact, non-rolled-back local ledger; it is not a global, cross-machine, cross-account, or snapshot-resistant one-use authority.",
   "No secure-erasure claim is made for memory, storage, logs outside this worker, snapshots, crash data, or page files.",
   "This receipt does not prove native Windows custody, legal rights, geometric accuracy, source truth, or production suitability.",
   "Isolation grants no authority: captured, measured, inferred, and generated information must remain separately labelled.",
+  "Receipt and evidence digests detect mutation but are not signatures; serialized JSON is an unauthenticated claim and cannot prove that a sandbox ran.",
 ] as const);
 
 export const LOCAL_OFFLINE_PREVIEW_SANDBOX_PERSISTENCE_CLAIM = Object.freeze({
@@ -31,9 +44,9 @@ export const LOCAL_OFFLINE_PREVIEW_SANDBOX_PERSISTENCE_CLAIM = Object.freeze({
   previewOutputPathProvided: false as const,
   writableHostDirectoryProvided: false as const,
   dockerSocketProvided: false as const,
-  returnChannel: "bounded_framed_stdout_only" as const,
+  returnChannel: "bounded_framed_stdout_intended_payload" as const,
   claim:
-    "The worker is given neither a preview-output path nor a writable host directory; result bytes can return only through the bounded framed standard-output channel.",
+    "The worker is given neither a preview-output path nor a writable host directory. The bounded framed standard-output channel is its only intended byte-payload return channel; exit status, timing, resource use, and Docker metadata remain side channels.",
 });
 
 const POLICY_DOMAIN =
@@ -55,6 +68,9 @@ export interface LocalOfflinePreviewSandboxEffectiveControls {
   readonly imageId: string;
   readonly imagePullPolicy: "never";
   readonly fixedEntrypoint: readonly string[];
+  readonly imageEnvironment: readonly string[];
+  readonly imageWorkingDirectory: "/";
+  readonly imageStopSignal: "SIGKILL";
   readonly networkMode: "none";
   readonly readOnlyRootFilesystem: true;
   readonly mountCount: 0;
@@ -85,7 +101,15 @@ export interface LocalOfflinePreviewSandboxEffectiveControls {
   readonly pidsLimit: number;
   readonly maximumInputBytes: number;
   readonly maximumOutputBytes: number;
+  readonly maximumWireBytes: number;
   readonly maximumRuntimeMilliseconds: number;
+  readonly watchdogKind: "busybox_timeout_pid1_wall_clock";
+  readonly watchdogExecutablePath: string;
+  readonly watchdogArtifactSha256: string;
+  readonly watchdogCoverage: "stdin_worker_stdout";
+  readonly watchdogTerminationSignal: "SIGKILL";
+  readonly watchdogIndependentOfHostProcess: true;
+  readonly watchdogMaximumRuntimeMilliseconds: number;
 }
 
 export interface LocalOfflinePreviewSandboxPolicy {
@@ -122,7 +146,10 @@ interface LocalOfflinePreviewSandboxTerminalReceiptBase {
     typeof LOCAL_OFFLINE_PREVIEW_SANDBOX_TERMINAL_RECEIPT_V0;
   readonly backend: typeof LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND;
   readonly authority: "none";
-  readonly sandboxEstablished: true;
+  readonly sandboxEstablished: false;
+  readonly claimStatus: typeof LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS;
+  readonly attestationAuthority: "none";
+  readonly cryptographicallyAuthenticated: false;
   readonly requestId: string;
   readonly policyDigest: string;
   readonly engineDigest: string;
@@ -161,12 +188,19 @@ export type LocalOfflinePreviewSandboxTerminalReceipt =
   | LocalOfflinePreviewSandboxTransformTerminalReceipt
   | LocalOfflinePreviewSandboxFreshVerifierTerminalReceipt;
 
+/** Serialized integrity claim; never a live or authenticated sandbox witness. */
+export type LocalOfflinePreviewSandboxTerminalReceiptClaim =
+  LocalOfflinePreviewSandboxTerminalReceipt;
+
 export type LocalOfflinePreviewSandboxTerminalReceiptInput = Omit<
   LocalOfflinePreviewSandboxTerminalReceipt,
   | "schemaVersion"
   | "backend"
   | "authority"
   | "sandboxEstablished"
+  | "claimStatus"
+  | "attestationAuthority"
+  | "cryptographicallyAuthenticated"
   | "receiptDigest"
 >;
 
@@ -175,7 +209,10 @@ export interface LocalOfflinePreviewSandboxEvidence {
   readonly backend: typeof LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND;
   readonly authority: "none";
   readonly productionExecution: "disabled";
-  readonly sandboxEstablished: true;
+  readonly sandboxEstablished: false;
+  readonly claimStatus: typeof LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS;
+  readonly attestationAuthority: "none";
+  readonly cryptographicallyAuthenticated: false;
   readonly requestId: string;
   readonly policyDigest: string;
   readonly engineDigest: string;
@@ -193,12 +230,19 @@ export interface LocalOfflinePreviewSandboxEvidence {
   readonly evidenceDigest: string;
 }
 
+/** Serialized integrity claim; never a live or authenticated sandbox witness. */
+export type LocalOfflinePreviewSandboxEvidenceClaim =
+  LocalOfflinePreviewSandboxEvidence;
+
 const CONTROL_KEYS = [
   "platform",
   "imageReference",
   "imageId",
   "imagePullPolicy",
   "fixedEntrypoint",
+  "imageEnvironment",
+  "imageWorkingDirectory",
+  "imageStopSignal",
   "networkMode",
   "readOnlyRootFilesystem",
   "mountCount",
@@ -229,7 +273,15 @@ const CONTROL_KEYS = [
   "pidsLimit",
   "maximumInputBytes",
   "maximumOutputBytes",
+  "maximumWireBytes",
   "maximumRuntimeMilliseconds",
+  "watchdogKind",
+  "watchdogExecutablePath",
+  "watchdogArtifactSha256",
+  "watchdogCoverage",
+  "watchdogTerminationSignal",
+  "watchdogIndependentOfHostProcess",
+  "watchdogMaximumRuntimeMilliseconds",
 ] as const;
 
 const POLICY_KEYS = [
@@ -261,6 +313,9 @@ const RECEIPT_KEYS = [
   "backend",
   "authority",
   "sandboxEstablished",
+  "claimStatus",
+  "attestationAuthority",
+  "cryptographicallyAuthenticated",
   "phase",
   "requestId",
   "policyDigest",
@@ -290,6 +345,9 @@ const EVIDENCE_KEYS = [
   "authority",
   "productionExecution",
   "sandboxEstablished",
+  "claimStatus",
+  "attestationAuthority",
+  "cryptographicallyAuthenticated",
   "requestId",
   "policyDigest",
   "engineDigest",
@@ -396,6 +454,10 @@ function controlsFromConfiguration(
     imageId: configuration.imageId,
     imagePullPolicy: configuration.imagePullPolicy,
     fixedEntrypoint: [...configuration.fixedEntrypoint],
+    imageEnvironment: [...LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2],
+    imageWorkingDirectory:
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2,
+    imageStopSignal: LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2,
     networkMode: configuration.networkMode,
     readOnlyRootFilesystem: true,
     mountCount: 0,
@@ -426,8 +488,20 @@ function controlsFromConfiguration(
     pidsLimit: configuration.resourceLimits.pidsLimit,
     maximumInputBytes: configuration.resourceLimits.maximumInputBytes,
     maximumOutputBytes: configuration.resourceLimits.maximumOutputBytes,
+    maximumWireBytes:
+      FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES,
     maximumRuntimeMilliseconds:
       configuration.resourceLimits.maximumRuntimeMilliseconds,
+    watchdogKind: configuration.runtimeWatchdog.kind,
+    watchdogExecutablePath: configuration.runtimeWatchdog.executablePath,
+    watchdogArtifactSha256: configuration.runtimeWatchdog.artifactSha256,
+    watchdogCoverage: configuration.runtimeWatchdog.coverage,
+    watchdogTerminationSignal:
+      configuration.runtimeWatchdog.terminationSignal,
+    watchdogIndependentOfHostProcess:
+      configuration.runtimeWatchdog.independentOfHostProcess,
+    watchdogMaximumRuntimeMilliseconds:
+      configuration.runtimeWatchdog.maximumRuntimeMilliseconds,
   });
 }
 
@@ -436,6 +510,7 @@ function parseControls(
 ): LocalOfflinePreviewSandboxEffectiveControls | null {
   if (!isPlainObject(value) || !hasExactKeys(value, CONTROL_KEYS)) return null;
   const entrypoint = value.fixedEntrypoint;
+  const imageEnvironment = value.imageEnvironment;
   if (
     value.platform !== "linux/amd64" ||
     typeof value.imageReference !== "string" ||
@@ -445,6 +520,14 @@ function parseControls(
     !Array.isArray(entrypoint) ||
     entrypoint.length === 0 ||
     !entrypoint.every((entry) => typeof entry === "string" && entry.length > 0) ||
+    !Array.isArray(imageEnvironment) ||
+    !arraysEqual(
+      imageEnvironment,
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2,
+    ) ||
+    value.imageWorkingDirectory !==
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2 ||
+    value.imageStopSignal !== LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2 ||
     value.networkMode !== "none" ||
     value.readOnlyRootFilesystem !== true ||
     value.mountCount !== 0 ||
@@ -477,7 +560,20 @@ function parseControls(
     !isSafePositiveInteger(value.pidsLimit) ||
     !isSafePositiveInteger(value.maximumInputBytes) ||
     !isSafePositiveInteger(value.maximumOutputBytes) ||
-    !isSafePositiveInteger(value.maximumRuntimeMilliseconds)
+    value.maximumWireBytes !==
+      FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_MAX_BYTES ||
+    !isSafePositiveInteger(value.maximumRuntimeMilliseconds) ||
+    value.watchdogKind !== "busybox_timeout_pid1_wall_clock" ||
+    typeof value.watchdogExecutablePath !== "string" ||
+    !value.watchdogExecutablePath.startsWith("/") ||
+    posix.normalize(value.watchdogExecutablePath) !==
+      value.watchdogExecutablePath ||
+    !isDigest(value.watchdogArtifactSha256) ||
+    value.watchdogCoverage !== "stdin_worker_stdout" ||
+    value.watchdogTerminationSignal !== "SIGKILL" ||
+    value.watchdogIndependentOfHostProcess !== true ||
+    value.watchdogMaximumRuntimeMilliseconds !==
+      value.maximumRuntimeMilliseconds
   ) {
     return null;
   }
@@ -592,7 +688,10 @@ function receiptMaterialIsValid(
     value.schemaVersion !== LOCAL_OFFLINE_PREVIEW_SANDBOX_TERMINAL_RECEIPT_V0 ||
     value.backend !== LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND ||
     value.authority !== "none" ||
-    value.sandboxEstablished !== true ||
+    value.sandboxEstablished !== false ||
+    value.claimStatus !== LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS ||
+    value.attestationAuthority !== "none" ||
+    value.cryptographicallyAuthenticated !== false ||
     !phaseValid ||
     typeof value.requestId !== "string" ||
     !REQUEST_ID.test(value.requestId) ||
@@ -604,7 +703,7 @@ function receiptMaterialIsValid(
     !isCanonicalUtc(value.startedAt) ||
     !isCanonicalUtc(value.finishedAt) ||
     Date.parse(value.startedAt) >= Date.parse(value.finishedAt) ||
-    Date.parse(value.finishedAt) > Date.parse(value.deadlineAt) ||
+    Date.parse(value.finishedAt) >= Date.parse(value.deadlineAt) ||
     wireInput === null ||
     wireOutput === null ||
     source === null ||
@@ -620,8 +719,10 @@ function receiptMaterialIsValid(
     return false;
   }
   if (
-    wireInput.sizeBytes > controls.maximumInputBytes ||
-    wireOutput.sizeBytes > controls.maximumOutputBytes ||
+    source.sizeBytes > controls.maximumInputBytes ||
+    candidate.sizeBytes > controls.maximumOutputBytes ||
+    wireInput.sizeBytes > controls.maximumWireBytes ||
+    wireOutput.sizeBytes > controls.maximumWireBytes ||
     Date.parse(value.finishedAt) - Date.parse(value.startedAt) >
       controls.maximumRuntimeMilliseconds
   ) {
@@ -634,6 +735,10 @@ function receiptMaterialIsValid(
   );
 }
 
+/**
+ * Creates a mutation-evident but unauthenticated host-observation claim.
+ * It deliberately cannot establish a live sandbox.
+ */
 export function createLocalOfflinePreviewSandboxTerminalReceipt(
   input: LocalOfflinePreviewSandboxTerminalReceiptInput,
   policy: LocalOfflinePreviewSandboxPolicy,
@@ -644,7 +749,10 @@ export function createLocalOfflinePreviewSandboxTerminalReceipt(
     schemaVersion: LOCAL_OFFLINE_PREVIEW_SANDBOX_TERMINAL_RECEIPT_V0,
     backend: LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND,
     authority: "none" as const,
-    sandboxEstablished: true as const,
+    sandboxEstablished: false as const,
+    claimStatus: LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS,
+    attestationAuthority: "none" as const,
+    cryptographicallyAuthenticated: false as const,
     ...structuredClone(input),
   };
   if (!isPlainObject(material) || !receiptMaterialIsValid(material, parsedPolicy)) {
@@ -673,6 +781,10 @@ export function parseLocalOfflinePreviewSandboxTerminalReceipt(
   return frozenReceipt as LocalOfflinePreviewSandboxTerminalReceipt;
 }
 
+/**
+ * Checks that two serialized claims are internally consistent. The result is
+ * still unauthenticated and deliberately keeps sandboxEstablished false.
+ */
 export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
   policy: LocalOfflinePreviewSandboxPolicy;
   transformReceipt: LocalOfflinePreviewSandboxTerminalReceipt;
@@ -695,6 +807,9 @@ export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
     verifier.phase !== "fresh_verifier" ||
     transform.requestId !== verifier.requestId ||
     transform.engineDigest !== verifier.engineDigest ||
+    transform.deadlineAt !== verifier.deadlineAt ||
+    transform.containerConfigurationDigest !==
+      verifier.containerConfigurationDigest ||
     !canonicalEqual(transform.source, verifier.source) ||
     !canonicalEqual(transform.candidate, verifier.candidate) ||
     transform.reportSha256 !== verifier.reportSha256 ||
@@ -712,7 +827,10 @@ export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
     backend: LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND,
     authority: "none" as const,
     productionExecution: "disabled" as const,
-    sandboxEstablished: true as const,
+    sandboxEstablished: false as const,
+    claimStatus: LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS,
+    attestationAuthority: "none" as const,
+    cryptographicallyAuthenticated: false as const,
     requestId: transform.requestId,
     policyDigest: policy.policyDigest,
     engineDigest: transform.engineDigest,
@@ -734,6 +852,7 @@ export function createLocalOfflinePreviewSandboxEvidence(input: Readonly<{
   });
 }
 
+/** Parses only the integrity shape; it does not authenticate a live run. */
 export function parseLocalOfflinePreviewSandboxEvidence(
   value: unknown,
 ): LocalOfflinePreviewSandboxEvidence | null {
@@ -743,7 +862,10 @@ export function parseLocalOfflinePreviewSandboxEvidence(
     value.backend !== LOCAL_OFFLINE_PREVIEW_SANDBOX_BACKEND ||
     value.authority !== "none" ||
     value.productionExecution !== "disabled" ||
-    value.sandboxEstablished !== true ||
+    value.sandboxEstablished !== false ||
+    value.claimStatus !== LOCAL_OFFLINE_PREVIEW_SANDBOX_CLAIM_STATUS ||
+    value.attestationAuthority !== "none" ||
+    value.cryptographicallyAuthenticated !== false ||
     typeof value.requestId !== "string" ||
     !REQUEST_ID.test(value.requestId) ||
     !isDigest(value.policyDigest) ||

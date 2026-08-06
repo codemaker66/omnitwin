@@ -1,0 +1,57 @@
+{
+  "record": "t508-activation-custody-slice",
+  "date": "2026-07-28",
+  "authority": "none",
+  "scope": "T-508 continuation: joint nine-artifact audit, 0059-collision proposal, focused 0058 static evidence. 0058 remains disabled; 0059 (any ordinal) remains prohibited. No training, paid compute, provider contact, XGRIDS payload parsing, raw mutation, signing, registration, promotion or publication occurred.",
+  "artifacts": {
+    "jointAudit": {
+      "path": "docs/reports/omnitwin-foundry-activation-v1-nine-artifact-joint-audit-2026-07-28.md",
+      "reviewerClass": "independent non-author machine review, read-only, unsigned",
+      "verdicts": {
+        "jointFreezeOfNine": "GO conditional on P1-1 (one byte-preserving commit establishing custody for the eight untracked artifacts, the parent, adjacent vector/proposal files and the identity record, then post-commit hash re-verification)",
+        "sqlRepairAuthorship": "GO for design authorship only, after the P1-1 commit; NO-GO for editing frozen 0058, applying migrations, or broadening grants",
+        "specComplete0058": "NO-GO confirmed",
+        "migration0059OrSuccessorEnable": "NO-GO confirmed; additionally unsatisfiable as written pending the P2-1 amendment",
+        "gatewayTokenProposal": "adjacent, proposed_not_frozen, not part of the nine"
+      },
+      "findings": ["P0: none", "P1-1 commit-custody absence for the freeze set", "P2-1 0059 ordinal collision (fails closed; amend, never renumber)", "P3-1 workload-proof status-header heterogeneity", "P3-2 stale journal byte identity (semantic integrity proven; supersede the recorded hash)", "P3-3 byte-vectors positive coverage is 1/9 profiles (scope note)", "P3-4 stale .gitattributes anchor; strengthened policy uncommitted", "P3-5 tail-relative journal assertions fragile; index-pin instead"],
+      "hashVerification": "all 16 artifact recomputations exact vs the 2026-07-14/15 handoff tables; migrations 0053-0058 byte-identical on disk and at HEAD"
+    },
+    "amendmentProposal": {
+      "path": "docs/proposals/omnitwin-foundry-activation-enable-migration-rekeying-2026-07-28.md",
+      "state": "proposal only; parent contract untouched; requires third amendment + independent re-audit; decision owner Blake"
+    },
+    "staticEvidenceTest": {
+      "path": "packages/api/src/__tests__/foundry-derivative-activation-0058-static-evidence.test.ts",
+      "gapAddressed": "focused 0058 evidence - static slice only",
+      "asserts": [
+        "0053-0058 byte lengths + SHA-256 frozen (0058 = 262281 B sha256:1655b8ff5022377f28f7ef1f73aa5ca0e75e0ddc14218339b341b81a33c5506e)",
+        "journal index pins 51-57 (index-pinned per P3-5, never tail-relative); exactly one foundry_derivative_activation tag",
+        "0059_action_log pinned (1725 B sha256:be3f5cce9060a2c4ab2c43b458b6edfaa63b27cbaffb9e959ad20e4eb6e62133) and free of fdv1_/foundry_derivative/activation_epoch/enabled_release; 0060/0061 likewise; no enable-shaped migration at any index",
+        "exactly one migration-authored epoch INSERT: generation-1 disabled_sentinel bootstrap; no INSERT authors enabled_release; INSERT INTO occurrences pinned at 7",
+        "exactly 2 GRANT statements, both EXECUTE on the read helpers fdv1_current_epoch / fdv1_next_epoch_boundary; dynamic REVOKE templates present; fdv1_assert_enabled denial exception present",
+        "zero CREATE POLICY, zero ROW LEVEL SECURITY (asserted absence per the P3 catalog mandate), SECURITY DEFINER count pinned at 27",
+        "identifier catalog sweep: 24 tables / 53 functions / 16 triggers / 14 indexes / 163 named constraints / 578 columns; every identifier <= 63 bytes (max 61); zero 63-byte truncation collisions across pg_class (tables+indexes), pg_proc, pg_trigger, pg_constraint and per-table pg_attribute namespaces"
+      ],
+      "verification": {
+        "result": "7 passed, 0 failed",
+        "environment": "Linux sandbox, Node 22.22.3 --experimental-strip-types, byte-identical copies of the nine drizzle inputs + real zod from the workspace pnpm store + a minimal vitest-compatible shim (describe/it/expect: toBe/toEqual/toHaveLength/toContain)",
+        "caveat": "the repository's Windows-installed pnpm workspace exposes unreadable junctions over the Linux mount (node_modules/vitest resolves to I/O error), so the in-workspace vitest run and tsc typecheck could not execute here",
+        "outstandingReceipts": [
+          "Windows: pnpm --filter @omnitwin/api test -- src/__tests__/foundry-derivative-activation-0058-static-evidence.test.ts",
+          "Windows: pnpm --filter @omnitwin/api typecheck",
+          "Windows: pnpm --filter @omnitwin/api lint"
+        ]
+      }
+    }
+  },
+  "gapStatusAfterSlice": {
+    "authenticatedRunnerVerifierReceipt": "design audited (GO-conditional); semantic receipts + DB admission still unimplemented",
+    "privilegedCallableApi": "design audited (GO-conditional); SQL surface still absent",
+    "sourceScopedContainment": "design audited; SQL repair authorship admissible after P1-1 commit",
+    "reverseClosure": "design audited; same",
+    "custodyHorizon": "design audited; same",
+    "focused0058Evidence": "static slice landed (this test); live semantic suite on pinned PostgreSQL 16.14, Drizzle parity for the 24 tables, concurrency and adversarial matrices, and the fresh independent final audit remain open"
+  },
+  "gatesPreserved": ["external identity", "full-scope classification", "Matterport/source rights incl. Grand Hall Brush checkpoints", "XGRIDS whitepaper competing-AI clause", "independent-control", "transform-review", "0058 disabled sentinel", "0059/enable prohibition", "no shared-lineage upgrade to surveyed accuracy"]
+}

@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useMemo } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Color, FrontSide } from "three";
+import { ACESFilmicToneMapping, Color, FrontSide, SRGBColorSpace } from "three";
 import { textSplats } from "@sparkjsdev/spark";
 import { useSearchParams } from "react-router-dom";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
@@ -14,6 +21,18 @@ import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
+import {
+  ReceptionCaptureInvalidator,
+  useReceptionCaptureAdapter,
+} from "./living-hall/ReceptionCaptureAdapter.js";
+import {
+  RECEPTION_CAPTURE_SCHEMA_VERSION,
+  receptionAssetSetDigest,
+  receptionRendererBinding,
+  type ReceptionCaptureAsset,
+  type ReceptionCaptureConfiguration,
+} from "./living-hall/reception-capture-contract.js";
+import { RECEPTION_FIXED_FINE_REVIEW_PROFILE } from "./living-hall/reception-viewer-profile.js";
 
 // P0 ingestion probe bridge (dev route only): headless checks read load
 // results per URL from this window global instead of scraping the canvas.
@@ -80,18 +99,70 @@ function parseVec3(raw: string | null): readonly [number, number, number] | null
   return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
 }
 
-function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.ReactElement {
-  const expected = urls.length;
+function syntheticCaptureAsset(url: string): ReceptionCaptureAsset {
+  return {
+    sourceId: url,
+    requestPath: new URL(url, window.location.href).pathname,
+    sha256: "f".repeat(64),
+    sizeBytes: 1,
+  };
+}
 
+function syntheticCaptureConfiguration(
+  asset: ReceptionCaptureAsset | null,
+  splatCount: number | null,
+  nonce: string | null,
+): ReceptionCaptureConfiguration | null {
+  if (asset === null || splatCount === null || nonce === null) return null;
+  return {
+    schemaVersion: RECEPTION_CAPTURE_SCHEMA_VERSION,
+    candidateId: "synthetic",
+    viewId: "generated-ply",
+    captureNonce: nonce,
+    profileId: "synthetic-ply-v1",
+    expectedSplatCount: splatCount,
+    assetSetSha256: receptionAssetSetDigest([asset]),
+    assets: [asset],
+    rendererBinding: receptionRendererBinding(),
+  };
+}
+
+function useSyntheticCapture(
+  urls: readonly string[],
+  captureNonce: string | null,
+) {
+  const [loadedSplatCount, setLoadedSplatCount] = useState<number | null>(null);
+  const captureAsset = useMemo(
+    () => captureNonce !== null && urls.length === 1 && urls[0] !== undefined
+      ? syntheticCaptureAsset(urls[0])
+      : null,
+    [captureNonce, urls],
+  );
+  const configuration = useMemo(
+    () => syntheticCaptureConfiguration(captureAsset, loadedSplatCount, captureNonce),
+    [captureAsset, captureNonce, loadedSplatCount],
+  );
+  const capture = useReceptionCaptureAdapter(configuration);
+  return { capture, captureAsset, configuration, setLoadedSplatCount };
+}
+
+function useFixtureCallbacks(
+  expected: number,
+  captureEnabled: boolean,
+  setLoadedSplatCount: Dispatch<SetStateAction<number | null>>,
+): {
+  readonly onLoad: (event: SparkSplatLoadEvent) => void;
+  readonly onError: (event: SparkSplatErrorEvent) => void;
+} {
   const settle = useCallback((entry: SplatFixtureBridge["results"][number]) => {
     const bridge = fixtureBridge();
     bridge.results.push(entry);
     if (bridge.results.length >= expected) {
-      bridge.status = bridge.results.every((r) => r.ok) ? "loaded" : "error";
+      bridge.status = bridge.results.every((result) => result.ok) ? "loaded" : "error";
     }
   }, [expected]);
-
   const onLoad = useCallback((event: SparkSplatLoadEvent) => {
+    if (captureEnabled && expected === 1) setLoadedSplatCount(event.splatCount);
     settle({
       url: event.url,
       ok: true,
@@ -99,8 +170,7 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
       bounds: event.localBounds,
       elapsedMs: performance.now() - fixtureBridge().startedAtMs,
     });
-  }, [settle]);
-
+  }, [captureEnabled, expected, setLoadedSplatCount, settle]);
   const onError = useCallback((event: SparkSplatErrorEvent) => {
     settle({
       url: event.url,
@@ -109,6 +179,21 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
       elapsedMs: performance.now() - fixtureBridge().startedAtMs,
     });
   }, [settle]);
+  return { onError, onLoad };
+}
+
+function UrlSplatScene({
+  urls,
+  captureNonce,
+}: {
+  readonly urls: readonly string[];
+  readonly captureNonce: string | null;
+}): React.ReactElement {
+  const expected = urls.length;
+  const synthetic = useSyntheticCapture(urls, captureNonce);
+  const { onLoad, onError } = useFixtureCallbacks(
+    expected, captureNonce !== null, synthetic.setLoadedSplatCount,
+  );
 
   useEffect(() => {
     fixtureBridge();
@@ -121,10 +206,21 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
           key={url}
           url={url}
           includeRendererHost={index === 0}
+          renderProfile={captureNonce === null ? undefined : RECEPTION_FIXED_FINE_REVIEW_PROFILE.spark}
+          captureIdentity={synthetic.captureAsset === null ? undefined : {
+            candidateId: "synthetic",
+            requestPath: synthetic.captureAsset.requestPath,
+            sha256: synthetic.captureAsset.sha256,
+            sizeBytes: synthetic.captureAsset.sizeBytes,
+          }}
+          onPresentedFrame={index === 0 ? synthetic.capture.onPresentedFrame : undefined}
           onLoad={onLoad}
           onError={onError}
         />
       ))}
+      {synthetic.configuration !== null && (
+        <ReceptionCaptureInvalidator onReady={synthetic.capture.onInvalidatorReady} />
+      )}
     </>
   );
 }
@@ -132,6 +228,7 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
 export function SplatFixturePage(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
+  const captureNonce = import.meta.env.DEV ? searchParams.get("captureNonce") : null;
   const splatUrls = useMemo(() => {
     const raw = searchParams.get("splatUrl");
     if (raw === null || raw.trim() === "") return null;
@@ -169,7 +266,17 @@ export function SplatFixturePage(): React.ReactElement {
           far: 120,
           position: cam ?? [0, 0.6, 3.4],
         }}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={captureNonce === null
+          ? { antialias: true, powerPreference: "high-performance" }
+          : {
+            antialias: RECEPTION_FIXED_FINE_REVIEW_PROFILE.canvas.antialias,
+            alpha: RECEPTION_FIXED_FINE_REVIEW_PROFILE.canvas.alpha,
+            premultipliedAlpha: RECEPTION_FIXED_FINE_REVIEW_PROFILE.canvas.premultipliedAlpha,
+            powerPreference: RECEPTION_FIXED_FINE_REVIEW_PROFILE.canvas.powerPreference,
+            outputColorSpace: SRGBColorSpace,
+            toneMapping: ACESFilmicToneMapping,
+            toneMappingExposure: RECEPTION_FIXED_FINE_REVIEW_PROFILE.canvas.toneMappingExposure,
+          }}
       >
         <color attach="background" args={["#101217"]} />
         <hemisphereLight args={["#fff4d8", "#30243a", 1.8]} />
@@ -184,7 +291,7 @@ export function SplatFixturePage(): React.ReactElement {
           </>
         ) : (
           <group rotation={zUp ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}>
-            <UrlSplatScene urls={splatUrls} />
+            <UrlSplatScene urls={splatUrls} captureNonce={captureNonce} />
           </group>
         )}
         <OrbitControls

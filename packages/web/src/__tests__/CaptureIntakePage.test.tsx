@@ -56,7 +56,8 @@ describe("CaptureIntakePage", () => {
     expect(screen.getByText("9364")).toBeTruthy();
     expect(screen.getByText("20.75 GiB")).toBeTruthy();
     expect(screen.getByText(/verified source bytes are not a loadable runtime twin/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /open runtime asset registry/i })).toBeTruthy();
+    const foundryLink = screen.getByRole("link", { name: /open runtime foundry/i });
+    expect(foundryLink.getAttribute("href")).toBe("/dashboard?view=foundry");
   });
 
   it("shows a fail-closed configured-state result", async () => {

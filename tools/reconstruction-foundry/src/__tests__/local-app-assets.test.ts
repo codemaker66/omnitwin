@@ -5,6 +5,7 @@ import {
   LOCAL_FOUNDRY_APP_HTML,
   LOCAL_FOUNDRY_APP_JAVASCRIPT,
 } from "../local-app-assets.js";
+import { LOCAL_HD_WORKER_READINESS_DTO_V0 } from "../local-hd-worker-readiness.js";
 
 describe("Foundry local app browser assets", () => {
   it("ships valid standalone browser JavaScript", () => {
@@ -18,6 +19,169 @@ describe("Foundry local app browser assets", () => {
       .map((match) => match[1]);
     expect(ids).not.toContain(undefined);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("shows the build-owned worker plan after the receipt without offering execution", () => {
+    const receiptFooterIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'class="receipt-footer"',
+    );
+    const workerPanelIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="local-hd-worker-readiness"',
+    );
+    const guidedWorkflowIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="guided-workflow"',
+    );
+    expect(workerPanelIndex).toBeGreaterThan(receiptFooterIndex);
+    expect(guidedWorkflowIndex).toBeGreaterThan(workerPanelIndex);
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Pinned plan — not installed or ready to run",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "This environment plan is not matched to this source or plan.",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Plan recorded · no execution",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Candidate bundle recorded — clean-host check still open",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "The exact Python 3.13 bundle used by the aggregate-only E57 adapter and its legal pack now reproduce to the same receipt",
+    );
+    const panelHtml = LOCAL_FOUNDRY_APP_HTML.slice(
+      workerPanelIndex,
+      guidedWorkflowIndex,
+    );
+    expect(panelHtml).not.toMatch(/<button|<form|<input|<select/iu);
+
+    const renderer = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function requireLocalHdWorkerReadiness",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function updateSaveStep"),
+    );
+    expect(renderer).toContain("function renderLocalHdWorkerReadiness(input)");
+    expect(renderer).toContain(
+      "function renderLocalE57IntakeEnvironmentReadiness(input)",
+    );
+    expect(renderer).toContain("for (const artifact of value.artifacts)");
+    expect(renderer).toContain("for (const item of followUp.remainingGates)");
+    expect(renderer).toContain("for (const lane of value.capabilityLanes)");
+    expect(renderer).toContain("for (const component of value.components)");
+    expect(renderer).toContain("for (const exclusion of value.exclusions)");
+    expect(renderer).not.toContain(".slice(");
+    expect(renderer).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/iu);
+    expect(renderer).toContain(
+      "Do not build, run, or deploy the legacy worker image",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "if (!localHdWorkerRendered) renderLocalHdWorkerReadiness(state.localHdWorker);",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-hd-worker-summary, .local-hd-worker-lanes, .local-hd-worker-components { grid-template-columns: 1fr; }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-hd-worker-footer code { display: block;",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-e57-summary, .local-e57-columns { grid-template-columns: 1fr; }",
+    );
+  });
+
+  it("rejects extra fields, identity drift, and local GPU-worker aliases before rendering", () => {
+    const exactKeysHelper = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function hasExactObjectKeys(value, expectedKeys)",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function isCapturedQualityDigest(value)",
+      ),
+    );
+    const readinessParser = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function requireLocalE57IntakeEnvironmentReadiness(value, parentManifestSha256)",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function renderLocalHdWorkerReadiness(input)",
+      ),
+    );
+    const harness: {
+      parseLocalHdWorkerReadinessForTest?: (value: unknown) => unknown;
+    } = {};
+    new Script(
+      `${exactKeysHelper}\n${readinessParser}\nglobalThis.parseLocalHdWorkerReadinessForTest = requireLocalHdWorkerReadiness;`,
+      { filename: "local-foundry-hd-worker-readiness-parser.js" },
+    ).runInNewContext(harness);
+    const parseReadiness = harness.parseLocalHdWorkerReadinessForTest;
+    if (parseReadiness === undefined) {
+      throw new Error("HD-worker readiness parser test harness was not installed");
+    }
+
+    expect(() => parseReadiness(LOCAL_HD_WORKER_READINESS_DTO_V0)).not.toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      unexpectedAuthority: true,
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      summary: {
+        ...LOCAL_HD_WORKER_READINESS_DTO_V0.summary,
+        unexpectedCount: 1,
+      },
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      capabilityLanes: LOCAL_HD_WORKER_READINESS_DTO_V0.capabilityLanes.map(
+        (lane) => lane.id === "gaussian_training"
+          ? { ...lane, executionLocation: "local_windows_candidate" }
+          : lane,
+      ),
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      capabilityLanes: [
+        ...LOCAL_HD_WORKER_READINESS_DTO_V0.capabilityLanes.slice(0, 4),
+        LOCAL_HD_WORKER_READINESS_DTO_V0.capabilityLanes[0],
+      ],
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      components: LOCAL_HD_WORKER_READINESS_DTO_V0.components.map(
+        (component, index) => index === 0
+          ? { ...component, unexpectedField: true }
+          : component,
+      ),
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      e57Environment: {
+        ...LOCAL_HD_WORKER_READINESS_DTO_V0.e57Environment,
+        unexpectedReadyFlag: true,
+      },
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      e57Environment: {
+        ...LOCAL_HD_WORKER_READINESS_DTO_V0.e57Environment,
+        artifacts: LOCAL_HD_WORKER_READINESS_DTO_V0.e57Environment.artifacts
+          .map((artifact) => artifact.id === "pye57-wheel"
+            ? {
+              ...artifact,
+              filename: "pye57-0.4.19-cp310-cp310-win_amd64.whl",
+            }
+            : artifact),
+      },
+    })).toThrow();
+    expect(() => parseReadiness({
+      ...LOCAL_HD_WORKER_READINESS_DTO_V0,
+      e57Environment: {
+        ...LOCAL_HD_WORKER_READINESS_DTO_V0.e57Environment,
+        bundle: {
+          ...LOCAL_HD_WORKER_READINESS_DTO_V0.e57Environment.bundle,
+          state: "verified",
+        },
+      },
+    })).toThrow();
   });
 
   it("uses text nodes and fixed local routes instead of executable browser escape hatches", () => {
@@ -48,17 +212,21 @@ describe("Foundry local app browser assets", () => {
     expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="quality-decision-board"');
     expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="source-facts"');
     expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="source-facts-list"');
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Universal Source Facts V5");
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Established facts come only from the fingerprinted E57, binary GLB, OBJ, SPZ, stored-ZIP SOG v2, classic Gaussian PLY, JPEG, PNG, ISO Base Media, CSV, and JSON bytes");
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Calibration or trajectory document structure does not prove field semantics");
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Coverage applies only to the selected receipt root and file set");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Universal Source Facts V7");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("V7 preserves the complete V6 source-facts artifact");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("exact Potree v2 metadata.json, hierarchy.bin, and octree.bin bundles");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("does not decode point values or establish units, frame, CRS, physical bounds, completeness, registration, accuracy, provenance, rights, or viewer fidelity");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Coverage applies only to this fingerprinted receipt root and file set");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="potree-source-facts-list"');
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("function renderSourceFacts(value)");
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("Established from these exact bytes");
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("for (const asset of value.assets)");
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("for (const item of asset.unknowns || [])");
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("function appendPointPlyProperties(target, properties)");
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain("declared point PLY properties and byte offsets");
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain('"/api/source-facts"');
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
-      '"foundry-universal-source-facts-v5.json"',
+      '"foundry-universal-source-facts-v7.json"',
     );
     expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="source-facts-download-status"');
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
@@ -110,15 +278,13 @@ describe("Foundry local app browser assets", () => {
 
   it("separates unresolved facts from source-level Source Facts coverage", () => {
     const sourceFactsRenderer = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
-      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function renderSourceFacts"),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function renderInheritedSourceFacts"),
       LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function sourceReadinessStatusLabel"),
     );
 
-    expect(sourceFactsRenderer).toContain(
-      'value.assets.reduce((total, asset) => total + (asset.unknowns || []).length, 0)',
-    );
-    expect(sourceFactsRenderer).toContain('["Unresolved facts", unresolvedFactCount]');
-    expect(sourceFactsRenderer).toContain('["Sources not established or untargeted",');
+    expect(sourceFactsRenderer).toContain('["Inherited V6 assets", summary.inheritedAssetCount]');
+    expect(sourceFactsRenderer).toContain('["Potree bundles", summary.potreeBundleCount]');
+    expect(sourceFactsRenderer).toContain('["Potree structures established", summary.establishedPotreeBundleCount]');
     expect(sourceFactsRenderer).not.toContain('["Gaps or outside scope",');
     expect(sourceFactsRenderer).toContain("receiptCandidateInputTypes");
     expect(sourceFactsRenderer).toContain("Container facts do not select a camera or panorama role, or a captured, enhanced, generated, or concept provenance class.");
@@ -134,6 +300,26 @@ describe("Foundry local app browser assets", () => {
     expect(sourceFactsRenderer).toContain('"Document structure not established"');
     expect(sourceFactsRenderer).toContain("Established document structure from these exact bytes");
     expect(sourceFactsRenderer).toContain("Still unknown beyond document structure");
+    expect(sourceFactsRenderer).toContain("function appendPotreeMemberIdentities(parent, bundle)");
+    expect(sourceFactsRenderer).toContain("Exact three-member identity (");
+    expect(sourceFactsRenderer).toContain("function potreeCompatibilityNotes(bundle)");
+    expect(sourceFactsRenderer).toContain("Compatibility deviations and boundaries (");
+    expect(sourceFactsRenderer).toContain('compatibility.declaredHierarchyDepth === "differs_from_observed_accepted"');
+    expect(sourceFactsRenderer).toContain('compatibility.leafChildMasks === "observed_and_accepted_by_official_loader_semantics"');
+    expect(sourceFactsRenderer).toContain("leaf hierarchy records advertise child masks");
+    expect(sourceFactsRenderer).toContain('compatibility.proxyReplacementDeclarations === "target_record_overwrite_mismatches_observed_and_accepted"');
+    expect(sourceFactsRenderer).toContain("proxyReplacementChildMaskMismatchCount");
+    expect(sourceFactsRenderer).toContain("proxyReplacementPointCountMismatchCount");
+    expect(sourceFactsRenderer).toContain("attribute.histogramDeclared === false");
+    expect(sourceFactsRenderer).toContain('compatibility.attributeHistograms === "omitted_and_accepted"');
+    expect(sourceFactsRenderer).toContain('compatibility.attributeHistograms === "partially_declared"');
+    expect(sourceFactsRenderer).toContain("Metadata omits optional attribute histograms");
+    expect(sourceFactsRenderer).toContain("official loader can calculate histograms after loading");
+    expect(sourceFactsRenderer).toContain('["Proxy declarations", sourceFactLabel(bundle.facts.compatibility.proxyReplacementDeclarations)]');
+    expect(sourceFactsRenderer).toContain("for (const note of notes)");
+    expect(sourceFactsRenderer).toContain("Frozen scope boundary: ");
+    expect(sourceFactsRenderer).toContain("function appendPotreeUnknowns(parent, bundle)");
+    expect(sourceFactsRenderer).toContain("for (const unknown of unknowns)");
     expect(LOCAL_FOUNDRY_APP_CSS).toContain(
       ".source-facts-summary { display: grid; gap: 10px; grid-template-columns: repeat(5, minmax(0, 1fr));",
     );
@@ -199,18 +385,18 @@ describe("Foundry local app browser assets", () => {
     expect(sourceReadinessIndex).toBeGreaterThan(sourceFactsIndex);
     expect(receiptFooterIndex).toBeGreaterThan(sourceReadinessIndex);
     expect(guidedWorkflowIndex).toBeGreaterThan(receiptFooterIndex);
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Source Readiness Map V5");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Source Readiness Map V7");
     expect(LOCAL_FOUNDRY_APP_HTML).toContain(
       "What this source set covers—and what is still missing",
     );
     expect(LOCAL_FOUNDRY_APP_HTML).toContain("Pre-admission map · authority none");
     expect(LOCAL_FOUNDRY_APP_HTML).toContain(
-      "This reports receipt-stage candidates and byte-fact coverage only.",
+      "V7 preserves the complete V6 receipt-stage map and adds path-specific Potree bundle refinements below it.",
     );
     expect(LOCAL_FOUNDRY_APP_HTML).toContain(
-      "It does not approve files, compile a route or recipe, select a worker or provider, establish rights, accuracy, or registration, or say anything can run.",
+      "A refinement changes only this evidence view; it does not remove the inherited record, approve files, establish processing readiness, compile a route or recipe, select a worker or provider, establish rights, accuracy, or registration, or say anything can run.",
     );
-    expect(LOCAL_FOUNDRY_APP_HTML).not.toContain("Source Readiness Map V5 Ready");
+    expect(LOCAL_FOUNDRY_APP_HTML).not.toContain("Source Readiness Map V7 Ready");
     expect(LOCAL_FOUNDRY_APP_HTML).not.toContain("Supported");
     expect(LOCAL_FOUNDRY_APP_HTML).not.toContain("Processable");
   });
@@ -222,9 +408,9 @@ describe("Foundry local app browser assets", () => {
     );
 
     expect(renderer).toContain("function renderSourceReadiness(value)");
-    expect(renderer).toContain('all_observed_facts_established: "All observed Source Facts V5 established"');
-    expect(renderer).toContain('facts_established: "Source Facts V5 established"');
-    expect(renderer).toContain('outside_source_facts_v5: "Outside Source Facts V5"');
+    expect(renderer).toContain('all_observed_facts_established: "All observed Source Facts V6 established"');
+    expect(renderer).toContain('facts_established: "Source Facts V6 established"');
+    expect(renderer).toContain('outside_source_facts_v6: "Outside Source Facts V6"');
     expect(renderer).not.toContain("outside_source_facts_v1");
     expect(renderer).toContain('evidence_incomplete: "Evidence incomplete"');
     expect(renderer).toContain('no_source_observed: "No source observed"');
@@ -248,12 +434,12 @@ describe("Foundry local app browser assets", () => {
       'id="source-readiness-blocker" class="plain-warning source-readiness-blocker" role="alert" aria-live="assertive" aria-atomic="true" hidden',
     );
     const renderer = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
-      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function renderSourceReadiness(value)"),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function renderInheritedSourceReadiness(value)"),
       LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function updateSaveStep"),
     );
     const blockedBranch = renderer.slice(
       renderer.indexOf('if (value.state === "blocked")'),
-      renderer.indexOf("const summary = value.summary || {}"),
+      renderer.indexOf("for (const lane of value.lanes || [])"),
     );
 
     expect(blockedBranch).toContain("sourceReadinessSummary.hidden = true");
@@ -295,7 +481,7 @@ describe("Foundry local app browser assets", () => {
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain('"/api/source-readiness"');
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
-      '"foundry-source-readiness-map-v5.json"',
+      '"foundry-source-readiness-map-v7.json"',
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
       "sourceReadiness && sourceReadiness.readinessSha256",
@@ -317,7 +503,7 @@ describe("Foundry local app browser assets", () => {
 
     expect(checklistIndex).toBeGreaterThan(readinessIndex);
     expect(receiptFooterIndex).toBeGreaterThan(checklistIndex);
-    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Operator Evidence Checklist V5");
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Operator Evidence Checklist V7");
     expect(LOCAL_FOUNDRY_APP_HTML).toContain("What to collect or verify next");
     expect(LOCAL_FOUNDRY_APP_HTML).toContain(
       "Pre-admission requests · authority none",
@@ -358,13 +544,17 @@ describe("Foundry local app browser assets", () => {
     expect(renderer).toContain("Still not established: ");
     expect(renderer).toContain("Affected source families: ");
     expect(renderer).toContain("Source families: ");
-    expect(renderer).toContain("Source paths / distinct contents");
+    expect(renderer).toContain('["Inherited V6 requests", summary.inheritedEvidenceRequestCount]');
+    expect(renderer).toContain('["Potree requests", summary.potreeEvidenceRequestCount]');
     expect(renderer).toContain("exact-content duplicate · group SHA-256 ");
     expect(renderer).toContain("unique within this receipt");
     expect(renderer).toContain(
       "No existing source path — this conditional request concerns a missing source family. Its necessity is not evaluated.",
     );
     expect(renderer).toContain('element("details", "evidence-source-details")');
+    expect(renderer).toContain("function renderPotreeEvidenceRequest(request)");
+    expect(renderer).toContain("request.sourceFactsBundle.inspection");
+    expect(renderer).toContain("function renderPotreeOperatorEvidence(requests, supersededRefs)");
     expect(renderer).not.toContain(".slice(");
     expect(renderer).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/u);
   });
@@ -372,13 +562,13 @@ describe("Foundry local app browser assets", () => {
   it("keeps XBIN checklist output to one polite export blocker while retaining the digest footer", () => {
     const renderer = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
       LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
-        "function renderOperatorEvidenceChecklist(value)",
+        "function renderInheritedOperatorEvidenceChecklist(value)",
       ),
       LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf("function updateSaveStep"),
     );
     const blockedBranch = renderer.slice(
       renderer.indexOf('if (value.state === "blocked")'),
-      renderer.indexOf("const summary = value.summary || {}"),
+      renderer.indexOf("const itemsById = new Map"),
     );
 
     expect(blockedBranch).toContain("operatorEvidenceSummary.hidden = true");
@@ -412,7 +602,7 @@ describe("Foundry local app browser assets", () => {
       ".operator-evidence-head, .operator-evidence-group-head, .operator-evidence-item-head { align-items: flex-start; flex-direction: column; }",
     );
     expect(LOCAL_FOUNDRY_APP_CSS).toContain(
-      ".source-fact-card-head, .source-facts-footer, .source-readiness-footer, .operator-evidence-footer { align-items: flex-start; flex-direction: column; }",
+      ".source-fact-card-head, .source-facts-footer, .source-readiness-footer, .operator-evidence-footer, .potree-v7-heading, .potree-bundle-card-head, .potree-refinement-card-head, .v7-inherited-heading { align-items: flex-start; flex-direction: column; }",
     );
     expect(LOCAL_FOUNDRY_APP_CSS).not.toContain(
       ".operator-evidence-groups { overflow-x:",
@@ -430,7 +620,7 @@ describe("Foundry local app browser assets", () => {
       '"/api/operator-evidence-checklist"',
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
-      '"foundry-operator-evidence-checklist-v5.json"',
+      '"foundry-operator-evidence-checklist-v7.json"',
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
       "operatorEvidenceChecklist && operatorEvidenceChecklist.checklistSha256",
@@ -456,7 +646,7 @@ describe("Foundry local app browser assets", () => {
       /window\.addEventListener\("beforeunload"[\s\S]*?!reviewDirty && !planDirty && !unsavedDraft && !unsavedPlan/u,
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
-      /stopResult\.verificationStopped !== true \|\|\s+stopResult\.offlinePreviewStopped !== true[\s\S]*?reviewDirty = false;\s+planDirty = false;\s+admissionArtifact = null;\s+planArtifact = null;/u,
+      /stopResult\.verificationStopped !== true \|\|\s+stopResult\.preparedHdDatasetStopped !== true \|\|\s+stopResult\.photoCaptureQualityStopped !== true \|\|\s+stopResult\.capturedQualityComparisonStopped !== true \|\|\s+stopResult\.offlinePreviewStopped !== true[\s\S]*?reviewDirty = false;\s+planDirty = false;\s+admissionArtifact = null;\s+planArtifact = null;/u,
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
       /function renderAdmissionSuccess\(value\)[\s\S]*?reviewDirty = false;/u,
@@ -472,6 +662,44 @@ describe("Foundry local app browser assets", () => {
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
       /function renderPlanPreview\(value\)[\s\S]*?planDirty = false;/u,
+    );
+  });
+
+  it("never downloads the complete file from stale or unbuilt screen choices", () => {
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="download-handoff-button"');
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain("Download one complete file");
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "let completeHandoffRevisionSha256 = null;",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "let completeHandoffMaximumSerializedBytes = 32 * 1024 * 1024;",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /function syncCompleteHandoffAvailability\(state = null\)[\s\S]*?if \(reviewDirty\)[\s\S]*?downloadHandoffButton\.disabled = true;[\s\S]*?if \(planDirty\)[\s\S]*?downloadHandoffButton\.disabled = true;/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /completeHandoffStatus === "ready" && completeHandoffRevisionSha256 !== null[\s\S]*?downloadHandoffButton\.disabled = false;/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).not.toMatch(
+      /function renderReceipt\(value, facts\)[\s\S]*?downloadHandoffButton\.disabled = false;[\s\S]*?function syncServerAdmissionBinding/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /downloadHandoffButton\.addEventListener\("click"[\s\S]*?const requestedRevisionSha256 = completeHandoffRevisionSha256;[\s\S]*?completeHandoffRevisionSha256 === requestedRevisionSha256/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "Your choices changed while the complete file was being prepared. Nothing was saved.",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "Download requested. The source was rechecked first",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "Check your Downloads folder before closing this session.",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "The complete file must stay under \" + formatBytes(completeHandoffMaximumSerializedBytes)",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).not.toContain(
+      'handoffDownloadHelp.textContent = "Saved.',
     );
   });
 
@@ -523,12 +751,304 @@ describe("Foundry local app browser assets", () => {
   });
 });
 
+describe("captured-quality comparison browser surface", () => {
+  it("uses stable unique IDs between guided review and the optional GLB preview", () => {
+    const capturedIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="captured-quality-comparison"',
+    );
+    const planIndex = LOCAL_FOUNDRY_APP_HTML.indexOf('id="plan-workbench"');
+    const offlinePreviewIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="offline-normalization-preview"',
+    );
+    const stepStart = LOCAL_FOUNDRY_APP_HTML.indexOf('<ol class="steps"');
+    const stepEnd = LOCAL_FOUNDRY_APP_HTML.indexOf("</ol>", stepStart);
+
+    expect(capturedIndex).toBeGreaterThan(planIndex);
+    expect(offlinePreviewIndex).toBeGreaterThan(capturedIndex);
+    expect(LOCAL_FOUNDRY_APP_HTML.slice(stepStart, stepEnd)).not.toContain(
+      "captured-quality",
+    );
+    for (const id of [
+      "captured-quality-comparison",
+      "captured-quality-heading",
+      "captured-quality-status",
+      "captured-quality-status-heading",
+      "captured-quality-status-copy",
+      "captured-quality-meter-bar",
+      "captured-quality-result-facts",
+      "captured-quality-view-count",
+      "captured-quality-capture-count",
+      "captured-quality-source-integrity",
+      "captured-quality-winner",
+      "captured-quality-report-sha",
+      "captured-quality-error",
+      "start-captured-quality-button",
+      "cancel-captured-quality-button",
+      "download-captured-quality-report-button",
+    ]) {
+      expect(LOCAL_FOUNDRY_APP_HTML.split(`id="${id}"`).length - 1).toBe(1);
+    }
+  });
+
+  it("states the exact local evidence boundary without choosing a winner", () => {
+    const panelStart = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="captured-quality-comparison"',
+    );
+    const panelEnd = LOCAL_FOUNDRY_APP_HTML.indexOf("</section>", panelStart);
+    const panel = LOCAL_FOUNDRY_APP_HTML.slice(panelStart, panelEnd);
+
+    expect(panel).toContain("Local regression check · authority none");
+    expect(panel).toContain("real Living Hall renderer on this computer");
+    expect(panel).toContain("four frozen SOG files and four frozen SPZ files");
+    expect(panel).toContain("same six camera views twice");
+    expect(panel).toContain("8 exact local files");
+    expect(panel).toContain("6 × 2 candidates × 2 repeats");
+    expect(panel).toContain("Declared external requests</dt><dd>0");
+    expect(panel).toContain("Winner</dt><dd>Not selected");
+    expect(panel).toContain("does not choose which room is physically truer");
+    expect(panel).toContain("regression-triage evidence only");
+    expect(panel).toContain("does not establish metric accuracy, usage rights, release permission, or product acceptance");
+  });
+
+  it("parses only the exact DTO, fixed authority, and six-view twenty-four-capture report", () => {
+    const executableParser = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function hasExactObjectKeys(value, expectedKeys)",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function clearCapturedQualityPoll()",
+      ),
+    );
+    const harness: {
+      parseCapturedQualityForTest?: (value: unknown) => unknown;
+    } = {};
+    new Script(
+      `${executableParser}\nglobalThis.parseCapturedQualityForTest = parseCapturedQualityComparison;`,
+      { filename: "local-foundry-captured-quality-parser.js" },
+    ).runInNewContext(harness);
+    const parseCapturedQuality = harness.parseCapturedQualityForTest;
+    if (parseCapturedQuality === undefined) {
+      throw new Error("captured-quality parser test harness was not installed");
+    }
+
+    const ready = {
+      state: "ready",
+      requestId: null,
+      authority: "none",
+      winner: "not_selected",
+      message: "Ready for the exact local comparison.",
+      failureCode: null,
+      progress: { phase: "ready", completed: 0, total: 0 },
+      report: null,
+    };
+    const report = {
+      schemaVersion: "omnitwin.foundry.captured-quality-comparison-report.v0",
+      reportSha256: "a".repeat(64),
+      generatedAt: "2026-07-18T16:00:00.000Z",
+      sourceReceiptSha256: null,
+      rendererProfileId: "reception-fixed-v1",
+      viewCount: 6,
+      captureCount: 24,
+      pairMetricCount: 6,
+    };
+    const completed = {
+      ...ready,
+      state: "completed",
+      requestId: "1".repeat(32),
+      message: "The exact local comparison completed.",
+      progress: { phase: "completed", completed: 24, total: 24 },
+      report,
+    };
+
+    expect(parseCapturedQuality(ready)).toBe(ready);
+    expect(parseCapturedQuality(completed)).toBe(completed);
+    expect(() => parseCapturedQuality({ ...ready, extra: true }))
+      .toThrow("captured-quality field this page does not accept");
+    expect(() => parseCapturedQuality({ ...ready, winner: "quality_selected" }))
+      .toThrow("unknown captured-quality boundary");
+    for (const [field, value] of [
+      ["viewCount", 5],
+      ["captureCount", 23],
+      ["pairMetricCount", 5],
+    ] as const) {
+      expect(() => parseCapturedQuality({
+        ...completed,
+        report: { ...report, [field]: value },
+      })).toThrow("invalid captured-quality report summary");
+    }
+  });
+
+  it("uses fixed routes, exact request bodies, stale guards, polling, and a digest-bound report", () => {
+    const interactions = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-captured-quality-button").addEventListener',
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-offline-preview-button").addEventListener',
+      ),
+    );
+    const downloader = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "async function downloadCapturedQualityReport(button)",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function offlinePreviewNeedsAttention()",
+      ),
+    );
+
+    expect(interactions).toContain(
+      'postJson("/api/captured-quality-comparison/start", { requestId })',
+    );
+    expect(interactions).toContain(
+      'postJson("/api/captured-quality-comparison/cancel", { requestId: expectedRequestId })',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'postJson("/api/captured-quality-comparison/status", { requestId: expectedRequestId })',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'postJson("/api/captured-quality-comparison/status", { requestId })',
+    );
+    expect(interactions).toContain(
+      "pendingCapturedQualityRequestId !== requestId",
+    );
+    expect(interactions).toContain(
+      "capturedQualityArtifact.requestId !== expectedRequestId",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "capturedQualityPollTimer = null;\n      void pollCapturedQualityComparison();",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "scheduleCapturedQualityPoll();",
+    );
+    expect(downloader).toContain(
+      '"/api/captured-quality-comparison/report"',
+    );
+    expect(downloader).toContain(
+      '"&requestId=" + encodeURIComponent(expectedRequestId)',
+    );
+    expect(downloader).toContain(
+      '"&digest=" + encodeURIComponent(expectedDigest)',
+    );
+    expect(downloader).toContain(
+      "capturedQualityArtifact.report.reportSha256 !== expectedDigest",
+    );
+    expect(downloader).toContain(
+      'link.download = "foundry-captured-quality-comparison-report-v0.json"',
+    );
+    expect(interactions).not.toMatch(
+      /repoRoot|qualityRoot|mobileRoot|outputRoot|sourcePath|command|environment/u,
+    );
+  });
+
+  it("keeps cancellation and terminal state monotonic for the same request", () => {
+    const renderer = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function renderCapturedQualityComparison",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "async function pollCapturedQualityComparison",
+      ),
+    );
+    const cancelInteraction = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("cancel-captured-quality-button").addEventListener',
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("download-captured-quality-report-button").addEventListener',
+      ),
+    );
+    const clearClientState = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function clearCapturedQualityClientState()",
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        "function offlinePreviewNeedsAttention()",
+      ),
+    );
+
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "let pendingCapturedQualityCancellationId = null;",
+    );
+    expect(renderer).toContain(
+      'const currentIsTerminal = ["completed", "failed"].includes(capturedQualityArtifact.state);',
+    );
+    expect(renderer).toContain(
+      "if (currentIsTerminal && parsed.state !== capturedQualityArtifact.state) return false;",
+    );
+    expect(renderer).toContain(
+      "pendingCapturedQualityCancellationId === parsed.requestId &&\n        parsed.state === \"running\"",
+    );
+    expect(renderer.indexOf("const currentIsTerminal")).toBeLessThan(
+      renderer.indexOf("capturedQualityArtifact = parsed;"),
+    );
+    expect(renderer.indexOf("pendingCapturedQualityCancellationId === parsed.requestId")).toBeLessThan(
+      renderer.indexOf("capturedQualityArtifact = parsed;"),
+    );
+    expect(renderer).toContain(
+      "pendingCapturedQualityCancellationId === parsed.requestId &&\n      [\"completed\", \"failed\"].includes(parsed.state)",
+    );
+
+    const markCancellation = cancelInteraction.indexOf(
+      "pendingCapturedQualityCancellationId = expectedRequestId;",
+    );
+    const stopPolling = cancelInteraction.indexOf("clearCapturedQualityPoll();");
+    const sendCancellation = cancelInteraction.indexOf(
+      'postJson("/api/captured-quality-comparison/cancel", { requestId: expectedRequestId })',
+    );
+    expect(markCancellation).toBeGreaterThan(-1);
+    expect(stopPolling).toBeGreaterThan(markCancellation);
+    expect(sendCancellation).toBeGreaterThan(stopPolling);
+    expect(cancelInteraction).toContain(
+      "await recoverCapturedQualityAfterLostResponse(expectedRequestId)",
+    );
+    expect(cancelInteraction).toMatch(
+      /if \(!recovered\)[\s\S]*?pendingCapturedQualityCancellationId = null;[\s\S]*?scheduleCapturedQualityPoll\(\);/u,
+    );
+    expect(clearClientState).toContain(
+      "pendingCapturedQualityCancellationId = null;",
+    );
+  });
+
+  it("keeps running or undownloaded work visible to stop, tab-close, and mobile flows", () => {
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="captured-quality-status" class="captured-quality-status" data-state="ready" role="status" aria-live="polite" aria-atomic="true"',
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="captured-quality-error" class="error-panel" role="alert" tabindex="-1" hidden',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "function capturedQualityNeedsAttention()",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'return capturedQualityArtifact.state === "completed" && !downloadedCapturedQualityReport;',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /stopButton\.addEventListener\("click"[\s\S]*?capturedComparisonNeedsAttention \|\| privatePreviewNeedsAttention/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "stopResult.capturedQualityComparisonStopped !== true",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /window\.addEventListener\("beforeunload"[\s\S]*?!capturedComparisonNeedsAttention && !privatePreviewNeedsAttention/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".captured-quality-boundaries, .captured-quality-result-facts, .offline-preview-boundaries, .offline-preview-result-facts { grid-template-columns: 1fr; }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".captured-quality-head, .offline-preview-head { align-items: flex-start; flex-direction: column; }",
+    );
+  });
+});
+
 describe("offline GLB format preview browser surface", () => {
   it("places one optional panel after the guided review without making it a required step", () => {
     const guidedIndex = LOCAL_FOUNDRY_APP_HTML.indexOf('id="guided-workflow"');
     const planIndex = LOCAL_FOUNDRY_APP_HTML.indexOf('id="plan-workbench"');
     const previewIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
       'id="offline-normalization-preview"',
+    );
+    const capturedQualityIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="captured-quality-comparison"',
     );
     const previewTagIndex = LOCAL_FOUNDRY_APP_HTML.lastIndexOf(
       "<section",
@@ -537,14 +1057,15 @@ describe("offline GLB format preview browser surface", () => {
     const stepStart = LOCAL_FOUNDRY_APP_HTML.indexOf('<ol class="steps"');
     const stepEnd = LOCAL_FOUNDRY_APP_HTML.indexOf("</ol>", stepStart);
     const immediatelyBeforePreview = LOCAL_FOUNDRY_APP_HTML.slice(
-      guidedIndex,
+      capturedQualityIndex,
       previewTagIndex,
     );
 
     expect(guidedIndex).toBeGreaterThan(-1);
     expect(planIndex).toBeGreaterThan(guidedIndex);
-    expect(previewIndex).toBeGreaterThan(planIndex);
-    expect(immediatelyBeforePreview).toMatch(/<\/section>\s*<\/section>\s*$/u);
+    expect(capturedQualityIndex).toBeGreaterThan(planIndex);
+    expect(previewIndex).toBeGreaterThan(capturedQualityIndex);
+    expect(immediatelyBeforePreview).toMatch(/<\/section>\s*$/u);
     expect(LOCAL_FOUNDRY_APP_HTML.slice(stepStart, stepEnd)).not.toContain(
       "offline-preview",
     );
@@ -776,19 +1297,488 @@ describe("offline GLB format preview browser surface", () => {
       "function offlinePreviewNeedsAttention()",
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
-      /stopButton\.addEventListener\("click"[\s\S]*?verificationStillRunning \|\| privatePreviewNeedsAttention/u,
+      /stopButton\.addEventListener\("click"[\s\S]*?verificationStillRunning \|\| preparedDatasetNeedsAttention \|\| photoQualityNeedsReview \|\| capturedComparisonNeedsAttention \|\| privatePreviewNeedsAttention/u,
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
-      /window\.addEventListener\("beforeunload"[\s\S]*?!verificationStillRunning && !privatePreviewNeedsAttention/u,
+      /window\.addEventListener\("beforeunload"[\s\S]*?!verificationStillRunning && !preparedDatasetNeedsAttention && !photoQualityNeedsReview && !capturedComparisonNeedsAttention && !privatePreviewNeedsAttention/u,
     );
     expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
-      "the app will clear its preview buffer on a best-effort basis",
+      "schedulePhotoQualityPoll();",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "the app will clear that buffer on a best-effort basis when time ends.",
     );
     expect(LOCAL_FOUNDRY_APP_CSS).toContain(
-      ".offline-preview-boundaries, .offline-preview-result-facts { grid-template-columns: 1fr; }",
+      ".prepared-hd-boundaries, .prepared-hd-result-facts, .captured-quality-boundaries, .captured-quality-result-facts, .offline-preview-boundaries, .offline-preview-result-facts { grid-template-columns: 1fr; }",
     );
     expect(LOCAL_FOUNDRY_APP_CSS).toContain(
-      ".offline-preview-head { align-items: flex-start; flex-direction: column; }",
+      ".prepared-hd-head, .captured-quality-head, .offline-preview-head { align-items: flex-start; flex-direction: column; }",
     );
+  });
+});
+
+describe("prepared HD dataset browser surface", () => {
+  const receiptSha256 = "1".repeat(64);
+  const readinessReceiptSha256 = "2".repeat(64);
+  const requestId = "0123456789abcdef0123456789abcdef";
+  const ready = {
+    schemaVersion: "omnitwin.foundry.local-prepared-hd-dataset-gate.v0",
+    state: "ready",
+    authority: "none",
+    operation: "prepared_dataset_validation_only",
+    receiptSha256,
+    requestId: null,
+    message: "The exact package layout is ready for validation.",
+    failureCode: null,
+    report: null,
+  } as const;
+  const completed = {
+    ...ready,
+    state: "completed",
+    requestId,
+    message: "Prepared package validated; execution remains disabled.",
+    report: {
+      schemaVersion: "omnitwin.foundry.prepared-hd-dataset-readiness.v0",
+      readinessReceiptSha256,
+      sourceReceiptSha256: receiptSha256,
+      cameraCount: 2,
+      imageCount: 3,
+      runtimeImageCount: 3,
+      trainImageCount: 2,
+      heldoutImageCount: 1,
+      pointCount: 2,
+      depthPriorCount: 2,
+    },
+  } as const;
+
+  function parser(): (value: unknown) => unknown {
+    const source = LOCAL_FOUNDRY_APP_JAVASCRIPT;
+    const helpers = source.slice(
+      source.indexOf("function hasExactObjectKeys(value, expectedKeys)"),
+      source.indexOf("function clearPreparedHdPoll()"),
+    );
+    const harness: {
+      parsePreparedHdDatasetForTest?: (value: unknown) => unknown;
+    } = {};
+    new Script(
+      `${helpers}\nglobalThis.parsePreparedHdDatasetForTest = parsePreparedHdDataset;`,
+      { filename: "local-foundry-prepared-hd-parser.js" },
+    ).runInNewContext(harness);
+    if (harness.parsePreparedHdDatasetForTest === undefined) {
+      throw new Error("prepared HD parser test harness was not installed");
+    }
+    return harness.parsePreparedHdDatasetForTest;
+  }
+
+  it("presents an honest local input gate with no execution claim", () => {
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain('id="prepared-hd-dataset"');
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Validate reconstruction inputs before any HD work",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Prepared package validated; photo registration, reconstruction, training, and enhancement were not performed.",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "Depth required · factor 2 · test every 8",
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="prepared-hd-status" class="prepared-hd-status" data-state="unavailable" role="status" aria-live="polite" aria-atomic="true"',
+    );
+  });
+
+  it("accepts only exact authority-none DTOs with coherent prepared evidence counts", () => {
+    const parse = parser();
+    expect(() => parse(ready)).not.toThrow();
+    expect(() => parse(completed)).not.toThrow();
+    expect(() => parse({ ...ready, training: true })).toThrow(
+      "field this page does not accept",
+    );
+    expect(() => parse({ ...ready, authority: "operator" })).toThrow(
+      "unsafe prepared-dataset boundary",
+    );
+    expect(() => parse({
+      ...completed,
+      report: { ...completed.report, heldoutImageCount: 2 },
+    })).toThrow("inconsistent prepared-dataset evidence counts");
+    expect(() => parse({
+      ...completed,
+      report: { ...completed.report, sourceReceiptSha256: "3".repeat(64) },
+    })).toThrow("internally inconsistent prepared-dataset state");
+  });
+
+  it("uses fixed local routes and sends no browser-selected paths or options", () => {
+    const interactions = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-prepared-hd-button").addEventListener',
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-photo-quality-button").addEventListener',
+      ),
+    );
+    expect(interactions).toContain(
+      'postJson("/api/prepared-hd-dataset/start", {',
+    );
+    expect(interactions).toContain(
+      "receiptSha256: preparedHdArtifact.receiptSha256",
+    );
+    expect(interactions).toContain(
+      'postJson("/api/prepared-hd-dataset/cancel", {',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'postJson("/api/prepared-hd-dataset/status", { requestId: expectedRequestId })',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'const requestUrl = "/api/prepared-hd-dataset/report" +',
+    );
+    expect(interactions).not.toMatch(
+      /sourceRoot|repoRoot|packageRoot|pythonExecutable|dataFactor|testEvery|depthRequired/u,
+    );
+  });
+});
+
+describe("photo capture quality browser surface", () => {
+  it("keeps assignments attributable, revisions monotonic, and result gaps actionable", () => {
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="photo-quality-meter" class="photo-quality-meter" role="progressbar"',
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="photo-quality-live" class="sr-only" role="status"',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      '["path", "mediaType", "sizeBytes", "suggestedRole", "assignedRole", "protocolSlot"]',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'element("span", "sr-only", " for " + candidate.path)',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      '(candidate.assignedRole || candidate.suggestedRole) === optionSpec[0]',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'parsed.runRevision < photoQualityArtifact.runRevision',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'photoQualityArtifact.state !== "cancelled"',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      '["Assigned photos outside the naming protocol", report.unmatchedAssignedPaths]',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'leftPath + " ↔ " + rightPath',
+    );
+  });
+});
+
+describe("durable local intake workspace browser surface", () => {
+  const receiptSha256 = "1".repeat(64);
+  const workspaceSha256 = "2".repeat(64);
+  const requestId = "0123456789abcdef0123456789abcdef";
+  const workspace = {
+    workspaceSha256,
+    fileCount: 4,
+    totalBytes: 20,
+    truth: {
+      pendingReview: 1,
+      admitted: 2,
+      excluded: 1,
+      captured: 1,
+      enhancedCaptured: 1,
+      generatedCinematic: 0,
+      conceptImagination: 0,
+    },
+  } as const;
+  const ready = {
+    schemaVersion: "omnitwin.foundry.local-intake-workspace-controller.v0",
+    state: "ready",
+    authority: "none",
+    operation: null,
+    configured: true,
+    receiptSha256,
+    requestId: null,
+    message: "Ready to keep the checked source in the configured local workspace.",
+    failureCode: null,
+    progress: null,
+    workspace: null,
+  } as const;
+  const copying = {
+    ...ready,
+    state: "copying",
+    operation: "copy_into_local_workspace",
+    requestId,
+    message: "Copying the checked source.",
+    progress: {
+      copiedFileCount: 2,
+      fileCount: 4,
+      copiedBytes: 10,
+      totalBytes: 20,
+    },
+  } as const;
+  const stored = {
+    ...copying,
+    state: "stored",
+    message: "Verified local copy stored.",
+    progress: {
+      copiedFileCount: 4,
+      fileCount: 4,
+      copiedBytes: 20,
+      totalBytes: 20,
+    },
+    workspace,
+  } as const;
+
+  function parser(): (value: unknown) => unknown {
+    const source = LOCAL_FOUNDRY_APP_JAVASCRIPT;
+    const helpers = source.slice(
+      source.indexOf("function hasExactObjectKeys(value, expectedKeys)"),
+      source.indexOf("function parsePreparedHdDataset(value)"),
+    );
+    const harness: {
+      parseLocalIntakeWorkspaceForTest?: (value: unknown) => unknown;
+    } = {};
+    new Script(
+      `${helpers}\nglobalThis.parseLocalIntakeWorkspaceForTest = parseLocalIntakeWorkspace;`,
+      { filename: "local-foundry-intake-workspace-parser.js" },
+    ).runInNewContext(harness);
+    if (harness.parseLocalIntakeWorkspaceForTest === undefined) {
+      throw new Error("local intake workspace parser test harness was not installed");
+    }
+    return harness.parseLocalIntakeWorkspaceForTest;
+  }
+
+  it("offers one plain-language, receipt-ready local-copy panel with honest boundaries", () => {
+    const panelIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="local-intake-workspace"',
+    );
+    const metricsIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'class="metrics"',
+    );
+    const formatsIndex = LOCAL_FOUNDRY_APP_HTML.indexOf(
+      'id="formats-heading"',
+    );
+    const panel = LOCAL_FOUNDRY_APP_HTML.slice(panelIndex, formatsIndex);
+
+    expect(panelIndex).toBeGreaterThan(metricsIndex);
+    expect(formatsIndex).toBeGreaterThan(panelIndex);
+    expect(panel).toContain("Keep a verified copy on this computer");
+    expect(panel).toContain("The original source stays unchanged.");
+    expect(panel).toContain("Nothing is uploaded or processed");
+    expect(panel).toContain(
+      "no reconstruction, training, enhancement, or publishing runs",
+    );
+    expect(panel).toContain("truth labels stay separate");
+    expect(panel).toContain("close this workspace and reopen its verified record later");
+    expect(panel).toContain(
+      "select a new local workspace folder when starting Foundry",
+    );
+    expect(panel).toContain("Local copy · authority none");
+    expect(panel).toContain("External requests</dt><dd>0 · nothing is uploaded");
+    for (const label of [
+      "Pending review",
+      "Admitted",
+      "Excluded",
+      "Captured",
+      "Enhanced-captured",
+      "Generated cinematic",
+      "Concept / imagination",
+    ]) {
+      expect(panel).toContain(label);
+    }
+  });
+
+  it("accepts only the exact path-free DTO and coherent state/count combinations", () => {
+    const parse = parser();
+    const unavailable = {
+      ...ready,
+      state: "unavailable",
+      configured: false,
+      receiptSha256: null,
+      message: "No local workspace was configured for this session.",
+    };
+    const verifying = {
+      ...copying,
+      state: "verifying",
+      message: "Checking the copied files.",
+    };
+    const failed = {
+      ...copying,
+      state: "failed",
+      message: "The copy did not finish.",
+      failureCode: "LOCAL_INTAKE_WORKSPACE_COPY_FAILED",
+    };
+    const inspectionFailed = {
+      ...unavailable,
+      state: "failed",
+      configured: true,
+      message: "The configured local workspace could not be inspected.",
+      failureCode: "LOCAL_INTAKE_WORKSPACE_INSPECTION_FAILED",
+    };
+    const deleting = {
+      ...stored,
+      state: "deleting",
+      operation: "delete_local_workspace_copy",
+      requestId: "abcdef0123456789abcdef0123456789",
+      message: "Deleting the verified local copy.",
+      progress: null,
+    };
+    const deleted = {
+      ...deleting,
+      state: "deleted",
+      message: "The local copy was deleted.",
+      workspace: null,
+    };
+
+    for (const value of [
+      unavailable,
+      ready,
+      copying,
+      verifying,
+      stored,
+      failed,
+      inspectionFailed,
+      deleting,
+      deleted,
+    ]) {
+      expect(() => parse(value)).not.toThrow();
+    }
+    expect(() => parse({ ...ready, sourcePath: "C:/private" })).toThrow(
+      "field this page does not accept",
+    );
+    expect(() => parse({ ...ready, authority: "operator" })).toThrow(
+      "unsafe local-workspace boundary",
+    );
+    expect(() => parse({
+      ...stored,
+      workspace: {
+        ...workspace,
+        truth: { ...workspace.truth, pendingReview: 2 },
+      },
+    })).toThrow("inconsistent local-workspace truth counts");
+    expect(() => parse({
+      ...stored,
+      workspace: { ...workspace, workspaceSha256: `sha256:${workspaceSha256}` },
+    })).toThrow("invalid local-workspace identity");
+    expect(() => parse({
+      ...failed,
+      failureCode: "COPY_FAILED",
+    })).toThrow("invalid local-workspace failure code");
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'hasExactObjectKeys(value.progress, [\n        "copiedFileCount",\n        "fileCount",\n        "copiedBytes",\n        "totalBytes"',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'hasExactObjectKeys(value.workspace.truth, [',
+    );
+  });
+
+  it("uses only the five fixed routes and exact opaque browser bodies", () => {
+    const interactions = LOCAL_FOUNDRY_APP_JAVASCRIPT.slice(
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-local-intake-workspace-button").addEventListener',
+      ),
+      LOCAL_FOUNDRY_APP_JAVASCRIPT.indexOf(
+        'byId("start-prepared-hd-button").addEventListener',
+      ),
+    );
+    expect(interactions).toContain(
+      'postJson("/api/local-intake-workspace/start", {',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'postJson("/api/local-intake-workspace/status", { requestId: expectedRequestId })',
+    );
+    expect(interactions).toContain(
+      'postJson("/api/local-intake-workspace/cancel", {',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'apiUrl("/api/local-intake-workspace/report")',
+    );
+    expect(interactions).toContain(
+      'postJson("/api/local-intake-workspace/delete-and-stop", {',
+    );
+    expect(interactions).toContain('confirmation: "copy_into_local_workspace"');
+    expect(interactions).toContain('confirmation: "delete_local_workspace_copy"');
+    expect(interactions).toContain("const requestId = newVerificationRequestId();");
+    expect(interactions).toContain("receiptSha256,");
+    expect(interactions).toContain("workspaceSha256: workspaceDigest,");
+    expect(interactions).not.toMatch(
+      /sourcePath|workspacePath|sourceRoot|workspaceRoot|relativePath|directory|credential|environment/u,
+    );
+  });
+
+  it("renders monotonic copy, verification, storage, deletion, and report lifecycles", () => {
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'state.localIntakeWorkspace !== undefined',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "expectedLocalIntakeWorkspaceRequestId",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'const currentIsTerminal = ["stored", "failed", "deleted"].includes(localIntakeWorkspaceArtifact.state);',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'if (currentIsTerminal && parsed.state !== localIntakeWorkspaceArtifact.state) return false;',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      '["copying", "verifying", "deleting"].includes(value.state)',
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "localIntakeWorkspaceArtifact.workspace.workspaceSha256 !== expectedWorkspaceDigest",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      'link.download = "foundry-local-intake-workspace-record-v0.json"',
+    );
+    for (const heading of [
+      "Ready to keep a verified local copy",
+      "Copying the checked source",
+      "Verifying every copied file",
+      "Verified local copy stored",
+      "Deleting the local copy and stopping",
+      "Local workspace copy deleted",
+    ]) {
+      expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(heading);
+    }
+  });
+
+  it("requires explicit deletion confirmation and protects running work on stop", () => {
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="confirm-delete-local-intake-workspace" type="checkbox"',
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      'id="delete-local-intake-workspace-button" class="button button-danger" type="button" disabled',
+    );
+    expect(LOCAL_FOUNDRY_APP_HTML).toContain(
+      "This deletes the workspace copy and its saved record, then stops this local session. The original source stays unchanged.",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "!canDelete || !confirmDeleteLocalIntakeWorkspace.checked",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "function localIntakeWorkspaceNeedsAttention()",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /stopButton\.addEventListener\("click"[\s\S]*?privatePreviewNeedsAttention \|\| localWorkspaceNeedsAttention/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "stopResult.localIntakeWorkspaceStopped !== true",
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toMatch(
+      /window\.addEventListener\("beforeunload"[\s\S]*?!privatePreviewNeedsAttention && !localWorkspaceNeedsAttention/u,
+    );
+    expect(LOCAL_FOUNDRY_APP_JAVASCRIPT).toContain(
+      "window.sessionStorage.removeItem(sessionKey);",
+    );
+  });
+
+  it("stacks every panel group and action cleanly on a narrow screen", () => {
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-intake-workspace-boundaries, .local-intake-workspace-truth { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-intake-workspace-boundaries, .local-intake-workspace-progress-facts, .local-intake-workspace-result-facts, .local-intake-workspace-truth { grid-template-columns: 1fr; }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-intake-workspace-head, .local-intake-workspace-actions { align-items: flex-start; flex-direction: column; }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain(
+      ".local-intake-workspace-actions, .local-intake-workspace-delete .button { width: 100%; }",
+    );
+    expect(LOCAL_FOUNDRY_APP_CSS).toContain("overflow-wrap: anywhere");
   });
 });

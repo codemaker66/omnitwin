@@ -1,0 +1,256 @@
+{
+  "schemaVersion": "venviewer.reception-room-final-validation.v1",
+  "generatedAt": "2026-07-16T22:21:19.280716Z",
+  "scope": {
+    "venueSlug": "trades-hall",
+    "roomSlug": "reception-room",
+    "worktree": "C:/Users/blake/omnitwin2",
+    "branch": "feature/diary-p0-slice-3",
+    "headCommit": "1d6346d978272eba7b7e604c8feee2299f140a9c",
+    "workingTreeState": "shared_dirty_worktree; no clean-checkout claim",
+    "boundary": "Reception local real-component computer-vision comparison and fail-closed runtime-delivery hardening; this is not completion of the full multi-room HD Enhancement goal"
+  },
+  "outcome": {
+    "computerVisionComparison": "passed",
+    "repeatability": "passed",
+    "qualityWinner": "not_determined",
+    "physicalAccuracyWinner": "not_determined",
+    "publicActivation": "blocked_fail_closed",
+    "externalStateChanged": false,
+    "plainLanguageConclusion": "Computer vision proves that the two renders differ consistently in five usable views. It cannot prove which render is more faithful to the physical Reception Room without a registered real-room reference and human review."
+  },
+  "computerVisionEvidence": {
+    "evidenceRoot": "C:/Users/blake/omnitwin2/output/playwright/reception-hd-real-component-2026-07-16",
+    "immutableArtifacts": {
+      "capture-manifest.json": {
+        "sizeBytes": 12398,
+        "sha256": "e414ee58d64266c59bebfa23485f897c8c3472929853ec3b398e093ae43faf5b"
+      },
+      "cv-triage.json": {
+        "sizeBytes": 47379,
+        "sha256": "9cc0af09bdc25fc004e34f1d0e741611f699145c81bf7e9e6be8befd7c58f15b",
+        "embeddedReceiptSha256": "55bf71044439e9ce15cb6d069f296a155ba5aa8b33f46b4ed34a87648a9143dc"
+      },
+      "pixel-metrics.json": {
+        "sizeBytes": 3423,
+        "sha256": "d79443a4594d97fab25724acc97772159d41f09f6b0a1cc63e89a0863490caf3"
+      },
+      "cv-boards-current/index.json": {
+        "sizeBytes": 49231,
+        "sha256": "006dddb62557244c49897382d4a893ca1885e15971380848cf52f1f075f80bb3",
+        "embeddedReceiptSha256": "52cf083c4cf21446defe000385d43dcc7ddd3f849432ff7f578b0908abc5886f"
+      }
+    },
+    "captureContract": {
+      "candidates": 2,
+      "fixedViews": [
+        "overview",
+        "timber-left",
+        "timber-right",
+        "floor-surface",
+        "ceiling-moulding",
+        "column-skirting"
+      ],
+      "repeatsPerCandidateView": 2,
+      "screenshots": 24,
+      "sidecars": 12,
+      "byteIdenticalRepeatPairs": 12,
+      "settleMilliseconds": 500,
+      "imageContract": "1200x900 RGB8 true lossless PNG"
+    },
+    "candidateDecodedGaussianTotals": {
+      "quality-sog-fine-real-component": 2002009,
+      "mobile-spz-fine-real-component": 1978258
+    },
+    "comparison": {
+      "qualityToMobile": {
+        "review": 5,
+        "notAssessable": 1,
+        "clear": 0
+      },
+      "mobileToQuality": {
+        "review": 5,
+        "notAssessable": 1,
+        "clear": 0
+      },
+      "notAssessableView": "ceiling-moulding",
+      "psnrDbRange": [26.912251, 29.773793],
+      "ssimRange": [0.941555, 0.961395],
+      "maeRange": [0.025317, 0.040604],
+      "verdict": "no_physically_supported_winner"
+    },
+    "overviewBoard": {
+      "path": "C:/tmp/reception-cv-overview-2026-07-16.png",
+      "sizeBytes": 2864190,
+      "sha256": "0b2533c72c0e6eac95fbb73dfb192f332b7f208a2b34eaac2be3b84be06d3448"
+    }
+  },
+  "evidenceVerification": {
+    "checker": {
+      "path": "tools/reception-hd/verify_real_component_evidence.py",
+      "sizeBytes": 22584,
+      "sha256": "dd68f5d9da9bdc1111fe39194697c9fee53dcb0d218ee7e0674459f6e9d3d24e",
+      "python": "3.13.6"
+    },
+    "strictCurrentCheckoutReplay": {
+      "status": "failed_closed",
+      "reason": "Two of the 15 selected capture-environment files changed after capture."
+    },
+    "immutableEvidenceValidation": {
+      "status": "passed_with_environment_drift",
+      "verifiedAt": "2026-07-16T22:20:57.080314Z",
+      "receiptPath": "C:/tmp/reception-room-real-component-validation-2026-07-16.json",
+      "receiptSha256": "f46899c7c1927b88492214bd4a34201cff8fe641558ad11e1bfa1a99774bcc6c",
+      "environmentFiles": 15,
+      "environmentFilesMatched": 13,
+      "environmentFilesDrifted": 2,
+      "screenshotsVerified": 24,
+      "sidecarsVerified": 12,
+      "repeatPairsVerified": 12
+    },
+    "environmentDrift": [
+      {
+        "path": "pnpm-lock.yaml",
+        "capturedSizeBytes": 282823,
+        "capturedSha256": "a9aa8eb057a98849c1a9f7889c0e2c8a71a4448023c914a0a754680baddb5146",
+        "currentSizeBytes": 285839,
+        "currentSha256": "767b459e11b52b8bc7fe17d5e5bf69fec3230f02618555e7eefb6aa6c01450c1"
+      },
+      {
+        "path": "packages/web/src/router.tsx",
+        "capturedSizeBytes": 17251,
+        "capturedSha256": "6eebd7866b2f9f831f70c8c78b7c3cca4461ebfee0f7f43c33ec0ac2959199f8",
+        "currentSizeBytes": 18038,
+        "currentSha256": "95c6020e9610e8cd6a89f9cbc6c0947544935c0d4a20d577ea9d0d4d1ba3fb0c"
+      }
+    ],
+    "replayBoundary": "The 15-file manifest is a selected capture-critical inventory, not a complete transitive dependency closure. The immutable screenshot and CV bundle verifies, but a bit-identical recapture from the current checkout is not claimed."
+  },
+  "runtimeSafety": {
+    "independentSecurityAudit": "no_remaining_P0_or_P1_code_issue_found",
+    "publicPresentation": {
+      "showcaseEnabled": false,
+      "presentationCandidates": [],
+      "quality-sog-fine-v1": {
+        "reviewedByteProfile": true,
+        "reviewedPresentationTransformSha256": null,
+        "publicPresentationCandidate": false
+      },
+      "mobile-spz-fine-v1": {
+        "reviewedByteProfile": true,
+        "reviewedPresentationTransformSha256": null,
+        "publicPresentationCandidate": false
+      },
+      "futureRequirement": "One immutable presentation contract must bind the exact group transform, camera policy and route, and renderer-profile digest; the browser must apply those exact reviewed values."
+    },
+    "closedRisks": [
+      "Dedicated private runtime-profile R2 credentials and bucket are separate from legacy and Foundry storage, with no public URL fallback.",
+      "Full member bytes are size- and SHA-256-verified before release.",
+      "Transform and QA identifiers are immutable; exact retries are idempotent and changed content returns HTTP 409.",
+      "Concurrent first registrations recover PostgreSQL duplicate-key races as exact retry 200 or immutable 409; unrelated errors are rethrown.",
+      "Public approval requires all 11 required QA checks to pass, structured Spark loadStatus=loaded, human-reviewed evidence, and the exact signed-transform digest.",
+      "Authorization and immutable package/member identity are re-read immediately before bytes are sent.",
+      "Anonymous delivery is limited to two active responses, 16 FIFO waiters, 16 MiB per member, a 30-second upstream timeout, a 180-second absolute response deadline, and 24 requests per minute per client IP.",
+      "A bounded 64 MiB, 16-entry, five-minute verified-byte LRU and identical-content single-flight reduce repeated private storage reads without sharing authorization.",
+      "Private preview listens for disconnect before database lookup, preventing a lookup-time disconnect from stranding a transfer slot.",
+      "Client fetches use cancellation and the configured API origin is validated."
+    ]
+  },
+  "validation": {
+    "api": {
+      "fullSuite": {
+        "status": "passed",
+        "testFiles": 143,
+        "suites": 527,
+        "testsTotal": 2627,
+        "testsPassed": 2622,
+        "testsSkippedOrPending": 5,
+        "testsFailed": 0,
+        "wallSeconds": 413.5,
+        "receiptPath": "C:/tmp/omnitwin-api-final-vitest-20260716-post-timeout.json",
+        "receiptSizeBytes": 858328,
+        "receiptSha256": "3a660c8ea509a59e49a7499a15293fe4286538fcdb070fa513ef61c95140398f"
+      },
+      "focusedImmutabilityRoutes": {
+        "status": "passed",
+        "tests": 13
+      },
+      "targetedSecurityCluster": {
+        "status": "passed",
+        "testFiles": 10,
+        "tests": 169
+      },
+      "typecheck": "passed",
+      "productionBuild": "passed",
+      "targetedLint": "passed_no_warnings",
+      "coldStartStabilityNote": "An earlier full run exposed a 15.7-second cold-start timeout in the new Fastify route test. Only that integration test received a justified 30-second timeout; the complete post-fix suite then passed."
+    },
+    "types": {
+      "fullSuite": {
+        "status": "passed",
+        "testFiles": 90,
+        "testsPassed": 2103,
+        "testsFailed": 0
+      },
+      "typecheck": "passed",
+      "productionBuild": "passed",
+      "targetedLint": "passed"
+    },
+    "web": {
+      "fullSuite": {
+        "status": "passed",
+        "testFiles": 265,
+        "testsPassed": 3161,
+        "testsSkipped": 0,
+        "testsFailed": 0,
+        "wallSeconds": 282.7
+      },
+      "typecheck": "passed_on_final_tree",
+      "productionBuild": "passed_with_non_secret_live_shaped_validation_environment",
+      "productionModulesTransformed": 3260,
+      "targetedLint": "passed_no_warnings"
+    },
+    "documentation": {
+      "jsonArtifactsParse": "passed",
+      "presentationEligibilityAssertions": "passed",
+      "environmentReconciliation": "13_of_15_selected_files_match"
+    },
+    "scopedDiffCheck": "passed_with_line_ending_warnings_only"
+  },
+  "externalState": {
+    "deploymentPerformed": false,
+    "migrationApplied": false,
+    "candidateRegistered": false,
+    "qaApprovalRegistered": false,
+    "transformApprovalRegistered": false,
+    "publicPointerChanged": false,
+    "privateBucketProvisioned": false,
+    "sourceOrMasterAssetModified": false,
+    "paidComputeStarted": false,
+    "captureBrowserViewportReset": true,
+    "captureBrowserTabsFinalized": true,
+    "temporaryCaptureServersRemaining": false
+  },
+  "remainingBlockers": {
+    "qualityDecision": [
+      "Register a trusted real-room photograph or scan aligned to the same camera views.",
+      "Complete blinded human review of the aligned reference comparisons.",
+      "Obtain moving/orbit stability, load-time, frame-rate, GPU-memory, and supported-device evidence.",
+      "Resolve the structural room crop/floor-boundary control; both current structural inputs fail HORIZONTAL_ROOM_ENVELOPE_NOT_FOUND."
+    ],
+    "publicActivation": [
+      "Create and review the exact immutable presentation contract and make the browser apply it.",
+      "Provision the dedicated private bucket, copy and byte-verify the reviewed objects, and prove anonymous and legacy-public retrieval is denied.",
+      "Apply the required migrations and register the exact package, transform, QA, and presentation evidence.",
+      "Deploy aggregate edge/WAF limits because process-local controls do not aggregate across API replicas.",
+      "Capture and review the real protected product route before enabling the showcase."
+    ]
+  },
+  "claimLimitations": [
+    "The two candidates were captured from the same optical centre with static views; this is not motion, orbit, device, or performance evidence.",
+    "PSNR, SSIM, MAE, Gaussian count, sharpness, or file size alone cannot establish physical accuracy or user-perceived quality.",
+    "The preliminary JPEG-under-PNG-name incident is an operator session report only; the rejected bytes, hash, timestamp, and raw checker output were not retained. The final 24 PNGs are independently verifiable.",
+    "No protected-route, deployment, storage-policy, or public-release proof was produced.",
+    "No generated enhancement was used or accepted as captured truth, metric authority, collision authority, route authority, or safety evidence."
+  ]
+}

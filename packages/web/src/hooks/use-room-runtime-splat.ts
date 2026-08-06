@@ -16,9 +16,10 @@ import {
 // planner. The cockpit is single-tenant (Trades Hall): the room slug comes from
 // the loaded space, the venue is fixed. Mirrors the dev route's proven
 // decision pipeline (decideRuntimeAsset → splat URLs + view transform) and
-// reflects the runtime-asset status into the cockpit top bar. Public read;
-// degrades to the atelier fallback (procedural clay + ink scene) whenever no
-// usable package exists — never a blank canvas.
+// reflects the runtime-asset status into the cockpit top bar. The legacy
+// detailed-package browser resolver is retired; this hook therefore degrades
+// to the atelier fallback until the room has its own reviewed anonymous
+// profile contract — never a blank canvas.
 
 const RUNTIME_VENUE = "trades-hall";
 const IDENTITY_TRANSFORM: RuntimeAssetViewTransform = runtimeAssetViewTransformForRoom("grand-hall");

@@ -303,6 +303,110 @@ export async function newEnquiryNotification(
 }
 
 // ---------------------------------------------------------------------------
+// enquiryReceived — sent to the GUEST, immediately, on every public enquiry
+//
+// The counterpart to newEnquiryNotification above. That one tells the venue;
+// this one tells the person who wrote in. Until it existed, a guest who
+// submitted an enquiry heard nothing at all until a human happened to reply.
+//
+// Two rules shape the copy:
+//   1. Echo what they sent. It proves the message arrived intact and gives
+//      them the chance to correct a wrong date before anyone acts on it.
+//   2. Promise nothing the venue has not decided. Availability above all —
+//      the website can compute room fit from published capacities, but
+//      nothing in this system knows whether a date is free. Saying or
+//      implying otherwise would put an unsupported claim in front of a
+//      client, which is precisely what the public claim guard exists to stop.
+//      Response-time commitments belong to the venue, not to this template.
+// ---------------------------------------------------------------------------
+
+export interface EnquiryReceivedData {
+  readonly venueName: string;
+  /** Short human handle for the enquiry — see enquiryReference in @omnitwin/types. */
+  readonly reference: string;
+  readonly contactName: string | null;
+  readonly spaceName: string;
+  readonly eventType: string | null;
+  readonly eventDate: string | null;
+  readonly guestCount: number | null;
+  readonly message: string | null;
+  readonly venueEmail: string;
+  readonly venuePhone: string | null;
+}
+
+export function EnquiryReceivedEmail(props: EnquiryReceivedData): ReactElement {
+  const greeting =
+    props.contactName === null || props.contactName === ""
+      ? "Thank you — your enquiry has reached the events team at "
+      : `Thank you, ${props.contactName} — your enquiry has reached the events team at `;
+  return (
+    <Layout
+      label="Enquiry received"
+      preview={`Your enquiry for ${props.spaceName} — reference ${props.reference}`}
+    >
+      <Heading style={h2Style()}>We have your enquiry</Heading>
+      <Text style={paragraphStyle}>
+        {greeting}
+        <strong>{props.venueName}</strong>.
+      </Text>
+      {noteCallout(
+        "neutral",
+        `Your reference: ${props.reference}`,
+        "Please quote this if you call or write to us about this enquiry.",
+      )}
+      <Text style={{ ...paragraphStyle, marginTop: 16, fontWeight: 600 }}>
+        What you sent us
+      </Text>
+      <Section>
+        <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
+          <tbody>
+            <MetaRow label="Room" value={props.spaceName} />
+            <MetaRow label="Occasion" value={props.eventType} />
+            <MetaRow label="Date" value={props.eventDate} />
+            <MetaRow
+              label="Guests"
+              value={props.guestCount === null ? null : String(props.guestCount)}
+            />
+          </tbody>
+        </table>
+      </Section>
+      {props.message !== null && props.message !== "" && (
+        <Section
+          style={{ marginTop: 16, padding: 12, background: "#f9f9f6", borderRadius: 6 }}
+        >
+          <Text style={{ fontSize: 13, color: INK_SOFT, margin: 0 }}>{props.message}</Text>
+        </Section>
+      )}
+      <Text style={{ ...paragraphStyle, marginTop: 20 }}>
+        A member of the events team will read this and reply to you at this address. If
+        anything above is wrong, reply to this email and tell us — it is easier to change
+        now than later.
+      </Text>
+      <Text style={paragraphStyle}>
+        You can also reach us at{" "}
+        <Link href={`mailto:${props.venueEmail}`}>{props.venueEmail}</Link>
+        {props.venuePhone === null || props.venuePhone === "" ? (
+          "."
+        ) : (
+          <>
+            {" "}
+            or on <Link href={`tel:${props.venuePhone.replace(/\s+/gu, "")}`}>{props.venuePhone}</Link>.
+          </>
+        )}
+      </Text>
+    </Layout>
+  );
+}
+
+export async function enquiryReceived(
+  data: EnquiryReceivedData,
+): Promise<{ subject: string; html: string }> {
+  const subject = `We have your enquiry — reference ${data.reference}`;
+  const html = await render(<EnquiryReceivedEmail {...data} />);
+  return { subject, html };
+}
+
+// ---------------------------------------------------------------------------
 // enquiryApproved — sent to planner/guest
 // ---------------------------------------------------------------------------
 

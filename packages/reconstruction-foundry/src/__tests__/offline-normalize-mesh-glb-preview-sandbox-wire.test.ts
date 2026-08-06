@@ -23,6 +23,7 @@ import {
   FoundryOfflineNormalizeMeshGlbPreviewInvocationV0Schema,
   FoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementV0Schema,
   FoundryOfflineNormalizeMeshGlbPreviewPermitV0Schema,
+  computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256,
   computeFoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementSha256,
   computeFoundryOfflineNormalizeMeshGlbPreviewReportSha256,
   runFoundryOfflineNormalizeMeshGlbPreview,
@@ -331,9 +332,71 @@ describe.sequential("offline preview isolated-worker sandbox wire", () => {
     expect(Object.isFrozen(decoded.metadata.invocation)).toBe(true);
   });
 
+  it("zeroizes private encoder snapshots on success and after a later metadata rejection", () => {
+    const sourceBefore = Buffer.from(fixture.source);
+    const candidateBefore = Buffer.from(fixture.candidate);
+    const successFillSpy = vi.spyOn(Buffer.prototype, "fill");
+    const wire = verifierRequest(fixture);
+    const successZeroizedLengths = successFillSpy.mock.instances.flatMap(
+      (instance, index) =>
+        successFillSpy.mock.calls[index]?.[0] === 0 &&
+        Buffer.isBuffer(instance) &&
+        instance.every((value) => value === 0)
+          ? [instance.byteLength]
+          : [],
+    );
+    successFillSpy.mockRestore();
+
+    expect(successZeroizedLengths).toContain(fixture.source.byteLength);
+    expect(successZeroizedLengths).toContain(fixture.candidate.byteLength);
+    expect(fixture.source).toEqual(sourceBefore);
+    expect(fixture.candidate).toEqual(candidateBefore);
+    const decoded =
+      decodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage(wire);
+    expect(decoded.kind).toBe("fresh_verifier_request");
+    if (decoded.kind !== "fresh_verifier_request") {
+      throw new Error("successful encoder cleanup changed the wire payload");
+    }
+    expect(decoded.sourceBytes).toEqual(fixture.source);
+    expect(decoded.candidateBytes).toEqual(fixture.candidate);
+    decoded.sourceBytes.fill(0);
+    decoded.candidateBytes.fill(0);
+    wire.fill(0);
+
+    const rejectedFillSpy = vi.spyOn(Buffer.prototype, "fill");
+    expect(() =>
+      encodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage({
+        kind: "fresh_verifier_request",
+        requestId: "../rejected-after-snapshot",
+        deadlineAt: DEADLINE,
+        invocation: fixture.invocation,
+        permitEnvelope: fixture.envelope,
+        permitPublicKey: fixture.permitPublicKey,
+        report: fixture.report,
+        sourceBytes: fixture.source,
+        candidateBytes: fixture.candidate,
+      }),
+    ).toThrow();
+    const rejectedZeroizedLengths = rejectedFillSpy.mock.instances.flatMap(
+      (instance, index) =>
+        rejectedFillSpy.mock.calls[index]?.[0] === 0 &&
+        Buffer.isBuffer(instance) &&
+        instance.every((value) => value === 0)
+          ? [instance.byteLength]
+          : [],
+    );
+    rejectedFillSpy.mockRestore();
+
+    expect(rejectedZeroizedLengths).toContain(fixture.source.byteLength);
+    expect(rejectedZeroizedLengths).toContain(fixture.candidate.byteLength);
+    expect(fixture.source).toEqual(sourceBefore);
+    expect(fixture.candidate).toEqual(candidateBefore);
+  });
+
   it("round-trips fresh verification without ever echoing candidate bytes in success", () => {
+    const requestWire = verifierRequest(fixture);
     const decoded = decodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage(
-      verifierRequest(fixture),
+      requestWire,
     );
     expect(decoded.kind).toBe("fresh_verifier_request");
     if (decoded.kind !== "fresh_verifier_request") throw new Error("Unexpected decoded role.");
@@ -345,6 +408,16 @@ describe.sequential("offline preview isolated-worker sandbox wire", () => {
       encodeFoundryOfflineNormalizeMeshGlbPreviewSandboxWireMessage({
         kind: "fresh_verifier_success",
         requestId: REQUEST_ID,
+        requestWireSha256: `sha256:${sha256Bytes(requestWire)}`,
+        deadlineAt: DEADLINE,
+        invocationSha256:
+          computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256(
+            fixture.invocation,
+          ),
+        permitPayloadSha256: fixture.invocation.permit.payloadSha256,
+        source: decoded.metadata.blobs[0],
+        candidate: decoded.metadata.blobs[1],
+        reportSha256: fixture.report.reportSha256,
       }),
     );
     expect(success).toEqual({
@@ -355,6 +428,16 @@ describe.sequential("offline preview isolated-worker sandbox wire", () => {
         messageType: "success",
         role: "fresh_verifier",
         requestId: REQUEST_ID,
+        requestWireSha256: `sha256:${sha256Bytes(requestWire)}`,
+        deadlineAt: DEADLINE,
+        invocationSha256:
+          computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256(
+            fixture.invocation,
+          ),
+        permitPayloadSha256: fixture.invocation.permit.payloadSha256,
+        source: decoded.metadata.blobs[0],
+        candidate: decoded.metadata.blobs[1],
+        reportSha256: fixture.report.reportSha256,
         blobs: [],
       },
     });
@@ -562,10 +645,24 @@ describe.sequential("offline preview isolated-worker sandbox wire", () => {
       FOUNDRY_OFFLINE_NORMALIZE_MESH_GLB_PREVIEW_SANDBOX_WIRE_FRAME_HEADER_BYTES;
     alteredCandidate[candidateOffset] =
       (alteredCandidate[candidateOffset] ?? 0) ^ 1;
+    const alteredCandidateBefore = Buffer.from(alteredCandidate);
+    const failedDecodeFillSpy = vi.spyOn(Buffer.prototype, "fill");
     expectWireError(
       alteredCandidate,
       "OFFLINE_PREVIEW_SANDBOX_WIRE_FRAME_DOMAIN_DIGEST_MISMATCH",
     );
+    const failedDecodeZeroizedLengths =
+      failedDecodeFillSpy.mock.instances.flatMap((instance, index) =>
+        failedDecodeFillSpy.mock.calls[index]?.[0] === 0 &&
+        Buffer.isBuffer(instance) &&
+        instance.every((value) => value === 0)
+          ? [instance.byteLength]
+          : [],
+      );
+    failedDecodeFillSpy.mockRestore();
+    expect(alteredCandidate).toEqual(alteredCandidateBefore);
+    expect(failedDecodeZeroizedLengths).toContain(fixture.source.byteLength);
+    expect(failedDecodeZeroizedLengths).toContain(fixture.candidate.byteLength);
     expectWireError(
       wire.subarray(0, wire.length - 1),
       "OFFLINE_PREVIEW_SANDBOX_WIRE_FRAME_LENGTH_INVALID",

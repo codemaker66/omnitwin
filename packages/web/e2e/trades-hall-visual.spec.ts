@@ -2,7 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 
 const API = "http://localhost:3001";
 const RECEPTION_ROOM_ROUTE = "/dev/trades-hall-visual?venue=trades-hall&room=reception-room";
-const RECEPTION_ROOM_RUNTIME_PACKAGE_ID = "71687e9e-c23d-4f51-b3dd-a6a82c97978d";
 
 interface VisualRouteIssue {
   readonly status?: number;
@@ -207,17 +206,18 @@ test.describe("Trades Hall internal visual layer route", () => {
   });
 
   test("loads the registered Reception Room runtime package with no-auth-safe ancillary failures", async ({ page }) => {
+    const runtimePackageId = process.env["E2E_RECEPTION_ROOM_RUNTIME_PACKAGE_ID"] ?? "";
     test.skip(
-      process.env["E2E_RECEPTION_ROOM_RUNTIME_PACKAGE"] !== "true",
-      "Requires local API/R2 access with the Reception Room runtime package registered.",
+      process.env["E2E_RECEPTION_ROOM_RUNTIME_PACKAGE"] !== "true" || runtimePackageId === "",
+      "Requires local API/R2 access plus E2E_RECEPTION_ROOM_RUNTIME_PACKAGE_ID for the reviewed four-leaf package.",
     );
     test.setTimeout(150_000);
 
     const issues = watchVisualRouteIssues(page);
     await page.goto(RECEPTION_ROOM_ROUTE);
 
-    await expect(page.getByText(RECEPTION_ROOM_RUNTIME_PACKAGE_ID)).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByText(/Runtime asset loaded, not yet verified\/signed \(3,491,322 splats\)/i)).toBeVisible({
+    await expect(page.getByText(runtimePackageId)).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText(/Runtime asset loaded, not yet verified\/signed \(2,002,009 splats\)/i)).toBeVisible({
       timeout: 120_000,
     });
     await expect(page.getByText("Manual runtime URLs are disabled here")).toBeVisible();
@@ -225,7 +225,7 @@ test.describe("Trades Hall internal visual layer route", () => {
     expect(bodyText).not.toContain("No real asset loaded yet");
 
     expect(issues.packageResponses.some((response) => response.status === 200)).toBe(true);
-    expect(issues.runtimeAssetResponses).toHaveLength(7);
+    expect(issues.runtimeAssetResponses).toHaveLength(4);
     expect(issues.runtimeAssetResponses.every((response) => response.status === 200)).toBe(true);
     expect(issues.blockingResponses).toEqual([]);
     expect(issues.requestFailures).toEqual([]);

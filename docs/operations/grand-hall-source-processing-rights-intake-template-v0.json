@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "omnitwin.foundry.source-processing-rights-intake-template.v0",
+  "templateId": "grand-hall-source-processing-rights-intake-template-v0",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "recordState": "blank_user_completion_required",
+  "authority": "none",
+  "unsigned": true,
+  "purpose": "Collect source-specific processing and output-use facts for later review. A completed copy remains intake evidence and does not itself approve any use.",
+  "decisionValues": [
+    "permitted",
+    "prohibited",
+    "not_requested",
+    "not_applicable",
+    "requires_review"
+  ],
+  "assetRecordShape": {
+    "assetId": null,
+    "sourceType": null,
+    "sourceRecordRef": null,
+    "byteLength": null,
+    "sha256": null
+  },
+  "supportingRecordShape": {
+    "recordId": null,
+    "recordType": null,
+    "recordRef": null,
+    "sha256": null,
+    "note": null
+  },
+  "sourceRecords": [
+    {
+      "sourceRecordId": "matterport-e57-matterpak",
+      "sourceFamily": "matterport_e57_matterpak",
+      "recordState": "blank",
+      "customerOrAccountOwner": null,
+      "rightsHolderOrAuthorisingParty": null,
+      "governingRecord": {
+        "title": null,
+        "versionOrDate": null,
+        "orderOrAccountReference": null,
+        "recordRef": null,
+        "sha256": null
+      },
+      "assets": [],
+      "purposeDecisions": {
+        "localProcessing": null,
+        "derivativeCreation": null,
+        "derivativeInternalUse": null,
+        "derivativeCommercialUse": null,
+        "publicDisplay": null,
+        "publicTwinPublication": null,
+        "originalSourceRedistribution": null,
+        "derivedOutputRedistribution": null,
+        "cloudProcessing": null,
+        "modelTraining": null
+      },
+      "limitations": [],
+      "attributionRequirements": [],
+      "decisionMaker": {
+        "name": null,
+        "organisation": null,
+        "role": null,
+        "decisionBasis": null
+      },
+      "decisionDate": null,
+      "reReviewDate": null,
+      "supportingRecords": []
+    },
+    {
+      "sourceRecordId": "xgrids-portalcam-exports",
+      "sourceFamily": "xgrids_portalcam_lcc_exports",
+      "recordState": "blank",
+      "customerOrAccountOwner": null,
+      "rightsHolderOrAuthorisingParty": null,
+      "governingRecord": {
+        "title": null,
+        "versionOrDate": null,
+        "orderOrAccountReference": null,
+        "recordRef": null,
+        "sha256": null
+      },
+      "assets": [],
+      "purposeDecisions": {
+        "officialExportIntake": null,
+        "localProcessing": null,
+        "derivativeCreation": null,
+        "derivativeInternalUse": null,
+        "derivativeCommercialUse": null,
+        "publicDisplay": null,
+        "publicTwinPublication": null,
+        "originalSourceRedistribution": null,
+        "derivedOutputRedistribution": null,
+        "cloudProcessing": null,
+        "modelTraining": null
+      },
+      "limitations": [],
+      "attributionRequirements": [],
+      "decisionMaker": {
+        "name": null,
+        "organisation": null,
+        "role": null,
+        "decisionBasis": null
+      },
+      "decisionDate": null,
+      "reReviewDate": null,
+      "supportingRecords": []
+    },
+    {
+      "sourceRecordId": "venue-images-video-scans",
+      "sourceFamily": "venue_or_commissioned_content",
+      "recordState": "blank",
+      "customerOrAccountOwner": null,
+      "rightsHolderOrAuthorisingParty": null,
+      "governingRecord": {
+        "title": null,
+        "versionOrDate": null,
+        "orderOrAccountReference": null,
+        "recordRef": null,
+        "sha256": null
+      },
+      "assets": [],
+      "purposeDecisions": {
+        "internalIdentityReview": null,
+        "localProcessing": null,
+        "derivativeCreation": null,
+        "derivativeInternalUse": null,
+        "derivativeCommercialUse": null,
+        "publicDisplay": null,
+        "publicTwinPublication": null,
+        "originalSourceRedistribution": null,
+        "derivedOutputRedistribution": null,
+        "cloudProcessing": null,
+        "modelTraining": null
+      },
+      "limitations": [],
+      "attributionRequirements": [],
+      "decisionMaker": {
+        "name": null,
+        "organisation": null,
+        "role": null,
+        "decisionBasis": null
+      },
+      "decisionDate": null,
+      "reReviewDate": null,
+      "supportingRecords": []
+    }
+  ],
+  "additionalSourceRecords": [],
+  "completionRules": [
+    "Make a dated copy of this template; do not edit the template file.",
+    "List every actual source asset by stable asset id, source type, byte length and sha256.",
+    "Choose one decisionValue independently for every purpose field in each source record; no decision may be inferred from another purpose decision.",
+    "Record local processing, derivative creation, derivative internal use, derivative commercial use, public display, public twin publication, original-source redistribution, derived-output redistribution, cloud processing and model training separately for every source family.",
+    "A not_applicable decision requires a written explanation in limitations.",
+    "Record the governing record, decision maker, decision date and supporting record references.",
+    "Do not infer source or output rights from a software licence, file format or possession of a file."
+  ],
+  "guardrails": {
+    "sourceUseApproved": false,
+    "modelTrainingApproved": false,
+    "cloudProcessingApproved": false,
+    "redistributionApproved": false,
+    "t486ReviewInputCreated": false,
+    "publicationRequested": false,
+    "releaseAuthorityConferred": false
+  }
+}

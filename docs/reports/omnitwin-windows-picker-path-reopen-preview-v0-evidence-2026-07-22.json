@@ -1,0 +1,246 @@
+{
+  "schemaVersion": "omnitwin.windows-picker-path-reopen-preview-v0-evidence.v0",
+  "reviewId": "T-542A",
+  "parentTask": "T-542",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "status": {
+    "slice": "done",
+    "parentTask": "in_progress",
+    "reasonParentRemainsOpen": "Genuine Windows OS drag-and-drop is not implemented. T-542A provides Windows Common Item Dialog selection only."
+  },
+  "scope": "Windows Picker / Node Path-Reopen Preview V0: a process-owned Windows helper lets a nontechnical operator select multiple files, one folder at a time and an output folder. Node.js then reopens the selected paths locally, inspects each selected root and creates one independently verified T-541 child workspace per root under a durable collection index. The loopback browser remains path-free. This is ordinary local product and 3D reconstruction intake engineering, not retained-handle native byte custody, reconstruction, training, enhancement, cloud or cybersecurity work.",
+  "activity": {
+    "generatedNonVenueFixtureRead": true,
+    "userOrVenueSourceRead": false,
+    "originalSourceWrittenOrChanged": false,
+    "localWorkspaceCopiesCreated": true,
+    "localWorkspaceCollectionReopenedAndVerified": true,
+    "reconstructionPerformed": false,
+    "trainingPerformed": false,
+    "enhancementPerformed": false,
+    "cloudRequestPerformed": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false,
+    "deployed": false,
+    "cybersecurityWorkPerformed": false
+  },
+  "contract": {
+    "viewSchemaVersion": "omnitwin.foundry.local-native-intake-view.v0",
+    "actionResultSchemaVersion": "omnitwin.foundry.local-native-intake-action-result.v0",
+    "reportSchemaVersion": "omnitwin.foundry.local-native-intake-report.v0",
+    "collectionIndexSchemaVersion": "omnitwin.foundry.local-native-intake-collection-index.v0",
+    "eventSchemaVersion": "trusted-windows-native-source-basket-event.v1",
+    "startConfirmation": "inspect_and_keep_verified_copies",
+    "mode": "ordinary_windows_picker_node_path_reopen_preview",
+    "filesystemModel": "node_path_reopen_after_picker",
+    "nativeCustodyClaimed": false,
+    "authority": "none",
+    "sourceSelection": {
+      "picker": "Windows Common Item Dialog",
+      "multipleFiles": true,
+      "folderSelection": true,
+      "outputFolderSelection": true,
+      "genuineOsDragAndDrop": false,
+      "browserCanSupplyFilesystemPaths": false,
+      "canonicalPathsRemainProcessOwned": true
+    },
+    "persistence": {
+      "oneT541ChildWorkspacePerSelectedRoot": true,
+      "durableTopLevelCollectionIndex": true,
+      "reopenVerifierChecksEveryStoredChild": true,
+      "removeSupported": false,
+      "clearSupported": false,
+      "listChangeInstruction": "Restart the local session to change the selected list."
+    },
+    "browserPrivacy": {
+      "neutralLabelsOnly": true,
+      "publicReportContainsPathFields": false,
+      "publicReportContainsSha256Fields": false,
+      "publicReportContainsDigestFields": false,
+      "sourceReferencesExposed": false,
+      "helperConfigurationAcceptedFromBrowser": false
+    },
+    "truth": "Every imported member remains pending review. Captured, enhanced-captured, generated-cinematic and concept/imagination truth classes are preserved without promotion. A stored local copy or collection index does not admit rights, establish physical accuracy or authorize later processing.",
+    "notAuthorized": [
+      "registration",
+      "reconstruction",
+      "model training",
+      "enhancement",
+      "cloud upload",
+      "worker dispatch",
+      "credential use",
+      "spend",
+      "signing",
+      "publication",
+      "deployment",
+      "release or physical-authority claims"
+    ]
+  },
+  "implementation": {
+    "controller": "tools/reconstruction-foundry/src/local-native-intake.ts",
+    "controllerTests": "tools/reconstruction-foundry/src/__tests__/local-native-intake.test.ts",
+    "loopbackApp": "tools/reconstruction-foundry/src/local-native-intake-app.ts",
+    "loopbackAppTests": "tools/reconstruction-foundry/src/__tests__/local-native-intake-app.test.ts",
+    "browserAssets": "tools/reconstruction-foundry/src/local-native-intake-assets.ts",
+    "browserAssetsTests": "tools/reconstruction-foundry/src/__tests__/local-native-intake-assets.test.ts",
+    "processComposition": "tools/reconstruction-foundry/src/local-native-intake-composition.ts",
+    "nativeHelper": "tools/reconstruction-foundry/native/windows-source-helper",
+    "cliSurface": "tools/reconstruction-foundry/src/cli.ts",
+    "httpRoutes": [
+      "GET /api/native-source-basket",
+      "POST /api/native-source-basket/action",
+      "POST /api/native-source-basket/cancel-active",
+      "POST /api/native-source-basket/report",
+      "POST /api/stop"
+    ],
+    "lifecycle": {
+      "stopUsesOneIdempotentPromise": true,
+      "helperAndControllerCloseBeforeServerClose": true,
+      "concurrentStopsCovered": true,
+      "failedCloseReturnsTruthful503AndCanBeRetried": true
+    }
+  },
+  "realLocalObservation": {
+    "fixtureKind": "generated_non_venue_two_files_and_one_nested_file_folder",
+    "selectedRoots": 3,
+    "discoveredFiles": 3,
+    "totalBytes": 328,
+    "selectedItems": [
+      {
+        "neutralLabel": "File 1",
+        "kind": "OBJ",
+        "bytes": 89,
+        "sourceSha256": "34157ec24f714142f180b7069f12611dea597b1b6172734078d543a3c311a50b",
+        "copiedSha256": "34157ec24f714142f180b7069f12611dea597b1b6172734078d543a3c311a50b",
+        "childWorkspaceSha256": "0c1fe98982008077969727a9d0026a725af2c4472734d757a46b38ee20f6b074",
+        "status": "stored"
+      },
+      {
+        "neutralLabel": "File 2",
+        "kind": "PLY",
+        "bytes": 154,
+        "sourceSha256": "35675f3e55b57d4ca71b1357043327bc9432545ae33af46a53f59b131567d4ae",
+        "copiedSha256": "35675f3e55b57d4ca71b1357043327bc9432545ae33af46a53f59b131567d4ae",
+        "childWorkspaceSha256": "e161d88badf287e64e0bfba9d526e4dd8779cf078482d7d82038b8dea78fe129",
+        "status": "stored"
+      },
+      {
+        "neutralLabel": "Folder 3",
+        "kind": "folder_with_one_nested_text_file",
+        "bytes": 85,
+        "sourceSha256": "ae1fcdfee0df66cf92661ae8867878bf04f68991a6297ab29137b2e90e6d8743",
+        "copiedSha256": "ae1fcdfee0df66cf92661ae8867878bf04f68991a6297ab29137b2e90e6d8743",
+        "childWorkspaceSha256": "80644cb06557f205d2df811cf0b98c77980908ef9b5651c168192d75ce7d4c47",
+        "status": "stored"
+      }
+    ],
+    "storedRoots": 3,
+    "failedRoots": 0,
+    "cancelledRoots": 0,
+    "collectionIndexStored": true,
+    "collectionIndexSha256": "d8c95b5fbd12d6e0a5ef90cde02f90ed3a5d48b13dff016fc803e2112fda0cd3",
+    "reopenVerifier": {
+      "completed": true,
+      "storedChildrenVerified": 3
+    },
+    "sourceAndCopiedHashesMatched": true,
+    "publicReportPathFieldCount": 0,
+    "publicReportSha256FieldCount": 0,
+    "publicReportDigestFieldCount": 0,
+    "serverListenersAfterStop": 0,
+    "helperProcessesAfterStop": 0
+  },
+  "browserVerification": {
+    "driver": "Codex in-app Browser plugin",
+    "flow": "choose two files and one folder through native Windows dialogs, choose an output folder, wait for three verified child workspaces, inspect the terminal report, then stop",
+    "desktop": {
+      "documentClientWidth": 1265,
+      "documentScrollWidth": 1265,
+      "horizontalOverflow": false
+    },
+    "mobileViewportOverride": {
+      "width": 390,
+      "height": 844,
+      "documentClientWidth": 375,
+      "documentScrollWidth": 375,
+      "horizontalOverflow": false
+    },
+    "neutralRowsRendered": 3,
+    "durableSuccessRendered": true,
+    "terminalReportAccessible": true,
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "listenerClosedAfterQa": true,
+    "helperClosedAfterQa": true
+  },
+  "nativeHelperVerification": {
+    "folderRootBugFoundAndFixed": true,
+    "rustTestsPassed": 121,
+    "rustTestsFailed": 0,
+    "typescriptProtocolBridgeAdapterAndIntakeTestsPassed": 112,
+    "typescriptProtocolBridgeAdapterAndIntakeTestsFailed": 0,
+    "rebuiltDebugHelper": {
+      "bytes": 2275840,
+      "sha256": "3bdd27002c73475c2e31a1f81ed47256beb7e65c969fdc31c2892b88fb7ea856"
+    }
+  },
+  "verification": {
+    "focusedTools": {
+      "testsPassed": 47,
+      "testsFailed": 0,
+      "typecheck": "passed",
+      "targetedLint": "passed",
+      "diffCheck": "passed"
+    },
+    "fullTools": {
+      "testFilesPassed": 57,
+      "testFilesFailed": 1,
+      "testsPassed": 928,
+      "testsFailed": 1,
+      "qualification": "The sole failure is the pre-existing Windows production-release fixture rejecting the unrelated untracked packages/reconstruction-foundry/src/captured-quality-comparison.d.ts sibling in the shared dirty worktree."
+    },
+    "toolsBuild": {
+      "status": "qualified_existing_failure",
+      "diagnostics": 18,
+      "ts6059Diagnostics": 9,
+      "ts6307Diagnostics": 9,
+      "diagnosticsNamingT542": 0,
+      "qualification": "The known tools cross-package rootDir/file-list boundary remains red. No diagnostic names the T-542 implementation."
+    },
+    "corePackage": {
+      "testFilesPassed": 68,
+      "testsPassed": 797,
+      "testsSkipped": 1,
+      "testsFailed": 0,
+      "typecheck": "passed",
+      "build": "passed",
+      "lint": "qualified_existing_failure",
+      "lintQualification": "Two unrelated generated declaration parser errors remain outside T-542."
+    }
+  },
+  "limitations": [
+    "T-542A uses Windows Common Item Dialog selection. It is not genuine Windows OS drag-and-drop.",
+    "Node.js reopens canonical paths after selection. No retained native source or output handle is claimed to transfer or retain byte custody.",
+    "Remove and Clear are deliberately absent because retained-helper lifecycle reconciliation is not implemented for those mutations. Restart the session to change the list.",
+    "Only generated non-venue fixtures were used. No user, Grand Hall, Reception, Matterport or XGRIDS source was imported.",
+    "A verified local collection preserves evidence and truth only. It does not approve rights, registration, physical accuracy, reconstruction, training, enhancement, cloud use, signing, publication or deployment."
+  ],
+  "continuation": {
+    "broaderGoalStatus": "active",
+    "parentTaskStatus": "in_progress",
+    "completedSlice": "T-542A Windows Picker / Node Path-Reopen Preview V0",
+    "recommendedNextLocalSlice": "T-542B Genuine Windows OS Drop Target V0",
+    "nextSliceBoundary": "Feed a genuine process-owned Windows OS drop target into the same multi-source basket and path-free loopback browser. Preserve Node path-reopen truth, T-541 child workspaces, the durable top-level index and authority none. Do not add reconstruction, enhancement, training or cloud dispatch.",
+    "stillOpen": [
+      "T-542 genuine Windows OS drag-and-drop",
+      "T-533 human Reception room-envelope review",
+      "T-508 captured-quality programme",
+      "T-486 Grand Hall external review gates",
+      "T-539 clean-host qualification and production binding",
+      "the broader OmniTwin Foundry /goal"
+    ]
+  }
+}

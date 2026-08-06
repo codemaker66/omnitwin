@@ -52,6 +52,9 @@ import {
   type LocalOfflineNormalizationPreviewHelperLike,
   type LocalOfflineNormalizationPreviewStartRequest,
 } from "../local-offline-normalization-preview.js";
+import type {
+  LocalOfflineNormalizationPreviewExecutionBridge,
+} from "../local-offline-normalization-preview-execution-bridge.js";
 import {
   startLocalFoundryApp,
   type LocalFoundryAppHandle,
@@ -983,5 +986,104 @@ describe("Foundry local app offline normalization preview HTTP routes", () => {
 
     await app.stop();
     expect(await readdir(fixture.root)).toEqual(["source.glb"]);
+  });
+
+  it("keeps the process-only bridge out of HTTP and stops its backend exactly once", async () => {
+    const fixture = await previewRouteFixture({
+      requestId: "55555555555555555555555555555555",
+    });
+    let reserveCalls = 0;
+    let stopAllCalls = 0;
+    const executionBridge: LocalOfflineNormalizationPreviewExecutionBridge = {
+      reserveSession() {
+        reserveCalls += 1;
+        return Promise.reject(new Error("this test never starts execution"));
+      },
+      stopAll() {
+        stopAllCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    const app = await startLocalFoundryApp({
+      source: fixture.sourcePath,
+      offlineNormalizationPreview: {
+        assetsByPreviewAssetId:
+          fixture.controllerOptions.assetsByPreviewAssetId,
+        evidenceByReceiptSha256:
+          fixture.controllerOptions.evidenceByReceiptSha256,
+        pinnedTrustedPermitKeys:
+          fixture.controllerOptions.pinnedTrustedPermitKeys,
+        executionBridge,
+      },
+    });
+    openApps.push(app);
+
+    const ready = await waitForAppReady(app);
+    const publicJson = JSON.stringify(ready);
+    expect(ready.offlineNormalizationPreview.sandboxEstablished).toBe(false);
+    expect(publicJson).not.toMatch(
+      /executionBridge|docker|absolutePath|permitEnvelope|permitPublicKey/iu,
+    );
+    expect(reserveCalls).toBe(0);
+
+    await app.stop();
+    await app.stop();
+    expect(stopAllCalls).toBe(1);
+    expect(reserveCalls).toBe(0);
+  });
+
+  it("owns the lazy production bridge when trusted evidence has no legacy helper seam", async () => {
+    const fixture = await previewRouteFixture({
+      requestId: "66666666666666666666666666666666",
+    });
+    const app = await startLocalFoundryApp({
+      source: fixture.sourcePath,
+      offlineNormalizationPreview: {
+        assetsByPreviewAssetId:
+          fixture.controllerOptions.assetsByPreviewAssetId,
+        evidenceByReceiptSha256:
+          fixture.controllerOptions.evidenceByReceiptSha256,
+        pinnedTrustedPermitKeys:
+          fixture.controllerOptions.pinnedTrustedPermitKeys,
+      },
+    });
+    openApps.push(app);
+
+    // App startup only constructs the lazy bridge. With no generated release,
+    // it neither starts Docker nor weakens the ready/blocked browser contract.
+    const ready = await waitForAppReady(app);
+    expect(ready.offlineNormalizationPreview).toMatchObject({
+      state: "ready",
+      sandboxEstablished: false,
+      output: null,
+    });
+
+    const start = await postPreviewJson(app, "start", fixture.request);
+    expect(start.status).toBe(202);
+    let terminal: LocalOfflineNormalizationPreviewDto | null = null;
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const status = await postPreviewJson(app, "status", {
+        requestId: fixture.request.requestId,
+      });
+      expect(status.status).toBe(200);
+      const current = parsePreviewDto(status);
+      if (current.state === "failed") {
+        terminal = current;
+        break;
+      }
+      await delay(10);
+    }
+    expect(terminal).toMatchObject({
+      state: "failed",
+      sandboxEstablished: false,
+      output: null,
+    });
+    expect(terminal?.message).toContain("BUNDLED_RELEASE_UNAVAILABLE");
+    expect(JSON.stringify(terminal)).not.toMatch(
+      /absolutePath|permitEnvelope|permitPublicKey|dockerExecutable/iu,
+    );
+
+    await app.stop();
   });
 });

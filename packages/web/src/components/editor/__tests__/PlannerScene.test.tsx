@@ -143,7 +143,19 @@ describe("PlannerScene", () => {
     expect(source).toContain("function PlannerScenePrecompiler");
     expect(source).toContain("await gl.compileAsync(scene, camera)");
     expect(source).toContain("gl.compile(scene, camera)");
-    expect(source).toContain("<PlannerScenePrecompiler signature={sceneWarmupSignature} />");
+    expect(source).toContain("asynchronous={!timelinePreviewActive}");
+    expect(source).toContain("if (!asynchronous)");
+  });
+
+  it("keeps saved furniture mounted but disables mutation layers during timeline preview", async () => {
+    const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
+
+    expect(source).toContain("name={SAVED_LAYOUT_FURNITURE_GROUP}");
+    expect(source).toContain("visible={!timelinePreviewActive}");
+    expect(source).toContain("<TimelinePreviewFurniture />");
+    expect(source).toContain("{!timelinePreviewActive && <PlacementGhost />}");
+    expect(source).toContain("{!timelinePreviewActive && <SelectionSystem />}");
+    expect(source).toContain("{!timelinePreviewActive && <MeasurementTool />}");
   });
 
 });

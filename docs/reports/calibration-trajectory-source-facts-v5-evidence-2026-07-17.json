@@ -1,0 +1,251 @@
+{
+  "schemaVersion": "omnitwin.local.calibration-trajectory-source-facts-v5-evidence-manifest.v0",
+  "recordedAt": "2026-07-17",
+  "authority": "none",
+  "workstream": "T-508",
+  "scope": "Read-only, bounded structural evidence for exact local CSV and JSON calibration-or-trajectory document candidates. This is ordinary local reconstruction-product engineering. Cybersecurity, credentials, penetration testing, cloud deployment and publication are excluded from this slice.",
+  "profile": {
+    "receiptSchemaVersion": "omnitwin.foundry.universal-intake-receipt.v0",
+    "receiptDigestDomain": "VENVIEWER_FOUNDRY_INTAKE_RECEIPT_V0",
+    "sourceFactsSchemaVersion": "omnitwin.foundry.universal-source-facts.v5",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V5",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v5",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V5",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v5",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V5",
+    "inheritedProfile": "omnitwin.foundry.universal-source-facts.v4",
+    "supportedDocumentProfiles": [
+      {
+        "format": "csv",
+        "profile": "utf8_csv_record_structure_v0",
+        "factsInspectionCoverage": "complete_record_structure",
+        "assetCoverage": "complete_record_structure"
+      },
+      {
+        "format": "json",
+        "profile": "bounded_json_syntax_shape_v0",
+        "factsInspectionCoverage": "complete_syntax_and_shape",
+        "assetCoverage": "complete_json_syntax_and_shape"
+      }
+    ],
+    "limits": {
+      "sourceMaxBytes": 8388608,
+      "readChunkBytes": 262144,
+      "lineMaxBytes": 1048576,
+      "csvRecordMaxCount": 250000,
+      "csvRecordMaxCodeUnits": 1048576,
+      "csvFieldMaxCount": 256,
+      "csvAggregateFieldMaxCount": 500000,
+      "stringMaxCodeUnits": 65536,
+      "numberLexemeMaxCodeUnits": 256,
+      "jsonDepthMax": 64,
+      "jsonValueMaxCount": 250000,
+      "jsonMemberMaxCount": 200000,
+      "jsonContainerEntryMaxCount": 100000,
+      "jsonDistinctKeyMaxCount": 65536
+    }
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only; no independent attestation.",
+    "sameOpenHandle": true,
+    "sourceBinding": "The later facts pass reads the already-open identity-checked handle, verifies exact byte length and complete SHA-256, embeds both values in established facts, and rejects mismatch at the outcome, asset and artifact boundaries.",
+    "filesystemSnapshot": "not_atomic",
+    "targetPrecedence": "Verified E57/GLB magic, Gaussian PLY refinement, SPZ, SOG, inherited E57/GLTF/OBJ, ordinary inherited claim stop, V4 media, then the one-candidate V5 calibration/trajectory profile.",
+    "failureBinding": "Failure code and category are exact-registry-bound. CSV-only and JSON-only codes cannot cross formats. Cancellation issues no V5 artifact.",
+    "xbinBehavior": "Atomic unavailable result with no partial facts, readiness files or ordinary checklist evidence.",
+    "policy": {
+      "sourceAccess": "read_only",
+      "mutation": "none",
+      "reconstruction": "none",
+      "networkAccess": "none",
+      "authority": "none",
+      "rights": "not_evaluated"
+    }
+  },
+  "realSourceReplays": [
+    {
+      "id": "grand_hall_poses_csv",
+      "sourcePath": "F:/gaussian splat -- xgrids/model/The_Grand_Hall_2026-05-31-101837/project_data/poses.csv",
+      "receiptPath": "poses.csv",
+      "sourceBytes": 3659287,
+      "sourceSha256": "b86bc45d15b8b5a84d61160afe3e16e7659e195557a2b8c6567039bb74d83127",
+      "inputType": "trajectory",
+      "format": "csv",
+      "facts": {
+        "recordCount": 42850,
+        "fieldCount": 342800,
+        "uniformFieldCount": true,
+        "minimumFieldCount": 8,
+        "maximumFieldCount": 8,
+        "blankRecordCount": 0,
+        "emptyFieldCount": 0,
+        "quotedFieldCount": 0,
+        "multilineFieldCount": 0,
+        "lfCount": 42850,
+        "trailingRecordBreak": true,
+        "shapeSha256": "72496254642a9d3c5de8dc569351940eddd684d6444dc420e4860179ac67eb77"
+      },
+      "artifactChain": {
+        "receiptSha256": "5c110c389a8ec94cd148f24b850bd9f52ff308150906c5916cbddd8a18619fe6",
+        "sourceFactsSha256": "5ad9462a40f5c1be0613d7dd92294fa74d09e677cf9af0441c0d1fbe79cfa461",
+        "sourceReadinessSha256": "0cf54dbfbd28caffc85296b9561c3d7510957df331b4d5dba5ee14ab6739155e",
+        "operatorEvidenceChecklistSha256": "263286e8832d163d2d19fa72b3dfc0629f7c0d267b3958ea043cd7d76cec28a5"
+      }
+    },
+    {
+      "id": "lcc2_poses_json",
+      "sourcePath": "F:/VENVIEWER -- TH PROJECT SPLAT OUTPUTS/lcc2-result/info/poses.json",
+      "receiptPath": "poses.json",
+      "sourceBytes": 542394,
+      "sourceSha256": "d9822320412473bf8dd4681910abf395b2957a1d24612064354944fe8581881f",
+      "inputType": "trajectory",
+      "format": "json",
+      "facts": {
+        "rootKind": "object",
+        "rootKeys": ["poses", "fusionPoses"],
+        "valueCount": 54351,
+        "maximumDepth": 5,
+        "objectCount": 4530,
+        "arrayCount": 9059,
+        "stringValueCount": 4529,
+        "numberCount": 31703,
+        "nullCount": 4530,
+        "objectMemberCount": 18118,
+        "arrayElementCount": 36232,
+        "maximumArrayLength": 4529,
+        "distinctObjectKeyCount": 6,
+        "shapeSha256": "c2b23c9dfb60df0635b28e8b6797028c57b695a4263db7cdd1191ad67124f2a2"
+      },
+      "artifactChain": {
+        "receiptSha256": "8856d2b6184c3dcf5a2dd17e99b930248024588b429e7c6560e925c45cd3d5a8",
+        "sourceFactsSha256": "5e5b9633890c0b5ac9ef158b0d8a676cf462668c3c4814640964f238c6a206ca",
+        "sourceReadinessSha256": "05e1cce16613d4656cbb43347aed073c994515a02ea4a73d521198e0e7c3f8ab",
+        "operatorEvidenceChecklistSha256": "be8d8cd9d50efd2699536fc167eefd8897a6b5e03cacdd10bcc391664099fc15"
+      }
+    },
+    {
+      "id": "e57_original_poses_json",
+      "sourcePath": "F:/E57/poses.json",
+      "receiptPath": "poses.json",
+      "sourceBytes": 39717,
+      "sourceSha256": "b181eee225ad5019caec82c207d6e996be0cddf8852048b50f430f77707dc364",
+      "inputType": "trajectory",
+      "format": "json",
+      "facts": {
+        "rootKind": "object",
+        "rootKeyCount": 149,
+        "valueCount": 1491,
+        "numberCount": 1043,
+        "shapeSha256": "1a1326d33e6b584963e631f1c041d3608e354306632fc1c18ee680f61437032b"
+      },
+      "artifactChain": {
+        "receiptSha256": "5122f60c7b5595f10282976ae3dca31fd6bc728ff02707e996a6be7c993145ea",
+        "sourceFactsSha256": "e2bb832d49d2d431c3c649141df81558b3be11b87dd17f494dc2963ec366ea9f",
+        "sourceReadinessSha256": "d060a38d0c6dd1ad34a245d1667945b160648bb94251c17294768eadd2c78361",
+        "operatorEvidenceChecklistSha256": "927411077fa4d2acc60b170e7555c387f99bb29084288351a0dd343cd8e7d8e5"
+      }
+    },
+    {
+      "id": "e57_staged_poses_json",
+      "sourcePath": "F:/VenviewerReconstructionWork/trades-hall-2026-07-10/staged-e57-poses/poses.json",
+      "receiptPath": "poses.json",
+      "sourceBytes": 37780,
+      "sourceSha256": "f53f65e4142d04157cbddf88cb4caeedfe0bb6b35fd5fe66bc14fcfdc3fb6f08",
+      "inputType": "trajectory",
+      "format": "json",
+      "facts": {
+        "rootKind": "object",
+        "rootKeyCount": 149,
+        "valueCount": 1491,
+        "numberCount": 1043,
+        "shapeSha256": "1a1326d33e6b584963e631f1c041d3608e354306632fc1c18ee680f61437032b"
+      },
+      "artifactChain": {
+        "receiptSha256": "b2434493cde0a937cd80abdab11aded74b7d2e071294aa2e49a2ca7b462837d1",
+        "sourceFactsSha256": "4d576334862a0fb3017df044149a076e5b020724efc3be0db9449b7309d2f55c",
+        "sourceReadinessSha256": "a6138e96aff5820882e756c8732c6f8ad199864e58dcd98c7e1c18a53611f9a1",
+        "operatorEvidenceChecklistSha256": "31b5e7c721d648bb1c4ac2c7d0065bb3feac9ad85ef76bba4bf897fe9bac1510"
+      }
+    }
+  ],
+  "crossReplayObservation": "The two E57 poses.json sources have the same bounded JSON shape summary and shape SHA-256, but different exact byte sizes, source SHA-256 values, receipt digests and complete V5 artifact-chain digests. No semantic equivalence is claimed.",
+  "calibrationEvidence": {
+    "realSourceReplayCount": 0,
+    "fixtureOnly": true,
+    "fixtureName": "camera-calibration.json",
+    "note": "The deterministic calibration fixture proves the V5 JSON path and fixed unknowns only. F:/E57/brush_dataset/transforms.json is classified outside this one-candidate V5 profile, and encrypted XGRIDS calibration was not decrypted or treated as evidence."
+  },
+  "unresolvedTrajectoryFactCodes": [
+    "TRAJECTORY_FIELD_SEMANTICS_UNKNOWN",
+    "TRAJECTORY_CLOCK_DOMAIN_AND_TIME_UNITS_UNKNOWN",
+    "TRAJECTORY_TRANSFORM_CONVENTION_UNKNOWN",
+    "TRAJECTORY_COORDINATE_FRAME_AND_UNITS_UNKNOWN",
+    "TRAJECTORY_COMPLETENESS_AND_SYNCHRONIZATION_UNKNOWN",
+    "TRAJECTORY_ACCURACY_AND_DRIFT_UNKNOWN",
+    "TRAJECTORY_PROVENANCE_UNKNOWN",
+    "TRAJECTORY_RIGHTS_UNKNOWN"
+  ],
+  "unresolvedCalibrationFactCodes": [
+    "CALIBRATION_FIELD_SEMANTICS_UNKNOWN",
+    "CALIBRATION_SENSOR_APPLICABILITY_UNKNOWN",
+    "CALIBRATION_INTRINSICS_AND_DISTORTION_UNKNOWN",
+    "CALIBRATION_EXTRINSIC_CONVENTION_UNKNOWN",
+    "CALIBRATION_TIMING_AND_READOUT_UNKNOWN",
+    "CALIBRATION_UNCERTAINTY_AND_VALIDATION_UNKNOWN",
+    "CALIBRATION_PROVENANCE_UNKNOWN",
+    "CALIBRATION_RIGHTS_UNKNOWN"
+  ],
+  "truthBoundaries": [
+    "CSV columns and JSON keys do not establish field semantics.",
+    "Numeric lexemes do not establish clock domain, epoch, time units, cadence, frame, CRS, axes, handedness, transform direction, quaternion order, physical units, accuracy or drift.",
+    "Document structure does not establish calibration applicability, synchronization, completeness, provenance, rights, registration, processing eligibility or execution authorization.",
+    "No reconstruction, registration, source mutation, network client, external service, cloud action, spend, release or publication occurred."
+  ],
+  "uiEvidence": {
+    "source": "Grand Hall poses.csv",
+    "desktopViewport": "1280x720",
+    "mobileViewport": "390x844",
+    "pageHorizontalOverflow": false,
+    "consoleWarningsOrErrors": 0,
+    "downloadsConfirmedOnDisk": [
+      "foundry-universal-source-facts-v5.json",
+      "foundry-source-readiness-map-v5.json",
+      "foundry-operator-evidence-checklist-v5.json"
+    ],
+    "sessionShutdownVerified": true,
+    "qualification": "Rendered QA covered the V5 view before the final bounded preview/status and schema-consistency hardening. Those later changes are covered by the full local and core regression suites; no second rendered-browser claim or saved screenshot artifact is made. The browser download-event waiter timed out after the first click, but the resulting files were independently confirmed on disk."
+  },
+  "independentReview": {
+    "contractVerdict": "clean_no_actionable_findings",
+    "parserVerdict": "clean_no_actionable_findings",
+    "closedFindings": [
+      "exact V1-V5 target precedence and ordinary-PLY claimant stop",
+      "CSV aggregate and prefix-complete column consistency",
+      "JSON tree, root, container and depth consistency",
+      "exact source-size and SHA-256 container binding",
+      "failure code/category/format applicability",
+      "cancellation non-issuance",
+      "bounded root-key UI preview and panel-local download status"
+    ]
+  },
+  "verification": {
+    "focusedV5": "3 files, 28 passed",
+    "reconstructionFoundry": "44 files, 567 passed, 1 existing skip",
+    "localFoundryCli": "17 files, 240 passed",
+    "sharedTypes": "91 files, 2110 passed",
+    "lint": "At the V5 checkpoint, Reconstruction Foundry, local Foundry CLI and shared types passed. Afterward, an unrelated concurrent untracked CLI source file appeared; the current targeted lint for all V5-touched CLI files still passes.",
+    "typecheck": "Reconstruction Foundry, local Foundry CLI and shared types passed",
+    "build": "Reconstruction Foundry, local Foundry CLI and shared types passed",
+    "finalExactRealReplay": "Grand Hall, LCC2, E57 original and E57 staged all reproduced their recorded final artifact digests",
+    "concurrentWorkspaceDrift": "tools/reconstruction-foundry/src/local-offline-normalization-preview-container-preflight.ts was created at 2026-07-17 21:40:43 after the clean V5 package lint checkpoint and currently has five unrelated ESLint findings. It was preserved and is not part of this V5 slice. CLI typecheck, build, full tests and targeted V5 lint remain green."
+  },
+  "implementation": [
+    "packages/reconstruction-foundry/src/calibration-trajectory-source-facts.ts",
+    "packages/reconstruction-foundry/src/source-facts-v5.ts",
+    "packages/reconstruction-foundry/src/source-readiness-v5.ts",
+    "packages/reconstruction-foundry/src/operator-evidence-checklist-v5.ts",
+    "packages/reconstruction-foundry/src/intake-receipt.ts",
+    "tools/reconstruction-foundry/src/local-app.ts",
+    "tools/reconstruction-foundry/src/local-app-assets.ts"
+  ]
+}

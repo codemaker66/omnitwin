@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "omnitwin.foundry.real-input-check.v1",
+  "checkedAt": "2026-07-13",
+  "operation": "read_only_intake_identification_and_hashing",
+  "filesModified": false,
+  "networkUsed": false,
+  "entries": [
+    {
+      "basename": "cloud_0.e57",
+      "bytes": 20518437888,
+      "detectedStatus": "detected",
+      "detectedTypes": ["e57"],
+      "confidence": ["high"],
+      "quarantineReasons": ["rights_unreviewed", "provenance_unreviewed"],
+      "manifestEligible": false,
+      "sha256": "975039d11fc04ca681f038e499f358124bbcab178ad5ce6324fa912212729cdd",
+      "receiptSha256": "6eddf4a3f62f91febc6e84231da9c6afd791c82525d49680846a803545f9a4fc",
+      "elapsedSeconds": 216.67
+    },
+    {
+      "basename": "2026-06-01-150618.xbin",
+      "bytes": 8696471552,
+      "detectedStatus": "detected",
+      "detectedTypes": ["xgrids_xbin"],
+      "confidence": ["high"],
+      "quarantineReasons": [
+        "opaque_or_proprietary_format",
+        "rights_unreviewed",
+        "provenance_unreviewed"
+      ],
+      "manifestEligible": false,
+      "sha256": "625d942745db807e26841c9e86f10fa9f93b9f276c56e7fd312b094d3f16b565",
+      "receiptSha256": "35bd380a7cc67e62ce768c35595dd0600828ee61a09ab18de3959917b374411b",
+      "elapsedSeconds": 94.75
+    },
+    {
+      "basename": "424ff41f6e5d41969c635fcd61be9b3f.obj",
+      "bytes": 38381816,
+      "detectedStatus": "detected",
+      "detectedTypes": ["obj"],
+      "confidence": ["medium"],
+      "quarantineReasons": ["rights_unreviewed", "provenance_unreviewed"],
+      "manifestEligible": false,
+      "sha256": "cf7247b5343fe719dc0f1aaf6b64c667d238c69133b71c44ccd9f5c67b5878c7",
+      "receiptSha256": "88d9eb0c7c7d78f510a0d8dd2f92f3e0fdc7e5cc425c2d400273c72390418fde",
+      "elapsedSeconds": 2.73
+    },
+    {
+      "basename": "preview_photo.jpg",
+      "bytes": 208529,
+      "detectedStatus": "ambiguous",
+      "detectedTypes": [
+        "dslr_image",
+        "generic_image",
+        "matterport_panorama",
+        "panorama_360",
+        "phone_image"
+      ],
+      "confidence": ["low", "low", "low", "low", "low"],
+      "quarantineReasons": [
+        "format_ambiguous",
+        "low_confidence_detection",
+        "rights_unreviewed",
+        "provenance_unreviewed"
+      ],
+      "manifestEligible": false,
+      "sha256": "5b91c0ec0506ba711cd9fc040be202aea7de3b5d3d9725e48467ef36b2aee5ee",
+      "receiptSha256": "bcb13d840057ca91c1d93a6ab609d58afaa407f0c6f759a56f2a9fdbccda7b86",
+      "elapsedSeconds": 2.54
+    }
+  ],
+  "limitations": [
+    "Recognition is not rights approval, provenance approval, metric validation, or release approval.",
+    "The proprietary XGRIDS XBIN payload was not decoded or reverse engineered.",
+    "The image role cannot be established from this file alone.",
+    "A real GLB was not included in this particular three-file matrix; GLB detection is covered by fixtures, not this real-file result."
+  ]
+}

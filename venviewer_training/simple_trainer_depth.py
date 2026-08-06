@@ -1,117 +1,162 @@
-"""Venviewer fork of gsplat 1.5.3 examples/simple_trainer.py.
+"""Venviewer Config B contract preflight.
 
-UPSTREAM
-    Source:    https://github.com/nerfstudio-project/gsplat
-    Tag:       v1.5.3
-    Path:      examples/simple_trainer.py
-    SHA:       <FILL-IN-AT-VENDORING-TIME>
-               Recorded in venviewer_training/_upstream_simple_trainer.sha256
-               at vendoring time so fork drift is detectable.
+This entrypoint is intentionally dependency-light.  ``--help`` and
+``preflight`` work without importing the upstream trainer, CUDA, Torch, Tyro,
+or viewer packages at module import time.  The legacy execution path remains
+closed: actual splat optimization is RunPod-only under D-016 and requires the
+trusted Foundry JobSpec, rights, confirmation, compute, cost, kill-switch, and
+attempt-ledger gates.
 
-WHY A FORK
-    Two changes from upstream:
+Examples
+--------
 
-      1. Dataset import — upstream:
-             from datasets.colmap import Dataset
-         here:
-             from venviewer_training.colmap_depth_dataset import Dataset
-         The replacement adds an `external_depth_dir` argument and
-         injects sparse uv+depth tensors as data["points"] /
-         data["depths"] per gsplat's native depth-supervision contract.
+Validate a real prepared COLMAP contract without training::
 
-      2. fused_ssim import — upstream:
-             from fused_ssim import fused_ssim
-         here:
-             try:    from fused_ssim import fused_ssim
-             except: from venviewer_training.ssim_fallback import fused_ssim
-         ssim_fallback is a pure-PyTorch SSIM that lets the trainer run
-         on pods where the fused-ssim wheel didn't compile against the
-         local CUDA toolchain.
+    python -B -m venviewer_training.simple_trainer_depth preflight \
+      --config configs/training/config_b.yaml \
+      --dataset C:/prepared/colmap_v2 \
+      --depth-dir C:/prepared/depths_e57
 
-    Everything else stays identical to upstream — gsplat's CLI surface,
-    config dataclass, training loop, eval cadence are inherited untouched.
+Run the repository-owned deterministic synthetic proof::
 
-VENDORING
-
-    The upstream examples/ directory is NOT installed by pip — it lives
-    in the gsplat repo only. To use this fork on a fresh pod:
-
-        cd /workspace/code/venviewer_training
-        GSPLAT_REF=v1.5.3
-        BASE=https://raw.githubusercontent.com/nerfstudio-project/gsplat/${GSPLAT_REF}/examples
-        curl -fsSL "${BASE}/simple_trainer.py" > _upstream_simple_trainer.py
-        curl -fsSL "${BASE}/datasets/colmap.py" > _upstream_colmap.py
-        sha256sum _upstream_simple_trainer.py _upstream_colmap.py \
-          > _upstream_checksums.sha256
-
-    Then this module patches the two upstream import sites via
-    sys.modules and defers all work to the vendored copy.
+    python -B -m venviewer_training.simple_trainer_depth preflight \
+      --config configs/training/config_b.yaml --synthetic-fixture
 """
 
 from __future__ import annotations
 
-import importlib.util
+import argparse
+import json
 import sys
-import types
+import tempfile
 from pathlib import Path
+from typing import Sequence
 
-# ============================================================================
-# patch 1 — route `from datasets.colmap import Dataset` to our subclass
-# ============================================================================
-import venviewer_training.colmap_depth_dataset as _depth_ds
 
-_datasets_pkg = types.ModuleType("datasets")
-_datasets_colmap = types.ModuleType("datasets.colmap")
-_datasets_colmap.Dataset = _depth_ds.Dataset  # type: ignore[attr-defined]
-# Parser is also imported by upstream from datasets.colmap; pass through.
-if hasattr(_depth_ds, "Parser"):
-    _datasets_colmap.Parser = _depth_ds.Parser  # type: ignore[attr-defined]
-_datasets_pkg.colmap = _datasets_colmap  # type: ignore[attr-defined]
-sys.modules.setdefault("datasets", _datasets_pkg)
-sys.modules.setdefault("datasets.colmap", _datasets_colmap)
-
-# ============================================================================
-# patch 2 — fused_ssim with pure-PyTorch fallback
-# ============================================================================
-try:
-    from fused_ssim import fused_ssim as _fused_ssim  # type: ignore
-except Exception:  # noqa: BLE001 — silently fall back to pure-PyTorch
-    from venviewer_training.ssim_fallback import fused_ssim as _fused_ssim
-
-if "fused_ssim" not in sys.modules:
-    _fused_pkg = types.ModuleType("fused_ssim")
-    _fused_pkg.fused_ssim = _fused_ssim  # type: ignore[attr-defined]
-    sys.modules["fused_ssim"] = _fused_pkg
-
-# ============================================================================
-# load vendored upstream and re-export its CLI entrypoint
-# ============================================================================
-_HERE = Path(__file__).resolve().parent
-_UPSTREAM = _HERE / "_upstream_simple_trainer.py"
-if not _UPSTREAM.exists():
-    raise SystemExit(
-        f"upstream not vendored at {_UPSTREAM}\n"
-        "see the VENDORING block in venviewer_training/simple_trainer_depth.py"
-    )
-
-_spec = importlib.util.spec_from_file_location(
-    "venviewer_training._upstream_simple_trainer", str(_UPSTREAM)
+BLOCKED_EXECUTION_MESSAGE = (
+    "Actual training is not available from this entrypoint. D-016 requires "
+    "RunPod, and the trusted Foundry execution gates are not connected."
 )
-if _spec is None or _spec.loader is None:  # pragma: no cover
-    raise SystemExit(f"could not load spec for {_UPSTREAM}")
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["venviewer_training._upstream_simple_trainer"] = _mod
-_spec.loader.exec_module(_mod)
 
-# upstream's tyro CLI lives in main(). If a future gsplat refactor changes
-# the entrypoint name, this fork pattern needs updating — fail loudly.
-main = getattr(_mod, "main", None)
-if main is None:  # pragma: no cover
-    raise SystemExit(
-        "vendored upstream simple_trainer.py has no main() — fork pattern "
-        "needs updating for the new gsplat release"
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m venviewer_training.simple_trainer_depth",
+        description=(
+            "Validate the frozen Config B and COLMAP/depth contracts without "
+            "starting training or contacting a provider."
+        ),
     )
+    subparsers = parser.add_subparsers(dest="command")
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="run the authority-none CPU contract proof (no optimization)",
+    )
+    preflight.add_argument("--config", required=True, type=Path)
+    source = preflight.add_mutually_exclusive_group(required=True)
+    source.add_argument("--dataset", type=Path, help="prepared colmap_v2 root")
+    source.add_argument(
+        "--synthetic-fixture",
+        action="store_true",
+        help="use the small deterministic repository-owned test fixture",
+    )
+    preflight.add_argument(
+        "--depth-dir",
+        type=Path,
+        help=(
+            "depth-prior directory to validate (defaults to DATASET/depths; "
+            "this checker does not connect it to training)"
+        ),
+    )
+    preflight.add_argument(
+        "--output",
+        type=Path,
+        help="optionally create a new canonical JSON receipt; never overwrites",
+    )
+
+    execute = subparsers.add_parser(
+        "execute",
+        help="always fails closed; actual training requires the Foundry executor",
+    )
+    execute.add_argument("arguments", nargs=argparse.REMAINDER)
+    return parser
+
+
+def _run_preflight(args: argparse.Namespace) -> int:
+    from venviewer_training.trainer_contract import (
+        TrainerContractError,
+        build_preflight_receipt,
+        receipt_bytes,
+    )
+
+    temporary: tempfile.TemporaryDirectory[str] | None = None
+    try:
+        if args.synthetic_fixture:
+            if args.depth_dir is not None:
+                raise TrainerContractError(
+                    "INVALID_ARGUMENT",
+                    "--depth-dir cannot be combined with --synthetic-fixture; the fixture owns its depth files",
+                )
+            temporary = tempfile.TemporaryDirectory(prefix="venviewer-trainer-contract-")
+            from venviewer_training.tests.fixture_builder import build_valid_colmap_fixture
+
+            dataset_root, depth_dir = build_valid_colmap_fixture(Path(temporary.name))
+        else:
+            dataset_root = args.dataset
+            assert isinstance(dataset_root, Path)
+            depth_dir = args.depth_dir or (dataset_root / "depths")
+
+        receipt = build_preflight_receipt(
+            config_path=args.config,
+            dataset_root=dataset_root,
+            depth_dir=depth_dir,
+        )
+        encoded = receipt_bytes(receipt)
+        if args.output is not None:
+            try:
+                with args.output.open("xb") as destination:
+                    destination.write(encoded)
+            except FileExistsError as error:
+                raise TrainerContractError(
+                    "OUTPUT_EXISTS", "output receipt already exists; refusing to overwrite"
+                ) from error
+            except OSError as error:
+                raise TrainerContractError(
+                    "OUTPUT_WRITE_FAILED", "could not create output receipt"
+                ) from error
+        sys.stdout.buffer.write(encoded)
+        return 0
+    except TrainerContractError as error:
+        sys.stderr.write(
+            json.dumps(
+                {"code": error.code, "message": error.message, "ok": False},
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return 2
+    finally:
+        if temporary is not None:
+            temporary.cleanup()
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
+        return 0
+    if args.command == "execute":
+        sys.stderr.write(BLOCKED_EXECUTION_MESSAGE + "\n")
+        return 78
+    if args.command == "preflight":
+        return _run_preflight(args)
+    parser.error("unknown command")
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

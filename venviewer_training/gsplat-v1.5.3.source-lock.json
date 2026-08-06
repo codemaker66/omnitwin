@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "venviewer.gsplat-source-lock.v0",
+  "project": "nerfstudio-project/gsplat",
+  "repository": "https://github.com/nerfstudio-project/gsplat",
+  "tag": "v1.5.3",
+  "releaseArchive": {
+    "url": "https://github.com/nerfstudio-project/gsplat/archive/refs/tags/v1.5.3.tar.gz",
+    "byteSize": 27454693,
+    "sha256": "8a24428b8ea2ce7c3e10fcf5aa20e20fe503b8329c96db797f4eab703729aac3"
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "sourceUrl": "https://raw.githubusercontent.com/nerfstudio-project/gsplat/v1.5.3/LICENSE",
+    "byteSize": 11345,
+    "sha256": "96a4f89293c0df19880da9b0e35f67589f5885ea61b224ef16bb2bd599a8a44d",
+    "legalReviewStatus": "recorded_not_legal_advice"
+  },
+  "requiredSourceClosure": [
+    {
+      "path": "examples/datasets/colmap.py",
+      "byteSize": 18447,
+      "sha256": "2aa364ecfd2d7dd715ede5192fccd533982edf3be68b98008440a5aedf3b3fed"
+    },
+    {
+      "path": "examples/datasets/normalize.py",
+      "byteSize": 4650,
+      "sha256": "019be99afb9cf947842b42c149fb5baecd840847795b0d63e6596d86aa7f79b3"
+    },
+    {
+      "path": "examples/datasets/traj.py",
+      "byteSize": 9447,
+      "sha256": "69eb03c2b9d04c88bc2d4c4e0a5f398a51b8079889f3aea83775328f455ff936"
+    },
+    {
+      "path": "examples/gsplat_viewer.py",
+      "byteSize": 9675,
+      "sha256": "c4037793460b1c0fd1f895eed80ba373492136b7c1845f8ddea5f3173838d71a"
+    },
+    {
+      "path": "examples/lib_bilagrid.py",
+      "byteSize": 22151,
+      "sha256": "fefcebafdf7e8c533fe8c0c83c67a81b010ecc2e4b99677a49528307a306f4b2"
+    },
+    {
+      "path": "examples/requirements.txt",
+      "byteSize": 677,
+      "sha256": "c488a9146f7428560b24cfc7a01455808f356d4c8468641b23277c9236bbcc8a"
+    },
+    {
+      "path": "examples/simple_trainer.py",
+      "byteSize": 49728,
+      "sha256": "79319e1cd7404e4d1ba0c425634235c39e6054f0643b904a01feea6179462c05"
+    },
+    {
+      "path": "examples/utils.py",
+      "byteSize": 7519,
+      "sha256": "44a38b236940706705c9351b365be6bd21d49efc57dd695ba5a7e70055b959e1"
+    }
+  ],
+  "apiContract": {
+    "targetPython": "3.10",
+    "declaredTyroVersion": "0.8.10",
+    "entrypointSignature": "main(local_rank, world_rank, world_size, cfg)",
+    "preset": "mcmc",
+    "inheritedConfigDefaults": {
+      "test_every": 8
+    },
+    "inheritedMcmcDefaults": {
+      "init_opa": 0.5,
+      "init_scale": 0.1,
+      "opacity_reg": 0.01,
+      "scale_reg": 0.01,
+      "strategy.verbose": true
+    }
+  },
+  "runtimeStatus": {
+    "sourceVendored": false,
+    "dependencyClosurePinned": false,
+    "upstreamCliImported": false,
+    "externalE57DepthWired": false,
+    "trainingMetricsJsonlProduced": false,
+    "d014BilateralGridSerializationDefined": false,
+    "legacyRunnerEnabled": false
+  }
+}

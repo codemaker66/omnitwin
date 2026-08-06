@@ -1,0 +1,56 @@
+{
+  "format": "VNSDP01",
+  "version": 1,
+  "header_size_bytes": 160,
+  "max_payload_bytes": 1048576,
+  "vectors": [
+    {
+      "name": "empty-source-object",
+      "kind": "source",
+      "terminal": true,
+      "work_sequence_decimal": "1",
+      "chunk_sequence_decimal": "1",
+      "session_ref": "helper_session_000102030405060708090a0b0c0d0e0f",
+      "request_ref": "helper_request_101112131415161718191a1b1c1d1e1f",
+      "scope_ref": "helper_scope_202122232425262728292a2b2c2d2e2f",
+      "container_ref": "helper_source_303132333435363738393a3b3c3d3e3f",
+      "object_ref": "helper_source_file_404142434445464748494a4b4c4d4e4f",
+      "transfer_ref": "helper_transfer_707172737475767778797a7b7c7d7e7f",
+      "payload_hex": "",
+      "payload_sha256_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "frame_hex": "564e534450303100000100a00101000000000000000000010000000000000001000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f707172737475767778797a7b7c7d7e7fe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "final-output-chunk",
+      "kind": "output",
+      "terminal": true,
+      "work_sequence_decimal": "72623859790382856",
+      "chunk_sequence_decimal": "16909060",
+      "session_ref": "helper_session_808182838485868788898a8b8c8d8e8f",
+      "request_ref": "helper_request_909192939495969798999a9b9c9d9e9f",
+      "scope_ref": "helper_scope_a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "container_ref": "helper_run_b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "object_ref": "helper_output_file_c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "transfer_ref": "helper_transfer_d0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+      "payload_hex": "56656e76696577657220564e53445030310a",
+      "payload_sha256_hex": "7c8945e5c715f65e0395a4c119355d3be8a267f7499fe01e1b3cff2acf60d062",
+      "frame_hex": "564e534450303100000100a00201000001020304050607080000001201020304808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf7c8945e5c715f65e0395a4c119355d3be8a267f7499fe01e1b3cff2acf60d06256656e76696577657220564e53445030310a"
+    },
+    {
+      "name": "catalog-raw-utf16-unpaired-surrogate",
+      "kind": "catalog",
+      "terminal": true,
+      "work_sequence_decimal": "2",
+      "chunk_sequence_decimal": "1",
+      "session_ref": "helper_session_000102030405060708090a0b0c0d0e0f",
+      "request_ref": "helper_request_101112131415161718191a1b1c1d1e1f",
+      "scope_ref": "helper_scope_202122232425262728292a2b2c2d2e2f",
+      "container_ref": "helper_source_303132333435363738393a3b3c3d3e3f",
+      "object_ref": "helper_catalog_e0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+      "transfer_ref": "helper_transfer_707172737475767778797a7b7c7d7e7f",
+      "payload_hex": "0041d8000042",
+      "payload_sha256_hex": "e9cff819340398fda9ed33cba225542f1ed440d718d31bce30d4c3aab03bdddc",
+      "frame_hex": "564e534450303100000100a00301000000000000000000020000000600000001000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3fe0e1e2e3e4e5e6e7e8e9eaebecedeeef707172737475767778797a7b7c7d7e7fe9cff819340398fda9ed33cba225542f1ed440d718d31bce30d4c3aab03bdddc0041d8000042"
+    }
+  ]
+}

@@ -1,5 +1,13 @@
 # RunPod training operator runbook
 
+> **Blocked historical procedure (2026-07-13): do not launch or train from
+> this document.** `run_training.sh` now exits before creating a run because
+> this manual path bypasses the Foundry JobSpec, purpose-aware rights decision,
+> single-use execution confirmation, compute approval, cost/kill controls and
+> durable attempt ledger. The trainer wrapper is also incomplete. The sections
+> below are retained only as evidence for rebuilding the future approved
+> executor; they are not current operating instructions.
+
 **Audience:** Blake (and any future trainer operator).
 **Scope:** every action between "I want to train a Venviewer splat" and "the signed AssetVersion bundle is in R2 ready for backend ingestion."
 **Backed by:** D-006a (gsplat MCMC + bilateral grid), D-014 (Venue Artifact Factory), D-016 (RunPod-canonical training environment).

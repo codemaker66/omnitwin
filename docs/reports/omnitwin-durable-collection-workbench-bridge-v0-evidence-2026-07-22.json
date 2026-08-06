@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "omnitwin.durable-collection-workbench-bridge-v0-evidence.v0",
+  "reviewId": "T-544",
+  "recordedAt": "2026-07-22",
+  "authority": "none",
+  "status": {
+    "slice": "done_generated_and_default_core_verified",
+    "implementation": "implemented",
+    "focusedVerification": "passed",
+    "manualVisualBrowserVerification": "passed_1280x900_390x844_and_320x720_after_P2_P3_remediation",
+    "upstreamRealExplorerGesture": "pending_under_T-542B",
+    "parentNativeIntakeTask": "in_progress",
+    "broaderGoal": "active"
+  },
+  "scope": "A process-only bridge accepts only the T-542 controller's retained durable collection root plus its exact collection-index digest, reverifies every stored T-541 child independently, runs the existing Universal Intake Receipt and V8 Source Facts, readiness and operator-checklist chain only on verified copied payloads, rebinds the V8 receipt to the T-541 receipt and reverifies the child again before publishing a path-free neutral result.",
+  "contract": {
+    "viewSchemaVersion": "omnitwin.foundry.local-native-collection-analysis-view.v0",
+    "reportSchemaVersion": "omnitwin.foundry.local-native-collection-analysis-report.v0",
+    "authority": "none",
+    "planState": "needs_operator_review",
+    "cancellationBoundary": "between_bounded_verification_steps",
+    "cancellationQualification": "The V8 inspection accepts AbortSignal. Initial collection/T-541 verification and final T-541 re-verification do not, so cancellation can wait for the current bounded verification step and takes effect before the next step.",
+    "inputBoundary": {
+      "collectionRootOwner": "local_native_intake_process_only",
+      "callerSuppliedIndexDigestRequired": true,
+      "browserCanSupplyCollectionRoot": false,
+      "browserCanReceiveCollectionRoot": false,
+      "exactCollectionIndexDigestChecked": true
+    },
+    "childSequence": [
+      "verify_t541_child",
+      "inspect_verified_copied_payload_with_v8",
+      "bind_v8_receipt_to_t541_receipt",
+      "reverify_t541_child_after_inspection",
+      "publish_neutral_result"
+    ],
+    "failureIsolation": "per_child",
+    "publicLabels": "generated_kind_and_position_only",
+    "publicBlockers": {
+      "source": "fixed_codes_derived_only_from_neutral_item_and_artifact_states",
+      "sortedUnique": true,
+      "alwaysIncludes": "OPERATOR_EVIDENCE_REVIEW_REQUIRED",
+      "xbinIncludes": "XBIN_OFFICIAL_EXPORT_ONLY",
+      "nonStoredIncludes": "COPIED_PAYLOAD_NOT_STORED",
+      "failedVerificationIncludes": "COPIED_PAYLOAD_VERIFICATION_FAILED"
+    },
+    "publicNextAction": {
+      "xbin": "OBTAIN_OFFICIAL_EXPORT",
+      "ordinaryCompletedItem": "OPERATOR_EVIDENCE_REVIEW_REQUIRED",
+      "nonStoredOrInvalidCopiedPayload": "RESTART_LOCAL_INTAKE",
+      "failedOrCancelledItem": "RESTART_LOCAL_SESSION"
+    },
+    "rawLabelsReasonsRequestTextAndLocatorsPublished": false
+  },
+  "generatedVerification": {
+    "mixedFamilyFixture": {
+      "ephemeral": true,
+      "userOrVenueData": false,
+      "items": [
+        "E57-labelled file",
+        "OBJ-labelled file",
+        "GLB-labelled file",
+        "Gaussian-PLY-labelled file",
+        "JPEG-labelled file",
+        "MP4-labelled file",
+        "XBIN-labelled file"
+      ],
+      "familiesObserved": [
+        "generic_e57",
+        "obj",
+        "glb_gltf",
+        "gaussian_ply",
+        "generic_image",
+        "video",
+        "xgrids_xbin"
+      ],
+      "xbinSupport": "opaque_reference_only",
+      "xbinBlocker": "XBIN_OFFICIAL_EXPORT_ONLY",
+      "xbinNextAction": "OBTAIN_OFFICIAL_EXPORT"
+    },
+    "defaultCoreCollectionFixture": {
+      "ephemeral": true,
+      "userOrVenueData": false,
+      "selectedRoots": 2,
+      "storedChildren": 2,
+      "storedFiles": 2,
+      "storedBytes": 14,
+      "members": [
+        {
+          "family": "obj",
+          "bytes": 5,
+          "sha256": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8"
+        },
+        {
+          "family": "glb_gltf",
+          "bytes": 9,
+          "sha256": "209632502598829df2207e5b4bdc7dff3805da888b7d66aefd206e9abfc9e6f0"
+        }
+      ],
+      "initialAnalysisOutcome": "complete",
+      "initialItemStates": [
+        "complete",
+        "complete"
+      ],
+      "mutationOutcome": "complete_with_failures",
+      "mutationItemStates": [
+        "failed_child_verification",
+        "complete"
+      ],
+      "originalSourcesUnchanged": true
+    },
+    "adversarialCoverage": {
+      "wrongCallerIndexDigestRejected": true,
+      "nonStoredChildDistinguishedFromFailedVerification": true,
+      "mutatedChildBeforeAnalysisRejectedInIsolation": true,
+      "mutationAfterV8BeforeFinalVerificationWithholdsArtifacts": true,
+      "laterIntactChildContinues": true,
+      "activeV8CancellationPreservesPriorResults": true,
+      "uninterruptibleVerificationCancellationQualificationPinned": true,
+      "publicPathAndBasenameLeakRejected": true,
+      "truthRemainsPending": true,
+      "reportDigestBound": true
+    }
+  },
+  "verification": {
+    "focusedCommand": "pnpm exec vitest run src/__tests__/local-native-collection-analysis.test.ts src/__tests__/local-native-intake.test.ts src/__tests__/local-native-intake-app.test.ts src/__tests__/local-native-intake-assets.test.ts src/__tests__/grand-hall-pilot-fit.test.ts",
+    "focusedScope": "four_T-544_files_plus_Grand_Hall_fit",
+    "focusedFilesPassed": 5,
+    "focusedFilesFailed": 0,
+    "focusedTestsPassed": 55,
+    "focusedTestsFailed": 0,
+    "packageTypecheck": "passed",
+    "targetedLint": "passed",
+    "wholeToolsSuite": {
+      "result": "qualified_by_one_known_unrelated_failure",
+      "filesPassed": 58,
+      "filesFailed": 1,
+      "testsPassed": 958,
+      "testsFailed": 1,
+      "testsTotal": 959,
+      "soleFailingTestFile": "build-windows-x64-production-release.test.ts",
+      "qualification": "The sole failure is caused by the pre-existing packages/reconstruction-foundry/src/captured-quality-comparison.d.ts emitted sibling and is unrelated to T-544."
+    },
+    "step3UxRemediation": {
+      "issue": "Analysis action feedback was initially written into the distant Step 1 status, and report-open feedback was then overwritten by polling.",
+      "resolution": "Start, cancel and report feedback now stays in the Step 3 analysis status; terminal polling preserves the report-open message while the report remains visibly open.",
+      "focusedFilesPassed": 4,
+      "focusedFilesFailed": 0,
+      "focusedTestsPassed": 48,
+      "focusedTestsFailed": 0,
+      "packageTypecheck": "passed",
+      "targetedLint": "passed",
+      "scopedDiffCheck": "passed",
+      "manualBrowser": {
+        "viewports": [
+          "1280x900",
+          "390x844",
+          "320x720"
+        ],
+        "reportStatusPersistedBeyondTwoPolls": true,
+        "step1StatusHiddenAndEmpty": true,
+        "viewportOverflow": false,
+        "reportOverflow": false,
+        "consoleWarnings": 0,
+        "consoleErrors": 0
+      }
+    },
+    "scopedDiffCheck": "passed",
+    "httpLifecycleRoutesVerified": [
+      "start",
+      "status",
+      "cancel",
+      "report"
+    ],
+    "browserAssetJavaScriptSyntax": "passed",
+    "manualVisualBrowserVerification": "passed_1280x900_390x844_and_320x720_after_P2_P3_remediation"
+  },
+  "activity": {
+    "userOrVenueSourceRead": false,
+    "originalSourceWrittenOrChanged": false,
+    "admissionEvaluated": false,
+    "planCompiled": false,
+    "reconstructionPerformed": false,
+    "workerDispatched": false,
+    "providerSelected": false,
+    "providerInvoked": false,
+    "trainingPerformed": false,
+    "enhancementPerformed": false,
+    "cloudRequestPerformed": false,
+    "rightsEvaluated": false,
+    "credentialUsed": false,
+    "spendOccurred": false,
+    "signed": false,
+    "published": false,
+    "deployed": false
+  },
+  "remaining": [
+    "T-542B still needs one real human Windows Explorer drop gesture through the native OLE panel and its resulting end-to-end copied-collection evidence.",
+    "Every inspected source still requires operator evidence review; this bridge grants no admission, execution or publication authority."
+  ]
+}

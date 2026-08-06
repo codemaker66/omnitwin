@@ -1704,8 +1704,9 @@ export function TradesHallVisualPage(): ReactElement {
     return () => { cancelled = true; };
   }, [selectedTruthTarget.targetId, selectedTruthTarget.targetType]);
 
-  // Fetch the latest usable runtime package for the selected room. A failure
-  // or empty API result leaves publishedPackage null and keeps fallback.
+  // The legacy detailed-package browser resolver is retired. It resolves null
+  // in production and keeps this diagnostic page on reviewed fallback geometry
+  // until a room-specific anonymous profile contract exists.
   useEffect(() => {
     let cancelled = false;
     if (runtimeTarget.error !== null) {

@@ -65,17 +65,45 @@ from one representation to another.
 ### Implemented local coverage
 
 - Universal Intake Receipt V0 inventories and fingerprints dropped sources.
+- The bounded T-542 native-selection preview adds a helper-owned, topmost
+  Windows OLE `CF_HDROP` panel for one mixed file/folder gesture. The browser
+  can only request the separate panel and receives neutral rows; it has no HTML
+  drag/drop, `DataTransfer`, filename or path surface. Node subsequently
+  reopens the process-owned paths, creates one T-541 child workspace per root
+  and stores a durable collection index. This remains explicitly
+  `nativeCustodyClaimed: false`, `authority: none`, and is not retained-handle
+  byte custody.
+- T-544 bridges a process-owned T-542 collection into the existing local V8
+  inspection chain without accepting a root from HTTP. It binds the exact
+  collection-index digest, reverifies every stored T-541 child independently,
+  inspects only the verified copied payload, binds the V8 receipt back to the
+  T-541 receipt and reverifies the child again before publishing a result. One
+  damaged child does not suppress later intact children. Browser DTOs contain
+  only generated `File N`/`Folder N` labels, digest/state summaries, sorted
+  fixed blocker codes and fixed next-action codes; XBIN is explicitly
+  `XBIN_OFFICIAL_EXPORT_ONLY` with `OBTAIN_OFFICIAL_EXPORT`. A collection entry
+  with no stored copy is instead
+  `COPIED_PAYLOAD_NOT_STORED` with `RESTART_LOCAL_INTAKE`; a failed child
+  verification remains distinct as `COPIED_PAYLOAD_VERIFICATION_FAILED`. Every
+  result stays
+  `needs_operator_review`, authority remains none and cancellation is truthful
+  at `between_bounded_verification_steps` because T-541 verification itself is
+  not abortable. This bridge does not perform admission, plan compilation,
+  reconstruction, worker/provider dispatch, training, enhancement, rights
+  evaluation, signing or publication.
 - Universal Source Facts V1 remains frozen and establishes bounded E57, binary
   GLB, streaming OBJ and stored-ZIP SOG v2 structure while preserving
   format-specific unknowns.
 - Universal Source Facts V2, Source Readiness Map V2 and Operator Evidence
   Checklist V2 remain frozen. V2 reuses the exact V1 asset contracts and adds
   SPZ without changing V1 bytes, meanings or digest domains.
-- The active local app uses Universal Source Facts V5, Source Readiness Map V5
-  and Operator Evidence Checklist V5. V3 added classic Gaussian PLY, V4 added
-  bounded media-container structure, and V5 adds calibration/trajectory
-  document structure without changing earlier bytes, meanings or digest
-  domains.
+- The active local app uses Universal Source Facts V8, Source Readiness Map V8
+  and Operator Evidence Checklist V8. V3 added classic Gaussian PLY, V4 added
+  bounded media-container structure, V5 added calibration/trajectory document
+  structure, V6 added ordinary point PLY layout, and V7 adds an exact
+  three-member XGRIDS/Potree v2 bundle refinement. V8 adds a separately bound
+  point-value, readiness, effective-checklist and private diagnostic-preview
+  refinement without changing earlier bytes, meanings or digest domains.
 - The SOG inspector validates stored members, metadata declarations, CRCs,
   signed descriptors and complete RIFF member structure on the same open handle
   used for the full-file fingerprint. It does not decode WebP pixels or Gaussian
@@ -113,7 +141,62 @@ from one representation to another.
   transform/quaternion convention, calibration applicability,
   synchronization, accuracy/drift, provenance, rights and registration remain
   explicit unknowns.
-- V1-V5 artifact digests prove canonical local self-consistency only. Issuance is
+- The V6 ordinary point PLY inspector runs only after inherited Gaussian
+  inspection does not establish or explicitly reject a Gaussian target. It
+  accepts bounded, case-sensitive PLY 1.0 `binary_little_endian` with exactly
+  one positive fixed-width vertex element, unique scalar properties, required
+  `x`/`y`/`z` declarations, and exact
+  `header + vertex count × stride = source bytes` arithmetic. It derives
+  declared property offsets but decodes no values; property names do not
+  establish semantics. ASCII, big-endian, list, compressed, packed and
+  mesh/multi-element layouts receive explicit unsupported-variant results;
+  trailing-byte or payload-length contradictions receive explicit parse-failure
+  results.
+- The V7 Potree inspector binds exact co-located `metadata.json`,
+  `hierarchy.bin` and `octree.bin` identities as one bundle. It accepts only the
+  frozen XGRIDS `DEFAULT` declaration with a 14-byte
+  position/intensity/`lcc prediction` record, traverses 22-byte little-endian
+  hierarchy chunks and proxies under the official viewer rules, and proves
+  point-count, node-byte-range, disjointness, gaplessness and exact octree
+  coverage equations. Metadata and hierarchy capture is bounded; octree bytes
+  are streamed and hashed. It decodes no point values and retains declared
+  depth, leaf-with-child, histogram and proxy-replacement differences as
+  compatibility evidence instead of silently normalizing them.
+- The V8 point-value inspector runs only over an exact V7-established bundle.
+  It decodes the frozen `int32[3]` position and two one-byte attributes, checks
+  finiteness, declared ranges and derived node bounds with one scale unit of
+  tolerance, and records exact extrema, quantiles, byte histograms and—under a
+  bounded threshold—duplicate-position/full-record profiles. It also produces
+  twelve deterministic 1024×1024 CPU PNG diagnostics across three axis pairs
+  and four fixed display modes. These values and rasters do not establish
+  units, frame, physical meaning, completeness, accuracy, vendor semantics or
+  official-viewer fidelity.
+- A separate Photo Capture Quality Workbench V0 consumes only receipt-verified
+  JPEG/PNG candidates. It preserves the existing 18-build/12-held-out protocol,
+  verifies exact source bytes again, decodes pixels sequentially, applies frozen
+  resolution/exposure/clipping/edge-energy/colour and difference-hash heuristics,
+  and emits a receipt-bound authority-none report plus memory-only WebP contact
+  previews. Submitted roles, run revisions, cancellation and Stop settlement are
+  explicit. This is capture triage, not Universal Source Facts V9, calibration,
+  registration, reconstruction or recovered-detail evidence.
+- A separate Room Envelope Review V0 workbench consumes only one exact
+  V8-established Potree bundle and its three digest-bound 1024×1024 diagnostic
+  planes. The operator reviews all three planes, labels one as horizontal and
+  draws a simple polygon in intrinsic pixel coordinates. A bounded worker
+  re-verifies the three bundle members, decodes the unchanged 14-byte records,
+  maps every point through the frozen V8 raster equation and records selected
+  counts, decoder-coordinate bounds and the exact inverse-mapped polygon in a
+  canonical self-digested `authority:none` artifact. The polygon is eligible
+  only after an explicit `accepted_as_fit_seed` decision and at least 512
+  selected records. It establishes no units, axis meaning, room identity,
+  physical accuracy, independent control, rights or transform authority.
+- The separate E57 consumer for that artifact is fit-only by construction. Its
+  production adapter requests the frozen fit scan IDs and never requests the
+  frozen validation/test IDs. It may emit an authority-none candidate or a
+  refusal, but never an approved TransformArtifact. A later locked validation
+  action must remain a distinct process and must not tune or refit the
+  candidate it evaluates.
+- V1-V8 artifact digests prove canonical local self-consistency only. Issuance is
   internal to the high-level inspected-intake path, `authority` remains `none`,
   and neither the digest nor schema validity authenticates who ran the
   inspector or independently attests the source.
@@ -128,12 +211,37 @@ from one representation to another.
 - The authority-none real trajectory-document V5 evidence chains are recorded
   in
   `docs/reports/calibration-trajectory-source-facts-v5-evidence-2026-07-17.json`.
+- The authority-none ordinary point PLY V6 evidence and its deliberate mesh and
+  Gaussian-precedence controls are recorded in
+  `docs/reports/ordinary-point-ply-source-facts-v6-evidence-2026-07-18.json`.
+- The authority-none XGRIDS/Potree v2 V7 evidence, including the exact Reception
+  positive, four metadata/octet contradictions and five unreachable-hierarchy
+  negatives, is recorded in
+  `docs/reports/xgrids-potree-v2-source-facts-v7-evidence-2026-07-18.json`.
+- The authority-none XGRIDS/Potree point-value V8 evidence, including exact
+  decoded distributions, duplicate concentration, twelve deterministic preview
+  identities and responsive local-app QA, is recorded in
+  `docs/reports/xgrids-potree-v2-point-values-v8-evidence-2026-07-18.json`.
+- The authority-none Photo Capture Quality Workbench V0 implementation and
+  controlled four-photo fixture QA are recorded in
+  `docs/reports/reception-room-photo-capture-quality-workbench-v0-evidence-2026-07-18.json`.
+- The authority-none Room Envelope Review V0 contract, real ineligible
+  proposal, responsive workbench QA and separate fit-only E57 consumer are
+  recorded in
+  `docs/reports/reception-room-envelope-review-workbench-v0-evidence-2026-07-19.json`.
 
-The next bounded local profile should cover ordinary non-Gaussian point
-geometry without widening V1-V5, beginning with PLY and adding LAS/LAZ or XYZ
-only where real local inputs and explicit limits support them. Property/header
-structure must stay separate from units, frame/CRS, accuracy, provenance,
-rights and authority.
+V8 establishes decoded numeric point values only for the exact V7-established
+Reception vendor preview without widening V1-V7. It does not turn that preview
+into raw sensor data, authoritative captured geometry or metric geometry.
+Vendor-attribute semantics, units/frame/CRS, authoritative physical bounds,
+geometry role and completeness, provenance, accuracy, registration, official-
+viewer fidelity and rights remain explicit unknowns requiring separate later
+evidence profiles.
+
+The photo workbench does not close those V8 unknowns and does not establish an
+Appearance Capture QA Pack. A heuristic `pass` means only that no frozen rule
+fired; `capture_quality_ready` means ready for a later registration test, not
+that registration, physical accuracy, source rights or release approval exists.
 
 This ordinary local path does not depend on the optional release workflow
 below. No cybersecurity, credential, cloud, deployment or publication work is

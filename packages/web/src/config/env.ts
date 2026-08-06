@@ -2,8 +2,8 @@
 // Environment configuration — Vite injects VITE_ prefixed vars at build time
 // ---------------------------------------------------------------------------
 
-export const API_URL: string =
-  import.meta.env["VITE_API_URL"] ?? "http://localhost:3001";
+const configuredApiUrl = import.meta.env["VITE_API_URL"] ?? "http://localhost:3001";
+export const API_URL: string = configuredApiUrl.trim().replace(/\/+$/u, "");
 
 // R2 public URL prefix for uploaded files. When set, the loadout detail
 // view renders actual image previews instead of filename text. When unset

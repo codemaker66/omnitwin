@@ -1,10 +1,21 @@
 # Venviewer training-output bundle contract (v1)
 
-**Status:** v1 — accepted 2026-04-26.
+**Status:** accepted 2026-04-26 as the historical v0 candidate shape; current
+execution and promotion use is blocked pending the control bindings below.
 **Schema version field:** `"venviewer.assetbundle.v0"` (the wire-format constant; bumped only on breaking schema changes).
 **Authority:** D-014 (Venue Artifact Factory) defines the boundary; this spec is its concrete shape. D-016 names the pipeline that produces conforming bundles. This file is the binding contract for both producers (RunPod trainer) and consumers (backend ingestion T-053, downstream registry).
 
-A bundle is the unit that crosses the training/runtime boundary. Producing a conforming bundle is the **only** way training output enters the system.
+A bundle is the intended unit that crosses the training/runtime boundary.
+Producing this v0 shape is necessary for legacy-candidate verification, but is
+not sufficient for training output to enter registration or runtime.
+
+> **Current implementation boundary (2026-07-13):**
+> `verify-training-candidate` performs read-only, local verification of an
+> already-extracted D-014 v0 candidate. A pass produces an
+> `untrusted_candidate_verified` dossier with authority `none`. It does not
+> extract, dispatch, train, upload, register, sign, publish, promote, or
+> authorize runtime consumption. The concrete legacy runner at
+> `infra/runpod/run_training.sh` is blocked fail-closed.
 
 ---
 
@@ -16,7 +27,10 @@ A bundle is a directory whose contents are tarred (gzip, deterministic ordering 
 r2:venviewer-training-outputs/{venue_id}/{run_id}/{run_id}.tar.gz
 ```
 
-The extracted root MUST contain exactly the files below. Names are fixed.
+The extracted root basename MUST equal the control-plane-supplied expected
+`run_id`, and the root MUST contain exactly the top-level files below. Names
+are fixed; nested directories, unexpected entries, symlinks, non-regular
+entries, and files with additional hard links are rejected.
 
 ```
 {run_id}/
@@ -28,16 +42,24 @@ The extracted root MUST contain exactly the files below. Names are fixed.
 ├── hardware.json          # GPU model, CUDA runtime, RunPod pod metadata
 ├── git_state.json         # trainer code commit SHA, branch, dirty flag, remote
 ├── colmap_input.json      # COLMAP scene metadata: cam count, image count, point bbox
-└── bilateral_grid.bin     # OPTIONAL — present iff bilateral grid was enabled
+└── bilateral_grid.bin     # OPTIONAL legacy entry; currently rejected (see §2.9)
 ```
 
 Every file except `bilateral_grid.bin` is **mandatory**.
+
+The local verifier accepts the extracted directory as input. A tarball and its
+R2 object path are transport artifacts and are not themselves verification
+subjects.
 
 ---
 
 ## 2. File schemas
 
 ### 2.1 `manifest.json` (canonical entry point)
+
+The following is a historical shape example. Because it lists
+`bilateral_grid.bin`, it is intentionally **not** accepted by the current local
+verifier; §2.9 explains the missing binary contract.
 
 ```json
 {
@@ -77,7 +99,16 @@ Field rules:
 
 ### 2.2 `scene.ply`
 
-gsplat-native PLY (binary little endian) of the trained Gaussians. The canonical model artifact. SPZ derivation is OPTIONAL post-processing — it does not ship in the bundle.
+gsplat-native PLY (binary little endian) of the trained Gaussians. The
+implemented verifier requires `binary_little_endian 1.0`, exactly one vertex
+element, no mesh or list elements, and the exact ordered float32 scalar gsplat
+property layout for `training_config.sh_degree`. The declared vertex count
+must be positive and no greater than both the verifier cap and
+`strategy.cap_max`; file size must exactly equal the fixed-stride payload.
+Every Gaussian value is streamed and checked for finiteness, and each rotation
+quaternion must have non-zero length. An extension, magic prefix, or matching
+SHA-256 alone is not sufficient. SPZ derivation is OPTIONAL post-processing —
+it does not ship in the bundle.
 
 ### 2.3 `training_config.json`
 
@@ -189,7 +220,13 @@ Scene metadata captured from the COLMAP reconstruction at training start.
 
 ### 2.9 `bilateral_grid.bin` (optional)
 
-Raw float32 little-endian dump of the bilateral grid post-processing parameters, shape from `training_config.bilateral_grid_shape` (default `[16, 16, 8]`). Present iff the trainer was launched with `--enable-bilateral-grid`. Absent otherwise.
+D-014 v0 does not define enough information to verify this file. In
+particular, view count, channels, tensor layout, dtype, endian, and
+serialization are underspecified; `training_config.bilateral_grid_shape`
+cannot supply the missing contract. The local verifier therefore rejects a
+candidate when `bilateral_grid.bin` is present or when
+`post_processing` requests `bilateral_grid`. No corrected binary format is
+defined by this document.
 
 ---
 
@@ -208,7 +245,9 @@ Every bundle ships with a placeholder signature so the schema doesn't change bet
 }
 ```
 
-The placeholder is intentionally non-empty. Consumers MUST tolerate it and treat the bundle as **untrusted candidate** until backend ingestion (T-053) replaces it with a real signature.
+The placeholder is intentionally non-empty. The local verifier requires this
+exact placeholder shape and treats the bundle as an **untrusted candidate**.
+It cannot replace the placeholder or authorize another component to do so.
 
 ### v1 → v2 migration (Ed25519 in KMS)
 
@@ -231,7 +270,13 @@ When the org signs up to Sigstore (D-013 future work), `algorithm` flips to `"si
 
 ---
 
-## 4. Trust boundary
+## 4. Intended trust boundary and current block
+
+The credential separation below remains the accepted design. It is not a
+description of a currently authorized producer: the legacy manual RunPod
+runner is unconditionally blocked because it bypassed the JobSpec, reviewed
+rights, execution confirmation, compute approval, cost controls, kill switch,
+and durable attempt ledger.
 
 Producers (RunPod training pods) hold:
 
@@ -249,23 +294,44 @@ Producers do NOT hold:
 
 A pod can publish a bundle to its own outputs prefix. A pod cannot make that bundle "real."
 
-Consumers (backend ingestion T-053) are the trust gate. Ingestion:
+Consumers (backend ingestion T-053) are intended to be the trust gate. Before
+the promotion sequence below can be implemented as authoritative ingestion,
+the candidate must be bound to all of the following exact subjects:
+
+- reviewed ingest-manifest digest;
+- canonical JobSpec digest;
+- validated provider-plan digest/identity;
+- durable execution-attempt ledger record;
+- passed quality contract and its evidence; and
+- trusted signature subject/payload.
+
+D-014 v0 carries none of those bindings. Consequently, a locally verified v0
+candidate cannot be registered as evidence or an AssetVersion, signed,
+consumed by runtime, published, or promoted. The following sequence is the
+historical intended flow after those bindings are added; the v0 checks alone
+do not authorize step 6 or 7.
+
+Ingestion:
 
 1. Pulls the candidate bundle from `venviewer-training-outputs/{venue_id}/{run_id}/{run_id}.tar.gz`.
 2. Extracts; reads `manifest.json`.
 3. For every entry in `manifest.json.files[]`, recomputes SHA-256 of the named file and verifies it matches the manifest's claim.
 4. Verifies the bundle's structural shape against §1 (presence of mandatory files; absence of unexpected files; `total_size` matches sum).
 5. Verifies `manifest.json.venue_id` and `manifest.json.run_id` match the R2 path the bundle was pulled from.
-6. Replaces `signature` with a real Ed25519 signature per §3.
+6. After verifying every required subject binding, replaces `signature` with a real Ed25519 signature per §3.
 7. Writes a row into the `AssetVersion` table referencing the signed bundle's R2 path.
 
 Any failure rejects the bundle and surfaces the failure to the operator. The candidate bundle stays in R2 for forensics — it is not deleted on rejection.
 
 ---
 
-## 5. Backend ingestion verification protocol (T-053)
+## 5. Historical backend-ingestion sketch (T-053; incomplete and non-executable)
 
-Pseudocode for the verifier. Implementation lives at `scripts/admin/register_trained_bundle.ts` once T-018 lands.
+The original pseudocode below documented structural checks only. It is not a
+complete trust protocol and must not be implemented as written: it omits the
+ingest-manifest, JobSpec, provider-plan, attempt-ledger, quality, and trusted
+signature bindings required by §4. In particular, reaching the `promote`
+comment after shape/hash checks does not authorize signing or registration.
 
 ```
 function ingest(venue_id, run_id):
@@ -293,7 +359,8 @@ function ingest(venue_id, run_id):
         assert actual == entry.sha256, f"hash mismatch on {entry.name}"
         assert filesize(tmp_dir / entry.name) == entry.size
 
-    # promote
+    # BLOCKED: first resolve and verify every §4 subject binding.
+    # Shape, hashes, R2 location and pod metadata do not authorize promotion.
     manifest.signature = sign_ed25519(manifest_canonical_bytes(manifest))
     write_signed_manifest_back_to_bundle(...)
     asset_version.insert(venue_id, run_id, signed_manifest_url, ...)

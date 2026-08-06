@@ -30,6 +30,10 @@ import {
   type FoundryOfflineNormalizeMeshGlbPreviewVerifiedPermit,
 } from "../../../packages/reconstruction-foundry/src/offline-normalize-mesh-glb-preview.js";
 import {
+  stableCanonicalJson,
+  toCanonicalJson,
+} from "../../../packages/reconstruction-foundry/src/canonical-json.js";
+import {
   DsseEnvelopeSchema,
 } from "../../../packages/reconstruction-foundry/src/dsse.js";
 import {
@@ -39,6 +43,11 @@ import {
   parseLocalOfflineNormalizationPreviewVerifierResult,
   type LocalOfflineNormalizationPreviewVerifierInput,
 } from "./local-offline-normalization-preview-verifier.js";
+import {
+  localOfflineNormalizationPreviewExecutionProofMatches,
+  type LocalOfflineNormalizationPreviewExecutionBridge,
+  type LocalOfflineNormalizationPreviewExecutionSession,
+} from "./local-offline-normalization-preview-execution-bridge.js";
 
 export const LOCAL_OFFLINE_NORMALIZATION_PREVIEW_HELPER_INPUT_V0 =
   "omnitwin.local-offline-normalization-preview-helper-input.v0";
@@ -58,6 +67,8 @@ const HELPER_TERMINATION_UNCONFIRMED_CODE =
   "LOCAL_OFFLINE_PREVIEW_HELPER_TERMINATION_UNCONFIRMED";
 const SOURCE_HANDLE_CLOSE_UNCONFIRMED_CODE =
   "LOCAL_OFFLINE_PREVIEW_SOURCE_HANDLE_CLOSE_UNCONFIRMED";
+const SANDBOX_STOP_UNCONFIRMED_CODE =
+  "LOCAL_OFFLINE_PREVIEW_SANDBOX_STOP_UNCONFIRMED";
 
 /**
  * Synchronous consume-once ledger shared by every controller in this Node
@@ -165,7 +176,7 @@ export interface LocalOfflineNormalizationPreviewDto {
   readonly custody: "session_memory_only";
   readonly trustedSourceOnly: true;
   readonly localVolumeEstablished: false;
-  readonly sandboxEstablished: false;
+  readonly sandboxEstablished: boolean;
 }
 
 export const LOCAL_OFFLINE_NORMALIZATION_PREVIEW_INITIAL_DTO = Object.freeze({
@@ -251,6 +262,11 @@ export interface CreateLocalOfflineNormalizationPreviewControllerOptions {
   readonly helperTimeoutMs?: number;
   /** Process-side injection seam used by focused tests and reviewed hosts only. */
   readonly helperFactory?: LocalOfflineNormalizationPreviewHelperFactory;
+  /**
+   * Process-only isolated execution boundary. It is never populated from an
+   * HTTP request and is deliberately separate from the legacy helper seam.
+   */
+  readonly executionBridge?: LocalOfflineNormalizationPreviewExecutionBridge;
   /** Test-only close seam. Production hosts must use the default exact close. */
   readonly sourceHandleCloser?: (handle: FileHandle) => Promise<void>;
 }
@@ -297,6 +313,7 @@ interface ActiveRequest {
   deadlineTimer: ReturnType<typeof setTimeout> | null;
   helperLifecycle: TrackedHelperLifecycle | null;
   abortHelper: ((code: string) => Promise<boolean>) | null;
+  sandboxCleanupFailure: LocalOfflineNormalizationPreviewError | null;
   readonly settled: Promise<void>;
   readonly resolveSettled: () => void;
 }
@@ -352,6 +369,16 @@ class LocalOfflineNormalizationPreviewError extends Error {
 
 function fail(code: string, message: string, cause?: unknown): never {
   throw new LocalOfflineNormalizationPreviewError(code, message, { cause });
+}
+
+function sandboxCleanupUnconfirmed(
+  cause: unknown,
+): LocalOfflineNormalizationPreviewError {
+  return new LocalOfflineNormalizationPreviewError(
+    SANDBOX_STOP_UNCONFIRMED_CODE,
+    "The isolated sandbox could not be confirmed stopped.",
+    { cause },
+  );
 }
 
 function copyAndFreezeJson<T>(value: T): T {
@@ -489,6 +516,7 @@ function dto(
     readonly source?: LocalOfflineNormalizationPreviewDto["source"];
     readonly failureCode?: string;
     readonly message?: string;
+    readonly sandboxEstablished?: boolean;
   } = {},
 ): LocalOfflineNormalizationPreviewDto {
   const message = options.message !== undefined
@@ -499,12 +527,16 @@ function dto(
     ? state === "ready"
       ? "This trusted private source is ready for one offline preview run."
       : state === "running"
-        ? "A helper thread with byte caps and V8 heap settings is creating the private preview. Those settings are not a whole-process memory limit or a sandbox."
+        ? "The private preview is running. No sandbox claim is shown unless the isolated run and its separate fresh check return an exact live proof."
         : state === "verified"
-          ? "The private preview passed a separate fresh-verification helper and remains in session memory only."
+          ? options.sandboxEstablished === true
+            ? "The private preview passed isolated transform and fresh-verifier runs with an exact live sandbox proof. It remains in session memory only."
+            : "The private preview passed a separate fresh-verification helper and remains in session memory only. This reviewed legacy path does not claim a sandbox."
           : "The private offline preview is blocked."
     : options.failureCode === HELPER_TERMINATION_UNCONFIRMED_CODE
       ? `The helper could not be confirmed stopped. No output was accepted. Stop the controller again to retry (${options.failureCode}).`
+      : options.failureCode === SANDBOX_STOP_UNCONFIRMED_CODE
+        ? `The isolated sandbox could not be confirmed stopped. No output was accepted, and this run must not be treated as safely stopped (${options.failureCode}).`
       : options.failureCode === SOURCE_HANDLE_CLOSE_UNCONFIRMED_CODE
         ? `The read-only source-file handle could not be confirmed closed. No output was accepted. Stop the controller again to retry (${options.failureCode}).`
       : `The private offline preview stopped safely without retaining unverified output (${options.failureCode}).`);
@@ -521,7 +553,7 @@ function dto(
     custody: "session_memory_only",
     trustedSourceOnly: true,
     localVolumeEstablished: false,
-    sandboxEstablished: false,
+    sandboxEstablished: options.sandboxEstablished === true,
   });
 }
 
@@ -875,6 +907,8 @@ export class LocalOfflineNormalizationPreviewController {
   readonly #evidence: ReadonlyMap<string, StoredEvidence>;
   readonly #keys: LocalOfflineNormalizationPreviewTrustedKeys;
   readonly #helperFactory: LocalOfflineNormalizationPreviewHelperFactory;
+  readonly #executionBridge:
+    LocalOfflineNormalizationPreviewExecutionBridge | undefined;
   readonly #sourceHandleCloser: (handle: FileHandle) => Promise<void>;
   readonly #helperTimeoutMs: number;
   readonly #states = new Map<string, LocalOfflineNormalizationPreviewDto>();
@@ -891,11 +925,20 @@ export class LocalOfflineNormalizationPreviewController {
   readonly #trackedSourceHandles = new Set<TrackedSourceHandle>();
   #outputLease: TrackedOutputLease | null = null;
   #active: ActiveRequest | null = null;
+  #executionBridgeStopPromise: Promise<void> | null = null;
   #stopped = false;
 
   constructor(
     options: CreateLocalOfflineNormalizationPreviewControllerOptions,
   ) {
+    if (
+      options.executionBridge !== undefined &&
+      options.helperFactory !== undefined
+    ) {
+      throw new TypeError(
+        "isolated execution cannot share the legacy helper injection seam",
+      );
+    }
     if (
       !Number.isInteger(options.helperTimeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS) ||
       (options.helperTimeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS) <= 0 ||
@@ -907,6 +950,7 @@ export class LocalOfflineNormalizationPreviewController {
     this.#helperTimeoutMs =
       options.helperTimeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
     this.#helperFactory = options.helperFactory ?? defaultHelperFactory;
+    this.#executionBridge = options.executionBridge;
     this.#sourceHandleCloser = options.sourceHandleCloser ??
       ((handle) => handle.close());
     this.#keys = new Map(options.pinnedTrustedPermitKeys);
@@ -1217,6 +1261,7 @@ export class LocalOfflineNormalizationPreviewController {
       deadlineTimer: null,
       helperLifecycle: null,
       abortHelper: null,
+      sandboxCleanupFailure: null,
       settled,
       resolveSettled,
     };
@@ -1233,6 +1278,10 @@ export class LocalOfflineNormalizationPreviewController {
     let candidateOutput: Buffer | null = null;
     let helperResult: unknown = null;
     let verifierResult: unknown = null;
+    let executionSession:
+      LocalOfflineNormalizationPreviewExecutionSession | null = null;
+    let executionSessionStopPromise: Promise<void> | null = null;
+    let sandboxEstablished = false;
     try {
       const verifiedPermit =
         verifyFoundryOfflineNormalizeMeshGlbPreviewPermit({
@@ -1290,29 +1339,69 @@ export class LocalOfflineNormalizationPreviewController {
         [stillActivePermit.invocation.permit.keyId, helperPermitKey],
       ]);
 
-      const transferable = copyToTransferable(initial.bytes);
-      bestEffortOverwrite(initial.bytes);
-      initial = { bytes: Buffer.alloc(0), identity: initial.identity };
+      let helperReport: FoundryOfflineNormalizeMeshGlbPreviewReportV0;
+      if (this.#executionBridge === undefined) {
+        const transferable = copyToTransferable(initial.bytes);
+        bestEffortOverwrite(initial.bytes);
+        initial = { bytes: Buffer.alloc(0), identity: initial.identity };
 
-      helperResult = await this.#runHelper(
-        active,
-        {
-          schemaVersion: LOCAL_OFFLINE_NORMALIZATION_PREVIEW_HELPER_INPUT_V0,
-          sourceBytes: transferable,
-          invocation: stillActivePermit.invocation,
-          permitEnvelope: prepared.evidence.permitEnvelope,
-          pinnedTrustedPermitKeys: helperPermitKeys,
-        },
-        stillActivePermit.expiresAt,
-      );
-      this.#assertActive(active);
-      const success = parseHelperSuccess(helperResult);
-      candidateOutput = Buffer.from(success.normalizedGlb);
-      helperResult = null;
-      const helperReport =
-        FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
-          success.report,
+        helperResult = await this.#runHelper(
+          active,
+          {
+            schemaVersion: LOCAL_OFFLINE_NORMALIZATION_PREVIEW_HELPER_INPUT_V0,
+            sourceBytes: transferable,
+            invocation: stillActivePermit.invocation,
+            permitEnvelope: prepared.evidence.permitEnvelope,
+            pinnedTrustedPermitKeys: helperPermitKeys,
+          },
+          stillActivePermit.expiresAt,
         );
+        this.#assertActive(active);
+        const success = parseHelperSuccess(helperResult);
+        candidateOutput = Buffer.from(success.normalizedGlb);
+        helperResult = null;
+        helperReport =
+          FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
+            success.report,
+          );
+      } else {
+        const executionDeadlineAt = new Date(active.deadlineAt).toISOString();
+        executionSession = await this.#executionBridge.reserveSession(
+          {
+            deadlineAt: executionDeadlineAt,
+            invocation: stillActivePermit.invocation,
+            permitEnvelope: prepared.evidence.permitEnvelope,
+            permitPublicKey: helperPermitKey,
+            permitPayloadSha256: stillActivePermit.permitPayloadSha256,
+          },
+          active.abortController.signal,
+        );
+        const ownedSession = executionSession;
+        active.abortHelper = async (): Promise<boolean> => {
+          try {
+            executionSessionStopPromise ??= ownedSession.stop();
+            await executionSessionStopPromise;
+            return true;
+          } catch (cleanupError: unknown) {
+            active.sandboxCleanupFailure ??=
+              sandboxCleanupUnconfirmed(cleanupError);
+            return false;
+          }
+        };
+        this.#assertActive(active);
+        const transformed = await ownedSession.runTransform({
+          sourceBytes: initial.bytes,
+          signal: active.abortController.signal,
+        });
+        this.#assertActive(active);
+        candidateOutput = Buffer.from(transformed.candidateBytes);
+        helperReport =
+          FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
+            transformed.report,
+          );
+        bestEffortOverwrite(initial.bytes);
+        initial = { bytes: Buffer.alloc(0), identity: initial.identity };
+      }
 
       fresh = await readExactSource(
         prepared.asset.absolutePath,
@@ -1330,43 +1419,80 @@ export class LocalOfflineNormalizationPreviewController {
       if (!sameIdentity(initial.identity, fresh.identity)) {
         fail(
           "LOCAL_OFFLINE_PREVIEW_SOURCE_IDENTITY_CHANGED",
-          "The preview source was replaced or mutated while the helper ran.",
+          "The preview source was replaced or mutated while private execution ran.",
         );
       }
       this.#assertActive(active);
-      const freshSourceBytes = copyToTransferable(fresh.bytes);
-      const candidateOutputBytes = copyToTransferable(candidateOutput);
-      bestEffortOverwrite(fresh.bytes);
-      fresh = { bytes: Buffer.alloc(0), identity: fresh.identity };
-      bestEffortOverwrite(candidateOutput);
-      candidateOutput = null;
+      let report: FoundryOfflineNormalizeMeshGlbPreviewReportV0;
+      if (executionSession === null) {
+        const freshSourceBytes = copyToTransferable(fresh.bytes);
+        const candidateOutputBytes = copyToTransferable(candidateOutput);
+        bestEffortOverwrite(fresh.bytes);
+        fresh = { bytes: Buffer.alloc(0), identity: fresh.identity };
+        bestEffortOverwrite(candidateOutput);
+        candidateOutput = null;
 
-      verifierResult = await this.#runVerifierHelper(active, {
-        schemaVersion:
-          LOCAL_OFFLINE_NORMALIZATION_PREVIEW_VERIFIER_INPUT_V0,
-        freshSourceBytes,
-        candidateOutputBytes,
-        invocation: stillActivePermit.invocation,
-        permitEnvelope: DsseEnvelopeSchema.parse(
-          prepared.evidence.permitEnvelope,
-        ),
-        report: helperReport,
-        pinnedTrustedPermitKeys: helperPermitKeys,
-      }, stillActivePermit.expiresAt);
-      this.#assertActive(active);
-      const verified =
-        parseLocalOfflineNormalizationPreviewVerifierResult(verifierResult);
-      if (verified.kind === "failed") {
-        fail(
-          verified.code,
-          "The separate fresh-verification helper rejected the preview.",
+        verifierResult = await this.#runVerifierHelper(active, {
+          schemaVersion:
+            LOCAL_OFFLINE_NORMALIZATION_PREVIEW_VERIFIER_INPUT_V0,
+          freshSourceBytes,
+          candidateOutputBytes,
+          invocation: stillActivePermit.invocation,
+          permitEnvelope: DsseEnvelopeSchema.parse(
+            prepared.evidence.permitEnvelope,
+          ),
+          report: helperReport,
+          pinnedTrustedPermitKeys: helperPermitKeys,
+        }, stillActivePermit.expiresAt);
+        this.#assertActive(active);
+        const verified =
+          parseLocalOfflineNormalizationPreviewVerifierResult(verifierResult);
+        if (verified.kind === "failed") {
+          fail(
+            verified.code,
+            "The separate fresh-verification helper rejected the preview.",
+          );
+        }
+        candidateOutput = Buffer.from(verified.candidateOutputBytes);
+        verifierResult = null;
+        report = FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
+          verified.report,
         );
+      } else {
+        const proofResult = await executionSession.runFreshVerifier({
+          freshSourceBytes: fresh.bytes,
+          candidateBytes: candidateOutput,
+          report: helperReport,
+          signal: active.abortController.signal,
+        });
+        this.#assertActive(active);
+        const executionDeadlineAt = new Date(active.deadlineAt).toISOString();
+        if (
+          !localOfflineNormalizationPreviewExecutionProofMatches(
+            proofResult.proof,
+            {
+              deadlineAt: executionDeadlineAt,
+              invocation: stillActivePermit.invocation,
+              permitPayloadSha256: stillActivePermit.permitPayloadSha256,
+              sourceBytes: fresh.bytes,
+              candidateBytes: candidateOutput,
+              report: helperReport,
+            },
+          )
+        ) {
+          fail(
+            "LOCAL_OFFLINE_PREVIEW_SANDBOX_PROOF_REJECTED",
+            "The isolated execution result did not carry an authentic exact live witness.",
+          );
+        }
+        sandboxEstablished = true;
+        active.abortHelper = null;
+        report = FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
+          helperReport,
+        );
+        bestEffortOverwrite(fresh.bytes);
+        fresh = { bytes: Buffer.alloc(0), identity: fresh.identity };
       }
-      candidateOutput = Buffer.from(verified.candidateOutputBytes);
-      verifierResult = null;
-      const report = FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema.parse(
-        verified.report,
-      );
       const candidateSha256 = `sha256:${createHash("sha256")
         .update(candidateOutput)
         .digest("hex")}`;
@@ -1374,7 +1500,8 @@ export class LocalOfflineNormalizationPreviewController {
         candidateOutput.byteLength !== report.output.sizeBytes ||
         candidateSha256 !== report.output.sha256 ||
         report.reportSha256 !== helperReport.reportSha256 ||
-        JSON.stringify(report) !== JSON.stringify(helperReport)
+        stableCanonicalJson(toCanonicalJson(report)) !==
+          stableCanonicalJson(toCanonicalJson(helperReport))
       ) {
         fail(
           LOCAL_OFFLINE_NORMALIZATION_PREVIEW_VERIFIER_FAILURE_CODES.verificationFailed,
@@ -1410,6 +1537,7 @@ export class LocalOfflineNormalizationPreviewController {
       });
       const finalDto = dto(request, "verified", {
         source: sourceDto(stillActivePermit),
+        sandboxEstablished,
         output: {
           sizeBytes: report.output.sizeBytes,
           sha256: report.output.sha256,
@@ -1419,10 +1547,22 @@ export class LocalOfflineNormalizationPreviewController {
       });
       return this.#record(finalDto);
     } catch (error: unknown) {
+      let failure = error;
+      if (executionSession !== null && !sandboxEstablished) {
+        active.abortHelper = null;
+        try {
+          executionSessionStopPromise ??= executionSession.stop();
+          await executionSessionStopPromise;
+        } catch (cleanupError: unknown) {
+          active.sandboxCleanupFailure ??=
+            sandboxCleanupUnconfirmed(cleanupError);
+          failure = active.sandboxCleanupFailure;
+        }
+      }
       const failed = dto(request, "failed", {
         source: sourceDto(prepared.verifiedPermit),
         failureCode: publicCode(
-          error,
+          failure,
           "LOCAL_OFFLINE_PREVIEW_VERIFICATION_FAILED",
         ),
       });
@@ -1498,10 +1638,11 @@ export class LocalOfflineNormalizationPreviewController {
           dto(request, "failed", {
             source: this.#states.get(requestId)?.source ?? null,
             failureCode:
-              !terminationConfirmed ||
+              active.sandboxCleanupFailure?.code ??
+              (!terminationConfirmed ||
                 this.#hasTrackedHelperForRequest(requestId)
                 ? HELPER_TERMINATION_UNCONFIRMED_CODE
-                : SOURCE_HANDLE_CLOSE_UNCONFIRMED_CODE,
+                : SOURCE_HANDLE_CLOSE_UNCONFIRMED_CODE),
           }),
         );
       }
@@ -1537,6 +1678,10 @@ export class LocalOfflineNormalizationPreviewController {
     }
     for (const lifecycle of [...this.#trackedSourceHandles]) {
       await this.#closeTrackedSourceHandle(lifecycle);
+    }
+    if (this.#executionBridge !== undefined) {
+      this.#executionBridgeStopPromise ??= this.#executionBridge.stopAll();
+      await this.#executionBridgeStopPromise;
     }
     for (const requestId of [...this.#results.keys()]) {
       this.#discardResult(

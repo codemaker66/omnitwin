@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { type BigIntStats } from "node:fs";
 import {
   lstat,
@@ -15,9 +15,38 @@ import {
   resolve as resolvePath,
 } from "node:path";
 import { TextDecoder } from "node:util";
+import type { Readable } from "node:stream";
 
-export const LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1 =
-  "omnitwin.reconstruction-foundry.offline-preview-container.v1";
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V2 =
+  "omnitwin.reconstruction-foundry.offline-preview-container.v2";
+
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_FIXED_ENTRYPOINT_V2 =
+  Object.freeze([
+    "/bin/busybox",
+    "timeout",
+    "-s",
+    "KILL",
+    "60s",
+    "/usr/local/bin/node",
+    "--no-warnings",
+    "--experimental-permission",
+    "--allow-fs-read=/opt/worker/worker.mjs",
+    "--no-addons",
+    "--max-old-space-size=512",
+    "/opt/worker/worker.mjs",
+  ] as const);
+
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2 =
+  Object.freeze([
+    "HOME=/nonexistent",
+    "TMPDIR=/nonexistent",
+    "XDG_CACHE_HOME=/nonexistent",
+    "NODE_ENV=production",
+    "TZ=UTC",
+  ] as const);
+
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2 = "/";
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2 = "SIGKILL";
 
 export const LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS = Object.freeze({
   workerKind: "io.omnitwin.foundry.worker.kind",
@@ -27,7 +56,25 @@ export const LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS = Object.freeze({
     "io.omnitwin.foundry.worker.artifact-sha256",
   seccompProfileSha256:
     "io.omnitwin.foundry.worker.seccomp-profile-sha256",
+  watchdogArtifactSha256:
+    "io.omnitwin.foundry.worker.watchdog-artifact-sha256",
+  watchdogMaximumRuntimeMilliseconds:
+    "io.omnitwin.foundry.worker.watchdog-maximum-runtime-ms",
+  approvalScope: "io.omnitwin.foundry.approval.scope",
+  qualificationStatus: "io.omnitwin.foundry.qualification.status",
 } as const);
+
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_APPROVAL_SCOPE_V2 =
+  "build_owned_production";
+
+/**
+ * The image build cannot qualify itself. A signed bundled-release manifest
+ * binds the separately produced live qualification report to this exact image
+ * digest, while the immutable image label remains honest about build-time
+ * status.
+ */
+export const LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_BUILD_QUALIFICATION_STATUS_V2 =
+  "unqualified";
 
 export const LOCAL_OFFLINE_PREVIEW_CONTAINER_PREFLIGHT_ERROR_CODES = [
   "PREFLIGHT_CONFIGURATION_REJECTED",
@@ -71,10 +118,14 @@ export const LOCAL_OFFLINE_PREVIEW_CONTAINER_PREFLIGHT_ERROR_CODES = [
   "IMAGE_LABEL_MISMATCH",
   "IMAGE_NONROOT_USER_MISMATCH",
   "IMAGE_ENTRYPOINT_MISMATCH",
+  "IMAGE_ENVIRONMENT_MISMATCH",
+  "IMAGE_WORKING_DIRECTORY_MISMATCH",
+  "IMAGE_STOP_SIGNAL_MISMATCH",
   "IMAGE_DEFAULT_COMMAND_REJECTED",
   "IMAGE_EXPOSED_PORTS_REJECTED",
   "IMAGE_DECLARED_VOLUMES_REJECTED",
   "IMAGE_HEALTHCHECK_REJECTED",
+  "DOCKER_PROCESS_TERMINATION_UNCONFIRMED",
   "PREFLIGHT_INTERNAL_FAILURE",
 ] as const;
 
@@ -103,9 +154,19 @@ export interface LocalOfflinePreviewContainerResourceLimits {
   readonly maximumRuntimeMilliseconds: number;
 }
 
+export interface LocalOfflinePreviewContainerRuntimeWatchdog {
+  readonly kind: "busybox_timeout_pid1_wall_clock";
+  readonly executablePath: "/bin/busybox";
+  readonly artifactSha256: string;
+  readonly coverage: "stdin_worker_stdout";
+  readonly terminationSignal: "SIGKILL";
+  readonly independentOfHostProcess: true;
+  readonly maximumRuntimeMilliseconds: number;
+}
+
 export interface LocalOfflinePreviewContainerConfiguration {
   readonly schemaVersion:
-    typeof LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1;
+    typeof LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V2;
   readonly authority: "none";
   readonly fallbackPolicy: "block";
   readonly containerPlatform: "linux/amd64";
@@ -127,6 +188,7 @@ export interface LocalOfflinePreviewContainerConfiguration {
   readonly workerProtocolSha256: string;
   readonly workerArtifactSha256: string;
   readonly fixedEntrypoint: readonly string[];
+  readonly runtimeWatchdog: LocalOfflinePreviewContainerRuntimeWatchdog;
   readonly resourceLimits: LocalOfflinePreviewContainerResourceLimits;
 }
 
@@ -177,7 +239,9 @@ export type LocalOfflinePreviewDockerCommandProbeResult =
       outcome:
         | "timed_out"
         | "output_limit_exceeded"
-        | "failed_to_start";
+        | "failed_to_start"
+        | "stream_failed"
+        | "termination_unconfirmed";
     }>;
 
 export type LocalOfflinePreviewDockerCommandProbe = (
@@ -207,6 +271,7 @@ const IMAGE_REFERENCE =
   /^[a-z0-9][a-z0-9._/-]{0,446}@sha256:[a-f0-9]{64}$/u;
 const MAX_SECURITY_PROFILE_BYTES = 1024 * 1024;
 const COMMAND_TIMEOUT_MILLISECONDS = 10_000;
+const COMMAND_TERMINATION_CONFIRM_MILLISECONDS = 2_000;
 const MAX_COMMAND_STDOUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_STDERR_BYTES = 64 * 1024;
 const MIN_CONTAINER_MEMORY_BYTES = 64 * 1024 * 1024;
@@ -239,6 +304,7 @@ const CONFIGURATION_KEYS = [
   "workerProtocolSha256",
   "workerArtifactSha256",
   "fixedEntrypoint",
+  "runtimeWatchdog",
   "resourceLimits",
 ] as const;
 
@@ -249,6 +315,16 @@ const RESOURCE_LIMIT_KEYS = [
   "pidsLimit",
   "maximumInputBytes",
   "maximumOutputBytes",
+  "maximumRuntimeMilliseconds",
+] as const;
+
+const RUNTIME_WATCHDOG_KEYS = [
+  "kind",
+  "executablePath",
+  "artifactSha256",
+  "coverage",
+  "terminationSignal",
+  "independentOfHostProcess",
   "maximumRuntimeMilliseconds",
 ] as const;
 
@@ -412,11 +488,7 @@ function parseResourceLimits(
       1,
       MAX_CONTAINER_ARTIFACT_BYTES,
     ) ||
-    !isSafeIntegerInRange(
-      maximumRuntimeMilliseconds,
-      100,
-      MAX_CONTAINER_RUNTIME_MILLISECONDS,
-    )
+    maximumRuntimeMilliseconds !== MAX_CONTAINER_RUNTIME_MILLISECONDS
   ) {
     return null;
   }
@@ -431,6 +503,36 @@ function parseResourceLimits(
   });
 }
 
+function parseRuntimeWatchdog(
+  value: unknown,
+  resourceLimits: LocalOfflinePreviewContainerResourceLimits,
+): LocalOfflinePreviewContainerRuntimeWatchdog | null {
+  if (
+    !isPlainObject(value) ||
+    !hasExactStringKeys(value, RUNTIME_WATCHDOG_KEYS) ||
+    value.kind !== "busybox_timeout_pid1_wall_clock" ||
+    value.executablePath !== "/bin/busybox" ||
+    typeof value.artifactSha256 !== "string" ||
+    !SHA256.test(value.artifactSha256) ||
+    value.coverage !== "stdin_worker_stdout" ||
+    value.terminationSignal !== "SIGKILL" ||
+    value.independentOfHostProcess !== true ||
+    value.maximumRuntimeMilliseconds !==
+      resourceLimits.maximumRuntimeMilliseconds
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    kind: value.kind,
+    executablePath: value.executablePath,
+    artifactSha256: value.artifactSha256,
+    coverage: value.coverage,
+    terminationSignal: value.terminationSignal,
+    independentOfHostProcess: value.independentOfHostProcess,
+    maximumRuntimeMilliseconds: value.maximumRuntimeMilliseconds,
+  });
+}
+
 export function parseLocalOfflinePreviewContainerConfiguration(
   value: unknown,
 ): LocalOfflinePreviewContainerConfiguration | null {
@@ -439,8 +541,12 @@ export function parseLocalOfflinePreviewContainerConfiguration(
   }
   const fixedEntrypoint = parseEntrypoint(value.fixedEntrypoint);
   const resourceLimits = parseResourceLimits(value.resourceLimits);
+  const runtimeWatchdog =
+    resourceLimits === null
+      ? null
+      : parseRuntimeWatchdog(value.runtimeWatchdog, resourceLimits);
   if (
-    value.schemaVersion !== LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V1 ||
+    value.schemaVersion !== LOCAL_OFFLINE_PREVIEW_CONTAINER_CONFIGURATION_V2 ||
     value.authority !== "none" ||
     value.fallbackPolicy !== "block" ||
     value.containerPlatform !== "linux/amd64" ||
@@ -471,6 +577,12 @@ export function parseLocalOfflinePreviewContainerConfiguration(
     typeof value.workerArtifactSha256 !== "string" ||
     !SHA256.test(value.workerArtifactSha256) ||
     fixedEntrypoint === null ||
+    runtimeWatchdog === null ||
+    !arraysEqual(
+      fixedEntrypoint,
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_FIXED_ENTRYPOINT_V2,
+    ) ||
+    fixedEntrypoint[0] !== runtimeWatchdog.executablePath ||
     resourceLimits === null
   ) {
     return null;
@@ -498,6 +610,7 @@ export function parseLocalOfflinePreviewContainerConfiguration(
     workerProtocolSha256: value.workerProtocolSha256,
     workerArtifactSha256: value.workerArtifactSha256,
     fixedEntrypoint,
+    runtimeWatchdog,
     resourceLimits,
   });
 }
@@ -663,8 +776,24 @@ function toBuffer(chunk: Buffer | string): Buffer {
   return typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
 }
 
-export const defaultLocalOfflinePreviewDockerCommandProbe:
-LocalOfflinePreviewDockerCommandProbe = async (request) => {
+type DockerProbeChildProcessFactory = (
+  executablePath: string,
+  argumentsList: readonly string[],
+) => ChildProcessByStdio<null, Readable, Readable>;
+
+const defaultDockerProbeChildProcessFactory:
+DockerProbeChildProcessFactory = (executablePath, argumentsList) =>
+  spawn(executablePath, [...argumentsList], {
+    env: dockerCliEnvironment(),
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+
+async function runLocalOfflinePreviewDockerCommandProbe(
+  request: LocalOfflinePreviewDockerCommandProbeRequest,
+  childProcessFactory: DockerProbeChildProcessFactory,
+): Promise<LocalOfflinePreviewDockerCommandProbeResult> {
   const argumentsList = dockerArguments(request);
   if (
     argumentsList === null ||
@@ -683,67 +812,142 @@ LocalOfflinePreviewDockerCommandProbe = async (request) => {
       let stdoutByteLength = 0;
       let stderrByteLength = 0;
       let timeout: ReturnType<typeof setTimeout> | null = null;
+      let terminationConfirmation:
+        ReturnType<typeof setTimeout> | null = null;
+      let requestedTerminationOutcome:
+        | "timed_out"
+        | "output_limit_exceeded"
+        | "stream_failed"
+        | null = null;
       const stdoutChunks: Buffer[] = [];
-      const child = spawn(request.executablePath, argumentsList, {
-        env: dockerCliEnvironment(),
-        shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-      });
+      let child: ChildProcessByStdio<null, Readable, Readable>;
       const finish = (
         result: LocalOfflinePreviewDockerCommandProbeResult,
       ): void => {
         if (settled) return;
         settled = true;
         if (timeout !== null) clearTimeout(timeout);
+        if (terminationConfirmation !== null) {
+          clearTimeout(terminationConfirmation);
+        }
         resolve(result);
       };
-      const stopForLimit = (): void => {
+      const eraseStdoutChunks = (): void => {
+        for (const chunk of stdoutChunks) chunk.fill(0);
         stdoutChunks.length = 0;
-        child.stdout.destroy();
-        child.stderr.destroy();
-        child.kill("SIGKILL");
-        child.unref();
-        finish({ outcome: "output_limit_exceeded" });
       };
-      child.stdout.on("data", (rawChunk: Buffer | string) => {
-        if (settled) return;
-        const chunk = toBuffer(rawChunk);
-        stdoutByteLength += chunk.byteLength;
-        if (stdoutByteLength > request.maximumStdoutBytes) {
-          stopForLimit();
-          return;
+      const terminate = (
+        outcome: "timed_out" | "output_limit_exceeded" | "stream_failed",
+      ): void => {
+        if (settled || requestedTerminationOutcome !== null) return;
+        requestedTerminationOutcome = outcome;
+        eraseStdoutChunks();
+        terminationConfirmation = setTimeout(() => {
+          try {
+            child.unref();
+          } catch {
+            // The structured unconfirmed result remains authoritative.
+          }
+          finish({ outcome: "termination_unconfirmed" });
+        }, COMMAND_TERMINATION_CONFIRM_MILLISECONDS);
+        try {
+          child.stdout.destroy();
+        } catch {
+          // The confirmation timer remains authoritative.
         }
-        stdoutChunks.push(chunk);
-      });
-      child.stderr.on("data", (rawChunk: Buffer | string) => {
-        if (settled) return;
-        stderrByteLength += toBuffer(rawChunk).byteLength;
-        if (stderrByteLength > request.maximumStderrBytes) stopForLimit();
-      });
-      child.once("error", () => {
+        try {
+          child.stderr.destroy();
+        } catch {
+          // The confirmation timer remains authoritative.
+        }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The confirmation timer remains authoritative.
+        }
+        try {
+          child.unref();
+        } catch {
+          // The confirmation timer remains authoritative.
+        }
+      };
+      try {
+        child = childProcessFactory(request.executablePath, argumentsList);
+      } catch {
         finish({ outcome: "failed_to_start" });
-      });
-      child.once("close", (exitCode) => {
-        if (settled) return;
-        finish({
-          outcome: "completed",
-          exitCode,
-          stdout: Buffer.concat(stdoutChunks, stdoutByteLength),
-          stderrByteLength,
+        return;
+      }
+      try {
+        child.stdout.on("data", (rawChunk: Buffer | string) => {
+          if (settled) return;
+          const chunk = toBuffer(rawChunk);
+          stdoutByteLength += chunk.byteLength;
+          if (stdoutByteLength > request.maximumStdoutBytes) {
+            terminate("output_limit_exceeded");
+            return;
+          }
+          stdoutChunks.push(chunk);
         });
-      });
-      timeout = setTimeout(() => {
-        stdoutChunks.length = 0;
-        child.stdout.destroy();
-        child.stderr.destroy();
-        child.kill("SIGKILL");
-        child.unref();
-        finish({ outcome: "timed_out" });
-      }, request.timeoutMilliseconds);
+        child.stderr.on("data", (rawChunk: Buffer | string) => {
+          if (settled) return;
+          stderrByteLength += toBuffer(rawChunk).byteLength;
+          if (stderrByteLength > request.maximumStderrBytes) {
+            terminate("output_limit_exceeded");
+          }
+        });
+        child.stdout.on("error", () => {
+          terminate("stream_failed");
+        });
+        child.stderr.on("error", () => {
+          terminate("stream_failed");
+        });
+        child.once("error", () => {
+          if (requestedTerminationOutcome === null) {
+            finish({ outcome: "failed_to_start" });
+          }
+        });
+        child.once("close", (exitCode) => {
+          if (settled) return;
+          if (requestedTerminationOutcome !== null) {
+            finish({ outcome: requestedTerminationOutcome });
+            return;
+          }
+          const stdout = Buffer.concat(stdoutChunks, stdoutByteLength);
+          eraseStdoutChunks();
+          finish({
+            outcome: "completed",
+            exitCode,
+            stdout,
+            stderrByteLength,
+          });
+        });
+        timeout = setTimeout(() => {
+          terminate("timed_out");
+        }, request.timeoutMilliseconds);
+      } catch {
+        terminate("stream_failed");
+      }
     },
   );
-};
+}
+
+export const defaultLocalOfflinePreviewDockerCommandProbe:
+LocalOfflinePreviewDockerCommandProbe = async (request) =>
+  await runLocalOfflinePreviewDockerCommandProbe(
+    request,
+    defaultDockerProbeChildProcessFactory,
+  );
+
+/** Test-only process seam. It cannot change validation or produce authority. */
+export async function __testOnlyRunLocalOfflinePreviewDockerCommandProbe(
+  request: LocalOfflinePreviewDockerCommandProbeRequest,
+  childProcessFactory: DockerProbeChildProcessFactory,
+): Promise<LocalOfflinePreviewDockerCommandProbeResult> {
+  return await runLocalOfflinePreviewDockerCommandProbe(
+    request,
+    childProcessFactory,
+  );
+}
 
 function sha256(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -820,15 +1024,12 @@ function mapFileProbeFailure(
   return null;
 }
 
-async function verifyFileBindings(
+async function verifyDockerExecutableBinding(
   configuration: ParsedConfiguration,
   fileProbe: LocalOfflinePreviewContainerFileProbe,
 ): Promise<LocalOfflinePreviewContainerPreflightErrorCode | null> {
   if (!pathIsAbsoluteAndLexicallyCanonical(configuration.dockerExecutablePath)) {
     return "DOCKER_EXECUTABLE_PATH_REJECTED";
-  }
-  if (!pathIsAbsoluteAndLexicallyCanonical(configuration.seccompProfilePath)) {
-    return "SECCOMP_PROFILE_PATH_REJECTED";
   }
   const dockerResult = await fileProbe({
     absolutePath: configuration.dockerExecutablePath,
@@ -849,6 +1050,21 @@ async function verifyFileBindings(
     )
   ) {
     return "DOCKER_EXECUTABLE_CHANGED";
+  }
+  return null;
+}
+
+async function verifyFileBindings(
+  configuration: ParsedConfiguration,
+  fileProbe: LocalOfflinePreviewContainerFileProbe,
+): Promise<LocalOfflinePreviewContainerPreflightErrorCode | null> {
+  const dockerFailure = await verifyDockerExecutableBinding(
+    configuration,
+    fileProbe,
+  );
+  if (dockerFailure !== null) return dockerFailure;
+  if (!pathIsAbsoluteAndLexicallyCanonical(configuration.seccompProfilePath)) {
+    return "SECCOMP_PROFILE_PATH_REJECTED";
   }
   const seccompResult = await fileProbe({
     absolutePath: configuration.seccompProfilePath,
@@ -902,7 +1118,13 @@ async function runJsonCommand(
     case "output_limit_exceeded":
       return { ok: false, code: codes.outputLimit };
     case "failed_to_start":
+    case "stream_failed":
       return { ok: false, code: codes.invocation };
+    case "termination_unconfirmed":
+      return {
+        ok: false,
+        code: "DOCKER_PROCESS_TERMINATION_UNCONFIRMED",
+      };
     case "completed":
       break;
   }
@@ -996,7 +1218,20 @@ function requiredImageLabelsMatch(
     ] === configuration.workerArtifactSha256 &&
     labels[
       LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS.seccompProfileSha256
-    ] === configuration.seccompProfileSha256
+    ] === configuration.seccompProfileSha256 &&
+    labels[
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS.watchdogArtifactSha256
+    ] === configuration.runtimeWatchdog.artifactSha256 &&
+    labels[
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS.watchdogMaximumRuntimeMilliseconds
+    ] === String(configuration.runtimeWatchdog.maximumRuntimeMilliseconds) &&
+    labels[
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS.approvalScope
+    ] === LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_APPROVAL_SCOPE_V2 &&
+    labels[
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_LABELS.qualificationStatus
+    ] ===
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_IMAGE_BUILD_QUALIFICATION_STATUS_V2
   );
 }
 
@@ -1040,6 +1275,28 @@ function validateImageConfiguration(
   ) {
     return "IMAGE_ENTRYPOINT_MISMATCH";
   }
+  const environment = stringArray(imageConfiguration.Env);
+  if (
+    environment === null ||
+    !arraysEqual(
+      environment,
+      LOCAL_OFFLINE_PREVIEW_CONTAINER_SAFE_ENVIRONMENT_V2,
+    )
+  ) {
+    return "IMAGE_ENVIRONMENT_MISMATCH";
+  }
+  if (
+    imageConfiguration.WorkingDir !==
+    LOCAL_OFFLINE_PREVIEW_CONTAINER_WORKING_DIRECTORY_V2
+  ) {
+    return "IMAGE_WORKING_DIRECTORY_MISMATCH";
+  }
+  if (
+    imageConfiguration.StopSignal !==
+    LOCAL_OFFLINE_PREVIEW_CONTAINER_STOP_SIGNAL_V2
+  ) {
+    return "IMAGE_STOP_SIGNAL_MISMATCH";
+  }
   const defaultCommand = imageConfiguration.Cmd;
   if (
     defaultCommand !== undefined &&
@@ -1074,14 +1331,31 @@ async function executePreflight(
   if (fileFailure !== null) return blocked(fileFailure);
   const commandProbe =
     dependencies.commandProbe ?? defaultLocalOfflinePreviewDockerCommandProbe;
+  const fileProbe =
+    dependencies.fileProbe ?? defaultLocalOfflinePreviewContainerFileProbe;
+  const revalidateDocker = async (): Promise<
+    LocalOfflinePreviewContainerPreflightReport | null
+  > => {
+    const failure = await verifyDockerExecutableBinding(
+      configuration,
+      fileProbe,
+    );
+    return failure === null ? null : blocked(failure);
+  };
+  const beforeVersion = await revalidateDocker();
+  if (beforeVersion !== null) return beforeVersion;
   const version = await runJsonCommand(configuration, commandProbe, "version");
   if (!version.ok) return blocked(version.code);
   const versionFailure = validateVersion(version.value);
   if (versionFailure !== null) return blocked(versionFailure);
+  const beforeInfo = await revalidateDocker();
+  if (beforeInfo !== null) return beforeInfo;
   const info = await runJsonCommand(configuration, commandProbe, "info");
   if (!info.ok) return blocked(info.code);
   const infoFailure = validateDockerInfo(info.value);
   if (infoFailure !== null) return blocked(infoFailure);
+  const beforeImageInspect = await revalidateDocker();
+  if (beforeImageInspect !== null) return beforeImageInspect;
   const image = await runJsonCommand(
     configuration,
     commandProbe,

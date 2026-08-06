@@ -1,5 +1,10 @@
 import { z } from "zod";
 import {
+  CanonicalJsonValueSchema,
+  sha256Hex,
+  stableCanonicalJson,
+} from "./canonical-layout-snapshot.js";
+import {
   RuntimeTransformAlignmentMethodSchema,
   RuntimeTransformFrameSchema,
   RuntimeManifestKeySchema,
@@ -677,11 +682,98 @@ export const ReviewedRuntimeProfileIdSchema = z.enum([
 ]);
 export type ReviewedRuntimeProfileId = z.infer<typeof ReviewedRuntimeProfileIdSchema>;
 
+export const APPROVED_ROOM_RUNTIME_PRESENTATION_CONTRACT_SCHEMA_VERSION =
+  "venviewer.approved-room-runtime-presentation.v1";
+const APPROVED_ROOM_RUNTIME_PRESENTATION_DIGEST_DOMAIN =
+  "venviewer.approved-room-runtime-presentation.v1\u0000";
+
+const RuntimePresentationVec3Schema = z.tuple([
+  z.number().finite(),
+  z.number().finite(),
+  z.number().finite(),
+]);
+
+const ApprovedRoomRuntimePresentationContractBodySchema = z.object({
+  schemaVersion: z.literal(APPROVED_ROOM_RUNTIME_PRESENTATION_CONTRACT_SCHEMA_VERSION),
+  groupTransform: z.object({
+    position: RuntimePresentationVec3Schema,
+    rotationEulerRadians: RuntimePresentationVec3Schema,
+    uniformScale: z.number().finite().positive(),
+  }).strict(),
+  cameraPolicy: z.object({
+    id: z.string().trim().min(1).max(96).regex(SLUG_PATTERN),
+    route: z.string().trim().min(1).max(240).regex(/^\/[A-Za-z0-9/_-]*$/u),
+    pathDigest: RuntimePackageContentDigestSchema,
+    initialPosition: RuntimePresentationVec3Schema,
+    initialTarget: RuntimePresentationVec3Schema,
+    verticalFovDegrees: z.number().finite().positive().lt(180),
+    nearPlaneMetres: z.number().finite().positive(),
+    farPlaneMetres: z.number().finite().positive(),
+    approachRatePerSecond: z.number().finite().positive(),
+    settleEpsilon: z.number().finite().positive(),
+    reducedMotionMode: z.literal("pin_to_scroll_position"),
+  }).strict().superRefine((camera, ctx) => {
+    if (camera.farPlaneMetres <= camera.nearPlaneMetres) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["farPlaneMetres"],
+        message: "Runtime presentation far plane must be beyond its near plane.",
+      });
+    }
+  }),
+  rendererProfile: z.object({
+    id: z.string().trim().min(1).max(96).regex(SLUG_PATTERN),
+    digest: RuntimePackageContentDigestSchema,
+  }).strict(),
+}).strict();
+
+export type ApprovedRoomRuntimePresentationContractBody = z.infer<
+  typeof ApprovedRoomRuntimePresentationContractBodySchema
+>;
+
+export function approvedRoomRuntimePresentationContractDigest(
+  contract: ApprovedRoomRuntimePresentationContractBody,
+): string {
+  const body = ApprovedRoomRuntimePresentationContractBodySchema.parse(contract);
+  const canonical = CanonicalJsonValueSchema.parse(body);
+  return sha256Hex(
+    `${APPROVED_ROOM_RUNTIME_PRESENTATION_DIGEST_DOMAIN}${stableCanonicalJson(canonical)}`,
+  );
+}
+
+export const ApprovedRoomRuntimePresentationContractSchema =
+  ApprovedRoomRuntimePresentationContractBodySchema.extend({
+    contractDigest: RuntimePackageContentDigestSchema,
+  }).strict().superRefine((contract, ctx) => {
+    const { contractDigest, ...body } = contract;
+    if (contractDigest !== approvedRoomRuntimePresentationContractDigest(body)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["contractDigest"],
+        message: "Runtime presentation contract digest must match its exact versioned body.",
+      });
+    }
+  });
+export type ApprovedRoomRuntimePresentationContract = z.infer<
+  typeof ApprovedRoomRuntimePresentationContractSchema
+>;
+
+export function buildApprovedRoomRuntimePresentationContract(
+  body: ApprovedRoomRuntimePresentationContractBody,
+): ApprovedRoomRuntimePresentationContract {
+  const parsedBody = ApprovedRoomRuntimePresentationContractBodySchema.parse(body);
+  return ApprovedRoomRuntimePresentationContractSchema.parse({
+    ...parsedBody,
+    contractDigest: approvedRoomRuntimePresentationContractDigest(parsedBody),
+  });
+}
+
 export const ApprovedRoomRuntimeProfileSchema = z.object({
   scope: z.literal("approved_room_runtime_profile"),
   venueSlug: RuntimeSlugSchema,
   roomSlug: RuntimeSlugSchema,
   profileId: ReviewedRuntimeProfileIdSchema,
+  presentationContract: ApprovedRoomRuntimePresentationContractSchema,
   visualAssetUrls: z.array(z.string().url())
     .min(1)
     .max(MAX_RUNTIME_VISUAL_ASSET_COUNT),

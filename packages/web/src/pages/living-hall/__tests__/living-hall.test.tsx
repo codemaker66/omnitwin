@@ -172,3 +172,18 @@ describe("claim safety", () => {
     expect(copy).not.toContain("photoreal digital twin");
   });
 });
+
+describe("private exact-version review", () => {
+  it("plainly says when the exact package failed and no substitute was used", async () => {
+    render(
+      <MemoryRouter initialEntries={["/admin/runtime-package-previews/not-a-uuid/view"]}>
+        <LivingHallPage previewPackageId="not-a-uuid" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(
+      "This exact package could not be loaded. The photograph is shown instead; nothing else was substituted.",
+    )).toBeTruthy();
+    expect(screen.getByText("This view cannot publish or replace the public room.")).toBeTruthy();
+  });
+});

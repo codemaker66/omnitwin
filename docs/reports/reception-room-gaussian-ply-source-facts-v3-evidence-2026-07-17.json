@@ -1,0 +1,244 @@
+{
+  "schemaVersion": "omnitwin.local.gaussian-ply-source-facts-v3-evidence-manifest.v0",
+  "authority": "none",
+  "scope": "Read-only structural evidence for three exact local classic Gaussian PLY files. This manifest does not establish decoded Gaussian values, encoding semantics, physical bounds, units, venue frame, renderer compatibility, visual fidelity, provenance, accuracy, registration quality, processing eligibility, or usage rights.",
+  "recordedAt": "2026-07-17",
+  "specificationBasis": {
+    "plyArchive": "https://graphics.stanford.edu/pub/zippack/ply-1.1.tar.Z",
+    "graphdeco": {
+      "commit": "54c035f7834b564019656c3e3fcc3646292f727d",
+      "modelSource": "https://github.com/graphdeco-inria/gaussian-splatting/blob/54c035f7834b564019656c3e3fcc3646292f727d/scene/gaussian_model.py",
+      "shSource": "https://github.com/graphdeco-inria/gaussian-splatting/blob/54c035f7834b564019656c3e3fcc3646292f727d/utils/sh_utils.py",
+      "licenseLimitation": "The upstream research/evaluation licence is format evidence only and does not establish rights in any inspected asset."
+    },
+    "gsplat": {
+      "commit": "77ab983ffe43420b2131669cb35776b883ca4c3c",
+      "exporterSource": "https://github.com/nerfstudio-project/gsplat/blob/77ab983ffe43420b2131669cb35776b883ca4c3c/gsplat/exporter.py",
+      "codeLicense": "Apache-2.0",
+      "licenseLimitation": "The upstream code licence does not establish rights in any inspected asset."
+    },
+    "splatTransform": {
+      "commit": "defe73928c50c9f33b5faffd103097b6244a6bbc",
+      "readerSource": "https://github.com/playcanvas/splat-transform/blob/defe73928c50c9f33b5faffd103097b6244a6bbc/src/lib/readers/read-ply.ts",
+      "packedReaderSource": "https://github.com/playcanvas/splat-transform/blob/defe73928c50c9f33b5faffd103097b6244a6bbc/src/lib/readers/decompress-ply.ts",
+      "packedWriterSource": "https://github.com/playcanvas/splat-transform/blob/defe73928c50c9f33b5faffd103097b6244a6bbc/src/lib/writers/write-compressed-ply.ts",
+      "codeLicense": "MIT",
+      "licenseLimitation": "The upstream code licence does not establish rights in any inspected asset."
+    }
+  },
+  "profile": {
+    "schemaVersion": "omnitwin.foundry.universal-source-facts.v3",
+    "sourceFactsDigestDomain": "VENVIEWER_FOUNDRY_UNIVERSAL_SOURCE_FACTS_V3",
+    "readinessSchemaVersion": "omnitwin.foundry.source-readiness-map.v3",
+    "readinessDigestDomain": "VENVIEWER_FOUNDRY_SOURCE_READINESS_MAP_V3",
+    "checklistSchemaVersion": "omnitwin.foundry.operator-evidence-checklist.v3",
+    "checklistDigestDomain": "VENVIEWER_FOUNDRY_OPERATOR_EVIDENCE_CHECKLIST_V3",
+    "targetCandidate": "gaussian_ply",
+    "format": "ply",
+    "version": "1.0",
+    "encoding": "binary_little_endian",
+    "inspectionCode": "GAUSSIAN_PLY_FORMAT_FACTS_ESTABLISHED",
+    "inspectionCoverage": "complete_header_and_exact_fixed_width_payload_layout",
+    "sourceMaxBytes": 137438953472,
+    "headerMaxBytes": 1048576,
+    "headerLineMaxBytes": 65536,
+    "receiptClassifierMaxCharacters": 64000,
+    "receiptClassifierRule": "complete_case_sensitive_ply_header_grammar_only",
+    "longHeaderRefinementRule": "an ordinary-ply receipt candidate may refine to gaussian_ply only after an established same-open-handle V3 inspection; failed ordinary PLY stays untargeted",
+    "elementMaxCount": 64,
+    "propertyMaxCount": 4096,
+    "commentAndObjInfoMaxCount": 256,
+    "vertexMaxCount": 100000000,
+    "vertexStrideMaxBytes": 32768,
+    "propertyOrder": "arbitrary_unique_declared_order_with_derived_offsets",
+    "normalRule": "optional_all_or_none_float32_nx_ny_nz",
+    "normalOffsetOrder": "semantic_nx_ny_nz_independent_of_declaration_order",
+    "sphericalHarmonicsRestCounts": [0, 9, 24, 45, 72],
+    "packedPlayCanvasRule": "deferred_only_after_complete_legacy_or_current_packed_signature",
+    "scalarAndEncodingTokenCase": "case_sensitive",
+    "propertyNameRule": "printable_non_whitespace_ascii",
+    "valuesDecoded": false
+  },
+  "artifactTrustBoundary": {
+    "digestMeaning": "Canonical local self-consistency only.",
+    "sameOpenHandle": true,
+    "sourceIdentityBinding": "The complete SHA-256 and bounded PLY inspection use the same already-open handle; finalization rejects a mismatched observer identity.",
+    "xbinBehavior": "Atomic unavailable result with no partial facts, readiness lanes, or ordinary checklist requests.",
+    "issuanceSurface": "The package root exposes the inspected-intake entrypoint and canonical V3 artifacts, not caller-supplied V3 issuance.",
+    "independentAttestation": "not_established"
+  },
+  "sources": [
+    {
+      "label": "Reception LCC master point_cloud.ply",
+      "sourceBytes": 496504970,
+      "sha256": "da8efa94895ef7aa2c6024336278d855fdb13026bf10028901c3ac46d1e91a3d",
+      "headerBytes": 2026,
+      "vertexCount": 2002028,
+      "vertexStrideBytes": 248,
+      "payloadBytes": 496502944,
+      "propertyCount": 62,
+      "sphericalHarmonicsDegree": 3,
+      "sphericalHarmonicsRestPropertyCount": 45,
+      "normalPropertiesPresent": true,
+      "normalByteOffsets": [12, 16, 20],
+      "extraPropertyCount": 0,
+      "commentCount": 17,
+      "objInfoCount": 0,
+      "exactPayloadEquationVerified": true,
+      "artifactChain": {
+        "receiptSha256": "d8172f1fbd578fa6d9d396edc5f9ac66bc455ceb0eebaa34a03b12246a646108",
+        "sourceFactsSha256": "8d192581d86af95db224605d44235e9299572334c9328231350247a29e85a221",
+        "sourceReadinessSha256": "0f215f55f0e74082990f8fa13f6f5554eec9ec61b3a1681dcc3d58d4881c69e4",
+        "operatorEvidenceChecklistSha256": "5af3c3178fb2465ca063157b47ce19f2e2805a24a332e719178d12902b083a1d"
+      }
+    },
+    {
+      "label": "Reception LCC SH0 point_cloud.ply",
+      "sourceBytes": 134589707,
+      "sha256": "8f6894aab409bbd413f379bb64b527d170e066d918cc6099c07fae175f0b94b8",
+      "headerBytes": 911,
+      "vertexCount": 1979247,
+      "vertexStrideBytes": 68,
+      "payloadBytes": 134588796,
+      "propertyCount": 17,
+      "sphericalHarmonicsDegree": 0,
+      "sphericalHarmonicsRestPropertyCount": 0,
+      "normalPropertiesPresent": true,
+      "normalByteOffsets": [12, 16, 20],
+      "extraPropertyCount": 0,
+      "commentCount": 17,
+      "objInfoCount": 0,
+      "exactPayloadEquationVerified": true,
+      "artifactChain": {
+        "receiptSha256": "2d59fb1bdb6a5ba0dc6c760fc9a0613a2d26f52388275f520b69ddeda547fa61",
+        "sourceFactsSha256": "eb7cf5f3b766dadacb30eb0569fc4d4b2fdc899e80ee8e9b489cd7f2bf3213a5",
+        "sourceReadinessSha256": "e636787595cf91be887a344344602e2601700b469d2f96ca922725731da3f8df",
+        "operatorEvidenceChecklistSha256": "086b3391ae1843d80129777403fb01166f3ecffa0239fafce2e585d12ece3dc1"
+      }
+    },
+    {
+      "label": "Brush brush_dataset/export_05000.ply",
+      "sourceBytes": 11859606,
+      "sha256": "ae5cffa802186058efefd3afbcb1b9778c858942bd167a3f201523eda51fe842",
+      "headerBytes": 1550,
+      "vertexCount": 50246,
+      "vertexStrideBytes": 236,
+      "payloadBytes": 11858056,
+      "propertyCount": 59,
+      "declaredPropertyOrder": "f_dc, lexicographic f_rest, opacity, rotation, scale, xyz",
+      "sphericalHarmonicsDegree": 3,
+      "sphericalHarmonicsRestPropertyCount": 45,
+      "normalPropertiesPresent": false,
+      "normalByteOffsets": null,
+      "extraPropertyCount": 0,
+      "commentCount": 3,
+      "objInfoCount": 0,
+      "exactPayloadEquationVerified": true,
+      "artifactChain": {
+        "receiptSha256": "96229acc5895eec3549c3470579922ea119e56d5d014bd905df8058d42f39e91",
+        "sourceFactsSha256": "2305a6ce199d920828664223c9ac15f74bcadd4c5ce63b70e011e4f27eabde43",
+        "sourceReadinessSha256": "7920416a618091e2d31f61d902362f8a6f51400a0d89de69e790178c48d80f90",
+        "operatorEvidenceChecklistSha256": "f63dbdb29054e8ab7fae4e415cc3ce0aef131b34e88831f2b2b6b9ca165469cc"
+      }
+    }
+  ],
+  "perSourceChainSummary": {
+    "receiptFileCount": 1,
+    "sourceFactsEstablishedCount": 1,
+    "sourceFactsNotEstablishedCount": 0,
+    "representedLaneCount": 1,
+    "readinessGapCount": 12,
+    "evidenceRequestCount": 12,
+    "normalEvidenceRequestCount": 11,
+    "conditionalEvidenceRequestCount": 1,
+    "checklistGroupCount": 2
+  },
+  "unresolvedFactCodes": [
+    "GAUSSIAN_PLY_ACCURACY_UNKNOWN",
+    "GAUSSIAN_PLY_ATTRIBUTE_VALUES_UNKNOWN",
+    "GAUSSIAN_PLY_ENCODING_SEMANTICS_UNKNOWN",
+    "GAUSSIAN_PLY_FRAME_UNKNOWN",
+    "GAUSSIAN_PLY_PHYSICAL_BOUNDS_UNKNOWN",
+    "GAUSSIAN_PLY_PROVENANCE_UNKNOWN",
+    "GAUSSIAN_PLY_REGISTRATION_UNKNOWN",
+    "GAUSSIAN_PLY_RENDERER_COMPATIBILITY_UNKNOWN",
+    "GAUSSIAN_PLY_RIGHTS_UNKNOWN",
+    "GAUSSIAN_PLY_UNITS_UNKNOWN",
+    "GAUSSIAN_PLY_VISUAL_FIDELITY_UNKNOWN"
+  ],
+  "evidenceRequestMapping": {
+    "independent_control": ["GAUSSIAN_PLY_ACCURACY_UNKNOWN", "GAUSSIAN_PLY_REGISTRATION_UNKNOWN"],
+    "bounded_inspection": ["GAUSSIAN_PLY_ATTRIBUTE_VALUES_UNKNOWN", "GAUSSIAN_PLY_PHYSICAL_BOUNDS_UNKNOWN", "GAUSSIAN_PLY_RENDERER_COMPATIBILITY_UNKNOWN"],
+    "format_identification": ["GAUSSIAN_PLY_ENCODING_SEMANTICS_UNKNOWN"],
+    "registration_input": ["GAUSSIAN_PLY_FRAME_UNKNOWN"],
+    "source_provenance": ["GAUSSIAN_PLY_PROVENANCE_UNKNOWN", "GAUSSIAN_PLY_UNITS_UNKNOWN"],
+    "rights_decision": ["GAUSSIAN_PLY_RIGHTS_UNKNOWN"],
+    "appearance_reference": ["GAUSSIAN_PLY_VISUAL_FIDELITY_UNKNOWN"]
+  },
+  "uiEvidence": {
+    "source": "Brush brush_dataset/export_05000.ply",
+    "desktop": {
+      "path": "docs/reports/evidence/local-foundry-gaussian-ply-v3-desktop-2026-07-17.jpg",
+      "viewport": "1280x720",
+      "sha256": "caaf4d7a054be674083a7d253eda0fbc66b1f97b5f78cdffd0fac7fa24ba7339",
+      "declaredPropertyRows": 59,
+      "pageHorizontalOverflow": false,
+      "propertyTableLocallyScrollable": true,
+      "consoleWarningOrErrorCount": 0
+    },
+    "mobile": {
+      "path": "docs/reports/evidence/local-foundry-gaussian-ply-v3-mobile-2026-07-17.jpg",
+      "viewport": "320x844",
+      "sha256": "be947bcf580f2d88cb607866145bdd1ab642f4a247dbec23677299300c0c18d0",
+      "declaredPropertyRows": 59,
+      "pageHorizontalOverflow": false,
+      "propertyTableLocallyScrollable": true,
+      "consoleWarningOrErrorCount": 0
+    },
+    "downloadChecks": [
+      {"artifact": "receipt", "status": 200, "attachmentFilename": "foundry-intake-receipt.json"},
+      {"artifact": "sourceFacts", "status": 200, "attachmentFilename": "foundry-universal-source-facts-v3.json"},
+      {"artifact": "sourceReadiness", "status": 200, "attachmentFilename": "foundry-source-readiness-map-v3.json"},
+      {"artifact": "operatorEvidenceChecklist", "status": 200, "attachmentFilename": "foundry-operator-evidence-checklist-v3.json"}
+    ]
+  },
+  "verification": {
+    "focusedInspector": {"passed": 21},
+    "focusedIntakeClassifier": {"passed": 18},
+    "focusedInspectorPipelineReadinessChecklist": {"passed": 35},
+    "combinedV3AndFrozenV2Golden": {"passed": 48},
+    "sharedTypes": {
+      "testFiles": 91,
+      "passed": 2110,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "reconstructionFoundry": {
+      "testFiles": 37,
+      "passed": 494,
+      "skipped": 1,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "localFoundryApp": {
+      "testFiles": 14,
+      "passed": 174,
+      "lint": "passed",
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "independentFinalAudit": "two_independent_final_audits_no_remaining_actionable_p0_p1_p2_or_p3_findings"
+  },
+  "limitations": [
+    "Structural success validates the bounded classic PLY header, required scalar declarations, derived byte offsets and exact fixed-width payload arithmetic; it does not decode a single Gaussian attribute value.",
+    "Nominal spherical-harmonic degree is derived only from the complete f_rest property count; property names do not establish channel semantics or renderer support.",
+    "Normal properties record layout only and are not treated as decoded or meaningful normals.",
+    "Header comments and obj_info values are counted but not retained verbatim or promoted into producer, frame, provenance, unit, or rights authority.",
+    "PlayCanvas packed PLY, ASCII PLY, big-endian PLY, list properties and multi-element PLY remain deferred profiles rather than malformed classic Gaussian PLY claims.",
+    "The V3 digest proves canonical local self-consistency only; it is not independent attestation that the inspector ran or that source declarations are authoritative.",
+    "Digest binding is not an atomic filesystem snapshot.",
+    "No source file was changed and no cybersecurity work, reconstruction, upload, external service, training job, deployment, release, publication, or authority promotion occurred."
+  ]
+}

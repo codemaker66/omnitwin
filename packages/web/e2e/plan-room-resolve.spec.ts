@@ -14,13 +14,13 @@ import {
 // the captured splat streams in over it coarse-to-fine with a quiet caption.
 // No spinner anywhere. Camera and chrome stay interactive during the stream.
 // Network is throttled to 50 Mbps via CDP per the card's verification, so
-// the 63 MB chunk set genuinely streams (~10 s) instead of arriving at once.
+// the 35.7 MB reviewed fine frontier genuinely streams instead of arriving at once.
 //
 // The stage exposes `data-resolve-phase` (ink | developing | resolved |
 // fallback) as the choreography's honesty surface — assertions key off it.
 // ---------------------------------------------------------------------------
 
-// Streaming + decoding the full 63 MB chunk set is GPU/CPU-heavy; running
+// Streaming + decoding the full 35.7 MB fine frontier is GPU/CPU-heavy; running
 // these cases concurrently with other WebGL specs starves the renderers
 // (same policy as public-config-flow.spec.ts).
 test.describe.configure({ mode: "serial" });
@@ -139,7 +139,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await attachStageScreenshot(page, testInfo, "card-a2-resolve-2s.png");
 
     // The room resolves: every chunk arrives, the caption exits, the phase
-    // settles. 63 MB at 50 Mbps ≈ 10 s + decode. A recovery remount may
+    // settles. 35.7 MB at 50 Mbps is roughly 5.7 s plus decode. A recovery remount may
     // honestly re-develop once from cache — poll to the SETTLED state where
     // the phase is resolved AND the caption has exited.
     await expect

@@ -218,9 +218,53 @@ export const FRESH_THEME_OPTIONS = [
 
 export const FRESH_FOOTER_NOTE = "© 2026 The Trades House of Glasgow · Powered by Venviewer";
 
+/** The enquiry form's own fields and states.
+ *
+ *  The composer used to end at a mailto: link — it wrote the message and
+ *  handed the visitor their own clipboard, so the enquiry never became a
+ *  record and the team never saw it unless an email happened to arrive. These
+ *  strings belong to the real submission that replaced it.
+ *
+ *  Nothing here may promise availability. The page can answer "does 120 fit"
+ *  from published capacities; it cannot answer "is that Saturday free", and
+ *  the acknowledgement must not imply that it can. */
+export const FRESH_ENQUIRY_NAME_LABEL = "Your name";
+/** "Your email", not "Email": the contact block below already labels the
+ *  venue's own address "Email", and two identical labels on one page are
+ *  ambiguous to a screen reader as well as to getByText. */
+export const FRESH_ENQUIRY_EMAIL_LABEL = "Your email";
+export const FRESH_ENQUIRY_PHONE_LABEL = "Your telephone (optional)";
+export const FRESH_ENQUIRY_SUBMIT = "Send this enquiry";
+export const FRESH_ENQUIRY_SENDING = "Sending…";
+export const FRESH_ENQUIRY_EMAIL_REQUIRED =
+  "Please add an email address so the team can reply to you.";
+export const FRESH_ENQUIRY_PRIVACY_NOTE =
+  "We use these details only to answer this enquiry.";
+export const FRESH_ENQUIRY_SUCCESS_TITLE = "Your enquiry is with the events team";
+export const FRESH_ENQUIRY_SUCCESS_BODY =
+  "We have emailed you a copy of what you sent. Someone will read it and reply to that address.";
+export const FRESH_ENQUIRY_REFERENCE_LABEL = "Your reference";
+/** Shown when the send fails. It must never be a dead end: the composed
+ *  message stays on screen and the mail app and telephone remain one tap away. */
+export const FRESH_ENQUIRY_ERROR =
+  "We could not send that just now. Your message is below — you can open it in your email app, copy it, or call us.";
+export const FRESH_ENQUIRY_MAIL_APP_ACTION = "Open in your email app";
+
 /** Everything user-visible, for the claim-guard sweep. */
 export function allFreshCopy(): readonly string[] {
   return [
+    FRESH_ENQUIRY_NAME_LABEL,
+    FRESH_ENQUIRY_EMAIL_LABEL,
+    FRESH_ENQUIRY_PHONE_LABEL,
+    FRESH_ENQUIRY_SUBMIT,
+    FRESH_ENQUIRY_SENDING,
+    FRESH_ENQUIRY_EMAIL_REQUIRED,
+    FRESH_ENQUIRY_PRIVACY_NOTE,
+    FRESH_ENQUIRY_SUCCESS_TITLE,
+    FRESH_ENQUIRY_SUCCESS_BODY,
+    FRESH_ENQUIRY_REFERENCE_LABEL,
+    FRESH_ENQUIRY_ERROR,
+    FRESH_ENQUIRY_MAIL_APP_ACTION,
     FRESH_META_TITLE,
     FRESH_BRAND_SMALL,
     FRESH_BRAND_NAME,

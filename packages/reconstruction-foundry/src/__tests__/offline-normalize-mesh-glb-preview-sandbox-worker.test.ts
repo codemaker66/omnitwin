@@ -25,6 +25,7 @@ import {
   FoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementV0Schema,
   FoundryOfflineNormalizeMeshGlbPreviewPermitV0Schema,
   FoundryOfflineNormalizeMeshGlbPreviewReportV0Schema,
+  computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256,
   computeFoundryOfflineNormalizeMeshGlbPreviewOperatorAcknowledgementSha256,
   computeFoundryOfflineNormalizeMeshGlbPreviewReportSha256,
   serializeFoundryOfflineNormalizeMeshGlbPreviewPermitV0,
@@ -350,6 +351,26 @@ describe.sequential("offline preview semantic sandbox worker", () => {
       throw new Error("fresh verifier response was not successful");
     }
     expect(decoded.metadata.requestId).toBe(REQUEST_ID);
+    expect(decoded.metadata).toMatchObject({
+      requestWireSha256: digest(request),
+      deadlineAt: DEADLINE,
+      invocationSha256:
+        computeFoundryOfflineNormalizeMeshGlbPreviewInvocationSha256(
+          fixture.invocation,
+        ),
+      permitPayloadSha256: fixture.invocation.permit.payloadSha256,
+      source: {
+        kind: "source",
+        sizeBytes: fixture.source.byteLength,
+        sha256: digest(fixture.source),
+      },
+      candidate: {
+        kind: "candidate",
+        sizeBytes: transform.outputBytes.byteLength,
+        sha256: digest(transform.outputBytes),
+      },
+      reportSha256: transform.metadata.report.reportSha256,
+    });
     expect(decoded.metadata.blobs).toEqual([]);
     expect(Object.keys(decoded)).toEqual(["kind", "metadata"]);
   });

@@ -13,6 +13,7 @@ import {
   CreateRuntimePackageRevisionInputSchema,
   LatestRuntimePackageQuerySchema,
   PublicRoomRuntimeVisualSchema,
+  RegisterRuntimePackageInputSchema,
   RegisterCaptureControlSourceRecordInputSchema,
   RegisterCaptureSessionInputSchema,
   RegisterAssetVersionInputSchema,
@@ -24,6 +25,7 @@ import {
   RuntimeFileExtensionSchema,
   ReviewedRuntimeProfileIdSchema,
   RuntimePackageManifestJsonSchema,
+  RuntimePackageContentDigestSchema,
   RuntimePackageRevisionCreateResponseSchema,
   RuntimeQaRecordQuerySchema,
   RuntimeQaRecordRegistrationSchema,
@@ -39,7 +41,9 @@ import {
   runtimeQaRecordAllowsPublicExposure,
   runtimeQaRecordSignedTransformArtifactId,
   runtimeQaRecordSignedTransformArtifactSha256,
+  runtimeQaViewTransformMatchesMatrix,
   type AssetVersion,
+  type ApprovedRoomRuntimePresentationContract,
   type ApprovedRoomRuntimeProfile,
   type CaptureControlSourceRegistration,
   type CaptureSession,
@@ -76,11 +80,14 @@ import { runtimeTransformArtifactSha256 } from "../lib/runtime-transform-artifac
 import {
   isReceptionReviewedProfilePresentationCandidate,
   matchReceptionReviewedRuntimeProfile,
+  receptionReviewedProfilePresentationContract,
+  receptionRuntimeProfileManifestFingerprint,
 } from "../lib/reception-reviewed-runtime-profile.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import {
   RuntimePackageRevisionConflictError,
   RuntimePackageRevisionIntegrityError,
+  computeRuntimePackageRevisionDigest,
   createDatabaseRuntimePackageRevisionStore,
   createRuntimePackageRevision,
 } from "../services/runtime-package-revisions.js";
@@ -126,6 +133,7 @@ interface PublicReviewedProfileResolution {
   readonly visualAssets: readonly AssetVersionRow[];
   readonly profileId: ReviewedRuntimeProfileId;
   readonly reviewedTransformArtifactSha256: string;
+  readonly presentationContract: ApprovedRoomRuntimePresentationContract;
 }
 
 interface PublicRuntimeProfileMemberAuthorization {
@@ -134,6 +142,7 @@ interface PublicRuntimeProfileMemberAuthorization {
   readonly runtimePackageRevision: number;
   readonly runtimePackageContentDigest: string | null;
   readonly reviewedTransformArtifactSha256: string;
+  readonly presentationContractDigest: string;
   readonly memberIndex: number;
   readonly assetVersionId: string;
   readonly r2Key: string;
@@ -723,6 +732,74 @@ export function resolveRuntimeVisualAssetComposition(
   return orderedAssets;
 }
 
+export interface RuntimeQaPublicPackageBinding {
+  readonly runtimePackageContentSha256: string;
+  readonly orderedVisualCompositionSha256: string;
+  readonly visualChunkCount: number;
+  readonly totalVisualBytes: number;
+}
+
+function immutableRuntimePackageContentSha256(pkg: RuntimePackageRow): string | null {
+  if (
+    pkg.identityKind !== "content_sha256" ||
+    pkg.contentDigest === null ||
+    !RuntimePackageContentDigestSchema.safeParse(pkg.contentDigest).success
+  ) {
+    return null;
+  }
+  const parsed = RegisterRuntimePackageInputSchema.safeParse({
+    venueSlug: pkg.venueSlug,
+    roomSlug: pkg.roomSlug,
+    primaryVisualAssetVersionId: pkg.primaryVisualAssetVersionId,
+    semanticMeshAssetVersionId: pkg.semanticMeshAssetVersionId,
+    collisionAssetVersionId: pkg.collisionAssetVersionId,
+    pointCloudAssetVersionId: pkg.pointCloudAssetVersionId,
+    manifestJson: pkg.manifestJson,
+    evidenceStatus: pkg.evidenceStatus,
+    runtimeStatus: pkg.runtimeStatus,
+  });
+  if (!parsed.success) return null;
+  return computeRuntimePackageRevisionDigest(parsed.data) === pkg.contentDigest
+    ? pkg.contentDigest
+    : null;
+}
+
+export function runtimeQaPublicPackageBinding(
+  pkg: RuntimePackageRow,
+  candidateAssets: readonly AssetVersionRow[],
+): RuntimeQaPublicPackageBinding | null {
+  const contentSha256 = immutableRuntimePackageContentSha256(pkg);
+  const parsedManifest = RuntimePackageManifestJsonSchema.safeParse(pkg.manifestJson);
+  const orderedAssets = resolveRuntimeVisualAssetComposition(pkg, candidateAssets);
+  if (contentSha256 === null || !parsedManifest.success || orderedAssets === null) return null;
+  const receipts = parsedManifest.data.assets.visualAssetReceipts;
+  if (orderedAssets.length === 0 || receipts?.length !== orderedAssets.length) return null;
+
+  let totalVisualBytes = 0;
+  for (let index = 0; index < orderedAssets.length; index += 1) {
+    const asset = orderedAssets[index];
+    const receipt = receipts[index];
+    if (
+      asset === undefined || receipt === undefined || asset.r2Key === null ||
+      asset.externalUrl !== null || asset.sha256 === null || asset.sizeBytes === null ||
+      receipt.assetVersionId !== asset.id || receipt.fileName !== asset.fileName ||
+      receipt.fileExt !== asset.fileExt || receipt.sha256 !== asset.sha256 ||
+      receipt.sizeBytes !== asset.sizeBytes ||
+      receipt.storageKeySha256 !== runtimeAssetStorageKeySha256(asset.r2Key)
+    ) return null;
+    totalVisualBytes += asset.sizeBytes;
+  }
+  if (!Number.isSafeInteger(totalVisualBytes) || totalVisualBytes <= 0) return null;
+  const compositionSha256 = receptionRuntimeProfileManifestFingerprint(parsedManifest.data);
+  if (compositionSha256 === null) return null;
+  return {
+    runtimePackageContentSha256: contentSha256,
+    orderedVisualCompositionSha256: compositionSha256,
+    visualChunkCount: orderedAssets.length,
+    totalVisualBytes,
+  };
+}
+
 function serializeRuntimePackage(
   pkg: RuntimePackageRow,
   primaryVisualAssetVersion: AssetVersionRow | null,
@@ -767,6 +844,7 @@ export function serializeApprovedRoomRuntimeProfile(
   visualAssetVersions: readonly AssetVersionRow[],
   requestOrigin: string | null,
   reviewedTransformArtifactSha256: string | null,
+  presentationContract: ApprovedRoomRuntimePresentationContract | null,
 ): ApprovedRoomRuntimeProfile | null {
   const profileId = matchReceptionReviewedRuntimeProfile(pkg, visualAssetVersions);
   if (
@@ -775,6 +853,7 @@ export function serializeApprovedRoomRuntimeProfile(
       profileId,
       reviewedTransformArtifactSha256,
     ) ||
+    presentationContract === null ||
     requestOrigin === null
   ) {
     return null;
@@ -790,6 +869,7 @@ export function serializeApprovedRoomRuntimeProfile(
     venueSlug: pkg.venueSlug,
     roomSlug: pkg.roomSlug,
     profileId,
+    presentationContract,
     visualAssetUrls,
   });
   return parsed.success ? parsed.data : null;
@@ -896,6 +976,11 @@ export function runtimeQaRecordAllowsPublicRoomVisual(
   if (!parsedRecord.success || !parsedTransform.success) return false;
   const record = parsedRecord.data;
   if (!runtimeQaRecordAllowsPublicExposure(record)) return false;
+  if (record.runtimePackageBinding === undefined) return false;
+  if (!runtimeQaViewTransformMatchesMatrix(
+    record.viewTransform,
+    parsedTransform.data.matrix,
+  )) return false;
 
   const signedTransformArtifactId = runtimeQaRecordSignedTransformArtifactId(record);
   const signedTransformArtifactSha256 = runtimeQaRecordSignedTransformArtifactSha256(record);
@@ -989,13 +1074,23 @@ export function runtimeQaRecordAllowsPublicRuntimePackage(
   pkg: RuntimePackageRow,
   row: RuntimeQaRecordRow | null | undefined,
   transformArtifact: RuntimeTransformArtifactRow | null | undefined,
+  visualAssets: readonly AssetVersionRow[],
 ): boolean {
   if (row === null || row === undefined) return false;
   const parsedRecord = RuntimeQaRecordV0Schema.safeParse(row.recordJson);
   if (!parsedRecord.success) return false;
   const record = parsedRecord.data;
+  const expectedBinding = runtimeQaPublicPackageBinding(pkg, visualAssets);
+  const reviewedBinding = record.runtimePackageBinding;
   return transformArtifact !== null &&
     transformArtifact !== undefined &&
+    expectedBinding !== null &&
+    reviewedBinding !== undefined &&
+    reviewedBinding.runtimePackageContentSha256 === expectedBinding.runtimePackageContentSha256 &&
+    reviewedBinding.orderedVisualCompositionSha256 === expectedBinding.orderedVisualCompositionSha256 &&
+    reviewedBinding.visualChunkCount === expectedBinding.visualChunkCount &&
+    reviewedBinding.totalVisualBytes === expectedBinding.totalVisualBytes &&
+    record.sparkLoad.visualChunkCount === expectedBinding.visualChunkCount &&
     row.runtimePackageId === pkg.id &&
     row.venueSlug === pkg.venueSlug &&
     row.roomSlug === pkg.roomSlug &&
@@ -1714,21 +1809,35 @@ export async function assetRoutes(
     }
     const qaRecord = await latestRuntimeQaRecord(db, pkg.id);
     const transformArtifact = await findRuntimeTransformArtifactForQaRecord(db, qaRecord);
-    if (!runtimeQaRecordAllowsPublicRuntimePackage(pkg, qaRecord, transformArtifact)) return null;
+    if (!runtimeQaRecordAllowsPublicRuntimePackage(pkg, qaRecord, transformArtifact, visualAssets)) return null;
     const parsedQaRecord = RuntimeQaRecordV0Schema.safeParse(qaRecord?.recordJson);
     const reviewedTransformArtifactSha256 = parsedQaRecord.success
       ? runtimeQaRecordSignedTransformArtifactSha256(parsedQaRecord.data)
       : null;
+    if (reviewedTransformArtifactSha256 === null) return null;
+    const parsedTransform = TransformArtifactV0Schema.safeParse(
+      transformArtifact?.transformArtifact,
+    );
+    if (!parsedQaRecord.success || !parsedTransform.success) return null;
+    const presentationContract = receptionReviewedProfilePresentationContract(
+      profileId,
+      parsedQaRecord.data,
+      parsedTransform.data,
+    );
     if (
-      reviewedTransformArtifactSha256 === null ||
+      presentationContract === null ||
       !isReceptionReviewedProfilePresentationCandidate(
         profileId,
         reviewedTransformArtifactSha256,
       )
-    ) {
-      return null;
-    }
-    return { pkg, visualAssets, profileId, reviewedTransformArtifactSha256 };
+    ) return null;
+    return {
+      pkg,
+      visualAssets,
+      profileId,
+      reviewedTransformArtifactSha256,
+      presentationContract,
+    };
   }
 
   function publicRuntimeProfileMemberAuthorization(
@@ -1753,6 +1862,7 @@ export async function assetRoutes(
       runtimePackageRevision: resolved.pkg.revision,
       runtimePackageContentDigest: resolved.pkg.contentDigest,
       reviewedTransformArtifactSha256: resolved.reviewedTransformArtifactSha256,
+      presentationContractDigest: resolved.presentationContract.contractDigest,
       memberIndex,
       assetVersionId: asset.id,
       r2Key: asset.r2Key,
@@ -1773,6 +1883,7 @@ export async function assetRoutes(
       left.runtimePackageRevision === right.runtimePackageRevision &&
       left.runtimePackageContentDigest === right.runtimePackageContentDigest &&
       left.reviewedTransformArtifactSha256 === right.reviewedTransformArtifactSha256 &&
+      left.presentationContractDigest === right.presentationContractDigest &&
       left.memberIndex === right.memberIndex &&
       left.assetVersionId === right.assetVersionId &&
       left.r2Key === right.r2Key &&
@@ -1862,6 +1973,7 @@ export async function assetRoutes(
           resolved.visualAssets,
           trustedOrigin,
           resolved.reviewedTransformArtifactSha256,
+          resolved.presentationContract,
         ),
       };
     } catch (error: unknown) {

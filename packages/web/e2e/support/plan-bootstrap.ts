@@ -13,6 +13,12 @@ import { expect, type Page } from "@playwright/test";
 export const API = "http://localhost:3001";
 export const CONFIG_ID = "e2e-a1-config-001";
 export const ASSET_VERSION_ID = "10000000-0000-4000-8000-000000000003";
+export const RECEPTION_SOG_ASSET_VERSION_IDS = [
+  ASSET_VERSION_ID,
+  "10000000-0000-4000-8000-000000000004",
+  "10000000-0000-4000-8000-000000000005",
+  "10000000-0000-4000-8000-000000000006",
+] as const;
 
 export const VENUE = {
   id: "e2e-venue-trades",
@@ -56,16 +62,15 @@ export const PLAN_CONFIG = {
   objects: [],
 } as const;
 
-// The real captured Reception Room runtime chunks (63 MB total) shipped in
-// public/splats/reception/. env.sog is the environment shell, not the room.
+// The real captured Reception Room Quality fine frontier (35,735,101 bytes)
+// shipped in public/splats/reception/. The coarse parents and env.sog are
+// deliberately excluded: mounting replacement levels together draws the room
+// more than once and visibly smears edges.
 export const RECEPTION_SOG_CHUNKS = [
-  "0_0.sog",
-  "0_1_0.sog",
+  "0_15_0_0.sog",
   "0_1_0_5.sog",
   "0_6_0_0.sog",
   "0_7_0_0.sog",
-  "0_15_0_0.sog",
-  "0_20_0.sog",
 ] as const;
 
 export const ATELIER_FALLBACK_COPY =
@@ -89,13 +94,14 @@ export function receptionRuntimePackage(origin: string): Record<string, unknown>
       packageType: "room-runtime",
       assets: {
         primaryVisualAssetVersionId: ASSET_VERSION_ID,
+        visualAssetVersionIds: [...RECEPTION_SOG_ASSET_VERSION_IDS],
         semanticMeshAssetVersionId: null,
         collisionAssetVersionId: null,
         pointCloudAssetVersionId: null,
       },
     },
     evidenceStatus: "unverified",
-    runtimeStatus: "internal_ready",
+    runtimeStatus: "published",
     createdAt: "2026-07-09T22:56:00.000Z",
     updatedAt: "2026-07-09T22:56:00.000Z",
     primaryVisualAssetUrl: chunkUrls[0],
@@ -107,13 +113,13 @@ export function receptionRuntimePackage(origin: string): Record<string, unknown>
       captureSessionId: null,
       assetKind: "splat",
       sourceType: "xgrids",
-      fileName: "0_0.sog",
+      fileName: "0_15_0_0.sog",
       fileExt: ".sog",
-      r2Key: "venues/trades-hall/rooms/reception-room/xgrids/0_0.sog",
+      r2Key: "venues/trades-hall/rooms/reception-room/xgrids/0_15_0_0.sog",
       externalUrl: null,
       mimeType: "application/octet-stream",
       sha256: "a".repeat(64),
-      sizeBytes: 9017864,
+      sizeBytes: 10279160,
       evidenceStatus: "unverified",
       runtimeStatus: "usable",
       notes: null,

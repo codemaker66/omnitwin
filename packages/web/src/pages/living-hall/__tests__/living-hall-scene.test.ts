@@ -5,6 +5,7 @@ import {
   MIN_GAZE_DISTANCE_M,
   RECEPTION_DOLLY_STATIONS,
   RECEPTION_TILE_MANIFEST,
+  canLoadDirectReceptionPreview,
   receptionTileUrls,
 } from "../reception-dolly-path.js";
 
@@ -88,12 +89,27 @@ describe("buildDollyCurves", () => {
 });
 
 describe("tile manifest", () => {
-  it("urls derive from the manifest, one per tile", () => {
+  it("loads exactly the reviewed fine-detail frontier", () => {
+    expect(RECEPTION_TILE_MANIFEST.map((tile) => tile.file)).toEqual([
+      "0_15_0_0.sog",
+      "0_1_0_5.sog",
+      "0_6_0_0.sog",
+      "0_7_0_0.sog",
+    ]);
+
     const urls = receptionTileUrls();
     expect(urls.length).toBe(RECEPTION_TILE_MANIFEST.length);
     for (const url of urls) {
       expect(url.startsWith("/splats/reception/")).toBe(true);
       expect(url.endsWith(".sog")).toBe(true);
     }
+  });
+
+  it("never loads direct evidence files in a production build", () => {
+    expect(canLoadDirectReceptionPreview(false, null)).toBe(false);
+    expect(canLoadDirectReceptionPreview(false, "1")).toBe(false);
+    expect(canLoadDirectReceptionPreview(true, null)).toBe(true);
+    expect(canLoadDirectReceptionPreview(true, "1")).toBe(true);
+    expect(canLoadDirectReceptionPreview(true, "0")).toBe(false);
   });
 });

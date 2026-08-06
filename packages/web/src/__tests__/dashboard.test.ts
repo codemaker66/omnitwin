@@ -133,6 +133,20 @@ describe("DashboardLayout", () => {
     expect(src).toContain("useClerk");
     expect(src).toContain("signOut");
   });
+
+  it("keeps Runtime Foundry inside the first platform-admin navigation group", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const src = await fs.readFile(
+      path.resolve("src/components/dashboard/DashboardLayout.tsx"),
+      "utf-8",
+    );
+    const foundryIndex = src.indexOf('{ view: "foundry", label: "Runtime Foundry"');
+    const enquiriesIndex = src.indexOf('{ view: "enquiries", label: "Enquiries"');
+    expect(foundryIndex).toBeGreaterThan(-1);
+    expect(enquiriesIndex).toBeGreaterThan(-1);
+    expect(foundryIndex).toBeLessThan(enquiriesIndex);
+  });
 });
 
 describe("EnquiriesView", () => {
@@ -387,6 +401,7 @@ describe("DashboardPage", () => {
   it("parses dashboard view query params and rejects unknown values", async () => {
     const { dashboardViewFromSearchValue } = await import("../pages/DashboardPage.js");
     expect(dashboardViewFromSearchValue("settings")).toBe("settings");
+    expect(dashboardViewFromSearchValue("foundry")).toBe("foundry");
     expect(dashboardViewFromSearchValue("onboarding")).toBe("onboarding");
     expect(dashboardViewFromSearchValue("made-up-view")).toBeNull();
     expect(dashboardViewFromSearchValue(null)).toBeNull();
@@ -397,6 +412,8 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("onboarding", "admin", "admin")).toBe(true);
     expect(canOpenDashboardView("onboarding", "admin", "none")).toBe(false);
     expect(canOpenDashboardView("onboarding", "staff")).toBe(false);
+    expect(canOpenDashboardView("foundry", "admin", "admin")).toBe(true);
+    expect(canOpenDashboardView("foundry", "admin", "none")).toBe(false);
     expect(canOpenDashboardView("admin", "hallkeeper")).toBe(false);
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
@@ -424,6 +441,8 @@ describe("DashboardPage", () => {
     expect(initialDashboardViewForRole("pipeline", "executive")).toBe("analytics");
     expect(initialDashboardViewForRole("admin", "admin", "none")).toBe("enquiries");
     expect(initialDashboardViewForRole("admin", "admin", "admin")).toBe("admin");
+    expect(initialDashboardViewForRole("foundry", "admin", "admin")).toBe("foundry");
+    expect(initialDashboardViewForRole("foundry", "admin", "none")).toBe("enquiries");
     expect(initialDashboardViewForRole("admin", "hallkeeper")).toBe("enquiries");
     expect(initialDashboardViewForRole(null, "executive")).toBe("analytics");
   });

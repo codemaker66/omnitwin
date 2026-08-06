@@ -1,4 +1,9 @@
-# Config B — Venviewer production training recipe.
+# Config B — frozen target contract for the intended Venviewer training recipe.
+#
+# This file is not an executable or proven production recipe yet. The local
+# checker can validate every field and the prepared COLMAP/depth input without
+# training. Actual optimization remains blocked behind the accepted RunPod and
+# Foundry execution gates.
 #
 # Recipe: MCMC + Mip-Splatting (antialiased) + 3DGUT + bilateral grid +
 # DN-Splatter-style depth supervision. Cap 5M Gaussians, 30k steps,
@@ -9,14 +14,11 @@
 # bake-off (T-022 / T-027) and any silent change invalidates the
 # comparison.
 #
-# Invocation (via run_training.sh):
-#   /opt/run_training.sh \
-#     --venue-id trades-hall \
-#     --config /workspace/code/configs/training/config_b.yaml \
-#     --enable-mip-splatting \
-#     --enable-3dgut \
-#     --enable-dn-supervision \
-#     --enable-bilateral-grid
+# Current safety boundary (2026-07-14):
+#   - infra/runpod/run_training.sh remains deliberately disabled;
+#   - the compiled Tyro arguments have not run in the pinned RunPod image;
+#   - external E57/DN depth is validated but is not wired into the trainer; and
+#   - bilateral-grid runtime output and D-014 serialization remain unproved.
 
 # ---- core training schedule ----
 max_steps: 30000
@@ -47,7 +49,9 @@ bilateral_grid_shape: [16, 16, 8]
 depth_loss: true
 depth_lambda: 0.02
 
-# ---- 3DGUT (distorted-camera-aware rasterization) ----
+# ---- 3DGUT target flags ----
+# The local external-depth checker is pinhole-only. Distorted-camera training
+# and acceptance of these flags in the pinned RunPod runtime remain unproved.
 with_ut: true
 with_eval3d: true
 
