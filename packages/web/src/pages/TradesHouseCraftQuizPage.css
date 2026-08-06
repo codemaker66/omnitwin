@@ -1602,9 +1602,34 @@
 /* While he reacts to a choice, the chosen option holds the light and the
    rest step back — nobody talks over the Convener. */
 
+/* The moment of commit had no punctuation: the card simply became a different
+   colour, which reads as a state change rather than a decision landing. One
+   flare, and the seal strikes with it.
+
+   Light and colour ONLY — no transform, no size, no margin. Scaling the active
+   progress pip is what pushed the last question 1px past the viewport edge, and
+   an option card sits inside a grid where the same mistake costs far more.
+   `box-shadow` and `filter` cannot affect layout, so this cannot overflow. */
+@keyframes craft-option-commit {
+  0% { box-shadow: 0 0 0 0 rgba(240, 220, 166, 0); }
+  20% { box-shadow: 0 0 48px 7px rgba(240, 220, 166, 0.55); }
+  100% { box-shadow: 0 0 22px 0 rgba(230, 207, 155, 0.28); }
+}
+
+@keyframes craft-seal-strike {
+  0% { filter: none; }
+  20% { filter: brightness(1.75) drop-shadow(0 0 14px rgba(240, 220, 166, 0.9)); }
+  100% { filter: none; }
+}
+
 .craft-quiz-option.is-picked {
+  animation: craft-option-commit 620ms cubic-bezier(0.16, 1, 0.3, 1);
   border-color: #e6cf9b;
   box-shadow: 0 0 22px rgba(230, 207, 155, 0.28);
+}
+
+.craft-quiz-option.is-picked .craft-option-seal {
+  animation: craft-seal-strike 620ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .craft-quiz-option.is-faded {
@@ -2611,5 +2636,14 @@
   .craft-quiz-weighing .convener.is-compact .convener-frame,
   .craft-quiz-weighing .convener-frame {
     max-width: none;
+  }
+}
+
+/* The commit flare is pure decoration: without it the card still lands on its
+   chosen state, so removing the motion loses nothing but the flourish. */
+@media (prefers-reduced-motion: reduce) {
+  .craft-quiz-option.is-picked,
+  .craft-quiz-option.is-picked .craft-option-seal {
+    animation: none;
   }
 }
