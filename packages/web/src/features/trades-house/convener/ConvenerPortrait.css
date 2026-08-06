@@ -11,6 +11,9 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  /* The mute toggle is absolutely placed against this box. Without it the
+     button would escape to whatever ancestor happens to be positioned. */
+  position: relative;
   width: 100%;
 }
 
@@ -296,6 +299,65 @@
   }
 
   .convener-flame {
+    transition: none;
+  }
+}
+
+/* ---- the mute toggle ------------------------------------------------------
+   Small, gold, and parked at the frame's bottom-right. It must be reachable
+   without hunting yet never compete with the portrait: a visitor who wants
+   silence is usually mildly annoyed already, and making them search for the
+   control is the thing that turns mild into closed-the-tab. */
+.convener-mute {
+  align-items: center;
+  background: rgba(9, 14, 24, 0.82);
+  border: 1px solid rgba(214, 178, 106, 0.5);
+  border-radius: 999px;
+  color: #e8d3a0;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  transition: border-color 160ms ease, background 160ms ease, opacity 160ms ease;
+  /* Dimmed until wanted. Opacity alone, never display/visibility, so it
+     stays in the tab order for someone who navigates by keyboard. */
+  opacity: 0.55;
+  width: 30px;
+  z-index: 3;
+}
+
+.convener:hover .convener-mute,
+.convener-mute:hover,
+.convener-mute:focus-visible {
+  opacity: 1;
+}
+
+.convener-mute:hover {
+  background: rgba(16, 24, 38, 0.92);
+  border-color: rgba(236, 205, 143, 0.85);
+}
+
+.convener-mute:focus-visible {
+  outline: 2px solid #f0dca6;
+  outline-offset: 2px;
+}
+
+/* Pressed = silenced. The state has to read without relying on which of two
+   similar emoji is showing, because emoji render differently per platform. */
+.convener-mute[aria-pressed="true"] {
+  background: rgba(60, 20, 20, 0.85);
+  border-color: rgba(206, 126, 110, 0.7);
+  color: #f0c2b4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .convener-mute {
     transition: none;
   }
 }

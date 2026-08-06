@@ -24,6 +24,15 @@ import {
 } from "react";
 import { useMediaQuery } from "../../../hooks/use-media-query.js";
 import {
+  charsSpokenBy,
+  getConvenerVoicePlayer,
+  isConvenerVoiceMuted,
+  loadConvenerVoice,
+  setConvenerVoiceMuted,
+  type ConvenerVoiceLine,
+  type ConvenerVoicePlayer,
+} from "./convener-voice.js";
+import {
   GAZE_FOLLOW_OMEGA,
   GAZE_GLANCE_OMEGA,
   gazeTargetForPointer,
@@ -77,6 +86,14 @@ export interface ConvenerHandle {
   readonly express: (mouth: ConvenerMouth, ms?: number) => void;
   readonly setMull: (on: boolean) => void;
   readonly setLean: (on: boolean) => void;
+  /**
+   * Speak a line WITHOUT writing it into his bubble. His reply to an answer is
+   * shown in its own panel beside the options — the bubble keeps holding the
+   * scene, so the question stays readable while he comments on it — but a
+   * talking portrait that falls silent exactly when he reacts is worse than one
+   * that never spoke. No-op when muted or when the line has no audio.
+   */
+  readonly speakAside: (text: string) => void;
 }
 
 interface ConvenerPortraitProps {
@@ -116,6 +133,9 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
     const [quip, setQuip] = useState(false);
     const [mull, setMullState] = useState(false);
     const [lean, setLeanState] = useState(false);
+    // Read once from storage: the visitor's choice should survive a reload, and
+    // reading it per line would be a synchronous storage hit inside say().
+    const [voiceMuted, setVoiceMutedState] = useState<boolean>(() => isConvenerVoiceMuted());
 
     const rootRef = useRef<HTMLDivElement>(null);
     const frameRef = useRef<HTMLButtonElement>(null);
@@ -157,6 +177,16 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
     mullRef.current = mull;
     const reducedMotionRef = useRef(reducedMotion);
     reducedMotionRef.current = reducedMotion;
+
+    // ---- voice ----
+    // The player is created lazily and lives for the whole session: iOS grants
+    // playback per audio ELEMENT on a user gesture, so one reused element is
+    // the only arrangement where lines after the first are allowed to sound.
+    const playerRef = useRef<ConvenerVoicePlayer | null>(null);
+    const voiceIndexRef = useRef<ReadonlyMap<string, ConvenerVoiceLine> | null>(null);
+    const voiceRafRef = useRef<number | null>(null);
+    const voiceMutedRef = useRef(voiceMuted);
+    voiceMutedRef.current = voiceMuted;
 
     const later = useCallback((fn: () => void, ms: number): void => {
       const id = setTimeout(() => {
@@ -201,6 +231,9 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
     const finishSay = useCallback((): void => {
       if (typeIntervalRef.current !== null) clearInterval(typeIntervalRef.current);
       typeIntervalRef.current = null;
+      if (voiceRafRef.current !== null) cancelAnimationFrame(voiceRafRef.current);
+      voiceRafRef.current = null;
+      playerRef.current?.stop();
       if (holdTimerRef.current !== null) {
         clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
@@ -236,30 +269,95 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
       if (options?.announce !== false && liveRef.current) liveRef.current.textContent = text;
 
       const holdMs = options?.holdMs ?? TYPE_HOLD_DEFAULT_MS;
+      const myGen = sayGenRef.current;
       return new Promise<void>((resolve) => {
         sayResolveRef.current = resolve;
-        if (reducedMotionRef.current) {
-          // Instant text, but hold for as long as the typewriter would have
-          // taken — reduced motion must never mean reduced reading time.
-          if (typedRef.current) typedRef.current.textContent = text;
-          const typeMs = Math.round((text.length * 1_000) / (options?.cps ?? TYPE_DEFAULT_CPS));
-          armHold(holdMs + typeMs);
-          return;
-        }
-        const cps = options?.cps ?? TYPE_DEFAULT_CPS;
-        let shown = 0;
-        if (typedRef.current) typedRef.current.textContent = "";
-        startTalk();
-        typeIntervalRef.current = setInterval(() => {
-          shown += 1;
-          if (typedRef.current) typedRef.current.textContent = text.slice(0, shown);
-          if (shown >= text.length) {
-            if (typeIntervalRef.current !== null) clearInterval(typeIntervalRef.current);
-            typeIntervalRef.current = null;
-            stopTalk();
-            armHold(holdMs);
+
+        /** The behaviour that existed before he had a voice. */
+        const typeOnARate = (): void => {
+          if (reducedMotionRef.current) {
+            // Instant text, but hold for as long as the typewriter would have
+            // taken — reduced motion must never mean reduced reading time.
+            if (typedRef.current) typedRef.current.textContent = text;
+            const typeMs = Math.round((text.length * 1_000) / (options?.cps ?? TYPE_DEFAULT_CPS));
+            armHold(holdMs + typeMs);
+            return;
           }
-        }, Math.max(8, Math.round(1_000 / cps)));
+          const cps = options?.cps ?? TYPE_DEFAULT_CPS;
+          let shown = 0;
+          if (typedRef.current) typedRef.current.textContent = "";
+          startTalk();
+          typeIntervalRef.current = setInterval(() => {
+            shown += 1;
+            if (typedRef.current) typedRef.current.textContent = text.slice(0, shown);
+            if (shown >= text.length) {
+              if (typeIntervalRef.current !== null) clearInterval(typeIntervalRef.current);
+              typeIntervalRef.current = null;
+              stopTalk();
+              armHold(holdMs);
+            }
+          }, Math.max(8, Math.round(1_000 / cps)));
+        };
+
+        // The index is awaited, not merely read. The portrait mounts and speaks
+        // its first line in the same tick, so reading a ref here found null
+        // every time and the opening scene — the one line every visitor hears
+        // — was always silent. The promise is memoised, so this costs one
+        // microtask once the manifest has landed.
+        const resolveLine = voiceMutedRef.current
+          ? Promise.resolve(undefined)
+          : (voiceIndexRef.current === null
+            ? loadConvenerVoice().then((index) => {
+                voiceIndexRef.current = index;
+                return index.get(text);
+              })
+            : Promise.resolve(voiceIndexRef.current.get(text)));
+
+        // Nothing is shown until the audio actually starts. Painting the first
+        // characters optimistically and then discovering playback was refused
+        // would leave half a sentence frozen on screen.
+        if (typedRef.current) typedRef.current.textContent = "";
+        void resolveLine.then(async (line) => {
+          const player = playerRef.current;
+          // A newer line retargeted us while the manifest or audio was being
+          // fetched. That say() already called finishSay; painting here would
+          // write an abandoned sentence over the current one.
+          if (sayGenRef.current !== myGen) return;
+          if (line === undefined || player === null || voiceMutedRef.current) {
+            typeOnARate();
+            return;
+          }
+          const audio = await player.play(line);
+          if (sayGenRef.current !== myGen) return;
+          if (audio === null) {
+            typeOnARate();
+            return;
+          }
+          if (reducedMotionRef.current && typedRef.current) {
+            typedRef.current.textContent = text;
+          }
+          startTalk();
+          const times = line.charStartTimesMs;
+          const step = (): void => {
+            if (sayGenRef.current !== myGen) return;
+            const elapsed = audio.currentTime * 1_000;
+            if (!reducedMotionRef.current && typedRef.current) {
+              // The audio element's own clock, read fresh every frame, so a
+              // stall to buffer holds the text back with the voice rather than
+              // letting a second timer run on ahead.
+              typedRef.current.textContent = text.slice(0, charsSpokenBy(times, elapsed));
+            }
+            if (audio.ended || (audio.duration > 0 && audio.currentTime >= audio.duration)) {
+              voiceRafRef.current = null;
+              if (typedRef.current) typedRef.current.textContent = text;
+              stopTalk();
+              armHold(holdMs);
+              return;
+            }
+            voiceRafRef.current = requestAnimationFrame(step);
+          };
+          voiceRafRef.current = requestAnimationFrame(step);
+        });
       });
     }, [armHold, finishSay, startTalk, stopTalk]);
 
@@ -293,13 +391,64 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
       }
     }, [later, measuredRect]);
 
+    /** Audio + mouth only; the bubble is left holding whatever it holds. */
+    const speakAside = useCallback((text: string): void => {
+      // Retarget first: this cancels any line in flight, releases whoever was
+      // awaiting it, and bumps the generation so the old rAF loop stops
+      // painting the bubble.
+      finishSay();
+      sayGenRef.current += 1;
+      const myGen = sayGenRef.current;
+      if (voiceMutedRef.current) return;
+
+      const resolveLine = voiceIndexRef.current === null
+        ? loadConvenerVoice().then((index) => {
+            voiceIndexRef.current = index;
+            return index.get(text);
+          })
+        : Promise.resolve(voiceIndexRef.current.get(text));
+
+      void resolveLine.then(async (line) => {
+        const player = playerRef.current;
+        if (sayGenRef.current !== myGen) return;
+        // Silence rather than a fallback typewriter: the panel already shows
+        // this text in full, so there is nothing for a typewriter to reveal.
+        if (line === undefined || player === null || voiceMutedRef.current) return;
+        const audio = await player.play(line);
+        if (audio === null || sayGenRef.current !== myGen) return;
+        startTalk();
+        const step = (): void => {
+          if (sayGenRef.current !== myGen) return;
+          if (audio.ended || (audio.duration > 0 && audio.currentTime >= audio.duration)) {
+            voiceRafRef.current = null;
+            stopTalk();
+            return;
+          }
+          voiceRafRef.current = requestAnimationFrame(step);
+        };
+        voiceRafRef.current = requestAnimationFrame(step);
+      });
+    }, [finishSay, startTalk, stopTalk]);
+
+    const toggleVoiceMuted = useCallback((): void => {
+      setVoiceMutedState((wasMuted) => {
+        const nowMuted = !wasMuted;
+        setConvenerVoiceMuted(nowMuted);
+        // Silence takes effect on the line being spoken, not the next one:
+        // muting a man mid-sentence and still hearing him finish is a bug.
+        if (nowMuted) playerRef.current?.stop();
+        return nowMuted;
+      });
+    }, []);
+
     useImperativeHandle(handleRef, (): ConvenerHandle => ({
       say,
       glanceAt,
       express,
       setMull: setMullState,
       setLean: setLeanState,
-    }), [express, glanceAt, say]);
+      speakAside,
+    }), [express, glanceAt, say, speakAside]);
 
     // ---- the one rAF loop: gaze spring + candle flames ----
     useEffect(() => {
@@ -502,6 +651,25 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
       return () => { document.removeEventListener("keydown", onKeyDown); };
     }, [skipTyping]);
 
+    // ---- the voice: the session's player, manifest fetched once ----
+    useEffect(() => {
+      const player = getConvenerVoicePlayer();
+      playerRef.current = player;
+      let live = true;
+      void loadConvenerVoice().then((index) => {
+        // A manifest that arrives after unmount must not resurrect anything.
+        if (live) voiceIndexRef.current = index;
+      });
+      return () => {
+        live = false;
+        playerRef.current = null;
+        // Stopped, never disposed: the element carries Safari's unlock for the
+        // whole visit, and this component remounts (compact/wide, screen
+        // changes) far more often than the visit ends.
+        player.stop();
+      };
+    }, []);
+
     // ---- unmount: every timer dies, every await resolves ----
     useEffect(() => {
       const timeouts = timeoutsRef.current;
@@ -510,6 +678,8 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
         timeouts.clear();
         if (typeIntervalRef.current !== null) clearInterval(typeIntervalRef.current);
         if (talkIntervalRef.current !== null) clearInterval(talkIntervalRef.current);
+        if (voiceRafRef.current !== null) cancelAnimationFrame(voiceRafRef.current);
+        voiceRafRef.current = null;
         if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
         sayResolveRef.current?.();
@@ -895,6 +1065,19 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
             {speaking ? <span className="convener-caret">▌</span> : null}
           </p>
         </div>
+        {/* Outside the speech box on purpose: that box is itself a button that
+            skips the line, and a control nested in a control is a click the
+            visitor cannot aim. */}
+        <button
+          type="button"
+          className="convener-mute"
+          onClick={toggleVoiceMuted}
+          aria-pressed={voiceMuted}
+          aria-label={voiceMuted ? "Let the Convener speak aloud" : "Silence the Convener's voice"}
+          title={voiceMuted ? "Let him speak" : "Silence him"}
+        >
+          <span aria-hidden="true">{voiceMuted ? "🔇" : "🔊"}</span>
+        </button>
         <p className="convener-sr-only" role="status" aria-live="polite" ref={liveRef} />
       </div>
     );

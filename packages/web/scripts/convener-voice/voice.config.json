@@ -2,12 +2,14 @@
   "voiceId": "wteyCP7td8C5nYwWnOV1",
   "voiceName": "Chris Lee",
   "note": "A voice_id is an identifier, not a secret, so it is committed. The API key never is: it lives in packages/web/.env.local, which .gitignore covers.",
-  "modelId": "eleven_multilingual_v2",
+  "modelId": "eleven_v3",
   "outputFormat": "mp3_44100_128",
+  "modelNote": "v3 over multilingual_v2: far more expressive, and it returns exactly one timestamp per character (v2 returned 22 for a 20-character line), so the typewriter can index the alignment array directly.",
   "voiceSettings": {
-    "stability": 0.45,
+    "stability": 0.5,
     "similarity_boost": 0.8,
     "style": 0.4,
     "use_speaker_boost": true
-  }
+  },
+  "settingsNote": "v3 reads stability as three discrete modes: 0.0 Creative, 0.5 Natural, 1.0 Robust. Natural is deliberate. Creative is more theatrical line by line but drifts in timbre across a 102-line corpus, and one character speaking in two voices is worse than one speaking slightly flatter."
 }

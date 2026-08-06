@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { OptionSeal } from "../features/trades-house/OptionSeal.js";
 import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
+import { loadConvenerVoice, unlockConvenerVoice } from "../features/trades-house/convener/convener-voice.js";
 import {
   CONVENER_DELIBERATION,
   CONVENER_DELIBERATION_BEAT_MS,
@@ -378,6 +379,11 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [reply, setReply] = useState<string | null>(null);
   const convenerRef = useRef<ConvenerHandle>(null);
+
+  // Fetch the voice manifest while the visitor is still reading the invitation.
+  // The portrait mounts on the question screen and speaks in the same tick, so
+  // starting the fetch there means the opening scene races it — and loses.
+  useEffect(() => { void loadConvenerVoice(); }, []);
   const wideStage = useMediaQuery("(min-width: 980px)");
   const ranking = useMemo(() => rankCrafts(totals, lastAxes), [lastAxes, totals]);
 
@@ -394,6 +400,10 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   // survives remounts without the page having to time a say() call.
 
   function beginQuiz(): void {
+    // Spend the tap's gesture on audio permission BEFORE any state change:
+    // iOS grants it only synchronously inside a real user gesture, and this is
+    // the one deliberate press the visitor makes before he starts speaking.
+    unlockConvenerVoice();
     setTotals(ZERO_AXIS_TOTALS);
     setLastAxes({});
     setQuestionIndex(0);
@@ -421,8 +431,13 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setLastAxes(answer.lastAxes);
     // Answering opens his reply and stops there. Nothing advances on a clock:
     // the reader decides when they have finished with the line.
-    setReply(convenerReaction(questionIndex, optionIndex));
+    const reaction = convenerReaction(questionIndex, optionIndex);
+    setReply(reaction);
     convenerRef.current?.express(optionIndex % 3 === 1 ? "press" : "smile", 1_400);
+    // He SAYS the reply while the panel shows it. Aside, not say(): his bubble
+    // must keep holding the scene, or answering would wipe the question the
+    // reader is still weighing.
+    convenerRef.current?.speakAside(reaction);
   }
 
   // Stable identity: WeighingScreen's handover effect lists this in its deps,
