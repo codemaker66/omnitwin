@@ -15,22 +15,45 @@ the typewriter text **on the audio's own character timestamps** — the text app
 exactly as he says it, and the mouth flaps on the same clock. The API key never
 ships to the browser; the site serves static mp3s.
 
-## Blake's two jobs (~15 minutes total)
+## Status (2026-08-06) — built, blocked on one thing
 
-1. **Account + key.** Sign up at elevenlabs.io → *Creator* plan (~$22/mo; the whole
-   corpus is a one-time ~40k characters, well inside the 100k monthly credits —
-   after generation you can downgrade). Profile → API Keys → create. Put it in
-   `packages/web/.env.local` as `ELEVENLABS_API_KEY=...` — **never commit it;
-   never paste it in chat.** Tell Claude "key is in place" — that's all Claude
-   needs to know.
-2. **Pick the voice.** Claude will build `scripts/convener-voice/audition.mjs`,
-   which generates 4–6 candidates (Voice Design prompts like "warm gravelly aged
-   Glaswegian male, quick theatrical energy, kind" plus the best Scottish voices in
-   the Voice Library) each speaking the same three Convener lines, and writes a
-   local `audition.html`. Open it, listen, pick. The winning `voice_id` is pinned
-   in `scripts/convener-voice/voice.config.json` (committed — it's an ID, not a
-   secret). If a real Glaswegian voice actor is ever cloned instead, get written
-   rights first.
+**Done:** key in `packages/web/.env.local` (gitignored, verified untrackable);
+voice chosen and pinned in `scripts/convener-voice/voice.config.json`
+(`wteyCP7td8C5nYwWnOV1`, "Chris Lee" — an instant clone Blake made);
+`scripts/convener-voice/generate.mjs` written and dry-run proven.
+
+**Blocked on:** the account is on the **free** tier. Three hard stops, each
+measured against the live API rather than inferred:
+
+| Need | Free | Evidence |
+| --- | --- | --- |
+| Serve an instant-cloned voice via API | ✗ | `401 ivc_not_permitted — Instantly cloned voices are not available on your current plan` |
+| Commercial licence | ✗ | free grants none, and this ships on a client's public site |
+| 14,951 characters for one full pass | ✗ | free cap is 10,000/month |
+
+**Starter ($6/mo, 30,000 credits) clears all three** with a revision pass spare.
+Creator ($22) matters only for professional cloning or heavy rewriting. Nothing
+in the setup changes when the plan does — just rerun the generator.
+
+> Corrected from the original plan, which guessed Creator was required and
+> assumed a ~40k corpus. Measured: 102 lines, 14,951 characters.
+
+Voice-library voices were considered and rejected: 27 Scottish ones exist, but
+`free_users_allowed` governs the web UI only — the API returns
+`402 paid_plan_required` for all of them. Voice Design is likewise paid-only
+(`403 feature_not_available`). So the free tier could never have shipped this.
+
+### The variable name is load-bearing
+
+`ELEVENLABS_API_KEY`, **never** `VITE_ELEVENLABS_API_KEY`. Vite inlines every
+`VITE_*` variable into the client bundle, so that one prefix would publish the
+key to every visitor of a public site. Only Node scripts may read it.
+
+### If a key is ever exposed
+
+Rotate it. A key pasted into chat, a ticket, or a commit is burned even if it
+looks unused — this repo is **public**, and keys in public repos are scraped
+within minutes.
 
 ## Claude's build (R4, after the voice is picked)
 
