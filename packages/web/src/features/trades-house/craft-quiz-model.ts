@@ -119,7 +119,7 @@ export const CRAFT_PROFILES = {
     omen: "ringing metal",
     motto: "MAKE IT WORK. MAKE IT WORTHY. MAKE IT LAST.",
     reveal:
-      "The Chain heard the hammer in you — drawn to stubborn problems and the moment force becomes intelligence. Inventive, practical and quietly brave, you want to leave things stronger than you found them. Your challenge is impatience: not everything yields to pressure.",
+      "You go at the thing nobody else will touch, and you cannot leave it while it is still wrong. Their searchers smashed bad work on the Saturday and paid a widow’s rent out of the Gill Stoup on the Sunday, and saw no contradiction in it. Neither do you. Mind the pressure, though: not everything yields to it, and some people are not problems to be solved.",
   },
   wrights: {
     name: "THE WRIGHTS",
@@ -130,7 +130,7 @@ export const CRAFT_PROFILES = {
     omen: "fresh wood shavings",
     motto: "GIVE GOOD IDEAS A BODY.",
     reveal:
-      "You are a maker of forms — spaces, objects, plans — useful, but never without warmth. Versatile, constructive and welcoming, you give ideas a body. Your challenge is restlessness: finish the first thing before shaping the next.",
+      "You join things. Timber, plans, folk who had stopped speaking to each other. Their word for a man who never made his essay was pendicle, and they meant it as the worst thing you could call somebody, because proof was not paperwork to them but the whole of a man’s standing. You will finish what you started or it will nag at you for years.",
   },
   masons: {
     name: "THE MASONS",
@@ -141,7 +141,7 @@ export const CRAFT_PROFILES = {
     omen: "hewn stone",
     motto: "BUILD FOR THOSE NOT YET HERE.",
     reveal:
-      "The Chain grew heavy with stone: you think beyond the moment and build what can bear weight after you are gone. Structured, patient and public-spirited, you plan for people you will never meet. Your challenge is rigidity — even good plans must sometimes move.",
+      "You build for people you will never meet. When the town said his arch would fall, Mungo Naismith slept the night under it, because argument is cheap and a night is not. That is your instinct exactly. The risk is mistaking permanence for rightness, and refusing to shift a thing that ought to shift.",
   },
   coopers: {
     name: "THE COOPERS",
@@ -152,7 +152,7 @@ export const CRAFT_PROFILES = {
     omen: "sealed oak",
     motto: "HOLD FAST. LET NOTHING PRECIOUS LEAK AWAY.",
     reveal:
-      "You understand pressure — the seal, the join, the discipline to hold precious things safe. Dependable, organised and discreet, you are trusted with what matters most. Your challenge is control: some things need slack, not tightening.",
+      "You are the one trusted with what must not leak. A barrel is thirty separate staves that hold only because they are bound, and the whole trade came down to one merciless question every Saturday morning: does it hold? You ask it of yourself first. Slacken the hoop now and then. Not everything precious wants gripping.",
   },
   tailors: {
     name: "THE TAILORS",
@@ -163,7 +163,7 @@ export const CRAFT_PROFILES = {
     omen: "fine stitches",
     motto: "NOTHING CARELESS. NOTHING ILL-FITTING.",
     reveal:
-      "The Chain noticed your eye before your words: you see the crooked seam, the idea that almost fits. You bring poise, proportion and refinement to people and plans alike. Your challenge is perfectionism — some things must breathe before they are finished.",
+      "You see the crooked seam before anybody says a word. They kept a locked room where a man proved himself alone, and in 1724 they unseated their own Deacon over eleven unpaid pennies, because a rule that bends for the powerful is decoration. Fit is your religion. Some things have to breathe before they are finished.",
   },
   weavers: {
     name: "THE WEAVERS",
@@ -174,7 +174,7 @@ export const CRAFT_PROFILES = {
     omen: "threads drawn tight",
     motto: "FIND THE PATTERN. STRENGTHEN THE WHOLE.",
     reveal:
-      "You notice the connections others miss — a community, like cloth, is many strands held in tension. Subtle, loyal and patient, you strengthen the whole. Your challenge is over-entanglement: not every loose thread is yours to carry.",
+      "You notice how the threads run. Their deacons served one year only, written down as being for the avoiding of all superioritie and tyrannie, and in 1615 they ruled that a master who withheld his knowledge from an apprentice had committed theft. That is your politics, whether or not you have ever said it aloud. You will carry loose ends that were never yours to carry.",
   },
   dyers: {
     name: "THE BONNETMAKERS & DYERS",
@@ -185,7 +185,7 @@ export const CRAFT_PROFILES = {
     omen: "bold dye",
     motto: "SHOW THE TRUE COLOUR.",
     reveal:
-      "The Chain flashed with dye and daring: you believe identity should be visible and nothing true should be dull. You bring imagination, flair and creative courage. Your challenge: ask what needs revealing before you change the colour.",
+      "You make the thing by which people are known. They knitted the blue bonnet out of waste wool until it was the badge of a whole country, then took in the dyers for one reason: a colour that fades is a small public lie. You would rather be true than fashionable. You would also rather change than die, and this craft has done exactly that twice.",
   },
   skinners: {
     name: "THE SKINNERS & GLOVERS",
@@ -196,7 +196,7 @@ export const CRAFT_PROFILES = {
     omen: "old polished leather",
     motto: "GUARD WHAT HAS BEEN ENTRUSTED.",
     reveal:
-      "The Chain felt old leather polished by generations of hands: you guard standards, honour and continuity. Protective, steady and principled — people rest easier in your keeping. Your challenge is suspicion: not everyone needs testing twice.",
+      "You take what the world discards and make it worth keeping. Their founding charter has the two trades agreeing to unyte ourself in cherite togidder, and they hold the oldest charter of the fourteen while standing seventh in the line, and have never once made a fuss about it. You will outlast a good many people who talked more.",
   },
   cordiners: {
     name: "THE CORDINERS",
@@ -207,7 +207,7 @@ export const CRAFT_PROFILES = {
     omen: "road-dust",
     motto: "NO ONE GOES UNPREPARED.",
     reveal:
-      "The Chain felt the road beneath your feet: practical, loyal and built for hard journeys, you equip others to endure. You care less for spectacle than readiness. Your challenge is guardedness — prepare for joy as faithfully as you prepare for weather.",
+      "A shoemaker’s son is a Prince born. That was theirs, and they meant it: they crowned their own King Crispin and paraded him through Glasgow while actual kings went about looking shabby. The same craft made six thousand pairs of shoes for an army that was not theirs, because feet are feet. Careful the crown does not become the point of it.",
   },
   bakers: {
     name: "THE BAKERS",
@@ -217,7 +217,7 @@ export const CRAFT_PROFILES = {
     omen: "warm bread",
     motto: "NO ONE IS USEFUL HUNGRY.",
     reveal:
-      "You ask whether people have eaten before anything else — care, for you, is practical before it is poetic. Warm, generous and reliable, you steady every room you provision. Your challenge is self-neglect: you feed everyone else first.",
+      "The town must eat, today, at an honest weight. They went to prison rather than sign on the magistrates’ terms, and once fed an army the night before the battle that settled a kingdom. You feed people and you make no performance of it. Watch the shadow: the baker they punished was the one selling full loaves too cheaply.",
   },
   fleshers: {
     name: "THE FLESHERS",
@@ -228,7 +228,7 @@ export const CRAFT_PROFILES = {
     omen: "market bells",
     motto: "FACE THE NEED. SERVE IT WELL.",
     reveal:
-      "The Chain did not flinch, and neither did you: honest about necessity, fair in supply and clean in dealing. Direct, useful and unsentimental in the best sense. Your challenge is bluntness — truth still needs tenderness.",
+      "You have the strong stomach that lets everybody else keep clean hands. Their signature fraud had a name of its own, the blawing of muttoun, and the man who could spot it was the same man who could have done it. They beat the magistrates in court in 1802 and never once rioted. Keep a calm sough. Just do not let steady harden into unmoved.",
   },
   maltmen: {
     name: "THE MALTMEN",
@@ -239,7 +239,7 @@ export const CRAFT_PROFILES = {
     omen: "warm grain",
     motto: "LET TIME DO ITS NOBLE WORK.",
     reveal:
-      "The Chain heard laughter in the old vats: you know trust, flavour and friendship cannot be rushed. A natural host and a fine judge of timing, you turn raw ingredients into fellowship. Your challenge is delay — conditions are never perfect.",
+      "You are patient with what cannot be hurried. Twice Parliament declared them no craft at all; twice they quietly renamed their chief and bought their liberty back, and four and a half centuries on they are still led by a Visitor rather than a Deacon. There is a wall around your care, though, and it is worth asking now and then who is standing outside it.",
   },
   gardeners: {
     name: "THE GARDENERS",
@@ -250,7 +250,7 @@ export const CRAFT_PROFILES = {
     omen: "rain on leaves",
     motto: "LET GLASGOW — AND ITS PEOPLE — FLOURISH.",
     reveal:
-      "The Chain softened into leaf and root: you believe growth is real work, and you see what is neglected and imagine it flourishing. Patient, hopeful and restorative. Your challenge is over-nurture — some things need pruning, not tending.",
+      "Yours is the only craft whose arms show the moment everything went wrong, Adam and Eve and the serpent and the tree, and they read that not as a curse but as a claim: the one trade practised before the Fall. The moon on their shield is waxing. You plant for eyes that will not be yours. Not everything wants tending; some of it wants pruning.",
   },
   barbers: {
     name: "THE BARBERS",
@@ -261,7 +261,7 @@ export const CRAFT_PROFILES = {
     omen: "a steady breath",
     motto: "A STEADY HAND RESTORES MORE THAN THE SURFACE.",
     reveal:
-      "The Chain lowered its voice: you have the steadiness people need when they feel exposed. Caring, precise and humane, you restore composure as much as appearance. Your challenge is burden — do not carry others’ distress too deeply.",
+      "Every morning half a city bared its throat to a man holding a razor, and then talked. That is what you are for. Locked out of their own hall, they went to the kirk and took the minutes anyway and won by sheer patience; they booked Black journeymen in 1741, women in 1791, and petitioned against the slave trade in 1792. You are trusted with what people say when they relax, which is also the danger.",
   },
 } as const satisfies Readonly<Record<CraftId, CraftProfile>>;
 

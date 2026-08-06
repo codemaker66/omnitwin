@@ -76,10 +76,20 @@ describe("Trades House leaflet experience", () => {
       const third = options[2];
       if (third === undefined) throw new Error("missing option");
       fireEvent.click(third);
-      // Let his acknowledgement finish typing and the quiz advance.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(8_000);
-      });
+
+      // Answering opens his reply and stops. Nothing advances on a clock, so
+      // the scene stays put no matter how long the reader sits with the line.
+      await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+      const reply = screen.getByRole("group", { name: "The Convener replies" });
+      expect(reply.textContent, `scene ${String(scene + 1)} reply`).toContain("Ye Auld Convener");
+      expect(
+        screen.getByText(`QUESTION ${String(scene + 1)} OF 12`),
+        "the scene must still be on screen while he replies",
+      ).toBeTruthy();
+
+      // The reader presses on when they are ready.
+      fireEvent.click(screen.getByRole("button", { name: scene === 11 ? "See your Craft" : "Go on" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     }
 
     vi.useRealTimers();

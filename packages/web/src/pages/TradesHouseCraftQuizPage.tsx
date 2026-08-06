@@ -126,6 +126,9 @@ interface QuestionScreenProps {
    * tap anyway — the accordion is a confirm step, not just a space saver.
    */
   readonly compact: boolean;
+  /** His reply to the answer just given, or null while the scene is open. */
+  readonly reply: string | null;
+  readonly onContinue: () => void;
 }
 
 function QuestionScreen({
@@ -135,14 +138,23 @@ function QuestionScreen({
   pickedIndex,
   onOptionHover,
   compact,
+  reply,
+  onContinue,
 }: QuestionScreenProps): ReactElement {
   const question = CRAFT_QUESTIONS[questionIndex];
   if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
   const omen = midQuizOmen(totals, questionIndex);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
 
   // A new scene arrives closed, so nobody answers the last question's shape.
   useEffect(() => { setOpenIndex(null); }, [questionIndex]);
+
+  // Move focus to Continue when he replies: a keyboard user should not have to
+  // hunt for the only live control on the screen.
+  useEffect(() => {
+    if (reply !== null) continueRef.current?.focus();
+  }, [reply]);
 
   return (
     <section className="craft-quiz-question" aria-labelledby="craft-question-title">
@@ -153,7 +165,7 @@ function QuestionScreen({
       {/* The Convener speaks this aloud; on narrow viewports his bubble is its
           only visible rendering, so it stays in the tree either way. */}
       <h1 id="craft-question-title">{question.scene}</h1>
-      <div className={`craft-quiz-options${compact ? " is-accordion" : ""}`}>
+      <div className={`craft-quiz-options${compact ? " is-accordion" : ""}${reply === null ? "" : " is-replying"}`}>
         {question.options.map((option, optionIndex) => {
           const picked = pickedIndex === optionIndex;
           const faded = pickedIndex !== null && !picked;
@@ -186,7 +198,7 @@ function QuestionScreen({
                 {/* Naming the price is what keeps the four options equally
                     choosable — remove it and the cheapest one always wins. */}
                 {open ? <em className="craft-quiz-option-cost">Costs you: {option.cost}</em> : null}
-                {open && compact
+                {open && compact && reply === null
                   ? <em className="craft-quiz-option-confirm">Tap again to choose</em>
                   : null}
               </span>
@@ -194,6 +206,26 @@ function QuestionScreen({
           );
         })}
       </div>
+
+      {/* His reply gets its own box and stays until YOU move on. Overwriting
+          the scene with it, and advancing on a timer, meant the best writing in
+          the quiz flashed past unread — and tying the advance to a promise is
+          what let a stray say() race the whole quiz to the end. */}
+      {reply === null ? null : (
+        <div className="craft-quiz-reply" role="group" aria-label="The Convener replies">
+          <p className="craft-quiz-reply-who">Ye Auld Convener</p>
+          <p className="craft-quiz-reply-text">{reply}</p>
+          <button
+            type="button"
+            className="craft-quiz-continue"
+            ref={continueRef}
+            onClick={onContinue}
+          >
+            {questionIndex === CRAFT_QUESTIONS.length - 1 ? "See your Craft" : "Go on"}
+          </button>
+        </div>
+      )}
+
       <p className="craft-quiz-est">Trades House of Glasgow · Est. 1605</p>
     </section>
   );
@@ -256,8 +288,14 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
       <p className="craft-result-essence">{craft.essence}</p>
       <p className="craft-result-reveal">{craft.reveal}</p>
       <p className="craft-result-motto">{craft.motto}</p>
+      {/* The near-miss. A sorting hat is remembered for what it ALMOST said,
+          not for what it said — so he admits how close it ran, by name. This
+          is also the line people screenshot. */}
       <p className="craft-result-affinities">
-        Your close affinities are <strong>{runnerUp.profile.name}</strong> and <strong>{third.profile.name}</strong> — an affinity is an invitation to explore, and enquiries are warmly welcomed.
+        <span className="craft-result-affinities-who">Ye Auld Convener, quieter</span>
+        “Mind, it ran closer than ye’d think. Ye were a hair off <strong>{runnerUp.profile.name}</strong>,
+        and I near said <strong>{third.profile.name}</strong> out loud before I caught myself.
+        Any of the three would have ye. Go and ask them.”
       </p>
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
@@ -274,6 +312,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   const [totals, setTotals] = useState<AxisTotals>(ZERO_AXIS_TOTALS);
   const [lastAxes, setLastAxes] = useState<AxisVector>({});
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
+  const [reply, setReply] = useState<string | null>(null);
   const convenerRef = useRef<ConvenerHandle>(null);
   const wideStage = useMediaQuery("(min-width: 980px)");
   const ranking = useMemo(() => rankCrafts(totals, lastAxes), [lastAxes, totals]);
@@ -295,6 +334,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setLastAxes({});
     setQuestionIndex(0);
     setPickedIndex(null);
+    setReply(null);
     setScreen("question");
   }
 
@@ -303,6 +343,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setLastAxes({});
     setQuestionIndex(0);
     setPickedIndex(null);
+    setReply(null);
     setScreen("intro");
   }
 
@@ -314,22 +355,17 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     const answer = applyCraftQuizAnswer(totals, questionIndex, optionIndex);
     setTotals(answer.totals);
     setLastAxes(answer.lastAxes);
+    // Answering opens his reply and stops there. Nothing advances on a clock:
+    // the reader decides when they have finished with the line.
+    setReply(convenerReaction(questionIndex, optionIndex));
+    convenerRef.current?.express(optionIndex % 3 === 1 ? "press" : "smile", 1_400);
+  }
 
-    const advance = (): void => {
-      setPickedIndex(null);
-      if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
-      else setQuestionIndex((current) => current + 1);
-    };
-    const convener = convenerRef.current;
-    if (convener === null) {
-      advance();
-      return;
-    }
-    // He replies to THIS answer, then the quiz moves on — the beat is the
-    // character. His line may notice the choice and name its price; it may
-    // never grade it, or the narrator becomes the answer key.
-    convener.express(optionIndex % 3 === 1 ? "press" : "smile", 900);
-    void convener.say(convenerReaction(questionIndex, optionIndex), { quip: true }).then(advance);
+  function continueFromReply(): void {
+    setReply(null);
+    setPickedIndex(null);
+    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
+    else setQuestionIndex((current) => current + 1);
   }
 
   return (
@@ -342,6 +378,9 @@ export function TradesHouseCraftQuizPage(): ReactElement {
               <ConvenerPortrait
                 ref={convenerRef}
                 compact={!wideStage}
+                /* His bubble always holds the SCENE. The reply lives in its own
+                   panel beside the options, so answering never wipes the
+                   question the reader is still thinking about. */
                 restingLine={CRAFT_QUESTIONS[questionIndex]?.scene ?? null}
               />
             </div>
@@ -351,6 +390,8 @@ export function TradesHouseCraftQuizPage(): ReactElement {
               compact={!wideStage}
               onAnswer={answerQuestion}
               pickedIndex={pickedIndex}
+              reply={reply}
+              onContinue={continueFromReply}
               onOptionHover={(clientX, clientY) => { convenerRef.current?.glanceAt(clientX, clientY); }}
             />
           </div>
