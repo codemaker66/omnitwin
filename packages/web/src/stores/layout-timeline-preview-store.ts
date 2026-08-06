@@ -204,9 +204,18 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     if (current === null) return;
     const clamped = clampProgress(progress);
     const beforeMidpoint = clamped < 0.5;
+    const highCardinalityImperativeMorph = current.mode === "same-event-morph"
+      && current.itemTransitionPlan !== null
+      && timelineTransitionUsesImperativeMorph(current.itemTransitionPlan);
     const staticEndpointChanged = current.itemTransitionPlan === null
       && beforeMidpoint !== (current.progress < 0.5);
-    const activeFrame = beforeMidpoint ? current.fromFrame : current.toFrame;
+    // A dense same-room morph keeps the source runtime authoritative until
+    // settle. Furniture/capture still switch their nearest endpoint at the
+    // midpoint, but avoiding a transient runtime identity change prevents a
+    // synchronous app + router + R3F fan-out in the animation's hot path.
+    const activeFrame = highCardinalityImperativeMorph
+      ? current.fromFrame
+      : beforeMidpoint ? current.fromFrame : current.toFrame;
     const captureItems = beforeMidpoint ? current.fromItems : current.toItems;
     const currentItems = current.itemTransitionPlan !== null
       && !timelineTransitionUsesImperativeMorph(current.itemTransitionPlan)

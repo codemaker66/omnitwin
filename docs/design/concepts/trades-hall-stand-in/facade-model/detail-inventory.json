@@ -1,0 +1,231 @@
+{
+  "sourceImage": "actual-facade-model-reference.png",
+  "zonesDir": "detail-inventory",
+  "detailInventory": {
+    "scanMethod": "grid-3x3",
+    "targetMinDetails": 20,
+    "details": [
+      {
+        "id": "r0c0-parapet-balusters",
+        "kind": "ridge",
+        "description": "Repeated turned stone balusters create a strong light-dark rhythm along the left roof parapet.",
+        "region": { "x": 0.0, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso; each baluster is approximately 0.8% of facade width",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "parapet-balustrades/baluster-repeat" },
+        "evidenceRef": "detail-inventory/zone-r0c0.png",
+        "confidence": 0.94
+      },
+      {
+        "id": "r0c0-pavilion-cornice",
+        "kind": "bevel",
+        "description": "The left pavilion cap has two projecting cornice steps with crisp grazing-light edges.",
+        "region": { "x": 0.0, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso; projection approximately 0.5% of facade width",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "pavilion-cornices/cornice-chamfer" },
+        "evidenceRef": "detail-inventory/zone-r0c0.png",
+        "confidence": 0.91
+      },
+      {
+        "id": "r0c1-dome-ribs",
+        "kind": "ridge",
+        "description": "Vertical copper ribs segment the dome and remain visible from the frontal review angle.",
+        "region": { "x": 0.3333, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso; narrow raised ribs over the dome surface",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "dome-shell/dome-ribs" },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.96
+      },
+      {
+        "id": "r0c1-cupola-oculus",
+        "kind": "hole",
+        "description": "A dark circular oculus punctures the front of the copper cupola and must read as a true recess.",
+        "region": { "x": 0.3333, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro; opening approximately 1.2% of facade width",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "cupola/cupola-oculus" },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.94
+      },
+      {
+        "id": "r0c1-copper-patina",
+        "kind": "stain",
+        "description": "Blue-green copper patina varies vertically between dome ribs, with darker weathering near seams.",
+        "region": { "x": 0.3333, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "macro-to-meso material variation",
+        "affects": "material",
+        "mapsTo": { "type": "material.localOverride", "ref": "dome-copper/vertical-patina" },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.9
+      },
+      {
+        "id": "r0c1-central-medallion-band",
+        "kind": "ridge",
+        "description": "A repeated circular medallion band spans the central parapet below the dome.",
+        "region": { "x": 0.3333, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso; repeated shallow relief discs",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "central-parapet/medallion-band" },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.92
+      },
+      {
+        "id": "r0c2-right-balusters",
+        "kind": "ridge",
+        "description": "The right roofline repeats the turned-baluster silhouette at three stepped heights.",
+        "region": { "x": 0.6667, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso repeated geometry",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "parapet-balustrades/baluster-repeat" },
+        "evidenceRef": "detail-inventory/zone-r0c2.png",
+        "confidence": 0.94
+      },
+      {
+        "id": "r0c2-rain-streaking",
+        "kind": "stain",
+        "description": "Subtle vertical grime streaks descend from parapet and cornice joints on the right pavilion.",
+        "region": { "x": 0.6667, "y": 0.0, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro-to-meso material breakup",
+        "affects": "material",
+        "mapsTo": { "type": "material.localOverride", "ref": "facade-stone/rain-streaking" },
+        "evidenceRef": "detail-inventory/zone-r0c2.png",
+        "confidence": 0.78
+      },
+      {
+        "id": "r1c0-arched-fanlight-muntins",
+        "kind": "linework",
+        "description": "Radial fanlight muntins and vertical sash bars define the large arched window bay.",
+        "region": { "x": 0.0, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro; bars remain legible at the fixed review view",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "arched-window-bays/radial-fanlight-muntins" },
+        "evidenceRef": "detail-inventory/zone-r1c0.png",
+        "confidence": 0.96
+      },
+      {
+        "id": "r1c0-ashlar-joints",
+        "kind": "linework",
+        "description": "Regular horizontal and staggered vertical ashlar joints break up the upper sandstone wall.",
+        "region": { "x": 0.0, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro panel-line; approximately 0.08% of facade width",
+        "affects": "both",
+        "mapsTo": { "type": "component.localFeature", "ref": "sandstone-walls/ashlar-joints" },
+        "evidenceRef": "detail-inventory/zone-r1c0.png",
+        "confidence": 0.93
+      },
+      {
+        "id": "r1c1-column-capital-rings",
+        "kind": "ridge",
+        "description": "Paired portico columns use stacked bases and stylized Ionic capital rings that catch highlights.",
+        "region": { "x": 0.3333, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso profile relief",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "portico-columns/capital-rings" },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.92
+      },
+      {
+        "id": "r1c1-pediment-cornice",
+        "kind": "bevel",
+        "description": "The central triangular pediment has a deep stepped cornice with a sharp shadow line.",
+        "region": { "x": 0.3333, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso; two-step projecting edge",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "central-pediment/pediment-cornice" },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.96
+      },
+      {
+        "id": "r1c1-frieze-reliefs",
+        "kind": "ridge",
+        "description": "Shallow rectangular figure-relief panels flank the portico at first-floor height.",
+        "region": { "x": 0.3333, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso shallow relief cards",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "frieze-reliefs/relief-blocks" },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.86
+      },
+      {
+        "id": "r1c1-central-fanlight",
+        "kind": "linework",
+        "description": "The central arched opening has a radial fanlight above rectilinear sash divisions.",
+        "region": { "x": 0.3333, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro repeated bars",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "central-fanlight/radial-sash" },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.93
+      },
+      {
+        "id": "r1c2-keyed-arch-surround",
+        "kind": "ridge",
+        "description": "The right arched bay uses a projecting keyed stone surround and sill that separate it from the wall plane.",
+        "region": { "x": 0.6667, "y": 0.3333, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso projecting surround",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "arched-window-bays/keyed-arch-surround" },
+        "evidenceRef": "detail-inventory/zone-r1c2.png",
+        "confidence": 0.9
+      },
+      {
+        "id": "r2c0-rustication-joints",
+        "kind": "groove",
+        "description": "Deep horizontal and staggered vertical joints define the rusticated ground-floor stone blocks.",
+        "region": { "x": 0.0, "y": 0.6667, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso groove network",
+        "affects": "both",
+        "mapsTo": { "type": "component.localFeature", "ref": "rusticated-base/rustication-joints" },
+        "evidenceRef": "detail-inventory/zone-r2c0.png",
+        "confidence": 0.97
+      },
+      {
+        "id": "r2c0-ground-contact-stain",
+        "kind": "stain",
+        "description": "Dark green-brown grime accumulates along the plinth and lower corners at ground contact.",
+        "region": { "x": 0.0, "y": 0.6667, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso material band along the lowest 3% of height",
+        "affects": "material",
+        "mapsTo": { "type": "material.localOverride", "ref": "facade-stone/ground-contact-stain" },
+        "evidenceRef": "detail-inventory/zone-r2c0.png",
+        "confidence": 0.88
+      },
+      {
+        "id": "r2c1-entrance-voussoirs",
+        "kind": "groove",
+        "description": "Wedge-shaped voussoir seams radiate around the central entrance arch.",
+        "region": { "x": 0.3333, "y": 0.6667, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "meso radial groove system",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "entrance-arch/voussoir-seams" },
+        "evidenceRef": "detail-inventory/zone-r2c1.png",
+        "confidence": 0.95
+      },
+      {
+        "id": "r2c1-door-panels",
+        "kind": "ridge",
+        "description": "The dark timber entrance door has nested raised rectangular panels beneath the fanlight.",
+        "region": { "x": 0.3333, "y": 0.6667, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro-to-meso shallow panel relief",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "entrance-door/raised-door-panels" },
+        "evidenceRef": "detail-inventory/zone-r2c1.png",
+        "confidence": 0.91
+      },
+      {
+        "id": "r2c2-ground-fanlights",
+        "kind": "linework",
+        "description": "Lower right openings repeat thin radial fanlight bars above dark glazed doors.",
+        "region": { "x": 0.6667, "y": 0.6667, "width": 0.3333, "height": 0.3333, "units": "normalized" },
+        "scale": "micro repeated bars",
+        "affects": "geometry",
+        "mapsTo": { "type": "component.localFeature", "ref": "ground-floor-openings/fanlight-bars" },
+        "evidenceRef": "detail-inventory/zone-r2c2.png",
+        "confidence": 0.94
+      }
+    ]
+  },
+  "authoringInstruction": "Every observed detail maps to an intended component.localFeatures or material.localOverrides entry. Keep those exact refs when authoring the sculpt spec."
+}

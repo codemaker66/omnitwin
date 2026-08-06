@@ -10,8 +10,12 @@ import {
 } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
+  BoxGeometry,
+  CylinderGeometry,
   DynamicDrawUsage,
   Group,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
   Material,
   MeshStandardMaterial,
   type InstancedMesh,
@@ -84,6 +88,7 @@ export function timelineFurnitureRenderKind(item: PlacedItem): TimelineFurniture
 
 const EMPTY_ITEMS: readonly PlacedItem[] = [];
 export const TIMELINE_SIMPLIFIED_LOD_THRESHOLD = TIMELINE_IMPERATIVE_MORPH_THRESHOLD;
+export const TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS = 1_000 / 30;
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -384,6 +389,20 @@ interface CompiledTimelineMorphPlan {
   readonly unmatchedTo: readonly TimelineMorphProxyEndpoint[];
 }
 
+interface TimelineGpuMorphBatch extends TimelineMorphProxyBatch {
+  readonly fromPositions: Float32Array;
+  readonly toPositions: Float32Array;
+  readonly fromRotations: Float32Array;
+  readonly rotationDeltas: Float32Array;
+  readonly fromScales: Float32Array;
+  readonly scaleDeltas: Float32Array;
+  readonly instanceCount: number;
+}
+
+interface TimelineMorphProgressUniform {
+  value: number;
+}
+
 const EMPTY_COMPILED_TIMELINE_MORPH_PLAN: CompiledTimelineMorphPlan = {
   batches: [],
   pairs: [],
@@ -451,6 +470,221 @@ function compileTimelineMorphPlan(plan: TimelineItemTransitionPlan): CompiledTim
   };
 }
 
+export function timelineMorphUsesGpuAttributes(plan: TimelineItemTransitionPlan): boolean {
+  if (plan.pairs.length === 0 || plan.unmatchedFrom.length > 0 || plan.unmatchedTo.length > 0) {
+    return false;
+  }
+  return plan.pairs.every(({ from, to }) => {
+    const fromSpec = timelineProxySpec(from);
+    const toSpec = timelineProxySpec(to);
+    return fromSpec !== null && toSpec !== null && fromSpec.key === toSpec.key;
+  });
+}
+
+function compileTimelineGpuMorphBatches(
+  plan: TimelineItemTransitionPlan,
+  compiled: CompiledTimelineMorphPlan,
+): readonly TimelineGpuMorphBatch[] | null {
+  if (!timelineMorphUsesGpuAttributes(plan)) return null;
+  const recordsByBatch = compiled.batches.map((): TimelineMorphProxyPair[] => []);
+  for (const record of compiled.pairs) {
+    const fromBatchIndex = record.fromEndpoint?.batchIndex;
+    const toBatchIndex = record.toEndpoint?.batchIndex;
+    if (
+      fromBatchIndex === undefined
+      || toBatchIndex === undefined
+      || fromBatchIndex !== toBatchIndex
+    ) return null;
+    recordsByBatch[fromBatchIndex]?.push(record);
+  }
+
+  return compiled.batches.map((batch): TimelineGpuMorphBatch => {
+    const records = recordsByBatch[batch.index] ?? [];
+    const fromPositions = new Float32Array(records.length * 3);
+    const toPositions = new Float32Array(records.length * 3);
+    const fromRotations = new Float32Array(records.length);
+    const rotationDeltas = new Float32Array(records.length);
+    const fromScales = new Float32Array(records.length);
+    const scaleDeltas = new Float32Array(records.length);
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      if (record === undefined) continue;
+      const fromScale = record.fromScale;
+      const toScale = fromScale + record.deltaScale;
+      const positionOffset = index * 3;
+      fromPositions[positionOffset] = record.fromX;
+      fromPositions[positionOffset + 1] = record.fromY + (batch.height * fromScale) / 2;
+      fromPositions[positionOffset + 2] = record.fromZ;
+      toPositions[positionOffset] = record.fromX + record.deltaX;
+      toPositions[positionOffset + 1] = record.fromY + record.deltaY + (batch.height * toScale) / 2;
+      toPositions[positionOffset + 2] = record.fromZ + record.deltaZ;
+      fromRotations[index] = record.fromRotationY;
+      rotationDeltas[index] = record.deltaRotationY;
+      fromScales[index] = fromScale;
+      scaleDeltas[index] = record.deltaScale;
+    }
+    return {
+      ...batch,
+      fromPositions,
+      toPositions,
+      fromRotations,
+      rotationDeltas,
+      fromScales,
+      scaleDeltas,
+      instanceCount: records.length,
+    };
+  });
+}
+
+function TimelineGpuMorphProxyMesh({
+  batch,
+  progressUniform,
+  writesOutput = true,
+}: {
+  readonly batch: TimelineGpuMorphBatch;
+  readonly progressUniform: TimelineMorphProgressUniform;
+  readonly writesOutput?: boolean;
+}): ReactElement {
+  const geometry = useMemo(() => {
+    const baseGeometry = batch.round
+      ? new CylinderGeometry(
+          Math.max(batch.width, batch.depth) / 2,
+          Math.max(batch.width, batch.depth) / 2,
+          batch.height,
+          10,
+        )
+      : new BoxGeometry(batch.width, batch.height, batch.depth);
+    const nextGeometry = new InstancedBufferGeometry();
+    nextGeometry.setIndex(baseGeometry.getIndex());
+    for (const [name, attribute] of Object.entries(baseGeometry.attributes)) {
+      nextGeometry.setAttribute(name, attribute);
+    }
+    for (const group of baseGeometry.groups) {
+      nextGeometry.addGroup(group.start, group.count, group.materialIndex);
+    }
+    nextGeometry.instanceCount = batch.instanceCount;
+    nextGeometry.setAttribute(
+      "timelineFromPosition",
+      new InstancedBufferAttribute(batch.fromPositions, 3),
+    );
+    nextGeometry.setAttribute(
+      "timelineToPosition",
+      new InstancedBufferAttribute(batch.toPositions, 3),
+    );
+    nextGeometry.setAttribute(
+      "timelineFromRotation",
+      new InstancedBufferAttribute(batch.fromRotations, 1),
+    );
+    nextGeometry.setAttribute(
+      "timelineRotationDelta",
+      new InstancedBufferAttribute(batch.rotationDeltas, 1),
+    );
+    nextGeometry.setAttribute(
+      "timelineFromScale",
+      new InstancedBufferAttribute(batch.fromScales, 1),
+    );
+    nextGeometry.setAttribute(
+      "timelineScaleDelta",
+      new InstancedBufferAttribute(batch.scaleDeltas, 1),
+    );
+    return nextGeometry;
+  }, [batch]);
+  const material = useMemo(() => {
+    const nextMaterial = new MeshStandardMaterial({
+      color: batch.colour,
+      roughness: 0.72,
+      metalness: 0.04,
+    });
+    nextMaterial.colorWrite = writesOutput;
+    nextMaterial.depthWrite = writesOutput;
+    nextMaterial.onBeforeCompile = (shader): void => {
+      shader.uniforms["timelineMorphProgress"] = progressUniform;
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+attribute vec3 timelineFromPosition;
+attribute vec3 timelineToPosition;
+attribute float timelineFromRotation;
+attribute float timelineRotationDelta;
+attribute float timelineFromScale;
+attribute float timelineScaleDelta;
+uniform float timelineMorphProgress;`,
+        )
+        .replace(
+          "#include <beginnormal_vertex>",
+          `#include <beginnormal_vertex>
+float timelineNormalRotation = timelineFromRotation + timelineRotationDelta * timelineMorphProgress;
+float timelineNormalCosine = cos(timelineNormalRotation);
+float timelineNormalSine = sin(timelineNormalRotation);
+objectNormal.xz = mat2(
+  timelineNormalCosine, -timelineNormalSine,
+  timelineNormalSine, timelineNormalCosine
+) * objectNormal.xz;`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `float timelineRotation = timelineFromRotation + timelineRotationDelta * timelineMorphProgress;
+float timelineScale = timelineFromScale + timelineScaleDelta * timelineMorphProgress;
+float timelineCosine = cos(timelineRotation);
+float timelineSine = sin(timelineRotation);
+vec3 transformed = position * timelineScale;
+transformed.xz = mat2(
+  timelineCosine, -timelineSine,
+  timelineSine, timelineCosine
+) * transformed.xz;
+transformed += mix(timelineFromPosition, timelineToPosition, timelineMorphProgress);`,
+        );
+    };
+    nextMaterial.customProgramCacheKey = () => "timeline-gpu-attribute-morph-v1";
+    return nextMaterial;
+  }, [batch.colour, progressUniform, writesOutput]);
+
+  useEffect(() => () => {
+    geometry.dispose();
+    material.dispose();
+  }, [geometry, material]);
+
+  return (
+    <mesh
+      name={`timeline-gpu-morph-${String(batch.index)}`}
+      geometry={geometry}
+      material={material}
+      frustumCulled={false}
+      raycast={() => undefined}
+    />
+  );
+}
+
+const TIMELINE_GPU_MORPH_PROGRAM_ANCHOR_BATCH: TimelineGpuMorphBatch = {
+  key: "timeline-gpu-morph-program-anchor",
+  index: 0,
+  capacity: 1,
+  width: 0.01,
+  height: 0.01,
+  depth: 0.01,
+  round: false,
+  colour: "#8e978f",
+  fromPositions: new Float32Array([0, -10_000, 0]),
+  toPositions: new Float32Array([0, -10_000, 0]),
+  fromRotations: new Float32Array([0]),
+  rotationDeltas: new Float32Array([0]),
+  fromScales: new Float32Array([1]),
+  scaleDeltas: new Float32Array([0]),
+  instanceCount: 1,
+};
+
+function TimelineGpuMorphProgramAnchor(): ReactElement {
+  const progressUniform = useMemo<TimelineMorphProgressUniform>(() => ({ value: 0 }), []);
+  return (
+    <TimelineGpuMorphProxyMesh
+      batch={TIMELINE_GPU_MORPH_PROGRAM_ANCHOR_BATCH}
+      progressUniform={progressUniform}
+      writesOutput={false}
+    />
+  );
+}
+
 function TimelineMorphProxyMesh({
   batch,
   register,
@@ -486,14 +720,24 @@ function TimelineMorphProxyMesh({
 export function subscribeTimelineMorphInvalidation(
   plan: TimelineItemTransitionPlan,
   invalidate: () => void,
+  options: {
+    readonly minimumIntervalMs?: number;
+    readonly now?: () => number;
+  } = {},
 ): () => void {
   const initial = useLayoutTimelinePreviewStore.getState().transition;
   let previousProgress = initial?.itemTransitionPlan === plan ? initial.progress : null;
+  let lastInvalidationAt = Number.NEGATIVE_INFINITY;
+  const minimumIntervalMs = options.minimumIntervalMs ?? 0;
+  const now = options.now ?? (() => performance.now());
   return useLayoutTimelinePreviewStore.subscribe((state) => {
     const transition = state.transition;
     const nextProgress = transition?.itemTransitionPlan === plan ? transition.progress : null;
     if (nextProgress === null || nextProgress === previousProgress) return;
     previousProgress = nextProgress;
+    const timestamp = now();
+    if (timestamp - lastInvalidationAt < minimumIntervalMs && nextProgress < 1) return;
+    lastInvalidationAt = timestamp;
     invalidate();
   });
 }
@@ -506,10 +750,14 @@ export function subscribeTimelineMorphInvalidation(
  */
 function TimelineImperativeSimplifiedMorphLayer({
   plan,
-  settledAtToEndpoint,
+  activePlan,
+  reverseActiveProgress,
+  settledProgress,
 }: {
   readonly plan: TimelineItemTransitionPlan;
-  readonly settledAtToEndpoint: boolean;
+  readonly activePlan: TimelineItemTransitionPlan | null;
+  readonly reverseActiveProgress: boolean;
+  readonly settledProgress: 0 | 1;
 }): ReactElement {
   const meshByIndexRef = useRef<Array<InstancedMesh | null>>([]);
   const uniformGroupRef = useRef<Group | null>(null);
@@ -521,6 +769,13 @@ function TimelineImperativeSimplifiedMorphLayer({
       : EMPTY_COMPILED_TIMELINE_MORPH_PLAN,
     [plan, uniformTranslation],
   );
+  const gpuBatches = useMemo(
+    () => uniformTranslation === null
+      ? compileTimelineGpuMorphBatches(plan, compiled)
+      : null,
+    [compiled, plan, uniformTranslation],
+  );
+  const progressUniform = useMemo<TimelineMorphProgressUniform>(() => ({ value: 0 }), []);
   const countsRef = useRef(new Int32Array(compiled.batches.length));
   const lastProgressRef = useRef<number | null>(null);
 
@@ -535,19 +790,22 @@ function TimelineImperativeSimplifiedMorphLayer({
 
   useLayoutEffect(() => {
     invalidate();
-  }, [invalidate, plan, settledAtToEndpoint]);
+  }, [activePlan, invalidate, plan, settledProgress]);
 
-  useEffect(
-    () => subscribeTimelineMorphInvalidation(plan, invalidate),
-    [invalidate, plan],
-  );
+  useEffect(() => activePlan === null
+    ? undefined
+    : subscribeTimelineMorphInvalidation(activePlan, invalidate, {
+        minimumIntervalMs: TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS,
+      }), [activePlan, invalidate]);
 
   useFrame(() => {
     const transition = useLayoutTimelinePreviewStore.getState().transition;
-    const progress = transition?.itemTransitionPlan === plan
+    const activeProgress = activePlan !== null && transition?.itemTransitionPlan === activePlan
       ? clamp01(transition.progress)
-      : settledAtToEndpoint ? 1 : null;
-    if (progress === null) return;
+      : null;
+    const progress = activeProgress === null
+      ? settledProgress
+      : reverseActiveProgress ? 1 - activeProgress : activeProgress;
     if (progress === lastProgressRef.current) return;
     lastProgressRef.current = progress;
 
@@ -557,6 +815,11 @@ function TimelineImperativeSimplifiedMorphLayer({
         uniformTranslation.y * progress,
         uniformTranslation.z * progress,
       );
+      return;
+    }
+
+    if (gpuBatches !== null) {
+      progressUniform.value = progress;
       return;
     }
 
@@ -615,9 +878,19 @@ function TimelineImperativeSimplifiedMorphLayer({
 
   return (
     <group name="timeline-imperative-simplified-morph">
-      {uniformTranslation === null ? compiled.batches.map((batch) => (
-        <TimelineMorphProxyMesh key={batch.key} batch={batch} register={register} />
-      )) : (
+      {uniformTranslation === null ? (
+        gpuBatches === null
+          ? compiled.batches.map((batch) => (
+              <TimelineMorphProxyMesh key={batch.key} batch={batch} register={register} />
+            ))
+          : gpuBatches.map((batch) => (
+              <TimelineGpuMorphProxyMesh
+                key={batch.key}
+                batch={batch}
+                progressUniform={progressUniform}
+              />
+            ))
+      ) : (
         <group ref={uniformGroupRef} name="timeline-uniform-translation-morph">
           <TimelineSimplifiedFurnitureLayer items={plan.fromItems} />
         </group>
@@ -908,8 +1181,48 @@ function TimelineStaticTransitionFurniture(): ReactElement | null {
   );
 }
 
-interface RetainedImperativeMorph {
-  readonly plan: TimelineItemTransitionPlan;
+export interface TimelineMorphGeometryReuse {
+  readonly physicalPlan: TimelineItemTransitionPlan;
+  readonly activePlan: TimelineItemTransitionPlan;
+  readonly activeFromUsesPhysicalTo: boolean;
+  readonly targetEndpoint: "from" | "to";
+}
+
+export function timelineMorphGeometryReuse(
+  previous: TimelineMorphGeometryReuse | null,
+  activePlan: TimelineItemTransitionPlan,
+): TimelineMorphGeometryReuse {
+  const reusesForwardGeometry = previous !== null
+    && activePlan.fromItems === previous.physicalPlan.fromItems
+    && activePlan.toItems === previous.physicalPlan.toItems;
+  const reusesReverseGeometry = previous !== null
+    && activePlan.fromItems === previous.physicalPlan.toItems
+    && activePlan.toItems === previous.physicalPlan.fromItems;
+  if (reusesForwardGeometry) {
+    return {
+      physicalPlan: previous.physicalPlan,
+      activePlan,
+      activeFromUsesPhysicalTo: false,
+      targetEndpoint: "to",
+    };
+  }
+  if (reusesReverseGeometry) {
+    return {
+      physicalPlan: previous.physicalPlan,
+      activePlan,
+      activeFromUsesPhysicalTo: true,
+      targetEndpoint: "from",
+    };
+  }
+  return {
+    physicalPlan: activePlan,
+    activePlan,
+    activeFromUsesPhysicalTo: false,
+    targetEndpoint: "to",
+  };
+}
+
+interface RetainedImperativeMorph extends TimelineMorphGeometryReuse {
   readonly toFrameId: string;
   readonly toRuntime: LayoutTimelinePreviewFrameMetadata["venueRuntime"];
 }
@@ -950,30 +1263,40 @@ function TimelineDynamicFurniture(): ReactElement | null {
     return null;
   }
   if (highCardinalityMorph && highMorphTarget !== null) {
-    retainedPlanRef.current = {
-      plan: itemTransitionPlan,
-      toFrameId: highMorphTarget.id,
-      toRuntime: highMorphTarget.venueRuntime,
-    };
+    const previous = retainedPlanRef.current;
+    if (previous?.activePlan !== itemTransitionPlan) {
+      retainedPlanRef.current = {
+        ...timelineMorphGeometryReuse(previous, itemTransitionPlan),
+        toFrameId: highMorphTarget.id,
+        toRuntime: highMorphTarget.venueRuntime,
+      };
+    }
   }
   const retained = retainedPlanRef.current;
+  const targetItems = retained?.targetEndpoint === "from"
+    ? retained.physicalPlan.fromItems
+    : retained?.physicalPlan.toItems ?? null;
   const settledAtToEndpoint = sessionMode === "keyframe"
     && retained !== null
-    && currentItems === retained.plan.toItems
+    && currentItems === targetItems
     && settledFrame?.id === retained.toFrameId
     && settledRuntime === retained.toRuntime;
   const trustworthySettledPlan = settledAtToEndpoint
-    ? retained.plan
+    ? retained.physicalPlan
     : null;
   if (!highCardinalityMorph && trustworthySettledPlan === null) {
     retainedPlanRef.current = null;
   }
-  const imperativePlan = highCardinalityMorph ? itemTransitionPlan : trustworthySettledPlan;
+  const imperativePlan = highCardinalityMorph
+    ? retained?.physicalPlan ?? null
+    : trustworthySettledPlan;
   if (imperativePlan !== null) {
     return (
       <TimelineImperativeSimplifiedMorphLayer
         plan={imperativePlan}
-        settledAtToEndpoint={!highCardinalityMorph}
+        activePlan={highCardinalityMorph ? itemTransitionPlan : null}
+        reverseActiveProgress={highCardinalityMorph && retained?.activeFromUsesPhysicalTo === true}
+        settledProgress={retained?.targetEndpoint === "from" ? 0 : 1}
       />
     );
   }
@@ -1000,9 +1323,20 @@ export function timelineCaptureEndpointReuse(
   previous: TimelineCaptureEndpointReuse | null,
   activePlan: TimelineItemTransitionPlan,
 ): TimelineCaptureEndpointReuse {
+  const reusesForwardEndpoints = previous !== null
+    && activePlan.fromItems === previous.physicalPlan.fromItems
+    && activePlan.toItems === previous.physicalPlan.toItems;
   const reusesReverseEndpoints = previous !== null
     && activePlan.fromItems === previous.physicalPlan.toItems
     && activePlan.toItems === previous.physicalPlan.fromItems;
+  if (reusesForwardEndpoints) {
+    return {
+      physicalPlan: previous.physicalPlan,
+      activePlan,
+      activeFromUsesPhysicalTo: false,
+      targetEndpoint: "to",
+    };
+  }
   return reusesReverseEndpoints
     ? {
         physicalPlan: previous.physicalPlan,
@@ -1127,6 +1461,13 @@ function TimelineCaptureFurniture(): ReactElement {
 /** Read-only furniture renderer driven only by the isolated timeline store. */
 export function TimelinePreviewFurniture(): ReactElement | null {
   const mode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const retainGpuMorphProgram = useLayoutTimelinePreviewStore((state) => (
+    Math.max(
+      state.currentItems.length,
+      state.transition?.fromItems.length ?? 0,
+      state.transition?.toItems.length ?? 0,
+    ) > TIMELINE_SIMPLIFIED_LOD_THRESHOLD
+  ));
   if (mode === "inactive") return null;
   if (mode === "unavailable" || mode === "schedule-gap") {
     return <group name={TIMELINE_PREVIEW_FURNITURE_GROUP} />;
@@ -1134,6 +1475,7 @@ export function TimelinePreviewFurniture(): ReactElement | null {
 
   return (
     <>
+      {retainGpuMorphProgram && <TimelineGpuMorphProgramAnchor />}
       <group name={TIMELINE_PREVIEW_FURNITURE_GROUP}>
         <TimelineDynamicFurniture />
         <TimelineStaticTransitionFurniture />

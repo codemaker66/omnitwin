@@ -10,6 +10,10 @@ import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useHistoricalRuntimeStatusStore } from "../../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import {
+  SYNTHETIC_GRAND_HALL_STAND_IN_LABEL,
+  shouldUseSyntheticGrandHallStandIn,
+} from "../../../lib/synthetic-grand-hall-stand-in.js";
 import "./PlannerCockpit.css";
 
 /**
@@ -30,12 +34,21 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const timelinePreviewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
+  const timelinePreviewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const timelineUnavailableMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   const historicalRuntimeState = useHistoricalRuntimeStatusStore((state) => state.state);
   const historicalRuntimeMessage = useHistoricalRuntimeStatusStore((state) => state.message);
   const historicalRuntimeBindingId = useHistoricalRuntimeStatusStore((state) => state.bindingId);
   const requestHistoricalRuntimeRetry = useHistoricalRuntimeStatusStore((state) => state.requestRetry);
-  const availablePreviewCaption = historicalRuntimeState === "ready"
+  const syntheticGrandHallStandIn = shouldUseSyntheticGrandHallStandIn({
+    mode: timelinePreviewMode,
+    venueRuntime: timelinePreviewRuntime,
+    hasExactHistoricalRuntime: timelinePreviewFrame?.historicalRuntime?.state === "available",
+  });
+  const availablePreviewCaption = syntheticGrandHallStandIn
+    ? `Visualizing phase change · ${SYNTHETIC_GRAND_HALL_STAND_IN_LABEL} · frozen outline + furniture are the saved plan`
+    : historicalRuntimeState === "ready"
     ? "Visualizing phase change · exact historical capture + frozen furniture are synchronized · motion is not saved"
     : historicalRuntimeState === "loading"
       ? `Visualizing phase change · ${historicalRuntimeMessage ?? "Loading the exact historical room capture…"} · frozen outline + furniture remain synchronized`
@@ -69,6 +82,7 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
             className="layout-timeline-preview-caption"
             data-testid="layout-timeline-preview-caption"
             data-historical-runtime-state={historicalRuntimeState}
+            data-room-presentation-source={syntheticGrandHallStandIn ? "synthetic-stand-in" : "runtime-or-outline"}
             role="status"
             aria-live="polite"
           >

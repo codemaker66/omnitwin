@@ -94,7 +94,17 @@ describe("layout timeline preview store", () => {
       .toHaveLength(241);
 
     useLayoutTimelinePreviewStore.getState().setProgress(0.75);
-    expect(useLayoutTimelinePreviewStore.getState().currentItems).toBe(toItems);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: { id: "arrival" },
+      currentItems: toItems,
+      captureItems: toItems,
+    });
+
+    useLayoutTimelinePreviewStore.getState().settle(frame("dinner"), toItems);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: { id: "dinner" },
+      currentItems: toItems,
+    });
   });
 
   it("never glides furniture across event boundaries", () => {

@@ -83,9 +83,11 @@ describe("CockpitTopBar", () => {
     renderTopBar();
     expect(screen.getByText("Wedding Dinner → Dinner service")).toBeTruthy();
     expect(screen.getByText("Grand Hall")).toBeTruthy();
-    expect(screen.getByText("Frozen outline · historical capture unavailable")).toBeTruthy();
+    expect(screen.getByText("Synthetic stand-in · frozen plan")).toBeTruthy();
     expect(screen.getByText("2 phase preview items · saved plan unchanged")).toBeTruthy();
     expect(screen.getByTestId("cockpit-topbar").getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(screen.getByTestId("cockpit-topbar").getAttribute("data-room-presentation-source"))
+      .toBe("synthetic-stand-in");
     expect(screen.queryByRole("button", { name: /layers/i })).toBeNull();
   });
 

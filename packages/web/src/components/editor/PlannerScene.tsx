@@ -1,6 +1,7 @@
 import {
   Suspense,
   lazy,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,7 +18,7 @@ import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
 import { CameraRig } from "../CameraRig.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
-import { RoomMesh } from "./RoomMesh.js";
+import { RoomMesh, type RoomMeshDetail } from "./RoomMesh.js";
 import { SectionPlane } from "../SectionPlane.js";
 import { InvalidateOnToggle, AutoWallSelector } from "../WallTogglePanel.js";
 import { XrayToggle } from "../XrayToggle.js";
@@ -57,6 +58,9 @@ import {
   retainFrozenLayoutRoomModel,
   type FrozenLayoutRoomModel,
 } from "../../lib/frozen-layout-room.js";
+import {
+  shouldUseSyntheticGrandHallStandIn,
+} from "../../lib/synthetic-grand-hall-stand-in.js";
 
 const LazySparkRendererHost = lazy(async () => {
   const module = await import("../scene/SparkSplatLayer.js");
@@ -67,6 +71,8 @@ const LazyHistoricalRuntimeLayer = lazy(async () => {
   const module = await import("./HistoricalRuntimeLayer.js");
   return { default: module.HistoricalRuntimeLayer };
 });
+
+const PlannerRoomMesh = memo(RoomMesh);
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -118,6 +124,10 @@ export function shouldUseSmoothPlannerControls(viewportWidth: number): boolean {
 
 export function shouldRenderPlannerSceneOverlays(viewportWidth: number): boolean {
   return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH;
+}
+
+export function plannerRoomDetailForViewportWidth(viewportWidth: number): RoomMeshDetail {
+  return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH ? "detailed" : "lean";
 }
 
 /** Timeline playback releases the live capture so it cannot consume a third GPU budget or flash stale. */
@@ -341,6 +351,7 @@ export function PlannerScene(): ReactElement {
   const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
+  const roomDetail = plannerRoomDetailForViewportWidth(viewportWidth);
   // Memoized like useRoomDimensions above: the generic floorPlanOutline path
   // allocates a fresh wallPolygon per call, and this component re-renders on
   // every chunk arrival — an unmemoized call would thrash the ink layer's
@@ -380,9 +391,6 @@ export function PlannerScene(): ReactElement {
     ? frozenRoom?.geometry ?? null
     : timelinePreviewActive ? null : liveRoomGeometry;
   const dimensions = frozenRoom?.renderDimensions ?? liveDimensions;
-  const roomVariant = authoritativeFrozenPreview
-    ? "generic"
-    : space?.name === "Grand Hall" ? "grand-hall" : "generic";
   const furnitureOffset = frozenRoom?.furnitureOffset ?? [0, 0, 0] as const;
 
   useEffect(() => {
@@ -398,6 +406,29 @@ export function PlannerScene(): ReactElement {
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
   const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
+  const syntheticTimelineStandIn = shouldUseSyntheticGrandHallStandIn({
+    mode: timelinePreviewMode,
+    venueRuntime: activeVenueRuntime,
+    hasExactHistoricalRuntime: expectedHistoricalRuntime !== null,
+  });
+  const syntheticLiveStandIn = !timelinePreviewActive
+    && !hasAsset
+    && (space?.slug === "grand-hall" || space?.name === "Grand Hall");
+  const syntheticGrandHallStandIn = syntheticTimelineStandIn || syntheticLiveStandIn;
+  const roomVariant = syntheticGrandHallStandIn
+    ? "grand-hall-synthetic"
+    : authoritativeFrozenPreview
+      ? "generic"
+      : space?.name === "Grand Hall" ? "grand-hall" : "generic";
+  const roomPresentationSource = syntheticGrandHallStandIn
+    ? "synthetic-stand-in"
+    : expectedHistoricalRuntime !== null
+      ? "historical-capture"
+      : !timelinePreviewActive && hasAsset
+        ? "current-runtime"
+        : roomGeometry !== null
+          ? "procedural-shell"
+          : "none";
   const runtimeRendererRequestedRef = useRef(false);
   runtimeRendererRequestedRef.current = plannerRuntimeRendererRequested(
     runtimeRendererRequestedRef.current,
@@ -496,6 +527,8 @@ export function PlannerScene(): ReactElement {
       <div
         className="planner-scene-canvas-host"
         data-room-authority={authoritativeFrozenPreview ? "frozen" : timelinePreviewActive ? "unavailable" : "live"}
+        data-room-presentation-source={roomPresentationSource}
+        data-synthetic-grand-hall-stand-in={String(syntheticGrandHallStandIn)}
         data-room-envelope-key={frozenRoom?.envelopeKey}
         data-room-render-dimensions={`${String(dimensions.width)},${String(dimensions.length)},${String(dimensions.height)}`}
         data-room-furniture-offset={furnitureOffset.join(",")}
@@ -515,8 +548,11 @@ export function PlannerScene(): ReactElement {
           camera={{ fov: 55, near: 0.1, far: 200 }}
           style={{ width: "100%", height: "100%" }}
         >
-          <color attach="background" args={["#eee9de"]} />
-          <fog attach="fog" args={["#efe9dc", 54, 138]} />
+          <color attach="background" args={[syntheticGrandHallStandIn ? "#080d12" : "#eee9de"]} />
+          <fog
+            attach="fog"
+            args={syntheticGrandHallStandIn ? ["#0b1118", 48, 126] : ["#efe9dc", 54, 138]}
+          />
           <SceneProvider />
           {runtimeRendererRequested && (
             <Suspense fallback={null}>
@@ -535,7 +571,7 @@ export function PlannerScene(): ReactElement {
           <SectionPlane />
           <InvalidateOnToggle />
           {meshVisible && (roomGeometry !== null ? (
-            <RoomMesh geometry={roomGeometry} variant={roomVariant} />
+            <PlannerRoomMesh geometry={roomGeometry} variant={roomVariant} detail={roomDetail} />
           ) : !timelinePreviewActive ? (
             <>
               <AutoWallSelector />
@@ -547,6 +583,7 @@ export function PlannerScene(): ReactElement {
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
               targetOpacity={authoritativeFrozenPreview ? 1 : inkOpacity}
+              instant={timelinePreviewActive}
             />
           )}
           {shouldMountLiveRuntimeSplat(hasAsset, timelinePreviewActive) && (

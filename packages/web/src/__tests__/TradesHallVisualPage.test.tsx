@@ -439,8 +439,10 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getAllByText(/Density not checked/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Staff conflicts not checked/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("detailed");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall-synthetic");
+    expect(screen.getByTestId("visual-synthetic-stand-in-label").textContent)
+      .toContain("Synthetic Grand Hall stand-in · not a measured capture");
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
   });
@@ -600,7 +602,7 @@ describe("TradesHallVisualPage", () => {
   it("ignores manual splatUrl query params and keeps the procedural fallback", () => {
     mount("/dev/trades-hall-visual?splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("detailed");
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
     expect(screen.getByText(/Manual runtime URLs are disabled/i)).toBeTruthy();
   });
@@ -651,8 +653,22 @@ describe("TradesHallVisualPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Mesh/i }));
     expect(screen.getByRole("button", { name: /Mesh/i }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("detailed");
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+  });
+
+  it("keeps the synthetic hall shell lean on tablet viewports", () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 768,
+    });
+
+    mount();
+
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall-synthetic");
+    expect(screen.getByTestId("visual-synthetic-stand-in-label")).toBeTruthy();
   });
 
   it("lets operators minimize floating controls and callouts", () => {

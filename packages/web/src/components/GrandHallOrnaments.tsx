@@ -390,18 +390,27 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
             <boxGeometry args={[width, 0.045, 0.035]} />
             <meshStandardMaterial color={UNDERLIGHT} emissive={UNDERLIGHT} emissiveIntensity={0.34} roughness={0.36} metalness={0} />
           </mesh>
-          {figureX.map((x, i) => (
-            <group key={`frieze-figure-z-${String(sideIndex)}-${String(i)}`} position={[x, y - 0.02, z + (sideIndex === 0 ? 0.032 : -0.032)]}>
-              <mesh position={[0, -0.03, 0]}>
-                <boxGeometry args={[0.08, 0.32 + (i % 3) * 0.035, 0.026]} />
-                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
-              </mesh>
-              <mesh position={[0, 0.18, 0]}>
-                <sphereGeometry args={[0.055, 8, 8]} />
-                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
-              </mesh>
-            </group>
-          ))}
+          <Instances limit={figureX.length} range={figureX.length} name={`frieze-long-figure-bodies-${String(sideIndex)}`}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+            {figureX.map((x, i) => (
+              <Instance
+                key={`frieze-figure-z-body-${String(sideIndex)}-${String(i)}`}
+                position={[x, y - 0.05, z + (sideIndex === 0 ? 0.032 : -0.032)]}
+                scale={[0.08, 0.32 + (i % 3) * 0.035, 0.026]}
+              />
+            ))}
+          </Instances>
+          <Instances limit={figureX.length} range={figureX.length} name={`frieze-long-figure-heads-${String(sideIndex)}`}>
+            <sphereGeometry args={[0.055, 8, 8]} />
+            <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+            {figureX.map((x, i) => (
+              <Instance
+                key={`frieze-figure-z-head-${String(sideIndex)}-${String(i)}`}
+                position={[x, y + 0.16, z + (sideIndex === 0 ? 0.032 : -0.032)]}
+              />
+            ))}
+          </Instances>
         </group>
         </SurfaceVisibilityGroup>
       ))}
@@ -425,18 +434,27 @@ function TradeFrieze({ width, length, height }: TradeFriezeProps): React.ReactEl
             <boxGeometry args={[0.035, 0.045, length]} />
             <meshStandardMaterial color={UNDERLIGHT} emissive={UNDERLIGHT} emissiveIntensity={0.34} roughness={0.36} metalness={0} />
           </mesh>
-          {figureZ.map((z, i) => (
-            <group key={`frieze-figure-x-${String(sideIndex)}-${String(i)}`} position={[x + (sideIndex === 0 ? 0.032 : -0.032), y - 0.02, z]}>
-              <mesh position={[0, -0.03, 0]}>
-                <boxGeometry args={[0.026, 0.32 + (i % 3) * 0.035, 0.08]} />
-                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
-              </mesh>
-              <mesh position={[0, 0.18, 0]}>
-                <sphereGeometry args={[0.055, 8, 8]} />
-                <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
-              </mesh>
-            </group>
-          ))}
+          <Instances limit={figureZ.length} range={figureZ.length} name={`frieze-short-figure-bodies-${String(sideIndex)}`}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+            {figureZ.map((z, i) => (
+              <Instance
+                key={`frieze-figure-x-body-${String(sideIndex)}-${String(i)}`}
+                position={[x + (sideIndex === 0 ? 0.032 : -0.032), y - 0.05, z]}
+                scale={[0.026, 0.32 + (i % 3) * 0.035, 0.08]}
+              />
+            ))}
+          </Instances>
+          <Instances limit={figureZ.length} range={figureZ.length} name={`frieze-short-figure-heads-${String(sideIndex)}`}>
+            <sphereGeometry args={[0.055, 8, 8]} />
+            <meshStandardMaterial color={MURAL_SHADOW} roughness={0.82} metalness={0} />
+            {figureZ.map((z, i) => (
+              <Instance
+                key={`frieze-figure-x-head-${String(sideIndex)}-${String(i)}`}
+                position={[x + (sideIndex === 0 ? 0.032 : -0.032), y + 0.16, z]}
+              />
+            ))}
+          </Instances>
         </group>
         </SurfaceVisibilityGroup>
       ))}
@@ -453,43 +471,6 @@ const PILASTER_DEPTH = 0.12;
 const CAPITAL_HEIGHT = 0.32;
 const BASE_HEIGHT = 0.22;
 
-interface PilasterProps {
-  readonly position: readonly [number, number, number];
-  readonly height: number;
-  readonly wallAxis: "x" | "z";
-}
-
-function Pilaster({ position, height, wallAxis }: PilasterProps): React.ReactElement {
-  // Long axis depends on which wall: X-aligned wall → pilaster wide on Z, etc.
-  const w = wallAxis === "x" ? PILASTER_DEPTH : PILASTER_W;
-  const d = wallAxis === "x" ? PILASTER_W : PILASTER_DEPTH;
-  const shaftHeight = height - CAPITAL_HEIGHT - BASE_HEIGHT;
-
-  return (
-    <group position={[position[0], position[1], position[2]]}>
-      {/* Base */}
-      <mesh position={[0, BASE_HEIGHT / 2, 0]}>
-        <boxGeometry args={[w * 1.25, BASE_HEIGHT, d * 1.25]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      {/* Shaft */}
-      <mesh position={[0, BASE_HEIGHT + shaftHeight / 2, 0]}>
-        <boxGeometry args={[w, shaftHeight, d]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.9} metalness={0} />
-      </mesh>
-      {/* Capital — slightly oversized cube + thin gold band */}
-      <mesh position={[0, BASE_HEIGHT + shaftHeight + CAPITAL_HEIGHT / 2, 0]}>
-        <boxGeometry args={[w * 1.4, CAPITAL_HEIGHT * 0.7, d * 1.4]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      <mesh position={[0, BASE_HEIGHT + shaftHeight + CAPITAL_HEIGHT * 0.85, 0]}>
-        <boxGeometry args={[w * 1.45, CAPITAL_HEIGHT * 0.18, d * 1.45]} />
-        <meshStandardMaterial color={BRASS_GOLD} roughness={0.4} metalness={0.4} />
-      </mesh>
-    </group>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Arched window facade — visual cue, not a real window cutout
 // ---------------------------------------------------------------------------
@@ -500,43 +481,187 @@ export const WINDOW_SILL_Y = 2.15;
 const WINDOW_INSET = 0.04;
 const WINDOW_FRAME_THICKNESS = 0.12;
 
-interface WindowProps {
-  readonly position: readonly [number, number, number];
-  readonly rotationY: number;
+interface BoxBatchTransform {
+  readonly key: string;
+  readonly position: [number, number, number];
+  readonly scale: [number, number, number];
+  readonly rotation?: [number, number, number];
 }
 
-function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement {
+interface WindowWallOrnamentsProps {
+  readonly windowX: readonly number[];
+  readonly pilasterX: readonly number[];
+  readonly windowWallZ: number;
+  readonly pilasterWallZ: number;
+  readonly height: number;
+}
+
+function WindowWallOrnaments({
+  windowX,
+  pilasterX,
+  windowWallZ,
+  pilasterWallZ,
+  height,
+}: WindowWallOrnamentsProps): React.ReactElement {
   const archRadius = WINDOW_WIDTH / 2;
   const rectHeight = WINDOW_HEIGHT - archRadius;
   const curtainHeight = rectHeight + 0.55;
   const curtainY = WINDOW_SILL_Y + curtainHeight / 2 - 0.12;
+  const batches = useMemo(() => {
+    const trim: BoxBatchTransform[] = [];
+    const brass: BoxBatchTransform[] = [];
+    const curtains: BoxBatchTransform[] = [];
+    const curtainShadows: BoxBatchTransform[] = [];
+    const highlights: BoxBatchTransform[] = [];
+    const frameShadows: BoxBatchTransform[] = [];
+    const shaftHeight = height - CAPITAL_HEIGHT - BASE_HEIGHT;
+
+    for (const [index, x] of pilasterX.entries()) {
+      const prefix = `window-wall-pilaster-${String(index)}`;
+      trim.push(
+        {
+          key: `${prefix}-base`,
+          position: [x, BASE_HEIGHT / 2, pilasterWallZ],
+          scale: [PILASTER_W * 1.25, BASE_HEIGHT, PILASTER_DEPTH * 1.25],
+        },
+        {
+          key: `${prefix}-shaft`,
+          position: [x, BASE_HEIGHT + shaftHeight / 2, pilasterWallZ],
+          scale: [PILASTER_W, shaftHeight, PILASTER_DEPTH],
+        },
+        {
+          key: `${prefix}-capital`,
+          position: [x, BASE_HEIGHT + shaftHeight + CAPITAL_HEIGHT / 2, pilasterWallZ],
+          scale: [PILASTER_W * 1.4, CAPITAL_HEIGHT * 0.7, PILASTER_DEPTH * 1.4],
+        },
+      );
+      brass.push({
+        key: `${prefix}-capital-band`,
+        position: [x, BASE_HEIGHT + shaftHeight + CAPITAL_HEIGHT * 0.85, pilasterWallZ],
+        scale: [PILASTER_W * 1.45, CAPITAL_HEIGHT * 0.18, PILASTER_DEPTH * 1.45],
+      });
+    }
+
+    for (const [index, x] of windowX.entries()) {
+      const prefix = `arched-window-${String(index)}`;
+      curtains.push(
+        {
+          key: `${prefix}-curtain-left`,
+          position: [x - WINDOW_WIDTH / 2 - 0.22, curtainY, windowWallZ + WINDOW_INSET + 0.018],
+          scale: [0.34, curtainHeight, 0.035],
+        },
+        {
+          key: `${prefix}-curtain-right`,
+          position: [x + WINDOW_WIDTH / 2 + 0.22, curtainY, windowWallZ + WINDOW_INSET + 0.018],
+          scale: [0.34, curtainHeight, 0.035],
+        },
+      );
+      curtainShadows.push(
+        {
+          key: `${prefix}-curtain-shadow-left`,
+          position: [x - WINDOW_WIDTH / 2 - 0.04, curtainY, windowWallZ + WINDOW_INSET + 0.021],
+          scale: [0.055, curtainHeight * 0.92, 0.038],
+        },
+        {
+          key: `${prefix}-curtain-shadow-right`,
+          position: [x + WINDOW_WIDTH / 2 + 0.04, curtainY, windowWallZ + WINDOW_INSET + 0.021],
+          scale: [0.055, curtainHeight * 0.92, 0.038],
+        },
+      );
+      brass.push({
+        key: `${prefix}-pelmet`,
+        position: [x, WINDOW_SILL_Y + rectHeight + 0.22, windowWallZ + WINDOW_INSET + 0.02],
+        scale: [WINDOW_WIDTH + 0.74, 0.16, 0.045],
+      });
+      highlights.push(
+        {
+          key: `${prefix}-glass-highlight-left`,
+          position: [x - 0.28, WINDOW_SILL_Y + rectHeight * 0.7, windowWallZ + WINDOW_INSET + 0.034],
+          scale: [0.035, rectHeight * 0.42, 0.012],
+          rotation: [0, 0, -0.28],
+        },
+        {
+          key: `${prefix}-glass-highlight-right`,
+          position: [x + 0.26, WINDOW_SILL_Y + rectHeight * 0.36, windowWallZ + WINDOW_INSET + 0.034],
+          scale: [0.035, rectHeight * 0.42, 0.012],
+          rotation: [0, 0, -0.28],
+        },
+      );
+      trim.push(
+        {
+          key: `${prefix}-frame-left`,
+          position: [x - WINDOW_WIDTH / 2 + WINDOW_FRAME_THICKNESS / 2, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.01],
+          scale: [WINDOW_FRAME_THICKNESS, rectHeight, 0.02],
+        },
+        {
+          key: `${prefix}-frame-right`,
+          position: [x + WINDOW_WIDTH / 2 - WINDOW_FRAME_THICKNESS / 2, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.01],
+          scale: [WINDOW_FRAME_THICKNESS, rectHeight, 0.02],
+        },
+        {
+          key: `${prefix}-sill`,
+          position: [x, WINDOW_SILL_Y, windowWallZ + WINDOW_INSET + 0.02],
+          scale: [WINDOW_WIDTH + 0.16, 0.12, 0.06],
+        },
+        {
+          key: `${prefix}-horizontal-mullion`,
+          position: [x, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.01],
+          scale: [WINDOW_WIDTH - 0.1, 0.08, 0.02],
+        },
+        {
+          key: `${prefix}-vertical-mullion`,
+          position: [x, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.01],
+          scale: [0.08, rectHeight, 0.02],
+        },
+      );
+      frameShadows.push(
+        {
+          key: `${prefix}-horizontal-shadow-lower`,
+          position: [x, WINDOW_SILL_Y + rectHeight * 0.28, windowWallZ + WINDOW_INSET + 0.012],
+          scale: [WINDOW_WIDTH - 0.14, 0.045, 0.018],
+        },
+        {
+          key: `${prefix}-horizontal-shadow-upper`,
+          position: [x, WINDOW_SILL_Y + rectHeight * 0.72, windowWallZ + WINDOW_INSET + 0.012],
+          scale: [WINDOW_WIDTH - 0.14, 0.045, 0.018],
+        },
+        {
+          key: `${prefix}-vertical-shadow-left`,
+          position: [x - WINDOW_WIDTH * 0.24, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.012],
+          scale: [0.04, rectHeight * 0.9, 0.018],
+        },
+        {
+          key: `${prefix}-vertical-shadow-right`,
+          position: [x + WINDOW_WIDTH * 0.24, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.012],
+          scale: [0.04, rectHeight * 0.9, 0.018],
+        },
+      );
+    }
+
+    return { trim, brass, curtains, curtainShadows, highlights, frameShadows };
+  }, [curtainHeight, curtainY, height, pilasterWallZ, pilasterX, rectHeight, windowWallZ, windowX]);
 
   return (
-    <group position={[position[0], position[1], position[2]]} rotation={[0, rotationY, 0]}>
+    <group name="panorama-calibrated-window-wall-batches">
       {/* Pale gathered drapes and brass pelmet: the reference photos show
           cream curtains inside the arched bays, not red side swags. */}
-      <mesh position={[-WINDOW_WIDTH / 2 - 0.22, curtainY, WINDOW_INSET + 0.018]}>
-        <boxGeometry args={[0.34, curtainHeight, 0.035]} />
+      <Instances limit={batches.curtains.length} range={batches.curtains.length} name="arched-window-cream-curtains">
+        <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color={CURTAIN_CREAM} roughness={0.88} metalness={0} />
-      </mesh>
-      <mesh position={[WINDOW_WIDTH / 2 + 0.22, curtainY, WINDOW_INSET + 0.018]}>
-        <boxGeometry args={[0.34, curtainHeight, 0.035]} />
-        <meshStandardMaterial color={CURTAIN_CREAM} roughness={0.88} metalness={0} />
-      </mesh>
-      <mesh position={[-WINDOW_WIDTH / 2 - 0.04, curtainY, WINDOW_INSET + 0.021]}>
-        <boxGeometry args={[0.055, curtainHeight * 0.92, 0.038]} />
+        {batches.curtains.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} />)}
+      </Instances>
+      <Instances limit={batches.curtainShadows.length} range={batches.curtainShadows.length} name="arched-window-curtain-shadows">
+        <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color={CURTAIN_SHADOW} roughness={0.9} metalness={0} />
-      </mesh>
-      <mesh position={[WINDOW_WIDTH / 2 + 0.04, curtainY, WINDOW_INSET + 0.021]}>
-        <boxGeometry args={[0.055, curtainHeight * 0.92, 0.038]} />
-        <meshStandardMaterial color={CURTAIN_SHADOW} roughness={0.9} metalness={0} />
-      </mesh>
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight + 0.22, WINDOW_INSET + 0.02]}>
-        <boxGeometry args={[WINDOW_WIDTH + 0.74, 0.16, 0.045]} />
+        {batches.curtainShadows.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} />)}
+      </Instances>
+      <Instances limit={batches.brass.length} range={batches.brass.length} name="arched-window-pelmet-and-pilaster-capital-bands">
+        <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color={BRASS_GOLD} roughness={0.4} metalness={0.35} />
-      </mesh>
+        {batches.brass.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} />)}
+      </Instances>
       {/* Daylight backing behind the actual translucent glass. */}
-      <mesh name="arched-window-daylight-pane-rect" position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET]}>
+      <Instances limit={windowX.length} range={windowX.length} name="arched-window-daylight-pane-rect">
         <planeGeometry args={[WINDOW_WIDTH - 0.08, rectHeight]} />
         <meshStandardMaterial
           color={WINDOW_GLOW}
@@ -545,8 +670,11 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           roughness={0.4}
           metalness={0}
         />
-      </mesh>
-      <mesh name="arched-window-glass-pane-rect" position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.025]}>
+        {windowX.map((x, i) => (
+          <Instance key={`window-daylight-rect-${String(i)}`} position={[x, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET]} />
+        ))}
+      </Instances>
+      <Instances limit={windowX.length} range={windowX.length} name="arched-window-glass-pane-rect">
         <planeGeometry args={[WINDOW_WIDTH - 0.22, rectHeight - 0.12]} />
         <meshStandardMaterial
           color={GLASS_BLUE}
@@ -559,13 +687,12 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           depthWrite={false}
           side={DoubleSide}
         />
-      </mesh>
+        {windowX.map((x, i) => (
+          <Instance key={`window-glass-rect-${String(i)}`} position={[x, WINDOW_SILL_Y + rectHeight / 2, windowWallZ + WINDOW_INSET + 0.025]} />
+        ))}
+      </Instances>
       {/* Half-circle arch top with translucent glass layered over glow. */}
-      <mesh
-        name="arched-window-daylight-pane-arch"
-        position={[0, WINDOW_SILL_Y + rectHeight, WINDOW_INSET]}
-        rotation={[0, 0, 0]}
-      >
+      <Instances limit={windowX.length} range={windowX.length} name="arched-window-daylight-pane-arch">
         <circleGeometry args={[archRadius - 0.04, 32, 0, Math.PI]} />
         <meshStandardMaterial
           color={WINDOW_GLOW}
@@ -574,12 +701,11 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           roughness={0.4}
           metalness={0}
         />
-      </mesh>
-      <mesh
-        name="arched-window-glass-pane-arch"
-        position={[0, WINDOW_SILL_Y + rectHeight, WINDOW_INSET + 0.026]}
-        rotation={[0, 0, 0]}
-      >
+        {windowX.map((x, i) => (
+          <Instance key={`window-daylight-arch-${String(i)}`} position={[x, WINDOW_SILL_Y + rectHeight, windowWallZ + WINDOW_INSET]} />
+        ))}
+      </Instances>
+      <Instances limit={windowX.length} range={windowX.length} name="arched-window-glass-pane-arch">
         <circleGeometry args={[archRadius - 0.14, 32, 0, Math.PI]} />
         <meshStandardMaterial
           color={GLASS_BLUE}
@@ -592,73 +718,33 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
           depthWrite={false}
           side={DoubleSide}
         />
-      </mesh>
-      {[-0.28, 0.26].map((x, i) => (
-        <mesh
-          key={`arched-window-glass-highlight-${String(i)}`}
-          name="arched-window-glass-highlight"
-          position={[x, WINDOW_SILL_Y + rectHeight * (i === 0 ? 0.7 : 0.36), WINDOW_INSET + 0.034]}
-          rotation={[0, 0, -0.28]}
-        >
-          <boxGeometry args={[0.035, rectHeight * 0.42, 0.012]} />
-          <meshStandardMaterial
-            color={GLASS_HIGHLIGHT}
-            emissive={GLASS_HIGHLIGHT}
-            emissiveIntensity={0.18}
-            roughness={0.05}
-            metalness={0}
-            transparent
-            opacity={0.34}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
-      {/* Frame — left vertical */}
-      <mesh position={[-WINDOW_WIDTH / 2 + WINDOW_FRAME_THICKNESS / 2, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.01]}>
-        <boxGeometry args={[WINDOW_FRAME_THICKNESS, rectHeight, 0.02]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      {/* Frame — right vertical */}
-      <mesh position={[WINDOW_WIDTH / 2 - WINDOW_FRAME_THICKNESS / 2, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.01]}>
-        <boxGeometry args={[WINDOW_FRAME_THICKNESS, rectHeight, 0.02]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      {/* Frame — sill */}
-      <mesh position={[0, WINDOW_SILL_Y, WINDOW_INSET + 0.02]}>
-        <boxGeometry args={[WINDOW_WIDTH + 0.16, 0.12, 0.06]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      {/* Frame — horizontal mullion at half height */}
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.01]}>
-        <boxGeometry args={[WINDOW_WIDTH - 0.1, 0.08, 0.02]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight * 0.28, WINDOW_INSET + 0.012]}>
-        <boxGeometry args={[WINDOW_WIDTH - 0.14, 0.045, 0.018]} />
+        {windowX.map((x, i) => (
+          <Instance key={`window-glass-arch-${String(i)}`} position={[x, WINDOW_SILL_Y + rectHeight, windowWallZ + WINDOW_INSET + 0.026]} />
+        ))}
+      </Instances>
+      <Instances limit={batches.highlights.length} range={batches.highlights.length} name="arched-window-glass-highlight">
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color={GLASS_HIGHLIGHT} emissive={GLASS_HIGHLIGHT} emissiveIntensity={0.18} roughness={0.05} metalness={0} transparent opacity={0.34} depthWrite={false} />
+        {batches.highlights.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} rotation={part.rotation} />)}
+      </Instances>
+      <Instances limit={batches.trim.length} range={batches.trim.length} name="arched-window-frames-mullions-and-pilasters">
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color={TRIM_COLOR} roughness={0.87} metalness={0} />
+        {batches.trim.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} />)}
+      </Instances>
+      <Instances limit={batches.frameShadows.length} range={batches.frameShadows.length} name="arched-window-secondary-mullions">
+        <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color={WINDOW_FRAME_SHADOW} roughness={0.85} metalness={0} />
-      </mesh>
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight * 0.72, WINDOW_INSET + 0.012]}>
-        <boxGeometry args={[WINDOW_WIDTH - 0.14, 0.045, 0.018]} />
-        <meshStandardMaterial color={WINDOW_FRAME_SHADOW} roughness={0.85} metalness={0} />
-      </mesh>
-      {/* Frame — vertical mullion */}
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.01]}>
-        <boxGeometry args={[0.08, rectHeight, 0.02]} />
-        <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} />
-      </mesh>
-      <mesh position={[-WINDOW_WIDTH * 0.24, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.012]}>
-        <boxGeometry args={[0.04, rectHeight * 0.9, 0.018]} />
-        <meshStandardMaterial color={WINDOW_FRAME_SHADOW} roughness={0.85} metalness={0} />
-      </mesh>
-      <mesh position={[WINDOW_WIDTH * 0.24, WINDOW_SILL_Y + rectHeight / 2, WINDOW_INSET + 0.012]}>
-        <boxGeometry args={[0.04, rectHeight * 0.9, 0.018]} />
-        <meshStandardMaterial color={WINDOW_FRAME_SHADOW} roughness={0.85} metalness={0} />
-      </mesh>
+        {batches.frameShadows.map((part) => <Instance key={part.key} position={part.position} scale={part.scale} />)}
+      </Instances>
       {/* Arch frame — thin ring along the half-circle outer edge */}
-      <mesh position={[0, WINDOW_SILL_Y + rectHeight, WINDOW_INSET + 0.01]}>
+      <Instances limit={windowX.length} range={windowX.length} name="arched-window-arch-frames">
         <ringGeometry args={[archRadius - 0.06, archRadius, 32, 1, 0, Math.PI]} />
         <meshStandardMaterial color={TRIM_COLOR} roughness={0.85} metalness={0} side={DoubleSide} />
-      </mesh>
+        {windowX.map((x, i) => (
+          <Instance key={`window-arch-frame-${String(i)}`} position={[x, WINDOW_SILL_Y + rectHeight, windowWallZ + WINDOW_INSET + 0.01]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -667,97 +753,141 @@ function ArchedWindow({ position, rotationY }: WindowProps): React.ReactElement 
 // Opposite-wall double doors — three ornate timber sets facing the window wall
 // ---------------------------------------------------------------------------
 
-function DoorRaisedPanel({
-  x,
-  y,
-  width,
-  height,
-}: {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}): React.ReactElement {
-  return (
-    <group position={[x, y, -FRONT_DOOR_DEPTH * 0.72]}>
-      <mesh name="front-wall-door-raised-panel-frame">
-        <boxGeometry args={[width, height, 0.035]} />
-        <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.58} metalness={0.02} />
-      </mesh>
-      <mesh name="front-wall-door-recessed-panel" position={[0, 0, -0.012]}>
-        <boxGeometry args={[width * 0.76, height * 0.74, 0.036]} />
-        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.72} metalness={0} />
-      </mesh>
-    </group>
-  );
-}
-
-function OrnateDoubleDoorSet({ x, z }: { readonly x: number; readonly z: number }): React.ReactElement {
-  const leafWidth = (FRONT_DOOR_WIDTH - 0.08) / 2;
-  const leafCenterX = leafWidth / 2 + 0.02;
-  const y = FRONT_DOOR_HEIGHT / 2;
-
-  return (
-    <group name="front-long-wall-door-set" position={[x, 0, z]}>
-      <mesh name="grand-hall-front-wall-door-frame-left" position={[-FRONT_DOOR_WIDTH / 2 - FRONT_DOOR_FRAME / 2, y, 0]}>
-        <boxGeometry args={[FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.58} metalness={0.02} />
-      </mesh>
-      <mesh name="grand-hall-front-wall-door-frame-right" position={[FRONT_DOOR_WIDTH / 2 + FRONT_DOOR_FRAME / 2, y, 0]}>
-        <boxGeometry args={[FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.58} metalness={0.02} />
-      </mesh>
-      <mesh name="grand-hall-front-wall-door-top-rail" position={[0, FRONT_DOOR_HEIGHT + 0.1, 0]}>
-        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.2, 0.2, FRONT_DOOR_DEPTH * 1.42]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.56} metalness={0.02} />
-      </mesh>
-      <mesh name="grand-hall-front-wall-door-cornice" position={[0, FRONT_DOOR_HEIGHT + 0.28, -0.01]}>
-        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.9, 0.12, FRONT_DOOR_DEPTH * 1.72]} />
-        <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.5} metalness={0.04} />
-      </mesh>
-      <mesh name="grand-hall-front-wall-door-threshold" position={[0, 0.05, -0.015]}>
-        <boxGeometry args={[FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.3, 0.1, FRONT_DOOR_DEPTH * 1.55]} />
-        <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.62} metalness={0.02} />
-      </mesh>
-
-      {[-leafCenterX, leafCenterX].map((leafX, i) => (
-        <group key={`grand-hall-front-wall-door-leaf-${String(i)}`} name="grand-hall-front-wall-door-leaf" position={[leafX, y, -0.012]}>
-          <mesh name="grand-hall-front-wall-door">
-            <boxGeometry args={[leafWidth, FRONT_DOOR_HEIGHT, FRONT_DOOR_DEPTH]} />
-            <meshStandardMaterial color={DOOR_TIMBER} roughness={0.66} metalness={0.01} />
-          </mesh>
-          <DoorRaisedPanel x={0} y={0.48} width={leafWidth * 0.66} height={0.88} />
-          <DoorRaisedPanel x={0} y={-0.58} width={leafWidth * 0.66} height={0.72} />
-          <mesh name="front-wall-door-vertical-stile" position={[i === 0 ? leafWidth / 2 - 0.03 : -leafWidth / 2 + 0.03, 0, -FRONT_DOOR_DEPTH * 0.74]}>
-            <boxGeometry args={[0.06, FRONT_DOOR_HEIGHT * 0.92, 0.034]} />
-            <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.54} metalness={0.03} />
-          </mesh>
-        </group>
-      ))}
-
-      <mesh name="front-wall-door-center-seam" position={[0, y, -FRONT_DOOR_DEPTH * 0.86]}>
-        <boxGeometry args={[0.045, FRONT_DOOR_HEIGHT * 0.9, 0.036]} />
-        <meshStandardMaterial color={PANEL_SHADOW} roughness={0.68} metalness={0.01} />
-      </mesh>
-      {[-0.13, 0.13].map((handleX, i) => (
-        <mesh key={`front-wall-door-brass-handle-${String(i)}`} name="front-wall-door-brass-handle" position={[handleX, 1.16, -FRONT_DOOR_DEPTH * 1.18]}>
-          <sphereGeometry args={[0.055, 14, 14]} />
-          <meshStandardMaterial color={BRASS_GOLD} roughness={0.26} metalness={0.72} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 function OppositeLongWallDoors({ width, length }: { readonly width: number; readonly length: number }): React.ReactElement {
   const z = length / 2 - 0.085;
-  const doorX = computeOppositeLongWallDoorCenters(width);
+  const batches = useMemo(() => {
+    const darkOak: BoxBatchTransform[] = [];
+    const highlight: BoxBatchTransform[] = [];
+    const timber: BoxBatchTransform[] = [];
+    const shadow: BoxBatchTransform[] = [];
+    const handles: BoxBatchTransform[] = [];
+    const leafWidth = (FRONT_DOOR_WIDTH - 0.08) / 2;
+    const leafCenterX = leafWidth / 2 + 0.02;
+    const doorY = FRONT_DOOR_HEIGHT / 2;
+
+    for (const [doorIndex, doorX] of computeOppositeLongWallDoorCenters(width).entries()) {
+      const prefix = `front-door-${String(doorIndex)}`;
+      darkOak.push(
+        {
+          key: `${prefix}-frame-left`,
+          position: [doorX - FRONT_DOOR_WIDTH / 2 - FRONT_DOOR_FRAME / 2, doorY, z],
+          scale: [FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35],
+        },
+        {
+          key: `${prefix}-frame-right`,
+          position: [doorX + FRONT_DOOR_WIDTH / 2 + FRONT_DOOR_FRAME / 2, doorY, z],
+          scale: [FRONT_DOOR_FRAME, FRONT_DOOR_HEIGHT + 0.22, FRONT_DOOR_DEPTH * 1.35],
+        },
+        {
+          key: `${prefix}-top-rail`,
+          position: [doorX, FRONT_DOOR_HEIGHT + 0.1, z],
+          scale: [FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.2, 0.2, FRONT_DOOR_DEPTH * 1.42],
+        },
+        {
+          key: `${prefix}-threshold`,
+          position: [doorX, 0.05, z - 0.015],
+          scale: [FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.3, 0.1, FRONT_DOOR_DEPTH * 1.55],
+        },
+      );
+      highlight.push({
+        key: `${prefix}-cornice`,
+        position: [doorX, FRONT_DOOR_HEIGHT + 0.28, z - 0.01],
+        scale: [FRONT_DOOR_WIDTH + FRONT_DOOR_FRAME * 2.9, 0.12, FRONT_DOOR_DEPTH * 1.72],
+      });
+
+      for (const [leafIndex, leafOffsetX] of [-leafCenterX, leafCenterX].entries()) {
+        const leafX = doorX + leafOffsetX;
+        const leafZ = z - 0.012;
+        timber.push({
+          key: `${prefix}-leaf-${String(leafIndex)}`,
+          position: [leafX, doorY, leafZ],
+          scale: [leafWidth, FRONT_DOOR_HEIGHT, FRONT_DOOR_DEPTH],
+        });
+
+        for (const [panelIndex, panel] of [
+          { y: 0.48, width: leafWidth * 0.66, height: 0.88 },
+          { y: -0.58, width: leafWidth * 0.66, height: 0.72 },
+        ].entries()) {
+          const panelZ = leafZ - FRONT_DOOR_DEPTH * 0.72;
+          highlight.push({
+            key: `${prefix}-leaf-${String(leafIndex)}-panel-frame-${String(panelIndex)}`,
+            position: [leafX, doorY + panel.y, panelZ],
+            scale: [panel.width, panel.height, 0.035],
+          });
+          shadow.push({
+            key: `${prefix}-leaf-${String(leafIndex)}-panel-recess-${String(panelIndex)}`,
+            position: [leafX, doorY + panel.y, panelZ - 0.012],
+            scale: [panel.width * 0.76, panel.height * 0.74, 0.036],
+          });
+        }
+
+        highlight.push({
+          key: `${prefix}-leaf-${String(leafIndex)}-stile`,
+          position: [
+            leafX + (leafIndex === 0 ? leafWidth / 2 - 0.03 : -leafWidth / 2 + 0.03),
+            doorY,
+            leafZ - FRONT_DOOR_DEPTH * 0.74,
+          ],
+          scale: [0.06, FRONT_DOOR_HEIGHT * 0.92, 0.034],
+        });
+      }
+
+      shadow.push({
+        key: `${prefix}-center-seam`,
+        position: [doorX, doorY, z - FRONT_DOOR_DEPTH * 0.86],
+        scale: [0.045, FRONT_DOOR_HEIGHT * 0.9, 0.036],
+      });
+      for (const [handleIndex, handleX] of [-0.13, 0.13].entries()) {
+        handles.push({
+          key: `${prefix}-handle-${String(handleIndex)}`,
+          position: [doorX + handleX, 1.16, z - FRONT_DOOR_DEPTH * 1.18],
+          scale: [1, 1, 1],
+        });
+      }
+    }
+
+    return { darkOak, highlight, timber, shadow, handles };
+  }, [width, z]);
 
   return (
     <SurfaceVisibilityGroup surfaceKey="wall-front" name="opposite-long-wall-three-door-cluster">
-      {doorX.map((x, i) => (
-        <OrnateDoubleDoorSet key={`front-long-wall-door-set-${String(i)}`} x={x} z={z} />
-      ))}
+      <group name="front-long-wall-door-set-batches">
+        <Instances limit={batches.darkOak.length} range={batches.darkOak.length} name="grand-hall-front-wall-door-frame-left-right-top-threshold">
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={PANEL_DARK_OAK} roughness={0.58} metalness={0.02} />
+          {batches.darkOak.map((part) => (
+            <Instance key={part.key} position={part.position} scale={part.scale} />
+          ))}
+        </Instances>
+        <Instances limit={batches.highlight.length} range={batches.highlight.length} name="front-wall-door-raised-panel-frame-and-vertical-stile">
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={DOOR_HIGHLIGHT} roughness={0.54} metalness={0.03} />
+          {batches.highlight.map((part) => (
+            <Instance key={part.key} position={part.position} scale={part.scale} />
+          ))}
+        </Instances>
+        <Instances limit={batches.timber.length} range={batches.timber.length} name="grand-hall-front-wall-door">
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={DOOR_TIMBER} roughness={0.66} metalness={0.01} />
+          {batches.timber.map((part) => (
+            <Instance key={part.key} position={part.position} scale={part.scale} />
+          ))}
+        </Instances>
+        <Instances limit={batches.shadow.length} range={batches.shadow.length} name="front-wall-door-recessed-panel-and-center-seam">
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color={PANEL_SHADOW} roughness={0.7} metalness={0.01} />
+          {batches.shadow.map((part) => (
+            <Instance key={part.key} position={part.position} scale={part.scale} />
+          ))}
+        </Instances>
+        <Instances limit={batches.handles.length} range={batches.handles.length} name="front-wall-door-brass-handle">
+          <sphereGeometry args={[0.055, 14, 14]} />
+          <meshStandardMaterial color={BRASS_GOLD} roughness={0.26} metalness={0.72} />
+          {batches.handles.map((part) => (
+            <Instance key={part.key} position={part.position} />
+          ))}
+        </Instances>
+      </group>
     </SurfaceVisibilityGroup>
   );
 }
@@ -1181,6 +1311,9 @@ export interface GrandHallOrnamentsProps {
   readonly width?: number;
   readonly length?: number;
   readonly height?: number;
+  readonly domeRadius?: number;
+  /** Roofless presentation keeps hanging lights but removes ceiling occlusion. */
+  readonly cutaway?: boolean;
 }
 
 /**
@@ -1191,6 +1324,8 @@ export function GrandHallOrnaments({
   width = GRAND_HALL_RENDER_DIMENSIONS.width,
   length = GRAND_HALL_RENDER_DIMENSIONS.length,
   height = GRAND_HALL_RENDER_DIMENSIONS.height,
+  domeRadius = DOME_RADIUS,
+  cutaway = false,
 }: GrandHallOrnamentsProps): React.ReactElement {
   const sectionHeight = useSectionStore((s) => s.height);
   const halfL = length / 2;
@@ -1212,10 +1347,11 @@ export function GrandHallOrnaments({
   );
   const wallOrnamentsVisible = shouldShowWallOrnamentsForSection(sectionHeight, height);
   const ceilingOrnamentsVisible = shouldShowCeilingOrnamentsForSection(sectionHeight, height);
+  const hangingLightsVisible = ceilingOrnamentsVisible || cutaway;
 
   return (
     <group name="grand-hall-ornaments">
-      {ceilingOrnamentsVisible && (
+      {ceilingOrnamentsVisible && !cutaway && (
         <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-ornaments">
           <CofferedAvodireCeiling width={width} length={length} height={height} />
         </SurfaceVisibilityGroup>
@@ -1230,36 +1366,26 @@ export function GrandHallOrnaments({
           <EndWallFocalPoint width={width} length={length} />
           {/* Pilasters and arched windows along the window wall only. */}
           <SurfaceVisibilityGroup surfaceKey="wall-back" name="window-wall-ornament-cluster">
-            {pilasterX.map((x, i) => (
-              <Pilaster
-                key={`pilaster-window-wall-${String(i)}`}
-                position={[x, 0, -halfL + 0.12]}
-                height={height}
-                wallAxis="z"
-              />
-            ))}
-
-            {/* Arched windows on the real window wall, facing inward. */}
-            {windowX.map((x, i) => (
-              <ArchedWindow
-                key={`window-long-wall-${String(i)}`}
-                position={[x, 0, windowWallZ]}
-                rotationY={0}
-              />
-            ))}
+            <WindowWallOrnaments
+              windowX={windowX}
+              pilasterX={pilasterX}
+              windowWallZ={windowWallZ}
+              pilasterWallZ={-halfL + 0.12}
+              height={height}
+            />
           </SurfaceVisibilityGroup>
         </>
       )}
 
       {/* Ceiling rosette ring around the dome base */}
-      {ceilingOrnamentsVisible && (
+      {ceilingOrnamentsVisible && !cutaway && (
         <SurfaceVisibilityGroup surfaceKey="ceiling" name="grand-hall-ceiling-rosette">
-          <CeilingRosetteRing y={height - 0.005} radius={DOME_RADIUS} />
+          <CeilingRosetteRing y={height - 0.005} radius={domeRadius} />
         </SurfaceVisibilityGroup>
       )}
 
       {/* Three chandeliers along the 21m hall centerline. */}
-      {ceilingOrnamentsVisible
+      {hangingLightsVisible
         ? chandelierX.map((x, i) => (
             <Chandelier
               key={`chandelier-${String(i)}`}

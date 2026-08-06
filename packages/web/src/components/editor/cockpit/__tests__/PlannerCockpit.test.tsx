@@ -87,12 +87,34 @@ describe("PlannerCockpit", () => {
     expect(screen.getByTestId("cockpit-shell").getAttribute("data-layout-timeline-preview")).toBe("true");
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-layout-timeline-preview")).toBe("true");
     expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
-      "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved",
+      "Visualizing phase change · Synthetic Grand Hall stand-in · not a measured capture · frozen outline + furniture are the saved plan",
     );
+    expect(screen.getByTestId("layout-timeline-preview-caption").getAttribute("data-room-presentation-source"))
+      .toBe("synthetic-stand-in");
     expect(screen.queryByTestId("room-resolve-caption")).toBeNull();
     expect(container.querySelector(".cockpit-layer-controls")).toBeNull();
     expect(screen.queryByTestId("cockpit-dock-mock")).toBeNull();
     expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
+  });
+
+  it("keeps the synthetic stand-in warning visible in the mobile timeline shell", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: null,
+      endsAt: null,
+      historicalRuntime: null,
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+
+    render(<PlannerCockpit mobile />);
+
+    const caption = screen.getByTestId("layout-timeline-preview-caption");
+    expect(caption.textContent).toContain("Synthetic Grand Hall stand-in");
+    expect(caption.textContent).toContain("not a measured capture");
   });
 
   it("states that the saved plan is hidden when the selected timeline interval has no keyframe", () => {

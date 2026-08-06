@@ -32,7 +32,10 @@ import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
-import type { LayoutTimelinePreviewFrameMetadata } from "../../../stores/layout-timeline-preview-store.js";
+import type {
+  LayoutTimelinePreviewFrameMetadata,
+  LayoutTimelinePreviewState,
+} from "../../../stores/layout-timeline-preview-store.js";
 import { useRoomLayoutTimeline } from "../../../hooks/use-room-layout-timeline.js";
 import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useMediaQuery } from "../../../hooks/use-media-query.js";
@@ -129,6 +132,14 @@ function previewFrameMetadata(
       ? frame.keyframe.historicalRuntime
       : null,
   };
+}
+
+export function timelineRetargetSourceFrame(
+  preview: Pick<LayoutTimelinePreviewState, "activeFrame" | "transition">,
+): LayoutTimelinePreviewFrameMetadata | null {
+  const transition = preview.transition;
+  if (transition === null) return preview.activeFrame;
+  return transition.progress < 0.5 ? transition.fromFrame : transition.toFrame;
 }
 
 function framesAllowFrozenSpatialMorph(
@@ -653,12 +664,13 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     setPlaying(false);
     const generation = cancelAnimations();
     const preview = useLayoutTimelinePreviewStore.getState();
-    const previewSourceIndex = preview.activeFrame === null
+    const previewSourceFrame = timelineRetargetSourceFrame(preview);
+    const previewSourceIndex = previewSourceFrame === null
       ? -1
-      : frames.findIndex((frame) => frame.id === preview.activeFrame?.id);
+      : frames.findIndex((frame) => frame.id === previewSourceFrame.id);
     const fromIndex = previewSourceIndex >= 0 ? previewSourceIndex : activeIndex;
     const fromFrame = frames[fromIndex];
-    const fromItems = preview.activeFrame === null ? frameItems(fromFrame) : preview.currentItems;
+    const fromItems = previewSourceFrame === null ? frameItems(fromFrame) : preview.currentItems;
     if (
       fromFrame === undefined
       || fromItems === null

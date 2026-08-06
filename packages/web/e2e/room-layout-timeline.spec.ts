@@ -487,8 +487,9 @@ test("Day/Week timeline clicks, scrubs, shortcuts, retargets, and keeps gaps tru
   await expect(sceneHost).toHaveAttribute("data-room-render-dimensions", "42,21,7");
   await expect(sceneHost).toHaveAttribute("data-room-furniture-offset", "-21,0,-10.5");
   await expect(sceneHost).toHaveAttribute("data-current-splat-suppressed", "true");
+  await expect(sceneHost).toHaveAttribute("data-room-presentation-source", "synthetic-stand-in");
   await expect(page.getByTestId("cockpit-runtime-chip"))
-    .toContainText("Frozen outline · historical capture unavailable");
+    .toContainText("Synthetic stand-in · frozen plan");
 
   await scrubTo(page, "2026-07-18T13:30:00.000Z");
   const scheduleGapSlider = page.getByRole("slider", { name: "Scrub room layout timeline" });
@@ -768,6 +769,7 @@ test("500-object keyframes remain responsive and within the 60fps frame budget",
   const canvasHost = page.locator(".cockpit-stage .planner-scene-canvas-host");
   await expect(canvasHost, "the frozen scene must finish its first real canvas render before idle sampling")
     .toHaveAttribute("data-timeline-preview-render-ready", "true", { timeout: 20_000 });
+  await expect(canvasHost).toHaveAttribute("data-room-motion-detail", "detailed");
 
   const idleFrameBudget = frameBudgetSummary(
     await sampleAnimationFrames(page, FRAME_BUDGET_SAMPLE_MS),
@@ -778,6 +780,7 @@ test("500-object keyframes remain responsive and within the 60fps frame budget",
   const beforeMorph = await canvas.screenshot();
   await filmstripCard(page, "Dinner service").click();
   await page.waitForTimeout(220);
+  await expect(canvasHost).toHaveAttribute("data-room-motion-detail", "proxy");
   const duringMorph = await canvas.screenshot();
   expect(duringMorph.equals(beforeMorph), "500-object canvas must visibly advance during the morph")
     .toBe(false);
@@ -791,6 +794,7 @@ test("500-object keyframes remain responsive and within the 60fps frame budget",
   });
   await page.waitForTimeout(600);
   await expect(filmstripCard(page, "Dinner service")).toHaveAttribute("aria-pressed", "true");
+  await expect(canvasHost).toHaveAttribute("data-room-motion-detail", "detailed");
   const settledMorph = await canvas.screenshot();
   expect(settledMorph.equals(beforeMorph), "500-object endpoints must render distinct layouts")
     .toBe(false);
@@ -812,12 +816,19 @@ test("500-object keyframes remain responsive and within the 60fps frame budget",
   await expect(filmstripCard(page, "Dinner service")).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
   const elapsedMs = await page.evaluate((started) => performance.now() - started, startedAt);
   const frameBudget = frameBudgetSummary(frameSamples);
+  const morphMisses = frameSamples.flatMap((deltaMs, index) => (
+    deltaMs > FRAME_BUDGET_P95_MS ? [{ index, deltaMs }] : []
+  ));
   await testInfo.attach("500-object-frame-budget.json", {
-    body: JSON.stringify({ idle: idleFrameBudget, morph: frameBudget }, null, 2),
+    body: JSON.stringify({ idle: idleFrameBudget, morph: frameBudget, morphMisses }, null, 2),
     contentType: "application/json",
   });
   expect(elapsedMs).toBeLessThan(4_000);
-  const frameBudgetEvidence = JSON.stringify({ idle: idleFrameBudget, morph: frameBudget });
+  const frameBudgetEvidence = JSON.stringify({
+    idle: idleFrameBudget,
+    morph: frameBudget,
+    morphMisses,
+  });
   expect(idleFrameBudget.sampleCount, frameBudgetEvidence).toBeGreaterThanOrEqual(60);
   expect(idleFrameBudget.p95Ms, frameBudgetEvidence).toBeLessThanOrEqual(FRAME_BUDGET_P95_MS);
   expect(idleFrameBudget.sustainedMisses, frameBudgetEvidence)

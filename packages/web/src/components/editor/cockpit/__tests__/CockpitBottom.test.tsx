@@ -31,6 +31,7 @@ const {
   isValidTimelineDeepLinkDate,
   MAX_MOUNTED_TIMELINE_THUMBNAILS,
   shouldMountTimelineThumbnail,
+  timelineRetargetSourceFrame,
   timelinePhaseDensityClass,
 } = await import("../RoomLayoutTimelineDock.js");
 const { isRoundTimelineCollision } = await import("../LayoutPlanThumbnail.js");
@@ -785,6 +786,8 @@ describe("CockpitBottom room layout timeline", () => {
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, roomFlip, dinner]));
     renderBottom();
     await screen.findByRole("slider", { name: /scrub room layout/i });
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(ARRIVAL_ID);
 
     fireEvent.click(screen.getAllByRole(
       "button",
@@ -793,6 +796,12 @@ describe("CockpitBottom room layout timeline", () => {
 
     expect(useLayoutTimelinePreviewStore.getState().transition?.mode).toBe("same-event-morph");
     expect(useLayoutTimelinePreviewStore.getState().transition?.itemTransitionPlan).not.toBeNull();
+    useLayoutTimelinePreviewStore.getState().setProgress(0.49);
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(ARRIVAL_ID);
+    useLayoutTimelinePreviewStore.getState().setProgress(0.5);
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(DINNER_ID);
   });
 
   it("keeps real forward and reverse selections on the same cached physical endpoints", async () => {

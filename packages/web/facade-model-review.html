@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trades Hall facade stand-in review</title>
+    <style>
+      html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111416; }
+      body { font-family: Inter, system-ui, sans-serif; color: #efe7d7; }
+      canvas { display: block; }
+      .label { position: fixed; left: 18px; top: 16px; padding: 8px 11px; border: 1px solid rgba(222, 177, 102, .45); border-radius: 6px; background: rgba(12, 15, 17, .78); font-size: 12px; letter-spacing: .04em; }
+      .label strong { color: #deb166; font-weight: 650; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div class="label"><strong>SYNTHETIC STAND-IN</strong> · reference-guided, not measured</div>
+    <script>
+      window.__FACADE_ERROR__ = "";
+      window.addEventListener("error", (event) => { window.__FACADE_ERROR__ = String(event.error?.stack || event.message); });
+      window.addEventListener("unhandledrejection", (event) => { window.__FACADE_ERROR__ = String(event.reason?.stack || event.reason); });
+    </script>
+    <script type="module" src="/@fs/C:/Users/blake/omnitwin2-event-layout-runtime/docs/design/concepts/trades-hall-stand-in/facade-model/render/main.ts?v=2"></script>
+  </body>
+</html>

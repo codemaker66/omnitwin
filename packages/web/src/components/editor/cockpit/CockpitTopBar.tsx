@@ -6,6 +6,7 @@ import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
+import { shouldUseSyntheticGrandHallStandIn } from "../../../lib/synthetic-grand-hall-stand-in.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
 import "./CockpitTopBar.css";
 
@@ -61,6 +62,11 @@ export function CockpitTopBar(): ReactElement {
   const linked = useLinkedEvent(venueId);
   const previewActive = previewMode !== "inactive";
   const objectCount = previewActive ? previewObjectCount : savedObjectCount;
+  const syntheticGrandHallStandIn = shouldUseSyntheticGrandHallStandIn({
+    mode: previewMode,
+    venueRuntime: previewRuntime,
+    hasExactHistoricalRuntime: previewFrame?.historicalRuntime?.state === "available",
+  });
 
   const model = buildTopBarModel({
     spaceName: previewActive ? previewRuntime?.spaceName ?? null : space?.name ?? null,
@@ -95,7 +101,9 @@ export function CockpitTopBar(): ReactElement {
   const runtimeLabel = previewActive
     ? previewRuntime === null
       ? "Room preview unavailable"
-      : "Frozen outline · historical capture unavailable"
+      : syntheticGrandHallStandIn
+        ? "Synthetic stand-in · frozen plan"
+        : "Frozen outline · historical capture unavailable"
     : model.runtimeLabel;
 
   return (
@@ -103,6 +111,7 @@ export function CockpitTopBar(): ReactElement {
       className="cockpit-topbar"
       data-testid="cockpit-topbar"
       data-layout-timeline-preview={String(previewActive)}
+      data-room-presentation-source={syntheticGrandHallStandIn ? "synthetic-stand-in" : "runtime-or-outline"}
       aria-label="Planner status"
     >
       <div className="cockpit-topbar__brand">

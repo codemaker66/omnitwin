@@ -1,0 +1,85 @@
+{
+  "ok": true,
+  "verdict": "pass",
+  "confidence": 0.925,
+  "estimatedFidelity": 0.925,
+  "targetThreshold": 0.7,
+  "materialId": "facade-stone",
+  "sourceImage": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone-crop.png",
+  "outDir": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone",
+  "palette": [
+    "#BFB381",
+    "#CCC296",
+    "#D9D2AC",
+    "#A29A6A",
+    "#2F2F29",
+    "#6F6B4F"
+  ],
+  "maps": {
+    "albedo": {
+      "path": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone\\facade-stone_albedo.png",
+      "url": "facade-stone_albedo.png",
+      "channel": "albedo",
+      "source": "reference-pixel-extraction"
+    },
+    "roughness": {
+      "path": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone\\facade-stone_roughness.png",
+      "url": "facade-stone_roughness.png",
+      "channel": "roughness",
+      "source": "reference-pixel-extraction"
+    },
+    "height": {
+      "path": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone\\facade-stone_height.png",
+      "url": "facade-stone_height.png",
+      "channel": "height",
+      "source": "reference-pixel-extraction"
+    },
+    "normal": {
+      "path": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone\\facade-stone_normal.png",
+      "url": "facade-stone_normal.png",
+      "channel": "normal",
+      "source": "reference-pixel-extraction"
+    },
+    "ao": {
+      "path": "C:\\Users\\blake\\omnitwin2-event-layout-runtime\\docs\\design\\concepts\\trades-hall-stand-in\\facade-model\\material-evidence\\facade-stone\\facade-stone_ao.png",
+      "url": "facade-stone_ao.png",
+      "channel": "ao",
+      "source": "reference-pixel-extraction"
+    }
+  },
+  "diagnostics": {
+    "sourceWidth": 700,
+    "sourceHeight": 700,
+    "mapSize": 512,
+    "cropBBoxPixels": {
+      "x": 0,
+      "y": 0,
+      "width": 700,
+      "height": 700
+    },
+    "mask": {
+      "backgroundColor": "#C2B68C",
+      "backgroundNoise": 70.036,
+      "transparentPixelFraction": 0.0,
+      "foregroundCoverage": 0.8452
+    },
+    "mapStats": {
+      "valueRange": 0.6733,
+      "heightP90Gradient": 0.12832,
+      "roughnessBase": 0.731,
+      "roughnessVariation": 0.194,
+      "normalStrength": 0.307,
+      "blurRadius": 10
+    },
+    "palette": [
+      "#BFB381",
+      "#CCC296",
+      "#D9D2AC",
+      "#A29A6A",
+      "#2F2F29",
+      "#6F6B4F"
+    ]
+  },
+  "warnings": [],
+  "limitation": "single-image PBR extraction is an estimate; 70%+ extraction confidence still needs render screenshot review"
+}

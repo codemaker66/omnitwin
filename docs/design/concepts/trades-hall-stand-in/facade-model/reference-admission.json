@@ -1,0 +1,20 @@
+{
+  "technicalProbe": {
+    "type": "png",
+    "bytes": 2202298,
+    "width": 1536,
+    "height": 1024,
+    "aspectRatio": 1.5,
+    "technicalSuitability": "pass",
+    "warnings": []
+  },
+  "admission": {
+    "admitted": true,
+    "reasons": [],
+    "viewpoint": "front",
+    "foregroundCoverage": 0.6417,
+    "largestComponentFraction": 0.9516,
+    "pHash": "18067026505948129312",
+    "duplicateOfHash": null
+  }
+}

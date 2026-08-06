@@ -284,9 +284,11 @@ function LayoutPlanThumbnailComponent({
   paused = false,
 }: LayoutPlanThumbnailProps): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const appliedProofKeyRef = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (appliedProofKeyRef.current === proofKey) return;
     setReady(false);
     const applyRaster = (raster: HTMLCanvasElement): void => {
       const canvas = canvasRef.current;
@@ -295,6 +297,7 @@ function LayoutPlanThumbnailComponent({
       if (context === null) return;
       context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       context.drawImage(raster, 0, 0);
+      appliedProofKeyRef.current = proofKey;
       setReady(true);
     };
     const cached = cachedRaster(proofKey);

@@ -42,6 +42,8 @@ describe("RoomMesh", () => {
     const { shouldRenderGrandHallOrnaments } = await import("../components/editor/RoomMesh.js");
     expect(shouldRenderGrandHallOrnaments({ isGrandHall: true, viewportWidth: 390 })).toBe(false);
     expect(shouldRenderGrandHallOrnaments({ isGrandHall: true, viewportWidth: 768 })).toBe(false);
+    expect(shouldRenderGrandHallOrnaments({ isGrandHall: true, viewportWidth: 768, detail: "detailed" })).toBe(true);
+    expect(shouldRenderGrandHallOrnaments({ isGrandHall: true, viewportWidth: 1440, detail: "lean" })).toBe(false);
     expect(shouldRenderGrandHallOrnaments({ isGrandHall: true, viewportWidth: 1440 })).toBe(true);
     expect(shouldRenderGrandHallOrnaments({ isGrandHall: false, viewportWidth: 1440 })).toBe(false);
   });
@@ -55,11 +57,25 @@ describe("RoomMesh", () => {
   });
 
   it("allows route-level detail to force the lean or detailed shell", async () => {
-    const { shouldUseRoomMeshLeanShell } = await import("../components/editor/RoomMesh.js");
+    const {
+      shouldShowDetailedRoomDuringTimelineMotion,
+      shouldUseRoomMeshLeanShell,
+    } = await import("../components/editor/RoomMesh.js");
     expect(shouldUseRoomMeshLeanShell("lean", 1440)).toBe(true);
     expect(shouldUseRoomMeshLeanShell("detailed", 390)).toBe(false);
     expect(shouldUseRoomMeshLeanShell("auto", 390)).toBe(true);
     expect(shouldUseRoomMeshLeanShell("auto", 1440)).toBe(false);
+    expect(shouldShowDetailedRoomDuringTimelineMotion("transition", 240)).toBe(true);
+    expect(shouldShowDetailedRoomDuringTimelineMotion("transition", 241)).toBe(false);
+    expect(shouldShowDetailedRoomDuringTimelineMotion("keyframe", 500)).toBe(true);
+  });
+
+  it("mounts the synthetic facade only for the detailed synthetic Grand Hall", async () => {
+    const { shouldRenderSyntheticTradesHallFacade } = await import("../components/editor/RoomMesh.js");
+
+    expect(shouldRenderSyntheticTradesHallFacade(true, false)).toBe(true);
+    expect(shouldRenderSyntheticTradesHallFacade(true, true)).toBe(false);
+    expect(shouldRenderSyntheticTradesHallFacade(false, false)).toBe(false);
   });
 
   it("keeps camera-driven brick wall fading out of the lean shell", async () => {
@@ -75,8 +91,35 @@ describe("RoomMesh", () => {
     const source = await fs.readFile(path.resolve("src/components/editor/RoomMesh.tsx"), "utf-8");
     expect(source).toContain("useLeanRoomShell ? (");
     expect(source).toContain("<meshBasicMaterial");
-    expect(source).toContain("{!useLeanRoomShell && geometry.features.map");
     expect(source).toContain("{!useLeanRoomShell && (");
+    expect(source).toContain('name="room-architectural-detail"');
+    expect(source).toContain("geometry.features.map");
+  });
+
+  it("keeps the synthetic Grand Hall as presentation-only dressing", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/editor/RoomMesh.tsx"), "utf-8");
+
+    expect(source).toContain('"grand-hall-synthetic"');
+    expect(source).toContain('name="synthetic-grand-hall-foundation"');
+    expect(source).toContain('name="synthetic-grand-hall-plinth"');
+    expect(source).toContain("<SyntheticTradesHallFacade");
+    expect(source).toContain("shouldRenderSyntheticTradesHallFacade(isSyntheticGrandHall, useLeanRoomShell)");
+    expect(source).toContain('presentationSource: "synthetic-stand-in"');
+    expect(source).toContain("opacity={isSyntheticGrandHall ? 0.075 : 0.22}");
+    expect(source).not.toContain("PlacedFurniture");
+    expect(source).not.toContain("TimelinePreviewFurniture");
+  });
+
+  it("retains detailed architecture behind a motion-time visibility group", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/editor/RoomMesh.tsx"), "utf-8");
+    expect(source).toContain('name="room-motion-proxy-walls"');
+    expect(source).toContain("function TimelineRoomMotionDetailDriver");
+    expect(source).toContain('setAttribute("data-room-motion-detail", mode)');
+    expect(source).toContain('name="room-architectural-detail"');
   });
 });
 
