@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { OptionSeal } from "../features/trades-house/OptionSeal.js";
 import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
+import {
+  CONVENER_DELIBERATION,
+  CONVENER_DELIBERATION_BEAT_MS,
+  convenerReaction,
+} from "../features/trades-house/convener/convener-lines.js";
 import { useMediaQuery } from "../hooks/use-media-query.js";
 import {
   CRAFT_ORDER,
@@ -8,15 +13,16 @@ import {
   CRAFT_QUESTIONS,
   applyCraftQuizAnswer,
   buildCraftIntroductionMailto,
+  ZERO_AXIS_TOTALS,
   rankCrafts,
+  type AxisTotals,
+  type AxisVector,
   type CraftId,
   type CraftRankingEntry,
-  type CraftScores,
-  type CraftWeights,
 } from "../features/trades-house/craft-quiz-model.js";
 import "./TradesHouseCraftQuizPage.css";
 
-type QuizScreen = "intro" | "question" | "result";
+type QuizScreen = "intro" | "question" | "weighing" | "result";
 
 function railLabel(name: string): string {
   return name.replace(/^THE\s+/u, "");
@@ -75,7 +81,7 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
           <span>is yours?</span>
         </h1>
         <div className="craft-quiz-divider" aria-hidden="true"><i>❖</i></div>
-        <p>Nine questions · four centuries · one fellowship</p>
+        <p>{CRAFT_QUESTIONS.length} questions · four centuries · one fellowship</p>
         <button type="button" className="craft-quiz-begin" onClick={onBegin} aria-label="Begin the Craft quiz">
           Begin
         </button>
@@ -93,7 +99,7 @@ function QuizProgress({ activeIndex }: QuizProgressProps): ReactElement {
   return (
     <div className="craft-quiz-progress" aria-hidden="true">
       {CRAFT_QUESTIONS.map((question, index) => (
-        <span className={index <= activeIndex ? "is-lit" : ""} data-active={index === activeIndex} key={question.prompt}>
+        <span className={index <= activeIndex ? "is-lit" : ""} data-active={index === activeIndex} key={question.title}>
           ⚜︎{index < CRAFT_QUESTIONS.length - 1 ? <i>◆</i> : null}
         </span>
       ))}
@@ -101,33 +107,58 @@ function QuizProgress({ activeIndex }: QuizProgressProps): ReactElement {
   );
 }
 
-function midQuizOmen(scores: Readonly<CraftScores>, questionIndex: number): string | null {
-  if (questionIndex !== 4) return null;
-  const [first, second] = rankCrafts(scores);
+/** Halfway through, the Chain names the two Crafts it is torn between. */
+function midQuizOmen(totals: AxisTotals, questionIndex: number): string | null {
+  if (questionIndex !== Math.floor(CRAFT_QUESTIONS.length / 2)) return null;
+  const [first, second] = rankCrafts(totals);
   if (first === undefined || second === undefined) return null;
   return `The Chain senses ${first.profile.omen} and ${second.profile.omen}. It is not yet decided.`;
 }
 
 interface QuestionScreenProps {
   readonly questionIndex: number;
-  readonly scores: Readonly<CraftScores>;
+  readonly totals: AxisTotals;
   readonly onAnswer: (optionIndex: number) => void;
   /** The option just chosen; locks the set while the Convener reacts. */
   readonly pickedIndex: number | null;
   /** The Convener glances at whichever option the pointer is weighing. */
   readonly onOptionHover: (clientX: number, clientY: number) => void;
+  /**
+   * Narrow viewports show the four leads only and open one at a time. Four
+   * priced options and a scene cannot share a phone without either scrolling
+   * or type too small to read, and a consequential choice deserves the second
+   * tap anyway — the accordion is a confirm step, not just a space saver.
+   */
+  readonly compact: boolean;
+  /** His reply to the answer just given, or null while the scene is open. */
+  readonly reply: string | null;
+  readonly onContinue: () => void;
 }
 
 function QuestionScreen({
   questionIndex,
-  scores,
+  totals,
   onAnswer,
   pickedIndex,
   onOptionHover,
+  compact,
+  reply,
+  onContinue,
 }: QuestionScreenProps): ReactElement {
   const question = CRAFT_QUESTIONS[questionIndex];
   if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
-  const omen = midQuizOmen(scores, questionIndex);
+  const omen = midQuizOmen(totals, questionIndex);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+
+  // A new scene arrives closed, so nobody answers the last question's shape.
+  useEffect(() => { setOpenIndex(null); }, [questionIndex]);
+
+  // Move focus to Continue when he replies: a keyboard user should not have to
+  // hunt for the only live control on the screen.
+  useEffect(() => {
+    if (reply !== null) continueRef.current?.focus();
+  }, [reply]);
 
   return (
     <section className="craft-quiz-question" aria-labelledby="craft-question-title">
@@ -135,36 +166,70 @@ function QuestionScreen({
       <QuizProgress activeIndex={questionIndex} />
       <p className="craft-quiz-question-count">QUESTION {questionIndex + 1} OF {CRAFT_QUESTIONS.length}</p>
       {omen === null ? null : <p className="craft-quiz-omen">{omen}</p>}
-      <h1 id="craft-question-title">{question.prompt}</h1>
-      <div className="craft-quiz-options">
+      {/* The Convener speaks this aloud; on narrow viewports his bubble is its
+          only visible rendering, so it stays in the tree either way. */}
+      <h1 id="craft-question-title">{question.scene}</h1>
+      <div className={`craft-quiz-options${compact ? " is-accordion" : ""}${reply === null ? "" : " is-replying"}`}>
         {question.options.map((option, optionIndex) => {
           const picked = pickedIndex === optionIndex;
           const faded = pickedIndex !== null && !picked;
+          const open = !compact || openIndex === optionIndex;
           return (
             /* aria-disabled, NOT disabled: disabling the focused button drops
                keyboard focus to <body> on every answer. answerQuestion() is
                the real re-entry guard; this is the accessible signal. */
             <button
               type="button"
-              className={`craft-quiz-option${picked ? " is-picked" : ""}${faded ? " is-faded" : ""}`}
+              className={`craft-quiz-option${picked ? " is-picked" : ""}${faded ? " is-faded" : ""}${open ? " is-open" : ""}`}
               aria-disabled={pickedIndex !== null}
-              onClick={() => { onAnswer(optionIndex); }}
+              aria-expanded={compact ? open : undefined}
+              onClick={() => {
+                // On a phone the first tap opens the option and the second
+                // commits it; on a wide screen one tap does both.
+                if (compact && openIndex !== optionIndex) setOpenIndex(optionIndex);
+                else onAnswer(optionIndex);
+              }}
               onPointerEnter={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 onOptionHover(rect.left + rect.width / 2, rect.top + rect.height / 2);
               }}
-              key={option.title}
+              key={option.lead}
             >
               <OptionSeal index={optionIndex} />
               <span>
-                <strong>{option.title}</strong>
-                <small>{option.subtitle}</small>
+                <strong>{option.lead}</strong>
+                {open ? <small>{option.body}</small> : null}
+                {/* Naming the price is what keeps the four options equally
+                    choosable — remove it and the cheapest one always wins. */}
+                {open ? <em className="craft-quiz-option-cost">Costs you: {option.cost}</em> : null}
+                {open && compact && reply === null
+                  ? <em className="craft-quiz-option-confirm">Tap again to choose</em>
+                  : null}
               </span>
             </button>
           );
         })}
       </div>
-      <div className="craft-quiz-divider is-muted" aria-hidden="true"><i>❖</i></div>
+
+      {/* His reply gets its own box and stays until YOU move on. Overwriting
+          the scene with it, and advancing on a timer, meant the best writing in
+          the quiz flashed past unread — and tying the advance to a promise is
+          what let a stray say() race the whole quiz to the end. */}
+      {reply === null ? null : (
+        <div className="craft-quiz-reply" role="group" aria-label="The Convener replies">
+          <p className="craft-quiz-reply-who">Ye Auld Convener</p>
+          <p className="craft-quiz-reply-text">{reply}</p>
+          <button
+            type="button"
+            className="craft-quiz-continue"
+            ref={continueRef}
+            onClick={onContinue}
+          >
+            {questionIndex === CRAFT_QUESTIONS.length - 1 ? "See your Craft" : "Go on"}
+          </button>
+        </div>
+      )}
+
       <p className="craft-quiz-est">Trades House of Glasgow · Est. 1605</p>
     </section>
   );
@@ -194,6 +259,67 @@ function ResultLaurel(): ReactElement {
     }
   }
   return <svg className="craft-result-laurel" viewBox="0 0 270 270" aria-hidden="true"><path d="M 62 68 A 100 100 0 1 0 208 68" />{leaves}</svg>;
+}
+
+interface WeighingScreenProps {
+  readonly onDecided: () => void;
+  readonly compact: boolean;
+}
+
+/**
+ * The deliberation. Twelve hard scenes used to end with an instant verdict,
+ * which reads as a lookup table rather than a judgement — the pause is what
+ * makes the answer feel earned, and it is the beat every sorting hat is
+ * actually remembered for.
+ *
+ * Timers, not promises. The previous auto-advance chained navigation onto
+ * `convener.say(...).then(...)`, so a stray resolution could race the quiz to
+ * the end — a failure that only ever appeared on CI. Here one interval owns
+ * the beat count, one effect owns the handover, and both clean up.
+ */
+function WeighingScreen({ onDecided, compact }: WeighingScreenProps): ReactElement {
+  const [beat, setBeat] = useState(0);
+  const skipRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setBeat((current) => current + 1);
+    }, CONVENER_DELIBERATION_BEAT_MS);
+    return () => { window.clearInterval(timer); };
+  }, []);
+
+  // Handing over is its own effect so the interval never navigates: the beat
+  // counter is the single source of truth for where we are in the ceremony.
+  useEffect(() => {
+    if (beat >= CONVENER_DELIBERATION.length) onDecided();
+  }, [beat, onDecided]);
+
+  // Anyone who has already waited twelve scenes is entitled to be impatient.
+  useEffect(() => { skipRef.current?.focus(); }, []);
+
+  const line = CONVENER_DELIBERATION[Math.min(beat, CONVENER_DELIBERATION.length - 1)] ?? "";
+
+  return (
+    <section className="craft-quiz-weighing" aria-labelledby="craft-weighing-title">
+      <h1 className="craft-quiz-sr-only" id="craft-weighing-title">The Convener is weighing your answers</h1>
+      <p className="craft-result-kicker"><span />The Chain is weighing<span /></p>
+      {/* He is the one deliberating, so he is on screen doing it. His bubble
+          stays empty here: the beats change faster than the typewriter can
+          finish a line, and a half-typed thought reads as a stall. */}
+      <div className="craft-weighing-portrait">
+        <ConvenerPortrait compact={compact} restingLine={null} />
+      </div>
+      <div className="craft-weighing-chain" aria-hidden="true">
+        {CONVENER_DELIBERATION.map((_, index) => (
+          <i key={index} data-lit={index <= beat ? "true" : "false"} />
+        ))}
+      </div>
+      <p className="craft-weighing-line" role="status" aria-live="polite">{line}</p>
+      <button type="button" className="craft-weighing-skip" ref={skipRef} onClick={onDecided}>
+        Tell me now
+      </button>
+    </section>
+  );
 }
 
 interface ResultScreenProps {
@@ -227,13 +353,18 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
       <p className="craft-result-essence">{craft.essence}</p>
       <p className="craft-result-reveal">{craft.reveal}</p>
       <p className="craft-result-motto">{craft.motto}</p>
+      {/* The near-miss. A sorting hat is remembered for what it ALMOST said,
+          not for what it said — so he admits how close it ran, by name. This
+          is also the line people screenshot. */}
       <p className="craft-result-affinities">
-        Your close affinities are <strong>{runnerUp.profile.name}</strong> and <strong>{third.profile.name}</strong> — an affinity is an invitation to explore, and enquiries are warmly welcomed.
+        <span className="craft-result-affinities-who">Ye Auld Convener, quieter</span>
+        “Mind, it ran closer than ye’d think. Ye were a hair off <strong>{runnerUp.profile.name}</strong>,
+        and I near said <strong>{third.profile.name}</strong> out loud before I caught myself.
+        Any of the three would have ye. Go and ask them.”
       </p>
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
       <a className="craft-result-leaflet" href="/trades-house/leaflet">View the visitor leaflet</a>
-      <div className="craft-result-building" aria-hidden="true" />
       <p className="craft-result-signoff">Host here · belong here</p>
     </section>
   );
@@ -242,12 +373,13 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
 export function TradesHouseCraftQuizPage(): ReactElement {
   const [screen, setScreen] = useState<QuizScreen>("intro");
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [scores, setScores] = useState<CraftScores>({});
-  const [lastWeights, setLastWeights] = useState<CraftWeights>({});
+  const [totals, setTotals] = useState<AxisTotals>(ZERO_AXIS_TOTALS);
+  const [lastAxes, setLastAxes] = useState<AxisVector>({});
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
+  const [reply, setReply] = useState<string | null>(null);
   const convenerRef = useRef<ConvenerHandle>(null);
   const wideStage = useMediaQuery("(min-width: 980px)");
-  const ranking = useMemo(() => rankCrafts(scores, lastWeights), [lastWeights, scores]);
+  const ranking = useMemo(() => rankCrafts(totals, lastAxes), [lastAxes, totals]);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -257,26 +389,25 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     };
   }, []);
 
-  // He reads each question aloud as it arrives — the host, not a caption.
-  useEffect(() => {
-    if (screen !== "question") return;
-    const prompt = CRAFT_QUESTIONS[questionIndex]?.prompt;
-    if (prompt !== undefined) void convenerRef.current?.say(prompt);
-  }, [screen, questionIndex]);
+  // He performs each scene as it arrives — the host, not a caption. The
+  // portrait owns that: it speaks whatever `restingLine` holds, so the scene
+  // survives remounts without the page having to time a say() call.
 
   function beginQuiz(): void {
-    setScores({});
-    setLastWeights({});
+    setTotals(ZERO_AXIS_TOTALS);
+    setLastAxes({});
     setQuestionIndex(0);
     setPickedIndex(null);
+    setReply(null);
     setScreen("question");
   }
 
   function resetQuiz(): void {
-    setScores({});
-    setLastWeights({});
+    setTotals(ZERO_AXIS_TOTALS);
+    setLastAxes({});
     setQuestionIndex(0);
     setPickedIndex(null);
+    setReply(null);
     setScreen("intro");
   }
 
@@ -285,23 +416,26 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     const option = CRAFT_QUESTIONS[questionIndex]?.options[optionIndex];
     if (option === undefined) return;
     setPickedIndex(optionIndex);
-    const answer = applyCraftQuizAnswer(scores, questionIndex, optionIndex);
-    setScores(answer.scores);
-    setLastWeights(answer.lastWeights);
+    const answer = applyCraftQuizAnswer(totals, questionIndex, optionIndex);
+    setTotals(answer.totals);
+    setLastAxes(answer.lastAxes);
+    // Answering opens his reply and stops there. Nothing advances on a clock:
+    // the reader decides when they have finished with the line.
+    setReply(convenerReaction(questionIndex, optionIndex));
+    convenerRef.current?.express(optionIndex % 3 === 1 ? "press" : "smile", 1_400);
+  }
 
-    const advance = (): void => {
-      setPickedIndex(null);
-      if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
-      else setQuestionIndex((current) => current + 1);
-    };
-    const convener = convenerRef.current;
-    if (convener === null) {
-      advance();
-      return;
-    }
-    // He reacts, THEN the quiz moves on — the beat is the personality.
-    convener.express("smile", 900);
-    void convener.say(option.convenerLine, { quip: true }).then(advance);
+  // Stable identity: WeighingScreen's handover effect lists this in its deps,
+  // and a fresh arrow every render would make that effect churn.
+  const revealCraft = useCallback(() => { setScreen("result"); }, []);
+
+  function continueFromReply(): void {
+    setReply(null);
+    setPickedIndex(null);
+    // The last scene hands over to the deliberation, never straight to the
+    // verdict: an instant answer after twelve dilemmas reads as a lookup.
+    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("weighing");
+    else setQuestionIndex((current) => current + 1);
   }
 
   return (
@@ -314,18 +448,25 @@ export function TradesHouseCraftQuizPage(): ReactElement {
               <ConvenerPortrait
                 ref={convenerRef}
                 compact={!wideStage}
-                restingLine={CRAFT_QUESTIONS[questionIndex]?.prompt ?? null}
+                /* His bubble always holds the SCENE. The reply lives in its own
+                   panel beside the options, so answering never wipes the
+                   question the reader is still thinking about. */
+                restingLine={CRAFT_QUESTIONS[questionIndex]?.scene ?? null}
               />
             </div>
             <QuestionScreen
               questionIndex={questionIndex}
-              scores={scores}
+              totals={totals}
+              compact={!wideStage}
               onAnswer={answerQuestion}
               pickedIndex={pickedIndex}
+              reply={reply}
+              onContinue={continueFromReply}
               onOptionHover={(clientX, clientY) => { convenerRef.current?.glanceAt(clientX, clientY); }}
             />
           </div>
         ) : null}
+        {screen === "weighing" ? <WeighingScreen onDecided={revealCraft} compact={!wideStage} /> : null}
         {screen === "result" ? <ResultScreen ranking={ranking} onRetake={resetQuiz} /> : null}
       </div>
     </main>

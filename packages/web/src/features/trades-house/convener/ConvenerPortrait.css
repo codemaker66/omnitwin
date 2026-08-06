@@ -113,8 +113,38 @@
 }
 
 .convener-flame {
+  /* The rAF loop rewrites scaleY/skewX every 90ms; anchoring at the wick base
+     means the flame dances from where it is actually attached, and the short
+     transition smooths those discrete jumps into continuous guttering rather
+     than a stutter. */
   transform-box: fill-box;
   transform-origin: 50% 100%;
+  transition: transform 120ms ease-out;
+  will-change: transform;
+}
+
+.convener-motes circle {
+  animation: convener-mote-drift 9s ease-in-out infinite;
+  opacity: 0.5;
+}
+
+.convener-motes circle:nth-child(2n) {
+  animation-delay: -3s;
+  animation-duration: 13s;
+  opacity: 0.34;
+}
+
+.convener-motes circle:nth-child(3n) {
+  animation-delay: -7s;
+  animation-duration: 17s;
+  opacity: 0.42;
+}
+
+@keyframes convener-mote-drift {
+  0%, 100% { opacity: 0.18; transform: translate(0, 0); }
+  30% { opacity: 0.6; }
+  50% { opacity: 0.45; transform: translate(4px, -14px); }
+  70% { opacity: 0.55; }
 }
 
 .convener-glow {
@@ -257,5 +287,15 @@
 
   .convener-speech-text .convener-caret {
     animation: none;
+  }
+
+  /* Drifting motes and guttering flame are decoration, not information —
+     they stop. The gaze does not (see the pointer-following rule above). */
+  .convener-motes circle {
+    animation: none;
+  }
+
+  .convener-flame {
+    transition: none;
   }
 }

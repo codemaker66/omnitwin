@@ -477,6 +477,17 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
       });
     }, [express, say, state.pokeCount, utterance]);
 
+    // ---- the scene speaks itself ----
+    // He performs whatever restingLine currently holds. Owning this here
+    // rather than having the page call say() on mount removes an effect
+    // ordering hazard: under StrictMode the parent's say() could start the
+    // typewriter and the child's own remount cleanup would then clear it,
+    // leaving a caret blinking over an empty bubble forever.
+    useEffect(() => {
+      if (restingLine === null || restingLine.length === 0) return;
+      void say(restingLine, { cps: 58 });
+    }, [restingLine, say]);
+
     // ---- mull steers the gaze aside, like the original ----
     useEffect(() => {
       targetRef.current = mull ? { dx: -4, dy: -3 } : { dx: 0, dy: 0 };
@@ -575,28 +586,45 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                 <stop offset="0" stopColor="#6a4c2a" stopOpacity=".85" />
                 <stop offset="1" stopColor="#6a4c2a" stopOpacity="0" />
               </radialGradient>
+              {/* flame body: blue base, amber heart, smoke-thin tip */}
+              <linearGradient id={gradient("flame")} x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" stopColor="#3f6ad8" stopOpacity=".85" />
+                <stop offset=".16" stopColor="#ffb02e" />
+                <stop offset=".45" stopColor="#ffdf8a" />
+                <stop offset=".8" stopColor="#ffca5f" stopOpacity=".92" />
+                <stop offset="1" stopColor="#ff8a2b" stopOpacity=".25" />
+              </linearGradient>
+              <radialGradient id={gradient("bloom")} cx=".5" cy=".5" r=".5">
+                <stop offset="0" stopColor="#ffe0a2" stopOpacity=".85" />
+                <stop offset=".28" stopColor="#ffab48" stopOpacity=".42" />
+                <stop offset=".62" stopColor="#e87a1e" stopOpacity=".16" />
+                <stop offset="1" stopColor="#c85f10" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id={gradient("wax")} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#6d6152" />
+                <stop offset=".34" stopColor="#e8dcc4" />
+                <stop offset=".62" stopColor="#cbbda0" />
+                <stop offset="1" stopColor="#5d5344" />
+              </linearGradient>
+              {/* the dark that makes the light mean something */}
+              <radialGradient id={gradient("vignette")} cx=".5" cy=".42" r=".78">
+                <stop offset="0" stopColor="#000" stopOpacity="0" />
+                <stop offset=".55" stopColor="#000" stopOpacity=".12" />
+                <stop offset=".82" stopColor="#000" stopOpacity=".62" />
+                <stop offset="1" stopColor="#000" stopOpacity=".92" />
+              </radialGradient>
+              {/* canvas tooth — keeps the flats from reading as plastic */}
+              <filter id={gradient("grain")} x="0" y="0" width="100%" height="100%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="n" />
+                <feColorMatrix in="n" type="saturate" values="0" />
+              </filter>
               <clipPath id={gradient("clip")}><rect x="58" y="40" width="284" height="356" rx="3" /></clipPath>
             </defs>
 
-            {/* candle sconces */}
-            <g>
-              <path d="M28 300 q-10 8 -6 20 l6 6 6 -6 q4 -12 -6 -20z" fill="#5c421a" />
-              <rect x="24" y="252" width="8" height="52" rx="2" fill="#7a571f" />
-              <rect x="20" y="244" width="16" height="10" rx="2" fill="#8a651f" />
-              <rect x="24.5" y="214" width="7" height="32" rx="3" fill="#e9e2cf" />
-              <ellipse className="convener-glow" ref={glowLRef} cx="28" cy="204" rx="26" ry="30" fill={`url(#${gradient("candle")})`} opacity=".55" />
-              <path className="convener-flame" ref={flameLRef} d="M28 214 q-6 -9 0 -18 q6 9 0 18z" fill="#ffca5f" />
-              <path d="M28 213 q-3 -5 0 -10 q3 5 0 10z" fill="#fff3c4" />
-            </g>
-            <g>
-              <path d="M372 300 q10 8 6 20 l-6 6 -6 -6 q-4 -12 6 -20z" fill="#5c421a" />
-              <rect x="368" y="252" width="8" height="52" rx="2" fill="#7a571f" />
-              <rect x="364" y="244" width="16" height="10" rx="2" fill="#8a651f" />
-              <rect x="368.5" y="214" width="7" height="32" rx="3" fill="#e9e2cf" />
-              <ellipse className="convener-glow" ref={glowRRef} cx="372" cy="204" rx="26" ry="30" fill={`url(#${gradient("candle")})`} opacity=".55" />
-              <path className="convener-flame" ref={flameRRef} d="M372 214 q-6 -9 0 -18 q6 9 0 18z" fill="#ffca5f" />
-              <path d="M372 213 q-3 -5 0 -10 q3 5 0 10z" fill="#fff3c4" />
-            </g>
+            {/* The candles used to hang outside the frame as 8px slivers —
+                present, flickering, and far too small to see. They now stand
+                inside the painting, in front of him, where their light is the
+                reason the scene is lit at all. */}
 
             {/* frame */}
             <rect x="44" y="26" width="312" height="384" rx="10" fill={`url(#${gradient("frame")})`} stroke="#4a3410" strokeWidth="2" />
@@ -723,25 +751,41 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                     />
                   </g>
                   {/* (nose painted with the face above; nothing may cover the mouth) */}
+                  {/* Eyes. The old ones read as a mascot because they were
+                      big, round, evenly bright and perfectly symmetrical. These
+                      are smaller, almond, set deep in shadow, with the sclera
+                      shaded top-down so the lid reads as having weight. The
+                      gaze groups keep their original centres so the spring rig
+                      is untouched. */}
                   <g>
-                    <ellipse cx="172" cy="220" rx="9.5" ry="5.6" fill="#f6f1e4" />
+                    <path d="M162 220.5 q10 -8.5 20.5 -0.5 q-10 7.5 -20.5 0.5 z" fill="#0f0b07" opacity=".55" />
+                    <path d="M162.6 220.4 q9.6 -7.8 19.4 -0.4 q-9.6 6.9 -19.4 0.4 z" fill="#efe7d6" />
+                    <path d="M162.6 220.4 q9.6 -7.8 19.4 -0.4 q-4 1.4 -9.6 1.6 q-6 .2 -9.8 -1.2 z" fill="#c9bda6" opacity=".55" />
                     <g ref={gazeLRef}>
-                      <circle cx="172" cy="220" r="3.4" fill="#4f5a66" />
-                      <circle cx="172" cy="220" r="1.7" fill="#14100c" />
-                      <circle cx="173.2" cy="218.8" r=".8" fill="#fff" opacity=".9" />
+                      <circle cx="172" cy="220" r="4.1" fill="#5a4a34" />
+                      <circle cx="172" cy="220" r="4.1" fill="none" stroke="#2a1d10" strokeWidth=".9" opacity=".8" />
+                      <circle cx="172" cy="220.4" r="2" fill="#0b0805" />
+                      <circle cx="173.4" cy="218.5" r=".95" fill="#fff8e6" opacity=".95" />
+                      <circle cx="170.6" cy="221.6" r=".5" fill="#c98a3e" opacity=".5" />
                     </g>
-                    <path d="M162 220 q10 -8 20 0" fill="none" stroke="#8a6a4e" strokeWidth="1.1" />
-                    <rect className="convener-lid" ref={lidLRef} x="161" y="212" width="22" height="9" fill={`url(#${gradient("skin")})`} style={{ transformOrigin: "172px 214px" }} />
+                    {/* upper lash line, heaviest at the outer corner */}
+                    <path d="M161.8 220.4 q10 -8.6 20.6 -0.6" fill="none" stroke="#3d2b18" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d="M163 224.4 q9 3.6 18.4 -1.2" fill="none" stroke="#a37d55" strokeWidth=".9" opacity=".65" />
+                    <rect className="convener-lid" ref={lidLRef} x="161" y="212" width="22" height="9.6" fill={`url(#${gradient("skin")})`} style={{ transformOrigin: "172px 213px" }} />
                   </g>
                   <g>
-                    <ellipse cx="228" cy="220" rx="9.5" ry="5.6" fill="#f6f1e4" />
+                    <path d="M238 220.5 q-10 -8.5 -20.5 -0.5 q10 7.5 20.5 0.5 z" fill="#0f0b07" opacity=".62" />
+                    <path d="M237.4 220.4 q-9.6 -7.8 -19.4 -0.4 q9.6 6.9 19.4 0.4 z" fill="#e7dfcd" />
+                    <path d="M237.4 220.4 q-9.6 -7.8 -19.4 -0.4 q4 1.4 9.6 1.6 q6 .2 9.8 -1.2 z" fill="#bfb299" opacity=".6" />
                     <g ref={gazeRRef}>
-                      <circle cx="228" cy="220" r="3.4" fill="#4f5a66" />
-                      <circle cx="228" cy="220" r="1.7" fill="#14100c" />
-                      <circle cx="229.2" cy="218.8" r=".8" fill="#fff" opacity=".9" />
+                      <circle cx="228" cy="220" r="4.1" fill="#54452f" />
+                      <circle cx="228" cy="220" r="4.1" fill="none" stroke="#2a1d10" strokeWidth=".9" opacity=".8" />
+                      <circle cx="228" cy="220.4" r="2" fill="#0b0805" />
+                      <circle cx="229.4" cy="218.5" r=".8" fill="#fff8e6" opacity=".8" />
                     </g>
-                    <path d="M218 220 q10 -8 20 0" fill="none" stroke="#8a6a4e" strokeWidth="1.1" />
-                    <rect className="convener-lid" ref={lidRRef} x="217" y="212" width="22" height="9" fill={`url(#${gradient("skin")})`} style={{ transformOrigin: "228px 214px" }} />
+                    <path d="M238.2 220.4 q-10 -8.6 -20.6 -0.6" fill="none" stroke="#3d2b18" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d="M237 224.4 q-9 3.6 -18.4 -1.2" fill="none" stroke="#96714b" strokeWidth=".9" opacity=".6" />
+                    <rect className="convener-lid" ref={lidRRef} x="217" y="212" width="22" height="9.6" fill={`url(#${gradient("skin")})`} style={{ transformOrigin: "228px 213px" }} />
                   </g>
                   <g className="convener-brow is-left">
                     <path d="M155 208 q15 -11 30 -4" fill="none" stroke="#e6e0d2" strokeWidth="6.5" strokeLinecap="round" />
@@ -762,6 +806,61 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                   <path d="M150 192 q-7 9 -5 20 M250 192 q7 9 5 20" stroke="#d8d2c4" strokeWidth="3.6" fill="none" strokeLinecap="round" />
                 </g>
               </g>
+              {/* ---- the two candles, in front of him ---- */}
+              {/* Left: nearer, taller, the key light on his right cheek. */}
+              <g>
+                <ellipse className="convener-glow" ref={glowLRef} cx="96" cy="286" rx="96" ry="104" fill={`url(#${gradient("bloom")})`} opacity=".55" />
+                <path d="M84 396 v-86 q0 -7 12 -7 q12 0 12 7 v86 z" fill={`url(#${gradient("wax")})`} />
+                <path d="M84 316 q7 12 3 22 q-5 11 1 20" fill="none" stroke="#f2e8d2" strokeWidth="4" strokeLinecap="round" opacity=".75" />
+                <path d="M108 322 q-6 14 -1 26" fill="none" stroke="#cbbda0" strokeWidth="3" strokeLinecap="round" opacity=".6" />
+                <ellipse cx="96" cy="303" rx="12" ry="4" fill="#f6efdc" />
+                <ellipse cx="96" cy="303" rx="7.5" ry="2.4" fill="#8a7a5e" />
+                <path d="M96 303 v-9" stroke="#2b2118" strokeWidth="1.8" strokeLinecap="round" />
+                <path
+                  className="convener-flame"
+                  ref={flameLRef}
+                  d="M96 296 c-9 -10 -8 -24 0 -38 c8 14 9 28 0 38 z"
+                  fill={`url(#${gradient("flame")})`}
+                />
+                <path d="M96 294 c-4 -6 -3.5 -14 0 -22 c3.5 8 4 16 0 22 z" fill="#fff6d8" opacity=".95" />
+              </g>
+              {/* Right: further, shorter, the cool fill that keeps him round. */}
+              <g>
+                <ellipse className="convener-glow" ref={glowRRef} cx="306" cy="316" rx="78" ry="86" fill={`url(#${gradient("bloom")})`} opacity=".42" />
+                <path d="M296 396 v-58 q0 -6 10 -6 q10 0 10 6 v58 z" fill={`url(#${gradient("wax")})`} />
+                <path d="M296 344 q6 10 2 19" fill="none" stroke="#efe4cc" strokeWidth="3.4" strokeLinecap="round" opacity=".7" />
+                <ellipse cx="306" cy="332" rx="10" ry="3.4" fill="#f6efdc" />
+                <ellipse cx="306" cy="332" rx="6" ry="2" fill="#8a7a5e" />
+                <path d="M306 332 v-7" stroke="#2b2118" strokeWidth="1.6" strokeLinecap="round" />
+                <path
+                  className="convener-flame"
+                  ref={flameRRef}
+                  d="M306 326 c-7 -8 -6.5 -19 0 -30 c6.5 11 7 22 0 30 z"
+                  fill={`url(#${gradient("flame")})`}
+                />
+                <path d="M306 324 c-3 -5 -2.6 -11 0 -17 c2.6 6 3 12 0 17 z" fill="#fff6d8" opacity=".92" />
+              </g>
+
+              {/* Motes drifting through the light — the cheapest thing that
+                  reads as "air in the room" rather than "flat artwork". */}
+              <g className="convener-motes" aria-hidden="true">
+                <circle cx="126" cy="250" r="1.5" fill="#ffe6b4" />
+                <circle cx="168" cy="196" r="1.1" fill="#ffdca0" />
+                <circle cx="243" cy="228" r="1.3" fill="#ffe6b4" />
+                <circle cx="286" cy="176" r="1" fill="#ffd88f" />
+                <circle cx="205" cy="128" r="1.2" fill="#ffe6b4" />
+                <circle cx="141" cy="150" r="0.9" fill="#ffdca0" />
+              </g>
+
+              {/* Everything above sits inside the dark. */}
+              <rect x="58" y="40" width="284" height="356" fill={`url(#${gradient("vignette")})`} />
+              <rect
+                x="58" y="40" width="284" height="356"
+                filter={`url(#${gradient("grain")})`}
+                opacity=".07"
+                style={{ mixBlendMode: "overlay" }}
+              />
+
               <g stroke="#000" strokeWidth=".6" fill="none" opacity=".16">
                 <path d="M70 90 q30 8 44 -6 q20 12 34 2 M300 120 q-16 10 -30 4 M90 330 q24 -6 40 6 M270 350 q20 -10 40 -2 M120 60 q10 14 30 10" />
               </g>

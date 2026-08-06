@@ -23,6 +23,86 @@ async function expectNoPageScroll(page: Page): Promise<void> {
   );
 }
 
+// The reveal is the payoff; the Convener's near-miss aside is a remark ABOUT
+// it. Typographic rank has to match that, and it silently did not: the aside's
+// size lived on a page-scoped `.page .aside` selector (0,2,0) while every
+// responsive rule was `.aside` (0,1,0), so four breakpoints of careful tuning
+// never applied and the aside rendered larger than the reveal on desktop —
+// and 24% of an iPhone SE. Specificity beats media-query narrowness, so this
+// class of bug is invisible in the source: assert the rendered outcome.
+async function expectRevealOutranksAside(page: Page): Promise<void> {
+  const size = await page.evaluate(() => {
+    const px = (selector: string): number => {
+      const node = document.querySelector(selector);
+      if (node === null) return Number.NaN;
+      return Number.parseFloat(window.getComputedStyle(node).fontSize);
+    };
+    return { reveal: px(".craft-result-reveal"), aside: px(".craft-result-affinities") };
+  });
+
+  expect(size.reveal, "the reveal must be rendered").not.toBeNaN();
+  expect(size.aside, "the Convener's aside must be rendered").not.toBeNaN();
+  expect(
+    size.aside,
+    `the Convener's aside (${String(size.aside)}px) must not out-typeset the reveal (${String(size.reveal)}px)`,
+  ).toBeLessThanOrEqual(size.reveal);
+}
+
+// Desktop walks the whole quiz in one click per scene; a phone needs one tap to
+// open the option and a second to commit.
+async function answerEveryScene(page: Page, expandsBeforeCommitting: boolean): Promise<void> {
+  await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+  for (let questionIndex = 0; questionIndex < 12; questionIndex += 1) {
+    const option = page.locator(".craft-quiz-option").nth(2);
+    await expect(option).toBeVisible({ timeout: 20_000 });
+    await option.click();
+    if (expandsBeforeCommitting) await option.click();
+    const advance = page.getByRole("button", { name: questionIndex === 11 ? "See your Craft" : "Go on" });
+    await expect(advance).toBeVisible({ timeout: 20_000 });
+    await advance.click();
+  }
+}
+
+// The last answer hands over to his deliberation, and the verdict follows only
+// after it. This is a full-viewport screen like every other, so it owes the
+// same no-scroll promise — and it must not leak the answer while it runs.
+async function expectDeliberationThenVerdict(page: Page): Promise<void> {
+  const weighing = page.locator(".craft-quiz-weighing");
+  await expect(weighing).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeHidden();
+  await expectNoPageScroll(page);
+  // Skipping is offered because anyone who has answered twelve dilemmas is
+  // entitled to be impatient; taking it must land on the same verdict.
+  await expect(page.getByRole("button", { name: "Tell me now" })).toBeVisible();
+}
+
+// The desktop RESULT had no coverage at all — the desktop tests stopped at the
+// intro — which is how the payoff for twelve scenes came to overflow by 243px
+// in a 650px phone column on a 1600px screen without a single test going red.
+// Three aspects: the short laptop, the commonest monitor, and a large one.
+for (const desktop of [
+  { width: 1280, height: 800 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1440 },
+] as const) {
+  test(`lands the Craft reveal whole on desktop at ${String(desktop.width)}x${String(desktop.height)}`, async ({ page }) => {
+    await page.setViewportSize(desktop);
+    await page.goto("/quiz");
+    await page.evaluate(async () => { await document.fonts.ready; });
+
+    await answerEveryScene(page, false);
+    await expectDeliberationThenVerdict(page);
+
+    await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
+    // The whole point of leaving the phone frame: the reveal uses the screen.
+    const shell = await page.locator(".trades-house-craft-quiz-shell").boundingBox();
+    expect(shell?.width ?? 0, "the reveal must not render in the 520px phone cage").toBeGreaterThan(900);
+    await expectRevealOutranksAside(page);
+    await expectNoPageScroll(page);
+  });
+}
+
 // Two desktop aspects on purpose: the tall one, and the short-wide one that
 // exposed the phone-skin geometry leaks (the 625px core cap and the rails
 // hanging below the fold were invisible at 1200 tall).
@@ -120,18 +200,55 @@ for (const viewport of IPHONE_VIEWPORTS) {
     await expectNoPageScroll(page);
 
     await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
-    for (let questionIndex = 0; questionIndex < 9; questionIndex += 1) {
+    for (let questionIndex = 0; questionIndex < 12; questionIndex += 1) {
       // Two polite status regions coexist now: the quiz's progress announcer
       // and the Convener's speech mirror. Address the quiz's own.
-      await expect(page.locator(".craft-quiz-sr-only[role='status']")).toHaveText(`Question ${String(questionIndex + 1)} of 9`);
-      if (questionIndex === 4) await expect(page.locator(".craft-quiz-omen")).toBeVisible();
+      await expect(page.locator(".craft-quiz-sr-only[role='status']"))
+        .toHaveText(`Question ${String(questionIndex + 1)} of 12`, { timeout: 20_000 });
+      if (questionIndex === 6) await expect(page.locator(".craft-quiz-omen")).toBeVisible();
+      // The scene and four priced options fit a phone because the options
+      // collapse to their leads — so the no-scroll rule still holds here.
       await expectNoPageScroll(page);
-      await page.locator(".craft-quiz-option").first().click();
+      // The third option every time is a fixed path through axis space that
+      // the geometry puts nearest the Maltmen by a wide margin. On a phone the
+      // first tap opens it and the second commits.
+      const option = page.locator(".craft-quiz-option").nth(2);
+      await option.click();
+      // Expanded, it must STILL fit — that is the harder half of the promise.
+      await expect(page.locator(".craft-quiz-option-confirm")).toBeVisible();
+      await expectNoPageScroll(page);
+      await option.click();
+
+      // His reply is its own panel and it WAITS. Nothing advances on a timer,
+      // so the scene is still on screen behind it — and the reply must fit too.
+      const advance = page.getByRole("button", { name: questionIndex === 11 ? "See your Craft" : "Go on" });
+      await expect(advance).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator(".craft-quiz-question-count"))
+        .toHaveText(`QUESTION ${String(questionIndex + 1)} OF 12`);
+      await expectNoPageScroll(page);
+      await advance.click();
     }
 
-    await expect(page.getByRole("heading", { name: "THE HAMMERMEN" })).toBeVisible();
+    await expectDeliberationThenVerdict(page);
+    await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Retake the questions" })).toBeVisible();
+    await expectRevealOutranksAside(page);
     await expectNoPageScroll(page);
   });
 }
+
+// The deliberation is skippable on purpose. Proving the skip lands on the SAME
+// craft matters: a ceremony that can change the answer is not a ceremony.
+test("the deliberation can be skipped, and skipping does not change the Craft", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/quiz");
+  await page.evaluate(async () => { await document.fonts.ready; });
+
+  await answerEveryScene(page, false);
+  await expect(page.locator(".craft-quiz-weighing")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Tell me now" }).click();
+
+  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+  await expectNoPageScroll(page);
+});
