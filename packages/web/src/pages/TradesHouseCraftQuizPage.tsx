@@ -49,43 +49,12 @@ interface IntroScreenProps {
   readonly onBegin: () => void;
 }
 
-/** Stage curtain framing the desktop intro — pure decoration, hidden below 1180px. */
-function CurtainDrape({ side }: { readonly side: "left" | "right" }): ReactElement {
-  const flip = side === "right" ? "scale(-1 1) translate(-140 0)" : undefined;
-  return (
-    <svg
-      className={`craft-quiz-curtain is-${side}`}
-      viewBox="0 0 140 900"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <g transform={flip}>
-        <path d="M0 0 h118 q-26 120 -14 320 q10 180 -18 380 q-14 110 6 200 h-92 z" fill="#141d33" />
-        <path d="M22 0 q18 190 6 420 q-8 190 10 480" stroke="#0b1122" strokeWidth="26" fill="none" opacity=".8" />
-        <path d="M58 0 q22 210 8 450 q-10 200 14 450" stroke="#1c2a4a" strokeWidth="18" fill="none" opacity=".7" />
-        <path d="M92 0 q14 170 4 400 q-8 210 10 500" stroke="#0e1730" strokeWidth="20" fill="none" opacity=".85" />
-        <path d="M112 0 q-20 130 -10 330 q8 170 -16 370 q-12 105 8 200" stroke="#2a3b63" strokeWidth="4" fill="none" opacity=".5" />
-        <path d="M4 560 q62 44 116 8" stroke="#8a651f" strokeWidth="9" fill="none" />
-        <path d="M4 560 q62 44 116 8" stroke="#cda85f" strokeWidth="4" strokeDasharray="3 6" fill="none" />
-        <path d="M64 594 v34" stroke="#a67e33" strokeWidth="5" />
-        <path d="M52 628 h24 l-4 44 q-8 10 -16 0 z" fill="#b98d3e" />
-        <path d="M52 628 h24" stroke="#e6cf9b" strokeWidth="3" />
-        <path d="M56 636 v30 M64 638 v34 M72 636 v30" stroke="#8a651f" strokeWidth="2.4" opacity=".8" />
-      </g>
-    </svg>
-  );
-}
-
 function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
   return (
     <section className="craft-quiz-intro" aria-labelledby="craft-quiz-title">
       <CraftRail craftIds={CRAFT_ORDER.slice(0, 7)} side="left" />
       <CraftRail craftIds={CRAFT_ORDER.slice(7)} side="right" />
-      <CurtainDrape side="left" />
-      <CurtainDrape side="right" />
       <div className="craft-quiz-intro-core">
-        <div className="craft-quiz-intro-backdrop" aria-hidden="true" />
         <div className="craft-quiz-achievement-wrap">
           <img
             className="craft-quiz-achievement"

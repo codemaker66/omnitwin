@@ -23,21 +23,53 @@ async function expectNoPageScroll(page: Page): Promise<void> {
   );
 }
 
-test("stages the quiz across the full desktop viewport with the Convener presiding", async ({ page }) => {
-  await page.setViewportSize({ width: 2048, height: 1200 });
-  await page.goto("/quiz");
-  await expect(page.getByRole("heading", { name: "Which Craft is yours?" })).toBeVisible();
+// Two desktop aspects on purpose: the tall one, and the short-wide one that
+// exposed the phone-skin geometry leaks (the 625px core cap and the rails
+// hanging below the fold were invisible at 1200 tall).
+for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930 }] as const) {
+  test(`stages the quiz as a full-viewport invitation at ${String(desktop.width)}x${String(desktop.height)}`, async ({ page }) => {
+    await page.setViewportSize(desktop);
+    await page.goto("/quiz");
+    await expect(page.getByRole("heading", { name: "Which Craft is yours?" })).toBeVisible();
 
-  // The intro is a full-bleed proscenium — curtains, crest rails, the Hall —
-  // not the old 520px phone frame floating in dead space.
-  const intro = await page.locator(".craft-quiz-intro").boundingBox();
-  expect(intro).not.toBeNull();
-  if (intro === null) throw new Error("Craft intro geometry is unavailable.");
-  expect(intro.width).toBeGreaterThanOrEqual(2000);
-  await expect(page.locator(".craft-quiz-curtain")).toHaveCount(2);
-  await expectNoPageScroll(page);
+    // The intro is a full-bleed poster: no curtains, no photo backdrop —
+    // the engraved-invitation contract.
+    await expect(page.locator(".craft-quiz-curtain")).toHaveCount(0);
+    await expect(page.locator(".craft-quiz-intro-backdrop")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+    const intro = await page.locator(".craft-quiz-intro").boundingBox();
+    const core = await page.locator(".craft-quiz-intro-core").boundingBox();
+    expect(intro).not.toBeNull();
+    expect(core).not.toBeNull();
+    if (intro === null || core === null) throw new Error("Craft intro geometry is unavailable.");
+    expect(intro.width).toBeGreaterThanOrEqual(desktop.width - 4);
+    expect(intro.height).toBeGreaterThanOrEqual(desktop.height - 4);
+    // The centre column must STRETCH — a shorter core is the 625px-cap leak.
+    expect(core.height).toBeGreaterThanOrEqual(intro.height - 8);
+
+    // Both crest rails sit fully inside the viewport, all seven items each —
+    // a rail box can pass while overflow clips its crests, so check the last
+    // item of each roll, not just the rail.
+    const rails = page.locator(".craft-quiz-rail");
+    await expect(rails).toHaveCount(2);
+    for (const railIndex of [0, 1]) {
+      const rail = rails.nth(railIndex);
+      await expect(rail.locator(".craft-quiz-rail-item")).toHaveCount(7);
+      const railBox = await rail.boundingBox();
+      const lastItem = await rail.locator(".craft-quiz-rail-item").last().boundingBox();
+      expect(railBox).not.toBeNull();
+      expect(lastItem).not.toBeNull();
+      if (railBox === null || lastItem === null) throw new Error("Craft rail geometry is unavailable.");
+      expect(railBox.x).toBeGreaterThanOrEqual(-1);
+      expect(railBox.x + railBox.width).toBeLessThanOrEqual(desktop.width + 1);
+      expect(lastItem.y + lastItem.height).toBeLessThanOrEqual(desktop.height + 1);
+    }
+
+    await expect(page.locator(".craft-quiz-achievement")).toBeVisible();
+    await expect(page.locator(".craft-quiz-intro-foot")).toBeVisible();
+    await expectNoPageScroll(page);
+
+    await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
 
   // The Convener holds the stage beside the question…
   await expect(page.getByRole("button", { name: "Ye Auld Convener — poke the portrait" })).toBeVisible();
@@ -59,11 +91,12 @@ test("stages the quiz across the full desktop viewport with the Convener presidi
   }
   // Row-mates centre-align, so tops differ by half the height delta — the
   // contract is shared row + horizontal adjacency, not pixel-equal tops.
-  expect(second.y).toBeLessThan(first.y + first.height - 8);
-  expect(second.x).toBeGreaterThan(first.x + first.width - 1);
-  expect(third.y).toBeGreaterThan(first.y + first.height - 1);
-  await expectNoPageScroll(page);
-});
+    expect(second.y).toBeLessThan(first.y + first.height - 8);
+    expect(second.x).toBeGreaterThan(first.x + first.width - 1);
+    expect(third.y).toBeGreaterThan(first.y + first.height - 1);
+    await expectNoPageScroll(page);
+  });
+}
 
 for (const viewport of IPHONE_VIEWPORTS) {
   test(`fits every Craft quiz state without page scrolling at ${String(viewport.width)}x${String(viewport.height)}`, async ({ page }) => {
