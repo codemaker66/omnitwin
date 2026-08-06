@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canAccessResource, canManageVenue } from "../../utils/query.js";
+import { canAccessResource, canManageVenue, canWriteEvents, isEventWriteRole } from "../../utils/query.js";
 import type { JwtUser } from "../../middleware/auth.js";
 
 // ---------------------------------------------------------------------------
@@ -144,5 +144,116 @@ describe("canAccessResource", () => {
   it("null ownerId + platform admin → granted (the anonymous-owned-resource path)", () => {
     const user = makeUser({ role: "admin", platformRole: "admin", venueId: null });
     expect(canAccessResource(user, null, VENUE_A)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isEventWriteRole + canWriteEvents (T-540)
+//
+// Event writes are a narrower surface than event reads. `canAccessResource`
+// answers "may this user SEE the event", and its ownership branch grants
+// access to whoever created the row — which is the right question for a read
+// and the wrong one for a write: a user whose venueId later changes would
+// keep writing to their previous venue's events forever.
+//
+// So writes ask a different question: are you staff/admin AT THIS VENUE.
+// The split mirrors the diary's DIARY_WRITE_ROLES policy, where hallkeeper is
+// a read-facing ops role. Divergence from `canWriteBookings` (deliberate):
+// platform admins keep the global escape hatch that `canManageVenue` already
+// grants them everywhere else in events.ts.
+//
+//   | actor           | venue match | canWriteEvents |
+//   |-----------------|-------------|----------------|
+//   | platform admin  | -           | true           |
+//   | admin@A         | A           | true           |
+//   | admin@A         | B           | FALSE          |
+//   | staff@A         | A           | true           |
+//   | staff@A         | B           | FALSE          |
+//   | hallkeeper@A    | A           | FALSE          |
+//   | planner@A       | A           | FALSE          |
+//   | client@A        | A           | FALSE          |
+// ---------------------------------------------------------------------------
+
+describe("isEventWriteRole", () => {
+  it("admits staff and admin", () => {
+    expect(isEventWriteRole(makeUser({ role: "staff", venueId: VENUE_A }))).toBe(true);
+    expect(isEventWriteRole(makeUser({ role: "admin", venueId: VENUE_A }))).toBe(true);
+  });
+
+  it("refuses hallkeeper — a read-facing ops role on the event surface", () => {
+    expect(isEventWriteRole(makeUser({ role: "hallkeeper", venueId: VENUE_A }))).toBe(false);
+  });
+
+  it("refuses planner and client", () => {
+    expect(isEventWriteRole(makeUser({ role: "planner", venueId: VENUE_A }))).toBe(false);
+    expect(isEventWriteRole(makeUser({ role: "client", venueId: VENUE_A }))).toBe(false);
+  });
+
+  it("admits a platform admin whatever their venue role reads", () => {
+    expect(isEventWriteRole(makeUser({ role: "planner", platformRole: "admin", venueId: null }))).toBe(true);
+  });
+
+  it("is venue-blind — it answers role only, so routes can gate before a row load", () => {
+    // The whole point of the split: a route can refuse a hallkeeper without
+    // paying for the SELECT that would tell it which venue the event is in.
+    expect(isEventWriteRole(makeUser({ role: "staff", venueId: null }))).toBe(true);
+  });
+});
+
+describe("canWriteEvents", () => {
+  it("staff at venue A can write venue A events", () => {
+    expect(canWriteEvents(makeUser({ role: "staff", venueId: VENUE_A }), VENUE_A)).toBe(true);
+  });
+
+  it("admin at venue A can write venue A events", () => {
+    expect(canWriteEvents(makeUser({ role: "admin", venueId: VENUE_A }), VENUE_A)).toBe(true);
+  });
+
+  it("staff at venue A CANNOT write venue B events (the tenant-isolation guard)", () => {
+    expect(canWriteEvents(makeUser({ role: "staff", venueId: VENUE_A }), VENUE_B)).toBe(false);
+  });
+
+  it("admin at venue A CANNOT write venue B events", () => {
+    expect(canWriteEvents(makeUser({ role: "admin", venueId: VENUE_A }), VENUE_B)).toBe(false);
+  });
+
+  it("hallkeeper at venue A CANNOT write venue A events, though they may read them", () => {
+    const keeper = makeUser({ role: "hallkeeper", venueId: VENUE_A });
+    expect(canWriteEvents(keeper, VENUE_A)).toBe(false);
+    // The read gate is unchanged — this is the line the split protects.
+    expect(canManageVenue(keeper, VENUE_A)).toBe(true);
+  });
+
+  it("planner and client cannot write events even at their own venue", () => {
+    expect(canWriteEvents(makeUser({ role: "planner", venueId: VENUE_A }), VENUE_A)).toBe(false);
+    expect(canWriteEvents(makeUser({ role: "client", venueId: VENUE_A }), VENUE_A)).toBe(false);
+  });
+
+  it("staff with no venueId cannot write any venue's events", () => {
+    expect(canWriteEvents(makeUser({ role: "staff", venueId: null }), VENUE_A)).toBe(false);
+  });
+
+  it("platform admin can write any venue's events", () => {
+    expect(canWriteEvents(makeUser({ role: "admin", platformRole: "admin", venueId: null }), VENUE_A)).toBe(true);
+    expect(canWriteEvents(makeUser({ role: "admin", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(true);
+  });
+
+  it("grants no one that canManageVenue would refuse — writes are a subset of manage", () => {
+    // Guards against the gate ever widening by accident: every actor that can
+    // write must also pass the venue-manage check the read paths use.
+    const actors = [
+      makeUser({ role: "staff", venueId: VENUE_A }),
+      makeUser({ role: "admin", venueId: VENUE_A }),
+      makeUser({ role: "hallkeeper", venueId: VENUE_A }),
+      makeUser({ role: "planner", venueId: VENUE_A }),
+      makeUser({ role: "client", venueId: VENUE_A }),
+      makeUser({ role: "staff", venueId: VENUE_B }),
+      makeUser({ role: "admin", platformRole: "admin", venueId: null }),
+    ];
+    for (const actor of actors) {
+      if (canWriteEvents(actor, VENUE_A)) {
+        expect(canManageVenue(actor, VENUE_A), `${actor.role}/${String(actor.venueId)}`).toBe(true);
+      }
+    }
   });
 });

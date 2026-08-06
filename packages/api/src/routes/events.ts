@@ -37,7 +37,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 type EventRow = typeof events.$inferSelect;
@@ -198,6 +198,11 @@ async function buildPhaseGraph(db: Database, eventRow: EventRow): Promise<EventP
   });
 }
 
+function forbidden(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+}
+
+/** Load an event the actor may READ, or null once the reply has been sent. */
 async function requireEventAccess(
   db: Database,
   request: FastifyRequest,
@@ -210,7 +215,46 @@ async function requireEventAccess(
     return null;
   }
   if (!canAccessResource(request.user, eventRow.createdBy, eventRow.venueId)) {
-    void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    void forbidden(reply);
+    return null;
+  }
+  return eventRow;
+}
+
+/**
+ * Role gate for every event write (T-540).
+ *
+ * Called first in each write handler — before the body is parsed, so an actor
+ * who can never write is not handed the schema, and before any row is loaded,
+ * so the refusal costs no database work. Returns false once it has replied.
+ */
+function requireEventWriteRole(request: FastifyRequest, reply: FastifyReply): boolean {
+  if (isEventWriteRole(request.user)) return true;
+  void forbidden(reply);
+  return false;
+}
+
+/**
+ * Load an event the actor may WRITE, or null once the reply has been sent.
+ *
+ * The write twin of `requireEventAccess`: venue scope comes from the loaded
+ * row and there is no ownership branch, so creating an event never becomes a
+ * standing permission over a venue the actor has since left. One copy of the
+ * load + policy, following the `loadAccessibleBooking` precedent.
+ */
+async function requireEventWriteAccess(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  eventId: string,
+): Promise<EventRow | null> {
+  const eventRow = await loadEvent(db, eventId);
+  if (eventRow === null) {
+    void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
+    return null;
+  }
+  if (!canWriteEvents(request.user, eventRow.venueId)) {
+    void forbidden(reply);
     return null;
   }
   return eventRow;
@@ -256,8 +300,21 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   const { db } = opts;
 
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+
+    // The body names its own venue and the session is venue-scoped, so a
+    // create aimed at someone else's venue is a scope mismatch rather than a
+    // role failure — the same distinction the /ws/diary channel draws for the
+    // same shape. Without this an authenticated user could plant an event,
+    // and its whole phase scaffold, inside any venue they named.
+    if (!canWriteEvents(request.user, parsed.data.venueId)) {
+      return reply.status(403).send({
+        error: "This session is scoped to another venue",
+        code: "VENUE_SCOPE_MISMATCH",
+      });
+    }
 
     const created = await db.transaction(async (tx) => {
       const [eventRow] = await tx.insert(events).values({
@@ -313,9 +370,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = UpdateEventSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     const [updated] = await db.update(events).set({
@@ -361,9 +419,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/phases", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventPhaseSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     const [lastPhase] = await db
@@ -399,9 +458,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/scenarios", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventScenarioSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     if (parsed.data.phaseId !== undefined && parsed.data.phaseId !== null) {
@@ -438,9 +498,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/layout-variants", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateLayoutVariantSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
@@ -504,6 +565,7 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = UpdateEventPhaseSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
 
@@ -517,8 +579,11 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
     if (joined === undefined) {
       return reply.status(404).send({ error: "Event phase not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, joined.event.createdBy, joined.event.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    // Venue scope comes from the phase's parent event, never from the phase
+    // id alone — and never from event ownership, which would outlive the
+    // actor's membership of the venue.
+    if (!canWriteEvents(request.user, joined.event.venueId)) {
+      return forbidden(reply);
     }
 
     const [updated] = await db.update(eventPhases).set({
