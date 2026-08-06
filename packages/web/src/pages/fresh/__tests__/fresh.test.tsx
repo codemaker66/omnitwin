@@ -1,11 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-// The walk chunk carries three + Spark — far beyond jsdom. The page contract
-// under test is the poster-first wiring, so the lazy module becomes a stub.
-vi.mock("../FreshWalk.js", () => ({
-  default: () => <div data-testid="fresh-walk-stub" />,
-}));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
 import { FRESH_ROOMS, allFreshCopy } from "../fresh-copy.js";
@@ -192,49 +187,6 @@ describe("the room dossiers", () => {
   });
 });
 
-describe("walk the room — poster-first", () => {
-  it("shows the rendered poster and pays nothing until invited", () => {
-    render(<FreshPage />);
-    const poster = screen.getByAltText(
-      "The Reception Room as a captured scene, rendered by Venviewer — not a photograph",
-    );
-    expect(poster.getAttribute("src")).toContain("walk-poster");
-    expect(screen.getByRole("button", { name: "Step in" })).toBeTruthy();
-    expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
-    expect(
-      document.querySelector('[data-walk-state="poster"]'),
-    ).toBeTruthy();
-  });
-
-  it("wakes into loading when WebGL is available", async () => {
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, "getContext")
-      .mockReturnValue({} as never);
-    try {
-      render(<FreshPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
-      expect(document.querySelector('[data-walk-state="loading"]')).toBeTruthy();
-      expect(await screen.findByTestId("fresh-walk-stub")).toBeTruthy();
-    } finally {
-      getContext.mockRestore();
-    }
-  });
-
-  it("fails honestly when WebGL is unavailable", () => {
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, "getContext")
-      .mockReturnValue(null);
-    try {
-      render(<FreshPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
-      expect(document.querySelector('[data-walk-state="failed"]')).toBeTruthy();
-      expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
-    } finally {
-      getContext.mockRestore();
-    }
-  });
-});
-
 describe("the walkthrough — wired from the front door", () => {
   it("offers the whole-building walkthrough from the hero and the walk section", () => {
     render(<FreshPage />);
@@ -261,20 +213,6 @@ describe("the walkthrough — wired from the front door", () => {
     expectHref(3, "scan_105");
   });
 
-  it("gives the Reception Room dossier both doorways — walkthrough and in-page", () => {
-    render(<FreshPage />);
-    const openButtons = screen.getAllByRole("button", { name: "Open the room" });
-    fireEvent.click(openButtons[2] as HTMLElement);
-    expect(
-      screen
-        .getByRole("link", { name: "See this room in the walkthrough" })
-        .getAttribute("href"),
-    ).toContain("scan_126");
-    const walkLink = screen.getByRole("link", {
-      name: "Step into this room on this page",
-    });
-    expect(walkLink.getAttribute("href")).toBe("#walk");
-  });
 });
 
 describe("contact — real destinations", () => {

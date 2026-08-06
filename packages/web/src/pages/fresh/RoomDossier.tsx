@@ -13,7 +13,6 @@ import {
   FRESH_DOSSIER_CTA,
   FRESH_DOSSIER_DRAWN_NOTE,
   FRESH_DOSSIER_TWIN_CTA,
-  FRESH_DOSSIER_WALK_CTA,
   FRESH_TWIN_BASE,
   type FreshRoom,
 } from "./fresh-copy.js";
@@ -159,11 +158,6 @@ export function RoomDossier({ room, onClose }: RoomDossierProps): ReactElement {
                 href={`${FRESH_TWIN_BASE}?${room.twinLook}`}
               >
                 {FRESH_DOSSIER_TWIN_CTA}
-              </a>
-            )}
-            {room.inPageWalk === true && (
-              <a className="fr-cta-quiet" href="#walk" onClick={onClose}>
-                {FRESH_DOSSIER_WALK_CTA}
               </a>
             )}
           </div>

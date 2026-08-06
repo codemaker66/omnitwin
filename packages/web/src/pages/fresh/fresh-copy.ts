@@ -50,7 +50,6 @@ export const FRESH_TOUR_GROUND_ALT =
   "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
 export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
 export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
-export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
 
 /** Section kickers — the page's running heads: small letterspaced marks
  *  above each heading. Written sentence case; CSS sets them uppercase. */
@@ -82,9 +81,6 @@ export interface FreshRoom {
   /** Walkthrough deep link (?node/look query) — hero framing for this room,
    *  validated against this photography before shipping. */
   readonly twinLook?: string;
-  /** True when this room also lives on the page itself (the splat embed) —
-   *  its dossier offers the in-page doorway alongside the walkthrough. */
-  readonly inPageWalk?: boolean;
 }
 
 /** Responsive delivery: pre-encoded webp rungs live in
@@ -107,8 +103,6 @@ export const FRESH_HERO_PORTRAIT_MEDIA = "(max-width: 760px)";
 export const FRESH_HERO_PORTRAIT_SRCSET =
   "/images/venue/ladder/trades-hall-exterior-portrait-480.webp 480w, /images/venue/ladder/trades-hall-exterior-portrait-768.webp 768w";
 export const FRESH_ROOM_SIZES = "(max-width: 760px) calc(100vw - 32px), 558px";
-export const FRESH_HERITAGE_LADDER = [480, 768, 1120, 1448] as const;
-export const FRESH_HERITAGE_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
 
 /** The hero is the house itself, from above. */
 export const FRESH_HERO_IMAGE = tradesHallVenueImages.exterior;
@@ -146,7 +140,6 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
     name: "The Reception Room",
     line: "Where an evening at Trades Hall begins.",
     twinLook: "node=scan_126&look=scan_126%2C-20%2C4%2C75",
-    inPageWalk: true,
     image: tradesHallVenueImages.receptionRoom,
     alt: "The Reception Room dressed for a ceremony, candles along the aisle",
     width: 1536,
@@ -168,12 +161,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
   },
 ] as const;
 
-/** Today's artwork (2026-07-11): an illustrated portrait of the facade,
- *  and the arms of the Trades House. Labelled as artwork — never as
- *  photography. */
-export const FRESH_HERITAGE_ART = "/images/brand/facade-art.webp";
-export const FRESH_HERITAGE_ART_ALT =
-  "An illustrated portrait of the Trades Hall facade — dome, portico, and lit windows";
+/** The arms of the Trades House — artwork, never photography. */
 export const FRESH_ARMS = "/images/brand/coat-of-arms-240.webp";
 export const FRESH_ARMS_MARK = "/images/brand/coat-of-arms-mark-64.webp";
 export const FRESH_ARMS_ALT = "The arms of the Trades House of Glasgow";
@@ -202,29 +190,11 @@ export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
 
-/** Walk the room — the poster-first capture embed. The poster is a render
- *  of the captured scene (never one of the venue photographs, so the
- *  no-repeat law holds); the room itself loads only when invited. */
-export const FRESH_WALK_TITLE = "Walk the room";
+/** Walk the building — the walkthrough's section: the dollhouse door
+ *  grounds it, and the lede carries the capture's own facts. */
+export const FRESH_WALK_TITLE = "Walk the building";
 export const FRESH_WALK_LEDE =
-  "The Reception Room, captured — rendered live in your browser, not a photograph. Step in, look around from where the scanner stood, and move a table with your own hands.";
-export const FRESH_WALK_CHIP = "This is not a photograph.";
-export const FRESH_WALK_WAKE = "Step in";
-export const FRESH_WALK_SIZE_NOTE =
-  "Loads the captured room — about 60 MB, best on wifi.";
-export const FRESH_WALK_LOADING = "The room is arriving";
-export const FRESH_WALK_HINT =
-  "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
-export const FRESH_WALK_FAILED =
-  "The captured room couldn't open in this browser — the photographs above still tell the truth.";
-export const FRESH_WALK_NOTE =
-  "The same capture drives Venviewer, the planning tool beneath this page.";
-export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
-export const FRESH_WALK_POSTER_SRCSET =
-  "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
-export const FRESH_WALK_POSTER_SIZES = "(max-width: 980px) calc(100vw - 32px), 900px";
-export const FRESH_WALK_POSTER_ALT =
-  "The Reception Room as a captured scene, rendered by Venviewer — not a photograph";
+  "The whole hall, captured — 149 viewpoints across every floor, room to room, with dollhouse and plan views. Rendered live in your browser, not photographs.";
 
 /** The room dossiers — each card opens into the room's own page-within-
  *  the-page: published dimensions, and every capacity drawn to count. */
@@ -276,7 +246,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_TOUR_CTA,
     FRESH_TOUR_GROUND_ALT,
     FRESH_DOSSIER_TWIN_CTA,
-    FRESH_DOSSIER_WALK_CTA,
     FRESH_KICKER_ROOMS,
     FRESH_KICKER_WALK,
     FRESH_KICKER_RATES,
@@ -286,7 +255,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ROOMS_TITLE,
     FRESH_ROOMS_LEDE,
     FRESH_HERO_ALT,
-    FRESH_HERITAGE_ART_ALT,
     FRESH_ARMS_ALT,
     FRESH_MOTTO,
     FRESH_MOTTO_ATTR,
@@ -310,14 +278,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_DOSSIER_DRAWN_NOTE,
     FRESH_WALK_TITLE,
     FRESH_WALK_LEDE,
-    FRESH_WALK_CHIP,
-    FRESH_WALK_WAKE,
-    FRESH_WALK_SIZE_NOTE,
-    FRESH_WALK_LOADING,
-    FRESH_WALK_HINT,
-    FRESH_WALK_FAILED,
-    FRESH_WALK_NOTE,
-    FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,
     FRESH_HERITAGE_BODY,
     FRESH_CONTACT_TITLE,
