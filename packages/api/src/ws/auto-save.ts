@@ -4,6 +4,7 @@ import { eq, and, isNull, inArray } from "drizzle-orm";
 import { configurations, placedObjects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { getUserByClerkId } from "../middleware/auth.js";
+import { readClerkEmailClaims } from "../services/user-onboarding.js";
 
 // ---------------------------------------------------------------------------
 // WebSocket auto-save — debounced placed object sync
@@ -102,10 +103,15 @@ export async function resolveWsUser(
     const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
     const payload = await verifyToken(token, { secretKey });
     const clerkId = payload.sub;
-    const email = ((payload as Record<string, unknown>)["email"] as string | undefined)
-      ?? `${clerkId}@clerk.user`;
+    const emailClaims = readClerkEmailClaims(payload as Readonly<Record<string, unknown>>);
 
-    const dbUser = await getUserByClerkId(db, clerkId, email);
+    const dbUser = await getUserByClerkId(
+      db,
+      clerkId,
+      emailClaims.email,
+      emailClaims.emailVerified,
+      "websocket",
+    );
     if (dbUser === null) return null;
 
     return {

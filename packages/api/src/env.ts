@@ -18,6 +18,10 @@ const EnvSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Optional comma-separated allowlist. Matching domains may self-create
+  // planner users after Clerk proves a verified email. Leave empty unless
+  // the venue explicitly approves that domain.
+  VENVIEWER_APPROVED_EMAIL_DOMAINS: z.string().default(""),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),

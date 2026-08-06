@@ -1,9 +1,13 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import {
+  createDrizzleUserOnboardingStore,
+  readClerkEmailClaims,
+  resolveUserForClerkIdentity,
+  type UserOnboardingSource,
+} from "../services/user-onboarding.js";
 
 // ---------------------------------------------------------------------------
 // User type — attached to request after authentication
@@ -48,58 +52,40 @@ export function setAuthDb(db: Database): void {
 }
 
 // ---------------------------------------------------------------------------
-// getUserByClerkId — find or create local user from Clerk identity.
+// getUserByClerkId - resolve local user from Clerk identity.
 //
 // This is the authoritative bridge from Clerk's opaque `sub` (the JWT
 // `payload.sub` claim) to our local `users.id` UUID. Both HTTP and
 // WebSocket auth paths MUST go through this so ownership checks against
 // `configurations.userId` compare apples to apples.
+//
+// New Clerk users are no longer auto-created. This bridge links an
+// existing invited user row by verified email, or creates a planner only
+// for an explicitly approved email domain.
 // ---------------------------------------------------------------------------
 
 export async function getUserByClerkId(
   db: Database,
   clerkId: string,
-  email: string,
+  email: string | null,
+  emailVerified: boolean,
+  source: UserOnboardingSource = "auth",
 ): Promise<JwtUser | null> {
-  // Look up existing user by clerkId
-  const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1);
-  if (existing !== undefined) {
-    return {
-      id: existing.id,
-      email: existing.email,
-      role: existing.role,
-      venueId: existing.venueId,
-    };
-  }
-
-  // Also check by email (for users created before Clerk migration, or seed users)
-  const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  if (byEmail !== undefined) {
-    // Link Clerk ID to existing user
-    await db.update(users).set({ clerkId, updatedAt: new Date() }).where(eq(users.id, byEmail.id));
-    return {
-      id: byEmail.id,
-      email: byEmail.email,
-      role: byEmail.role,
-      venueId: byEmail.venueId,
-    };
-  }
-
-  // On-the-fly user creation (webhook hasn't fired yet)
-  const [created] = await db.insert(users).values({
+  const resolved = await resolveUserForClerkIdentity(createDrizzleUserOnboardingStore(db), {
     clerkId,
     email,
-    name: email.split("@")[0] ?? "User",
-    role: "planner",
-  }).returning();
+    emailVerified,
+    name: null,
+    source,
+  });
 
-  if (created === undefined) return null;
+  if (resolved === null) return null;
 
   return {
-    id: created.id,
-    email: created.email,
-    role: created.role,
-    venueId: created.venueId,
+    id: resolved.id,
+    email: resolved.email,
+    role: resolved.role,
+    venueId: resolved.venueId,
   };
 }
 
@@ -153,17 +139,22 @@ export async function authenticate(
     });
 
     const clerkId = payload.sub;
-    const rawEmail = (payload as Record<string, unknown>)["email"];
-    const email = typeof rawEmail === "string" ? rawEmail : undefined;
+    const emailClaims = readClerkEmailClaims(payload as Readonly<Record<string, unknown>>);
 
     if (_db === null) {
       await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });
       return;
     }
 
-    const user = await getUserByClerkId(_db, clerkId, email ?? `${clerkId}@clerk.user`);
+    const user = await getUserByClerkId(
+      _db,
+      clerkId,
+      emailClaims.email,
+      emailClaims.emailVerified,
+      "auth",
+    );
     if (user === null) {
-      await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
+      await reply.status(401).send({ error: "Invitation required", code: "UNAUTHORIZED" });
       return;
     }
 
