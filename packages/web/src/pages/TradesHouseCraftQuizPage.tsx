@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { OptionSeal } from "../features/trades-house/OptionSeal.js";
 import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
-import { convenerReaction } from "../features/trades-house/convener/convener-lines.js";
+import {
+  CONVENER_DELIBERATION,
+  CONVENER_DELIBERATION_BEAT_MS,
+  convenerReaction,
+} from "../features/trades-house/convener/convener-lines.js";
 import { useMediaQuery } from "../hooks/use-media-query.js";
 import {
   CRAFT_ORDER,
@@ -18,7 +22,7 @@ import {
 } from "../features/trades-house/craft-quiz-model.js";
 import "./TradesHouseCraftQuizPage.css";
 
-type QuizScreen = "intro" | "question" | "result";
+type QuizScreen = "intro" | "question" | "weighing" | "result";
 
 function railLabel(name: string): string {
   return name.replace(/^THE\s+/u, "");
@@ -257,6 +261,67 @@ function ResultLaurel(): ReactElement {
   return <svg className="craft-result-laurel" viewBox="0 0 270 270" aria-hidden="true"><path d="M 62 68 A 100 100 0 1 0 208 68" />{leaves}</svg>;
 }
 
+interface WeighingScreenProps {
+  readonly onDecided: () => void;
+  readonly compact: boolean;
+}
+
+/**
+ * The deliberation. Twelve hard scenes used to end with an instant verdict,
+ * which reads as a lookup table rather than a judgement — the pause is what
+ * makes the answer feel earned, and it is the beat every sorting hat is
+ * actually remembered for.
+ *
+ * Timers, not promises. The previous auto-advance chained navigation onto
+ * `convener.say(...).then(...)`, so a stray resolution could race the quiz to
+ * the end — a failure that only ever appeared on CI. Here one interval owns
+ * the beat count, one effect owns the handover, and both clean up.
+ */
+function WeighingScreen({ onDecided, compact }: WeighingScreenProps): ReactElement {
+  const [beat, setBeat] = useState(0);
+  const skipRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setBeat((current) => current + 1);
+    }, CONVENER_DELIBERATION_BEAT_MS);
+    return () => { window.clearInterval(timer); };
+  }, []);
+
+  // Handing over is its own effect so the interval never navigates: the beat
+  // counter is the single source of truth for where we are in the ceremony.
+  useEffect(() => {
+    if (beat >= CONVENER_DELIBERATION.length) onDecided();
+  }, [beat, onDecided]);
+
+  // Anyone who has already waited twelve scenes is entitled to be impatient.
+  useEffect(() => { skipRef.current?.focus(); }, []);
+
+  const line = CONVENER_DELIBERATION[Math.min(beat, CONVENER_DELIBERATION.length - 1)] ?? "";
+
+  return (
+    <section className="craft-quiz-weighing" aria-labelledby="craft-weighing-title">
+      <h1 className="craft-quiz-sr-only" id="craft-weighing-title">The Convener is weighing your answers</h1>
+      <p className="craft-result-kicker"><span />The Chain is weighing<span /></p>
+      {/* He is the one deliberating, so he is on screen doing it. His bubble
+          stays empty here: the beats change faster than the typewriter can
+          finish a line, and a half-typed thought reads as a stall. */}
+      <div className="craft-weighing-portrait">
+        <ConvenerPortrait compact={compact} restingLine={null} />
+      </div>
+      <div className="craft-weighing-chain" aria-hidden="true">
+        {CONVENER_DELIBERATION.map((_, index) => (
+          <i key={index} data-lit={index <= beat ? "true" : "false"} />
+        ))}
+      </div>
+      <p className="craft-weighing-line" role="status" aria-live="polite">{line}</p>
+      <button type="button" className="craft-weighing-skip" ref={skipRef} onClick={onDecided}>
+        Tell me now
+      </button>
+    </section>
+  );
+}
+
 interface ResultScreenProps {
   readonly ranking: readonly CraftRankingEntry[];
   readonly onRetake: () => void;
@@ -360,10 +425,16 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     convenerRef.current?.express(optionIndex % 3 === 1 ? "press" : "smile", 1_400);
   }
 
+  // Stable identity: WeighingScreen's handover effect lists this in its deps,
+  // and a fresh arrow every render would make that effect churn.
+  const revealCraft = useCallback(() => { setScreen("result"); }, []);
+
   function continueFromReply(): void {
     setReply(null);
     setPickedIndex(null);
-    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("result");
+    // The last scene hands over to the deliberation, never straight to the
+    // verdict: an instant answer after twelve dilemmas reads as a lookup.
+    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("weighing");
     else setQuestionIndex((current) => current + 1);
   }
 
@@ -395,6 +466,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
             />
           </div>
         ) : null}
+        {screen === "weighing" ? <WeighingScreen onDecided={revealCraft} compact={!wideStage} /> : null}
         {screen === "result" ? <ResultScreen ranking={ranking} onRetake={resetQuiz} /> : null}
       </div>
     </main>

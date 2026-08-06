@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import { CRAFT_QUESTIONS } from "../craft-quiz-model.js";
 import {
   CONVENER_ACKNOWLEDGEMENTS,
+  CONVENER_DELIBERATION,
   CONVENER_REACTIONS,
   convenerAcknowledgement,
   convenerReaction,
@@ -48,11 +49,20 @@ const REACTION_COPY = CONVENER_REACTIONS.flatMap((replies, questionIndex) =>
   })),
 );
 
+// The deliberation is the last thing he says before the verdict, which makes
+// it the easiest place to leak one: a single craft noun here would turn the
+// ceremony into the answer key.
+const DELIBERATION_COPY = CONVENER_DELIBERATION.map((text, index) => ({
+  where: `deliberation beat ${String(index + 1)}`,
+  text,
+}));
+
 const ALL_SPOKEN = [
   ...SCENES,
   ...OPTION_COPY.map(({ where, text }) => ({ where, text })),
   ...ACK_COPY,
   ...REACTION_COPY,
+  ...DELIBERATION_COPY,
 ];
 
 /** Respellings the register ruling bans outright, with their plain forms. */

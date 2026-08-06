@@ -92,6 +92,12 @@ describe("Trades House leaflet experience", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(500); });
     }
 
+    // The last answer hands over to his deliberation, not to the verdict —
+    // an instant answer after twelve dilemmas reads as a lookup table.
+    expect(screen.getByText("Hold still, now. Let me look at ye properly.")).toBeTruthy();
+    expect(screen.queryByText("THE MALTMEN"), "the verdict must not arrive early").toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+
     vi.useRealTimers();
     expect(screen.getByText("THE MALTMEN")).toBeTruthy();
     expect(screen.getByText("The Fermenter")).toBeTruthy();

@@ -193,6 +193,24 @@ export function convenerReaction(questionIndex: number, optionIndex: number): st
     ?? convenerAcknowledgement(questionIndex);
 }
 
+/**
+ * The deliberation. A sorting hat that answers the instant you stop talking is
+ * a form, not an oracle — the pause IS the ceremony, and it is the only place
+ * the quiz can say "this was close" before it says anything at all.
+ *
+ * Three beats, in order: he looks, he admits the pull of more than one, he
+ * decides. None of them may hint WHICH — he has not named a craft in twelve
+ * scenes and he does not start here (L8).
+ */
+export const CONVENER_DELIBERATION: readonly string[] = [
+  "Hold still, now. Let me look at ye properly.",
+  "Mm. More than one o' them has a claim on ye. I can feel the pull o' it.",
+  "Aye. Aye, I have it.",
+];
+
+/** How long each deliberation beat holds before the next. */
+export const CONVENER_DELIBERATION_BEAT_MS = 1_600;
+
 /** Milliseconds of no input before he dozes off. */
 export const CONVENER_DOZE_AFTER_MS = 45_000;
 

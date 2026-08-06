@@ -63,6 +63,19 @@ async function answerEveryScene(page: Page, expandsBeforeCommitting: boolean): P
   }
 }
 
+// The last answer hands over to his deliberation, and the verdict follows only
+// after it. This is a full-viewport screen like every other, so it owes the
+// same no-scroll promise — and it must not leak the answer while it runs.
+async function expectDeliberationThenVerdict(page: Page): Promise<void> {
+  const weighing = page.locator(".craft-quiz-weighing");
+  await expect(weighing).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeHidden();
+  await expectNoPageScroll(page);
+  // Skipping is offered because anyone who has answered twelve dilemmas is
+  // entitled to be impatient; taking it must land on the same verdict.
+  await expect(page.getByRole("button", { name: "Tell me now" })).toBeVisible();
+}
+
 // The desktop RESULT had no coverage at all — the desktop tests stopped at the
 // intro — which is how the payoff for twelve scenes came to overflow by 243px
 // in a 650px phone column on a 1600px screen without a single test going red.
@@ -78,6 +91,7 @@ for (const desktop of [
     await page.evaluate(async () => { await document.fonts.ready; });
 
     await answerEveryScene(page, false);
+    await expectDeliberationThenVerdict(page);
 
     await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
@@ -215,6 +229,7 @@ for (const viewport of IPHONE_VIEWPORTS) {
       await advance.click();
     }
 
+    await expectDeliberationThenVerdict(page);
     await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Retake the questions" })).toBeVisible();
@@ -222,3 +237,18 @@ for (const viewport of IPHONE_VIEWPORTS) {
     await expectNoPageScroll(page);
   });
 }
+
+// The deliberation is skippable on purpose. Proving the skip lands on the SAME
+// craft matters: a ceremony that can change the answer is not a ceremony.
+test("the deliberation can be skipped, and skipping does not change the Craft", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/quiz");
+  await page.evaluate(async () => { await document.fonts.ready; });
+
+  await answerEveryScene(page, false);
+  await expect(page.locator(".craft-quiz-weighing")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Tell me now" }).click();
+
+  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+  await expectNoPageScroll(page);
+});

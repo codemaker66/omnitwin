@@ -2469,3 +2469,124 @@
     display: grid;
   }
 }
+
+/* ---- the deliberation -----------------------------------------------------
+   Between the last answer and the verdict. Same full-viewport contract as
+   every other screen: it centres, it never scrolls, and it carries its own
+   escape from the 520px phone frame at desktop. */
+.craft-quiz-weighing {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 3.5vh, 34px);
+  justify-content: center;
+  /* Minus the phone frame's 16px inset, which is on the PAGE: a bare 100dvh
+     child inside a padded parent overflows by exactly that padding, every
+     time. The desktop block below zeroes the inset and restores the full
+     100dvh. */
+  min-height: calc(100dvh - 32px);
+  padding: clamp(20px, 4vh, 48px) clamp(20px, 5vw, 64px);
+  text-align: center;
+}
+
+/* Three links of his chain, lighting one per beat. This is the only progress
+   indication the deliberation gets — a spinner would say "loading", and
+   nothing is loading; he is thinking. */
+/* Constrained: the kicker's rules are `flex: 1` hairlines, so at 1920 they
+   stretched the full screen and the label read as a stray caption. */
+.craft-quiz-weighing .craft-result-kicker {
+  max-width: min(560px, 82vw);
+  width: 100%;
+}
+
+.craft-weighing-portrait {
+  width: min(320px, 62vw);
+}
+
+/* His bubble is suppressed here, not merely emptied: `restingLine={null}` still
+   renders the frame and its byline, and an empty speech bubble under a thinking
+   face reads as a failed load. The deliberation line is page copy instead, so
+   the beat never has to wait for a typewriter to finish. */
+.craft-quiz-weighing .convener-speech {
+  display: none;
+}
+
+.craft-weighing-chain {
+  display: flex;
+  gap: 14px;
+}
+
+.craft-weighing-chain i {
+  background: rgba(205, 168, 95, 0.22);
+  border: 1px solid rgba(205, 168, 95, 0.4);
+  border-radius: 50%;
+  height: 11px;
+  transition: background 420ms ease, box-shadow 420ms ease;
+  width: 11px;
+}
+
+.craft-weighing-chain i[data-lit="true"] {
+  background: var(--craft-gold);
+  box-shadow: 0 0 14px rgba(240, 220, 166, 0.75);
+}
+
+.craft-weighing-line {
+  color: #ecdfc4;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(17px, 1.5vw, 26px);
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 30ch;
+}
+
+.craft-weighing-skip {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(205, 168, 95, 0.45);
+  color: rgba(205, 168, 95, 0.85);
+  cursor: pointer;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
+  /* 44px of target for a control that is deliberately visually quiet. */
+  min-height: 44px;
+  padding: 0 6px;
+  text-transform: uppercase;
+}
+
+.craft-weighing-skip:hover,
+.craft-weighing-skip:focus-visible {
+  color: #f4e6c4;
+}
+
+@media (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="weighing"] .trades-house-craft-quiz-shell {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    min-height: 100dvh;
+    width: 100%;
+  }
+
+  /* The page inset is zero at desktop, so the full viewport is available. */
+  .trades-house-craft-quiz-page[data-screen="weighing"] .craft-quiz-weighing {
+    min-height: 100dvh;
+  }
+}
+
+/* The chain lights and the line changes either way — reduced motion removes
+   the fade, not the ceremony. Losing the beat would lose the content. */
+@media (prefers-reduced-motion: reduce) {
+  .craft-weighing-chain i {
+    transition: none;
+  }
+}
+
+@media (min-width: 980px) {
+  .craft-weighing-portrait {
+    width: clamp(300px, 24vw, 400px);
+  }
+}
