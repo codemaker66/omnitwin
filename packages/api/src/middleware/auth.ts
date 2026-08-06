@@ -1,9 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import {
+  createDrizzleClerkOnboardingStore,
+  extractVerifiedClerkSessionEmail,
+  parseApprovedEmailDomains,
+  resolveClerkOnboardingUser,
+  type ClerkOnboardingSource,
+} from "../services/clerk-onboarding.js";
 
 // ---------------------------------------------------------------------------
 // User type — attached to request after authentication
@@ -59,42 +64,24 @@ export function setAuthDb(db: Database): void {
 export async function getUserByClerkId(
   db: Database,
   clerkId: string,
-  email: string,
+  email: string | null,
+  options: {
+    readonly emailVerified: boolean;
+    readonly source: ClerkOnboardingSource;
+  },
 ): Promise<JwtUser | null> {
-  // Look up existing user by clerkId
-  const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1);
-  if (existing !== undefined) {
-    return {
-      id: existing.id,
-      email: existing.email,
-      role: existing.role,
-      venueId: existing.venueId,
-    };
-  }
+  const created = await resolveClerkOnboardingUser(
+    createDrizzleClerkOnboardingStore(db),
+    {
+      clerkId,
+      email,
+      emailVerified: options.emailVerified,
+      source: options.source,
+      approvedEmailDomains: parseApprovedEmailDomains(process.env["CLERK_APPROVED_EMAIL_DOMAINS"]),
+    },
+  );
 
-  // Also check by email (for users created before Clerk migration, or seed users)
-  const [byEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  if (byEmail !== undefined) {
-    // Link Clerk ID to existing user
-    await db.update(users).set({ clerkId, updatedAt: new Date() }).where(eq(users.id, byEmail.id));
-    return {
-      id: byEmail.id,
-      email: byEmail.email,
-      role: byEmail.role,
-      venueId: byEmail.venueId,
-    };
-  }
-
-  // On-the-fly user creation (webhook hasn't fired yet)
-  const [created] = await db.insert(users).values({
-    clerkId,
-    email,
-    name: email.split("@")[0] ?? "User",
-    role: "planner",
-  }).returning();
-
-  if (created === undefined) return null;
-
+  if (created === null) return null;
   return {
     id: created.id,
     email: created.email,
@@ -153,17 +140,19 @@ export async function authenticate(
     });
 
     const clerkId = payload.sub;
-    const rawEmail = (payload as Record<string, unknown>)["email"];
-    const email = typeof rawEmail === "string" ? rawEmail : undefined;
+    const { email, emailVerified } = extractVerifiedClerkSessionEmail(payload as Record<string, unknown>);
 
     if (_db === null) {
       await reply.status(500).send({ error: "Database not available", code: "SERVER_ERROR" });
       return;
     }
 
-    const user = await getUserByClerkId(_db, clerkId, email ?? `${clerkId}@clerk.user`);
+    const user = await getUserByClerkId(_db, clerkId, email, {
+      emailVerified,
+      source: "http_session",
+    });
     if (user === null) {
-      await reply.status(500).send({ error: "Failed to resolve user", code: "SERVER_ERROR" });
+      await reply.status(403).send({ error: "Account is not approved for Venviewer", code: "ACCESS_NOT_APPROVED" });
       return;
     }
 

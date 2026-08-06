@@ -18,6 +18,7 @@ const EnvSchema = z.object({
   CLERK_PUBLISHABLE_KEY: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().min(1).optional(),
   CLERK_WEBHOOK_SECRET: z.string().min(1).optional(),
+  CLERK_APPROVED_EMAIL_DOMAINS: z.string().default(""),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),

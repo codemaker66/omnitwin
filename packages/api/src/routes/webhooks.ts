@@ -3,6 +3,11 @@ import { eq } from "drizzle-orm";
 import { Webhook } from "svix";
 import { users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
+import {
+  createDrizzleClerkOnboardingStore,
+  parseApprovedEmailDomains,
+  resolveClerkOnboardingUser,
+} from "../services/clerk-onboarding.js";
 
 // ---------------------------------------------------------------------------
 // Clerk webhook events — sync user data to local DB
@@ -11,6 +16,9 @@ import type { Database } from "../db/client.js";
 interface ClerkEmailAddress {
   readonly email_address: string;
   readonly id: string;
+  readonly verification?: {
+    readonly status?: string | null;
+  } | null;
 }
 
 interface ClerkUserEvent {
@@ -43,9 +51,17 @@ interface ClerkWebhookPayload {
   readonly data: ClerkUserEvent;
 }
 
-function getPrimaryEmail(data: ClerkUserEvent): string {
+function getPrimaryEmail(data: ClerkUserEvent): {
+  readonly email: string | null;
+  readonly verified: boolean;
+} {
   const primary = data.email_addresses.find((e) => e.id === data.primary_email_address_id);
-  return primary?.email_address ?? data.email_addresses[0]?.email_address ?? "";
+  const chosen = primary ?? data.email_addresses[0] ?? null;
+  if (chosen === null) return { email: null, verified: false };
+  return {
+    email: chosen.email_address,
+    verified: chosen.verification?.status === "verified",
+  };
 }
 
 function getFullName(data: ClerkUserEvent): string {
@@ -118,28 +134,24 @@ export async function webhookRoutes(
 
     try {
       if (type === "user.created") {
-        const email = getPrimaryEmail(data);
+        const { email, verified } = getPrimaryEmail(data);
         const name = getFullName(data);
-        const role = sanitizeRole(data.public_metadata?.["role"]);
-        const rawVenueId = data.public_metadata?.["venueId"];
-        const venueId = typeof rawVenueId === "string" && rawVenueId.length > 0 ? rawVenueId : null;
         const phone = data.phone_numbers[0]?.phone_number ?? null;
         const username = normaliseUsername(data.username);
-
-        const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-        if (existing !== undefined) {
-          await db.update(users).set({ clerkId: data.id, name, username, updatedAt: new Date() }).where(eq(users.id, existing.id));
-        } else {
-          await db.insert(users).values({
-            clerkId: data.id, email, name, displayName: name, phone, role, venueId, username,
-          });
-        }
+        await resolveClerkOnboardingUser(createDrizzleClerkOnboardingStore(db), {
+          clerkId: data.id,
+          email,
+          emailVerified: verified,
+          source: "clerk_webhook",
+          approvedEmailDomains: parseApprovedEmailDomains(process.env["CLERK_APPROVED_EMAIL_DOMAINS"]),
+          profile: { name, displayName: name, phone, username },
+        });
 
         return reply.status(200).send({ received: true });
       }
 
       if (type === "user.updated") {
-        const email = getPrimaryEmail(data);
+        const { email } = getPrimaryEmail(data);
         const name = getFullName(data);
         const phone = data.phone_numbers[0]?.phone_number ?? null;
 
@@ -151,7 +163,8 @@ export async function webhookRoutes(
         const username = normaliseUsername(data.username);
 
         await db.update(users).set({
-          email, name, displayName: name, phone, role, venueId, username, updatedAt: new Date(),
+          ...(email === null ? {} : { email }),
+          name, displayName: name, phone, role, venueId, username, updatedAt: new Date(),
         }).where(eq(users.clerkId, data.id));
 
         return reply.status(200).send({ received: true });
