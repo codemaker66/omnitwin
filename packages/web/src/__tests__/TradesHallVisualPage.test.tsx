@@ -46,14 +46,28 @@ describe("TradesHallVisualPage", () => {
   it("renders the internal command shell empty state without mounting a Spark asset", () => {
     mount();
     expect(screen.getByText("Venviewer")).toBeTruthy();
+    expect(screen.getByText("Trades Hall Glasgow / Grand Hall")).toBeTruthy();
+    expect(screen.getByText("Planning evidence / human review required")).toBeTruthy();
     expect(screen.getByText("Truth Mode")).toBeTruthy();
     expect(screen.getByText("Event Phase Graph")).toBeTruthy();
     expect(screen.getByText("Guest Flow Replay")).toBeTruthy();
     expect(screen.getByText("Overlays")).toBeTruthy();
-    expect(screen.getByText("Internal command shell demo")).toBeTruthy();
     expect(screen.getByText("No real asset loaded yet")).toBeTruthy();
+    expect(screen.getByText("Procedural venue context only. No real asset loaded yet.")).toBeTruthy();
     expect(screen.getByTestId("grand-hall-room")).toBeTruthy();
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+  });
+
+  it("renders the Truth Mode evidence sections with safe wording", () => {
+    mount();
+    expect(screen.getByText("Source")).toBeTruthy();
+    expect(screen.getByText("Observed capture + semantic mesh + planner object")).toBeTruthy();
+    expect(screen.getByText("Verification")).toBeTruthy();
+    expect(screen.getByText("Machine checked / Not legally certified")).toBeTruthy();
+    expect(screen.getByText("Confidence")).toBeTruthy();
+    expect(screen.getByText("Layout-grade geometry available")).toBeTruthy();
+    expect(screen.getByText("Assumptions")).toBeTruthy();
+    expect(screen.getByText("180 guests, 2 service staff lanes, bar service rate pending")).toBeTruthy();
   });
 
   it("mounts the Spark layer only for a plausible runtime asset URL", () => {
@@ -68,11 +82,13 @@ describe("TradesHallVisualPage", () => {
     expect(bodyText).not.toMatch(/Black Label/i);
     expect(bodyText).not.toMatch(/production ready/i);
     expect(bodyText).not.toMatch(/real Trades Hall loaded/i);
-    expect(bodyText).not.toMatch(/photoreal/i);
+    expect(bodyText).not.toMatch(/photoreal digital twin/i);
     expect(bodyText).not.toMatch(/survey-grade/i);
     expect(bodyText).not.toMatch(/legally compliant/i);
     expect(bodyText).not.toMatch(/fire approved/i);
     expect(bodyText).not.toMatch(/certified safe/i);
+    expect(bodyText).not.toMatch(/approved for occupancy/i);
+    expect(bodyText).not.toMatch(/guaranteed accessible/i);
   });
 
   it("switches mesh, splat, and hybrid layer state", () => {
@@ -98,6 +114,15 @@ describe("TradesHallVisualPage", () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: /Ops Compiler/i }));
     expect(screen.getByRole("button", { name: "Ops" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /Heritage buffer/i }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("lets overlay legend controls toggle overlays", () => {
+    mount();
+    const flowToggle = screen.getByRole("button", { name: /Hide Guest flow replay/i });
+    expect(flowToggle.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(flowToggle);
+    expect(screen.getByRole("button", { name: /Show Guest flow replay/i }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("keeps fixture-only Spark sources out of the command shell source", async () => {

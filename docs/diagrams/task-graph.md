@@ -119,6 +119,7 @@ flowchart TD
         T408(["T-408 - live /plan command shell + readable labels"])
         T409(["T-409 - hidden heart easter egg"])
         T410(["T-410 - premium table/seat callouts"])
+        T411(["T-411 - reference-matched internal command shell"])
         T137(["T-137 - Residual Radiance doctrine"])
     end
 
@@ -224,7 +225,8 @@ flowchart TD
     T384 --> T407
     T123 --> T407
     T127 --> T407
-    T407 --> T091
+    T407 --> T411
+    T411 --> T091
     T385 --> T386
     T091 --> T386
     T385 --> T387
@@ -357,7 +359,7 @@ flowchart TD
     classDef blocked fill:#a85842,color:#f4ede0
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
-    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410 done
+    class T002,T019,T052,T080,T081,T082,T083,T084,T086,T087,T088,T089,T090,T097,T113,T114,T115,T122,T123,T124,T127,T135,T136,T137,T156,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T411 done
     class T001 inprogress
     class T003,T005,T018,T060,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T085,T091,T092,T093,T094,T095,T096,T098,T099,T116,T117,T118,T120,T121,T386,T388,T389 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -448,10 +450,11 @@ while the desktop camera opens in a fuller top-down planning-board composition.
 proposal made the default planner too heavy and violated the blank-hall expectation,
 so `/plan` now creates an empty hall again while preserving the lightweight HUD/camera
 chrome.
-`T-384/T-123/T-127 → T-407 → T-091` keeps the internal visual command shell
-separate from real-asset evidence: the route now has premium command-center chrome
-and honest Truth Mode-shaped fixture data, but still waits for a real signed runtime
-bundle before T-091/T-091A can close.
+`T-384/T-123/T-127 → T-407 → T-411 → T-091` keeps the internal visual
+command shell separate from real-asset evidence: the route has premium
+command-center chrome and honest Truth Mode-shaped fixture data, and T-411
+tightens it against the supplied dark command-center reference while still
+waiting for a real signed runtime bundle before T-091/T-091A can close.
 `T-378/T-398/T-404/T-406 → T-408` records the live `/plan` reference-alignment
 pass after the label, cinematic shell, command-deck, and blank-opening fixes:
 desktop now gets a full-width command-center status bar and large camera-facing
