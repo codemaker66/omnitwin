@@ -1919,3 +1919,40 @@
     margin-top: clamp(14px, 2.5vh, 24px);
   }
 }
+
+/* ---- the proscenium escapes the phone frame (intro, ≥1180px) --------------
+   Companion to the Hall stage block above: the intro too leaves the 520px
+   card and owns the full viewport — three-column grid restored (the phone
+   skin flexes it), rails back in the columns (the phone skin absolutes them
+   into 14px strips). Appended last so it outweighs the phone skin without
+   specificity games. */
+
+@media screen and (min-width: 1180px) {
+  .trades-house-craft-quiz-page[data-screen="intro"] {
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="intro"] .trades-house-craft-quiz-shell {
+    box-shadow: none;
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-intro {
+    display: grid;
+    grid-template-columns: minmax(190px, 235px) 1fr minmax(190px, 235px);
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-rail {
+    display: grid;
+    inset: auto;
+    position: static;
+    width: auto;
+  }
+
+  .craft-quiz-rail-item {
+    display: grid;
+  }
+}
